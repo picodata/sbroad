@@ -1,0 +1,17 @@
+[package]
+name = "sbrod"
+version = "0.1.0"
+authors = ["Igor Kuznetsov <kuznetsovin@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tarantool = "0.4.2"
+sqlparser = "0.11.0"
+serde = "1.0"
+fasthash = "0.4.0"
+yaml-rust = "0.4.1"
+
+[lib]
+crate-type = ["cdylib"]

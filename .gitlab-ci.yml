@@ -1,0 +1,39 @@
+stages:
+    - build
+    - test
+
+cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+        - target
+
+build:
+    stage: build
+    tags:
+        - docker
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.2
+
+    script:
+        - make
+    artifacts:
+      paths:
+        - target/debug/libsbrod.so
+      expire_in: 1 week
+
+
+
+lint:
+    stage: build
+    tags:
+        - docker
+    image: guangie88/rustfmt-clippy:stable
+    script:
+        - cargo clippy -- -Dclippy::all -Wclippy::pedantic
+
+test:
+    stage: test
+    tags:
+        - docker
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.2
+    script:
+        - make test
