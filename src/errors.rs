@@ -5,7 +5,6 @@ const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
 const SIMPLE_UNION_QUERY_ERROR: &str = "query doesn't simple union";
 const QUERY_NOT_IMPLEMENTED: &str = "query wasn't s implemented";
 const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
-const SHARDING_KEY_FILTER_ERROR: &str = "query doesn't have sharding key filter";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum QueryPlannerError {
@@ -13,7 +12,6 @@ pub enum QueryPlannerError {
     SimpleUnionQueryError,
     QueryNotImplemented,
     BucketIdError,
-    ShardingKeyFilterError
 }
 
 impl fmt::Display for QueryPlannerError {
@@ -23,7 +21,6 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::SimpleUnionQueryError => SIMPLE_UNION_QUERY_ERROR,
             QueryPlannerError::QueryNotImplemented => QUERY_NOT_IMPLEMENTED,
             QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
-            QueryPlannerError::ShardingKeyFilterError => SHARDING_KEY_FILTER_ERROR
         };
         write!(f, "{}", p)
     }
@@ -62,14 +59,5 @@ pub struct BucketIdError;
 impl fmt::Display for BucketIdError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", BUCKET_ID_ERROR)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ShardingKeyFilterError;
-
-impl fmt::Display for ShardingKeyFilterError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", SHARDING_KEY_FILTER_ERROR)
     }
 }
