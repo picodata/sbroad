@@ -448,23 +448,13 @@ mod tests {
     WHERE \"id\" = 1 OR \"id\" = 100
     ";
 
+        let first_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" > 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" < 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult {
-            bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" > 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 18511,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" > 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" < 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 18511,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" < 0)".to_string(),
-        });
+        expected_result.push(QueryResult { bucket_id: 3939, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 18511, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 3939, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 18511, node_query: second_sub_query.clone() });
 
         let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
@@ -483,23 +473,13 @@ mod tests {
         OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")
     ";
 
+        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" > 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" < 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult {
-            bucket_id: 2926,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" > 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 4202,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" > 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 2926,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" < 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 4202,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" < 0)".to_string(),
-        });
+        expected_result.push(QueryResult { bucket_id: 2926, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 4202, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
 
         let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
@@ -514,31 +494,15 @@ mod tests {
         ) AS \"t3\"
         WHERE \"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)";
 
+        let first_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult {
-            bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 22071,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 21300,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 22071,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string(),
-        });
-        expected_result.push(QueryResult {
-            bucket_id: 21300,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string(),
-        });
+        expected_result.push(QueryResult { bucket_id: 3939, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 22071, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 21300, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 3939, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 22071, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 21300, node_query: second_sub_query.clone() });
 
         let s = ClusterSchema::from(TEST_SCHEMA.to_string());
         let q = UserQuery::new(test_query, s, 30000).unwrap();
