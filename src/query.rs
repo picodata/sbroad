@@ -519,6 +519,38 @@ mod tests {
     }
 
     #[test]
+    fn test_transform_complex_in_ext_cond() {
+        let test_query = "SELECT * FROM (
+        SELECT * FROM \"complex_idx_test\" WHERE \"sys_from\" <= 0 AND \"sys_to\" >= 0
+        UNION ALL
+        SELECT * FROM \"complex_idx_test\" WHERE \"sys_from\" <= 0
+        ) AS \"t3\"
+        WHERE (\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000))
+            AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)
+        ";
+
+        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0)".to_string();
+        let mut expected_result = Vec::new();
+        expected_result.push(QueryResult { bucket_id: 2926, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 22115, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 6672, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 4202, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 23259, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 6557, node_query: first_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 22115, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 6672, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 23259, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult { bucket_id: 6557, node_query: second_sub_query.clone() });
+
+        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let q = UserQuery::new(test_query, s, 30000).unwrap();
+        assert_eq!(q.transform().unwrap(), expected_result)
+    }
+
+    #[test]
     fn test_unsupported_query() {
         let s = ClusterSchema::from(TEST_SCHEMA.to_string());
 
