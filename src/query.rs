@@ -71,16 +71,10 @@ impl UserQuery {
     pub fn transform(&self) -> Result<Vec<QueryResult>, QueryPlannerError> {
         let mut result = Vec::new();
 
-        let query_set = match self.detect_query_type() {
-            Ok(q) => q.parse().unwrap(),
-            Err(e) => return Err(e)
-        };
+        let query_set = self.detect_query_type()?;
 
-        for sq in query_set.iter() {
-            let shard_info = match self.extract_shard_info(&sq) {
-                Ok(i) => i,
-                Err(e) => return Err(e)
-            };
+        for sq in query_set.parse().unwrap().iter() {
+            let shard_info = self.extract_shard_info(&sq)?;
 
             for k in shard_info.keys {
                 let mut sub_result = QueryResult::new();
@@ -116,10 +110,7 @@ impl UserQuery {
         let mut result = ShardInfo::from(sharding_key);
 
         let filters = select_query.to_owned().selection.unwrap();
-        let sharding_key_values = match extract_sharding_key_values(&filters, &result.sharding_keys) {
-            Ok(r) => r,
-            Err(e) => return Err(e),
-        };
+        let sharding_key_values = extract_sharding_key_values(&filters, &result.sharding_keys)?;
 
         result.keys = sharding_key_values;
 
@@ -218,15 +209,9 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
                 // if operation operator `AND` needs cross join children leaves results,
                 // because they contains sharding key parts (see example AST in function docs)
 
-                let l_leaf = match extract_sharding_key_values(&left, sharding_key) {
-                    Ok(res) => res,
-                    Err(e) => return Err(e)
-                };
+                let l_leaf = extract_sharding_key_values(&left, sharding_key)?;
 
-                let r_leaf = match extract_sharding_key_values(&right, sharding_key) {
-                    Ok(res) => res,
-                    Err(e) => return Err(e)
-                };
+                let r_leaf = extract_sharding_key_values(&right, sharding_key)?;
 
                 if l_leaf.is_empty() {
                     result.extend(r_leaf);
@@ -252,23 +237,15 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
                 // if operation operator `OR` needs union results from children leaves,
                 // as they contains full sharding key values (see example AST in function docs)
 
-                match extract_sharding_key_values(&left, sharding_key) {
-                    Ok(res) => {
-                        for k in res {
-                            result.push(k);
-                        }
-                    }
-                    Err(e) => return Err(e)
-                };
+                let res_l = extract_sharding_key_values(&left, sharding_key)?;
+                for k in res_l {
+                    result.push(k);
+                }
 
-                match extract_sharding_key_values(&right, sharding_key) {
-                    Ok(res) => {
-                        for k in res {
-                            result.push(k);
-                        }
-                    }
-                    Err(e) => return Err(e)
-                };
+                let res_r = extract_sharding_key_values(&right, sharding_key)?;
+                for k in res_r {
+                    result.push(k);
+                }
             }
 
             _ => ()
