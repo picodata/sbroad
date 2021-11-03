@@ -1,11 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std;
 use std::os::raw::c_int;
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 use tarantool::error::{TarantoolErrorCode};
 use std::fmt;
-use crate::query::UserQuery;
-use crate::schema::ClusterSchema;
+use crate::query::ParsedTree;
+use crate::schema::Cluster;
 use sqlparser::ast::{Select};
 use crate::errors::QueryPlannerError;
 
@@ -26,8 +25,8 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    let schema = ClusterSchema::from(args.schema.to_string());
-    let q = UserQuery::new(args.query.as_str(), schema, args.bucket_count).unwrap();
+    let schema = Cluster::from(args.schema.to_string());
+    let q = ParsedTree::new(args.query.as_str(), schema, args.bucket_count).unwrap();
     let result = match q.transform() {
         Ok(p) => {
             ctx.return_mp(&p).unwrap();

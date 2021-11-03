@@ -1,5 +1,5 @@
 use sqlparser::ast::{Statement, Query, SetExpr, TableFactor, Expr, BinaryOperator, Select};
-use crate::schema::ClusterSchema;
+use crate::schema::Cluster;
 use sqlparser::parser::Parser;
 use sqlparser::dialect::GenericDialect;
 use crate::simple_query::SimpleQuery;
@@ -10,12 +10,12 @@ use std::collections::HashMap;
 use crate::errors::QueryPlannerError;
 
 
-pub fn query_to_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
+pub fn get_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
     let dialect = GenericDialect {};
 
-    let stm = Parser::parse_sql(&dialect, query).unwrap();
+    let mut stm = Parser::parse_sql(&dialect, query).unwrap();
 
-    let ast = match stm.to_owned().pop().unwrap() {
+    let ast = match stm.pop().unwrap() {
         Statement::Query(s) => s,
         _ => return Err(QueryPlannerError::QueryNotImplemented)
     };
@@ -23,20 +23,20 @@ pub fn query_to_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
     Ok(ast)
 }
 
-pub struct UserQuery {
+pub struct ParsedTree {
     ast: Box<Query>,
-    schema: ClusterSchema,
+    schema: Cluster,
     bucket_count: u64,
 }
 
-impl UserQuery {
-    pub fn new(query: &str, schema: ClusterSchema, bucket_count: u64) -> Result<Self, QueryPlannerError> {
-        let ast = match query_to_ast(query) {
+impl ParsedTree {
+    pub fn new(query: &str, schema: Cluster, bucket_count: u64) -> Result<Self, QueryPlannerError> {
+        let ast = match get_ast(query) {
             Ok(s) => s,
             _ => return Err(QueryPlannerError::QueryNotImplemented)
         };
 
-        Ok(UserQuery {
+        Ok(ParsedTree {
             ast,
             schema,
             bucket_count,
@@ -44,10 +44,10 @@ impl UserQuery {
     }
 
     fn detect_query_type(&self) -> Result<Box<dyn QueryPlaner>, QueryPlannerError> {
-        return match &self.ast.body {
+        match &self.ast.body {
             SetExpr::Select(current_query) => {
-                for t in current_query.from.iter() {
-                    if t.joins.len() != 0 {
+                if let Some(t) = current_query.from.get(0) {
+                    if !t.joins.is_empty() {
                         return Err(QueryPlannerError::QueryNotImplemented);
                     }
 
@@ -56,7 +56,7 @@ impl UserQuery {
                             Ok(Box::new(SimpleQuery::new(current_query.clone())))
                         }
                         TableFactor::Derived { lateral: _, subquery, alias: _ } => {
-                            Ok(Box::new(UnionSimpleQuery::new(subquery.to_owned(), current_query.selection.to_owned())))
+                            Ok(Box::new(UnionSimpleQuery::new(subquery.clone(), current_query.selection.clone())))
                         }
                         _ => Err(QueryPlannerError::QueryNotImplemented)
                     };
@@ -65,7 +65,7 @@ impl UserQuery {
                 Err(QueryPlannerError::QueryNotImplemented)
             }
             _ => Err(QueryPlannerError::QueryNotImplemented)
-        };
+        }
     }
 
     pub fn transform(&self) -> Result<Vec<QueryResult>, QueryPlannerError> {
@@ -73,8 +73,8 @@ impl UserQuery {
 
         let query_set = self.detect_query_type()?;
 
-        for sq in query_set.parse().unwrap().iter() {
-            let shard_info = self.extract_shard_info(&sq)?;
+        for sq in &query_set.parse().unwrap() {
+            let shard_info = self.extract_shard_info(sq)?;
 
             for k in shard_info.keys {
                 let mut sub_result = QueryResult::new();
@@ -86,7 +86,7 @@ impl UserQuery {
                     _ => 0
                 };
 
-                result.push(sub_result)
+                result.push(sub_result);
             }
         }
 
@@ -94,22 +94,22 @@ impl UserQuery {
         Ok(result)
     }
 
-    fn extract_shard_info(&self, select_query: &Box<Select>) -> Result<ShardInfo, QueryPlannerError> {
+    fn extract_shard_info(&self, select_query: &Select) -> Result<ShardInfo, QueryPlannerError> {
         let t = select_query.from.clone().pop().unwrap();
-        if t.joins.len() > 0 {
+        if !t.joins.is_empty() {
             return Err(QueryPlannerError::SimpleQueryError);
         }
 
         let sharding_key = match &t.relation {
             TableFactor::Table { name, alias: _, args: _, with_hints: _ } => {
                 let table = name.to_string().replace("\"", "");
-                self.schema.to_owned().get_sharding_key_by_space(&table)
+                self.schema.clone().get_sharding_key_by_space(&table)
             }
             _ => return Err(QueryPlannerError::SimpleQueryError)
         };
         let mut result = ShardInfo::from(sharding_key);
 
-        let filters = select_query.to_owned().selection.unwrap();
+        let filters = select_query.clone().selection.unwrap();
         let sharding_key_values = extract_sharding_key_values(&filters, &result.sharding_keys)?;
 
         result.keys = sharding_key_values;
@@ -140,13 +140,13 @@ impl From<Vec<String>> for ShardInfo {
 ///     (col1 = 1 and col2 = 2) OR (col1 = 3 and col2 = 4)
 ///
 /// This condition will parse to ast (`e: Expr`):
-///                                         BinaryOperator::Or
-///                                  /                           \
-///                           Expr::Nested                     Expr::Nested
-///                             /                                    \
-///                     BinaryOperator::And                        BinaryOperator::And
-///                  /                      \                    /                   \
-///           BinaryOperator::Eq       BinaryOperator::Eq    BinaryOperator::Eq    BinaryOperator::Eq
+///                                         `BinaryOperator::Or`
+///                                  /                             \
+///                           `Expr::Nested`                     `Expr::Nested`
+///                             /                                      \
+///                     `BinaryOperator::And`                        `BinaryOperator::And`
+///                  /                       \                       /                   \
+///          `BinaryOperator::Eq`       `BinaryOperator::Eq`    `BinaryOperator::Eq`    `BinaryOperator::Eq`
 ///             /       \                  /   \                  /   \                 /   \
 ///           col1      1                col2   2               col1  3               col2   4
 ///
@@ -162,17 +162,17 @@ impl From<Vec<String>> for ShardInfo {
 ///
 /// Ast in this case is:
 ///
-///                                              BinaryOperator::AND
-///                                  /                                    \
-///                           Expr::Nested                                Expr::Nested
+///                                              `BinaryOperator::AND`
+///                                  /                                       \
+///                           `Expr::Nested`                                `Expr::Nested`
 ///                             /                                             \
-///                     BinaryOperator::Or                                     BinaryOperator::Or
-///                  /                      \                             /                   \
-///           BinaryOperator::Eq       Expr::Nested                  BinaryOperator::Eq    BinaryOperator::Eq
-///             /       \                   \                               /   \                 /   \
-///           col1      1             BinaryOperator::Or                  col2   4             col2    5
+///                     `BinaryOperator::Or`                                     `BinaryOperator::Or`
+///                  /                      \                                    /                   \
+///           `BinaryOperator::Eq`       `Expr::Nested`                  `BinaryOperator::Eq`    `BinaryOperator::Eq`
+///             /       \                   \                                 /   \                 /   \
+///           col1      1             `BinaryOperator::Or`                  col2   4             col2    5
 ///                                     /           \
-///                      BinaryOperator::Eq      BinaryOperator::Eq
+///                      `BinaryOperator::Eq`      `BinaryOperator::Eq`
 ///                         /          \             /        \
 ///                      col1          2           col1       3
 ///
@@ -186,7 +186,7 @@ impl From<Vec<String>> for ShardInfo {
 ///      {"col1":"3", "col2":"5"}
 ///     ]
 
-fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<Vec<HashMap<String, String>>, QueryPlannerError> {
+fn extract_sharding_key_values(e: &Expr, sharding_key: &[String]) -> Result<Vec<HashMap<String, String>>, QueryPlannerError> {
     let mut result = Vec::new();
 
     match e {
@@ -209,9 +209,9 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
                 // if operation operator `AND` needs cross join children leaves results,
                 // because they contains sharding key parts (see example AST in function docs)
 
-                let l_leaf = extract_sharding_key_values(&left, sharding_key)?;
+                let l_leaf = extract_sharding_key_values(left, sharding_key)?;
 
-                let r_leaf = extract_sharding_key_values(&right, sharding_key)?;
+                let r_leaf = extract_sharding_key_values(right, sharding_key)?;
 
                 if l_leaf.is_empty() {
                     result.extend(r_leaf);
@@ -226,8 +226,8 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
                 // cross join hashmap vector for getting all combination of complex sharding key values.
                 for i in &l_leaf {
                     for j in &r_leaf {
-                        let mut v = i.to_owned();
-                        v.extend(j.to_owned());
+                        let mut v = i.clone();
+                        v.extend(j.clone());
                         result.push(v);
                     }
                 }
@@ -237,12 +237,12 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
                 // if operation operator `OR` needs union results from children leaves,
                 // as they contains full sharding key values (see example AST in function docs)
 
-                let res_l = extract_sharding_key_values(&left, sharding_key)?;
+                let res_l = extract_sharding_key_values(left, sharding_key)?;
                 for k in res_l {
                     result.push(k);
                 }
 
-                let res_r = extract_sharding_key_values(&right, sharding_key)?;
+                let res_r = extract_sharding_key_values(right, sharding_key)?;
                 for k in res_r {
                     result.push(k);
                 }
@@ -251,7 +251,7 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &Vec<String>) -> Result<V
             _ => ()
         },
         Expr::Nested(e) => {
-            return extract_sharding_key_values(&e, sharding_key);
+            return extract_sharding_key_values(e, sharding_key);
         }
         Expr::InSubquery { expr: _, subquery: _, negated: _ } => {
             return Err(QueryPlannerError::QueryNotImplemented);
@@ -348,7 +348,7 @@ mod tests {
     fn test_simple_query() {
         let test_query = "SELECT * FROM \"test_space\" WHERE \"id\" = 1";
 
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
 
         let mut expected_result = Vec::new();
@@ -357,13 +357,13 @@ mod tests {
             node_query: "SELECT * FROM \"test_space\" WHERE \"id\" = 1".to_string(),
         });
 
-        let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_simple_union_query() {
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
@@ -383,13 +383,13 @@ mod tests {
             node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)".to_string(),
         });
 
-        let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_simple_union_complex_shard_query() {
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"complex_idx_test\" WHERE \"sysFrom\" > 0
@@ -409,13 +409,13 @@ mod tests {
             node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = \"222\") AND (\"sysFrom\" < 0)".to_string(),
         });
 
-        let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_simple_disjunction_in_union_query() {
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
@@ -433,13 +433,13 @@ mod tests {
         expected_result.push(QueryResult { bucket_id: 3939, node_query: second_sub_query.clone() });
         expected_result.push(QueryResult { bucket_id: 18511, node_query: second_sub_query.clone() });
 
-        let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_complex_disjunction_union_query() {
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"complex_idx_test\" WHERE \"sys_op\" > 0
@@ -458,7 +458,7 @@ mod tests {
         expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
         expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
 
-        let q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
@@ -481,8 +481,8 @@ mod tests {
         expected_result.push(QueryResult { bucket_id: 22071, node_query: second_sub_query.clone() });
         expected_result.push(QueryResult { bucket_id: 21300, node_query: second_sub_query.clone() });
 
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
-        let q = UserQuery::new(test_query, s, 30000).unwrap();
+        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
@@ -513,8 +513,8 @@ mod tests {
         expected_result.push(QueryResult { bucket_id: 23259, node_query: second_sub_query.clone() });
         expected_result.push(QueryResult { bucket_id: 6557, node_query: second_sub_query.clone() });
 
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
-        let q = UserQuery::new(test_query, s, 30000).unwrap();
+        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
@@ -545,23 +545,23 @@ mod tests {
         expected_result.push(QueryResult { bucket_id: 23259, node_query: second_sub_query.clone() });
         expected_result.push(QueryResult { bucket_id: 6557, node_query: second_sub_query.clone() });
 
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
-        let q = UserQuery::new(test_query, s, 30000).unwrap();
+        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_unsupported_query() {
-        let s = ClusterSchema::from(TEST_SCHEMA.to_string());
+        let s = Cluster::from(TEST_SCHEMA.to_string());
 
         let mut test_query = "SELECT * FROM \"test_space\" as s1
     inner join \"join_space\" as s2 on s1.\"f1\" = s2.\"s1_id\"
     WHERE \"field_1\" = 86";
-        let mut q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        let mut q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap_err(), QueryPlannerError::QueryNotImplemented);
 
         test_query = "SELECT * FROM \"test_space\" WHERE \"field_1\" in (SELECT * FROM \"test_space_2\" WHERE \"field_2\" = 5)";
-        q = UserQuery::new(test_query, s.clone(), 30000).unwrap();
+        q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap_err(), QueryPlannerError::QueryNotImplemented);
     }
 }

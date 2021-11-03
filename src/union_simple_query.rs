@@ -25,8 +25,8 @@ impl QueryPlaner for UnionSimpleQuery {
             Err(e) => return Err(e)
         };
 
-        for s in subqueries.iter() {
-            let mut subquery = s.to_owned();
+        for s in &subqueries {
+            let mut subquery = s.clone();
             subquery.selection = Some(Expr::BinaryOp {
                 left: Box::new(Expr::Nested(Box::new(self.parent_cond.clone().unwrap()))),
                 op: BinaryOperator::And,
@@ -45,11 +45,11 @@ impl UnionSimpleQuery {
         match &self.subquery_ast.body {
             SetExpr::SetOperation { op, all: _, left, right } => {
                 if op == &SetOperator::Union {
-                    if let SetExpr::Select(current_query) = *left.to_owned() {
+                    if let SetExpr::Select(current_query) = *left.clone() {
                         result.push(current_query);
                     }
 
-                    if let SetExpr::Select(current_query) = *right.to_owned() {
+                    if let SetExpr::Select(current_query) = *right.clone() {
                         result.push(current_query);
                     }
                 }
@@ -63,10 +63,10 @@ impl UnionSimpleQuery {
 
 #[test]
 fn test_simple_select_query() {
-    use crate::query::query_to_ast;
+    use crate::query::get_ast;
     use sqlparser::ast::{Ident, Value};
 
-    let test_query_ast = query_to_ast("SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
+    let test_query_ast = get_ast("SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
     UNION ALL
     SELECT * FROM \"test_space\" WHERE \"sysFrom\" < 0").unwrap();
     let parent_cond = Some(

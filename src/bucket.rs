@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use fasthash::{murmur3::Hasher32, FastHasher};
 use crate::errors::QueryPlannerError;
 
-pub fn get_bucket_id(filters: &HashMap<String, String>, sharding_key: &Vec<String>, bucket_count: u64) -> Result<u64, QueryPlannerError> {
+pub fn get_bucket_id(filters: &HashMap<String, String>, sharding_key: &[String], bucket_count: u64) -> Result<u64, QueryPlannerError> {
     let mut hash = Hasher32::new();
 
     for key_part in sharding_key.iter() {

@@ -5,20 +5,20 @@ use self::yaml_rust::yaml;
 // TODO: add schema validate
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ClusterSchema{
+pub struct Cluster{
     schema: yaml::Yaml
 }
 
-impl From<String> for ClusterSchema {
+impl From<String> for Cluster {
     fn from(s: String) -> Self {
         let docs = YamlLoader::load_from_str(&s).unwrap();
-        ClusterSchema{
-            schema: docs[0].to_owned()
+        Cluster{
+            schema: docs[0].clone()
         }
     }
 }
 
-impl ClusterSchema {
+impl Cluster {
     pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
         let mut result = Vec::new();
             let spaces = self.schema["spaces"].as_hash().unwrap();
@@ -117,7 +117,7 @@ fn test_yaml_schema_parser() {
       - identification_number
       - product_code";
 
-    let s = ClusterSchema::from(test_schema.to_string());
+    let s = Cluster::from(test_schema.to_string());
 
     let mut expected_keys = Vec::new();
     expected_keys.push("identification_number".to_string());
