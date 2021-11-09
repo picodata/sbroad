@@ -5,3 +5,4 @@ mod schema;
 mod union_simple_query;
 mod query;
 mod errors;
+mod cluster_lua;

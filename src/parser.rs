@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::os::raw::c_int;
+use tarantool::ffi::lua::{luaT_state};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 use tarantool::error::{TarantoolErrorCode};
 use std::fmt;
@@ -7,11 +8,12 @@ use crate::query::ParsedTree;
 use crate::schema::Cluster;
 use sqlparser::ast::{Select};
 use crate::errors::QueryPlannerError;
+use crate::cluster_lua::{init_cluster_functions, get_cluster_schema};
 
 #[derive(Serialize, Deserialize)]
 struct Args {
     pub query: String,
-    pub schema: String,
+    pub schema: String, //unused attribute, it needs for lua code compatibility
     pub bucket_count: u64,
 }
 
@@ -25,7 +27,11 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    let schema = Cluster::from(args.schema.to_string());
+    let l = unsafe { luaT_state() };
+    init_cluster_functions(l);
+    let text_schema =  get_cluster_schema(l);
+
+    let schema = Cluster::from(text_schema);
     let q = ParsedTree::new(args.query.as_str(), schema, args.bucket_count).unwrap();
     let result = match q.transform() {
         Ok(p) => {
