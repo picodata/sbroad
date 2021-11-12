@@ -1,6 +1,6 @@
-use sqlparser::ast::{Query, Expr, Select, BinaryOperator, SetOperator, SetExpr};
 use crate::errors::QueryPlannerError;
 use crate::parser::QueryPlaner;
+use sqlparser::ast::{BinaryOperator, Expr, Query, Select, SetExpr, SetOperator};
 
 pub struct UnionSimpleQuery {
     subquery_ast: Box<Query>,
@@ -22,7 +22,7 @@ impl QueryPlaner for UnionSimpleQuery {
 
         let subqueries = match self.extract_subquery() {
             Ok(q) => q,
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         };
 
         for s in &subqueries {
@@ -43,7 +43,12 @@ impl UnionSimpleQuery {
         let mut result = Vec::new();
 
         match &self.subquery_ast.body {
-            SetExpr::SetOperation { op, all: _, left, right } => {
+            SetExpr::SetOperation {
+                op,
+                all: _,
+                left,
+                right,
+            } => {
                 if op == &SetOperator::Union {
                     if let SetExpr::Select(current_query) = *left.clone() {
                         result.push(current_query);
@@ -54,7 +59,7 @@ impl UnionSimpleQuery {
                     }
                 }
             }
-            _ => return Err(QueryPlannerError::SimpleUnionQueryError)
+            _ => return Err(QueryPlannerError::SimpleUnionQueryError),
         }
 
         Ok(result)
@@ -66,22 +71,31 @@ fn test_simple_select_query() {
     use crate::query::get_ast;
     use sqlparser::ast::{Ident, Value};
 
-    let test_query_ast = get_ast("SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
+    let test_query_ast = get_ast(
+        "SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
     UNION ALL
-    SELECT * FROM \"test_space\" WHERE \"sysFrom\" < 0").unwrap();
-    let parent_cond = Some(
-        Expr::BinaryOp {
-            left: Box::new(Expr::Identifier(Ident { value: "id".to_string(), quote_style: Some('"') })),
-            op: BinaryOperator::Eq,
-            right: Box::new(Expr::Value(Value::Number("1".to_string(), false))),
-        }
-    );
-
+    SELECT * FROM \"test_space\" WHERE \"sysFrom\" < 0",
+    )
+    .unwrap();
+    let parent_cond = Some(Expr::BinaryOp {
+        left: Box::new(Expr::Identifier(Ident {
+            value: "id".to_string(),
+            quote_style: Some('"'),
+        })),
+        op: BinaryOperator::Eq,
+        right: Box::new(Expr::Value(Value::Number("1".to_string(), false))),
+    });
 
     let q = UnionSimpleQuery::new(test_query_ast, parent_cond);
 
     let result = q.parse().unwrap();
 
-    assert_eq!(result[0].to_string(), "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" > 0)");
-    assert_eq!(result[1].to_string(), "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)");
+    assert_eq!(
+        result[0].to_string(),
+        "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" > 0)"
+    );
+    assert_eq!(
+        result[1].to_string(),
+        "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)"
+    );
 }

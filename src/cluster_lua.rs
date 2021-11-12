@@ -2,10 +2,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use tarantool::ffi::lua::{
-    lua_State, lua_getglobal, lua_pushinteger, lua_tostring, lua_settop,
-    lua_setfield, lua_tointeger, LUA_GLOBALSINDEX,
+    lua_State, lua_getglobal, lua_pushinteger, lua_setfield, lua_settop, lua_tointeger,
+    lua_tostring, LUA_GLOBALSINDEX,
 };
-
 
 const LUA_FUNCS: &str = "local cartridge = require('cartridge');
 local vshard = require('vshard')
@@ -32,15 +31,17 @@ pub fn init_cluster_functions(l: *mut lua_State) {
 
     // checking that lua code already was loaded
     if get_global(l, global_name) != 0 {
-        return
+        return;
     }
 
-    let mut res = unsafe { luaL_loadbuffer(
-        l,
-        LUA_FUNCS.as_ptr().cast::<i8>(),
-        LUA_FUNCS.len(),
-        crate::c_ptr!("helpers"),
-    ) };
+    let mut res = unsafe {
+        luaL_loadbuffer(
+            l,
+            LUA_FUNCS.as_ptr().cast::<i8>(),
+            LUA_FUNCS.len(),
+            crate::c_ptr!("helpers"),
+        )
+    };
     if res != 0 {
         panic!();
     };
@@ -53,10 +54,8 @@ pub fn init_cluster_functions(l: *mut lua_State) {
     set_global(l, global_name, 1);
 }
 
-
 #[allow(dead_code)]
-pub fn get_server_uri_by_bucket_id(l: *mut lua_State, bucket_id: isize) -> String
-{
+pub fn get_server_uri_by_bucket_id(l: *mut lua_State, bucket_id: isize) -> String {
     unsafe {
         lua_getglobal(l, crate::c_ptr!("get_server_uri_by_bucket"));
         lua_pushinteger(l, bucket_id);
@@ -64,9 +63,10 @@ pub fn get_server_uri_by_bucket_id(l: *mut lua_State, bucket_id: isize) -> Strin
 
     let res = unsafe { lua_pcall(l, 1, 1, 0) };
     if res != 0 {
-        panic!("{} {:?}", res, unsafe {CStr::from_ptr(lua_tostring(l, -1))});
+        panic!("{} {:?}", res, unsafe {
+            CStr::from_ptr(lua_tostring(l, -1))
+        });
     };
-
 
     let uri = unsafe { lua_tostring(l, -1) };
     let r = unsafe { CStr::from_ptr(uri) };
@@ -77,15 +77,16 @@ pub fn get_server_uri_by_bucket_id(l: *mut lua_State, bucket_id: isize) -> Strin
     result
 }
 
-pub fn get_cluster_schema(l: *mut lua_State) -> String
-{
+pub fn get_cluster_schema(l: *mut lua_State) -> String {
     unsafe {
         lua_getglobal(l, crate::c_ptr!("get_cluster_schema"));
     }
 
     let res = unsafe { lua_pcall(l, 0, 1, 0) };
     if res != 0 {
-        panic!("{} {:?}", res, unsafe {CStr::from_ptr(lua_tostring(l, -1))});
+        panic!("{} {:?}", res, unsafe {
+            CStr::from_ptr(lua_tostring(l, -1))
+        });
     };
 
     // copy result string pointer from stack, because lua_tostring returns const char *
@@ -100,7 +101,6 @@ pub fn get_cluster_schema(l: *mut lua_State) -> String
 
     result
 }
-
 
 extern "C" {
     pub fn luaL_loadbuffer(
@@ -121,22 +121,21 @@ pub fn get_global(l: *mut lua_State, g: *const c_char) -> isize {
     unsafe { lua_getglobal(l, g) };
     //copy result value to safety variable, because lua_tointeger returns lua_Integer
     let v = unsafe { lua_tointeger(l, -1) }; // read the value on the stack
-    unsafe { lua_pop(l, 1) };                // remove the value from the stack
+    unsafe { lua_pop(l, 1) }; // remove the value from the stack
     v
 }
 
 pub fn set_global(l: *mut lua_State, g: *const c_char, v: isize) {
     unsafe {
         lua_pushinteger(l, v); // push the value onto the stack
-        lua_setfield(l, LUA_GLOBALSINDEX, g);  // save the global value
+        lua_setfield(l, LUA_GLOBALSINDEX, g); // save the global value
     };
 }
 
 #[macro_export]
 macro_rules! c_ptr {
     ($s:literal) => {
-        ::std::ffi::CStr::from_bytes_with_nul_unchecked(
-            ::std::concat!($s, "\0").as_bytes()
-        ).as_ptr()
+        ::std::ffi::CStr::from_bytes_with_nul_unchecked(::std::concat!($s, "\0").as_bytes())
+            .as_ptr()
     };
 }

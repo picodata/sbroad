@@ -1,19 +1,21 @@
-use serde::{Deserialize, Serialize};
-use std::os::raw::c_int;
-use tarantool::ffi::lua::{luaT_state};
-use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
-use tarantool::error::{TarantoolErrorCode};
-use std::fmt;
+use crate::cluster_lua::{get_cluster_schema, init_cluster_functions};
+use crate::errors::QueryPlannerError;
 use crate::query::ParsedTree;
 use crate::schema::Cluster;
-use sqlparser::ast::{Select};
-use crate::errors::QueryPlannerError;
-use crate::cluster_lua::{init_cluster_functions, get_cluster_schema};
+use serde::{Deserialize, Serialize};
+use sqlparser::ast::Select;
+use std::cell::RefCell;
+use std::fmt;
+use std::os::raw::c_int;
+use tarantool::error::TarantoolErrorCode;
+use tarantool::ffi::lua::luaT_state;
+use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
+
+thread_local!(static CARTRIDGE_SCHEMA: RefCell<Cluster> = RefCell::new(Cluster::new()));
 
 #[derive(Serialize, Deserialize)]
 struct Args {
     pub query: String,
-    pub schema: String, //unused attribute, it needs for lua code compatibility
     pub bucket_count: u64,
 }
 
@@ -29,19 +31,42 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
 
     let l = unsafe { luaT_state() };
     init_cluster_functions(l);
-    let text_schema =  get_cluster_schema(l);
 
-    let schema = Cluster::from(text_schema);
-    let q = ParsedTree::new(args.query.as_str(), schema, args.bucket_count).unwrap();
-    let result = match q.transform() {
-        Ok(p) => {
-            ctx.return_mp(&p).unwrap();
-            0
+    CARTRIDGE_SCHEMA.with(|s| {
+        let mut schema = s.clone().into_inner();
+        // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
+        if schema.is_empty() {
+            let text_schema = get_cluster_schema(l);
+            schema = Cluster::from(text_schema);
+
+            *s.borrow_mut() = schema.clone();
         }
-        Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string())
-    };
 
-    result
+        let q = ParsedTree::new(args.query.as_str(), schema, args.bucket_count).unwrap();
+        let result = match q.transform() {
+            Ok(p) => {
+                ctx.return_mp(&p).unwrap();
+                0
+            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+        };
+
+        result
+    })
+}
+
+/**
+Function invalidates schema cache, then it updates schema before next query.
+It must be called in function `apply_config()` in lua cartridge application.
+*/
+#[no_mangle]
+pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
+    CARTRIDGE_SCHEMA.with(|s| {
+        *s.borrow_mut() = Cluster::new();
+    });
+
+    ctx.return_mp(&true).unwrap();
+    0
 }
 
 #[derive(Serialize, Debug, Eq, PartialEq)]
@@ -61,7 +86,11 @@ impl QueryResult {
 
 impl fmt::Display for QueryResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bucket: {}. Query: {}\r\n", self.bucket_id, self.node_query)
+        write!(
+            f,
+            "Bucket: {}. Query: {}\r\n",
+            self.bucket_id, self.node_query
+        )
     }
 }
 

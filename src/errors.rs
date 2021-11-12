@@ -1,5 +1,5 @@
-use std::fmt;
 use serde::Serialize;
+use std::fmt;
 
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
 const SIMPLE_UNION_QUERY_ERROR: &str = "query doesn't simple union";

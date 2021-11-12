@@ -1,36 +1,50 @@
 extern crate yaml_rust;
-use yaml_rust::YamlLoader;
 use self::yaml_rust::yaml;
+use yaml_rust::YamlLoader;
 
 // TODO: add schema validate
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Cluster{
-    schema: yaml::Yaml
+pub struct Cluster {
+    schema: yaml::Yaml,
 }
 
 impl From<String> for Cluster {
     fn from(s: String) -> Self {
         let docs = YamlLoader::load_from_str(&s).unwrap();
-        Cluster{
-            schema: docs[0].clone()
+
+        match docs.is_empty() {
+            true => Self::new(),
+            false => Cluster {
+                schema: docs[0].clone(),
+            },
         }
     }
 }
 
 impl Cluster {
+    pub fn new() -> Self {
+        Cluster {
+            schema: yaml::Yaml::Null,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.schema.is_null()
+    }
+
     pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
         let mut result = Vec::new();
-            let spaces = self.schema["spaces"].as_hash().unwrap();
+        let spaces = self.schema["spaces"].as_hash().unwrap();
 
-            for (space_name, params) in spaces.iter() {
-                let current_space_name = space_name.as_str().unwrap();
-                if current_space_name == space {
-                    for k in params["sharding_key"].as_vec().unwrap() {
-                        result.push(k.as_str().unwrap().to_string().to_lowercase());
-                    }
+        for (space_name, params) in spaces.iter() {
+            let current_space_name = space_name.as_str().unwrap();
+            if current_space_name == space {
+                for k in params["sharding_key"].as_vec().unwrap() {
+                    result.push(k.as_str().unwrap().to_string().to_lowercase());
                 }
             }
+        }
         result
     }
 }

@@ -1,14 +1,13 @@
-use sqlparser::ast::{Statement, Query, SetExpr, TableFactor, Expr, BinaryOperator, Select};
+use crate::bucket::get_bucket_id;
+use crate::errors::QueryPlannerError;
+use crate::parser::{QueryPlaner, QueryResult};
 use crate::schema::Cluster;
-use sqlparser::parser::Parser;
-use sqlparser::dialect::GenericDialect;
 use crate::simple_query::SimpleQuery;
 use crate::union_simple_query::UnionSimpleQuery;
-use crate::parser::{QueryPlaner, QueryResult};
-use crate::bucket::get_bucket_id;
+use sqlparser::ast::{BinaryOperator, Expr, Query, Select, SetExpr, Statement, TableFactor};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 use std::collections::HashMap;
-use crate::errors::QueryPlannerError;
-
 
 pub fn get_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
     let dialect = GenericDialect {};
@@ -17,7 +16,7 @@ pub fn get_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
 
     let ast = match stm.pop().unwrap() {
         Statement::Query(s) => s,
-        _ => return Err(QueryPlannerError::QueryNotImplemented)
+        _ => return Err(QueryPlannerError::QueryNotImplemented),
     };
 
     Ok(ast)
@@ -33,7 +32,7 @@ impl ParsedTree {
     pub fn new(query: &str, schema: Cluster, bucket_count: u64) -> Result<Self, QueryPlannerError> {
         let ast = match get_ast(query) {
             Ok(s) => s,
-            _ => return Err(QueryPlannerError::QueryNotImplemented)
+            _ => return Err(QueryPlannerError::QueryNotImplemented),
         };
 
         Ok(ParsedTree {
@@ -52,19 +51,27 @@ impl ParsedTree {
                     }
 
                     return match &t.relation {
-                        TableFactor::Table { name: _, alias: _, args: _, with_hints: _ } => {
-                            Ok(Box::new(SimpleQuery::new(current_query.clone())))
-                        }
-                        TableFactor::Derived { lateral: _, subquery, alias: _ } => {
-                            Ok(Box::new(UnionSimpleQuery::new(subquery.clone(), current_query.selection.clone())))
-                        }
-                        _ => Err(QueryPlannerError::QueryNotImplemented)
+                        TableFactor::Table {
+                            name: _,
+                            alias: _,
+                            args: _,
+                            with_hints: _,
+                        } => Ok(Box::new(SimpleQuery::new(current_query.clone()))),
+                        TableFactor::Derived {
+                            lateral: _,
+                            subquery,
+                            alias: _,
+                        } => Ok(Box::new(UnionSimpleQuery::new(
+                            subquery.clone(),
+                            current_query.selection.clone(),
+                        ))),
+                        _ => Err(QueryPlannerError::QueryNotImplemented),
                     };
                 }
 
                 Err(QueryPlannerError::QueryNotImplemented)
             }
-            _ => Err(QueryPlannerError::QueryNotImplemented)
+            _ => Err(QueryPlannerError::QueryNotImplemented),
         }
     }
 
@@ -81,15 +88,15 @@ impl ParsedTree {
 
                 sub_result.node_query.push_str(&sq.to_string());
 
-                sub_result.bucket_id = match get_bucket_id(&k, &shard_info.sharding_keys, self.bucket_count) {
-                    Ok(r) => r,
-                    _ => 0
-                };
+                sub_result.bucket_id =
+                    match get_bucket_id(&k, &shard_info.sharding_keys, self.bucket_count) {
+                        Ok(r) => r,
+                        _ => 0,
+                    };
 
                 result.push(sub_result);
             }
         }
-
 
         Ok(result)
     }
@@ -101,11 +108,16 @@ impl ParsedTree {
         }
 
         let sharding_key = match &t.relation {
-            TableFactor::Table { name, alias: _, args: _, with_hints: _ } => {
+            TableFactor::Table {
+                name,
+                alias: _,
+                args: _,
+                with_hints: _,
+            } => {
                 let table = name.to_string().replace("\"", "");
                 self.schema.clone().get_sharding_key_by_space(&table)
             }
-            _ => return Err(QueryPlannerError::SimpleQueryError)
+            _ => return Err(QueryPlannerError::SimpleQueryError),
         };
         let mut result = ShardInfo::from(sharding_key);
 
@@ -136,7 +148,7 @@ impl From<Vec<String>> for ShardInfo {
 /// Function extract sharding key values from query filter section.
 ///
 /// For example there is clause (sharding key is <col1, col2>):
-/// 
+///
 ///     (col1 = 1 and col2 = 2) OR (col1 = 3 and col2 = 4)
 ///
 /// This condition will parse to ast (`e: Expr`):
@@ -186,7 +198,10 @@ impl From<Vec<String>> for ShardInfo {
 ///      {"col1":"3", "col2":"5"}
 ///     ]
 
-fn extract_sharding_key_values(e: &Expr, sharding_key: &[String]) -> Result<Vec<HashMap<String, String>>, QueryPlannerError> {
+fn extract_sharding_key_values(
+    e: &Expr,
+    sharding_key: &[String],
+) -> Result<Vec<HashMap<String, String>>, QueryPlannerError> {
     let mut result = Vec::new();
 
     match e {
@@ -198,7 +213,8 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &[String]) -> Result<Vec<
 
                 for shard_key_part in sharding_key {
                     if shard_key_part == &field_name {
-                        shard_key_value.insert(field_name.to_string(), right.to_string().replace("\"", ""));
+                        shard_key_value
+                            .insert(field_name.to_string(), right.to_string().replace("\"", ""));
                     }
                 }
 
@@ -248,16 +264,20 @@ fn extract_sharding_key_values(e: &Expr, sharding_key: &[String]) -> Result<Vec<
                 }
             }
 
-            _ => ()
+            _ => (),
         },
         Expr::Nested(e) => {
             return extract_sharding_key_values(e, sharding_key);
         }
-        Expr::InSubquery { expr: _, subquery: _, negated: _ } => {
+        Expr::InSubquery {
+            expr: _,
+            subquery: _,
+            negated: _,
+        } => {
             return Err(QueryPlannerError::QueryNotImplemented);
         }
         // Another operation doesn't support now, because first of all needs make query with equijoin
-        _ => ()
+        _ => (),
     }
 
     Ok(result)
@@ -350,7 +370,6 @@ mod tests {
 
         let s = Cluster::from(TEST_SCHEMA.to_string());
 
-
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 3939,
@@ -376,11 +395,13 @@ mod tests {
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" > 0)".to_string(),
+            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" > 0)"
+                .to_string(),
         });
         expected_result.push(QueryResult {
             bucket_id: 3939,
-            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)".to_string(),
+            node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)"
+                .to_string(),
         });
 
         let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
@@ -425,13 +446,29 @@ mod tests {
     WHERE \"id\" = 1 OR \"id\" = 100
     ";
 
-        let first_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" > 0)".to_string();
-        let second_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" < 0)".to_string();
+        let first_sub_query =
+            "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" > 0)"
+                .to_string();
+        let second_sub_query =
+            "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR \"id\" = 100) AND (\"sysFrom\" < 0)"
+                .to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult { bucket_id: 3939, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 18511, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 3939, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 18511, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult {
+            bucket_id: 3939,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 18511,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 3939,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 18511,
+            node_query: second_sub_query.clone(),
+        });
 
         let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
@@ -453,10 +490,22 @@ mod tests {
         let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" > 0)".to_string();
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" < 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: second_sub_query.clone(),
+        });
 
         let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
@@ -474,12 +523,30 @@ mod tests {
         let first_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
         let second_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult { bucket_id: 3939, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22071, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 21300, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 3939, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22071, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 21300, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult {
+            bucket_id: 3939,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22071,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 21300,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 3939,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22071,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 21300,
+            node_query: second_sub_query.clone(),
+        });
 
         let s = Cluster::from(TEST_SCHEMA.to_string());
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
@@ -500,18 +567,54 @@ mod tests {
         let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = \"222\" OR \"product_code\" = \"111\")) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = \"222\" OR \"product_code\" = \"111\")) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22115, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6672, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 23259, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6557, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22115, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6672, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 23259, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6557, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22115,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6672,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 23259,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6557,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22115,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6672,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 23259,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6557,
+            node_query: second_sub_query.clone(),
+        });
 
         let s = Cluster::from(TEST_SCHEMA.to_string());
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
@@ -532,18 +635,54 @@ mod tests {
         let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22115, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6672, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 23259, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6557, node_query: first_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 2926, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 22115, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6672, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 4202, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 23259, node_query: second_sub_query.clone() });
-        expected_result.push(QueryResult { bucket_id: 6557, node_query: second_sub_query.clone() });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22115,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6672,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 23259,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6557,
+            node_query: first_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 2926,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 22115,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6672,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 4202,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 23259,
+            node_query: second_sub_query.clone(),
+        });
+        expected_result.push(QueryResult {
+            bucket_id: 6557,
+            node_query: second_sub_query.clone(),
+        });
 
         let s = Cluster::from(TEST_SCHEMA.to_string());
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
@@ -558,11 +697,16 @@ mod tests {
     inner join \"join_space\" as s2 on s1.\"f1\" = s2.\"s1_id\"
     WHERE \"field_1\" = 86";
         let mut q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
-        assert_eq!(q.transform().unwrap_err(), QueryPlannerError::QueryNotImplemented);
+        assert_eq!(
+            q.transform().unwrap_err(),
+            QueryPlannerError::QueryNotImplemented
+        );
 
         test_query = "SELECT * FROM \"test_space\" WHERE \"field_1\" in (SELECT * FROM \"test_space_2\" WHERE \"field_2\" = 5)";
         q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
-        assert_eq!(q.transform().unwrap_err(), QueryPlannerError::QueryNotImplemented);
+        assert_eq!(
+            q.transform().unwrap_err(),
+            QueryPlannerError::QueryNotImplemented
+        );
     }
 }
-
