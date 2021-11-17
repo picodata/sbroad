@@ -53,8 +53,6 @@ g.test_simple_query = function()
         rows = {},
     })
 
-    -- fiber.sleep(300)
-
     r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '123']] })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -89,6 +87,25 @@ g.test_union_query = function()
         rows = {
             { 1, "123", 1 },
             { 1, "123", 5 }
+        },
+    })
+end
+
+g.test_sql_execute = function ()
+    -- fiber.sleep(300)
+
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sql_execute", { 359, [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '123']] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            { 1, "123", 1, 359 }
         },
     })
 end

@@ -1,9 +1,10 @@
 local vshard = require('vshard')
 local cartridge = require('cartridge')
-local log = require('log')
+local yaml = require('yaml')
 
 _G.query = nil
 _G.insert_record = nil
+_G.sql_execute = nil
 
 local function query(q)
     local has_err, parser_res = pcall(
@@ -58,15 +59,25 @@ local function insert_record(space_name, values)
     return res
 end
 
+local function sql_execute(bucket_id, sql_q)
+    return yaml.decode(box.func["sbroad.execute_query"]:call({ bucket_id, sql_q }))
+end
+
 local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
     _G.query = query
     _G.insert_record = insert_record
+    _G.sql_execute = sql_execute
 
     box.schema.func.create('sbroad.parse_sql', { if_not_exists = true, language = 'C' })
     box.schema.func.create('sbroad.invalidate_caching_schema', { if_not_exists = true, language = 'C' })
     box.schema.func.create('sbroad.calculate_bucket_id', { if_not_exists = true, language = 'C' })
+    box.schema.func.create('sbroad.execute_query', { if_not_exists = true, language = 'C' })
+    box.schema.func.create('sbroad.init', { if_not_exists = true, language = 'C' })
+
+    box.func["sbroad.init"]:call({})
+
     return true
 end
 

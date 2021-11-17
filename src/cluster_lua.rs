@@ -2,23 +2,27 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use tarantool::ffi::lua::{
-    lua_State, lua_getglobal, lua_pushinteger, lua_setfield, lua_settop, lua_tointeger,
-    lua_tostring, LUA_GLOBALSINDEX,
+    lua_State, lua_getglobal, lua_pushinteger, lua_pushstring, lua_setfield, lua_settop,
+    lua_tointeger, lua_tostring, LUA_GLOBALSINDEX,
 };
 
 const LUA_FUNCS: &str = "local cartridge = require('cartridge');
 local vshard = require('vshard')
+local yaml = require('yaml')
 
-function get_server_uri_by_bucket(bucket_id)
-  local replicaset = vshard.router.route(bucket_id)
+function execute_sql(bucket_id, query)
+    local data, err = vshard.router.call(
+        bucket_id,
+        'read',
+        'box.execute',
+        { query }
+    )
 
-  if replicaset['master'] ~= nil then
-    if replicaset.master['conn'] ~= nil then
-      return replicaset.master.conn.host .. ':' .. replicaset.master.conn.port
-      end
-  end
+    if err ~= nil then
+        error(err)
+    end
 
-  return ''
+    return yaml.encode(data)
 end
 
 function get_cluster_schema()
@@ -55,13 +59,14 @@ pub fn init_cluster_functions(l: *mut lua_State) {
 }
 
 #[allow(dead_code)]
-pub fn get_server_uri_by_bucket_id(l: *mut lua_State, bucket_id: isize) -> String {
+pub fn execute_sql(l: *mut lua_State, bucket_id: isize, query: &str) -> String {
     unsafe {
-        lua_getglobal(l, crate::c_ptr!("get_server_uri_by_bucket"));
+        lua_getglobal(l, crate::c_ptr!("execute_sql"));
         lua_pushinteger(l, bucket_id);
+        lua_pushstring(l, query.as_ptr().cast::<i8>());
     }
 
-    let res = unsafe { lua_pcall(l, 1, 1, 0) };
+    let res = unsafe { lua_pcall(l, 2, 1, 0) };
     if res != 0 {
         panic!("{} {:?}", res, unsafe {
             CStr::from_ptr(lua_tostring(l, -1))
