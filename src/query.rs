@@ -213,8 +213,10 @@ fn extract_sharding_key_values(
 
                 for shard_key_part in sharding_key {
                     if shard_key_part == &field_name {
-                        shard_key_value
-                            .insert(field_name.to_string(), right.to_string().replace("\"", ""));
+                        shard_key_value.insert(
+                            field_name.to_string(),
+                            right.to_string().as_str().trim_matches('\'').to_string(),
+                        );
                     }
                 }
 
@@ -417,17 +419,17 @@ mod tests {
     UNION ALL
     SELECT * FROM \"complex_idx_test\" WHERE \"sysFrom\" < 0
     ) as \"t3\"
-    WHERE \"identification_number\" = 1 AND \"product_code\" = \"222\"
+    WHERE \"identification_number\" = 1 AND \"product_code\" = '222'
     ";
 
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 2926,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = \"222\") AND (\"sysFrom\" > 0)".to_string(),
+            node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = '222') AND (\"sysFrom\" > 0)".to_string(),
         });
         expected_result.push(QueryResult {
             bucket_id: 2926,
-            node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = \"222\") AND (\"sysFrom\" < 0)".to_string(),
+            node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = '222') AND (\"sysFrom\" < 0)".to_string(),
         });
 
         let q = ParsedTree::new(test_query, s.clone(), 30000).unwrap();
@@ -483,12 +485,12 @@ mod tests {
     UNION ALL
     SELECT * FROM \"complex_idx_test\" WHERE \"sys_op\" < 0
     ) as \"t3\"
-    WHERE (\"identification_number\" = 1 AND \"product_code\" = \"222\")
-        OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")
+    WHERE (\"identification_number\" = 1 AND \"product_code\" = '222')
+        OR (\"identification_number\" = 100 AND \"product_code\" = '111')
     ";
 
-        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" > 0)".to_string();
-        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = \"222\") OR (\"identification_number\" = 100 AND \"product_code\" = \"111\")) AND (\"sys_op\" < 0)".to_string();
+        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = '222') OR (\"identification_number\" = 100 AND \"product_code\" = '111')) AND (\"sys_op\" > 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = '222') OR (\"identification_number\" = 100 AND \"product_code\" = '111')) AND (\"sys_op\" < 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 2926,
@@ -561,11 +563,11 @@ mod tests {
         SELECT * FROM \"complex_idx_test\" WHERE \"sys_from\" <= 0
         ) AS \"t3\"
         WHERE (\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000))
-            AND (\"product_code\" = \"222\" OR \"product_code\" = \"111\")
+            AND (\"product_code\" = '222' OR \"product_code\" = '111')
         ";
 
-        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = \"222\" OR \"product_code\" = \"111\")) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
-        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = \"222\" OR \"product_code\" = \"111\")) AND (\"sys_from\" <= 0)".to_string();
+        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = '222' OR \"product_code\" = '111')) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = '222' OR \"product_code\" = '111')) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 2926,
@@ -629,11 +631,11 @@ mod tests {
         SELECT * FROM \"complex_idx_test\" WHERE \"sys_from\" <= 0
         ) AS \"t3\"
         WHERE (\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000))
-            AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)
+            AND ((\"product_code\" = '222' OR \"product_code\" = '111') AND \"amount\" > 0)
         ";
 
-        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
-        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = \"222\" OR \"product_code\" = \"111\") AND \"amount\" > 0)) AND (\"sys_from\" <= 0)".to_string();
+        let first_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = '222' OR \"product_code\" = '111') AND \"amount\" > 0)) AND (\"sys_from\" <= 0 AND \"sys_to\" >= 0)".to_string();
+        let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = '222' OR \"product_code\" = '111') AND \"amount\" > 0)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
             bucket_id: 2926,

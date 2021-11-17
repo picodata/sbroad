@@ -1,3 +1,4 @@
+use crate::bucket::str_to_bucket_id;
 use crate::cluster_lua::{get_cluster_schema, init_cluster_functions};
 use crate::errors::QueryPlannerError;
 use crate::query::ParsedTree;
@@ -66,6 +67,24 @@ pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -
     });
 
     ctx.return_mp(&true).unwrap();
+    0
+}
+
+#[derive(Serialize, Deserialize)]
+struct BucketCalcArgs {
+    pub val: String,
+    pub bucket_count: u64,
+}
+
+impl AsTuple for BucketCalcArgs {}
+
+#[no_mangle]
+pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    let args: Tuple = args.into();
+    let args = args.into_struct::<BucketCalcArgs>().unwrap();
+
+    let result = str_to_bucket_id(&args.val, args.bucket_count);
+    ctx.return_mp(&result).unwrap();
     0
 }
 

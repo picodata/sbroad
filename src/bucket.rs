@@ -8,16 +8,23 @@ pub fn get_bucket_id(
     sharding_key: &[String],
     bucket_count: u64,
 ) -> Result<u64, QueryPlannerError> {
-    let mut hash = Hasher32::new();
-
+    let mut str_shard_val = String::new();
     for key_part in sharding_key.iter() {
-        match filters.get(key_part) {
-            Some(v) => hash.write(v.as_bytes()),
-            None => return Err(QueryPlannerError::BucketIdError),
+        if let Some(v) = filters.get(key_part) {
+            str_shard_val.push_str(v);
+        } else {
+            return Err(QueryPlannerError::BucketIdError);
         }
     }
 
-    Ok(hash.finish() % bucket_count)
+    Ok(str_to_bucket_id(&str_shard_val, bucket_count))
+}
+
+pub fn str_to_bucket_id(s: &str, bucket_count: u64) -> u64 {
+    let mut hash = Hasher32::new();
+    hash.write(s.as_bytes());
+
+    hash.finish() % bucket_count
 }
 
 #[test]
@@ -79,5 +86,26 @@ fn test_bucket_id() {
     assert_eq!(
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
         13814
+    );
+}
+
+#[test]
+fn test_bucket_id_by_str() {
+    assert_eq!(str_to_bucket_id("100тесты", 30000), 17338);
+
+    assert_eq!(
+        str_to_bucket_id("4TEST5501605647472000000100000000d92beee8-749f-4539-aa15-3d2941dbb0f1x32https://google.com", 30000),
+        13814
+    );
+
+    let mut test_vals = HashMap::new();
+
+    test_vals.insert("id".to_string(), "1".to_string());
+    test_vals.insert("name".to_string(), "123".to_string());
+
+    let sharding_key = vec!["id".to_string(), "name".to_string()];
+    assert_eq!(
+        get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
+        str_to_bucket_id("1123", 30000),
     );
 }
