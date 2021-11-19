@@ -1,6 +1,7 @@
 mod bucket;
 mod cluster_lua;
 mod errors;
+mod ir;
 mod parser;
 mod query;
 mod schema;
