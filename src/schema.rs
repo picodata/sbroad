@@ -13,11 +13,12 @@ impl From<String> for Cluster {
     fn from(s: String) -> Self {
         let docs = YamlLoader::load_from_str(&s).unwrap();
 
-        match docs.is_empty() {
-            true => Self::new(),
-            false => Cluster {
+        if docs.is_empty() {
+            Self::new()
+        } else {
+            Cluster {
                 schema: docs[0].clone(),
-            },
+            }
         }
     }
 }
