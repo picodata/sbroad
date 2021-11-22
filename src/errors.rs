@@ -1,26 +1,38 @@
 use serde::Serialize;
 use std::fmt;
 
+const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
+const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
+const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
+const SERIALIZATION_ERROR: &str = "serialization";
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
 const SIMPLE_UNION_QUERY_ERROR: &str = "query doesn't simple union";
 const QUERY_NOT_IMPLEMENTED: &str = "query wasn't s implemented";
-const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
+const VALUE_OUT_OF_RANGE_ERROR: &str = "value out of range";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum QueryPlannerError {
+    BucketIdError,
+    DuplicateColumn,
+    InvalidShardingKey,
+    Serialization,
     SimpleQueryError,
     SimpleUnionQueryError,
     QueryNotImplemented,
-    BucketIdError,
+    ValueOutOfRange,
 }
 
 impl fmt::Display for QueryPlannerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
+            QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
+            QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
+            QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,
+            QueryPlannerError::Serialization => SERIALIZATION_ERROR,
             QueryPlannerError::SimpleQueryError => SIMPLE_QUERY_ERROR,
             QueryPlannerError::SimpleUnionQueryError => SIMPLE_UNION_QUERY_ERROR,
             QueryPlannerError::QueryNotImplemented => QUERY_NOT_IMPLEMENTED,
-            QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
+            QueryPlannerError::ValueOutOfRange => VALUE_OUT_OF_RANGE_ERROR,
         };
         write!(f, "{}", p)
     }

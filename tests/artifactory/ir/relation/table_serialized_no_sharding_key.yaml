@@ -1,0 +1,5 @@
+columns:
+  - name: a
+    type_name: Boolean
+name: t
+sharding_key: ~
