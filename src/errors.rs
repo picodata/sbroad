@@ -3,6 +3,8 @@ use std::fmt;
 
 const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
 const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
+const INVALID_PLAN_ERROR: &str = "invalid plan";
+const INVALID_RELATION_ERROR: &str = "invalid relation";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
 const SERIALIZATION_ERROR: &str = "serialization";
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
@@ -15,6 +17,8 @@ pub enum QueryPlannerError {
     BucketIdError,
     DuplicateColumn,
     InvalidShardingKey,
+    InvalidPlan,
+    InvalidRelation,
     Serialization,
     SimpleQueryError,
     SimpleUnionQueryError,
@@ -27,6 +31,8 @@ impl fmt::Display for QueryPlannerError {
         let p = match self {
             QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
+            QueryPlannerError::InvalidPlan => INVALID_PLAN_ERROR,
+            QueryPlannerError::InvalidRelation => INVALID_RELATION_ERROR,
             QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,
             QueryPlannerError::Serialization => SERIALIZATION_ERROR,
             QueryPlannerError::SimpleQueryError => SIMPLE_QUERY_ERROR,

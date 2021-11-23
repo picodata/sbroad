@@ -1,3 +1,4 @@
+use super::value::Value;
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -11,13 +12,13 @@ pub enum Type {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Column {
-    name: String,
-    type_name: Type,
+    pub name: String,
+    pub type_name: Type,
 }
 
 #[allow(dead_code)]
 impl Column {
-    fn new(n: &str, t: Type) -> Self {
+    pub fn new(n: &str, t: Type) -> Self {
         Column {
             name: n.into(),
             type_name: t,
@@ -26,15 +27,36 @@ impl Column {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct TableShard {
-    name: String,
-    columns: Vec<Column>,
-    sharding_key: Vec<usize>,
+pub enum Table {
+    Segment {
+        columns: Vec<Column>,
+        key: Vec<usize>,
+        name: String,
+    },
+    Virtual {
+        columns: Vec<Column>,
+        data: Vec<Vec<Value>>,
+        name: String,
+    },
+    VirtualSegment {
+        columns: Vec<Column>,
+        data: HashMap<String, Vec<Vec<Value>>>,
+        key: Vec<usize>,
+        name: String,
+    },
 }
 
 #[allow(dead_code)]
-impl TableShard {
-    fn new(n: &str, c: Vec<Column>, k: &[&str]) -> Result<Self, QueryPlannerError> {
+impl Table {
+    pub fn name(&self) -> &str {
+        match self {
+            Table::Segment { name, .. }
+            | Table::Virtual { name, .. }
+            | Table::VirtualSegment { name, .. } => name,
+        }
+    }
+
+    pub fn new_seg(n: &str, c: Vec<Column>, k: &[&str]) -> Result<Self, QueryPlannerError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
         let cols = &c;
         let no_duplicates = cols
@@ -56,36 +78,42 @@ impl TableShard {
             .collect();
         let positions = res_positions?;
 
-        Ok(TableShard {
+        Ok(Table::Segment {
             name: n.into(),
             columns: c,
-            sharding_key: positions,
+            key: positions,
         })
     }
 
-    fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
-        let ts: TableShard = match serde_yaml::from_str(s) {
+    pub fn seg_from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+        let ts: Table = match serde_yaml::from_str(s) {
             Ok(t) => t,
             Err(_) => return Err(QueryPlannerError::Serialization),
         };
-        let mut uniq_cols: HashSet<&str> = HashSet::new();
-        let cols = &ts.columns;
+        if let Table::Segment { columns, key, .. } = &ts {
+            let mut uniq_cols: HashSet<&str> = HashSet::new();
+            let cols = columns;
 
-        let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
+            let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
 
-        if !no_duplicates {
-            return Err(QueryPlannerError::DuplicateColumn);
+            if !no_duplicates {
+                return Err(QueryPlannerError::DuplicateColumn);
+            }
+
+            let keys = key;
+            let in_range = keys.iter().all(|pos| *pos < cols.len());
+
+            if !in_range {
+                return Err(QueryPlannerError::ValueOutOfRange);
+            }
+
+            Ok(ts)
+        } else {
+            Err(QueryPlannerError::Serialization)
         }
-
-        let keys = &ts.sharding_key;
-        let in_range = keys.iter().all(|pos| *pos < cols.len());
-
-        if !in_range {
-            return Err(QueryPlannerError::ValueOutOfRange);
-        }
-
-        Ok(ts)
     }
+
+    //TODO: constructors for Virtual and VirtualSegment
 }
 
 #[cfg(test)]
@@ -107,8 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn table() {
-        let t = TableShard::new(
+    fn table_seg() {
+        let t = Table::new_seg(
             "t",
             vec![
                 Column::new("a", Type::Boolean),
@@ -119,15 +147,23 @@ mod tests {
             &["b", "a"],
         )
         .unwrap();
-        assert_eq!(2, t.sharding_key.len());
-        assert_eq!(0, t.sharding_key[1]);
-        assert_eq!(1, t.sharding_key[0]);
+        if let Table::Segment { key, .. } = &t {
+            assert_eq!(2, key.len());
+            assert_eq!(0, key[1]);
+            assert_eq!(1, key[0]);
+        }
     }
 
     #[test]
-    fn table_duplicate_columns() {
+    fn table_seg_name() {
+        let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+        assert_eq!("t", t.name());
+    }
+
+    #[test]
+    fn table_seg_duplicate_columns() {
         assert_eq!(
-            TableShard::new(
+            Table::new_seg(
                 "t",
                 vec![
                     Column::new("a", Type::Boolean),
@@ -143,9 +179,9 @@ mod tests {
     }
 
     #[test]
-    fn table_wrong_sharding_key() {
+    fn table_seg_wrong_key() {
         assert_eq!(
-            TableShard::new(
+            Table::new_seg(
                 "t",
                 vec![
                     Column::new("a", Type::Boolean),
@@ -161,8 +197,8 @@ mod tests {
     }
 
     #[test]
-    fn table_serialized() {
-        let t = TableShard::new(
+    fn table_seg_serialized() {
+        let t = Table::new_seg(
             "t",
             vec![
                 Column::new("a", Type::Boolean),
@@ -178,66 +214,66 @@ mod tests {
             .join("artifactory")
             .join("ir")
             .join("relation")
-            .join("table_serialized.yaml");
+            .join("table_seg_serialized.yaml");
         let s = fs::read_to_string(path).unwrap();
-        let t_yaml = TableShard::from_yaml(&s).unwrap();
+        let t_yaml = Table::seg_from_yaml(&s).unwrap();
         assert_eq!(t, t_yaml);
     }
 
     #[test]
-    fn table_serialized_duplicate_columns() {
+    fn table_seg_serialized_duplicate_columns() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
             .join("ir")
             .join("relation")
-            .join("table_serialized_duplicate_columns.yaml");
+            .join("table_seg_serialized_duplicate_columns.yaml");
         let s = fs::read_to_string(path).unwrap();
         assert_eq!(
-            TableShard::from_yaml(&s).unwrap_err(),
+            Table::seg_from_yaml(&s).unwrap_err(),
             QueryPlannerError::DuplicateColumn
         );
     }
 
     #[test]
-    fn table_serialized_out_of_range_sharding_key() {
+    fn table_seg_serialized_out_of_range_key() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
             .join("ir")
             .join("relation")
-            .join("table_serialized_out_of_range_sharding_key.yaml");
+            .join("table_seg_serialized_out_of_range_key.yaml");
         let s = fs::read_to_string(path).unwrap();
         assert_eq!(
-            TableShard::from_yaml(&s).unwrap_err(),
+            Table::seg_from_yaml(&s).unwrap_err(),
             QueryPlannerError::ValueOutOfRange
         );
     }
 
     #[test]
-    fn table_serialized_no_sharding_key() {
+    fn table_seg_serialized_no_key() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
             .join("ir")
             .join("relation")
-            .join("table_serialized_no_sharding_key.yaml");
+            .join("table_seg_serialized_no_key.yaml");
         let s = fs::read_to_string(path).unwrap();
-        let t = TableShard::from_yaml(&s);
+        let t = Table::seg_from_yaml(&s);
         assert_eq!(t.unwrap_err(), QueryPlannerError::Serialization);
     }
 
     #[test]
-    fn table_serialized_no_columns() {
+    fn table_seg_serialized_no_columns() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
             .join("ir")
             .join("relation")
-            .join("table_serialized_no_columns.yaml");
+            .join("table_seg_serialized_no_columns.yaml");
         let s = fs::read_to_string(path).unwrap();
         assert_eq!(
-            TableShard::from_yaml(&s).unwrap_err(),
+            Table::seg_from_yaml(&s).unwrap_err(),
             QueryPlannerError::Serialization
         );
     }

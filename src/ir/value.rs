@@ -20,7 +20,7 @@ impl From<bool> for Trivalent {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Value {
     Boolean(bool),
     Null,
@@ -41,16 +41,16 @@ impl fmt::Display for Value {
 
 #[allow(dead_code)]
 impl Value {
-    fn number_from_str(f: &str) -> Self {
+    pub fn number_from_str(f: &str) -> Self {
         let d = d128::from_str(&f.to_string()).unwrap();
         Value::Number(d)
     }
 
-    fn string_from_str(f: &str) -> Self {
+    pub fn string_from_str(f: &str) -> Self {
         Value::String(String::from(f))
     }
 
-    fn eq(&self, other: &Value) -> Trivalent {
+    pub fn eq(&self, other: &Value) -> Trivalent {
         match &*self {
             Value::Boolean(s) => match other {
                 Value::Boolean(o) => (s == o).into(),
@@ -87,6 +87,7 @@ impl From<Trivalent> for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     // Helpers
 

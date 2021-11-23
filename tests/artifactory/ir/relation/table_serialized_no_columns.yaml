@@ -1,4 +1,0 @@
-columns: ~
-name: t
-sharding_key:
-  - 0
