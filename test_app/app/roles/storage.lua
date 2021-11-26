@@ -15,10 +15,6 @@ local function init(opts) -- luacheck: no unused args
     -- end
     _G.insert_map = insert_map
 
-    box.schema.func.create('sbroad.init', { if_not_exists = true, language = 'C' })
-
-    box.func["sbroad.init"]:call({})
-
     return true
 end
 

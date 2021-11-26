@@ -19,15 +19,7 @@ local function query(q)
 
     local result = nil
     for _, rec in pairs(parser_res) do
-        local bucket_id = rec[1]
-        local shard_query = rec[2]
-
-        local res = vshard.router.call(
-                bucket_id,
-                "read",
-                "box.execute",
-                { shard_query }
-        )
+        local res = yaml.decode(box.func["sbroad.execute_query"]:call({ rec[1], rec[2] }))
 
         if result == nil then
             result = res
@@ -59,10 +51,6 @@ local function insert_record(space_name, values)
     return res
 end
 
-local function sql_execute(bucket_id, sql_q)
-    return yaml.decode(box.func["sbroad.execute_query"]:call({ bucket_id, sql_q }))
-end
-
 local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
@@ -74,9 +62,6 @@ local function init(opts) -- luacheck: no unused args
     box.schema.func.create('sbroad.invalidate_caching_schema', { if_not_exists = true, language = 'C' })
     box.schema.func.create('sbroad.calculate_bucket_id', { if_not_exists = true, language = 'C' })
     box.schema.func.create('sbroad.execute_query', { if_not_exists = true, language = 'C' })
-    box.schema.func.create('sbroad.init', { if_not_exists = true, language = 'C' })
-
-    box.func["sbroad.init"]:call({})
 
     return true
 end

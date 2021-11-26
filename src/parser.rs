@@ -1,6 +1,6 @@
 use crate::bucket::str_to_bucket_id;
-use crate::cluster_lua::{execute_sql, get_cluster_schema, init_cluster_functions};
 use crate::errors::QueryPlannerError;
+use crate::lua_bridge::LuaBridge;
 use crate::query::ParsedTree;
 use crate::schema::Cluster;
 use serde::{Deserialize, Serialize};
@@ -9,11 +9,10 @@ use std::cell::RefCell;
 use std::fmt;
 use std::os::raw::c_int;
 use tarantool::error::TarantoolErrorCode;
-use tarantool::ffi::lua::{luaT_state, lua_State};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 thread_local!(static CARTRIDGE_SCHEMA: RefCell<Cluster> = RefCell::new(Cluster::new()));
-thread_local!(static LUA_STATE: RefCell<*mut lua_State> = RefCell::new( unsafe { luaT_state() }));
+thread_local!(static LUA_STATE: RefCell<LuaBridge> = RefCell::new(LuaBridge::new()));
 
 #[derive(Serialize, Deserialize)]
 struct Args {
@@ -31,13 +30,13 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    let l = LUA_STATE.try_with(|s| s.clone().into_inner()).unwrap();
+    let lua = LUA_STATE.try_with(|s| s.clone().into_inner()).unwrap();
 
     CARTRIDGE_SCHEMA.with(|s| {
         let mut schema = s.clone().into_inner();
         // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
         if schema.is_empty() {
-            let text_schema = get_cluster_schema(l);
+            let text_schema = lua.get_cluster_schema();
             schema = Cluster::from(text_schema);
 
             *s.borrow_mut() = schema.clone();
@@ -101,10 +100,14 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<ExecQueryArgs>().unwrap();
 
-    let l = LUA_STATE.try_with(|s| s.clone().into_inner()).unwrap();
-    let result = execute_sql(l, args.bucket_id, &args.query);
-    ctx.return_mp(&result).unwrap();
-    0
+    match LUA_STATE.try_with(|s| s.clone().into_inner()) {
+        Ok(lua) => {
+            let result = lua.execute_sql(args.bucket_id, &args.query);
+            ctx.return_mp(&result).unwrap();
+            0
+        }
+        Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,20 +117,6 @@ struct InitArgs {
 }
 
 impl AsTuple for InitArgs {}
-
-/**
-Function must be called in router and storage roles of cartridge application.
-*/
-#[no_mangle]
-pub extern "C" fn init(_ctx: FunctionCtx, _: FunctionArgs) -> c_int {
-    LUA_STATE
-        .try_with(|s| {
-            let l = s.clone().into_inner();
-            init_cluster_functions(l);
-        })
-        .unwrap();
-    0
-}
 
 #[derive(Serialize, Debug, Eq, PartialEq)]
 pub struct QueryResult {
