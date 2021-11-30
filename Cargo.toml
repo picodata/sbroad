@@ -18,6 +18,7 @@ yaml-rust = "0.4.1"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
+itertools = "0.8.2"
 
 [lib]
 crate-type = ["cdylib"]

@@ -3,6 +3,7 @@ use super::relation::Table;
 use super::{push_and_get_idx, Node, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Distribution {
@@ -70,6 +71,32 @@ pub enum Relational {
 
 #[allow(dead_code)]
 impl Relational {
+    /// We expect that the top level of the node's expression tree
+    /// is a row of aliases with unique names.
+    pub fn output_aliases(&self, plan: &Plan) -> Result<HashMap<String, usize>, QueryPlannerError> {
+        let mut map: HashMap<String, usize> = HashMap::new();
+
+        if let Some(Node::Expression(Expression::Row { list })) = plan.nodes.get(self.output()) {
+            let valid = list.iter().enumerate().all(|(pos, item)| {
+                // Check that expressions in the row list are all aliases
+                if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
+                    plan.nodes.get(*item)
+                {
+                    // Populate the map and check duplicate absence
+                    if map.insert(String::from(name), pos).is_none() {
+                        return true;
+                    }
+                }
+                false
+            });
+            if valid {
+                return Ok(map);
+            }
+            return Err(QueryPlannerError::InvalidPlan);
+        }
+        Err(QueryPlannerError::ValueOutOfRange)
+    }
+
     pub fn output(&self) -> usize {
         match self {
             Relational::InnerJoin { output, .. }
@@ -195,7 +222,9 @@ impl Relational {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::QueryPlannerError;
     use crate::ir::relation::*;
+    use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::path::Path;
@@ -249,7 +278,7 @@ mod tests {
 
         let scan = Relational::new_scan("t", &mut plan).unwrap();
         plan.nodes.push(Node::Relational(scan));
-        plan.top = Some(5);
+        plan.top = Some(9);
 
         let path = Path::new("")
             .join("tests")
@@ -282,5 +311,96 @@ mod tests {
         let scan_idx = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
 
         let proj = Relational::new_proj(&mut plan, scan_idx, vec![3, 4]).unwrap();
+    }
+
+    #[test]
+    fn output_aliases() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("output_aliases.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        let plan = Plan::from_yaml(&s).unwrap();
+
+        let top = plan.nodes.get(plan.top.unwrap()).unwrap();
+        if let Node::Relational(rel) = top {
+            let col_map = rel.output_aliases(&plan).unwrap();
+            let expected = vec!["a", "b"];
+            assert_eq!(expected.len(), col_map.len());
+            expected
+                .iter()
+                .zip(col_map.keys().sorted())
+                .for_each(|(e, k)| assert_eq!(e, k));
+        } else {
+            panic!("Plan top should be a relational operator!");
+        }
+    }
+
+    #[test]
+    fn output_aliases_duplicates() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("output_aliases_duplicates.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        let plan = Plan::from_yaml(&s).unwrap();
+
+        let top = plan.nodes.get(plan.top.unwrap()).unwrap();
+        if let Node::Relational(rel) = top {
+            assert_eq!(
+                QueryPlannerError::InvalidPlan,
+                rel.output_aliases(&plan).unwrap_err()
+            );
+        } else {
+            panic!("Plan top should be a relational operator!");
+        }
+    }
+
+    #[test]
+    fn output_aliases_unsupported_type() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("output_aliases_unsupported_type.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        let plan = Plan::from_yaml(&s).unwrap();
+
+        let top = plan.nodes.get(plan.top.unwrap()).unwrap();
+        if let Node::Relational(rel) = top {
+            assert_eq!(
+                QueryPlannerError::InvalidPlan,
+                rel.output_aliases(&plan).unwrap_err()
+            );
+        } else {
+            panic!("Plan top should be a relational operator!");
+        }
+    }
+
+    #[test]
+    fn output_alias_oor() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("output_aliases_oor.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        let plan = Plan::from_yaml(&s).unwrap();
+
+        let top = plan.nodes.get(plan.top.unwrap()).unwrap();
+        if let Node::Relational(rel) = top {
+            assert_eq!(
+                QueryPlannerError::ValueOutOfRange,
+                rel.output_aliases(&plan).unwrap_err()
+            );
+        } else {
+            panic!("Plan top should be a relational operator!");
+        }
     }
 }

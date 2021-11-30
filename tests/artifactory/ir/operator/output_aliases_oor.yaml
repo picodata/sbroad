@@ -1,0 +1,35 @@
+---
+nodes:
+  - Expression:
+      Reference:
+        branch: Left
+        position: 0
+  - Expression:
+      Alias:
+        name: a
+        child: 0
+  - Expression:
+      Row:
+        list:
+          - 1
+  - Relational:
+      ScanRelation:
+        distribution:
+          Segment:
+            key:
+              - 0
+        output: 42
+        relation: t
+relations:
+  t:
+    Segment:
+      columns:
+        - name: a
+          type_name: Number
+        - name: b
+          type_name: Number
+      key:
+        - 0
+      name: t
+slices: ~
+top: 3

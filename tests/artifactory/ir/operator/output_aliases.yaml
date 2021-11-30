@@ -17,52 +17,28 @@ nodes:
         name: b
         child: 2
   - Expression:
-      Reference:
-        branch: Left
-        position: 2
-  - Expression:
-      Alias:
-        name: c
-        child: 4
-  - Expression:
-      Reference:
-        branch: Left
-        position: 3
-  - Expression:
-      Alias:
-        name: d
-        child: 6
-  - Expression:
       Row:
         list:
           - 1
           - 3
-          - 5
-          - 7
   - Relational:
       ScanRelation:
         distribution:
           Segment:
             key:
-              - 1
               - 0
-        output: 8
+        output: 4
         relation: t
 relations:
   t:
     Segment:
       columns:
         - name: a
-          type_name: Boolean
+          type_name: Number
         - name: b
           type_name: Number
-        - name: c
-          type_name: String
-        - name: d
-          type_name: String
       key:
-        - 1
         - 0
       name: t
 slices: ~
-top: 9
+top: 5
