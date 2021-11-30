@@ -113,7 +113,7 @@ impl Relational {
         }
     }
 
-    pub fn from_table(table_name: &str, plan: &mut Plan) -> Result<Self, QueryPlannerError> {
+    pub fn new_scan(table_name: &str, plan: &mut Plan) -> Result<Self, QueryPlannerError> {
         let nodes = &mut plan.nodes;
         if let Some(relations) = &plan.relations {
             if let Some(rel) = relations.get(table_name) {
@@ -214,7 +214,7 @@ mod tests {
         .unwrap();
         plan.add_rel(t);
 
-        let scan = Relational::from_table("t", &mut plan).unwrap();
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
         assert_eq!(
             Relational::ScanRelation {
                 distribution: Distribution::Segment { key: vec![1, 0] },
@@ -244,7 +244,7 @@ mod tests {
         .unwrap();
         plan.add_rel(t);
 
-        let scan = Relational::from_table("t", &mut plan).unwrap();
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
         plan.nodes.push(Node::Relational(scan));
         plan.top = Some(5);
 
@@ -275,7 +275,7 @@ mod tests {
         .unwrap();
         plan.add_rel(t);
 
-        let scan = Relational::from_table("t", &mut plan).unwrap();
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
         let scan_idx = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
 
         let proj = Relational::new_proj(&mut plan, scan_idx, vec![3, 4]).unwrap();
