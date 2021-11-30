@@ -127,9 +127,12 @@ impl Relational {
                             .iter()
                             .enumerate()
                             .map(|(pos, col)| {
-                                let r =
-                                    Expression::new_ref(String::from(&col.name), Branch::Left, pos);
-                                push_and_get_idx(nodes, Node::Expression(r))
+                                let r = Expression::new_ref(Branch::Left, pos);
+                                let r_id = push_and_get_idx(nodes, Node::Expression(r));
+                                push_and_get_idx(
+                                    nodes,
+                                    Node::Expression(Expression::new_alias(&col.name, r_id)),
+                                )
                             })
                             .collect();
 
@@ -218,13 +221,13 @@ mod tests {
         assert_eq!(
             Relational::ScanRelation {
                 distribution: Distribution::Segment { key: vec![1, 0] },
-                output: 4,
+                output: 8,
                 relation: String::from("t"),
             },
             scan
         );
 
-        assert_eq!(5, push_and_get_idx(&mut plan.nodes, Node::Relational(scan)));
+        assert_eq!(9, push_and_get_idx(&mut plan.nodes, Node::Relational(scan)));
     }
 
     #[test]

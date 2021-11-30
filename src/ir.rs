@@ -101,6 +101,14 @@ impl<'n> Iterator for BranchIterator<'n> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.node {
             Node::Expression(expr) => match expr {
+                Expression::Alias { child, .. } => {
+                    let current_step = *self.step.borrow();
+                    if current_step == 0 {
+                        *self.step.borrow_mut() += 1;
+                        return self.plan.nodes.get(*child);
+                    }
+                    None
+                }
                 Expression::Bool { left, right, .. } => {
                     let current_step = *self.step.borrow();
                     if current_step == 0 {

@@ -2,31 +2,43 @@
 nodes:
   - Expression:
       Reference:
-        alias: a
         branch: Left
         position: 0
   - Expression:
+      Alias:
+        name: a
+        child: 0
+  - Expression:
       Reference:
-        alias: b
         branch: Left
         position: 1
   - Expression:
+      Alias:
+        name: b
+        child: 2
+  - Expression:
       Reference:
-        alias: c
         branch: Left
         position: 2
   - Expression:
+      Alias:
+        name: c
+        child: 4
+  - Expression:
       Reference:
-        alias: d
         branch: Left
         position: 3
   - Expression:
+      Alias:
+        name: d
+        child: 6
+  - Expression:
       Row:
         list:
-          - 0
           - 1
-          - 2
           - 3
+          - 5
+          - 7
   - Relational:
       ScanRelation:
         distribution:
@@ -34,7 +46,7 @@ nodes:
             key:
               - 1
               - 0
-        output: 4
+        output: 8
         relation: t
 relations:
   t:

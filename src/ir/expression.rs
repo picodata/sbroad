@@ -11,6 +11,11 @@ pub enum Branch {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Expression {
+    // 42 as a
+    Alias {
+        name: String,
+        child: usize,
+    },
     // a > 42
     // b in (select c from ...)
     Bool {
@@ -22,9 +27,8 @@ pub enum Expression {
     Constant {
         value: Value,
     },
-    // &0 (left) as b
+    // &0 (left)
     Reference {
-        alias: String,
         branch: Branch,
         /// expression position in the input row
         position: usize,
@@ -37,18 +41,22 @@ pub enum Expression {
 
 #[allow(dead_code)]
 impl Expression {
+    pub fn new_alias(name: &str, child: usize) -> Self {
+        Expression::Alias {
+            name: String::from(name),
+            child,
+        }
+    }
+
     pub fn new_const(value: Value) -> Self {
         Expression::Constant { value }
     }
 
-    pub fn new_ref(alias: String, branch: Branch, position: usize) -> Self {
-        Expression::Reference {
-            alias,
-            branch,
-            position,
-        }
+    pub fn new_ref(branch: Branch, position: usize) -> Self {
+        Expression::Reference { branch, position }
     }
 
+    // TODO: check that doesn't contain top-level aliases with the same names
     pub fn new_row(list: Vec<usize>) -> Self {
         Expression::Row { list }
     }
