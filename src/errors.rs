@@ -5,6 +5,7 @@ const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
 const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
 const INVALID_PLAN_ERROR: &str = "invalid plan";
 const INVALID_RELATION_ERROR: &str = "invalid relation";
+const INVALID_ROW_ERROR: &str = "invalid row";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
 const SERIALIZATION_ERROR: &str = "serialization";
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
@@ -16,9 +17,10 @@ const VALUE_OUT_OF_RANGE_ERROR: &str = "value out of range";
 pub enum QueryPlannerError {
     BucketIdError,
     DuplicateColumn,
-    InvalidShardingKey,
     InvalidPlan,
     InvalidRelation,
+    InvalidRow,
+    InvalidShardingKey,
     Serialization,
     SimpleQueryError,
     SimpleUnionQueryError,
@@ -33,6 +35,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
             QueryPlannerError::InvalidPlan => INVALID_PLAN_ERROR,
             QueryPlannerError::InvalidRelation => INVALID_RELATION_ERROR,
+            QueryPlannerError::InvalidRow => INVALID_ROW_ERROR,
             QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,
             QueryPlannerError::Serialization => SERIALIZATION_ERROR,
             QueryPlannerError::SimpleQueryError => SIMPLE_QUERY_ERROR,

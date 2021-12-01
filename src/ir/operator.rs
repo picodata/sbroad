@@ -109,7 +109,11 @@ impl Relational {
         }
     }
 
-    pub fn distribution(&self) -> Distribution {
+    pub fn pushup_distribution(
+        &self,
+        row: Option<usize>,
+        plan: &Plan,
+    ) -> Result<Distribution, QueryPlannerError> {
         match self {
             Relational::InnerJoin {
                 ref distribution, ..
@@ -132,10 +136,53 @@ impl Relational {
             | Relational::UnionAll {
                 ref distribution, ..
             } => match distribution {
-                Distribution::Random => Distribution::Random,
-                Distribution::Replicated => Distribution::Replicated,
-                Distribution::Segment { ref key } => Distribution::Segment { key: key.clone() },
-                Distribution::Single => Distribution::Single,
+                Distribution::Random => Ok(Distribution::Random),
+                Distribution::Replicated => Ok(Distribution::Replicated),
+                Distribution::Segment { ref key } => {
+                    // Expression tree structure:
+                    // level 0: row
+                    // level 1: aliases
+                    // level 2: references and other expressions
+                    // ...
+                    // To get the new distribution key we need only references on the second level.
+                    if let Some(row_node) = row {
+                        if let Node::Expression(Expression::Row { ref list }) =
+                            plan.get_node(row_node)?
+                        {
+                            let mut map: HashMap<usize, usize> = HashMap::new();
+                            for (row_pos, r) in list.iter().enumerate() {
+                                if let Node::Expression(Expression::Alias { child, .. }) =
+                                    plan.get_node(*r)?
+                                {
+                                    if let Node::Expression(Expression::Reference {
+                                        position,
+                                        ..
+                                    }) = plan.get_node(*child)?
+                                    {
+                                        if map.insert(*position, row_pos).is_some() {
+                                            return Err(QueryPlannerError::InvalidPlan);
+                                        }
+                                    }
+                                }
+                            }
+
+                            let mut new_key: Vec<usize> = Vec::new();
+                            let all_found = key.iter().all(|pos| {
+                                if let Some(new_pos) = map.get(pos) {
+                                    new_key.push(*new_pos);
+                                    return true;
+                                }
+                                false
+                            });
+                            if all_found {
+                                return Ok(Distribution::Segment { key: new_key });
+                            }
+                            return Ok(Distribution::Random);
+                        }
+                    }
+                    Err(QueryPlannerError::InvalidPlan)
+                }
+                Distribution::Single => Ok(Distribution::Single),
             },
         }
     }
@@ -180,42 +227,56 @@ impl Relational {
         Err(QueryPlannerError::InvalidRelation)
     }
 
-    // TODO: replace output with column name list
     pub fn new_proj(
         plan: &mut Plan,
         child: usize,
-        output: Vec<usize>,
+        output: &[&str],
     ) -> Result<Self, QueryPlannerError> {
-        let nodes = &mut plan.nodes;
+        if output.is_empty() {
+            return Err(QueryPlannerError::InvalidRow);
+        }
 
-        let get_node = |pos: usize| -> Result<&Node, QueryPlannerError> {
-            match nodes.get(pos) {
-                None => Err(QueryPlannerError::ValueOutOfRange),
-                Some(node) => Ok(node),
-            }
-        };
+        if let Node::Relational(child_node) = plan.get_node(child)? {
+            let map = child_node.output_aliases(plan)?;
+            let mut alias_exprs: Vec<usize> = Vec::new();
+            let mut used_child_pos: Vec<usize> = Vec::new();
 
-        match get_node(child)? {
-            Node::Expression(_) => Err(QueryPlannerError::InvalidPlan),
-            Node::Relational(rel) => {
-                if let Node::Expression(Expression::Row { ref list }) = get_node(rel.output())? {
-                    if list.len() < output.len() {
-                        Err(QueryPlannerError::InvalidPlan)
-                    } else {
-                        Ok(Relational::Projection {
-                            child,
-                            distribution: rel.distribution(),
-                            output: push_and_get_idx(
-                                nodes,
-                                Node::Expression(Expression::new_row(output)),
-                            ),
-                        })
-                    }
-                } else {
-                    Err(QueryPlannerError::InvalidPlan)
+            let all_found = output.iter().all(|col| {
+                map.get(*col).map_or(false, |pos| {
+                    // Create new references with aliases and push alias positions
+                    let r_id = push_and_get_idx(
+                        &mut plan.nodes,
+                        Node::Expression(Expression::new_ref(Branch::Left, *pos)),
+                    );
+                    let a_id = push_and_get_idx(
+                        &mut plan.nodes,
+                        Node::Expression(Expression::new_alias(col, r_id)),
+                    );
+                    alias_exprs.push(a_id);
+                    used_child_pos.push(*pos);
+                    true
+                })
+            });
+
+            if all_found {
+                let new_output = push_and_get_idx(
+                    &mut plan.nodes,
+                    Node::Expression(Expression::new_row(alias_exprs)),
+                );
+                // Re-read child node after plan modification (old pointers can become invalid)
+                if let Node::Relational(node) = plan.get_node(child)? {
+                    return Ok(Relational::Projection {
+                        child,
+                        distribution: node.pushup_distribution(Some(new_output), plan)?,
+                        output: new_output,
+                    });
                 }
             }
+
+            return Err(QueryPlannerError::InvalidRow);
         }
+
+        Err(QueryPlannerError::InvalidPlan)
     }
 }
 
@@ -308,9 +369,62 @@ mod tests {
         plan.add_rel(t);
 
         let scan = Relational::new_scan("t", &mut plan).unwrap();
-        let scan_idx = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
+        let scan_id = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
+        let proj_seg = Relational::new_proj(&mut plan, scan_id, &["b", "a"]).unwrap();
+        assert_eq!(
+            Relational::Projection {
+                child: scan_id,
+                distribution: Distribution::Segment { key: vec![0, 1] },
+                output: 14
+            },
+            proj_seg
+        );
 
-        let proj = Relational::new_proj(&mut plan, scan_idx, vec![3, 4]).unwrap();
+        let proj_rand = Relational::new_proj(&mut plan, scan_id, &["a", "d"]).unwrap();
+        assert_eq!(
+            Relational::Projection {
+                child: scan_id,
+                distribution: Distribution::Random,
+                output: 19
+            },
+            proj_rand
+        );
+
+        // Empty output
+        assert_eq!(
+            QueryPlannerError::InvalidRow,
+            Relational::new_proj(&mut plan, scan_id, &[]).unwrap_err()
+        );
+
+        // Invalid alias names in the output
+        assert_eq!(
+            QueryPlannerError::InvalidRow,
+            Relational::new_proj(&mut plan, scan_id, &["a", "e"]).unwrap_err()
+        );
+
+        // Expression node instead of relational one
+        assert_eq!(
+            QueryPlannerError::InvalidPlan,
+            Relational::new_proj(&mut plan, 1, &["a"]).unwrap_err()
+        );
+
+        // Try to build projection from the invalid node
+        assert_eq!(
+            QueryPlannerError::ValueOutOfRange,
+            Relational::new_proj(&mut plan, 42, &["a"]).unwrap_err()
+        );
+    }
+
+    #[test]
+    fn projection_serialize() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("projection.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        Plan::from_yaml(&s).unwrap();
     }
 
     #[test]
@@ -327,12 +441,19 @@ mod tests {
         let top = plan.nodes.get(plan.top.unwrap()).unwrap();
         if let Node::Relational(rel) = top {
             let col_map = rel.output_aliases(&plan).unwrap();
-            let expected = vec!["a", "b"];
-            assert_eq!(expected.len(), col_map.len());
-            expected
+
+            let expected_keys = vec!["a", "b"];
+            assert_eq!(expected_keys.len(), col_map.len());
+            expected_keys
                 .iter()
                 .zip(col_map.keys().sorted())
                 .for_each(|(e, k)| assert_eq!(e, k));
+
+            let expected_val = vec![0, 1];
+            expected_val
+                .iter()
+                .zip(col_map.values().sorted())
+                .for_each(|(e, v)| assert_eq!(e, v));
         } else {
             panic!("Plan top should be a relational operator!");
         }
@@ -402,5 +523,97 @@ mod tests {
         } else {
             panic!("Plan top should be a relational operator!");
         }
+    }
+
+    #[test]
+    fn pushup_distribution() {
+        let mut plan = Plan::empty();
+
+        let t = Table::new_seg(
+            "t",
+            vec![
+                Column::new("a", Type::Boolean),
+                Column::new("b", Type::Number),
+                Column::new("c", Type::String),
+                Column::new("d", Type::String),
+            ],
+            &["b", "a"],
+        )
+        .unwrap();
+        plan.add_rel(t);
+
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
+        let ref5_a = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_ref(Branch::Left, 0)),
+        );
+        let ref6_b = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_ref(Branch::Left, 1)),
+        );
+        let ref7_c = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_ref(Branch::Left, 2)),
+        );
+        let a8_a = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_alias("a", ref5_a)),
+        );
+        let a9_b = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_alias("b", ref6_b)),
+        );
+        let a10_c = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_alias("c", ref7_c)),
+        );
+
+        // Same order in distribution key
+        let fake_row = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::Row {
+                list: vec![a8_a, a9_b, a10_c],
+            }),
+        );
+        assert_eq!(
+            Distribution::Segment { key: vec![1, 0] },
+            scan.pushup_distribution(Some(fake_row), &plan).unwrap()
+        );
+
+        // Shuffle distribution key
+        let fake_row = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::Row {
+                list: vec![a9_b, a8_a],
+            }),
+        );
+        assert_eq!(
+            Distribution::Segment { key: vec![0, 1] },
+            scan.pushup_distribution(Some(fake_row), &plan).unwrap()
+        );
+
+        // Shrink distribution key #1
+        let fake_row = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::Row {
+                list: vec![a10_c, a8_a],
+            }),
+        );
+        assert_eq!(
+            Distribution::Random,
+            scan.pushup_distribution(Some(fake_row), &plan).unwrap()
+        );
+
+        // Shrink distribution key #2
+        let fake_row = push_and_get_idx(
+            &mut plan.nodes,
+            Node::Expression(Expression::Row { list: vec![a9_b] }),
+        );
+        assert_eq!(
+            Distribution::Random,
+            scan.pushup_distribution(Some(fake_row), &plan).unwrap()
+        );
+
+        //TODO: implement checks for Replicated and Single
     }
 }

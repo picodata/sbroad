@@ -46,24 +46,6 @@ impl Plan {
         }
     }
 
-    pub fn empty() -> Self {
-        Plan {
-            nodes: Vec::new(),
-            relations: None,
-            slices: None,
-            top: None,
-        }
-    }
-
-    pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
-        let plan: Plan = match serde_yaml::from_str(s) {
-            Ok(p) => p,
-            Err(_) => return Err(QueryPlannerError::Serialization),
-        };
-        plan.check()?;
-        Ok(plan)
-    }
-
     pub fn check(&self) -> Result<(), QueryPlannerError> {
         if self.top.is_none() {
             return Err(QueryPlannerError::InvalidPlan);
@@ -74,6 +56,31 @@ impl Plan {
         //TODO: additional consistency checks
 
         Ok(())
+    }
+
+    pub fn empty() -> Self {
+        Plan {
+            nodes: Vec::new(),
+            relations: None,
+            slices: None,
+            top: None,
+        }
+    }
+
+    pub fn get_node(&self, pos: usize) -> Result<&Node, QueryPlannerError> {
+        match self.nodes.get(pos) {
+            None => Err(QueryPlannerError::ValueOutOfRange),
+            Some(node) => Ok(node),
+        }
+    }
+
+    pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+        let plan: Plan = match serde_yaml::from_str(s) {
+            Ok(p) => p,
+            Err(_) => return Err(QueryPlannerError::Serialization),
+        };
+        plan.check()?;
+        Ok(plan)
     }
 }
 
@@ -181,6 +188,7 @@ impl<'n> Iterator for BranchIterator<'n> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::relation::*;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::path::Path;
@@ -210,6 +218,34 @@ mod tests {
         assert_eq!(
             QueryPlannerError::ValueOutOfRange,
             Plan::from_yaml(&s).unwrap_err()
+        );
+    }
+
+    #[test]
+    fn get_node() {
+        let mut plan = Plan::empty();
+
+        let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+        plan.add_rel(t);
+
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
+        let scan_id = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
+
+        if let Node::Relational(Relational::ScanRelation { relation, .. }) =
+            plan.get_node(scan_id).unwrap()
+        {
+            assert_eq!(relation, "t");
+        } else {
+            panic!("Unexpected node returned!")
+        }
+    }
+
+    #[test]
+    fn get_node_oor() {
+        let plan = Plan::empty();
+        assert_eq!(
+            QueryPlannerError::ValueOutOfRange,
+            plan.get_node(42).unwrap_err()
         );
     }
 
