@@ -17,7 +17,7 @@ pub enum Node {
     Relational(Relational),
 }
 
-pub fn push_and_get_idx<T>(v: &mut Vec<T>, item: T) -> usize {
+pub fn vec_alloc<T>(v: &mut Vec<T>, item: T) -> usize {
     let idx = v.len();
     v.push(item);
     idx
@@ -128,7 +128,7 @@ impl<'n> Iterator for BranchIterator<'n> {
                     None
                 }
                 Expression::Constant { .. } | Expression::Reference { .. } => None,
-                Expression::Row { list } => {
+                Expression::Row { list, .. } => {
                     let current_step = *self.step.borrow();
                     if let Some(node) = list.get(current_step) {
                         *self.step.borrow_mut() += 1;
@@ -229,7 +229,7 @@ mod tests {
         plan.add_rel(t);
 
         let scan = Relational::new_scan("t", &mut plan).unwrap();
-        let scan_id = push_and_get_idx(&mut plan.nodes, Node::Relational(scan));
+        let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
 
         if let Node::Relational(Relational::ScanRelation { relation, .. }) =
             plan.get_node(scan_id).unwrap()

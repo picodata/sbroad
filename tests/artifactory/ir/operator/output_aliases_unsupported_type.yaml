@@ -17,12 +17,12 @@ nodes:
         list:
           - 1
           - 2
-  - Relational:
-      ScanRelation:
         distribution:
           Segment:
             key:
               - 0
+  - Relational:
+      ScanRelation:
         output: 3
         relation: t
 relations:

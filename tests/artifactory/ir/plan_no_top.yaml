@@ -9,12 +9,12 @@ nodes:
       Row:
         list:
           - 0
-  - Relational:
-      ScanRelation:
         distribution:
           Segment:
             key:
               - 0
+  - Relational:
+      ScanRelation:
         output: 1
         relation: t
 relations:

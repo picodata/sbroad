@@ -48,6 +48,30 @@ nodes:
       ScanRelation:
         output: 8
         relation: t
+  - Expression:
+      Reference:
+        branch: Left
+        position: 0
+  - Expression:
+      Alias:
+        name: a
+        child: 10
+  - Expression:
+      Reference:
+        branch: Left
+        position: 1
+  - Expression:
+      Alias:
+        name: b
+        child: 12
+  - Expression:
+      Reference:
+        branch: Left
+        position: 2
+  - Expression:
+      Alias:
+        name: c
+        child: 14
 relations:
   t:
     Segment:
