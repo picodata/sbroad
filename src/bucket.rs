@@ -28,7 +28,7 @@ pub fn str_to_bucket_id(s: &str, bucket_count: usize) -> usize {
     hash.write(s.as_bytes());
 
     let hash: usize = hash.finish().try_into().unwrap();
-    hash % bucket_count
+    hash % bucket_count + 1
 }
 
 #[test]
@@ -41,13 +41,13 @@ fn test_bucket_id() {
     let mut sharding_key = vec!["id".to_string()];
     assert_eq!(
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
-        3939
+        3940
     );
 
     sharding_key = vec!["id".to_string(), "name".to_string()];
     assert_eq!(
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
-        2926
+        2927
     );
 
     test_vals.clear();
@@ -57,7 +57,7 @@ fn test_bucket_id() {
     sharding_key = vec!["id".to_string(), "name".to_string()];
     assert_eq!(
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
-        17338
+        17339
     );
 
     test_vals.clear();
@@ -89,17 +89,17 @@ fn test_bucket_id() {
     ];
     assert_eq!(
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
-        13814
+        13815
     );
 }
 
 #[test]
 fn test_bucket_id_by_str() {
-    assert_eq!(str_to_bucket_id("100тесты", 30000), 17338);
+    assert_eq!(str_to_bucket_id("100тесты", 30000), 17339);
 
     assert_eq!(
         str_to_bucket_id("4TEST5501605647472000000100000000d92beee8-749f-4539-aa15-3d2941dbb0f1x32https://google.com", 30000),
-        13814
+        13815
     );
 
     let mut test_vals = HashMap::new();
@@ -112,4 +112,9 @@ fn test_bucket_id_by_str() {
         get_bucket_id(&test_vals, &sharding_key, 30000).unwrap(),
         str_to_bucket_id("1123", 30000),
     );
+}
+
+#[test]
+fn test_zero_bucket_id() {
+    assert_eq!(str_to_bucket_id("18810", 30000), 1);
 }

@@ -380,7 +380,7 @@ mod tests {
 
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: "SELECT * FROM \"test_space\" WHERE \"id\" = 1".to_string(),
         });
 
@@ -402,12 +402,12 @@ mod tests {
 
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" > 0)"
                 .to_string(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: "SELECT * FROM \"test_space\" WHERE (\"id\" = 1) AND (\"sysFrom\" < 0)"
                 .to_string(),
         });
@@ -430,11 +430,11 @@ mod tests {
 
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = '222') AND (\"sysFrom\" > 0)".to_string(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: "SELECT * FROM \"complex_idx_test\" WHERE (\"identification_number\" = 1 AND \"product_code\" = '222') AND (\"sysFrom\" < 0)".to_string(),
         });
 
@@ -462,19 +462,19 @@ mod tests {
                 .to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 18511,
+            bucket_id: 18512,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 18511,
+            bucket_id: 18512,
             node_query: second_sub_query.clone(),
         });
 
@@ -499,19 +499,19 @@ mod tests {
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 AND \"product_code\" = '222') OR (\"identification_number\" = 100 AND \"product_code\" = '111')) AND (\"sys_op\" < 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: second_sub_query.clone(),
         });
 
@@ -532,27 +532,27 @@ mod tests {
         let second_sub_query = "SELECT * FROM \"test_space\" WHERE (\"id\" = 1 OR (\"id\" = 2 OR \"id\" = 3)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22071,
+            bucket_id: 22072,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 21300,
+            bucket_id: 21301,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 3939,
+            bucket_id: 3940,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22071,
+            bucket_id: 22072,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 21300,
+            bucket_id: 21301,
             node_query: second_sub_query.clone(),
         });
 
@@ -576,51 +576,51 @@ mod tests {
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND (\"product_code\" = '222' OR \"product_code\" = '111')) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22115,
+            bucket_id: 22116,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6672,
+            bucket_id: 6673,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 23259,
+            bucket_id: 23260,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6557,
+            bucket_id: 6558,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22115,
+            bucket_id: 22116,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6672,
+            bucket_id: 6673,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 23259,
+            bucket_id: 23260,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6557,
+            bucket_id: 6558,
             node_query: second_sub_query.clone(),
         });
 
@@ -644,51 +644,51 @@ mod tests {
         let second_sub_query = "SELECT * FROM \"complex_idx_test\" WHERE ((\"identification_number\" = 1 OR (\"identification_number\" = 100 OR \"identification_number\" = 1000)) AND ((\"product_code\" = '222' OR \"product_code\" = '111') AND \"amount\" > 0)) AND (\"sys_from\" <= 0)".to_string();
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22115,
+            bucket_id: 22116,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6672,
+            bucket_id: 6673,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 23259,
+            bucket_id: 23260,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6557,
+            bucket_id: 6558,
             node_query: first_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 2926,
+            bucket_id: 2927,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 22115,
+            bucket_id: 22116,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6672,
+            bucket_id: 6673,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 4202,
+            bucket_id: 4203,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 23259,
+            bucket_id: 23260,
             node_query: second_sub_query.clone(),
         });
         expected_result.push(QueryResult {
-            bucket_id: 6557,
+            bucket_id: 6558,
             node_query: second_sub_query.clone(),
         });
 

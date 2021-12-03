@@ -63,7 +63,7 @@ g.test_simple_query = function()
             {name = "bucket_id", type = "unsigned"},
         },
         rows = {
-            { 1, "123", 1, 359 }
+            { 1, "123", 1, 360 }
         },
     })
 end
