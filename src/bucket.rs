@@ -1,13 +1,16 @@
-use crate::errors::QueryPlannerError;
-use fasthash::{murmur3::Hasher32, FastHasher};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::hash::Hasher;
+
+use fasthash::{murmur3::Hasher32, FastHasher};
+
+use crate::errors::QueryPlannerError;
 
 pub fn get_bucket_id(
     filters: &HashMap<String, String>,
     sharding_key: &[String],
-    bucket_count: u64,
-) -> Result<u64, QueryPlannerError> {
+    bucket_count: usize,
+) -> Result<usize, QueryPlannerError> {
     let mut str_shard_val = String::new();
     for key_part in sharding_key.iter() {
         if let Some(v) = filters.get(key_part) {
@@ -20,11 +23,12 @@ pub fn get_bucket_id(
     Ok(str_to_bucket_id(&str_shard_val, bucket_count))
 }
 
-pub fn str_to_bucket_id(s: &str, bucket_count: u64) -> u64 {
+pub fn str_to_bucket_id(s: &str, bucket_count: usize) -> usize {
     let mut hash = Hasher32::new();
     hash.write(s.as_bytes());
 
-    hash.finish() % bucket_count
+    let hash: usize = hash.finish().try_into().unwrap();
+    hash % bucket_count
 }
 
 #[test]

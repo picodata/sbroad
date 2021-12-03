@@ -1,15 +1,18 @@
+use std::cell::RefCell;
+use std::convert::TryInto;
+use std::fmt;
+use std::os::raw::c_int;
+
+use serde::{Deserialize, Serialize};
+use sqlparser::ast::Select;
+use tarantool::error::TarantoolErrorCode;
+use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
+
 use crate::bucket::str_to_bucket_id;
 use crate::errors::QueryPlannerError;
 use crate::lua_bridge::LuaBridge;
 use crate::query::ParsedTree;
 use crate::schema::Cluster;
-use serde::{Deserialize, Serialize};
-use sqlparser::ast::Select;
-use std::cell::RefCell;
-use std::fmt;
-use std::os::raw::c_int;
-use tarantool::error::TarantoolErrorCode;
-use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 thread_local!(static CARTRIDGE_SCHEMA: RefCell<Cluster> = RefCell::new(Cluster::new()));
 thread_local!(static LUA_STATE: RefCell<LuaBridge> = RefCell::new(LuaBridge::new()));
@@ -58,7 +61,7 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
 /**
 Function invalidates schema cache, then it updates schema before next query.
 It must be called in function `apply_config()` in lua cartridge application.
-*/
+ */
 #[no_mangle]
 pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
     CARTRIDGE_SCHEMA.with(|s| {
@@ -82,14 +85,14 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
     let args: Tuple = args.into();
     let args = args.into_struct::<BucketCalcArgs>().unwrap();
 
-    let result = str_to_bucket_id(&args.val, args.bucket_count);
+    let result = str_to_bucket_id(&args.val, args.bucket_count.try_into().unwrap());
     ctx.return_mp(&result).unwrap();
     0
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ExecQueryArgs {
-    pub bucket_id: isize,
+    pub bucket_id: usize,
     pub query: String,
 }
 
@@ -101,26 +104,20 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args = args.into_struct::<ExecQueryArgs>().unwrap();
 
     match LUA_STATE.try_with(|s| s.clone().into_inner()) {
-        Ok(lua) => {
-            let result = lua.execute_sql(args.bucket_id, &args.query);
-            ctx.return_mp(&result).unwrap();
-            0
-        }
+        Ok(lua) => match lua.execute_sql(args.bucket_id, &args.query) {
+            Ok(p) => {
+                ctx.return_mp(&p).unwrap();
+                0
+            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+        },
         Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct InitArgs {
-    pub login: String,
-    pub password: String,
-}
-
-impl AsTuple for InitArgs {}
-
 #[derive(Serialize, Debug, Eq, PartialEq)]
 pub struct QueryResult {
-    pub bucket_id: u64,
+    pub bucket_id: usize,
     pub node_query: String,
 }
 

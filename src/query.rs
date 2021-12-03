@@ -1,13 +1,16 @@
+use std::collections::HashMap;
+use std::convert::TryInto;
+
+use sqlparser::ast::{BinaryOperator, Expr, Query, Select, SetExpr, Statement, TableFactor};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
+
 use crate::bucket::get_bucket_id;
 use crate::errors::QueryPlannerError;
 use crate::parser::{QueryPlaner, QueryResult};
 use crate::schema::Cluster;
 use crate::simple_query::SimpleQuery;
 use crate::union_simple_query::UnionSimpleQuery;
-use sqlparser::ast::{BinaryOperator, Expr, Query, Select, SetExpr, Statement, TableFactor};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-use std::collections::HashMap;
 
 pub fn get_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
     let dialect = GenericDialect {};
@@ -88,11 +91,14 @@ impl ParsedTree {
 
                 sub_result.node_query.push_str(&sq.to_string());
 
-                sub_result.bucket_id =
-                    match get_bucket_id(&k, &shard_info.sharding_keys, self.bucket_count) {
-                        Ok(r) => r,
-                        _ => 0,
-                    };
+                sub_result.bucket_id = match get_bucket_id(
+                    &k,
+                    &shard_info.sharding_keys,
+                    self.bucket_count.try_into().unwrap(),
+                ) {
+                    Ok(r) => r,
+                    _ => 0,
+                };
 
                 result.push(sub_result);
             }

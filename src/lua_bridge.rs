@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -5,6 +6,8 @@ use tarantool::ffi::lua::{
     luaT_state, lua_State, lua_getglobal, lua_pushinteger, lua_setfield, lua_settop, lua_tostring,
     LUA_GLOBALSINDEX,
 };
+
+use crate::errors::QueryPlannerError;
 
 const LUA_FUNCS: &str = "local cartridge = require('cartridge');
 local vshard = require('vshard')
@@ -38,7 +41,6 @@ extern "C" {
     ) -> i32;
     pub fn lua_pcall(state: *mut lua_State, nargs: i32, nresults: i32, msgh: i32) -> i32;
     pub fn lua_pushlstring(state: *mut lua_State, s: *const c_char, len: usize);
-
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -104,10 +106,15 @@ impl LuaBridge {
         result
     }
 
-    pub fn execute_sql(self, bucket_id: isize, query: &str) -> String {
+    pub fn execute_sql(self, bucket_id: usize, query: &str) -> Result<String, QueryPlannerError> {
+        let bid: isize = match bucket_id.try_into() {
+            Ok(r) => r,
+            Err(_e) => return Err(QueryPlannerError::IncorrectBucketIdError),
+        };
+
         unsafe {
             lua_getglobal(self.state, crate::c_ptr!("execute_sql"));
-            lua_pushinteger(self.state, bucket_id);
+            lua_pushinteger(self.state, bid);
 
             // lua c api recommends `lua_pushlstring` for arbitrary strings and `lua_pushstring` for zero-terminated strings
             // as &str in Rust is byte array need use lua_pushlstring that doesn't transform input query string to zero-terminate CString
@@ -128,7 +135,7 @@ impl LuaBridge {
         //remove result pointer result from stack
         self.lua_pop(1);
 
-        result
+        Ok(result)
     }
 
     fn lua_pop(self, n: i32) {
