@@ -1,5 +1,6 @@
 //! Value module.
 
+use crate::errors::QueryPlannerError;
 use decimal::d128;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -54,11 +55,14 @@ impl fmt::Display for Value {
 #[allow(dead_code)]
 impl Value {
     /// Construct a number from the string.
-    // FIXME: remove panic
-    #[must_use]
-    pub fn number_from_str(f: &str) -> Self {
-        let d = d128::from_str(&f.to_string()).unwrap();
-        Value::Number(d)
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when a string is not a number.
+    pub fn number_from_str(f: &str) -> Result<Self, QueryPlannerError> {
+        if let Ok(d) = d128::from_str(&f.to_string()) {
+            return Ok(Value::Number(d));
+        }
+        Err(QueryPlannerError::InvalidNumber)
     }
 
     /// Construct a string from the Rust `String`.
@@ -69,7 +73,6 @@ impl Value {
 
     /// Check equality of the two values.
     /// Result uses three-valued logic.
-    // FIXME: remove panic
     #[must_use]
     pub fn eq(&self, other: &Value) -> Trivalent {
         match &*self {
@@ -80,15 +83,13 @@ impl Value {
             },
             Value::Null => Trivalent::Unknown,
             Value::Number(s) => match other {
-                Value::Boolean(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::Number(o) => (s == o).into(),
-                Value::String(o) => (s == &d128::from_str(&o.to_string()).unwrap()).into(),
             },
             Value::String(s) => match other {
-                Value::Boolean(_) => Trivalent::False,
+                Value::Boolean(_) | Value::Number(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
-                Value::Number(o) => (o == &d128::from_str(&s.to_string()).unwrap()).into(),
                 Value::String(o) => s.eq(o).into(),
             },
         }
@@ -116,7 +117,7 @@ mod tests {
         let v = Value::number_from_str(s);
         let d = d128::from_str(&s.to_string()).unwrap();
 
-        if let Value::Number(n) = v {
+        if let Ok(Value::Number(n)) = v {
             assert_eq!(d, n);
         } else {
             panic!("incorrect enum!");
@@ -126,7 +127,7 @@ mod tests {
     fn test_nan(s: &str) {
         let v = Value::number_from_str(s);
 
-        if let Value::Number(n) = v {
+        if let Ok(Value::Number(n)) = v {
             assert_eq!(true, n.is_nan());
         } else {
             panic!("incorrect enum!");
@@ -185,7 +186,7 @@ mod tests {
         );
         assert_eq!(
             Trivalent::False,
-            Value::Boolean(true).eq(&Value::number_from_str("1e0"))
+            Value::Boolean(true).eq(&Value::number_from_str("1e0").unwrap())
         );
         assert_eq!(
             Trivalent::False,
@@ -202,7 +203,7 @@ mod tests {
         assert_eq!(Trivalent::Unknown, Value::Null.eq(&Value::Boolean(false)));
         assert_eq!(
             Trivalent::Unknown,
-            Value::Null.eq(&Value::number_from_str("nan"))
+            Value::Null.eq(&Value::number_from_str("nan").unwrap())
         );
         assert_eq!(
             Trivalent::Unknown,
@@ -212,35 +213,49 @@ mod tests {
         // Number
         assert_eq!(
             Trivalent::False,
-            Value::number_from_str("nan").eq(&Value::string_from_str("nan"))
+            Value::number_from_str("nan")
+                .unwrap()
+                .eq(&Value::string_from_str("nan"))
         );
         assert_eq!(
             Trivalent::False,
-            Value::number_from_str("0").eq(&Value::Boolean(false))
+            Value::number_from_str("0")
+                .unwrap()
+                .eq(&Value::Boolean(false))
         );
         assert_eq!(
             Trivalent::False,
-            Value::number_from_str("inf").eq(&Value::number_from_str("nan"))
+            Value::number_from_str("inf")
+                .unwrap()
+                .eq(&Value::number_from_str("nan").unwrap())
         );
         assert_eq!(
             Trivalent::False,
-            Value::number_from_str("-inf").eq(&Value::number_from_str("hello"))
+            Value::number_from_str("-inf")
+                .unwrap()
+                .eq(&Value::number_from_str("hello").unwrap())
         );
         assert_eq!(
             Trivalent::False,
-            Value::number_from_str("1e0").eq(&Value::number_from_str("1e100"))
+            Value::number_from_str("1e0")
+                .unwrap()
+                .eq(&Value::number_from_str("1e100").unwrap())
         );
         assert_eq!(
             Trivalent::True,
-            Value::number_from_str("1e0").eq(&Value::number_from_str("1.0e0"))
+            Value::number_from_str("1e0")
+                .unwrap()
+                .eq(&Value::number_from_str("1.0e0").unwrap())
         );
         assert_eq!(
             Trivalent::True,
-            Value::number_from_str("1e0").eq(&Value::number_from_str("1E0"))
+            Value::number_from_str("1e0")
+                .unwrap()
+                .eq(&Value::number_from_str("1E0").unwrap())
         );
         assert_eq!(
             Trivalent::Unknown,
-            Value::number_from_str("inf").eq(&Value::Null)
+            Value::number_from_str("inf").unwrap().eq(&Value::Null)
         );
 
         // String

@@ -95,10 +95,13 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError` when the plan tree check fails.
     pub fn check(&self) -> Result<(), QueryPlannerError> {
-        if self.top.is_none() {
-            return Err(QueryPlannerError::InvalidPlan);
-        } else if self.nodes.get(self.top.unwrap()).is_none() {
-            return Err(QueryPlannerError::ValueOutOfRange);
+        match self.top {
+            None => return Err(QueryPlannerError::InvalidPlan),
+            Some(top) => {
+                if self.nodes.get(top).is_none() {
+                    return Err(QueryPlannerError::ValueOutOfRange);
+                }
+            }
         }
 
         //TODO: additional consistency checks
