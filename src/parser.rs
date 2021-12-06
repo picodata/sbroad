@@ -10,12 +10,11 @@ use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 use crate::bucket::str_to_bucket_id;
 use crate::errors::QueryPlannerError;
-use crate::lua_bridge::LuaBridge;
+use crate::lua_bridge::{exec_query, get_cluster_schema};
 use crate::query::ParsedTree;
 use crate::schema::Cluster;
 
 thread_local!(static CARTRIDGE_SCHEMA: RefCell<Cluster> = RefCell::new(Cluster::new()));
-thread_local!(static LUA_STATE: RefCell<LuaBridge> = RefCell::new(LuaBridge::new()));
 
 #[derive(Serialize, Deserialize)]
 struct Args {
@@ -33,13 +32,16 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    let lua = LUA_STATE.try_with(|s| s.clone().into_inner()).unwrap();
-
     CARTRIDGE_SCHEMA.with(|s| {
         let mut schema = s.clone().into_inner();
         // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
         if schema.is_empty() {
-            let text_schema = lua.get_cluster_schema();
+            let text_schema = match get_cluster_schema() {
+                Ok(s) => s,
+                Err(e) => {
+                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string())
+                }
+            };
             schema = Cluster::from(text_schema);
 
             *s.borrow_mut() = schema.clone();
@@ -92,7 +94,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ExecQueryArgs {
-    pub bucket_id: usize,
+    pub bucket_id: u64,
     pub query: String,
 }
 
@@ -103,14 +105,11 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<ExecQueryArgs>().unwrap();
 
-    match LUA_STATE.try_with(|s| s.clone().into_inner()) {
-        Ok(lua) => match lua.execute_sql(args.bucket_id, &args.query) {
-            Ok(p) => {
-                ctx.return_mp(&p).unwrap();
-                0
-            }
-            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
-        },
+    match exec_query(args.bucket_id, &args.query) {
+        Ok(p) => {
+            ctx.return_mp(&p).unwrap();
+            0
+        }
         Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
     }
 }

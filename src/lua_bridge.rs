@@ -1,152 +1,42 @@
-use std::convert::TryInto;
-use std::ffi::CStr;
-use std::os::raw::c_char;
+use tarantool::ffi::tarantool::luaT_state;
+use tarantool::hlua::{Lua, LuaError, LuaFunction};
 
-use tarantool::ffi::lua::{
-    luaT_state, lua_State, lua_getglobal, lua_pushinteger, lua_setfield, lua_settop, lua_tostring,
-    LUA_GLOBALSINDEX,
-};
+pub fn get_cluster_schema() -> Result<String, LuaError> {
+    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
 
-use crate::errors::QueryPlannerError;
+    let get_schema: LuaFunction<_> = lua.eval("return require('cartridge').get_schema")?;
+    let res = get_schema.call()?;
 
-const LUA_FUNCS: &str = "local cartridge = require('cartridge');
-local vshard = require('vshard')
-local yaml = require('yaml')
-
-function execute_sql(bucket_id, query)
-    local data, err = vshard.router.call(
-        bucket_id,
-        'read',
-        'box.execute',
-        { query }
-    )
-
-    if err ~= nil then
-        error(err)
-    end
-
-    return yaml.encode(data)
-end
-
-function get_cluster_schema()
-  return cartridge.get_schema()
-end";
-
-extern "C" {
-    pub fn luaL_loadbuffer(
-        l: *mut lua_State,
-        buff: *const c_char,
-        sz: usize,
-        name: *const c_char,
-    ) -> i32;
-    pub fn lua_pcall(state: *mut lua_State, nargs: i32, nresults: i32, msgh: i32) -> i32;
-    pub fn lua_pushlstring(state: *mut lua_State, s: *const c_char, len: usize);
+    Ok(res)
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct LuaBridge {
-    state: *mut lua_State,
-}
+pub fn exec_query(bucket_id: u64, query: &str) -> Result<String, LuaError> {
+    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
 
-#[allow(dead_code)]
-impl LuaBridge {
-    pub fn new() -> Self {
-        let state = unsafe { luaT_state() };
+    lua.exec(
+        r#"
+        local vshard = require('vshard')
+        local yaml = require('yaml')
 
-        let global_name = unsafe { crate::c_ptr!("lua_bridge_initialized") };
-
-        let mut res = unsafe {
-            luaL_loadbuffer(
-                state,
-                LUA_FUNCS.as_ptr().cast::<i8>(),
-                LUA_FUNCS.len(),
-                crate::c_ptr!("helpers"),
+        function execute_sql(bucket_id, query)
+            local data, err = vshard.router.call(
+                bucket_id,
+                'read',
+                'box.execute',
+                { query }
             )
-        };
-        if res != 0 {
-            panic!();
-        };
 
-        res = unsafe { lua_pcall(state, 0, 0, 0) };
-        if res != 0 {
-            panic!();
-        };
+            if err ~= nil then
+                error(err)
+            end
 
-        // set global lua state
-        unsafe {
-            lua_pushinteger(state, 1); // push the value onto the stack
-            lua_setfield(state, LUA_GLOBALSINDEX, global_name); // save the global value
-        };
+            return yaml.encode(data)
+        end
+    "#,
+    )?;
 
-        LuaBridge { state }
-    }
+    let exec_sql: LuaFunction<_> = lua.get("execute_sql").unwrap();
+    let res = exec_sql.call_with_args((bucket_id, query))?;
 
-    pub fn get_cluster_schema(self) -> String {
-        unsafe {
-            lua_getglobal(self.state, crate::c_ptr!("get_cluster_schema"));
-        }
-
-        let res = unsafe { lua_pcall(self.state, 0, 1, 0) };
-        if res != 0 {
-            panic!("{} {:?}", res, unsafe {
-                CStr::from_ptr(lua_tostring(self.state, -1))
-            });
-        };
-
-        // copy result string pointer from stack, because lua_tostring returns const char *
-        let uri = unsafe { lua_tostring(self.state, -1) };
-        let r = unsafe { CStr::from_ptr(uri) };
-
-        // copy result string from raw pointer to safety variable
-        let result = r.to_str().unwrap().to_string();
-
-        //remove result pointer result from stack
-        self.lua_pop(1);
-
-        result
-    }
-
-    pub fn execute_sql(self, bucket_id: usize, query: &str) -> Result<String, QueryPlannerError> {
-        let bid: isize = match bucket_id.try_into() {
-            Ok(r) => r,
-            Err(_e) => return Err(QueryPlannerError::IncorrectBucketIdError),
-        };
-
-        unsafe {
-            lua_getglobal(self.state, crate::c_ptr!("execute_sql"));
-            lua_pushinteger(self.state, bid);
-
-            // lua c api recommends `lua_pushlstring` for arbitrary strings and `lua_pushstring` for zero-terminated strings
-            // as &str in Rust is byte array need use lua_pushlstring that doesn't transform input query string to zero-terminate CString
-            lua_pushlstring(self.state, query.as_ptr().cast::<i8>(), query.len());
-        }
-
-        let res = unsafe { lua_pcall(self.state, 2, 1, 0) };
-        if res != 0 {
-            panic!("{} {:?}", res, unsafe {
-                CStr::from_ptr(lua_tostring(self.state, -1))
-            });
-        };
-
-        let uri = unsafe { lua_tostring(self.state, -1) };
-        let r = unsafe { CStr::from_ptr(uri) };
-        let result = r.to_str().unwrap().to_string();
-
-        //remove result pointer result from stack
-        self.lua_pop(1);
-
-        Ok(result)
-    }
-
-    fn lua_pop(self, n: i32) {
-        unsafe { lua_settop(self.state, -n - 1) }
-    }
-}
-
-#[macro_export]
-macro_rules! c_ptr {
-    ($s:literal) => {
-        ::std::ffi::CStr::from_bytes_with_nul_unchecked(::std::concat!($s, "\0").as_bytes())
-            .as_ptr()
-    };
+    Ok(res)
 }

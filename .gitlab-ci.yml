@@ -11,7 +11,7 @@ build:
     stage: build
     tags:
         - docker
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.2
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
 
     script:
         - make
@@ -20,20 +20,20 @@ build:
         - target/debug/libsbroad.so
       expire_in: 1 week
 
-
-
 lint:
-    stage: build
+    stage: test
     tags:
         - docker
-    image: guangie88/rustfmt-clippy:stable
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
     script:
-        - cargo clippy -- -Dclippy::all -Wclippy::pedantic
+        - make lint
 
 test:
     stage: test
     tags:
         - docker
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.2
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
     script:
-        - make test
+        - make test_all
+        - ls target/debug/
+        - ls test_app/.rocks/lib/tarantool/

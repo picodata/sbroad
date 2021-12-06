@@ -1,5 +1,15 @@
 all: build
 
+OS := $(shell uname -s)
+ifeq ($(OS), Linux)
+	SRC_LIB = libsbroad.so
+	DEST_LIB = sbroad.so
+else
+	ifeq ($(OS), Darwin)
+		SRC_LIB = libsbroad.dylib
+		DEST_LIB = sbroad.dylib
+	endif
+endif
 build:
 	cargo build
 
@@ -12,8 +22,8 @@ test:
 lint:
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
 
-build_test_app_osx:
+build_test_app:
 	cd test_app && cartridge build
-	cp -rf target/debug/libsbroad.dylib test_app/.rocks/lib/tarantool/sbroad.dylib
+	cp -rf target/debug/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
-test_osx: test build build_test_app_osx integration_test_app
+test_all: test build build_test_app integration_test_app
