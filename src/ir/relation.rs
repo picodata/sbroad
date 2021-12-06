@@ -1,8 +1,11 @@
+//! Relation module.
+
 use super::value::Value;
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+/// Supported column types.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Type {
     Boolean,
@@ -10,14 +13,19 @@ pub enum Type {
     String,
 }
 
+/// Relation column.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Column {
+    /// Column name.
     pub name: String,
+    /// Column type.
     pub type_name: Type,
 }
 
 #[allow(dead_code)]
 impl Column {
+    /// Column constructor.
+    #[must_use]
     pub fn new(n: &str, t: Type) -> Self {
         Column {
             name: n.into(),
@@ -26,28 +34,47 @@ impl Column {
     }
 }
 
+/// Table is a tuple storage in the cluster.
+///
+/// Tables are the tuple storages in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Table {
+    /// Already existing table segment on some cluster data node.
     Segment {
+        /// List of the columns.
         columns: Vec<Column>,
+        /// Distribution key of the output tuples (column positions).
         key: Vec<usize>,
+        /// Unique table name.
         name: String,
     },
+    /// Result tuple storage, created by the executor. All tuples
+    /// are distributed randomly.
     Virtual {
+        /// List of the columns.
         columns: Vec<Column>,
+        /// List of the "raw" tuples (list of values).
         data: Vec<Vec<Value>>,
+        /// Unique table name (we need to generate it ourselves).
         name: String,
     },
+    /// Result tuple storage, created by the executor. All tuples
+    /// have a distribution key.
     VirtualSegment {
+        /// List of the columns.
         columns: Vec<Column>,
+        /// "Raw" tuples (list of values) in a hash map (hashed by distribution key)
         data: HashMap<String, Vec<Vec<Value>>>,
+        /// Distribution key (list of the column positions)
         key: Vec<usize>,
+        /// Unique table name (we need to generate it ourselves).
         name: String,
     },
 }
 
 #[allow(dead_code)]
 impl Table {
+    #[must_use]
     pub fn name(&self) -> &str {
         match self {
             Table::Segment { name, .. }
@@ -56,6 +83,10 @@ impl Table {
         }
     }
 
+    /// Table segment constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the input arguments are invalid.
     pub fn new_seg(n: &str, c: Vec<Column>, k: &[&str]) -> Result<Self, QueryPlannerError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
         let cols = &c;
@@ -85,6 +116,10 @@ impl Table {
         })
     }
 
+    /// Table segment from YAML.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the YAML-serialized table is invalid.
     pub fn seg_from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
         let ts: Table = match serde_yaml::from_str(s) {
             Ok(t) => t,

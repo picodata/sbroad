@@ -1,8 +1,12 @@
+//! Value module.
+
 use decimal::d128;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
+/// SQL uses three-valued logic. We need to implement
+/// it to compare values with each other.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Trivalent {
     False,
@@ -20,11 +24,19 @@ impl From<bool> for Trivalent {
     }
 }
 
+/// Values are used to keep constants from the query
+/// or results for the virtual tables.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Value {
+    /// Boolean type.
     Boolean(bool),
+    /// SQL NULL (unknown in the terms of three-valued logic).
     Null,
+    /// Number uses libdecnumber to correctly serialize any form
+    /// of the number to the same bytes (`1e0`, `1` and `1.0`
+    /// should be equivalent).
     Number(d128),
+    /// String type.
     String(String),
 }
 
@@ -41,15 +53,24 @@ impl fmt::Display for Value {
 
 #[allow(dead_code)]
 impl Value {
+    /// Construct a number from the string.
+    // FIXME: remove panic
+    #[must_use]
     pub fn number_from_str(f: &str) -> Self {
         let d = d128::from_str(&f.to_string()).unwrap();
         Value::Number(d)
     }
 
+    /// Construct a string from the Rust `String`.
+    #[must_use]
     pub fn string_from_str(f: &str) -> Self {
         Value::String(String::from(f))
     }
 
+    /// Check equality of the two values.
+    /// Result uses three-valued logic.
+    // FIXME: remove panic
+    #[must_use]
     pub fn eq(&self, other: &Value) -> Trivalent {
         match &*self {
             Value::Boolean(s) => match other {

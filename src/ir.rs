@@ -1,3 +1,7 @@
+//! Intermediate representation.
+//!
+//! Contains the logical plan tree and helpers.
+
 pub mod expression;
 pub mod operator;
 pub mod relation;
@@ -11,18 +15,55 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+/// Plan tree node.
+///
+/// There are two kinds of node variants: expressions and relational
+/// operators. Both of them can easily refer each other in the
+/// tree as they are stored in the same node arena. The reasons
+/// to separate them are:
+///
+/// - they should be treated with quite different logic
+/// - we don't want to have a single huge enum
+///
+/// Enum was chosen as we don't want to mess with dynamic
+/// dispatching and its performance penalties.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
 }
 
+/// Plan node "allocator".
+///
+/// Inserts an element to the array and returns its position,
+/// that is treated as a pointer.
 pub fn vec_alloc<T>(v: &mut Vec<T>, item: T) -> usize {
     let idx = v.len();
     v.push(item);
     idx
 }
 
+/// Logical plan tree structure.
+///
+/// We don't want to mess with the borrow checker and RefCell/Rc,
+/// so all nodes are stored in the single arena ("nodes" array).
+/// The positions in the array act like pointers, so it is possible
+/// only to add nodes to the plan, but never remove them.
+///
+/// Relations are stored in a hash-map, with a table name acting as a
+/// key to guarantee its uniqueness across the plan. The map is marked
+/// optional because plans without relations do exist (`select 1`).
+///
+/// Slice is a plan subtree under Motion node, that can be executed
+/// on a single db instance without data distribution problems (we add
+/// Motions to resolve them). Them we traverse the plan tree and collect
+/// Motions level by level in a bottom-up manner to the "slices" array
+/// of arrays. All the slices on the same level can be executed in parallel.
+/// In fact, "slices" is a prepared set of commands for the executor.
+///
+/// The plan top is marked as optional for tree creation convenience.
+/// We build the plan tree in a bottom-up manner, so the top would
+/// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
     nodes: Vec<Node>,
@@ -33,6 +74,9 @@ pub struct Plan {
 
 #[allow(dead_code)]
 impl Plan {
+    /// Add relation to the plan.
+    ///
+    /// If relation already exists, do nothing.
     pub fn add_rel(&mut self, table: Table) {
         match &mut self.relations {
             None => {
@@ -46,6 +90,10 @@ impl Plan {
         }
     }
 
+    /// Check that plan tree is valid.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the plan tree check fails.
     pub fn check(&self) -> Result<(), QueryPlannerError> {
         if self.top.is_none() {
             return Err(QueryPlannerError::InvalidPlan);
@@ -58,6 +106,8 @@ impl Plan {
         Ok(())
     }
 
+    /// Constructor for an empty plan structure.
+    #[must_use]
     pub fn empty() -> Self {
         Plan {
             nodes: Vec::new(),
@@ -67,6 +117,11 @@ impl Plan {
         }
     }
 
+    /// Get a node by its pointer (position in the node arena).
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the node with requested index
+    /// doesn't exist.
     pub fn get_node(&self, pos: usize) -> Result<&Node, QueryPlannerError> {
         match self.nodes.get(pos) {
             None => Err(QueryPlannerError::ValueOutOfRange),
@@ -74,6 +129,10 @@ impl Plan {
         }
     }
 
+    /// Construct a plan from the YAML file.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the YAML plan is invalid.
     pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
         let plan: Plan = match serde_yaml::from_str(s) {
             Ok(p) => p,
@@ -84,6 +143,13 @@ impl Plan {
     }
 }
 
+/// Plan node iterator over its branches.
+///
+/// For example, inner join returns at first a left child, then
+/// the right one. But a relation scan doesn't have any children
+/// and stop iteration at the moment.
+///
+/// We need this iterator to traverse plan tree with `traversal` crate.
 #[derive(Debug)]
 pub struct BranchIterator<'n> {
     node: &'n Node,
@@ -93,6 +159,8 @@ pub struct BranchIterator<'n> {
 
 #[allow(dead_code)]
 impl<'n> BranchIterator<'n> {
+    /// Constructor for a new branch iterator instance.
+    #[must_use]
     pub fn new(node: &'n Node, plan: &'n Plan) -> Self {
         BranchIterator {
             node,

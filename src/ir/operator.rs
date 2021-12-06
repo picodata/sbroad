@@ -1,3 +1,5 @@
+//! Operators for expression transformations.
+
 use super::expression::{Branch, Distribution, Expression};
 use super::relation::Table;
 use super::{vec_alloc, Node, Plan};
@@ -5,59 +7,98 @@ use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Bool {
+    /// `&&`
     And,
+    /// `=`
     Eq,
+    /// `=all` (also named `in`)
     EqAll,
+    /// `>`
     Gt,
+    /// `>=`
     GtEq,
+    /// `<`
     Lt,
+    /// `<=`
     LtEq,
+    /// `!=`
     NotEq,
+    /// `||`
     Or,
 }
 
+/// Relational algebra operator returning a new tuple.
+///
+/// Transforms input tuple(s) into the output one using
+/// relation algebra logic.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Relational {
+    /// Inner Join
     InnerJoin {
+        /// Left and right tuple comparison condition.
+        /// In fact - an expression tree top index in plan node arena.
         condition: usize,
+        /// Left branch tuple node index in the plan node arena.
         left: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
+        /// Right branch tuple node index in the plan node arena.
         right: usize,
     },
     Motion {
+        /// Child tuple node index in the plan node arena (left branch).
         child: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
     },
     Projection {
+        /// Child tuple node index in the plan node arena (left branch).
         child: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
     },
     ScanRelation {
+        /// Output tuple node index in the plan node arena.
         output: usize,
+        /// Relation name.
         relation: String,
     },
     ScanSubQuery {
+        /// Child tuple node index in the plan node arena (left branch).
         child: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
     },
     Selection {
+        /// Child tuple node index in the plan node arena (left branch).
         child: usize,
+        /// Filter expression node index in the plan node arena.
         filter: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
     },
     UnionAll {
+        /// Left branch tuple node index in the plan node arena.
         left: usize,
+        /// Right branch tuple node index in the plan node arena.
         right: usize,
+        /// Output tuple node index in the plan node arena.
         output: usize,
     },
 }
 
 #[allow(dead_code)]
 impl Relational {
+    /// Get output tuple alias map.
+    ///
     /// We expect that the top level of the node's expression tree
     /// is a row of aliases with unique names. Return them.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the output tuple is invalid.
     pub fn output_aliases(&self, plan: &Plan) -> Result<HashMap<String, usize>, QueryPlannerError> {
         let mut map: HashMap<String, usize> = HashMap::new();
 
@@ -83,6 +124,8 @@ impl Relational {
         Err(QueryPlannerError::ValueOutOfRange)
     }
 
+    /// Get output tuple node index in plan node arena.
+    #[must_use]
     pub fn output(&self) -> usize {
         match self {
             Relational::InnerJoin { output, .. }
@@ -95,6 +138,10 @@ impl Relational {
         }
     }
 
+    /// New `ScanRelation` constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when relation is invalid.
     pub fn new_scan(table_name: &str, plan: &mut Plan) -> Result<Self, QueryPlannerError> {
         let nodes = &mut plan.nodes;
         if let Some(relations) = &plan.relations {
@@ -137,6 +184,10 @@ impl Relational {
         Err(QueryPlannerError::InvalidRelation)
     }
 
+    /// New `Projection` constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the child node is invalid.
     pub fn new_proj(
         plan: &mut Plan,
         child: usize,
