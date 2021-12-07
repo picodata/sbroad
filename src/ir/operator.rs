@@ -90,16 +90,67 @@ pub enum Relational {
     },
 }
 
+/// Returns a list of new alias nodes.
+/// Helpful, when construct a new row from the child node
+/// and we have only column names. We can feed this function
+/// with column names and child node pointer to create a new
+/// alias node list.
+///
+/// # Errors
+/// Returns `QueryPlannerError` when child node is not a
+/// relational operator or some of the alias names are
+/// absent in the child node's output.  
+pub fn new_alias_nodes(
+    plan: &mut Plan,
+    node: usize,
+    col_names: &[&str],
+) -> Result<Vec<usize>, QueryPlannerError> {
+    if col_names.is_empty() {
+        return Err(QueryPlannerError::InvalidRow);
+    }
+
+    if let Node::Relational(relation_node) = plan.get_node(node)? {
+        let map = relation_node.output_alias_position_map(plan)?;
+        let mut aliases: Vec<usize> = Vec::new();
+
+        let all_found = col_names.iter().all(|col| {
+            map.get(*col).map_or(false, |pos| {
+                // Create new references and aliases. Save them to the plan nodes arena.
+                let r_id = vec_alloc(
+                    &mut plan.nodes,
+                    Node::Expression(Expression::new_ref(Branch::Left, *pos)),
+                );
+                let a_id = vec_alloc(
+                    &mut plan.nodes,
+                    Node::Expression(Expression::new_alias(col, r_id)),
+                );
+                aliases.push(a_id);
+                true
+            })
+        });
+
+        if all_found {
+            return Ok(aliases);
+        }
+
+        return Err(QueryPlannerError::InvalidRow);
+    }
+    Err(QueryPlannerError::InvalidPlan)
+}
+
 #[allow(dead_code)]
 impl Relational {
-    /// Get output tuple alias map.
+    /// Get an <column name - position> map from the output tuple.
     ///
     /// We expect that the top level of the node's expression tree
-    /// is a row of aliases with unique names. Return them.
+    /// is a row of aliases with unique names.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the output tuple is invalid.
-    pub fn output_aliases(&self, plan: &Plan) -> Result<HashMap<String, usize>, QueryPlannerError> {
+    pub fn output_alias_position_map(
+        &self,
+        plan: &Plan,
+    ) -> Result<HashMap<String, usize>, QueryPlannerError> {
         let mut map: HashMap<String, usize> = HashMap::new();
 
         if let Some(Node::Expression(Expression::Row { list, .. })) = plan.nodes.get(self.output())
@@ -136,6 +187,31 @@ impl Relational {
             | Relational::Selection { output, .. }
             | Relational::UnionAll { output, .. } => *output,
         }
+    }
+
+    /// Return a list of column names from the output tuple.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` if the tuple is invalid.
+    pub fn output_alias_names(&self, nodes: &[Node]) -> Result<Vec<String>, QueryPlannerError> {
+        let mut names: Vec<String> = Vec::new();
+
+        if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.get(self.output()) {
+            let valid = list.iter().all(|item| {
+                if let Some(Node::Expression(Expression::Alias { ref name, .. })) = nodes.get(*item)
+                {
+                    names.push(name.clone());
+                    true
+                } else {
+                    false
+                }
+            });
+            if valid {
+                return Ok(names);
+            }
+            return Err(QueryPlannerError::InvalidPlan);
+        }
+        Err(QueryPlannerError::ValueOutOfRange)
     }
 
     /// New `ScanRelation` constructor.
@@ -193,53 +269,62 @@ impl Relational {
         child: usize,
         output: &[&str],
     ) -> Result<Self, QueryPlannerError> {
-        if output.is_empty() {
-            return Err(QueryPlannerError::InvalidRow);
-        }
+        let aliases = new_alias_nodes(plan, child, output)?;
 
         if let Node::Relational(child_node) = plan.get_node(child)? {
-            let map = child_node.output_aliases(plan)?;
-            let mut alias_exprs: Vec<usize> = Vec::new();
-            let mut used_child_pos: Vec<usize> = Vec::new();
-
-            let all_found = output.iter().all(|col| {
-                map.get(*col).map_or(false, |pos| {
-                    // Create new references with aliases and push alias positions
-                    let r_id = vec_alloc(
-                        &mut plan.nodes,
-                        Node::Expression(Expression::new_ref(Branch::Left, *pos)),
-                    );
-                    let a_id = vec_alloc(
-                        &mut plan.nodes,
-                        Node::Expression(Expression::new_alias(col, r_id)),
-                    );
-                    alias_exprs.push(a_id);
-                    used_child_pos.push(*pos);
-                    true
-                })
-            });
-
-            if all_found {
-                // Re-read child node after plan modification (old pointers can become invalid)
-                if let Node::Relational(child_node) = plan.get_node(child)? {
-                    if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
-                        let dist =
-                            child_row.suggested_distribution(&Branch::Left, &alias_exprs, plan)?;
-                        let new_output = vec_alloc(
-                            &mut plan.nodes,
-                            Node::Expression(Expression::new_row(alias_exprs, dist)),
-                        );
-                        return Ok(Relational::Projection {
-                            child,
-                            output: new_output,
-                        });
-                    }
-                }
+            if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
+                let dist = child_row.suggested_distribution(&Branch::Left, &aliases, plan)?;
+                let new_output = vec_alloc(
+                    &mut plan.nodes,
+                    Node::Expression(Expression::new_row(aliases, dist)),
+                );
+                return Ok(Relational::Projection {
+                    child,
+                    output: new_output,
+                });
             }
+        }
+        Err(QueryPlannerError::InvalidPlan)
+    }
 
-            return Err(QueryPlannerError::InvalidRow);
+    /// New `Selection` constructor
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the child or filter nodes are invalid.
+    pub fn new_select(
+        plan: &mut Plan,
+        child: usize,
+        filter: usize,
+    ) -> Result<Self, QueryPlannerError> {
+        // Check that filter node is a boolean expression.
+        if let Node::Expression(Expression::Bool { .. }) = plan.get_node(filter)? {
+        } else {
+            return Err(QueryPlannerError::InvalidBool);
         }
 
+        let names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(child)? {
+            rel_op.output_alias_names(&plan.nodes)?
+        } else {
+            return Err(QueryPlannerError::InvalidPlan);
+        };
+
+        let output: Vec<&str> = names.iter().map(|s| s as &str).collect();
+        let aliases = new_alias_nodes(plan, child, &output)?;
+
+        if let Node::Relational(child_node) = plan.get_node(child)? {
+            if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
+                let dist = child_row.suggested_distribution(&Branch::Left, &aliases, plan)?;
+                let new_output = vec_alloc(
+                    &mut plan.nodes,
+                    Node::Expression(Expression::new_row(aliases, dist)),
+                );
+                return Ok(Relational::Selection {
+                    child,
+                    filter,
+                    output: new_output,
+                });
+            }
+        }
         Err(QueryPlannerError::InvalidPlan)
     }
 }
@@ -248,7 +333,9 @@ impl Relational {
 mod tests {
     use super::*;
     use crate::errors::QueryPlannerError;
+    use crate::ir::expression::*;
     use crate::ir::relation::*;
+    use crate::ir::value::*;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -409,7 +496,66 @@ mod tests {
     }
 
     #[test]
-    fn output_aliases() {
+    fn selection() {
+        let mut plan = Plan::empty();
+
+        let t = Table::new_seg(
+            "t",
+            vec![
+                Column::new("a", Type::Boolean),
+                Column::new("b", Type::Number),
+                Column::new("c", Type::String),
+                Column::new("d", Type::String),
+            ],
+            &["b", "a"],
+        )
+        .unwrap();
+        plan.add_rel(t);
+
+        let scan = Relational::new_scan("t", &mut plan).unwrap();
+        let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+
+        let new_aliases = new_alias_nodes(&mut plan, scan_id, &["b"]).unwrap();
+        let a_id = new_aliases.get(0).unwrap();
+        let const_id = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_const(Value::number_from_str("10").unwrap())),
+        );
+        let gt_id = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_bool(*a_id, Bool::Gt, const_id)),
+        );
+
+        // Correct Selection operator
+        Relational::new_select(&mut plan, scan_id, gt_id).unwrap();
+
+        // Non-boolean filter
+        assert_eq!(
+            QueryPlannerError::InvalidBool,
+            Relational::new_select(&mut plan, scan_id, const_id).unwrap_err()
+        );
+
+        // Non-relational child
+        assert_eq!(
+            QueryPlannerError::InvalidPlan,
+            Relational::new_select(&mut plan, const_id, gt_id).unwrap_err()
+        );
+    }
+
+    #[test]
+    fn selection_serialize() {
+        let path = Path::new("")
+            .join("tests")
+            .join("artifactory")
+            .join("ir")
+            .join("operator")
+            .join("selection.yaml");
+        let s = fs::read_to_string(path).unwrap();
+        Plan::from_yaml(&s).unwrap();
+    }
+
+    #[test]
+    fn output_alias_position_map() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
@@ -421,7 +567,7 @@ mod tests {
 
         let top = plan.nodes.get(plan.top.unwrap()).unwrap();
         if let Node::Relational(rel) = top {
-            let col_map = rel.output_aliases(&plan).unwrap();
+            let col_map = rel.output_alias_position_map(&plan).unwrap();
 
             let expected_keys = vec!["a", "b"];
             assert_eq!(expected_keys.len(), col_map.len());
@@ -441,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn output_aliases_duplicates() {
+    fn output_alias_position_map_duplicates() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
@@ -455,7 +601,7 @@ mod tests {
         if let Node::Relational(rel) = top {
             assert_eq!(
                 QueryPlannerError::InvalidPlan,
-                rel.output_aliases(&plan).unwrap_err()
+                rel.output_alias_position_map(&plan).unwrap_err()
             );
         } else {
             panic!("Plan top should be a relational operator!");
@@ -463,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn output_aliases_unsupported_type() {
+    fn output_alias_position_map_unsupported_type() {
         let path = Path::new("")
             .join("tests")
             .join("artifactory")
@@ -477,7 +623,7 @@ mod tests {
         if let Node::Relational(rel) = top {
             assert_eq!(
                 QueryPlannerError::InvalidPlan,
-                rel.output_aliases(&plan).unwrap_err()
+                rel.output_alias_position_map(&plan).unwrap_err()
             );
         } else {
             panic!("Plan top should be a relational operator!");
@@ -499,7 +645,7 @@ mod tests {
         if let Node::Relational(rel) = top {
             assert_eq!(
                 QueryPlannerError::ValueOutOfRange,
-                rel.output_aliases(&plan).unwrap_err()
+                rel.output_alias_position_map(&plan).unwrap_err()
             );
         } else {
             panic!("Plan top should be a relational operator!");
