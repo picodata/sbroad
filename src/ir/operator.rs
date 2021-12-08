@@ -104,6 +104,7 @@ pub fn new_alias_nodes(
     plan: &mut Plan,
     node: usize,
     col_names: &[&str],
+    branch: &Branch,
 ) -> Result<Vec<usize>, QueryPlannerError> {
     if col_names.is_empty() {
         return Err(QueryPlannerError::InvalidRow);
@@ -118,7 +119,7 @@ pub fn new_alias_nodes(
                 // Create new references and aliases. Save them to the plan nodes arena.
                 let r_id = vec_alloc(
                     &mut plan.nodes,
-                    Node::Expression(Expression::new_ref(Branch::Left, *pos)),
+                    Node::Expression(Expression::new_ref(branch.clone(), *pos)),
                 );
                 let a_id = vec_alloc(
                     &mut plan.nodes,
@@ -269,7 +270,7 @@ impl Relational {
         child: usize,
         output: &[&str],
     ) -> Result<Self, QueryPlannerError> {
-        let aliases = new_alias_nodes(plan, child, output)?;
+        let aliases = new_alias_nodes(plan, child, output, &Branch::Left)?;
 
         if let Node::Relational(child_node) = plan.get_node(child)? {
             if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
@@ -305,11 +306,11 @@ impl Relational {
         let names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(child)? {
             rel_op.output_alias_names(&plan.nodes)?
         } else {
-            return Err(QueryPlannerError::InvalidPlan);
+            return Err(QueryPlannerError::InvalidRow);
         };
 
         let output: Vec<&str> = names.iter().map(|s| s as &str).collect();
-        let aliases = new_alias_nodes(plan, child, &output)?;
+        let aliases = new_alias_nodes(plan, child, &output, &Branch::Left)?;
 
         if let Node::Relational(child_node) = plan.get_node(child)? {
             if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
@@ -326,6 +327,77 @@ impl Relational {
             }
         }
         Err(QueryPlannerError::InvalidPlan)
+    }
+
+    /// New `UnionAll` constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the left or right nodes are invalid
+    /// or have a different column structure in the output tuples.
+    pub fn new_union_all(
+        plan: &mut Plan,
+        left: usize,
+        right: usize,
+    ) -> Result<Self, QueryPlannerError> {
+        let left_names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(left)? {
+            rel_op.output_alias_names(&plan.nodes)?
+        } else {
+            return Err(QueryPlannerError::InvalidRow);
+        };
+
+        let right_names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(right)? {
+            rel_op.output_alias_names(&plan.nodes)?
+        } else {
+            return Err(QueryPlannerError::InvalidRow);
+        };
+
+        let equal = (left_names.len() == right_names.len())
+            && left_names.iter().zip(right_names).all(|(l, r)| l.eq(&r));
+
+        if !equal {
+            return Err(QueryPlannerError::NotEqualRows);
+        }
+
+        // Generate new output columns.
+        let col_names: Vec<&str> = left_names.iter().map(|s| s as &str).collect();
+        let aliases = new_alias_nodes(plan, left, &col_names, &Branch::Both)?;
+
+        let left_dist = if let Node::Relational(left_node) = plan.get_node(left)? {
+            match plan.get_node(left_node.output())? {
+                Node::Expression(left_row) => {
+                    left_row.suggested_distribution(&Branch::Left, &aliases, plan)?
+                }
+                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
+            }
+        } else {
+            return Err(QueryPlannerError::InvalidPlan);
+        };
+
+        let right_dist = if let Node::Relational(right_node) = plan.get_node(right)? {
+            match plan.get_node(right_node.output())? {
+                Node::Expression(right_row) => {
+                    right_row.suggested_distribution(&Branch::Right, &aliases, plan)?
+                }
+                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
+            }
+        } else {
+            return Err(QueryPlannerError::InvalidPlan);
+        };
+
+        let dist = if left_dist == right_dist {
+            left_dist
+        } else {
+            Distribution::Random
+        };
+        let output = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_row(aliases, dist)),
+        );
+        Ok(Relational::UnionAll {
+            left,
+            right,
+            output,
+        })
     }
 }
 

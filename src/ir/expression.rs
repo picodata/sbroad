@@ -45,7 +45,7 @@ pub enum Distribution {
 /// and we need a way to detect which branch the tuple came from.
 /// So, branches act like additional dimension (among with position)
 /// to refer incoming data.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum Branch {
     /// Output reference points both to the left and right branches.
     ///
@@ -167,7 +167,9 @@ impl Expression {
                                 position: ref_pos,
                             }) = plan.get_node(*child)?
                             {
-                                if *ref_branch == *my_branch
+                                if ((*ref_branch == *my_branch)
+                                    || (*my_branch == Branch::Both)
+                                    || (*ref_branch == Branch::Both))
                                     && map.insert(*ref_pos, self_pos).is_some()
                                 {
                                     return Err(QueryPlannerError::InvalidPlan);

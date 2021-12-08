@@ -182,7 +182,7 @@ fn selection() {
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
 
-    let new_aliases = new_alias_nodes(&mut plan, scan_id, &["b"]).unwrap();
+    let new_aliases = new_alias_nodes(&mut plan, scan_id, &["b"], &Branch::Left).unwrap();
     let a_id = new_aliases.get(0).unwrap();
     let const_id = vec_alloc(
         &mut plan.nodes,
@@ -204,7 +204,7 @@ fn selection() {
 
     // Non-relational child
     assert_eq!(
-        QueryPlannerError::InvalidPlan,
+        QueryPlannerError::InvalidRow,
         Relational::new_select(&mut plan, const_id, gt_id).unwrap_err()
     );
 }
@@ -217,6 +217,103 @@ fn selection_serialize() {
         .join("ir")
         .join("operator")
         .join("selection.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    Plan::from_yaml(&s).unwrap();
+}
+
+#[test]
+fn union_all() {
+    let mut plan = Plan::empty();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t1);
+
+    let scan_t1 = Relational::new_scan("t1", &mut plan).unwrap();
+    let scan_t1_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t1));
+
+    // Check fallback to random distribution
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["b"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+
+    let scan_t2 = Relational::new_scan("t2", &mut plan).unwrap();
+    let scan_t2_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t2));
+
+    let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t2_id).unwrap();
+    if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
+        assert_eq!(Distribution::Random, *row.distribution().unwrap());
+    } else {
+        panic!("Invalid output!");
+    }
+
+    // Check preserving the original distribution
+    let scan_t3 = Relational::new_scan("t1", &mut plan).unwrap();
+    let scan_t3_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t3));
+
+    let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t3_id).unwrap();
+    if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
+        assert_eq!(
+            Distribution::Segment { key: vec![0] },
+            *row.distribution().unwrap()
+        );
+    } else {
+        panic!("Invalid output!");
+    }
+
+    // Check errors for children with different column names
+    let t4 = Table::new_seg(
+        "t4",
+        vec![
+            Column::new("c", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["b"],
+    )
+    .unwrap();
+    plan.add_rel(t4);
+
+    let scan_t4 = Relational::new_scan("t4", &mut plan).unwrap();
+    let scan_t4_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t4));
+    assert_eq!(
+        QueryPlannerError::NotEqualRows,
+        Relational::new_union_all(&mut plan, scan_t4_id, scan_t1_id).unwrap_err()
+    );
+
+    // Check errors for children with different amount of column
+    let t5 = Table::new_seg("t5", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
+    plan.add_rel(t5);
+
+    let scan_t5 = Relational::new_scan("t5", &mut plan).unwrap();
+    let scan_t5_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t5));
+    assert_eq!(
+        QueryPlannerError::NotEqualRows,
+        Relational::new_union_all(&mut plan, scan_t5_id, scan_t1_id).unwrap_err()
+    );
+}
+
+#[test]
+fn union_all_serialize() {
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("ir")
+        .join("operator")
+        .join("union_all.yaml");
     let s = fs::read_to_string(path).unwrap();
     Plan::from_yaml(&s).unwrap();
 }

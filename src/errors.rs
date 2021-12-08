@@ -10,6 +10,7 @@ const INVALID_PLAN_ERROR: &str = "invalid plan";
 const INVALID_RELATION_ERROR: &str = "invalid relation";
 const INVALID_ROW_ERROR: &str = "invalid row";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
+const NOT_EQUAL_ROWS: &str = "not equal rows";
 const SERIALIZATION_ERROR: &str = "serialization";
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
 const SIMPLE_UNION_QUERY_ERROR: &str = "query doesn't simple union";
@@ -27,6 +28,7 @@ pub enum QueryPlannerError {
     InvalidRelation,
     InvalidRow,
     InvalidShardingKey,
+    NotEqualRows,
     Serialization,
     SimpleQueryError,
     SimpleUnionQueryError,
@@ -46,6 +48,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::InvalidRelation => INVALID_RELATION_ERROR,
             QueryPlannerError::InvalidRow => INVALID_ROW_ERROR,
             QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,
+            QueryPlannerError::NotEqualRows => NOT_EQUAL_ROWS,
             QueryPlannerError::Serialization => SERIALIZATION_ERROR,
             QueryPlannerError::SimpleQueryError => SIMPLE_QUERY_ERROR,
             QueryPlannerError::SimpleUnionQueryError => SIMPLE_UNION_QUERY_ERROR,

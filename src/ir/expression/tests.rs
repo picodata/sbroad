@@ -1,4 +1,5 @@
 use super::*;
+use crate::ir::*;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -54,6 +55,14 @@ fn suggested_distribution() {
             Distribution::Random,
             output
                 .suggested_distribution(&Branch::Left, &[a], &plan)
+                .unwrap()
+        );
+
+        // Check both branch mode
+        assert_eq!(
+            Distribution::Segment { key: vec![1, 0] },
+            output
+                .suggested_distribution(&Branch::Both, &[a, b, c], &plan)
                 .unwrap()
         );
 
