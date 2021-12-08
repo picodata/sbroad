@@ -61,6 +61,21 @@ pub enum Branch {
     Right,
 }
 
+impl Branch {
+    /// Compare two branches.
+    ///
+    /// When the reference points to both left and right branches,
+    /// it is equivalent to any of them.
+    #[must_use]
+    pub fn equivalent(&self, other: &Branch) -> bool {
+        match self {
+            Branch::Both => true,
+            Branch::Left => !matches!(other, Branch::Right),
+            Branch::Right => !matches!(other, Branch::Left),
+        }
+    }
+}
+
 /// Tuple tree build blocks.
 ///
 /// Tuple describes a single portion of data moved among the cluster.
@@ -167,9 +182,7 @@ impl Expression {
                                 position: ref_pos,
                             }) = plan.get_node(*child)?
                             {
-                                if ((*ref_branch == *my_branch)
-                                    || (*my_branch == Branch::Both)
-                                    || (*ref_branch == Branch::Both))
+                                if my_branch.equivalent(ref_branch)
                                     && map.insert(*ref_pos, self_pos).is_some()
                                 {
                                     return Err(QueryPlannerError::InvalidPlan);

@@ -66,6 +66,14 @@ fn suggested_distribution() {
                 .unwrap()
         );
 
+        // Check absent branch int the output
+        assert_eq!(
+            Distribution::Random,
+            output
+                .suggested_distribution(&Branch::Right, &[a, b, c], &plan)
+                .unwrap()
+        );
+
         //TODO: implement checks for Replicated and Single
     } else {
         panic!("Wrong output node type!");
