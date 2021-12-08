@@ -319,6 +319,46 @@ fn union_all_serialize() {
 }
 
 #[test]
+fn sub_query() {
+    let mut plan = Plan::empty();
+
+    let t = Table::new_seg(
+        "t",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t);
+
+    let scan = Relational::new_scan("t", &mut plan).unwrap();
+    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+
+    Relational::new_sub_query(&mut plan, scan_id).unwrap();
+
+    // Check non-relational child node error
+    let a = 1;
+    assert_eq!(
+        QueryPlannerError::InvalidRow,
+        Relational::new_sub_query(&mut plan, a).unwrap_err()
+    );
+}
+
+#[test]
+fn sub_query_serialize() {
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("ir")
+        .join("operator")
+        .join("sub_query.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    Plan::from_yaml(&s).unwrap();
+}
+
+#[test]
 fn output_alias_position_map() {
     let path = Path::new("")
         .join("tests")

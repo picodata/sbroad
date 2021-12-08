@@ -399,6 +399,39 @@ impl Relational {
             output,
         })
     }
+
+    /// New `ScanSubQuery` constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the child node is invalid.
+    pub fn new_sub_query(plan: &mut Plan, child: usize) -> Result<Self, QueryPlannerError> {
+        let names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(child)? {
+            rel_op.output_alias_names(&plan.nodes)?
+        } else {
+            return Err(QueryPlannerError::InvalidRow);
+        };
+
+        let col_names: Vec<&str> = names.iter().map(|s| s as &str).collect();
+        let aliases = new_alias_nodes(plan, child, &col_names, &Branch::Both)?;
+
+        let dist = if let Node::Relational(left_node) = plan.get_node(child)? {
+            match plan.get_node(left_node.output())? {
+                Node::Expression(left_row) => {
+                    left_row.suggested_distribution(&Branch::Left, &aliases, plan)?
+                }
+                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
+            }
+        } else {
+            return Err(QueryPlannerError::InvalidPlan);
+        };
+
+        let output = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_row(aliases, dist)),
+        );
+
+        Ok(Relational::ScanSubQuery { child, output })
+    }
 }
 
 #[cfg(test)]
