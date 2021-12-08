@@ -5,6 +5,7 @@ use serde::Serialize;
 const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
 const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
 const INVALID_BOOL_ERROR: &str = "invalid boolean";
+const INVALID_NAME_ERROR: &str = "invalid name";
 const INVALID_NUMBER_ERROR: &str = "invalid number";
 const INVALID_PLAN_ERROR: &str = "invalid plan";
 const INVALID_RELATION_ERROR: &str = "invalid relation";
@@ -23,6 +24,7 @@ pub enum QueryPlannerError {
     BucketIdError,
     DuplicateColumn,
     InvalidBool,
+    InvalidName,
     InvalidNumber,
     InvalidPlan,
     InvalidRelation,
@@ -43,6 +45,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
             QueryPlannerError::InvalidBool => INVALID_BOOL_ERROR,
+            QueryPlannerError::InvalidName => INVALID_NAME_ERROR,
             QueryPlannerError::InvalidNumber => INVALID_NUMBER_ERROR,
             QueryPlannerError::InvalidPlan => INVALID_PLAN_ERROR,
             QueryPlannerError::InvalidRelation => INVALID_RELATION_ERROR,

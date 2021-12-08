@@ -67,6 +67,8 @@ pub enum Relational {
         relation: String,
     },
     ScanSubQuery {
+        /// SubQuery name
+        alias: String,
         /// Child tuple node index in the plan node arena (left branch).
         child: usize,
         /// Output tuple node index in the plan node arena.
@@ -404,12 +406,20 @@ impl Relational {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the child node is invalid.
-    pub fn new_sub_query(plan: &mut Plan, child: usize) -> Result<Self, QueryPlannerError> {
+    pub fn new_sub_query(
+        plan: &mut Plan,
+        child: usize,
+        alias: &str,
+    ) -> Result<Self, QueryPlannerError> {
         let names: Vec<String> = if let Node::Relational(rel_op) = plan.get_node(child)? {
             rel_op.output_alias_names(&plan.nodes)?
         } else {
             return Err(QueryPlannerError::InvalidRow);
         };
+
+        if alias.is_empty() {
+            return Err(QueryPlannerError::InvalidName);
+        }
 
         let col_names: Vec<&str> = names.iter().map(|s| s as &str).collect();
         let aliases = new_alias_nodes(plan, child, &col_names, &Branch::Both)?;
@@ -430,7 +440,11 @@ impl Relational {
             Node::Expression(Expression::new_row(aliases, dist)),
         );
 
-        Ok(Relational::ScanSubQuery { child, output })
+        Ok(Relational::ScanSubQuery {
+            alias: String::from(alias),
+            child,
+            output,
+        })
     }
 }
 

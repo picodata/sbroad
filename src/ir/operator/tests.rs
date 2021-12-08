@@ -336,13 +336,19 @@ fn sub_query() {
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
 
-    Relational::new_sub_query(&mut plan, scan_id).unwrap();
+    Relational::new_sub_query(&mut plan, scan_id, "sq").unwrap();
 
-    // Check non-relational child node error
+    // Non-relational child node
     let a = 1;
     assert_eq!(
         QueryPlannerError::InvalidRow,
-        Relational::new_sub_query(&mut plan, a).unwrap_err()
+        Relational::new_sub_query(&mut plan, a, "sq").unwrap_err()
+    );
+
+    // Invalid name
+    assert_eq!(
+        QueryPlannerError::InvalidName,
+        Relational::new_sub_query(&mut plan, scan_id, "").unwrap_err()
     );
 }
 
