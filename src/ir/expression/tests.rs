@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn suggested_distribution() {
+fn suggest_distribution() {
     // Load a table "t (a, b, c, d)" distributed by ["b", "a"]
     // with a sec scan and three additional alias-reference pairs
     // for "a", "b" and "c". We want to see, what suggestions would
@@ -16,7 +16,7 @@ fn suggested_distribution() {
         .join("artifactory")
         .join("ir")
         .join("expression")
-        .join("suggested_distribution.yaml");
+        .join("suggest_distribution.yaml");
     let s = fs::read_to_string(path).unwrap();
     let plan = Plan::from_yaml(&s).unwrap();
 
@@ -30,7 +30,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Segment { key: vec![1, 0] },
             output
-                .suggested_distribution(&Branch::Left, &[a, b, c], &plan)
+                .suggest_distribution(&Branch::Left, &[a, b, c], &plan)
                 .unwrap()
         );
 
@@ -38,7 +38,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Segment { key: vec![0, 1] },
             output
-                .suggested_distribution(&Branch::Left, &[b, a], &plan)
+                .suggest_distribution(&Branch::Left, &[b, a], &plan)
                 .unwrap()
         );
 
@@ -46,7 +46,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Random,
             output
-                .suggested_distribution(&Branch::Left, &[c, a], &plan)
+                .suggest_distribution(&Branch::Left, &[c, a], &plan)
                 .unwrap()
         );
 
@@ -54,7 +54,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Random,
             output
-                .suggested_distribution(&Branch::Left, &[a], &plan)
+                .suggest_distribution(&Branch::Left, &[a], &plan)
                 .unwrap()
         );
 
@@ -62,7 +62,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Segment { key: vec![1, 0] },
             output
-                .suggested_distribution(&Branch::Both, &[a, b, c], &plan)
+                .suggest_distribution(&Branch::Both, &[a, b, c], &plan)
                 .unwrap()
         );
 
@@ -70,7 +70,7 @@ fn suggested_distribution() {
         assert_eq!(
             Distribution::Random,
             output
-                .suggested_distribution(&Branch::Right, &[a, b, c], &plan)
+                .suggest_distribution(&Branch::Right, &[a, b, c], &plan)
                 .unwrap()
         );
 

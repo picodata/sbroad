@@ -15,6 +15,10 @@ use std::collections::HashMap;
 /// Tuple data chunk distribution policy in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Distribution {
+    /// Only coordinator contains all the data.
+    ///
+    /// Example: insertion to the virtual table on coordinator.
+    Coordinator,
     /// Each segment contains a random portion of data.
     ///
     /// Example: "erased" distribution key by projection operator.
@@ -32,10 +36,49 @@ pub enum Distribution {
         /// that for a distribution key.
         key: Vec<usize>,
     },
-    /// Only a single segment contains all the data.
+}
+
+impl Distribution {
+    /// Calculate a new distribution for the `UnionAll` output tuple.
     ///
-    /// Example: insertion to the virtual table on coordinator.
-    Single,
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - distribution conflict that should be resolved by adding a `Motion` node
+    pub fn new_union(
+        left: Distribution,
+        right: Distribution,
+    ) -> Result<Distribution, QueryPlannerError> {
+        match left {
+            Distribution::Coordinator => match right {
+                Distribution::Coordinator => Ok(left),
+                _ => Err(QueryPlannerError::RequireMotion),
+            },
+            Distribution::Random => match right {
+                Distribution::Coordinator => Err(QueryPlannerError::RequireMotion),
+                _ => Ok(left),
+            },
+            Distribution::Replicated => match right {
+                Distribution::Coordinator => Err(QueryPlannerError::RequireMotion),
+                _ => Ok(right),
+            },
+            Distribution::Segment {
+                key: ref left_key, ..
+            } => match right {
+                Distribution::Random => Ok(Distribution::Random),
+                Distribution::Replicated => Ok(left),
+                Distribution::Segment {
+                    key: ref right_key, ..
+                } => {
+                    if left_key.iter().zip(right_key.iter()).all(|(l, r)| l == r) {
+                        Ok(left)
+                    } else {
+                        Ok(Distribution::Random)
+                    }
+                }
+                Distribution::Coordinator => Err(QueryPlannerError::RequireMotion),
+            },
+        }
+    }
 }
 
 /// Tree branch.
@@ -133,8 +176,9 @@ pub enum Expression {
     Row {
         /// A list of the alias expression node indexes in the plan node arena.
         list: Vec<usize>,
-        /// Resulting data distribution of the tuple.
-        distribution: Distribution,
+        /// Resulting data distribution of the tuple. Should be filled as a part
+        /// of the last "add Motion" transformation.
+        distribution: Option<Distribution>,
     },
 }
 
@@ -147,8 +191,9 @@ impl Expression {
     /// This function is executed on the child's side.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when aliases are invalid.
-    pub fn suggested_distribution(
+    /// Returns `QueryPlannerError` when aliases are invalid or a node doesn't know its
+    /// distribution yet.
+    pub fn suggest_distribution(
         &self,
         my_branch: &Branch,
         aliases: &[usize],
@@ -158,7 +203,12 @@ impl Expression {
             ref distribution, ..
         } = self
         {
-            match *distribution {
+            let dist = match distribution {
+                Some(d) => &*d,
+                None => return Err(QueryPlannerError::UninitializedDistribution),
+            };
+
+            match dist {
                 Distribution::Random => return Ok(Distribution::Random),
                 Distribution::Replicated => return Ok(Distribution::Replicated),
                 Distribution::Segment { ref key } => {
@@ -206,7 +256,7 @@ impl Expression {
                     }
                     return Ok(Distribution::Random);
                 }
-                Distribution::Single => return Ok(Distribution::Single),
+                Distribution::Coordinator => return Ok(Distribution::Coordinator),
             }
         }
         Err(QueryPlannerError::InvalidRow)
@@ -215,11 +265,15 @@ impl Expression {
     /// Get current row distribution.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the function is called on
-    /// expression other than `Row`.
+    /// Returns `QueryPlannerError` when the function is called on expression
+    /// other than `Row` or a node doesn't know its distribution yet.
     pub fn distribution(&self) -> Result<&Distribution, QueryPlannerError> {
         if let Expression::Row { distribution, .. } = self {
-            return Ok(distribution);
+            let dist = match distribution {
+                Some(d) => d,
+                None => return Err(QueryPlannerError::UninitializedDistribution),
+            };
+            return Ok(dist);
         }
         Err(QueryPlannerError::InvalidRow)
     }
@@ -248,7 +302,7 @@ impl Expression {
     // TODO: check that doesn't contain top-level aliases with the same names
     /// Row expression constructor.
     #[must_use]
-    pub fn new_row(list: Vec<usize>, distribution: Distribution) -> Self {
+    pub fn new_row(list: Vec<usize>, distribution: Option<Distribution>) -> Self {
         Expression::Row { list, distribution }
     }
 

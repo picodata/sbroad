@@ -1,6 +1,6 @@
 //! Operators for expression transformations.
 
-use super::expression::{Branch, Distribution, Expression};
+use super::expression::{Branch, Expression};
 use super::relation::Table;
 use super::{vec_alloc, Node, Plan};
 use crate::errors::QueryPlannerError;
@@ -226,11 +226,7 @@ impl Relational {
         if let Some(relations) = &plan.relations {
             if let Some(rel) = relations.get(table_name) {
                 match rel {
-                    Table::Segment {
-                        ref columns,
-                        key,
-                        name: _,
-                    } => {
+                    Table::Segment { ref columns, .. } => {
                         let refs = columns
                             .iter()
                             .enumerate()
@@ -247,10 +243,7 @@ impl Relational {
                         return Ok(Relational::ScanRelation {
                             output: vec_alloc(
                                 nodes,
-                                Node::Expression(Expression::new_row(
-                                    refs,
-                                    Distribution::Segment { key: key.clone() },
-                                )),
+                                Node::Expression(Expression::new_row(refs, None)),
                             ),
                             relation: String::from(table_name),
                         });
@@ -266,7 +259,10 @@ impl Relational {
     /// New `Projection` constructor.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the child node is invalid.
+    /// Returns `QueryPlannerError`:
+    /// - child node is not relational
+    /// - child output tuple is invalid
+    /// - column name do not match the ones in the child output tuple
     pub fn new_proj(
         plan: &mut Plan,
         child: usize,
@@ -274,32 +270,29 @@ impl Relational {
     ) -> Result<Self, QueryPlannerError> {
         let aliases = new_alias_nodes(plan, child, output, &Branch::Left)?;
 
-        if let Node::Relational(child_node) = plan.get_node(child)? {
-            if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
-                let dist = child_row.suggested_distribution(&Branch::Left, &aliases, plan)?;
-                let new_output = vec_alloc(
-                    &mut plan.nodes,
-                    Node::Expression(Expression::new_row(aliases, dist)),
-                );
-                return Ok(Relational::Projection {
-                    child,
-                    output: new_output,
-                });
-            }
-        }
-        Err(QueryPlannerError::InvalidPlan)
+        let new_output = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_row(aliases, None)),
+        );
+
+        Ok(Relational::Projection {
+            child,
+            output: new_output,
+        })
     }
 
     /// New `Selection` constructor
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the child or filter nodes are invalid.
+    /// Returns `QueryPlannerError`:
+    /// - filter expression is not boolean
+    /// - child node is not relational
+    /// - child output tuple is not valid
     pub fn new_select(
         plan: &mut Plan,
         child: usize,
         filter: usize,
     ) -> Result<Self, QueryPlannerError> {
-        // Check that filter node is a boolean expression.
         if let Node::Expression(Expression::Bool { .. }) = plan.get_node(filter)? {
         } else {
             return Err(QueryPlannerError::InvalidBool);
@@ -310,32 +303,28 @@ impl Relational {
         } else {
             return Err(QueryPlannerError::InvalidRow);
         };
-
         let output: Vec<&str> = names.iter().map(|s| s as &str).collect();
         let aliases = new_alias_nodes(plan, child, &output, &Branch::Left)?;
 
-        if let Node::Relational(child_node) = plan.get_node(child)? {
-            if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
-                let dist = child_row.suggested_distribution(&Branch::Left, &aliases, plan)?;
-                let new_output = vec_alloc(
-                    &mut plan.nodes,
-                    Node::Expression(Expression::new_row(aliases, dist)),
-                );
-                return Ok(Relational::Selection {
-                    child,
-                    filter,
-                    output: new_output,
-                });
-            }
-        }
-        Err(QueryPlannerError::InvalidPlan)
+        let new_output = vec_alloc(
+            &mut plan.nodes,
+            Node::Expression(Expression::new_row(aliases, None)),
+        );
+
+        Ok(Relational::Selection {
+            child,
+            filter,
+            output: new_output,
+        })
     }
 
     /// New `UnionAll` constructor.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the left or right nodes are invalid
-    /// or have a different column structure in the output tuples.
+    /// Returns `QueryPlannerError`:
+    /// - children nodes are not relational
+    /// - children tuples are invalid
+    /// - children tuples have mismatching structure
     pub fn new_union_all(
         plan: &mut Plan,
         left: usize,
@@ -364,37 +353,11 @@ impl Relational {
         let col_names: Vec<&str> = left_names.iter().map(|s| s as &str).collect();
         let aliases = new_alias_nodes(plan, left, &col_names, &Branch::Both)?;
 
-        let left_dist = if let Node::Relational(left_node) = plan.get_node(left)? {
-            match plan.get_node(left_node.output())? {
-                Node::Expression(left_row) => {
-                    left_row.suggested_distribution(&Branch::Left, &aliases, plan)?
-                }
-                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
-            }
-        } else {
-            return Err(QueryPlannerError::InvalidPlan);
-        };
-
-        let right_dist = if let Node::Relational(right_node) = plan.get_node(right)? {
-            match plan.get_node(right_node.output())? {
-                Node::Expression(right_row) => {
-                    right_row.suggested_distribution(&Branch::Right, &aliases, plan)?
-                }
-                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
-            }
-        } else {
-            return Err(QueryPlannerError::InvalidPlan);
-        };
-
-        let dist = if left_dist == right_dist {
-            left_dist
-        } else {
-            Distribution::Random
-        };
         let output = vec_alloc(
             &mut plan.nodes,
-            Node::Expression(Expression::new_row(aliases, dist)),
+            Node::Expression(Expression::new_row(aliases, None)),
         );
+
         Ok(Relational::UnionAll {
             left,
             right,
@@ -405,7 +368,10 @@ impl Relational {
     /// New `ScanSubQuery` constructor.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the child node is invalid.
+    /// Returns `QueryPlannerError`:
+    /// - child node is not relational
+    /// - child node output is not a correct tuple
+    /// - `SubQuery` name is empty
     pub fn new_sub_query(
         plan: &mut Plan,
         child: usize,
@@ -416,7 +382,6 @@ impl Relational {
         } else {
             return Err(QueryPlannerError::InvalidRow);
         };
-
         if alias.is_empty() {
             return Err(QueryPlannerError::InvalidName);
         }
@@ -424,20 +389,9 @@ impl Relational {
         let col_names: Vec<&str> = names.iter().map(|s| s as &str).collect();
         let aliases = new_alias_nodes(plan, child, &col_names, &Branch::Both)?;
 
-        let dist = if let Node::Relational(left_node) = plan.get_node(child)? {
-            match plan.get_node(left_node.output())? {
-                Node::Expression(left_row) => {
-                    left_row.suggested_distribution(&Branch::Left, &aliases, plan)?
-                }
-                Node::Relational(_) => return Err(QueryPlannerError::InvalidRow),
-            }
-        } else {
-            return Err(QueryPlannerError::InvalidPlan);
-        };
-
         let output = vec_alloc(
             &mut plan.nodes,
-            Node::Expression(Expression::new_row(aliases, dist)),
+            Node::Expression(Expression::new_row(aliases, None)),
         );
 
         Ok(Relational::ScanSubQuery {

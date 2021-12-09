@@ -3,6 +3,7 @@ use crate::errors::QueryPlannerError;
 use crate::ir::expression::*;
 use crate::ir::relation::*;
 use crate::ir::value::*;
+use crate::ir::*;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -33,7 +34,9 @@ fn scan_rel() {
         },
         scan
     );
+    assert_eq!(9, vec_alloc(&mut plan.nodes, Node::Relational(scan)));
 
+    set_distribution(9, &mut plan).unwrap();
     if let Node::Expression(row) = plan.get_node(8).unwrap() {
         assert_eq!(
             *row.distribution().unwrap(),
@@ -42,8 +45,6 @@ fn scan_rel() {
     } else {
         panic!("Wrong output node type!");
     }
-
-    assert_eq!(9, vec_alloc(&mut plan.nodes, Node::Relational(scan)));
 }
 
 #[test]
@@ -66,6 +67,7 @@ fn scan_rel_serialized() {
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     plan.nodes.push(Node::Relational(scan));
     plan.top = Some(9);
+    set_distribution(plan.top.unwrap(), &mut plan).unwrap();
 
     let path = Path::new("")
         .join("tests")
@@ -96,6 +98,8 @@ fn projection() {
 
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    set_distribution(scan_id, &mut plan).unwrap();
+
     let proj_seg = Relational::new_proj(&mut plan, scan_id, &["b", "a"]).unwrap();
     assert_eq!(
         Relational::Projection {
@@ -104,6 +108,8 @@ fn projection() {
         },
         proj_seg
     );
+    let proj_seg_id = vec_alloc(&mut plan.nodes, Node::Relational(proj_seg));
+    set_distribution(proj_seg_id, &mut plan).unwrap();
 
     if let Node::Expression(row) = plan.get_node(14).unwrap() {
         assert_eq!(
@@ -116,12 +122,14 @@ fn projection() {
     assert_eq!(
         Relational::Projection {
             child: scan_id,
-            output: 19
+            output: 20
         },
         proj_rand
     );
+    let proj_rand_id = vec_alloc(&mut plan.nodes, Node::Relational(proj_rand));
+    set_distribution(proj_rand_id, &mut plan).unwrap();
 
-    if let Node::Expression(row) = plan.get_node(19).unwrap() {
+    if let Node::Expression(row) = plan.get_node(20).unwrap() {
         assert_eq!(*row.distribution().unwrap(), Distribution::Random);
     }
 
@@ -238,6 +246,7 @@ fn union_all() {
 
     let scan_t1 = Relational::new_scan("t1", &mut plan).unwrap();
     let scan_t1_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t1));
+    set_distribution(scan_t1_id, &mut plan).unwrap();
 
     // Check fallback to random distribution
     let t2 = Table::new_seg(
@@ -253,26 +262,42 @@ fn union_all() {
 
     let scan_t2 = Relational::new_scan("t2", &mut plan).unwrap();
     let scan_t2_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t2));
+    set_distribution(scan_t2_id, &mut plan).unwrap();
 
     let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t2_id).unwrap();
-    if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
-        assert_eq!(Distribution::Random, *row.distribution().unwrap());
+    let union_all_id = vec_alloc(&mut plan.nodes, Node::Relational(union_all));
+    set_distribution(union_all_id, &mut plan).unwrap();
+
+    if let Node::Relational(union_all) = plan.get_node(union_all_id).unwrap() {
+        if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
+            assert_eq!(Distribution::Random, *row.distribution().unwrap());
+        } else {
+            panic!("Invalid output!");
+        }
     } else {
-        panic!("Invalid output!");
+        panic!("Invalid node!");
     }
 
     // Check preserving the original distribution
     let scan_t3 = Relational::new_scan("t1", &mut plan).unwrap();
     let scan_t3_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t3));
+    set_distribution(scan_t3_id, &mut plan).unwrap();
 
     let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t3_id).unwrap();
-    if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
-        assert_eq!(
-            Distribution::Segment { key: vec![0] },
-            *row.distribution().unwrap()
-        );
+    let union_all_id = vec_alloc(&mut plan.nodes, Node::Relational(union_all));
+    set_distribution(union_all_id, &mut plan).unwrap();
+
+    if let Node::Relational(union_all) = plan.get_node(union_all_id).unwrap() {
+        if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
+            assert_eq!(
+                Distribution::Segment { key: vec![0] },
+                *row.distribution().unwrap()
+            );
+        } else {
+            panic!("Invalid output!");
+        }
     } else {
-        panic!("Invalid output!");
+        panic!("Invalid node!");
     }
 
     // Check errors for children with different column names
