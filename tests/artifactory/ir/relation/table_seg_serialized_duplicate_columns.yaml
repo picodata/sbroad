@@ -1,11 +1,11 @@
 Segment:
   columns:
     - name: a
-      type_name: Boolean
+      type: Boolean
     - name: b
-      type_name: String
+      type: String
     - name: a
-      type_name: String
+      type: String
   name: t
   key:
     - 0

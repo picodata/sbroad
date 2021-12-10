@@ -1,9 +1,12 @@
 //! Relation module.
 
-use super::value::Value;
-use crate::errors::QueryPlannerError;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::errors::QueryPlannerError;
+
+use super::value::Value;
 
 /// Supported column types.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -19,7 +22,7 @@ pub struct Column {
     /// Column name.
     pub name: String,
     /// Column type.
-    pub type_name: Type,
+    pub r#type: Type,
 }
 
 #[allow(dead_code)]
@@ -29,7 +32,7 @@ impl Column {
     pub fn new(n: &str, t: Type) -> Self {
         Column {
             name: n.into(),
-            type_name: t,
+            r#type: t,
         }
     }
 }

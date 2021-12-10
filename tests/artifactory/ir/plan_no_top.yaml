@@ -22,7 +22,7 @@ relations:
     Segment:
       columns:
         - name: a
-          type_name: Boolean
+          type: Boolean
       key:
         - 0
       name: t

@@ -64,9 +64,9 @@ relations:
     Segment:
       columns:
         - name: a
-          type_name: Boolean
+          type: Boolean
         - name: b
-          type_name: Number
+          type: Number
       key:
         - 0
       name: t

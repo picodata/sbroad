@@ -7,7 +7,7 @@ use std::path::Path;
 fn column() {
     let a = Column {
         name: String::from("a"),
-        type_name: Type::Boolean,
+        r#type: Type::Boolean,
     };
     assert_eq!(a, Column::new("a", Type::Boolean));
     assert_ne!(a, Column::new("a", Type::String));

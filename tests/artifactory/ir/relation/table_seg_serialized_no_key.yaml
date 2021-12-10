@@ -1,6 +1,6 @@
 Segment:
   columns:
     - name: a
-      type_name: Boolean
+      type: Boolean
   name: t
   key: ~

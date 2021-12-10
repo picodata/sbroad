@@ -77,13 +77,13 @@ relations:
     Segment:
       columns:
         - name: a
-          type_name: Boolean
+          type: Boolean
         - name: b
-          type_name: Number
+          type: Number
         - name: c
-          type_name: String
+          type: String
         - name: d
-          type_name: String
+          type: String
       key:
         - 1
         - 0
