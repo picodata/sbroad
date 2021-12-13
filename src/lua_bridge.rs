@@ -1,6 +1,9 @@
+use crate::executor::result::BoxExecuteResult;
 use tarantool::ffi::tarantool::luaT_state;
 use tarantool::hlua::{Lua, LuaError, LuaFunction};
+use tarantool::log::{say, SayLevel};
 
+/// Function get cartridge cluster schema
 pub fn get_cluster_schema() -> Result<String, LuaError> {
     let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
 
@@ -10,7 +13,8 @@ pub fn get_cluster_schema() -> Result<String, LuaError> {
     Ok(res)
 }
 
-pub fn exec_query(bucket_id: u64, query: &str) -> Result<String, LuaError> {
+/// Function execute sql query on selected node
+pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteResult, LuaError> {
     let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
 
     lua.exec(
@@ -19,7 +23,7 @@ pub fn exec_query(bucket_id: u64, query: &str) -> Result<String, LuaError> {
         local yaml = require('yaml')
 
         function execute_sql(bucket_id, query)
-            local data, err = vshard.router.call(
+            local res, err = vshard.router.call(
                 bucket_id,
                 'read',
                 'box.execute',
@@ -30,13 +34,21 @@ pub fn exec_query(bucket_id: u64, query: &str) -> Result<String, LuaError> {
                 error(err)
             end
 
-            return yaml.encode(data)
+            return res
         end
     "#,
     )?;
 
     let exec_sql: LuaFunction<_> = lua.get("execute_sql").unwrap();
-    let res = exec_sql.call_with_args((bucket_id, query))?;
+    let res: BoxExecuteResult = exec_sql.call_with_args((bucket_id, query))?;
+
+    say(
+        SayLevel::Error,
+        "lua_bridge.rs",
+        110,
+        None,
+        &format!("{:?}", res),
+    );
 
     Ok(res)
 }

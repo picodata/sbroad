@@ -1,6 +1,5 @@
 local vshard = require('vshard')
 local cartridge = require('cartridge')
-local yaml = require('yaml')
 
 _G.query = nil
 _G.insert_record = nil
@@ -19,7 +18,7 @@ local function query(q)
 
     local result = nil
     for _, rec in pairs(parser_res) do
-        local res = yaml.decode(box.func["sbroad.execute_query"]:call({ rec[1], rec[2] }))
+        local res = box.func["sbroad.execute_query"]:call({ rec[1], rec[2] })
 
         if result == nil then
             result = res

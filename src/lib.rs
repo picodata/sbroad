@@ -1,6 +1,7 @@
 //! Tarantool planner for distributed SQL.
 mod bucket;
 mod errors;
+mod executor;
 pub mod ir;
 mod lua_bridge;
 mod parser;
