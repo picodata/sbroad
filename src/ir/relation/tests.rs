@@ -1,7 +1,9 @@
-use super::*;
-use pretty_assertions::{assert_eq, assert_ne};
 use std::fs;
 use std::path::Path;
+
+use pretty_assertions::{assert_eq, assert_ne};
+
+use super::*;
 
 #[test]
 fn column() {
@@ -85,6 +87,8 @@ fn table_seg_serialized() {
             Column::new("b", Type::Number),
             Column::new("c", Type::String),
             Column::new("d", Type::String),
+            Column::new("e", Type::Integer),
+            Column::new("f", Type::Unsigned),
         ],
         &["a", "d"],
     )
@@ -156,4 +160,72 @@ fn table_seg_serialized_no_columns() {
         Table::seg_from_yaml(&s).unwrap_err(),
         QueryPlannerError::Serialization
     );
+}
+
+#[test]
+fn column_msgpack_serialize() {
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::Boolean,
+    };
+
+    assert_eq!(
+        vec![
+            0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
+            0x70, 0x65, 0xA7, 0x62, 0x6F, 0x6F, 0x6C, 0x65, 0x61, 0x6E,
+        ],
+        rmp_serde::to_vec(&c).unwrap()
+    );
+
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::String,
+    };
+
+    assert_eq!(
+        vec![
+            0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
+            0x70, 0x65, 0xA6, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67
+        ],
+        rmp_serde::to_vec(&c).unwrap()
+    );
+
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::Integer,
+    };
+
+    assert_eq!(
+        vec![
+            0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
+            0x70, 0x65, 0xA7, 0x69, 0x6E, 0x74, 0x65, 0x67, 0x65, 0x72,
+        ],
+        rmp_serde::to_vec(&c).unwrap()
+    );
+
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::Unsigned,
+    };
+
+    assert_eq!(
+        vec![
+            0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
+            0x70, 0x65, 0xA8, 0x75, 0x6E, 0x73, 0x69, 0x67, 0x6E, 0x65, 0x64,
+        ],
+        rmp_serde::to_vec(&c).unwrap()
+    );
+
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::Number,
+    };
+
+    assert_eq!(
+        vec![
+            0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
+            0x70, 0x65, 0xA6, 0x6E, 0x75, 0x6D, 0x62, 0x65, 0x72,
+        ],
+        rmp_serde::to_vec(&c).unwrap()
+    )
 }

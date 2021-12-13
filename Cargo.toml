@@ -12,13 +12,14 @@ fasthash = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 sqlparser = "0.11.0"
-tarantool = { git = "https://sbroad-cargo-token:t-nZyqJVVuhGQv17BX6v@gitlab.com/picodata/picodata/tarantool-module.git", rev="8e388030"}
+tarantool = { git = "https://sbroad-cargo-token:t-nZyqJVVuhGQv17BX6v@gitlab.com/picodata/picodata/tarantool-module.git", rev="6f6bc329"}
 traversal = "0.1.2"
 yaml-rust = "0.4.1"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
 itertools = "0.8.2"
+rmp-serde = "0.14"
 
 [lib]
 crate-type = ["cdylib"]

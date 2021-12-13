@@ -2,27 +2,51 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
+use tarantool::hlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
 
 use super::value::Value;
 
 /// Supported column types.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq)]
 pub enum Type {
     Boolean,
     Number,
     String,
+    Integer,
+    Unsigned,
 }
 
 /// Relation column.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(LuaRead, Deserialize, PartialEq, Debug, Eq)]
 pub struct Column {
     /// Column name.
     pub name: String,
     /// Column type.
     pub r#type: Type,
+}
+
+/// Msgpack serializer for column
+impl SerSerialize for Column {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("name", &self.name)?;
+        match &self.r#type {
+            Type::Boolean => map.serialize_entry("type", "boolean")?,
+            Type::Number => map.serialize_entry("type", "number")?,
+            Type::Integer => map.serialize_entry("type", "integer")?,
+            Type::Unsigned => map.serialize_entry("type", "unsigned")?,
+            Type::String => map.serialize_entry("type", "string")?,
+        }
+
+        map.end()
+    }
 }
 
 #[allow(dead_code)]

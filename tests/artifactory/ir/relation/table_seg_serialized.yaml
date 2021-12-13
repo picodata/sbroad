@@ -8,6 +8,10 @@ Segment:
       type: String
     - name: d
       type: String
+    - name: e
+      type: Integer
+    - name: f
+      type: Unsigned
   name: t
   key:
     - 0
