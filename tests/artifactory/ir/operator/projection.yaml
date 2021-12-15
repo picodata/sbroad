@@ -6,7 +6,8 @@
 nodes:
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 0
   - Expression:
       Alias:
@@ -14,7 +15,8 @@ nodes:
         child: 0
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 1
   - Expression:
       Alias:
@@ -32,10 +34,12 @@ nodes:
   - Relational:
       ScanRelation:
         output: 4
+        id: 0
         relation: t
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 5 
         position: 1
   - Expression:
       Alias:
@@ -51,7 +55,9 @@ nodes:
               - 0
   - Relational:
       Projection:
-        child: 5
+        id: 5
+        children:
+          - 5
         output: 8
 relations:
   t:

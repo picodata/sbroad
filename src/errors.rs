@@ -7,10 +7,12 @@ const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
 const EMPTY_PLAN_RELATION: &str = "empty plan relations";
 const INCORRECT_BUCKET_ID_ERROR: &str = "incorrect bucket id";
 const INVALID_BOOL_ERROR: &str = "invalid boolean";
+const INVALID_INPUT: &str = "invalid input";
 const INVALID_NAME_ERROR: &str = "invalid name";
 const INVALID_NODE: &str = "invalid node";
 const INVALID_NUMBER_ERROR: &str = "invalid number";
 const INVALID_PLAN_ERROR: &str = "invalid plan";
+const INVALID_REFERENCE: &str = "invalid reference";
 const INVALID_RELATION_ERROR: &str = "invalid relation";
 const INVALID_ROW_ERROR: &str = "invalid row";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
@@ -30,10 +32,12 @@ pub enum QueryPlannerError {
     EmptyPlanRelations,
     IncorrectBucketIdError,
     InvalidBool,
+    InvalidInput,
     InvalidName,
     InvalidNode,
     InvalidNumber,
     InvalidPlan,
+    InvalidReference,
     InvalidRelation,
     InvalidRow,
     InvalidShardingKey,
@@ -55,10 +59,12 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::EmptyPlanRelations => EMPTY_PLAN_RELATION,
             QueryPlannerError::IncorrectBucketIdError => INCORRECT_BUCKET_ID_ERROR,
             QueryPlannerError::InvalidBool => INVALID_BOOL_ERROR,
+            QueryPlannerError::InvalidInput => INVALID_INPUT,
             QueryPlannerError::InvalidName => INVALID_NAME_ERROR,
             QueryPlannerError::InvalidNode => INVALID_NODE,
             QueryPlannerError::InvalidNumber => INVALID_NUMBER_ERROR,
             QueryPlannerError::InvalidPlan => INVALID_PLAN_ERROR,
+            QueryPlannerError::InvalidReference => INVALID_REFERENCE,
             QueryPlannerError::InvalidRelation => INVALID_RELATION_ERROR,
             QueryPlannerError::InvalidRow => INVALID_ROW_ERROR,
             QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,

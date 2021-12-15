@@ -8,7 +8,7 @@ pub mod relation;
 pub mod value;
 
 use crate::errors::QueryPlannerError;
-use expression::{Branch, Distribution, Expression};
+use expression::Expression;
 use operator::Relational;
 use relation::Table;
 use serde::{Deserialize, Serialize};
@@ -31,156 +31,6 @@ use std::collections::HashMap;
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
-}
-
-/// Suggested distribution by the child relational node.
-/// A wrapper for `Expression::suggest_distribution()`;
-/// used by relational nodes when they calculate their
-/// distribution.
-///
-/// # Errors
-/// Returns `QueryPlannerError`:
-/// - parent node's output is not a valid tuple
-/// - child node is not relational
-/// - child's output is not a valid tuple
-fn child_dist(
-    output: usize,
-    child: usize,
-    branch: &Branch,
-    plan: &Plan,
-) -> Result<Distribution, QueryPlannerError> {
-    // Get current output tuple column list
-    let aliases: &Vec<usize> =
-        if let Node::Expression(Expression::Row { list, .. }) = plan.get_node(output)? {
-            Ok(list)
-        } else {
-            Err(QueryPlannerError::InvalidRow)
-        }?;
-
-    // Distribution suggested by the child.
-    if let Node::Relational(child_node) = plan.get_node(child)? {
-        if let Node::Expression(child_row) = plan.get_node(child_node.output())? {
-            Ok(child_row.suggest_distribution(branch, aliases, plan)?)
-        } else {
-            Err(QueryPlannerError::InvalidRow)
-        }
-    } else {
-        Err(QueryPlannerError::InvalidPlan)
-    }
-}
-
-/// Set output tuple distribution for the node.
-///
-/// # Errors
-/// Returns `QueryPlannerError`:
-/// - when node position doesn't exist in the plan node arena
-/// - for nodes, that don't produce tuples (all expressions except `Row`)
-/// - for relational nodes with invalid output or children
-pub fn set_distribution(pointer: usize, plan: &mut Plan) -> Result<(), QueryPlannerError> {
-    match plan.get_node(pointer)? {
-        Node::Relational(relational) => {
-            match relational {
-                Relational::ScanRelation {
-                    relation: table_name,
-                    ..
-                } => {
-                    if let Some(relations) = &plan.relations {
-                        if let Some(rel) = relations.get(table_name) {
-                            // Update output tuple distribution to the relation's one.
-                            match rel {
-                                Table::Segment { key, .. } | Table::VirtualSegment { key, .. } => {
-                                    let rel_tuple = relational.output();
-                                    let node = plan
-                                        .nodes
-                                        .get_mut(rel_tuple)
-                                        .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                                    if let Node::Expression(Expression::Row {
-                                        ref mut distribution,
-                                        ..
-                                    }) = node
-                                    {
-                                        *distribution =
-                                            Some(Distribution::Segment { key: key.clone() });
-                                        return Ok(());
-                                    }
-                                    return Err(QueryPlannerError::InvalidRow);
-                                }
-                                Table::Virtual { .. } => {
-                                    let rel_tuple = relational.output();
-                                    let node = plan
-                                        .nodes
-                                        .get_mut(rel_tuple)
-                                        .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                                    if let Node::Expression(Expression::Row {
-                                        ref mut distribution,
-                                        ..
-                                    }) = node
-                                    {
-                                        *distribution = Some(Distribution::Random);
-                                        return Ok(());
-                                    }
-                                    return Err(QueryPlannerError::InvalidRow);
-                                }
-                            }
-                        }
-                        return Err(QueryPlannerError::InvalidRelation);
-                    }
-                    Err(QueryPlannerError::EmptyPlanRelations)
-                }
-                Relational::Projection { child, output, .. }
-                | Relational::Selection { child, output, .. }
-                | Relational::ScanSubQuery { child, output, .. } => {
-                    let dist = child_dist(*output, *child, &Branch::Left, plan)?;
-                    let rel_tuple = relational.output();
-                    let node = plan
-                        .nodes
-                        .get_mut(rel_tuple)
-                        .ok_or(QueryPlannerError::ValueOutOfRange)?;
-
-                    if let Node::Expression(Expression::Row {
-                        ref mut distribution,
-                        ..
-                    }) = node
-                    {
-                        *distribution = Some(dist);
-                        return Ok(());
-                    }
-                    Err(QueryPlannerError::InvalidNode)
-                }
-                Relational::UnionAll {
-                    left,
-                    right,
-                    output,
-                    ..
-                } => {
-                    let left_dist = child_dist(*output, *left, &Branch::Both, plan)?;
-
-                    let right_dist = child_dist(*output, *right, &Branch::Both, plan)?;
-
-                    let rel_tuple = relational.output();
-                    let node = plan
-                        .nodes
-                        .get_mut(rel_tuple)
-                        .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                    if let Node::Expression(Expression::Row {
-                        ref mut distribution,
-                        ..
-                    }) = node
-                    {
-                        *distribution = Some(Distribution::new_union(left_dist, right_dist)?);
-                        return Ok(());
-                    }
-                    Err(QueryPlannerError::InvalidRow)
-                }
-                // TODO: implement it!
-                Relational::InnerJoin { .. } | Relational::Motion { .. } => {
-                    Err(QueryPlannerError::QueryNotImplemented)
-                }
-            }
-        }
-        // TODO: how should we implement it for the `Row`?
-        Node::Expression(_) => Err(QueryPlannerError::QueryNotImplemented),
-    }
 }
 
 /// Plan node "allocator".
@@ -294,6 +144,24 @@ impl Plan {
         plan.check()?;
         Ok(plan)
     }
+
+    /// Returns the next node position
+    #[must_use]
+    pub fn next_node_id(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Build {logical id: position} map for relational nodes
+    #[must_use]
+    pub fn relational_id_map(&self) -> HashMap<usize, usize> {
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for (pos, node) in self.nodes.iter().enumerate() {
+            if let Node::Relational(relational) = node {
+                map.insert(relational.logical_id(), pos);
+            }
+        }
+        map
+    }
 }
 
 /// Plan node iterator over its branches.
@@ -327,6 +195,16 @@ impl<'n> Iterator for BranchIterator<'n> {
     type Item = &'n Node;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let get_next_child = |children: &Vec<usize>| -> Option<&Node> {
+            let current_step = *self.step.borrow();
+            let child = children.get(current_step);
+            child.and_then(|pos| {
+                let node = self.plan.nodes.get(*pos);
+                *self.step.borrow_mut() += 1;
+                node
+            })
+        };
+
         match self.node {
             Node::Expression(expr) => match expr {
                 Expression::Alias { child, .. } => {
@@ -360,18 +238,13 @@ impl<'n> Iterator for BranchIterator<'n> {
             },
             Node::Relational(rel) => match rel {
                 Relational::InnerJoin {
-                    left,
-                    right,
+                    children,
                     condition,
                     ..
                 } => {
                     let current_step = *self.step.borrow();
-                    if current_step == 0 {
-                        *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*left);
-                    } else if current_step == 1 {
-                        *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*right);
+                    if current_step == 0 || current_step == 1 {
+                        return get_next_child(children);
                     } else if current_step == 2 {
                         *self.step.borrow_mut() += 1;
                         return self.plan.nodes.get(*condition);
@@ -379,25 +252,14 @@ impl<'n> Iterator for BranchIterator<'n> {
                     None
                 }
                 Relational::ScanRelation { .. } => None,
-                Relational::ScanSubQuery { child, .. }
-                | Relational::Motion { child, .. }
-                | Relational::Selection { child, .. }
-                | Relational::Projection { child, .. } => {
+                Relational::ScanSubQuery { children, .. }
+                | Relational::Motion { children, .. }
+                | Relational::Selection { children, .. }
+                | Relational::Projection { children, .. } => get_next_child(children),
+                Relational::UnionAll { children, .. } => {
                     let current_step = *self.step.borrow();
-                    if current_step == 0 {
-                        *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*child);
-                    }
-                    None
-                }
-                Relational::UnionAll { left, right, .. } => {
-                    let current_step = *self.step.borrow();
-                    if current_step == 0 {
-                        *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*left);
-                    } else if current_step == 1 {
-                        *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*right);
+                    if current_step == 0 || current_step == 1 {
+                        return get_next_child(children);
                     }
                     None
                 }

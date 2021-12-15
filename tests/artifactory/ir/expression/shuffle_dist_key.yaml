@@ -43,16 +43,44 @@ nodes:
           - 3
           - 5
           - 7
-        distribution:
-          Segment:
-            key:
-              - 1
-              - 0 
+        distribution: ~
   - Relational:
       ScanRelation:
         output: 8
         id: 0
         relation: t
+  - Expression:
+      Reference:
+        targets:
+          - 0
+        position: 1
+        parent: 10
+  - Expression:
+      Alias:
+        name: b
+        child: 10
+  - Expression:
+      Reference:
+        targets:
+          - 0
+        position: 0
+        parent: 10
+  - Expression:
+      Alias:
+        name: a
+        child: 12
+  - Expression:
+      Row:
+        list:
+          - 11
+          - 13
+        distribution: ~
+  - Relational:
+      Projection:
+        children:
+          - 9
+        id: 10
+        output: 14
 relations:
   t:
     Segment:
@@ -70,4 +98,4 @@ relations:
         - 0
       name: t
 slices: ~
-top: 9
+top: 15

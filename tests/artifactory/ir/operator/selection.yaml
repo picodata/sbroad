@@ -2,7 +2,8 @@
 nodes:
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 0
   - Expression:
       Alias:
@@ -10,7 +11,8 @@ nodes:
         child: 0
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 1
   - Expression:
       Alias:
@@ -18,7 +20,8 @@ nodes:
         child: 2
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 2
   - Expression:
       Alias:
@@ -26,7 +29,8 @@ nodes:
         child: 4
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 0 
         position: 3
   - Expression:
       Alias:
@@ -46,11 +50,13 @@ nodes:
               - 0
   - Relational:
       ScanRelation:
+        id: 0
         output: 8
         relation: t
   - Expression:
       Reference:
-        branch: Left
+        targets: ~
+        parent: 10 
         position: 1
   - Expression:
       Alias:
@@ -67,7 +73,9 @@ nodes:
         right: 12
   - Expression:
       Reference:
-        branch: Left
+        targets:
+          - 0
+        parent: 10 
         position: 0
   - Expression:
       Alias:
@@ -75,7 +83,9 @@ nodes:
         child: 14
   - Expression:
       Reference:
-        branch: Left
+        targets:
+          - 0
+        parent: 10 
         position: 1
   - Expression:
       Alias:
@@ -83,7 +93,9 @@ nodes:
         child: 16
   - Expression:
       Reference:
-        branch: Left
+        targets:
+          - 0
+        parent: 10 
         position: 2
   - Expression:
       Alias:
@@ -91,7 +103,9 @@ nodes:
         child: 18
   - Expression:
       Reference:
-        branch: Left
+        targets:
+          - 0
+        parent: 10 
         position: 3
   - Expression:
       Alias:
@@ -111,7 +125,9 @@ nodes:
               - 0
   - Relational:
       Selection:
-        child: 9
+        children:
+          - 9
+        id: 10
         filter: 13
         output: 22
 relations:

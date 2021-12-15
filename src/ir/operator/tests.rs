@@ -4,7 +4,6 @@ use crate::ir::expression::*;
 use crate::ir::relation::*;
 use crate::ir::value::*;
 use crate::ir::*;
-use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -26,21 +25,31 @@ fn scan_rel() {
     .unwrap();
     plan.add_rel(t);
 
+    let scan_output = 8;
+    let scan_node = 9;
+
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     assert_eq!(
         Relational::ScanRelation {
-            output: 8,
+            output: scan_output,
+            id: 0,
             relation: String::from("t"),
         },
         scan
     );
-    assert_eq!(9, vec_alloc(&mut plan.nodes, Node::Relational(scan)));
+    assert_eq!(
+        scan_node,
+        vec_alloc(&mut plan.nodes, Node::Relational(scan))
+    );
+    plan.top = Some(scan_node);
 
-    set_distribution(9, &mut plan).unwrap();
-    if let Node::Expression(row) = plan.get_node(8).unwrap() {
+    let map = plan.relational_id_map();
+
+    set_distribution(scan_output, &map, &mut plan).unwrap();
+    if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
-            *row.distribution().unwrap(),
-            Distribution::Segment { key: vec![1, 0] }
+            row.distribution().unwrap(),
+            &Distribution::Segment { key: vec![1, 0] }
         );
     } else {
         panic!("Wrong output node type!");
@@ -67,7 +76,11 @@ fn scan_rel_serialized() {
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     plan.nodes.push(Node::Relational(scan));
     plan.top = Some(9);
-    set_distribution(plan.top.unwrap(), &mut plan).unwrap();
+
+    let scan_output = 8;
+
+    let map = plan.relational_id_map();
+    set_distribution(scan_output, &map, &mut plan).unwrap();
 
     let path = Path::new("")
         .join("tests")
@@ -98,46 +111,6 @@ fn projection() {
 
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
-    set_distribution(scan_id, &mut plan).unwrap();
-
-    let proj_seg = Relational::new_proj(&mut plan, scan_id, &["b", "a"]).unwrap();
-    assert_eq!(
-        Relational::Projection {
-            child: scan_id,
-            output: 14
-        },
-        proj_seg
-    );
-    let proj_seg_id = vec_alloc(&mut plan.nodes, Node::Relational(proj_seg));
-    set_distribution(proj_seg_id, &mut plan).unwrap();
-
-    if let Node::Expression(row) = plan.get_node(14).unwrap() {
-        assert_eq!(
-            *row.distribution().unwrap(),
-            Distribution::Segment { key: vec![0, 1] }
-        );
-    }
-
-    let proj_rand = Relational::new_proj(&mut plan, scan_id, &["a", "d"]).unwrap();
-    assert_eq!(
-        Relational::Projection {
-            child: scan_id,
-            output: 20
-        },
-        proj_rand
-    );
-    let proj_rand_id = vec_alloc(&mut plan.nodes, Node::Relational(proj_rand));
-    set_distribution(proj_rand_id, &mut plan).unwrap();
-
-    if let Node::Expression(row) = plan.get_node(20).unwrap() {
-        assert_eq!(*row.distribution().unwrap(), Distribution::Random);
-    }
-
-    // Empty output
-    assert_eq!(
-        QueryPlannerError::InvalidRow,
-        Relational::new_proj(&mut plan, scan_id, &[]).unwrap_err()
-    );
 
     // Invalid alias names in the output
     assert_eq!(
@@ -147,7 +120,7 @@ fn projection() {
 
     // Expression node instead of relational one
     assert_eq!(
-        QueryPlannerError::InvalidPlan,
+        QueryPlannerError::InvalidNode,
         Relational::new_proj(&mut plan, 1, &["a"]).unwrap_err()
     );
 
@@ -190,15 +163,21 @@ fn selection() {
     let scan = Relational::new_scan("t", &mut plan).unwrap();
     let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
 
-    let new_aliases = new_alias_nodes(&mut plan, scan_id, &["b"], &Branch::Left).unwrap();
-    let a_id = new_aliases.get(0).unwrap();
+    let ref_a_id = vec_alloc(
+        &mut plan.nodes,
+        Node::Expression(Expression::new_ref(scan_id + 1, Some(vec![0]), 0)),
+    );
+    let a_id = vec_alloc(
+        &mut plan.nodes,
+        Node::Expression(Expression::new_alias("a", ref_a_id)),
+    );
     let const_id = vec_alloc(
         &mut plan.nodes,
         Node::Expression(Expression::new_const(Value::number_from_str("10").unwrap())),
     );
     let gt_id = vec_alloc(
         &mut plan.nodes,
-        Node::Expression(Expression::new_bool(*a_id, Bool::Gt, const_id)),
+        Node::Expression(Expression::new_bool(a_id, Bool::Gt, const_id)),
     );
 
     // Correct Selection operator
@@ -212,7 +191,7 @@ fn selection() {
 
     // Non-relational child
     assert_eq!(
-        QueryPlannerError::InvalidRow,
+        QueryPlannerError::InvalidNode,
         Relational::new_select(&mut plan, const_id, gt_id).unwrap_err()
     );
 }
@@ -230,7 +209,7 @@ fn selection_serialize() {
 }
 
 #[test]
-fn union_all() {
+fn union_all_col_amount_mismatch() {
     let mut plan = Plan::empty();
 
     let t1 = Table::new_seg(
@@ -246,101 +225,17 @@ fn union_all() {
 
     let scan_t1 = Relational::new_scan("t1", &mut plan).unwrap();
     let scan_t1_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t1));
-    set_distribution(scan_t1_id, &mut plan).unwrap();
 
-    // Check fallback to random distribution
-    let t2 = Table::new_seg(
-        "t2",
-        vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-        ],
-        &["b"],
-    )
-    .unwrap();
+    // Check errors for children with different amount of column
+    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
     plan.add_rel(t2);
 
     let scan_t2 = Relational::new_scan("t2", &mut plan).unwrap();
     let scan_t2_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t2));
-    set_distribution(scan_t2_id, &mut plan).unwrap();
-
-    let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t2_id).unwrap();
-    let union_all_id = vec_alloc(&mut plan.nodes, Node::Relational(union_all));
-    set_distribution(union_all_id, &mut plan).unwrap();
-
-    if let Node::Relational(union_all) = plan.get_node(union_all_id).unwrap() {
-        if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
-            assert_eq!(Distribution::Random, *row.distribution().unwrap());
-        } else {
-            panic!("Invalid output!");
-        }
-    } else {
-        panic!("Invalid node!");
-    }
-
-    // Check preserving the original distribution
-    let scan_t3 = Relational::new_scan("t1", &mut plan).unwrap();
-    let scan_t3_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t3));
-    set_distribution(scan_t3_id, &mut plan).unwrap();
-
-    let union_all = Relational::new_union_all(&mut plan, scan_t1_id, scan_t3_id).unwrap();
-    let union_all_id = vec_alloc(&mut plan.nodes, Node::Relational(union_all));
-    set_distribution(union_all_id, &mut plan).unwrap();
-
-    if let Node::Relational(union_all) = plan.get_node(union_all_id).unwrap() {
-        if let Node::Expression(row) = plan.get_node(union_all.output()).unwrap() {
-            assert_eq!(
-                Distribution::Segment { key: vec![0] },
-                *row.distribution().unwrap()
-            );
-        } else {
-            panic!("Invalid output!");
-        }
-    } else {
-        panic!("Invalid node!");
-    }
-
-    // Check errors for children with different column names
-    let t4 = Table::new_seg(
-        "t4",
-        vec![
-            Column::new("c", Type::Boolean),
-            Column::new("b", Type::Number),
-        ],
-        &["b"],
-    )
-    .unwrap();
-    plan.add_rel(t4);
-
-    let scan_t4 = Relational::new_scan("t4", &mut plan).unwrap();
-    let scan_t4_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t4));
     assert_eq!(
         QueryPlannerError::NotEqualRows,
-        Relational::new_union_all(&mut plan, scan_t4_id, scan_t1_id).unwrap_err()
+        Relational::new_union_all(&mut plan, scan_t2_id, scan_t1_id).unwrap_err()
     );
-
-    // Check errors for children with different amount of column
-    let t5 = Table::new_seg("t5", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
-    plan.add_rel(t5);
-
-    let scan_t5 = Relational::new_scan("t5", &mut plan).unwrap();
-    let scan_t5_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t5));
-    assert_eq!(
-        QueryPlannerError::NotEqualRows,
-        Relational::new_union_all(&mut plan, scan_t5_id, scan_t1_id).unwrap_err()
-    );
-}
-
-#[test]
-fn union_all_serialize() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("union_all.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    Plan::from_yaml(&s).unwrap();
 }
 
 #[test]
@@ -366,7 +261,7 @@ fn sub_query() {
     // Non-relational child node
     let a = 1;
     assert_eq!(
-        QueryPlannerError::InvalidRow,
+        QueryPlannerError::InvalidNode,
         Relational::new_sub_query(&mut plan, a, "sq").unwrap_err()
     );
 
@@ -387,102 +282,4 @@ fn sub_query_serialize() {
         .join("sub_query.yaml");
     let s = fs::read_to_string(path).unwrap();
     Plan::from_yaml(&s).unwrap();
-}
-
-#[test]
-fn output_alias_position_map() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("output_aliases.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let plan = Plan::from_yaml(&s).unwrap();
-
-    let top = plan.nodes.get(plan.top.unwrap()).unwrap();
-    if let Node::Relational(rel) = top {
-        let col_map = rel.output_alias_position_map(&plan).unwrap();
-
-        let expected_keys = vec!["a", "b"];
-        assert_eq!(expected_keys.len(), col_map.len());
-        expected_keys
-            .iter()
-            .zip(col_map.keys().sorted())
-            .for_each(|(e, k)| assert_eq!(e, k));
-
-        let expected_val = vec![0, 1];
-        expected_val
-            .iter()
-            .zip(col_map.values().sorted())
-            .for_each(|(e, v)| assert_eq!(e, v));
-    } else {
-        panic!("Plan top should be a relational operator!");
-    }
-}
-
-#[test]
-fn output_alias_position_map_duplicates() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("output_aliases_duplicates.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let plan = Plan::from_yaml(&s).unwrap();
-
-    let top = plan.nodes.get(plan.top.unwrap()).unwrap();
-    if let Node::Relational(rel) = top {
-        assert_eq!(
-            QueryPlannerError::InvalidPlan,
-            rel.output_alias_position_map(&plan).unwrap_err()
-        );
-    } else {
-        panic!("Plan top should be a relational operator!");
-    }
-}
-
-#[test]
-fn output_alias_position_map_unsupported_type() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("output_aliases_unsupported_type.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let plan = Plan::from_yaml(&s).unwrap();
-
-    let top = plan.nodes.get(plan.top.unwrap()).unwrap();
-    if let Node::Relational(rel) = top {
-        assert_eq!(
-            QueryPlannerError::InvalidPlan,
-            rel.output_alias_position_map(&plan).unwrap_err()
-        );
-    } else {
-        panic!("Plan top should be a relational operator!");
-    }
-}
-
-#[test]
-fn output_alias_oor() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("output_aliases_oor.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let plan = Plan::from_yaml(&s).unwrap();
-
-    let top = plan.nodes.get(plan.top.unwrap()).unwrap();
-    if let Node::Relational(rel) = top {
-        assert_eq!(
-            QueryPlannerError::ValueOutOfRange,
-            rel.output_alias_position_map(&plan).unwrap_err()
-        );
-    } else {
-        panic!("Plan top should be a relational operator!");
-    }
 }

@@ -2,20 +2,22 @@
 nodes:
   - Expression:
       Reference:
-        alias: a
-        branch: Left
+        targets: ~
         position: 0
+        parent: 0
+  - Expression:
+      Alias:
+        name: a
+        child: 0
   - Expression:
       Row:
         list:
-          - 0
-        distribution:
-          Segment:
-            key:
-              - 0
+          - 1
+        distribution: ~
   - Relational:
       ScanRelation:
-        output: 1
+        output: 2
+        id: 0
         relation: t
 relations:
   t:
