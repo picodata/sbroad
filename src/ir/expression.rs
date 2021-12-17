@@ -138,7 +138,7 @@ impl Expression {
 }
 
 impl Plan {
-   /// Create a new output tuple from the children nodes output, containing
+    /// Create a new output tuple from the children nodes output, containing
     /// a specified list of column names. If the column list is empty then
     /// just copy all the columns to a new tuple.
     /// # Errors
