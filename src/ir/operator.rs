@@ -2,7 +2,7 @@
 
 use super::expression::Expression;
 use super::relation::Table;
-use super::{Node, Plan};
+use super::{Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -123,17 +123,16 @@ impl Relational {
     /// Returns `QueryPlannerError` when the output tuple is invalid.
     pub fn output_alias_position_map(
         &self,
-        plan: &Plan,
+        nodes: &Nodes,
     ) -> Result<HashMap<String, usize>, QueryPlannerError> {
         let mut map: HashMap<String, usize> = HashMap::new();
 
-        if let Some(Node::Expression(Expression::Row { list, .. })) =
-            plan.nodes.arena.get(self.output())
+        if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
         {
             let valid = list.iter().enumerate().all(|(pos, item)| {
                 // Check that expressions in the row list are all aliases
                 if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
-                    plan.nodes.arena.get(*item)
+                    nodes.arena.get(*item)
                 {
                     // Populate the map and check duplicate absence
                     if map.insert(String::from(name), pos).is_none() {

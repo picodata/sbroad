@@ -226,7 +226,7 @@ impl Plan {
         }
 
         let map = if let Node::Relational(relational_op) = self.get_node(child_node)? {
-            relational_op.output_alias_position_map(self)?
+            relational_op.output_alias_position_map(&self.nodes)?
         } else {
             return Err(QueryPlannerError::InvalidNode);
         };
