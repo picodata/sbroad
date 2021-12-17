@@ -190,33 +190,6 @@ impl Relational {
             Relational::ScanRelation { .. } => None,
         }
     }
-
-    /// New `ScanSubQuery` constructor.
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError`:
-    /// - child node is not relational
-    /// - child node output is not a correct tuple
-    /// - `SubQuery` name is empty
-    pub fn new_sub_query(
-        plan: &mut Plan,
-        child: usize,
-        alias: &str,
-    ) -> Result<Self, QueryPlannerError> {
-        if alias.is_empty() {
-            return Err(QueryPlannerError::InvalidName);
-        }
-        let id = plan.nodes.next_id();
-        let children: Vec<usize> = vec![child];
-        let output = plan.add_output_row(id, &children, &[0], &[])?;
-
-        Ok(Relational::ScanSubQuery {
-            alias: String::from(alias),
-            children,
-            id,
-            output,
-        })
-    }
 }
 
 impl Plan {
@@ -305,6 +278,30 @@ impl Plan {
         };
 
         Ok(self.nodes.push(Node::Relational(select)))
+    }
+
+    /// Add sub query scan node.
+    ///
+    /// # Errors
+    /// - child node is not relational
+    /// - child node output is not a correct tuple
+    /// - sub query name is empty
+    pub fn add_sub_query(&mut self, child: usize, alias: &str) -> Result<usize, QueryPlannerError> {
+        if alias.is_empty() {
+            return Err(QueryPlannerError::InvalidName);
+        }
+        let id = self.nodes.next_id();
+        let children: Vec<usize> = vec![child];
+        let output = self.add_output_row(id, &children, &[0], &[])?;
+
+        let sq = Relational::ScanSubQuery {
+            alias: String::from(alias),
+            children,
+            id,
+            output,
+        };
+
+        Ok(self.nodes.push(Node::Relational(sq)))
     }
 
     /// Add union all node.
