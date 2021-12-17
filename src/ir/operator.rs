@@ -207,7 +207,7 @@ impl Relational {
     ) -> Result<Self, QueryPlannerError> {
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = plan.add_row(id, &children, &[0], col_names)?;
+        let output = plan.add_output_row(id, &children, &[0], col_names)?;
 
         Ok(Relational::Projection {
             children,
@@ -235,7 +235,7 @@ impl Relational {
 
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = plan.add_row(id, &children, &[0], &[])?;
+        let output = plan.add_output_row(id, &children, &[0], &[])?;
 
         Ok(Relational::Selection {
             children,
@@ -274,7 +274,7 @@ impl Relational {
 
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![left, right];
-        let output = plan.add_row(id, &children, &[0, 1], &[])?;
+        let output = plan.add_output_row(id, &children, &[0, 1], &[])?;
 
         Ok(Relational::UnionAll {
             children,
@@ -300,7 +300,7 @@ impl Relational {
         }
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = plan.add_row(id, &children, &[0], &[])?;
+        let output = plan.add_output_row(id, &children, &[0], &[])?;
 
         Ok(Relational::ScanSubQuery {
             alias: String::from(alias),
