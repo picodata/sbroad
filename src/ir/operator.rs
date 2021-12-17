@@ -191,44 +191,6 @@ impl Relational {
         }
     }
 
-    /// New `UnionAll` constructor.
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError`:
-    /// - children nodes are not relational
-    /// - children tuples are invalid
-    /// - children tuples have mismatching structure
-    pub fn new_union_all(
-        plan: &mut Plan,
-        left: usize,
-        right: usize,
-    ) -> Result<Self, QueryPlannerError> {
-        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
-            if let Node::Relational(relational_op) = plan.get_node(child)? {
-                match plan.get_node(relational_op.output())? {
-                    Node::Expression(Expression::Row { ref list, .. }) => Ok(list.len()),
-                    _ => Err(QueryPlannerError::InvalidRow),
-                }
-            } else {
-                Err(QueryPlannerError::InvalidRow)
-            }
-        };
-
-        if child_row_len(left, plan) != child_row_len(right, plan) {
-            return Err(QueryPlannerError::NotEqualRows);
-        }
-
-        let id = plan.nodes.next_id();
-        let children: Vec<usize> = vec![left, right];
-        let output = plan.add_output_row(id, &children, &[0, 1], &[])?;
-
-        Ok(Relational::UnionAll {
-            children,
-            id,
-            output,
-        })
-    }
-
     /// New `ScanSubQuery` constructor.
     ///
     /// # Errors
@@ -343,6 +305,41 @@ impl Plan {
         };
 
         Ok(self.nodes.push(Node::Relational(select)))
+    }
+
+    /// Add union all node.
+    ///
+    /// # Errors
+    /// - children nodes are not relational
+    /// - children tuples are invalid
+    /// - children tuples have mismatching structure
+    pub fn add_union_all(&mut self, left: usize, right: usize) -> Result<usize, QueryPlannerError> {
+        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
+            if let Node::Relational(relational_op) = plan.get_node(child)? {
+                match plan.get_node(relational_op.output())? {
+                    Node::Expression(Expression::Row { ref list, .. }) => Ok(list.len()),
+                    _ => Err(QueryPlannerError::InvalidRow),
+                }
+            } else {
+                Err(QueryPlannerError::InvalidRow)
+            }
+        };
+
+        if child_row_len(left, self) != child_row_len(right, self) {
+            return Err(QueryPlannerError::NotEqualRows);
+        }
+
+        let id = self.nodes.next_id();
+        let children: Vec<usize> = vec![left, right];
+        let output = self.add_output_row(id, &children, &[0, 1], &[])?;
+
+        let union_all = Relational::UnionAll {
+            children,
+            id,
+            output,
+        };
+
+        Ok(self.nodes.push(Node::Relational(union_all)))
     }
 }
 

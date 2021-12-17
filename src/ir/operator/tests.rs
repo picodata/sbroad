@@ -183,6 +183,21 @@ fn selection_serialize() {
 }
 
 #[test]
+fn union_all() {
+    let mut plan = Plan::empty();
+
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1").unwrap();
+
+    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
+    plan.add_rel(t2);
+    let scan_t2_id = plan.add_scan("t2").unwrap();
+
+    plan.add_union_all(scan_t2_id, scan_t1_id).unwrap();
+}
+
+#[test]
 fn union_all_col_amount_mismatch() {
     let mut plan = Plan::empty();
 
@@ -206,7 +221,7 @@ fn union_all_col_amount_mismatch() {
     let scan_t2_id = plan.add_scan("t2").unwrap();
     assert_eq!(
         QueryPlannerError::NotEqualRows,
-        Relational::new_union_all(&mut plan, scan_t2_id, scan_t1_id).unwrap_err()
+        plan.add_union_all(scan_t2_id, scan_t1_id).unwrap_err()
     );
 }
 
