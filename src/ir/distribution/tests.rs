@@ -23,9 +23,7 @@ fn proj_preserve_dist_key() {
     plan.add_rel(t);
 
     let scan_id = plan.add_scan("t").unwrap();
-
-    let proj = Relational::new_proj(&mut plan, scan_id, &["a", "b"]).unwrap();
-    let proj_id = plan.nodes.push(Node::Relational(proj));
+    let proj_id = plan.add_proj(scan_id, &["a", "b"]).unwrap();
 
     plan.top = Some(proj_id);
 

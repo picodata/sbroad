@@ -191,31 +191,6 @@ impl Relational {
         }
     }
 
-    // TODO: we need a more flexible projection constructor (constants, etc)
-
-    /// New `Projection` constructor.
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError`:
-    /// - child node is not relational
-    /// - child output tuple is invalid
-    /// - column name do not match the ones in the child output tuple
-    pub fn new_proj(
-        plan: &mut Plan,
-        child: usize,
-        col_names: &[&str],
-    ) -> Result<Self, QueryPlannerError> {
-        let id = plan.nodes.next_id();
-        let children: Vec<usize> = vec![child];
-        let output = plan.add_output_row(id, &children, &[0], col_names)?;
-
-        Ok(Relational::Projection {
-            children,
-            id,
-            output,
-        })
-    }
-
     /// New `Selection` constructor
     ///
     /// # Errors
@@ -346,6 +321,32 @@ impl Plan {
             }
         }
         Err(QueryPlannerError::InvalidRelation)
+    }
+
+    // TODO: we need a more flexible projection constructor (constants, etc)
+
+    /// New `Projection` constructor.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - child node is not relational
+    /// - child output tuple is invalid
+    /// - column name do not match the ones in the child output tuple
+    pub fn add_proj(
+        &mut self,
+        child: usize,
+        col_names: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        let id = self.nodes.next_id();
+        let children: Vec<usize> = vec![child];
+        let output = self.add_output_row(id, &children, &[0], col_names)?;
+
+        let proj = Relational::Projection {
+            children,
+            id,
+            output,
+        };
+        Ok(self.nodes.push(Node::Relational(proj)))
     }
 }
 

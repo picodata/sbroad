@@ -1,7 +1,6 @@
 use super::*;
 use crate::errors::QueryPlannerError;
 use crate::ir::distribution::*;
-use crate::ir::expression::*;
 use crate::ir::relation::*;
 use crate::ir::value::*;
 use crate::ir::*;
@@ -103,19 +102,19 @@ fn projection() {
     // Invalid alias names in the output
     assert_eq!(
         QueryPlannerError::InvalidRow,
-        Relational::new_proj(&mut plan, scan_id, &["a", "e"]).unwrap_err()
+        plan.add_proj(scan_id, &["a", "e"]).unwrap_err()
     );
 
     // Expression node instead of relational one
     assert_eq!(
         QueryPlannerError::InvalidNode,
-        Relational::new_proj(&mut plan, 1, &["a"]).unwrap_err()
+        plan.add_proj(1, &["a"]).unwrap_err()
     );
 
-    // Try to build projection from the invalid node
+    // Try to build projection from the non-existing node
     assert_eq!(
         QueryPlannerError::ValueOutOfRange,
-        Relational::new_proj(&mut plan, 42, &["a"]).unwrap_err()
+        plan.add_proj(42, &["a"]).unwrap_err()
     );
 }
 
@@ -153,7 +152,7 @@ fn selection() {
     let ref_a_id = plan.nodes.add_ref(scan_id + 1, Some(vec![0]), 0);
     let a_id = plan.nodes.add_alias("a", ref_a_id).unwrap();
     let const_id = plan.nodes.add_const(Value::number_from_str("10").unwrap());
-    let gt_id = plan.nodes.add_bool(a_id, Bool::Gt, const_id)?;
+    let gt_id = plan.nodes.add_bool(a_id, Bool::Gt, const_id).unwrap();
 
     // Correct Selection operator
     Relational::new_select(&mut plan, scan_id, gt_id).unwrap();
