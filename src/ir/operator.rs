@@ -191,48 +191,6 @@ impl Relational {
         }
     }
 
-    /// New `ScanRelation` constructor.
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError` when relation is invalid.
-    pub fn new_scan(table_name: &str, plan: &mut Plan) -> Result<Self, QueryPlannerError> {
-        let scan_id = plan.next_node_id();
-        let nodes = &mut plan.nodes;
-
-        if let Some(relations) = &plan.relations {
-            if let Some(rel) = relations.get(table_name) {
-                match rel {
-                    Table::Segment { ref columns, .. } => {
-                        let refs = columns
-                            .iter()
-                            .enumerate()
-                            .map(|(pos, col)| {
-                                let r = Expression::new_ref(scan_id, None, pos);
-                                let r_id = vec_alloc(nodes, Node::Expression(r));
-                                vec_alloc(
-                                    nodes,
-                                    Node::Expression(Expression::new_alias(&col.name, r_id)),
-                                )
-                            })
-                            .collect();
-
-                        return Ok(Relational::ScanRelation {
-                            id: scan_id,
-                            output: vec_alloc(
-                                nodes,
-                                Node::Expression(Expression::new_row(refs, None)),
-                            ),
-                            relation: String::from(table_name),
-                        });
-                    }
-                    //TODO: implement virtual tables as well
-                    _ => return Err(QueryPlannerError::InvalidRelation),
-                }
-            }
-        }
-        Err(QueryPlannerError::InvalidRelation)
-    }
-
     // TODO: we need a more flexible projection constructor (constants, etc)
 
     /// New `Projection` constructor.
@@ -350,6 +308,52 @@ impl Relational {
             id,
             output,
         })
+    }
+}
+
+impl Plan {
+    /// Add a scan node.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when when relation is invalid.
+    pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
+        let logical_id = self.next_node_id();
+        let nodes = &mut self.nodes;
+
+        if let Some(relations) = &self.relations {
+            if let Some(rel) = relations.get(table) {
+                match rel {
+                    Table::Segment { ref columns, .. } => {
+                        let refs = columns
+                            .iter()
+                            .enumerate()
+                            .map(|(pos, col)| {
+                                let r = Expression::new_ref(logical_id, None, pos);
+                                let r_id = vec_alloc(nodes, Node::Expression(r));
+                                vec_alloc(
+                                    nodes,
+                                    Node::Expression(Expression::new_alias(&col.name, r_id)),
+                                )
+                            })
+                            .collect();
+
+                        let scan = Relational::ScanRelation {
+                            id: logical_id,
+                            output: vec_alloc(
+                                nodes,
+                                Node::Expression(Expression::new_row(refs, None)),
+                            ),
+                            relation: String::from(table),
+                        };
+
+                        return Ok(vec_alloc(&mut self.nodes, Node::Relational(scan)));
+                    }
+                    //TODO: implement virtual tables as well
+                    _ => return Err(QueryPlannerError::InvalidRelation),
+                }
+            }
+        }
+        Err(QueryPlannerError::InvalidRelation)
     }
 }
 

@@ -22,8 +22,7 @@ fn proj_preserve_dist_key() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    let scan_id = plan.add_scan("t").unwrap();
 
     let proj = Relational::new_proj(&mut plan, scan_id, &["a", "b"]).unwrap();
     let proj_id = vec_alloc(&mut plan.nodes, Node::Relational(proj));

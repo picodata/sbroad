@@ -39,8 +39,7 @@ fn get_node() {
     let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    let scan_id = plan.add_scan("t").unwrap();
 
     if let Node::Relational(Relational::ScanRelation { relation, .. }) =
         plan.get_node(scan_id).unwrap()

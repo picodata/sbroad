@@ -29,19 +29,8 @@ fn scan_rel() {
     let scan_output = 8;
     let scan_node = 9;
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    assert_eq!(
-        Relational::ScanRelation {
-            output: scan_output,
-            id: 0,
-            relation: String::from("t"),
-        },
-        scan
-    );
-    assert_eq!(
-        scan_node,
-        vec_alloc(&mut plan.nodes, Node::Relational(scan))
-    );
+    let scan_id = plan.add_scan("t").unwrap();
+    assert_eq!(scan_node, scan_id);
     plan.top = Some(scan_node);
 
     let map = plan.relational_id_map();
@@ -74,11 +63,10 @@ fn scan_rel_serialized() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    plan.nodes.push(Node::Relational(scan));
-    plan.top = Some(9);
+    let scan_id = plan.add_scan("t").unwrap();
+    plan.top = Some(scan_id);
 
-    let scan_output = 8;
+    let scan_output = scan_id - 1;
 
     let map = plan.relational_id_map();
     plan.set_distribution(scan_output, &map).unwrap();
@@ -110,8 +98,7 @@ fn projection() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    let scan_id = plan.add_scan("t").unwrap();
 
     // Invalid alias names in the output
     assert_eq!(
@@ -161,8 +148,7 @@ fn selection() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    let scan_id = plan.add_scan("t").unwrap();
 
     let ref_a_id = vec_alloc(
         &mut plan.nodes,
@@ -224,15 +210,13 @@ fn union_all_col_amount_mismatch() {
     .unwrap();
     plan.add_rel(t1);
 
-    let scan_t1 = Relational::new_scan("t1", &mut plan).unwrap();
-    let scan_t1_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t1));
+    let scan_t1_id = plan.add_scan("t1").unwrap();
 
     // Check errors for children with different amount of column
     let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
     plan.add_rel(t2);
 
-    let scan_t2 = Relational::new_scan("t2", &mut plan).unwrap();
-    let scan_t2_id = vec_alloc(&mut plan.nodes, Node::Relational(scan_t2));
+    let scan_t2_id = plan.add_scan("t2").unwrap();
     assert_eq!(
         QueryPlannerError::NotEqualRows,
         Relational::new_union_all(&mut plan, scan_t2_id, scan_t1_id).unwrap_err()
@@ -254,8 +238,7 @@ fn sub_query() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan = Relational::new_scan("t", &mut plan).unwrap();
-    let scan_id = vec_alloc(&mut plan.nodes, Node::Relational(scan));
+    let scan_id = plan.add_scan("t").unwrap();
 
     Relational::new_sub_query(&mut plan, scan_id, "sq").unwrap();
 
