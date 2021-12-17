@@ -8,7 +8,7 @@
 use super::distribution::Distribution;
 use super::operator;
 use super::value::Value;
-use super::{Node, Plan};
+use super::{Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 
@@ -98,21 +98,6 @@ impl Expression {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Alias expression constructor.
-    #[must_use]
-    pub fn new_alias(name: &str, child: usize) -> Self {
-        Expression::Alias {
-            name: String::from(name),
-            child,
-        }
-    }
-
-    /// Constant expression constructor.
-    #[must_use]
-    pub fn new_const(value: Value) -> Self {
-        Expression::Constant { value }
-    }
-
     /// Reference expression constructor.
     #[must_use]
     pub fn new_ref(parent: usize, targets: Option<Vec<usize>>, position: usize) -> Self {
@@ -134,6 +119,32 @@ impl Expression {
     #[must_use]
     pub fn new_bool(left: usize, op: operator::Bool, right: usize) -> Self {
         Expression::Bool { left, op, right }
+    }
+}
+
+impl Nodes {
+    /// Add alias node.
+    ///
+    /// # Errors
+    /// - child node is invalid
+    /// - name is empty
+    pub fn add_alias(&mut self, name: &str, child: usize) -> Result<usize, QueryPlannerError> {
+        self.arena
+            .get(child)
+            .ok_or(QueryPlannerError::InvalidNode)?;
+        if name.is_empty() {
+            return Err(QueryPlannerError::InvalidName);
+        }
+        let alias = Expression::Alias {
+            name: String::from(name),
+            child,
+        };
+        Ok(self.push(Node::Expression(alias)))
+    }
+
+    /// Add constant node.
+    pub fn add_const(&mut self, value: Value) -> usize {
+        self.push(Node::Expression(Expression::Constant { value }))
     }
 }
 
@@ -213,9 +224,7 @@ impl Plan {
                     Some(new_targets),
                     pos,
                 )));
-                let a_id = self
-                    .nodes
-                    .push(Node::Expression(Expression::new_alias(&name, r_id)));
+                let a_id = self.nodes.add_alias(&name, r_id)?;
                 aliases.push(a_id);
             }
 
@@ -242,11 +251,12 @@ impl Plan {
                     Some(new_targets),
                     *pos,
                 )));
-                let a_id = self
-                    .nodes
-                    .push(Node::Expression(Expression::new_alias(col, r_id)));
-                aliases.push(a_id);
-                true
+                if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
+                    aliases.push(a_id);
+                    true
+                } else {
+                    false
+                }
             })
         });
 

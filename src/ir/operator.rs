@@ -324,15 +324,14 @@ impl Plan {
             if let Some(rel) = relations.get(table) {
                 match rel {
                     Table::Segment { ref columns, .. } => {
-                        let refs = columns
-                            .iter()
-                            .enumerate()
-                            .map(|(pos, col)| {
-                                let r = Expression::new_ref(logical_id, None, pos);
-                                let r_id = nodes.push(Node::Expression(r));
-                                nodes.push(Node::Expression(Expression::new_alias(&col.name, r_id)))
-                            })
-                            .collect();
+                        let mut refs: Vec<usize> = Vec::new();
+
+                        for (pos, col) in columns.iter().enumerate() {
+                            let r_id = nodes
+                                .push(Node::Expression(Expression::new_ref(logical_id, None, pos)));
+                            let alias_id = nodes.add_alias(&col.name, r_id)?;
+                            refs.push(alias_id);
+                        }
 
                         let scan = Relational::ScanRelation {
                             id: logical_id,

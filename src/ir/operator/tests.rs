@@ -155,12 +155,8 @@ fn selection() {
         Some(vec![0]),
         0,
     )));
-    let a_id = plan
-        .nodes
-        .push(Node::Expression(Expression::new_alias("a", ref_a_id)));
-    let const_id = plan.nodes.push(Node::Expression(Expression::new_const(
-        Value::number_from_str("10").unwrap(),
-    )));
+    let a_id = plan.nodes.add_alias("a", ref_a_id).unwrap();
+    let const_id = plan.nodes.add_const(Value::number_from_str("10").unwrap());
     let gt_id = plan.nodes.push(Node::Expression(Expression::new_bool(
         a_id,
         Bool::Gt,
