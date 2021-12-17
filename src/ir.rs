@@ -55,6 +55,12 @@ impl Nodes {
         self.arena.push(node);
         position
     }
+
+    /// Returns the next node position
+    #[must_use]
+    pub fn next_id(&self) -> usize {
+        self.arena.len()
+    }
 }
 
 /// Logical plan tree structure.
@@ -152,12 +158,6 @@ impl Plan {
         };
         plan.check()?;
         Ok(plan)
-    }
-
-    /// Returns the next node position
-    #[must_use]
-    pub fn next_node_id(&self) -> usize {
-        self.nodes.arena.len()
     }
 
     /// Build {logical id: position} map for relational nodes

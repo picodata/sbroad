@@ -206,7 +206,7 @@ impl Relational {
         child: usize,
         col_names: &[&str],
     ) -> Result<Self, QueryPlannerError> {
-        let id = plan.next_node_id();
+        let id = plan.nodes.next_id();
         let children: Vec<usize> = vec![child];
         let output = plan.add_output_row(id, &children, &[0], col_names)?;
 
@@ -234,7 +234,7 @@ impl Relational {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let id = plan.next_node_id();
+        let id = plan.nodes.next_id();
         let children: Vec<usize> = vec![child];
         let output = plan.add_output_row(id, &children, &[0], &[])?;
 
@@ -273,7 +273,7 @@ impl Relational {
             return Err(QueryPlannerError::NotEqualRows);
         }
 
-        let id = plan.next_node_id();
+        let id = plan.nodes.next_id();
         let children: Vec<usize> = vec![left, right];
         let output = plan.add_output_row(id, &children, &[0, 1], &[])?;
 
@@ -299,7 +299,7 @@ impl Relational {
         if alias.is_empty() {
             return Err(QueryPlannerError::InvalidName);
         }
-        let id = plan.next_node_id();
+        let id = plan.nodes.next_id();
         let children: Vec<usize> = vec![child];
         let output = plan.add_output_row(id, &children, &[0], &[])?;
 
@@ -318,7 +318,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError` when when relation is invalid.
     pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
-        let logical_id = self.next_node_id();
+        let logical_id = self.nodes.next_id();
         let nodes = &mut self.nodes;
 
         if let Some(relations) = &self.relations {
