@@ -1,5 +1,6 @@
 use super::*;
 use crate::errors::QueryPlannerError;
+use crate::ir::distribution::*;
 use crate::ir::expression::*;
 use crate::ir::relation::*;
 use crate::ir::value::*;
@@ -45,7 +46,7 @@ fn scan_rel() {
 
     let map = plan.relational_id_map();
 
-    set_distribution(scan_output, &map, &mut plan).unwrap();
+    plan.set_distribution(scan_output, &map).unwrap();
     if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             row.distribution().unwrap(),
@@ -80,7 +81,7 @@ fn scan_rel_serialized() {
     let scan_output = 8;
 
     let map = plan.relational_id_map();
-    set_distribution(scan_output, &map, &mut plan).unwrap();
+    plan.set_distribution(scan_output, &map).unwrap();
 
     let path = Path::new("")
         .join("tests")
