@@ -10,7 +10,7 @@ use std::path::Path;
 
 #[test]
 fn scan_rel() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg(
         "t",
@@ -47,7 +47,7 @@ fn scan_rel() {
 
 #[test]
 fn scan_rel_serialized() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg(
         "t",
@@ -82,7 +82,7 @@ fn scan_rel_serialized() {
 
 #[test]
 fn projection() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg(
         "t",
@@ -132,7 +132,7 @@ fn projection_serialize() {
 
 #[test]
 fn selection() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg(
         "t",
@@ -184,7 +184,7 @@ fn selection_serialize() {
 
 #[test]
 fn union_all() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
     plan.add_rel(t1);
@@ -199,7 +199,7 @@ fn union_all() {
 
 #[test]
 fn union_all_col_amount_mismatch() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t1 = Table::new_seg(
         "t1",
@@ -227,7 +227,7 @@ fn union_all_col_amount_mismatch() {
 
 #[test]
 fn sub_query() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg(
         "t",

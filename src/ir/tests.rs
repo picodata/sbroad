@@ -34,7 +34,7 @@ fn plan_oor_top() {
 
 #[test]
 fn get_node() {
-    let mut plan = Plan::empty();
+    let mut plan = Plan::new();
 
     let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t);
@@ -52,7 +52,7 @@ fn get_node() {
 
 #[test]
 fn get_node_oor() {
-    let plan = Plan::empty();
+    let plan = Plan::new();
     assert_eq!(
         QueryPlannerError::ValueOutOfRange,
         plan.get_node(42).unwrap_err()

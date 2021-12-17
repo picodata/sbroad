@@ -87,6 +87,12 @@ pub struct Plan {
     top: Option<usize>,
 }
 
+impl Default for Plan {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl Plan {
     /// Add relation to the plan.
@@ -126,7 +132,7 @@ impl Plan {
 
     /// Constructor for an empty plan structure.
     #[must_use]
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         Plan {
             nodes: Nodes { arena: Vec::new() },
             relations: None,
