@@ -155,18 +155,18 @@ fn selection() {
     let gt_id = plan.nodes.add_bool(a_id, Bool::Gt, const_id).unwrap();
 
     // Correct Selection operator
-    Relational::new_select(&mut plan, scan_id, gt_id).unwrap();
+    plan.add_select(scan_id, gt_id).unwrap();
 
     // Non-boolean filter
     assert_eq!(
         QueryPlannerError::InvalidBool,
-        Relational::new_select(&mut plan, scan_id, const_id).unwrap_err()
+        plan.add_select(scan_id, const_id).unwrap_err()
     );
 
     // Non-relational child
     assert_eq!(
         QueryPlannerError::InvalidNode,
-        Relational::new_select(&mut plan, const_id, gt_id).unwrap_err()
+        plan.add_select(const_id, gt_id).unwrap_err()
     );
 }
 

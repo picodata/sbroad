@@ -191,35 +191,6 @@ impl Relational {
         }
     }
 
-    /// New `Selection` constructor
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError`:
-    /// - filter expression is not boolean
-    /// - child node is not relational
-    /// - child output tuple is not valid
-    pub fn new_select(
-        plan: &mut Plan,
-        child: usize,
-        filter: usize,
-    ) -> Result<Self, QueryPlannerError> {
-        if let Node::Expression(Expression::Bool { .. }) = plan.get_node(filter)? {
-        } else {
-            return Err(QueryPlannerError::InvalidBool);
-        }
-
-        let id = plan.nodes.next_id();
-        let children: Vec<usize> = vec![child];
-        let output = plan.add_output_row(id, &children, &[0], &[])?;
-
-        Ok(Relational::Selection {
-            children,
-            filter,
-            id,
-            output,
-        })
-    }
-
     /// New `UnionAll` constructor.
     ///
     /// # Errors
@@ -290,7 +261,7 @@ impl Plan {
     /// Add a scan node.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when when relation is invalid.
+    /// - relation is invalid
     pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
         let logical_id = self.nodes.next_id();
         let nodes = &mut self.nodes;
@@ -325,10 +296,9 @@ impl Plan {
 
     // TODO: we need a more flexible projection constructor (constants, etc)
 
-    /// New `Projection` constructor.
+    /// Add projection node.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError`:
     /// - child node is not relational
     /// - child output tuple is invalid
     /// - column name do not match the ones in the child output tuple
@@ -347,6 +317,32 @@ impl Plan {
             output,
         };
         Ok(self.nodes.push(Node::Relational(proj)))
+    }
+
+    /// Add selection node
+    ///
+    /// # Errors
+    /// - filter expression is not boolean
+    /// - child node is not relational
+    /// - child output tuple is not valid
+    pub fn add_select(&mut self, child: usize, filter: usize) -> Result<usize, QueryPlannerError> {
+        if let Node::Expression(Expression::Bool { .. }) = self.get_node(filter)? {
+        } else {
+            return Err(QueryPlannerError::InvalidBool);
+        }
+
+        let id = self.nodes.next_id();
+        let children: Vec<usize> = vec![child];
+        let output = self.add_output_row(id, &children, &[0], &[])?;
+
+        let select = Relational::Selection {
+            children,
+            filter,
+            id,
+            output,
+        };
+
+        Ok(self.nodes.push(Node::Relational(select)))
     }
 }
 
