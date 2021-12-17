@@ -334,7 +334,7 @@ impl Plan {
 
                         let scan = Relational::ScanRelation {
                             id: logical_id,
-                            output: nodes.push(Node::Expression(Expression::new_row(refs, None))),
+                            output: nodes.add_row(refs, None)?,
                             relation: String::from(table),
                         };
 

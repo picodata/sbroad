@@ -98,13 +98,6 @@ impl Expression {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    // TODO: check that doesn't contain top-level aliases with the same names
-    /// Row expression constructor.
-    #[must_use]
-    pub fn new_row(list: Vec<usize>, distribution: Option<Distribution>) -> Self {
-        Expression::Row { list, distribution }
-    }
-
     /// Boolean expression constructor.
     #[must_use]
     pub fn new_bool(left: usize, op: operator::Bool, right: usize) -> Self {
@@ -151,10 +144,34 @@ impl Nodes {
         };
         self.push(Node::Expression(r))
     }
+
+    // TODO: check that doesn't contain top-level aliases with the same names
+    /// Add row node.
+    ///
+    /// # Errors
+    /// - nodes in a list are invalid
+    /// - nodes in a list are not aliases
+    pub fn add_row(
+        &mut self,
+        list: Vec<usize>,
+        distribution: Option<Distribution>,
+    ) -> Result<usize, QueryPlannerError> {
+        for alias_node in &list {
+            if let Node::Expression(Expression::Alias { .. }) = self
+                .arena
+                .get(*alias_node)
+                .ok_or(QueryPlannerError::InvalidNode)?
+            {
+            } else {
+                return Err(QueryPlannerError::InvalidRow);
+            }
+        }
+        Ok(self.push(Node::Expression(Expression::Row { list, distribution })))
+    }
 }
 
 impl Plan {
-    /// Create a new output tuple from the children nodes output, containing
+    /// Create a new output row from the children nodes output, containing
     /// a specified list of column names. If the column list is empty then
     /// just copy all the columns to a new tuple.
     /// # Errors
@@ -229,9 +246,7 @@ impl Plan {
                 aliases.push(a_id);
             }
 
-            let row_node = self
-                .nodes
-                .push(Node::Expression(Expression::new_row(aliases, None)));
+            let row_node = self.nodes.add_row(aliases, None)?;
             return Ok(row_node);
         }
 
@@ -258,9 +273,7 @@ impl Plan {
         });
 
         if all_found {
-            let row_node = self
-                .nodes
-                .push(Node::Expression(Expression::new_row(aliases, None)));
+            let row_node = self.nodes.add_row(aliases, None)?;
             return Ok(row_node);
         }
         Err(QueryPlannerError::InvalidRow)
