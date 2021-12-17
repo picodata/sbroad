@@ -97,12 +97,6 @@ impl Expression {
         }
         Err(QueryPlannerError::InvalidRow)
     }
-
-    /// Boolean expression constructor.
-    #[must_use]
-    pub fn new_bool(left: usize, op: operator::Bool, right: usize) -> Self {
-        Expression::Bool { left, op, right }
-    }
 }
 
 impl Nodes {
@@ -123,6 +117,23 @@ impl Nodes {
             child,
         };
         Ok(self.push(Node::Expression(alias)))
+    }
+
+    /// Add boolean node.
+    ///
+    /// # Errors
+    /// - when left or right nodes are invalid
+    pub fn add_bool(
+        &mut self,
+        left: usize,
+        op: operator::Bool,
+        right: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.arena.get(left).ok_or(QueryPlannerError::InvalidNode)?;
+        self.arena
+            .get(right)
+            .ok_or(QueryPlannerError::InvalidNode)?;
+        Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
     }
 
     /// Add constant node.
