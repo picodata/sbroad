@@ -127,12 +127,12 @@ impl Relational {
     ) -> Result<HashMap<String, usize>, QueryPlannerError> {
         let mut map: HashMap<String, usize> = HashMap::new();
 
-        if let Some(Node::Expression(Expression::Row { list, .. })) = plan.nodes.get(self.output())
+        if let Some(Node::Expression(Expression::Row { list, .. })) = plan.nodes.arena.get(self.output())
         {
             let valid = list.iter().enumerate().all(|(pos, item)| {
                 // Check that expressions in the row list are all aliases
                 if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
-                    plan.nodes.get(*item)
+                    plan.nodes.arena.get(*item)
                 {
                     // Populate the map and check duplicate absence
                     if map.insert(String::from(name), pos).is_none() {
@@ -318,7 +318,7 @@ impl Plan {
     /// Returns `QueryPlannerError` when when relation is invalid.
     pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
         let logical_id = self.next_node_id();
-        let nodes = &mut self.nodes;
+        let nodes = &mut self.nodes.arena;
 
         if let Some(relations) = &self.relations {
             if let Some(rel) = relations.get(table) {
@@ -346,7 +346,7 @@ impl Plan {
                             relation: String::from(table),
                         };
 
-                        return Ok(vec_alloc(&mut self.nodes, Node::Relational(scan)));
+                        return Ok(vec_alloc(&mut self.nodes.arena, Node::Relational(scan)));
                     }
                     //TODO: implement virtual tables as well
                     _ => return Err(QueryPlannerError::InvalidRelation),

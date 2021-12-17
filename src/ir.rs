@@ -34,6 +34,17 @@ pub enum Node {
     Relational(Relational),
 }
 
+/// Plan node arena.
+///
+/// We don't want to mess with the borrow checker and RefCell/Rc,
+/// so all nodes are stored in the single arena ("nodes" array).
+/// The positions in the array act like pointers, so it is possible
+/// only to add nodes to the plan, but never remove them.
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub struct Nodes {
+    arena: Vec<Node>, 
+}
+
 /// Plan node "allocator".
 ///
 /// Inserts an element to the array and returns its position,
@@ -45,11 +56,6 @@ pub fn vec_alloc<T>(v: &mut Vec<T>, item: T) -> usize {
 }
 
 /// Logical plan tree structure.
-///
-/// We don't want to mess with the borrow checker and RefCell/Rc,
-/// so all nodes are stored in the single arena ("nodes" array).
-/// The positions in the array act like pointers, so it is possible
-/// only to add nodes to the plan, but never remove them.
 ///
 /// Relations are stored in a hash-map, with a table name acting as a
 /// key to guarantee its uniqueness across the plan. The map is marked
@@ -67,7 +73,7 @@ pub fn vec_alloc<T>(v: &mut Vec<T>, item: T) -> usize {
 /// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
-    nodes: Vec<Node>,
+    nodes: Nodes,
     relations: Option<HashMap<String, Table>>,
     slices: Option<Vec<Vec<usize>>>,
     top: Option<usize>,
@@ -99,7 +105,7 @@ impl Plan {
         match self.top {
             None => return Err(QueryPlannerError::InvalidPlan),
             Some(top) => {
-                if self.nodes.get(top).is_none() {
+                if self.nodes.arena.get(top).is_none() {
                     return Err(QueryPlannerError::ValueOutOfRange);
                 }
             }
@@ -114,7 +120,7 @@ impl Plan {
     #[must_use]
     pub fn empty() -> Self {
         Plan {
-            nodes: Vec::new(),
+            nodes: Nodes { arena: Vec::new() },
             relations: None,
             slices: None,
             top: None,
@@ -127,7 +133,7 @@ impl Plan {
     /// Returns `QueryPlannerError` when the node with requested index
     /// doesn't exist.
     pub fn get_node(&self, pos: usize) -> Result<&Node, QueryPlannerError> {
-        match self.nodes.get(pos) {
+        match self.nodes.arena.get(pos) {
             None => Err(QueryPlannerError::ValueOutOfRange),
             Some(node) => Ok(node),
         }
@@ -149,14 +155,14 @@ impl Plan {
     /// Returns the next node position
     #[must_use]
     pub fn next_node_id(&self) -> usize {
-        self.nodes.len()
+        self.nodes.arena.len()
     }
 
     /// Build {logical id: position} map for relational nodes
     #[must_use]
     pub fn relational_id_map(&self) -> HashMap<usize, usize> {
         let mut map: HashMap<usize, usize> = HashMap::new();
-        for (pos, node) in self.nodes.iter().enumerate() {
+        for (pos, node) in self.nodes.arena.iter().enumerate() {
             if let Node::Relational(relational) = node {
                 map.insert(relational.logical_id(), pos);
             }

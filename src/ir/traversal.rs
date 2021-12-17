@@ -38,7 +38,7 @@ impl<'n> Iterator for BranchIterator<'n> {
             let current_step = *self.step.borrow();
             let child = children.get(current_step);
             child.and_then(|pos| {
-                let node = self.plan.nodes.get(*pos);
+                let node = self.plan.nodes.arena.get(*pos);
                 *self.step.borrow_mut() += 1;
                 node
             })
@@ -50,7 +50,7 @@ impl<'n> Iterator for BranchIterator<'n> {
                     let current_step = *self.step.borrow();
                     if current_step == 0 {
                         *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*child);
+                        return self.plan.nodes.arena.get(*child);
                     }
                     None
                 }
@@ -58,10 +58,10 @@ impl<'n> Iterator for BranchIterator<'n> {
                     let current_step = *self.step.borrow();
                     if current_step == 0 {
                         *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*left);
+                        return self.plan.nodes.arena.get(*left);
                     } else if current_step == 1 {
                         *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*right);
+                        return self.plan.nodes.arena.get(*right);
                     }
                     None
                 }
@@ -70,7 +70,7 @@ impl<'n> Iterator for BranchIterator<'n> {
                     let current_step = *self.step.borrow();
                     if let Some(node) = list.get(current_step) {
                         *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*node);
+                        return self.plan.nodes.arena.get(*node);
                     }
                     None
                 }
@@ -86,7 +86,7 @@ impl<'n> Iterator for BranchIterator<'n> {
                         return get_next_child(children);
                     } else if current_step == 2 {
                         *self.step.borrow_mut() += 1;
-                        return self.plan.nodes.get(*condition);
+                        return self.plan.nodes.arena.get(*condition);
                     }
                     None
                 }

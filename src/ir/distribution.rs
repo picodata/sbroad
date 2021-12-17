@@ -163,6 +163,7 @@ impl Plan {
                     ..
                 }) = self
                     .nodes
+                    .arena
                     .get_mut(row_node)
                     .ok_or(QueryPlannerError::InvalidRow)?
                 {
@@ -254,6 +255,7 @@ impl Plan {
                             ..
                         }) = self
                             .nodes
+                            .arena
                             .get_mut(row_node)
                             .ok_or(QueryPlannerError::InvalidRow)?
                         {
@@ -267,6 +269,7 @@ impl Plan {
                         ..
                     }) = self
                         .nodes
+                        .arena
                         .get_mut(row_node)
                         .ok_or(QueryPlannerError::InvalidRow)?
                     {
@@ -308,6 +311,7 @@ impl Plan {
                 ..
             }) = self
                 .nodes
+                .arena
                 .get_mut(row_node)
                 .ok_or(QueryPlannerError::InvalidRow)?
             {

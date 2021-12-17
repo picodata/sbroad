@@ -1,34 +1,35 @@
 ---
 nodes:
-  - Expression:
-      Reference:
-        branch: Left
-        position: 0
-  - Expression:
-      Alias:
-        name: a
-        child: 0
-  - Expression:
-      Reference:
-        branch: Left
-        position: 1
-  - Expression:
-      Alias:
-        name: a
-        child: 2
-  - Expression:
-      Row:
-        list:
-          - 1
-          - 3
-        distribution:
-          Segment:
-            key:
-              - 0
-  - Relational:
-      ScanRelation:
-        output: 4
-        relation: t
+  arena:
+    - Expression:
+        Reference:
+          branch: Left
+          position: 0
+    - Expression:
+        Alias:
+          name: a
+          child: 0
+    - Expression:
+        Reference:
+          branch: Left
+          position: 1
+    - Expression:
+        Alias:
+          name: a
+          child: 2
+    - Expression:
+        Row:
+          list:
+            - 1
+            - 3
+          distribution:
+            Segment:
+              key:
+                - 0
+    - Relational:
+        ScanRelation:
+          output: 4
+          relation: t
 relations:
   t:
     Segment:

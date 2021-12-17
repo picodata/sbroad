@@ -151,19 +151,19 @@ fn selection() {
     let scan_id = plan.add_scan("t").unwrap();
 
     let ref_a_id = vec_alloc(
-        &mut plan.nodes,
+        &mut plan.nodes.arena,
         Node::Expression(Expression::new_ref(scan_id + 1, Some(vec![0]), 0)),
     );
     let a_id = vec_alloc(
-        &mut plan.nodes,
+        &mut plan.nodes.arena,
         Node::Expression(Expression::new_alias("a", ref_a_id)),
     );
     let const_id = vec_alloc(
-        &mut plan.nodes,
+        &mut plan.nodes.arena,
         Node::Expression(Expression::new_const(Value::number_from_str("10").unwrap())),
     );
     let gt_id = vec_alloc(
-        &mut plan.nodes,
+        &mut plan.nodes.arena,
         Node::Expression(Expression::new_bool(a_id, Bool::Gt, const_id)),
     );
 

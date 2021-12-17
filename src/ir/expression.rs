@@ -209,18 +209,18 @@ impl Plan {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
                 let r_id = vec_alloc(
-                    &mut self.nodes,
+                    &mut self.nodes.arena,
                     Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), pos)),
                 );
                 let a_id = vec_alloc(
-                    &mut self.nodes,
+                    &mut self.nodes.arena,
                     Node::Expression(Expression::new_alias(&name, r_id)),
                 );
                 aliases.push(a_id);
             }
 
             let row_node = vec_alloc(
-                &mut self.nodes,
+                &mut self.nodes.arena,
                 Node::Expression(Expression::new_row(aliases, None)),
             );
             return Ok(row_node);
@@ -239,11 +239,11 @@ impl Plan {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
                 let r_id = vec_alloc(
-                    &mut self.nodes,
+                    &mut self.nodes.arena,
                     Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), *pos)),
                 );
                 let a_id = vec_alloc(
-                    &mut self.nodes,
+                    &mut self.nodes.arena,
                     Node::Expression(Expression::new_alias(col, r_id)),
                 );
                 aliases.push(a_id);
@@ -253,7 +253,7 @@ impl Plan {
 
         if all_found {
             let row_node = vec_alloc(
-                &mut self.nodes,
+                &mut self.nodes.arena,
                 Node::Expression(Expression::new_row(aliases, None)),
             );
             return Ok(row_node);
