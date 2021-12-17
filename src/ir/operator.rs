@@ -2,7 +2,7 @@
 
 use super::expression::Expression;
 use super::relation::Table;
-use super::{vec_alloc, Node, Plan};
+use super::{Node, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -127,7 +127,8 @@ impl Relational {
     ) -> Result<HashMap<String, usize>, QueryPlannerError> {
         let mut map: HashMap<String, usize> = HashMap::new();
 
-        if let Some(Node::Expression(Expression::Row { list, .. })) = plan.nodes.arena.get(self.output())
+        if let Some(Node::Expression(Expression::Row { list, .. })) =
+            plan.nodes.arena.get(self.output())
         {
             let valid = list.iter().enumerate().all(|(pos, item)| {
                 // Check that expressions in the row list are all aliases
@@ -318,7 +319,7 @@ impl Plan {
     /// Returns `QueryPlannerError` when when relation is invalid.
     pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
         let logical_id = self.next_node_id();
-        let nodes = &mut self.nodes.arena;
+        let nodes = &mut self.nodes;
 
         if let Some(relations) = &self.relations {
             if let Some(rel) = relations.get(table) {
@@ -329,24 +330,18 @@ impl Plan {
                             .enumerate()
                             .map(|(pos, col)| {
                                 let r = Expression::new_ref(logical_id, None, pos);
-                                let r_id = vec_alloc(nodes, Node::Expression(r));
-                                vec_alloc(
-                                    nodes,
-                                    Node::Expression(Expression::new_alias(&col.name, r_id)),
-                                )
+                                let r_id = nodes.push(Node::Expression(r));
+                                nodes.push(Node::Expression(Expression::new_alias(&col.name, r_id)))
                             })
                             .collect();
 
                         let scan = Relational::ScanRelation {
                             id: logical_id,
-                            output: vec_alloc(
-                                nodes,
-                                Node::Expression(Expression::new_row(refs, None)),
-                            ),
+                            output: nodes.push(Node::Expression(Expression::new_row(refs, None))),
                             relation: String::from(table),
                         };
 
-                        return Ok(vec_alloc(&mut self.nodes.arena, Node::Relational(scan)));
+                        return Ok(nodes.push(Node::Relational(scan)));
                     }
                     //TODO: implement virtual tables as well
                     _ => return Err(QueryPlannerError::InvalidRelation),

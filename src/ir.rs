@@ -42,17 +42,19 @@ pub enum Node {
 /// only to add nodes to the plan, but never remove them.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Nodes {
-    arena: Vec<Node>, 
+    arena: Vec<Node>,
 }
 
-/// Plan node "allocator".
-///
-/// Inserts an element to the array and returns its position,
-/// that is treated as a pointer.
-pub fn vec_alloc<T>(v: &mut Vec<T>, item: T) -> usize {
-    let idx = v.len();
-    v.push(item);
-    idx
+impl Nodes {
+    /// Add new node to arena.
+    ///
+    /// Inserts a new node to the arena and returns its position,
+    /// that is treated as a pointer.
+    pub fn push(&mut self, node: Node) -> usize {
+        let position = self.arena.len();
+        self.arena.push(node);
+        position
+    }
 }
 
 /// Logical plan tree structure.

@@ -25,7 +25,7 @@ fn proj_preserve_dist_key() {
     let scan_id = plan.add_scan("t").unwrap();
 
     let proj = Relational::new_proj(&mut plan, scan_id, &["a", "b"]).unwrap();
-    let proj_id = vec_alloc(&mut plan.nodes.arena, Node::Relational(proj));
+    let proj_id = plan.nodes.push(Node::Relational(proj));
 
     plan.top = Some(proj_id);
 

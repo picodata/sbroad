@@ -8,7 +8,7 @@
 use super::distribution::Distribution;
 use super::operator;
 use super::value::Value;
-use super::{vec_alloc, Node, Plan};
+use super::{Node, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 
@@ -208,21 +208,20 @@ impl Plan {
                 };
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
-                let r_id = vec_alloc(
-                    &mut self.nodes.arena,
-                    Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), pos)),
-                );
-                let a_id = vec_alloc(
-                    &mut self.nodes.arena,
-                    Node::Expression(Expression::new_alias(&name, r_id)),
-                );
+                let r_id = self.nodes.push(Node::Expression(Expression::new_ref(
+                    rel_node_id,
+                    Some(new_targets),
+                    pos,
+                )));
+                let a_id = self
+                    .nodes
+                    .push(Node::Expression(Expression::new_alias(&name, r_id)));
                 aliases.push(a_id);
             }
 
-            let row_node = vec_alloc(
-                &mut self.nodes.arena,
-                Node::Expression(Expression::new_row(aliases, None)),
-            );
+            let row_node = self
+                .nodes
+                .push(Node::Expression(Expression::new_row(aliases, None)));
             return Ok(row_node);
         }
 
@@ -238,24 +237,23 @@ impl Plan {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
-                let r_id = vec_alloc(
-                    &mut self.nodes.arena,
-                    Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), *pos)),
-                );
-                let a_id = vec_alloc(
-                    &mut self.nodes.arena,
-                    Node::Expression(Expression::new_alias(col, r_id)),
-                );
+                let r_id = self.nodes.push(Node::Expression(Expression::new_ref(
+                    rel_node_id,
+                    Some(new_targets),
+                    *pos,
+                )));
+                let a_id = self
+                    .nodes
+                    .push(Node::Expression(Expression::new_alias(col, r_id)));
                 aliases.push(a_id);
                 true
             })
         });
 
         if all_found {
-            let row_node = vec_alloc(
-                &mut self.nodes.arena,
-                Node::Expression(Expression::new_row(aliases, None)),
-            );
+            let row_node = self
+                .nodes
+                .push(Node::Expression(Expression::new_row(aliases, None)));
             return Ok(row_node);
         }
         Err(QueryPlannerError::InvalidRow)
