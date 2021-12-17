@@ -8,7 +8,7 @@ _G.sql_execute = nil
 local function query(q)
     local has_err, parser_res = pcall(
             function()
-                return box.func["sbroad.parse_sql"]:call({ q, vshard.router.bucket_count() })
+                return box.func["sbroad.parse_sql"]:call({ q })
             end
     )
 
@@ -40,7 +40,7 @@ local function insert_record(space_name, values)
         shard_val = shard_val .. tostring(values[key])
     end
 
-    values['bucket_id'] = box.func["sbroad.calculate_bucket_id"]:call({ shard_val, vshard.router.bucket_count() })
+    values['bucket_id'] = box.func["sbroad.calculate_bucket_id"]:call({ shard_val })
 	local res = vshard.router.call(
         values['bucket_id'],
          "write",

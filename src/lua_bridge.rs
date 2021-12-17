@@ -52,3 +52,14 @@ pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteResult, LuaEr
 
     Ok(res)
 }
+
+/// Function get summary count of bucket from vshard
+pub fn bucket_count() -> Result<u64, LuaError> {
+    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
+
+    let bucket_count_fn: LuaFunction<_> =
+        lua.eval("return require('vshard').router.bucket_count")?;
+    let result = bucket_count_fn.call()?;
+
+    Ok(result)
+}
