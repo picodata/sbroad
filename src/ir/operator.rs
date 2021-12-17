@@ -112,129 +112,6 @@ pub enum Relational {
     },
 }
 
-/// Create a new tuple from the children nodes output, containing only
-/// a specified list of column names. If the column list is empty then
-/// just copy all the columns to a new tuple.
-/// # Errors
-/// Returns `QueryPlannerError`:
-/// - relation node contains invalid `Row` in the output
-/// - targets and children are inconsistent
-/// - column names don't exits
-pub fn new_row_node(
-    plan: &mut Plan,
-    rel_node_id: usize,
-    children: &[usize],
-    targets: &[usize],
-    col_names: &[&str],
-) -> Result<usize, QueryPlannerError> {
-    // We can pass two target children nodes only in a case
-    // of `UnionAll`. Even for a `NaturalJoin` we work with
-    // each child independently. In fact, we need only the
-    // first child in a `UnionAll` operator to get correct
-    // column names for a new tuple (second child aliases
-    // would be shadowed). But each reference should point
-    // to both children to give us additional information
-    // during transformations.
-    if (targets.len() > 2) || targets.is_empty() {
-        return Err(QueryPlannerError::InvalidRow);
-    }
-
-    if let Some(max) = targets.iter().max() {
-        if *max >= children.len() {
-            return Err(QueryPlannerError::InvalidRow);
-        }
-    }
-
-    let target_child: usize = if let Some(target) = targets.get(0) {
-        *target
-    } else {
-        return Err(QueryPlannerError::InvalidRow);
-    };
-    let child_node: usize = if let Some(child) = children.get(target_child) {
-        *child
-    } else {
-        return Err(QueryPlannerError::InvalidRow);
-    };
-
-    if col_names.is_empty() {
-        let child_row_list: Vec<usize> =
-            if let Node::Relational(relational_op) = plan.get_node(child_node)? {
-                if let Node::Expression(Expression::Row { list, .. }) =
-                    plan.get_node(relational_op.output())?
-                {
-                    list.clone()
-                } else {
-                    return Err(QueryPlannerError::InvalidRow);
-                }
-            } else {
-                return Err(QueryPlannerError::InvalidNode);
-            };
-
-        let mut aliases: Vec<usize> = Vec::new();
-
-        for (pos, alias_node) in child_row_list.iter().enumerate() {
-            let name: String = if let Node::Expression(Expression::Alias { ref name, .. }) =
-                plan.get_node(*alias_node)?
-            {
-                String::from(name)
-            } else {
-                return Err(QueryPlannerError::InvalidRow);
-            };
-            let new_targets: Vec<usize> = targets.iter().copied().collect();
-            // Create new references and aliases. Save them to the plan nodes arena.
-            let r_id = vec_alloc(
-                &mut plan.nodes,
-                Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), pos)),
-            );
-            let a_id = vec_alloc(
-                &mut plan.nodes,
-                Node::Expression(Expression::new_alias(&name, r_id)),
-            );
-            aliases.push(a_id);
-        }
-
-        let row_node = vec_alloc(
-            &mut plan.nodes,
-            Node::Expression(Expression::new_row(aliases, None)),
-        );
-        return Ok(row_node);
-    }
-
-    let map = if let Node::Relational(relational_op) = plan.get_node(child_node)? {
-        relational_op.output_alias_position_map(plan)?
-    } else {
-        return Err(QueryPlannerError::InvalidNode);
-    };
-
-    let mut aliases: Vec<usize> = Vec::new();
-
-    let all_found = col_names.iter().all(|col| {
-        map.get(*col).map_or(false, |pos| {
-            let new_targets: Vec<usize> = targets.iter().copied().collect();
-            // Create new references and aliases. Save them to the plan nodes arena.
-            let r_id = vec_alloc(
-                &mut plan.nodes,
-                Node::Expression(Expression::new_ref(rel_node_id, Some(new_targets), *pos)),
-            );
-            let a_id = vec_alloc(
-                &mut plan.nodes,
-                Node::Expression(Expression::new_alias(col, r_id)),
-            );
-            aliases.push(a_id);
-            true
-        })
-    });
-
-    if all_found {
-        let row_node = vec_alloc(
-            &mut plan.nodes,
-            Node::Expression(Expression::new_row(aliases, None)),
-        );
-        return Ok(row_node);
-    }
-    Err(QueryPlannerError::InvalidRow)
-}
-
 #[allow(dead_code)]
 impl Relational {
     /// Get an <column name - position> map from the output tuple.
@@ -372,7 +249,7 @@ impl Relational {
     ) -> Result<Self, QueryPlannerError> {
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = new_row_node(plan, id, &children, &[0], col_names)?;
+        let output = plan.add_row(id, &children, &[0], col_names)?;
 
         Ok(Relational::Projection {
             children,
@@ -400,7 +277,7 @@ impl Relational {
 
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = new_row_node(plan, id, &children, &[0], &[])?;
+        let output = plan.add_row(id, &children, &[0], &[])?;
 
         Ok(Relational::Selection {
             children,
@@ -439,7 +316,7 @@ impl Relational {
 
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![left, right];
-        let output = new_row_node(plan, id, &children, &[0, 1], &[])?;
+        let output = plan.add_row(id, &children, &[0, 1], &[])?;
 
         Ok(Relational::UnionAll {
             children,
@@ -465,7 +342,7 @@ impl Relational {
         }
         let id = plan.next_node_id();
         let children: Vec<usize> = vec![child];
-        let output = new_row_node(plan, id, &children, &[0], &[])?;
+        let output = plan.add_row(id, &children, &[0], &[])?;
 
         Ok(Relational::ScanSubQuery {
             alias: String::from(alias),
