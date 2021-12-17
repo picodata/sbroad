@@ -150,11 +150,7 @@ fn selection() {
 
     let scan_id = plan.add_scan("t").unwrap();
 
-    let ref_a_id = plan.nodes.push(Node::Expression(Expression::new_ref(
-        scan_id + 1,
-        Some(vec![0]),
-        0,
-    )));
+    let ref_a_id = plan.nodes.add_ref(scan_id + 1, Some(vec![0]), 0);
     let a_id = plan.nodes.add_alias("a", ref_a_id).unwrap();
     let const_id = plan.nodes.add_const(Value::number_from_str("10").unwrap());
     let gt_id = plan.nodes.push(Node::Expression(Expression::new_bool(

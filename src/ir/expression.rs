@@ -98,16 +98,6 @@ impl Expression {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Reference expression constructor.
-    #[must_use]
-    pub fn new_ref(parent: usize, targets: Option<Vec<usize>>, position: usize) -> Self {
-        Expression::Reference {
-            parent,
-            targets,
-            position,
-        }
-    }
-
     // TODO: check that doesn't contain top-level aliases with the same names
     /// Row expression constructor.
     #[must_use]
@@ -145,6 +135,21 @@ impl Nodes {
     /// Add constant node.
     pub fn add_const(&mut self, value: Value) -> usize {
         self.push(Node::Expression(Expression::Constant { value }))
+    }
+
+    /// Reference expression constructor.
+    pub fn add_ref(
+        &mut self,
+        parent: usize,
+        targets: Option<Vec<usize>>,
+        position: usize,
+    ) -> usize {
+        let r = Expression::Reference {
+            parent,
+            targets,
+            position,
+        };
+        self.push(Node::Expression(r))
     }
 }
 
@@ -219,11 +224,7 @@ impl Plan {
                 };
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
-                let r_id = self.nodes.push(Node::Expression(Expression::new_ref(
-                    rel_node_id,
-                    Some(new_targets),
-                    pos,
-                )));
+                let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), pos);
                 let a_id = self.nodes.add_alias(&name, r_id)?;
                 aliases.push(a_id);
             }
@@ -246,11 +247,7 @@ impl Plan {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Create new references and aliases. Save them to the plan nodes arena.
-                let r_id = self.nodes.push(Node::Expression(Expression::new_ref(
-                    rel_node_id,
-                    Some(new_targets),
-                    *pos,
-                )));
+                let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), *pos);
                 if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
                     aliases.push(a_id);
                     true

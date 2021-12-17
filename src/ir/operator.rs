@@ -327,8 +327,7 @@ impl Plan {
                         let mut refs: Vec<usize> = Vec::new();
 
                         for (pos, col) in columns.iter().enumerate() {
-                            let r_id = nodes
-                                .push(Node::Expression(Expression::new_ref(logical_id, None, pos)));
+                            let r_id = nodes.add_ref(logical_id, None, pos);
                             let alias_id = nodes.add_alias(&col.name, r_id)?;
                             refs.push(alias_id);
                         }
