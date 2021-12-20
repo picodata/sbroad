@@ -7,12 +7,13 @@ cache:
     paths:
         - target
 
-build:
-    stage: build
+default:
     tags:
-        - docker
+        - picodata
     image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
 
+build:
+    stage: build
     script:
         - make
     artifacts:
@@ -22,17 +23,11 @@ build:
 
 lint:
     stage: test
-    tags:
-        - docker
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
     script:
         - make lint
 
 test:
     stage: test
-    tags:
-        - docker
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
     script:
         - make test_all
         - ls target/debug/
