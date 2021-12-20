@@ -6,9 +6,9 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::bucket::get_bucket_id;
+use crate::cache::Metadata;
 use crate::errors::QueryPlannerError;
 use crate::parser::{QueryPlaner, QueryResult};
-use crate::schema::Cluster;
 use crate::simple_query::SimpleQuery;
 use crate::union_simple_query::UnionSimpleQuery;
 
@@ -27,12 +27,16 @@ pub fn get_ast(query: &str) -> Result<Box<Query>, QueryPlannerError> {
 
 pub struct ParsedTree {
     ast: Box<Query>,
-    schema: Cluster,
+    schema: Metadata,
     bucket_count: u64,
 }
 
 impl ParsedTree {
-    pub fn new(query: &str, schema: Cluster, bucket_count: u64) -> Result<Self, QueryPlannerError> {
+    pub fn new(
+        query: &str,
+        schema: Metadata,
+        bucket_count: u64,
+    ) -> Result<Self, QueryPlannerError> {
         let ast = match get_ast(query) {
             Ok(s) => s,
             _ => return Err(QueryPlannerError::QueryNotImplemented),
@@ -376,7 +380,8 @@ mod tests {
     fn test_simple_query() {
         let test_query = "SELECT * FROM \"test_space\" WHERE \"id\" = 1";
 
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let mut expected_result = Vec::new();
         expected_result.push(QueryResult {
@@ -390,7 +395,8 @@ mod tests {
 
     #[test]
     fn test_simple_union_query() {
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
@@ -418,7 +424,8 @@ mod tests {
 
     #[test]
     fn test_simple_union_complex_shard_query() {
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"complex_idx_test\" WHERE \"sysFrom\" > 0
@@ -444,7 +451,8 @@ mod tests {
 
     #[test]
     fn test_simple_disjunction_in_union_query() {
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"test_space\" WHERE \"sysFrom\" > 0
@@ -484,7 +492,8 @@ mod tests {
 
     #[test]
     fn test_complex_disjunction_union_query() {
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let test_query = "SELECT * FROM (
     SELECT * FROM \"complex_idx_test\" WHERE \"sys_op\" > 0
@@ -556,7 +565,9 @@ mod tests {
             node_query: second_sub_query.clone(),
         });
 
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
+
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
@@ -624,7 +635,9 @@ mod tests {
             node_query: second_sub_query.clone(),
         });
 
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
+
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
@@ -692,14 +705,17 @@ mod tests {
             node_query: second_sub_query.clone(),
         });
 
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
+
         let q = ParsedTree::new(test_query, s, 30000).unwrap();
         assert_eq!(q.transform().unwrap(), expected_result)
     }
 
     #[test]
     fn test_unsupported_query() {
-        let s = Cluster::from(TEST_SCHEMA.to_string());
+        let mut s = Metadata::new();
+        s.load(TEST_SCHEMA).unwrap();
 
         let mut test_query = "SELECT * FROM \"test_space\" as s1
     inner join \"join_space\" as s2 on s1.\"f1\" = s2.\"s1_id\"

@@ -27,7 +27,7 @@ impl From<bool> for Trivalent {
 
 /// Values are used to keep constants from the query
 /// or results for the virtual tables.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Value {
     /// Boolean type.
     Boolean(bool),

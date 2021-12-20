@@ -12,7 +12,7 @@ use crate::errors::QueryPlannerError;
 use super::value::Value;
 
 /// Supported column types.
-#[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq)]
+#[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
     Boolean,
     Number,
@@ -21,8 +21,25 @@ pub enum Type {
     Unsigned,
 }
 
+impl Type {
+    /// Type constructor
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the input arguments are invalid.
+    pub fn new(s: &str) -> Result<Self, QueryPlannerError> {
+        match s.to_string().to_lowercase().as_str() {
+            "boolean" => Ok(Type::Boolean),
+            "number" => Ok(Type::Number),
+            "string" => Ok(Type::String),
+            "integer" => Ok(Type::Integer),
+            "unsigned" => Ok(Type::Unsigned),
+            _ => Err(QueryPlannerError::TypeNotImplemented),
+        }
+    }
+}
+
 /// Relation column.
-#[derive(LuaRead, Deserialize, PartialEq, Debug, Eq)]
+#[derive(LuaRead, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
@@ -50,7 +67,6 @@ impl SerSerialize for Column {
     }
 }
 
-#[allow(dead_code)]
 impl Column {
     /// Column constructor.
     #[must_use]
@@ -65,7 +81,7 @@ impl Column {
 /// Table is a tuple storage in the cluster.
 ///
 /// Tables are the tuple storages in the cluster.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Table {
     /// Already existing table segment on some cluster data node.
     Segment {
@@ -100,7 +116,6 @@ pub enum Table {
     },
 }
 
-#[allow(dead_code)]
 impl Table {
     #[must_use]
     pub fn name(&self) -> &str {

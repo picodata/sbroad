@@ -10,12 +10,12 @@ use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 use crate::bucket::str_to_bucket_id;
+use crate::cache::Metadata;
 use crate::errors::QueryPlannerError;
 use crate::lua_bridge::{bucket_count, exec_query, get_cluster_schema};
 use crate::query::ParsedTree;
-use crate::schema::Cluster;
 
-thread_local!(static CARTRIDGE_SCHEMA: RefCell<Cluster> = RefCell::new(Cluster::new()));
+thread_local!(static CARTRIDGE_SCHEMA: RefCell<Metadata> = RefCell::new(Metadata::new()));
 
 #[derive(Serialize, Deserialize)]
 struct Args {
@@ -49,23 +49,17 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                     return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
                 }
             };
-            schema = Cluster::from(text_schema);
-
-            *s.borrow_mut() = schema.clone();
+            match schema.load(&text_schema) {
+                Ok(_) => *s.borrow_mut() = schema.clone(),
+                Err(e) => {
+                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string())
+                }
+            };
         }
 
         let bucket_count = match bucket_count() {
             Ok(c) => c,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    "parser.rs",
-                    58,
-                    Option::from("bucket id error"),
-                    &format!("{:?}", e),
-                );
-                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-            }
+            Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
         };
 
         let q = ParsedTree::new(args.query.as_str(), schema, bucket_count).unwrap();
@@ -74,17 +68,7 @@ pub extern "C" fn parse_sql(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                 ctx.return_mp(&p).unwrap();
                 0
             }
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    "parser.rs",
-                    73,
-                    Option::from("transform error"),
-                    &format!("{:?}", e),
-                );
-
-                tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string())
-            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
         };
 
         result
@@ -98,7 +82,7 @@ It must be called in function `apply_config()` in lua cartridge application.
 #[no_mangle]
 pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
     CARTRIDGE_SCHEMA.with(|s| {
-        *s.borrow_mut() = Cluster::new();
+        *s.borrow_mut() = Metadata::new();
     });
 
     ctx.return_mp(&true).unwrap();
@@ -118,16 +102,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
     let args = args.into_struct::<BucketCalcArgs>().unwrap();
     let bucket_count = match bucket_count() {
         Ok(c) => c,
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                "parser.rs",
-                121,
-                Option::from("bucket id error"),
-                &format!("{:?}", e),
-            );
-            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-        }
+        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
     };
     let result = str_to_bucket_id(&args.val, bucket_count.try_into().unwrap());
     ctx.return_mp(&result).unwrap();
@@ -152,16 +127,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             ctx.return_mp(&p).unwrap();
             0
         }
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                "parser.rs",
-                152,
-                Option::from("query execution error"),
-                &format!("{:?}", e),
-            );
-            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-        }
+        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
     }
 }
 

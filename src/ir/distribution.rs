@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 /// If table T1 is segmented by columns (a, b) and produces
 /// tuples with columns (a, b, c), it means that for any T1 tuple
 /// on a segment S1: f(a, b) = S1 and (a, b) is a segmentation key.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Key {
     /// A list of column positions in the tuple that form a
     /// segmentation key.
