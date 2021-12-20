@@ -2,9 +2,29 @@ use super::expression::Expression;
 use super::operator::Relational;
 use super::relation::Table;
 use super::{Node, Plan};
+use crate::collection;
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+/// Tuple columns, that determinate its segment distribution.
+///
+/// If table T1 is segmented by columns (a, b) and produces
+/// tuples with columns (a, b, c), it means that for any T1 tuple
+/// on a segment S1: f(a, b) = S1 and (a, b) is a segmentation key.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct Key {
+    /// A list of column positions in the tuple that form a
+    /// segmentation key.
+    pub positions: Vec<usize>,
+}
+
+impl Key {
+    #[must_use]
+    pub fn new(positions: Vec<usize>) -> Self {
+        Key { positions }
+    }
+}
 
 /// Tuple data chunk distribution policy in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -26,9 +46,8 @@ pub enum Distribution {
     ///
     /// Example: segmented table.
     Segment {
-        /// A list of column positions in the output tuple,
-        /// that for a distribution key.
-        key: Vec<usize>,
+        /// A set of segment keys (we can have multiple keys after join)
+        keys: HashSet<Key>,
     },
 }
 
@@ -56,17 +75,24 @@ impl Distribution {
                 _ => Ok(right),
             },
             Distribution::Segment {
-                key: ref left_key, ..
+                keys: ref left_keys,
+                ..
             } => match right {
                 Distribution::Random => Ok(Distribution::Random),
                 Distribution::Replicated => Ok(left),
                 Distribution::Segment {
-                    key: ref right_key, ..
+                    keys: ref right_keys,
+                    ..
                 } => {
-                    if left_key.iter().zip(right_key.iter()).all(|(l, r)| l == r) {
-                        Ok(left)
-                    } else {
+                    let mut keys: HashSet<Key> = HashSet::new();
+                    for key in left_keys.intersection(right_keys) {
+                        keys.insert(Key::new(key.positions.clone()));
+                    }
+
+                    if keys.is_empty() {
                         Ok(Distribution::Random)
+                    } else {
+                        Ok(Distribution::Segment { keys })
                     }
                 }
                 Distribution::Coordinator => Err(QueryPlannerError::RequireMotion),
@@ -202,20 +228,28 @@ impl Plan {
                     Some(Distribution::Random) => return Ok(Distribution::Random),
                     Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Coordinator) => return Ok(Distribution::Coordinator),
-                    Some(Distribution::Segment { key }) => {
-                        let mut new_key: Vec<usize> = Vec::new();
-                        let all_found = key.iter().all(|pos| {
-                            child_pos_map
-                                .get(&(child_rel_node, *pos))
-                                .map_or(false, |v| {
-                                    new_key.push(*v);
-                                    true
-                                })
-                        });
-                        if all_found {
-                            return Ok(Distribution::Segment { key: new_key });
+                    Some(Distribution::Segment { keys }) => {
+                        let mut new_keys: HashSet<Key> = HashSet::new();
+                        for key in keys {
+                            let mut new_key: Key = Key::new(Vec::new());
+                            let all_found = key.positions.iter().all(|pos| {
+                                child_pos_map
+                                    .get(&(child_rel_node, *pos))
+                                    .map_or(false, |v| {
+                                        new_key.positions.push(*v);
+                                        true
+                                    })
+                            });
+
+                            if all_found {
+                                new_keys.insert(new_key);
+                            }
                         }
-                        return Ok(Distribution::Random);
+
+                        if new_keys.is_empty() {
+                            return Ok(Distribution::Random);
+                        }
+                        return Ok(Distribution::Segment { keys: new_keys });
                     }
                 }
             }
@@ -242,10 +276,10 @@ impl Plan {
                 .ok_or(QueryPlannerError::InvalidRelation)?;
             match table {
                 Table::Segment { key, .. } | Table::VirtualSegment { key, .. } => {
-                    let mut new_key: Vec<usize> = Vec::new();
-                    let all_found = key.iter().all(|pos| {
+                    let mut new_key: Key = Key::new(Vec::new());
+                    let all_found = key.positions.iter().all(|pos| {
                         table_pos_map.get(pos).map_or(false, |v| {
-                            new_key.push(*v);
+                            new_key.positions.push(*v);
                             true
                         })
                     });
@@ -259,7 +293,9 @@ impl Plan {
                             .get_mut(row_node)
                             .ok_or(QueryPlannerError::InvalidRow)?
                         {
-                            *distribution = Some(Distribution::Segment { key: new_key });
+                            *distribution = Some(Distribution::Segment {
+                                keys: collection! { new_key },
+                            });
                         }
                     }
                 }

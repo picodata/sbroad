@@ -46,9 +46,10 @@ nodes:
             - 7
           distribution:
             Segment:
-              key:
-                - 1
-                - 0
+              keys:
+                - positions:
+                  - 1
+                  - 0
     - Relational:
         ScanRelation:
           id: 0
@@ -121,9 +122,10 @@ nodes:
             - 21
           distribution:
             Segment:
-              key:
-                - 1
-                - 0
+              keys:
+                - positions:
+                  - 1
+                  - 0
     - Relational:
         Selection:
           children:
@@ -144,8 +146,9 @@ relations:
         - name: d
           type: String
       key:
-        - 1
-        - 0
+        positions:
+          - 1
+          - 0
       name: t
 slices: ~
 top: 23

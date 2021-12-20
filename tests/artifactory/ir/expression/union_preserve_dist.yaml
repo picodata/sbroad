@@ -103,7 +103,8 @@ relations:
         - name: b
           type: Number
       key:
-        - 0
+        positions:
+          - 0
       name: t1
   t2:
     Segment:
@@ -113,7 +114,8 @@ relations:
         - name: b
           type: Number
       key:
-        - 0
+        positions:
+          - 0
       name: t2
 slices: ~
 top: 17

@@ -20,8 +20,9 @@ nodes:
             - 2
           distribution:
             Segment:
-              key:
-                - 0
+              keys:
+                - positions:
+                  - 0
     - Relational:
         ScanRelation:
           output: 3
@@ -35,7 +36,8 @@ relations:
         - name: b
           type: Number
       key:
-        - 0
+        positions:
+          - 0
       name: t
 slices: ~
 top: 4

@@ -2,4 +2,5 @@ Segment:
   columns: ~
   name: t
   key:
-    - 0
+    positions:
+      - 0

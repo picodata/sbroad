@@ -27,7 +27,8 @@ relations:
         - name: a
           type: Boolean
       key:
-        - 0
+        positions:
+          - 0
       name: t
 slices: ~
 top: 42

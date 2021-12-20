@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::distribution::Key;
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
 use tarantool::hlua::{self, LuaRead};
@@ -71,7 +72,7 @@ pub enum Table {
         /// List of the columns.
         columns: Vec<Column>,
         /// Distribution key of the output tuples (column positions).
-        key: Vec<usize>,
+        key: Key,
         /// Unique table name.
         name: String,
     },
@@ -93,7 +94,7 @@ pub enum Table {
         /// "Raw" tuples (list of values) in a hash map (hashed by distribution key)
         data: HashMap<String, Vec<Vec<Value>>>,
         /// Distribution key (list of the column positions)
-        key: Vec<usize>,
+        key: Key,
         /// Unique table name (we need to generate it ourselves).
         name: String,
     },
@@ -139,7 +140,7 @@ impl Table {
         Ok(Table::Segment {
             name: n.into(),
             columns: c,
-            key: positions,
+            key: Key::new(positions),
         })
     }
 
@@ -162,8 +163,7 @@ impl Table {
                 return Err(QueryPlannerError::DuplicateColumn);
             }
 
-            let keys = key;
-            let in_range = keys.iter().all(|pos| *pos < cols.len());
+            let in_range = key.positions.iter().all(|pos| *pos < cols.len());
 
             if !in_range {
                 return Err(QueryPlannerError::ValueOutOfRange);

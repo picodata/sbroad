@@ -30,9 +30,9 @@ fn table_seg() {
     )
     .unwrap();
     if let Table::Segment { key, .. } = &t {
-        assert_eq!(2, key.len());
-        assert_eq!(0, key[1]);
-        assert_eq!(1, key[0]);
+        assert_eq!(2, key.positions.len());
+        assert_eq!(0, key.positions[1]);
+        assert_eq!(1, key.positions[0]);
     }
 }
 

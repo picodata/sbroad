@@ -46,9 +46,10 @@ nodes:
             - 7
           distribution:
             Segment:
-              key:
-                - 1
-                - 0 
+              keys:
+                - positions:
+                  - 1
+                  - 0 
     - Relational:
         ScanRelation:
           output: 8
@@ -67,8 +68,9 @@ relations:
         - name: d
           type: String
       key:
-        - 1
-        - 0
+        positions:
+          - 1
+          - 0
       name: t
 slices: ~
 top: 9

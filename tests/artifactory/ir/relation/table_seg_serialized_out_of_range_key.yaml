@@ -4,4 +4,5 @@ Segment:
       type: Boolean
   name: t
   key:
-    - 10
+    positions:
+      - 10

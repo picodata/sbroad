@@ -1,4 +1,5 @@
 use super::*;
+use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::ir::distribution::*;
 use crate::ir::relation::*;
@@ -38,7 +39,9 @@ fn scan_rel() {
     if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             row.distribution().unwrap(),
-            &Distribution::Segment { key: vec![1, 0] }
+            &Distribution::Segment {
+                keys: collection! { Key::new(vec![1, 0]) }
+            }
         );
     } else {
         panic!("Wrong output node type!");

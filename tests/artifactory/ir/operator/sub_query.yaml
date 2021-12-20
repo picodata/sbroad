@@ -26,8 +26,9 @@ nodes:
             - 3
           distribution:
             Segment:
-              key:
-                - 0
+              keys:
+                - positions:
+                  - 0
     - Relational:
         ScanRelation:
           output: 4
@@ -58,8 +59,9 @@ nodes:
             - 9
           distribution:
             Segment:
-              key:
-                - 0
+              keys:
+                - positions:
+                  - 0
     - Relational:
         ScanSubQuery:
           alias: sq
@@ -76,7 +78,8 @@ relations:
         - name: b
           type: Number
       key:
-        - 0
+        positions:
+          - 0
       name: t
 slices: ~
 top: 11

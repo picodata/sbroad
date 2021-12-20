@@ -4,6 +4,7 @@
 
 pub mod distribution;
 pub mod expression;
+pub mod helpers;
 pub mod operator;
 pub mod relation;
 pub mod traversal;

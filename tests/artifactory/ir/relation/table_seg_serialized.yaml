@@ -14,5 +14,6 @@ Segment:
       type: Unsigned
   name: t
   key:
-    - 0
-    - 3
+    positions:
+      - 0
+      - 3
