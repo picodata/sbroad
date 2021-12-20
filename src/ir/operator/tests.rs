@@ -272,3 +272,107 @@ fn sub_query_serialize() {
     let s = fs::read_to_string(path).unwrap();
     Plan::from_yaml(&s).unwrap();
 }
+
+#[test]
+fn join() {
+    // t1(a, b), t2(c, d)
+    // select * from t1 join t2 on a = d;
+    //
+    // Treat a = d as (a) = (d),
+    // i.e. (a), (d) - tuples containing a single column.
+    let mut plan = Plan::new();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t1);
+    let scan_t1 = plan.add_scan("t1").unwrap();
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("c", Type::Boolean),
+            Column::new("d", Type::Number),
+        ],
+        &["d"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+    let scan_t2 = plan.add_scan("t2").unwrap();
+
+    let logical_id = plan.nodes.next_id();
+    let a_row = plan
+        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[0], &["a"])
+        .unwrap();
+    let d_row = plan
+        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[1], &["d"])
+        .unwrap();
+    let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
+    let join = plan
+        .add_join(scan_t1, scan_t2, condition, logical_id)
+        .unwrap();
+    plan.top = Some(join);
+}
+
+#[test]
+fn join_serialize() {
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("ir")
+        .join("operator")
+        .join("join.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    Plan::from_yaml(&s).unwrap();
+}
+
+#[test]
+fn join_duplicate_columns() {
+    // t1(a, b), t2(a, d)
+    // select * from t1 join t2 on t1.a = t2.d
+    let mut plan = Plan::new();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t1);
+    let scan_t1 = plan.add_scan("t1").unwrap();
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("d", Type::Number),
+        ],
+        &["d"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+    let scan_t2 = plan.add_scan("t2").unwrap();
+
+    let logical_id = plan.nodes.next_id();
+    let a_row = plan
+        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[0], &["a"])
+        .unwrap();
+    let d_row = plan
+        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[1], &["d"])
+        .unwrap();
+    let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
+    assert_eq!(
+        QueryPlannerError::DuplicateColumn,
+        plan.add_join(scan_t1, scan_t2, condition, logical_id)
+            .unwrap_err()
+    );
+}

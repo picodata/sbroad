@@ -229,6 +229,36 @@ impl Plan {
         Err(QueryPlannerError::InvalidRelation)
     }
 
+    /// Add inner join node.
+    ///
+    /// # Errors
+    /// - condition is not a boolean expression
+    /// - children nodes are not relational
+    /// - children output tuples are invalid
+    pub fn add_join(
+        &mut self,
+        left: usize,
+        right: usize,
+        condition: usize,
+        id: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        if let Node::Expression(Expression::Bool { .. }) = self.get_node(condition)? {
+        } else {
+            return Err(QueryPlannerError::InvalidBool);
+        }
+
+        let children: Vec<usize> = vec![left, right];
+        let output = self.add_output_row(id, &children, true, &[0, 1], &[])?;
+
+        let join = Relational::InnerJoin {
+            children,
+            condition,
+            id,
+            output,
+        };
+        Ok(self.nodes.push(Node::Relational(join)))
+    }
+
     // TODO: we need a more flexible projection constructor (constants, etc)
 
     /// Add projection node.
@@ -244,7 +274,7 @@ impl Plan {
     ) -> Result<usize, QueryPlannerError> {
         let id = self.nodes.next_id();
         let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, &[0], col_names)?;
+        let output = self.add_output_row(id, &children, false, &[0], col_names)?;
 
         let proj = Relational::Projection {
             children,
@@ -272,7 +302,7 @@ impl Plan {
         }
 
         let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, &[0], &[])?;
+        let output = self.add_output_row(id, &children, false, &[0], &[])?;
 
         let select = Relational::Selection {
             children,
@@ -296,7 +326,7 @@ impl Plan {
         }
         let id = self.nodes.next_id();
         let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, &[0], &[])?;
+        let output = self.add_output_row(id, &children, false, &[0], &[])?;
 
         let sq = Relational::ScanSubQuery {
             alias: String::from(alias),
@@ -332,7 +362,7 @@ impl Plan {
 
         let id = self.nodes.next_id();
         let children: Vec<usize> = vec![left, right];
-        let output = self.add_output_row(id, &children, &[0, 1], &[])?;
+        let output = self.add_output_row(id, &children, false, &[0, 1], &[])?;
 
         let union_all = Relational::UnionAll {
             children,

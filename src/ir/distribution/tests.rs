@@ -68,7 +68,7 @@ fn proj_shuffle_dist_key() {
         .join("tests")
         .join("artifactory")
         .join("ir")
-        .join("expression")
+        .join("distribution")
         .join("shuffle_dist_key.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
@@ -107,7 +107,7 @@ fn proj_shrink_dist_key_1() {
         .join("tests")
         .join("artifactory")
         .join("ir")
-        .join("expression")
+        .join("distribution")
         .join("shrink_dist_key_1.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
@@ -141,7 +141,7 @@ fn proj_shrink_dist_key_2() {
         .join("tests")
         .join("artifactory")
         .join("ir")
-        .join("expression")
+        .join("distribution")
         .join("shrink_dist_key_2.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
@@ -176,7 +176,7 @@ fn union_all_fallback_to_random() {
         .join("tests")
         .join("artifactory")
         .join("ir")
-        .join("expression")
+        .join("distribution")
         .join("union_fallback_to_random.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
@@ -222,7 +222,7 @@ fn union_preserve_dist() {
         .join("tests")
         .join("artifactory")
         .join("ir")
-        .join("expression")
+        .join("distribution")
         .join("union_preserve_dist.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
@@ -258,6 +258,57 @@ fn union_preserve_dist() {
         assert_eq!(
             &Distribution::Segment {
                 keys: collection! { Key::new(vec![0]) }
+            },
+            scan_row.distribution().unwrap()
+        );
+    }
+}
+
+#[test]
+fn join_unite_keys() {
+    // Load table "t1 (a, b)" distributed by ["a"],
+    // table "t2 (c, d)" distributed by ["d"],
+    // select * from t1 join t2 on t1.a = t2.d
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("ir")
+        .join("distribution")
+        .join("join_unite_keys.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let mut plan = Plan::from_yaml(&s).unwrap();
+
+    let map = plan.relational_id_map();
+
+    let scan_t1_output = 4;
+    let scan_t2_output = 10;
+    let join_output = 27;
+
+    plan.set_distribution(scan_t1_output, &map).unwrap();
+    if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
+        assert_eq!(
+            &Distribution::Segment {
+                keys: collection! { Key::new(vec![0]) }
+            },
+            scan_row.distribution().unwrap()
+        );
+    }
+
+    plan.set_distribution(scan_t2_output, &map).unwrap();
+    if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
+        assert_eq!(
+            &Distribution::Segment {
+                keys: collection! { Key::new(vec![1]) }
+            },
+            scan_row.distribution().unwrap()
+        );
+    }
+
+    plan.set_distribution(join_output, &map).unwrap();
+    if let Node::Expression(scan_row) = plan.get_node(join_output).unwrap() {
+        assert_eq!(
+            &Distribution::Segment {
+                keys: collection! { Key::new(vec![0]), Key::new(vec![3]) }
             },
             scan_row.distribution().unwrap()
         );

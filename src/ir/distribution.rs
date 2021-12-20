@@ -52,14 +52,10 @@ pub enum Distribution {
 }
 
 impl Distribution {
-    /// Calculate a new distribution for the `UnionAll` output tuple.
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError`:
-    /// - distribution conflict that should be resolved by adding a `Motion` node
-    pub fn new_union(
+    fn new_from_two_children(
         left: Distribution,
         right: Distribution,
+        is_join: bool,
     ) -> Result<Distribution, QueryPlannerError> {
         match left {
             Distribution::Coordinator => match right {
@@ -85,8 +81,14 @@ impl Distribution {
                     ..
                 } => {
                     let mut keys: HashSet<Key> = HashSet::new();
-                    for key in left_keys.intersection(right_keys) {
-                        keys.insert(Key::new(key.positions.clone()));
+                    if is_join {
+                        for key in left_keys.union(right_keys) {
+                            keys.insert(Key::new(key.positions.clone()));
+                        }
+                    } else {
+                        for key in left_keys.intersection(right_keys) {
+                            keys.insert(Key::new(key.positions.clone()));
+                        }
                     }
 
                     if keys.is_empty() {
@@ -98,6 +100,30 @@ impl Distribution {
                 Distribution::Coordinator => Err(QueryPlannerError::RequireMotion),
             },
         }
+    }
+
+    /// Calculate a new distribution for the `UnionAll` output tuple.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - distribution conflict that should be resolved by adding a `Motion` node
+    pub fn new_union(
+        left: Distribution,
+        right: Distribution,
+    ) -> Result<Distribution, QueryPlannerError> {
+        Distribution::new_from_two_children(left, right, false)
+    }
+
+    /// Calculate a new distribution for the `InnerJoin` output tuple.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - distribution conflict that should be resolved by adding a `Motion` node
+    pub fn new_join(
+        left: Distribution,
+        right: Distribution,
+    ) -> Result<Distribution, QueryPlannerError> {
+        Distribution::new_from_two_children(left, right, true)
     }
 }
 
@@ -339,9 +365,15 @@ impl Plan {
             Node::Relational(Relational::UnionAll { .. })
         );
 
+        let is_join: bool = matches!(
+            self.get_node(parent_node.ok_or(QueryPlannerError::InvalidNode)?)?,
+            Node::Relational(Relational::InnerJoin { .. })
+        );
+
+        let left_dist = self.dist_from_child(left_child, child_pos_map)?;
+        let right_dist = self.dist_from_child(right_child, child_pos_map)?;
+
         if is_union_all {
-            let left_dist = self.dist_from_child(left_child, child_pos_map)?;
-            let right_dist = self.dist_from_child(right_child, child_pos_map)?;
             if let Node::Expression(Expression::Row {
                 ref mut distribution,
                 ..
@@ -353,8 +385,19 @@ impl Plan {
             {
                 *distribution = Some(Distribution::new_union(left_dist, right_dist)?);
             }
+        } else if is_join {
+            if let Node::Expression(Expression::Row {
+                ref mut distribution,
+                ..
+            }) = self
+                .nodes
+                .arena
+                .get_mut(row_node)
+                .ok_or(QueryPlannerError::InvalidRow)?
+            {
+                *distribution = Some(Distribution::new_join(left_dist, right_dist)?);
+            }
         } else {
-            // TODO: implement join
             return Err(QueryPlannerError::InvalidNode);
         }
         Ok(())

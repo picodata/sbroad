@@ -11,6 +11,7 @@ use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Tuple tree build blocks.
 ///
@@ -162,17 +163,23 @@ impl Nodes {
     /// # Errors
     /// - nodes in a list are invalid
     /// - nodes in a list are not aliases
+    /// - aliases in a list have duplicate names
     pub fn add_row(
         &mut self,
         list: Vec<usize>,
         distribution: Option<Distribution>,
     ) -> Result<usize, QueryPlannerError> {
+        let mut names: HashSet<String> = HashSet::new();
+
         for alias_node in &list {
-            if let Node::Expression(Expression::Alias { .. }) = self
+            if let Node::Expression(Expression::Alias { name, .. }) = self
                 .arena
                 .get(*alias_node)
                 .ok_or(QueryPlannerError::InvalidNode)?
             {
+                if !names.insert(String::from(name)) {
+                    return Err(QueryPlannerError::DuplicateColumn);
+                }
             } else {
                 return Err(QueryPlannerError::InvalidRow);
             }
@@ -185,6 +192,10 @@ impl Plan {
     /// Create a new output row from the children nodes output, containing
     /// a specified list of column names. If the column list is empty then
     /// just copy all the columns to a new tuple.
+    ///
+    /// `is_join` option "on" builds an output tuple for the left child and
+    /// appends the right child's one to it. Otherwise we build an output tuple
+    /// only from the first child (left).
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - relation node contains invalid `Row` in the output
@@ -194,15 +205,15 @@ impl Plan {
         &mut self,
         rel_node_id: usize,
         children: &[usize],
+        is_join: bool,
         targets: &[usize],
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
         // We can pass two target children nodes only in a case
-        // of `UnionAll`. Even for a `NaturalJoin` we work with
-        // each child independently. In fact, we need only the
-        // first child in a `UnionAll` operator to get correct
-        // column names for a new tuple (second child aliases
-        // would be shadowed). But each reference should point
+        // of `UnionAll` and `InnerlJoin`.
+        // - For the `UnionAll` operator we need only the first
+        // child to get correct column names for a new tuple
+        // (second child aliases would be shadowed). But each reference should point
         // to both children to give us additional information
         // during transformations.
         if (targets.len() > 2) || targets.is_empty() {
@@ -215,6 +226,62 @@ impl Plan {
             }
         }
 
+        let mut aliases: Vec<usize> = Vec::new();
+
+        if col_names.is_empty() {
+            let required_targets = if is_join { targets } else { &targets[0..1] };
+            for target_idx in required_targets {
+                let target_child: usize = if let Some(target) = targets.get(*target_idx) {
+                    *target
+                } else {
+                    return Err(QueryPlannerError::InvalidRow);
+                };
+                let child_node: usize = if let Some(child) = children.get(target_child) {
+                    *child
+                } else {
+                    return Err(QueryPlannerError::InvalidRow);
+                };
+
+                let child_row_list: Vec<usize> =
+                    if let Node::Relational(relational_op) = self.get_node(child_node)? {
+                        if let Node::Expression(Expression::Row { list, .. }) =
+                            self.get_node(relational_op.output())?
+                        {
+                            list.clone()
+                        } else {
+                            return Err(QueryPlannerError::InvalidRow);
+                        }
+                    } else {
+                        return Err(QueryPlannerError::InvalidNode);
+                    };
+
+                for (pos, alias_node) in child_row_list.iter().enumerate() {
+                    let name: String =
+                        if let Node::Expression(Expression::Alias { ref name, .. }) =
+                            self.get_node(*alias_node)?
+                        {
+                            String::from(name)
+                        } else {
+                            return Err(QueryPlannerError::InvalidRow);
+                        };
+                    let new_targets: Vec<usize> = if is_join {
+                        // Reference in a join tuple points to the left or right child** left and right children.
+                        vec![*target_idx]
+                    } else {
+                        // Reference in union tuple points to **both** left and right children.
+                        targets.iter().copied().collect()
+                    };
+                    // Create new references and aliases. Save them to the plan nodes arena.
+                    let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), pos);
+                    let a_id = self.nodes.add_alias(&name, r_id)?;
+                    aliases.push(a_id);
+                }
+            }
+
+            let row_node = self.nodes.add_row(aliases, None)?;
+            return Ok(row_node);
+        }
+
         let target_child: usize = if let Some(target) = targets.get(0) {
             *target
         } else {
@@ -225,41 +292,6 @@ impl Plan {
         } else {
             return Err(QueryPlannerError::InvalidRow);
         };
-
-        if col_names.is_empty() {
-            let child_row_list: Vec<usize> =
-                if let Node::Relational(relational_op) = self.get_node(child_node)? {
-                    if let Node::Expression(Expression::Row { list, .. }) =
-                        self.get_node(relational_op.output())?
-                    {
-                        list.clone()
-                    } else {
-                        return Err(QueryPlannerError::InvalidRow);
-                    }
-                } else {
-                    return Err(QueryPlannerError::InvalidNode);
-                };
-
-            let mut aliases: Vec<usize> = Vec::new();
-
-            for (pos, alias_node) in child_row_list.iter().enumerate() {
-                let name: String = if let Node::Expression(Expression::Alias { ref name, .. }) =
-                    self.get_node(*alias_node)?
-                {
-                    String::from(name)
-                } else {
-                    return Err(QueryPlannerError::InvalidRow);
-                };
-                let new_targets: Vec<usize> = targets.iter().copied().collect();
-                // Create new references and aliases. Save them to the plan nodes arena.
-                let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), pos);
-                let a_id = self.nodes.add_alias(&name, r_id)?;
-                aliases.push(a_id);
-            }
-
-            let row_node = self.nodes.add_row(aliases, None)?;
-            return Ok(row_node);
-        }
 
         let map = if let Node::Relational(relational_op) = self.get_node(child_node)? {
             relational_op.output_alias_position_map(&self.nodes)?
@@ -290,3 +322,6 @@ impl Plan {
         Err(QueryPlannerError::InvalidRow)
     }
 }
+
+#[cfg(test)]
+mod tests;
