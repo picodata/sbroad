@@ -260,13 +260,17 @@ impl Plan {
     /// - filter expression is not boolean
     /// - child node is not relational
     /// - child output tuple is not valid
-    pub fn add_select(&mut self, child: usize, filter: usize) -> Result<usize, QueryPlannerError> {
+    pub fn add_select(
+        &mut self,
+        child: usize,
+        filter: usize,
+        id: usize,
+    ) -> Result<usize, QueryPlannerError> {
         if let Node::Expression(Expression::Bool { .. }) = self.get_node(filter)? {
         } else {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let id = self.nodes.next_id();
         let children: Vec<usize> = vec![child];
         let output = self.add_output_row(id, &children, &[0], &[])?;
 
