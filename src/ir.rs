@@ -7,7 +7,7 @@ pub mod expression;
 pub mod helpers;
 pub mod operator;
 pub mod relation;
-pub mod traversal;
+pub mod tree;
 pub mod value;
 
 use crate::errors::QueryPlannerError;
