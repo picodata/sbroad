@@ -1,14 +1,16 @@
 //! Relation module.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Formatter;
 
-use super::distribution::Key;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
-use serde::{Deserialize, Serialize};
 use tarantool::hlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
 
+use super::distribution::Key;
 use super::value::Value;
 
 /// Supported column types.
@@ -39,7 +41,7 @@ impl Type {
 }
 
 /// Relation column.
-#[derive(LuaRead, Deserialize, PartialEq, Debug, Eq, Clone)]
+#[derive(LuaRead, PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
@@ -50,8 +52,8 @@ pub struct Column {
 /// Msgpack serializer for column
 impl SerSerialize for Column {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("name", &self.name)?;
@@ -64,6 +66,46 @@ impl SerSerialize for Column {
         }
 
         map.end()
+    }
+}
+
+struct ColumnVisitor;
+
+impl<'de> Visitor<'de> for ColumnVisitor {
+    type Value = Column;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("column parsing failed")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
+        let mut column_name = String::new();
+        let mut column_type = String::new();
+        while let Some((key, value)) = map.next_entry::<String, String>()? {
+            match key.as_str() {
+                "name" => column_name.push_str(&value),
+                "type" => column_type.push_str(&value.to_lowercase()),
+                _ => return Err(Error::custom("invalid column param"))
+            }
+        }
+
+        match column_type.as_str() {
+            "boolean" => Ok(Column::new(&column_name, Type::Boolean)),
+            "number" => Ok(Column::new(&column_name, Type::Number)),
+            "string" => Ok(Column::new(&column_name, Type::String)),
+            "integer" => Ok(Column::new(&column_name, Type::Integer)),
+            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned)),
+            _ => Err(Error::custom("unsupported column type")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Column {
+    fn deserialize<D>(deserializer: D) -> Result<Column, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(ColumnVisitor)
     }
 }
 

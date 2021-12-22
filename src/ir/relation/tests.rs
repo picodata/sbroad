@@ -28,7 +28,7 @@ fn table_seg() {
         ],
         &["b", "a"],
     )
-    .unwrap();
+        .unwrap();
     if let Table::Segment { key, .. } = &t {
         assert_eq!(2, key.positions.len());
         assert_eq!(0, key.positions[1]);
@@ -55,7 +55,7 @@ fn table_seg_duplicate_columns() {
             ],
             &["b", "a"],
         )
-        .unwrap_err(),
+            .unwrap_err(),
         QueryPlannerError::DuplicateColumn
     );
 }
@@ -73,7 +73,7 @@ fn table_seg_wrong_key() {
             ],
             &["a", "e"],
         )
-        .unwrap_err(),
+            .unwrap_err(),
         QueryPlannerError::InvalidShardingKey
     );
 }
@@ -92,7 +92,7 @@ fn table_seg_serialized() {
         ],
         &["a", "d"],
     )
-    .unwrap();
+        .unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -185,7 +185,7 @@ fn column_msgpack_serialize() {
     assert_eq!(
         vec![
             0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79,
-            0x70, 0x65, 0xA6, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67
+            0x70, 0x65, 0xA6, 0x73, 0x74, 0x72, 0x69, 0x6E, 0x67,
         ],
         rmp_serde::to_vec(&c).unwrap()
     );
@@ -228,4 +228,22 @@ fn column_msgpack_serialize() {
         ],
         rmp_serde::to_vec(&c).unwrap()
     )
+}
+
+#[test]
+fn table_converting() {
+    let t = Table::new_seg(
+        "t",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("b", Type::Number),
+            Column::new("c", Type::String),
+            Column::new("d", Type::String),
+        ],
+        &["b", "a"],
+    )
+        .unwrap();
+
+    let s = serde_yaml::to_string(&t).unwrap();
+    Table::seg_from_yaml(&s).unwrap();
 }
