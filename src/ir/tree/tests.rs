@@ -24,17 +24,17 @@ fn expression_bft() {
         .add_bool(c1c2_and_c2c3, Bool::Or, c4_eq_c5)
         .unwrap();
 
-    let mut btf_tree = Bft::new(&top, |node| plan.nodes.expr_iter(node));
-    assert_eq!(btf_tree.next(), Some((0, &top)));
-    assert_eq!(btf_tree.next(), Some((1, &c1c2_and_c2c3)));
-    assert_eq!(btf_tree.next(), Some((1, &c4_eq_c5)));
-    assert_eq!(btf_tree.next(), Some((2, &c1_eq_c2)));
-    assert_eq!(btf_tree.next(), Some((2, &c2_eq_c3)));
-    assert_eq!(btf_tree.next(), Some((2, &c4)));
-    assert_eq!(btf_tree.next(), Some((2, &c5)));
-    assert_eq!(btf_tree.next(), Some((3, &c1)));
-    assert_eq!(btf_tree.next(), Some((3, &c2)));
-    assert_eq!(btf_tree.next(), Some((3, &c2)));
-    assert_eq!(btf_tree.next(), Some((3, &c3)));
-    assert_eq!(btf_tree.next(), None);
+    let mut bft_tree = Bft::new(&top, |node| plan.nodes.expr_iter(node));
+    assert_eq!(bft_tree.next(), Some((0, &top)));
+    assert_eq!(bft_tree.next(), Some((1, &c1c2_and_c2c3)));
+    assert_eq!(bft_tree.next(), Some((1, &c4_eq_c5)));
+    assert_eq!(bft_tree.next(), Some((2, &c1_eq_c2)));
+    assert_eq!(bft_tree.next(), Some((2, &c2_eq_c3)));
+    assert_eq!(bft_tree.next(), Some((2, &c4)));
+    assert_eq!(bft_tree.next(), Some((2, &c5)));
+    assert_eq!(bft_tree.next(), Some((3, &c1)));
+    assert_eq!(bft_tree.next(), Some((3, &c2)));
+    assert_eq!(bft_tree.next(), Some((3, &c2)));
+    assert_eq!(bft_tree.next(), Some((3, &c3)));
+    assert_eq!(bft_tree.next(), None);
 }
