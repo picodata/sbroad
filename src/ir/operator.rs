@@ -247,11 +247,10 @@ impl Plan {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let children: Vec<usize> = vec![left, right];
-        let output = self.add_output_row(id, &children, true, &[0, 1], &[])?;
+        let output = self.add_row_for_join(id, left, right)?;
 
         let join = Relational::InnerJoin {
-            children,
+            children: vec![left, right],
             condition,
             id,
             output,
@@ -273,11 +272,10 @@ impl Plan {
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
         let id = self.nodes.next_id();
-        let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, false, &[0], col_names)?;
+        let output = self.add_row_from_single_child(id, child, col_names)?;
 
         let proj = Relational::Projection {
-            children,
+            children: vec![child],
             id,
             output,
         };
@@ -301,11 +299,10 @@ impl Plan {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, false, &[0], &[])?;
+        let output = self.add_row_from_single_child(id, child, &[])?;
 
         let select = Relational::Selection {
-            children,
+            children: vec![child],
             filter,
             id,
             output,
@@ -325,12 +322,11 @@ impl Plan {
             return Err(QueryPlannerError::InvalidName);
         }
         let id = self.nodes.next_id();
-        let children: Vec<usize> = vec![child];
-        let output = self.add_output_row(id, &children, false, &[0], &[])?;
+        let output = self.add_row_from_single_child(id, child, &[])?;
 
         let sq = Relational::ScanSubQuery {
             alias: String::from(alias),
-            children,
+            children: vec![child],
             id,
             output,
         };
@@ -361,11 +357,10 @@ impl Plan {
         }
 
         let id = self.nodes.next_id();
-        let children: Vec<usize> = vec![left, right];
-        let output = self.add_output_row(id, &children, false, &[0, 1], &[])?;
+        let output = self.add_row_for_union(id, left, right)?;
 
         let union_all = Relational::UnionAll {
-            children,
+            children: vec![left, right],
             id,
             output,
         };

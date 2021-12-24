@@ -189,7 +189,7 @@ impl Nodes {
 }
 
 impl Plan {
-    /// Create a new output row from the children nodes output, containing
+    /// Create a new row from the children nodes output, containing
     /// a specified list of column names. If the column list is empty then
     /// just copy all the columns to a new tuple.
     ///
@@ -201,7 +201,7 @@ impl Plan {
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
     /// - column names don't exits
-    pub fn add_output_row(
+    fn add_row_from_output(
         &mut self,
         rel_node_id: usize,
         children: &[usize],
@@ -265,7 +265,8 @@ impl Plan {
                             return Err(QueryPlannerError::InvalidRow);
                         };
                     let new_targets: Vec<usize> = if is_join {
-                        // Reference in a join tuple points to the left or right child** left and right children.
+                        // Reference in a join tuple points to at first to the left,
+                        // then to the right child.
                         vec![*target_idx]
                     } else {
                         // Reference in union tuple points to **both** left and right children.
@@ -320,6 +321,86 @@ impl Plan {
             return Ok(row_node);
         }
         Err(QueryPlannerError::InvalidRow)
+    }
+
+    /// Project columns from the child node.
+    ///
+    /// If column names are empty, copy all the columns from the child.
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - child is an inconsistent relational node
+    /// - column names don't exits
+    pub fn add_row_from_single_child(
+        &mut self,
+        id: usize,
+        child: usize,
+        col_names: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        self.add_row_from_output(id, &[child], false, &[0], col_names)
+    }
+
+    /// New output row for union node.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - children are inconsistent relational nodes
+    pub fn add_row_for_union(
+        &mut self,
+        id: usize,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.add_row_from_output(id, &[left, right], false, &[0, 1], &[])
+    }
+
+    /// New output row for join node.
+    ///
+    /// Contains all the columns from left and right children.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - children are inconsistent relational nodes
+    pub fn add_row_for_join(
+        &mut self,
+        id: usize,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.add_row_from_output(id, &[left, right], true, &[0, 1], &[])
+    }
+
+    /// Project columns from the join's left branch.
+    ///
+    /// If column names are empty, copy all the columns from the left child.
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - children are inconsistent relational nodes
+    /// - column names don't exits
+    pub fn add_row_from_left_branch(
+        &mut self,
+        id: usize,
+        left: usize,
+        right: usize,
+        col_names: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        self.add_row_from_output(id, &[left, right], true, &[0], col_names)
+    }
+
+    /// Project columns from the join's right branch.
+    ///
+    /// If column names are empty, copy all the columns from the right child.
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - children are inconsistent relational nodes
+    /// - column names don't exits
+    pub fn add_row_from_right_branch(
+        &mut self,
+        id: usize,
+        left: usize,
+        right: usize,
+        col_names: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        self.add_row_from_output(id, &[left, right], true, &[1], col_names)
     }
 }
 

@@ -28,7 +28,7 @@ fn table_seg() {
         ],
         &["b", "a"],
     )
-        .unwrap();
+    .unwrap();
     if let Table::Segment { key, .. } = &t {
         assert_eq!(2, key.positions.len());
         assert_eq!(0, key.positions[1]);
@@ -55,7 +55,7 @@ fn table_seg_duplicate_columns() {
             ],
             &["b", "a"],
         )
-            .unwrap_err(),
+        .unwrap_err(),
         QueryPlannerError::DuplicateColumn
     );
 }
@@ -73,7 +73,7 @@ fn table_seg_wrong_key() {
             ],
             &["a", "e"],
         )
-            .unwrap_err(),
+        .unwrap_err(),
         QueryPlannerError::InvalidShardingKey
     );
 }
@@ -92,7 +92,7 @@ fn table_seg_serialized() {
         ],
         &["a", "d"],
     )
-        .unwrap();
+    .unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -242,7 +242,7 @@ fn table_converting() {
         ],
         &["b", "a"],
     )
-        .unwrap();
+    .unwrap();
 
     let s = serde_yaml::to_string(&t).unwrap();
     Table::seg_from_yaml(&s).unwrap();

@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
 
-use serde::{Deserialize, Deserializer, Serialize};
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::hlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
@@ -52,8 +52,8 @@ pub struct Column {
 /// Msgpack serializer for column
 impl SerSerialize for Column {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("name", &self.name)?;
@@ -78,14 +78,17 @@ impl<'de> Visitor<'de> for ColumnVisitor {
         formatter.write_str("column parsing failed")
     }
 
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error> where A: MapAccess<'de> {
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
         let mut column_name = String::new();
         let mut column_type = String::new();
         while let Some((key, value)) = map.next_entry::<String, String>()? {
             match key.as_str() {
                 "name" => column_name.push_str(&value),
                 "type" => column_type.push_str(&value.to_lowercase()),
-                _ => return Err(Error::custom("invalid column param"))
+                _ => return Err(Error::custom("invalid column param")),
             }
         }
 
@@ -102,8 +105,8 @@ impl<'de> Visitor<'de> for ColumnVisitor {
 
 impl<'de> Deserialize<'de> for Column {
     fn deserialize<D>(deserializer: D) -> Result<Column, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         deserializer.deserialize_map(ColumnVisitor)
     }

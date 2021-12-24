@@ -308,10 +308,10 @@ fn join() {
 
     let logical_id = plan.nodes.next_id();
     let a_row = plan
-        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[0], &["a"])
+        .add_row_from_left_branch(logical_id, scan_t1, scan_t2, &["a"])
         .unwrap();
     let d_row = plan
-        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[1], &["d"])
+        .add_row_from_right_branch(logical_id, scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     let join = plan
@@ -364,10 +364,10 @@ fn join_duplicate_columns() {
 
     let logical_id = plan.nodes.next_id();
     let a_row = plan
-        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[0], &["a"])
+        .add_row_from_left_branch(logical_id, scan_t1, scan_t2, &["a"])
         .unwrap();
     let d_row = plan
-        .add_output_row(logical_id, &[scan_t1, scan_t2], true, &[1], &["d"])
+        .add_row_from_right_branch(logical_id, scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     assert_eq!(
