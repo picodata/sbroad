@@ -69,7 +69,12 @@ pub enum Expression {
         /// Relational node ID, that contains current reference
         parent: usize,
     },
-    /// Top of the tuple tree with a list of aliases.
+    /// Top of the tuple tree.
+    ///
+    /// If current tuple is the output for some relational operator it should
+    /// consist from the list of aliases. Otherwise (rows in selection filter
+    /// or in join condition) we don't insist on the aliases in the list.
+    ///
     ///
     ///  Example: (a, b, 1).
     Row {
@@ -142,7 +147,7 @@ impl Nodes {
         self.push(Node::Expression(Expression::Constant { value }))
     }
 
-    /// Reference expression constructor.
+    /// Add reference node.
     pub fn add_ref(
         &mut self,
         parent: usize,
@@ -157,14 +162,19 @@ impl Nodes {
         self.push(Node::Expression(r))
     }
 
-    // TODO: check that doesn't contain top-level aliases with the same names
     /// Add row node.
+    pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
+        self.push(Node::Expression(Expression::Row { list, distribution }))
+    }
+
+    /// Add row node, where every column has an alias.
+    /// Mostly used for relational node output.
     ///
     /// # Errors
     /// - nodes in a list are invalid
     /// - nodes in a list are not aliases
     /// - aliases in a list have duplicate names
-    pub fn add_row(
+    pub fn add_row_of_aliases(
         &mut self,
         list: Vec<usize>,
         distribution: Option<Distribution>,
@@ -184,7 +194,7 @@ impl Nodes {
                 return Err(QueryPlannerError::InvalidRow);
             }
         }
-        Ok(self.push(Node::Expression(Expression::Row { list, distribution })))
+        Ok(self.add_row(list, distribution))
     }
 }
 
@@ -201,14 +211,15 @@ impl Plan {
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
     /// - column names don't exits
-    fn add_row_from_output(
+    fn new_columns(
         &mut self,
         rel_node_id: usize,
         children: &[usize],
         is_join: bool,
         targets: &[usize],
         col_names: &[&str],
-    ) -> Result<usize, QueryPlannerError> {
+        need_aliases: bool,
+    ) -> Result<Vec<usize>, QueryPlannerError> {
         // We can pass two target children nodes only in a case
         // of `UnionAll` and `InnerlJoin`.
         // - For the `UnionAll` operator we need only the first
@@ -226,7 +237,7 @@ impl Plan {
             }
         }
 
-        let mut aliases: Vec<usize> = Vec::new();
+        let mut result: Vec<usize> = Vec::new();
 
         if col_names.is_empty() {
             let required_targets = if is_join { targets } else { &targets[0..1] };
@@ -272,15 +283,18 @@ impl Plan {
                         // Reference in union tuple points to **both** left and right children.
                         targets.iter().copied().collect()
                     };
-                    // Create new references and aliases. Save them to the plan nodes arena.
+                    // Add new references and aliases to arena (if we need them).
                     let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), pos);
-                    let a_id = self.nodes.add_alias(&name, r_id)?;
-                    aliases.push(a_id);
+                    if need_aliases {
+                        let a_id = self.nodes.add_alias(&name, r_id)?;
+                        result.push(a_id);
+                    } else {
+                        result.push(r_id);
+                    }
                 }
             }
 
-            let row_node = self.nodes.add_row(aliases, None)?;
-            return Ok(row_node);
+            return Ok(result);
         }
 
         let target_child: usize = if let Some(target) = targets.get(0) {
@@ -300,43 +314,47 @@ impl Plan {
             return Err(QueryPlannerError::InvalidNode);
         };
 
-        let mut aliases: Vec<usize> = Vec::new();
+        let mut result: Vec<usize> = Vec::new();
 
         let all_found = col_names.iter().all(|col| {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
-                // Create new references and aliases. Save them to the plan nodes arena.
+                // Add new references and aliases to arena (if we need them).
                 let r_id = self.nodes.add_ref(rel_node_id, Some(new_targets), *pos);
-                if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
-                    aliases.push(a_id);
-                    true
+                if need_aliases {
+                    if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
+                        result.push(a_id);
+                        true
+                    } else {
+                        false
+                    }
                 } else {
-                    false
+                    true
                 }
             })
         });
 
         if all_found {
-            let row_node = self.nodes.add_row(aliases, None)?;
-            return Ok(row_node);
+            return Ok(result);
         }
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Project columns from the child node.
+    /// New output for a single child node (have aliases).
     ///
     /// If column names are empty, copy all the columns from the child.
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - child is an inconsistent relational node
     /// - column names don't exits
-    pub fn add_row_from_single_child(
+    pub fn add_row_for_output(
         &mut self,
         id: usize,
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        self.add_row_from_output(id, &[child], false, &[0], col_names)
+        let list = self.new_columns(id, &[child], false, &[0], col_names, true)?;
+        self.nodes.add_row_of_aliases(list, None)
     }
 
     /// New output row for union node.
@@ -350,7 +368,8 @@ impl Plan {
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        self.add_row_from_output(id, &[left, right], false, &[0, 1], &[])
+        let list = self.new_columns(id, &[left, right], false, &[0, 1], &[], true)?;
+        self.nodes.add_row_of_aliases(list, None)
     }
 
     /// New output row for join node.
@@ -366,12 +385,32 @@ impl Plan {
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        self.add_row_from_output(id, &[left, right], true, &[0, 1], &[])
+        let list = self.new_columns(id, &[left, right], true, &[0, 1], &[], true)?;
+        self.nodes.add_row_of_aliases(list, None)
+    }
+
+    /// Project columns from the child node.
+    ///
+    /// New columns don't have aliases. If column names are empty,
+    /// copy all the columns from the child.
+    /// # Errors
+    /// Returns `QueryPlannerError`:
+    /// - child is an inconsistent relational node
+    /// - column names don't exits
+    pub fn add_row_from_child(
+        &mut self,
+        id: usize,
+        child: usize,
+        col_names: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        let list = self.new_columns(id, &[child], false, &[0], col_names, false)?;
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// Project columns from the join's left branch.
     ///
-    /// If column names are empty, copy all the columns from the left child.
+    /// New columns don't have aliases. If column names are empty,
+    /// copy all the columns from the left child.
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children are inconsistent relational nodes
@@ -383,12 +422,14 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        self.add_row_from_output(id, &[left, right], true, &[0], col_names)
+        let list = self.new_columns(id, &[left, right], true, &[0], col_names, false)?;
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// Project columns from the join's right branch.
     ///
-    /// If column names are empty, copy all the columns from the right child.
+    /// New columns don't have aliases. If column names are empty,
+    /// copy all the columns from the right child.
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children are inconsistent relational nodes
@@ -400,7 +441,8 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        self.add_row_from_output(id, &[left, right], true, &[1], col_names)
+        let list = self.new_columns(id, &[left, right], true, &[1], col_names, false)?;
+        Ok(self.nodes.add_row(list, None))
     }
 }
 

@@ -14,7 +14,7 @@ fn row_duplicate_column_names() {
     assert_eq!(
         QueryPlannerError::DuplicateColumn,
         plan.nodes
-            .add_row(vec![c1_alias_a, c2_alias_a], None)
+            .add_row_of_aliases(vec![c1_alias_a, c2_alias_a], None)
             .unwrap_err()
     );
 }

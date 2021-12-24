@@ -135,6 +135,8 @@ fn projection_serialize() {
 
 #[test]
 fn selection() {
+    // select * from t where (a, b) = (1, 10)
+
     let mut plan = Plan::new();
 
     let t = Table::new_seg(
@@ -153,10 +155,13 @@ fn selection() {
     let scan_id = plan.add_scan("t").unwrap();
 
     let logical_id = plan.nodes.next_id();
-    let ref_a_id = plan.nodes.add_ref(logical_id, Some(vec![0]), 0);
-    let a_id = plan.nodes.add_alias("a", ref_a_id).unwrap();
-    let const_id = plan.nodes.add_const(Value::number_from_str("10").unwrap());
-    let gt_id = plan.nodes.add_bool(a_id, Bool::Gt, const_id).unwrap();
+    let ref_row = plan
+        .add_row_from_child(logical_id, scan_id, &["a", "b"])
+        .unwrap();
+    let const_1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
+    let const_10 = plan.nodes.add_const(Value::number_from_str("10").unwrap());
+    let const_row = plan.nodes.add_row(vec![const_1, const_10], None);
+    let gt_id = plan.nodes.add_bool(ref_row, Bool::Gt, const_row).unwrap();
 
     // Correct Selection operator
     plan.add_select(scan_id, gt_id, logical_id).unwrap();
@@ -164,13 +169,13 @@ fn selection() {
     // Non-boolean filter
     assert_eq!(
         QueryPlannerError::InvalidBool,
-        plan.add_select(scan_id, const_id, logical_id).unwrap_err()
+        plan.add_select(scan_id, const_row, logical_id).unwrap_err()
     );
 
     // Non-relational child
     assert_eq!(
         QueryPlannerError::InvalidNode,
-        plan.add_select(const_id, gt_id, logical_id).unwrap_err()
+        plan.add_select(const_row, gt_id, logical_id).unwrap_err()
     );
 }
 

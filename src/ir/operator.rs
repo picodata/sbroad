@@ -215,7 +215,7 @@ impl Plan {
 
                         let scan = Relational::ScanRelation {
                             id: logical_id,
-                            output: nodes.add_row(refs, None)?,
+                            output: nodes.add_row_of_aliases(refs, None)?,
                             relation: String::from(table),
                         };
 
@@ -272,7 +272,7 @@ impl Plan {
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
         let id = self.nodes.next_id();
-        let output = self.add_row_from_single_child(id, child, col_names)?;
+        let output = self.add_row_for_output(id, child, col_names)?;
 
         let proj = Relational::Projection {
             children: vec![child],
@@ -299,7 +299,7 @@ impl Plan {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let output = self.add_row_from_single_child(id, child, &[])?;
+        let output = self.add_row_for_output(id, child, &[])?;
 
         let select = Relational::Selection {
             children: vec![child],
@@ -322,7 +322,7 @@ impl Plan {
             return Err(QueryPlannerError::InvalidName);
         }
         let id = self.nodes.next_id();
-        let output = self.add_row_from_single_child(id, child, &[])?;
+        let output = self.add_row_for_output(id, child, &[])?;
 
         let sq = Relational::ScanSubQuery {
             alias: String::from(alias),
