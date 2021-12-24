@@ -199,9 +199,8 @@ impl Nodes {
 }
 
 impl Plan {
-    /// Create a new row from the children nodes output, containing
-    /// a specified list of column names. If the column list is empty then
-    /// just copy all the columns to a new tuple.
+    /// Returns a list of columns from the child node outputs.
+    /// If the column list is empty then copy all the columns to a new tuple.
     ///
     /// `is_join` option "on" builds an output tuple for the left child and
     /// appends the right child's one to it. Otherwise we build an output tuple
@@ -211,7 +210,7 @@ impl Plan {
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
     /// - column names don't exits
-    fn new_columns(
+    pub fn new_columns(
         &mut self,
         rel_node_id: usize,
         children: &[usize],
