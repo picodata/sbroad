@@ -39,15 +39,14 @@ pub enum Node {
     Relational(Relational),
 }
 
-/// Plan node arena.
-///
-/// We don't want to mess with the borrow checker and RefCell/Rc,
-/// so all nodes are stored in the single arena ("nodes" array).
-/// The positions in the array act like pointers, so it is possible
-/// only to add nodes to the plan, but never remove them.
+/// Plan nodes storage.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Nodes {
-    arena: Vec<Node>,
+    /// We don't want to mess with the borrow checker and RefCell/Rc,
+    /// so all nodes are stored in the single arena ("nodes" array).
+    /// The positions in the array act like pointers, so it is possible
+    /// only to add nodes to the plan, but never remove them.
+    pub arena: Vec<Node>,
 }
 
 impl Nodes {
@@ -86,7 +85,7 @@ impl Nodes {
 /// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
-    nodes: Nodes,
+    pub nodes: Nodes,
     relations: Option<HashMap<String, Table>>,
     slices: Option<Vec<Vec<usize>>>,
     top: Option<usize>,
@@ -208,7 +207,7 @@ impl Plan {
 
     /// Set top node of plan
     /// # Errors
-    /// - top node doesn't exist in AST
+    /// - top node doesn't exist in the plan.
     pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
         self.get_node(top)?;
         self.top = Some(top);

@@ -1,3 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::BuildHasher;
+
 #[macro_export]
 macro_rules! collection {
     // map-like
@@ -10,4 +13,17 @@ macro_rules! collection {
         use std::iter::{Iterator, IntoIterator};
         Iterator::collect(IntoIterator::into_iter([$($v,)*]))
     }};
+}
+
+/// By default `HashSet` uses `RandomState` to initialize the hasher.
+/// Because of that we can't get repeatable order in the set between
+/// runs that can cause flaky tests (in some cases).
+#[derive(Clone)]
+pub struct RepeatableState;
+
+impl BuildHasher for RepeatableState {
+    type Hasher = DefaultHasher;
+    fn build_hasher(&self) -> DefaultHasher {
+        DefaultHasher::new()
+    }
 }

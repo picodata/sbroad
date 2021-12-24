@@ -35,7 +35,7 @@ g.test_incorrect_query = function()
     local _, err = api:call("query", { [[SELECT * FROM "testing_space" as "a"
             INNER JOIN "testing_space" as "b" ON "a"."id" = "b"."a_id"
         WHERE "id" = 5 and "name" = '123']] })
-    t.assert_equals(err, "query wasn't s implemented")
+    t.assert_equals(err, "query wasn't implemented")
 end
 
 g.test_simple_query = function()

@@ -11,7 +11,7 @@ use super::relation::Table;
 use super::{Node, Nodes, Plan};
 
 /// Binary operator returning Bool expression.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
 pub enum Bool {
     /// `&&`
     And,

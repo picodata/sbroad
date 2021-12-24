@@ -1,0 +1,276 @@
+---
+# select * from t where
+# (a) = 1 and (b) = 2 and (c) = (a) and (c) = 1
+# or (d) = 1
+#
+# 11 - (a)
+# 12 - 1
+# 13 - (a) = 1
+# 15 - (b)
+# 16 - 2
+# 17 - (b) = 2
+# 18 - (a = 1) and (b = 2)
+# 20 - (c)
+# 21 - 1
+# 22 - (c) = 1
+# 23 - 44 and (c = 1)
+# 25 - (d)
+# 26 - 1
+# 27 - (d) = 1
+# 28 - 23 and (d = 1)
+# 40 - (c)
+# 42 - (a)
+# 43 - (c) = (a)
+# 44 - 18 and (c = a)
+#
+nodes:
+  arena:
+    - Expression:
+        Reference:
+          targets: ~
+          position: 0
+          parent: 0
+    - Expression:
+        Alias:
+          name: a
+          child: 0
+    - Expression:
+        Reference:
+          targets: ~
+          position: 1
+          parent: 0
+    - Expression:
+        Alias:
+          name: b
+          child: 2
+    - Expression:
+        Reference:
+          targets: ~
+          position: 2
+          parent: 0
+    - Expression:
+        Alias:
+          name: c
+          child: 4
+    - Expression:
+        Reference:
+          targets: ~
+          position: 3
+          parent: 0
+    - Expression:
+        Alias:
+          name: d
+          child: 6
+    - Expression:
+        Row:
+          list:
+            - 1
+            - 3
+            - 5
+            - 7
+          distribution: ~
+    - Relational:
+        ScanRelation:
+          output: 8
+          id: 0
+          relation: t
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 0
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 10
+          distribution: ~
+    - Expression:
+        Constant:
+          value:
+            Number: 1
+    - Expression:
+        Bool:
+          left: 11
+          op: Eq
+          right: 12
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 1
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 14
+          distribution: ~
+    - Expression:
+        Constant:
+          value:
+            Number: 2
+    - Expression:
+        Bool:
+          left: 15
+          op: Eq
+          right: 16
+    - Expression:
+        Bool:
+          left: 13
+          op: And
+          right: 17
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 2
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 19
+          distribution: ~
+    - Expression:
+        Constant:
+          value:
+            Number: 1
+    - Expression:
+        Bool:
+          left: 20
+          op: Eq
+          right: 21
+    - Expression:
+        Bool:
+          left: 44
+          op: And
+          right: 22
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 3
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 24
+          distribution: ~
+    - Expression:
+        Constant:
+          value:
+            Number: 1
+    - Expression:
+        Bool:
+          left: 25
+          op: Eq
+          right: 26
+    - Expression:
+        Bool:
+          left: 23
+          op: Or
+          right: 27
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 0
+          parent: 10
+    - Expression:
+        Alias:
+          name: a
+          child: 29
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 1
+          parent: 10
+    - Expression:
+        Alias:
+          name: b
+          child: 31
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 2
+          parent: 10
+    - Expression:
+        Alias:
+          name: c
+          child: 33
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 3
+          parent: 10
+    - Expression:
+        Alias:
+          name: d
+          child: 35
+    - Expression:
+        Row:
+          list:
+            - 30
+            - 32
+            - 34
+            - 36
+          distribution: ~
+    - Relational:
+        Selection:
+          children:
+            - 9
+          filter: 28
+          id: 10
+          output: 37
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 0
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 39
+          distribution: ~
+    - Expression:
+        Reference:
+          targets:
+            - 0
+          position: 2
+          parent: 10
+    - Expression:
+        Row:
+          list:
+            - 41
+          distribution: ~
+    - Expression:
+        Bool:
+          left: 40
+          op: Eq
+          right: 42
+    - Expression:
+        Bool:
+          left: 18
+          op: And
+          right: 43
+relations:
+  t:
+    Segment:
+      columns:
+        - name: a
+          type: boolean
+        - name: b
+          type: number
+        - name: c
+          type: string
+        - name: d
+          type: string
+      key:
+        positions:
+          - 0
+      name: t
+slices: ~
+top: 38

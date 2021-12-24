@@ -4,10 +4,13 @@ use serde::Serialize;
 
 const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
 const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
+const DO_SKIP: &str = "do skip";
 const EMPTY_PLAN_RELATION: &str = "empty plan relations";
+const EMPTY_RESULT: &str = "empty result";
 const INCORRECT_BUCKET_ID_ERROR: &str = "incorrect bucket id";
 const INVALID_AST: &str = "invalid AST";
 const INVALID_BOOL_ERROR: &str = "invalid boolean";
+const INVALID_CONSTANT: &str = "invalid constant";
 const INVALID_COLUMN_NAME: &str = "invalid column name";
 const INVALID_CLUSTER_SCHEMA: &str = "cluster schema is invalid";
 const INVALID_INPUT: &str = "invalid input";
@@ -22,7 +25,8 @@ const INVALID_SCHEMA_SPACES: &str = "not found spaces in schema";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
 const INVALID_SPACE_NAME: &str = "invalid space name";
 const NOT_EQUAL_ROWS: &str = "not equal rows";
-const QUERY_NOT_IMPLEMENTED: &str = "query wasn't s implemented";
+const QUERY_NOT_IMPLEMENTED: &str = "query wasn't implemented";
+const REDUNDANT_TRANSFORMATION: &str = "redundant transformation";
 const REQUIRE_MOTION: &str = "require motion";
 const SERIALIZATION_ERROR: &str = "serialization";
 const SIMPLE_QUERY_ERROR: &str = "query doesn't simple";
@@ -36,11 +40,14 @@ const TYPE_NOT_IMPLEMENTED: &str = "type is not implemented";
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum QueryPlannerError {
     BucketIdError,
+    DoSkip,
     DuplicateColumn,
     EmptyPlanRelations,
+    EmptyResult,
     IncorrectBucketIdError,
     InvalidAst,
     InvalidBool,
+    InvalidConstant,
     InvalidColumnName,
     InvalidClusterSchema,
     InvalidInput,
@@ -57,6 +64,7 @@ pub enum QueryPlannerError {
     NotEqualRows,
     QueryNotImplemented,
     RequireMotion,
+    RedundantTransformation,
     Serialization,
     SimpleQueryError,
     SimpleUnionQueryError,
@@ -71,11 +79,14 @@ impl fmt::Display for QueryPlannerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
             QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
+            QueryPlannerError::DoSkip => DO_SKIP,
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
             QueryPlannerError::EmptyPlanRelations => EMPTY_PLAN_RELATION,
+            QueryPlannerError::EmptyResult => EMPTY_RESULT,
             QueryPlannerError::IncorrectBucketIdError => INCORRECT_BUCKET_ID_ERROR,
             QueryPlannerError::InvalidAst => INVALID_AST,
             QueryPlannerError::InvalidBool => INVALID_BOOL_ERROR,
+            QueryPlannerError::InvalidConstant => INVALID_CONSTANT,
             QueryPlannerError::InvalidColumnName => INVALID_COLUMN_NAME,
             QueryPlannerError::InvalidClusterSchema => INVALID_CLUSTER_SCHEMA,
             QueryPlannerError::InvalidInput => INVALID_INPUT,
@@ -91,6 +102,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::InvalidSpaceName => INVALID_SPACE_NAME,
             QueryPlannerError::NotEqualRows => NOT_EQUAL_ROWS,
             QueryPlannerError::QueryNotImplemented => QUERY_NOT_IMPLEMENTED,
+            QueryPlannerError::RedundantTransformation => REDUNDANT_TRANSFORMATION,
             QueryPlannerError::RequireMotion => REQUIRE_MOTION,
             QueryPlannerError::Serialization => SERIALIZATION_ERROR,
             QueryPlannerError::SimpleQueryError => SIMPLE_QUERY_ERROR,
