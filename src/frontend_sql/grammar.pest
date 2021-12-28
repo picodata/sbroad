@@ -1,0 +1,51 @@
+Command = _{ SOI ~ Query ~ EOF }
+Keys = { ^"all" | ^"and" | ^"as" | ^"false" | ^"from" 
+	| ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
+	| ^"on" | ^"or" | ^"row" | ^"select" | ^"true" | ^"union"
+	| ^"where" | ^"values" }
+Value = _{ Row | Bool | Null | QuotedName | Number | String }
+    Bool = @{ ^"true" | ^"false" }
+    Null = @{ ^"null" }
+    Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
+        Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
+    String = @{ !(Keys) ~ ('a'..'z' | "_" | Number)+ }
+    QuotedName = @{ "\"" ~ String ~ "\"" ~ ("." ~ "\"" ~ String ~ "\"")? }
+    Row = { ("(" ~ Value ~ ("," ~ Value)* ~ ")") | (^"row(" ~ Value ~ ("," ~ Value)* ~ ")") }
+BinaryOp = _{ BoolOp }
+	BoolOp = { In | NotEq | GtEq | LtEq | Eq | Gt | Lt | And | Or }
+    	And = @{ ^"and" }
+        Eq = @{ "=" }
+        In = @{ ^"in" }
+        Gt = @{ ">" }
+        GtEq = @{ ">=" }
+        Lt = @{ "<" }
+        LtEq = @{ "<=" }
+        NotEq = @{ "!=" | "<>" }
+        Or = @{ ^"or" }
+        
+PrimaryExpr = _{ SubQuery | Value }
+Expr = { PrimaryExpr ~ BinaryOp ~ (Expr | PrimaryExpr) }
+ParenthesesExpr = { Expr | ("(" ~ Expr ~ ")") }
+ChainExpr = { ParenthesesExpr ~ BinaryOp ~ ChainExpr | ("(" ~ ChainExpr ~ ")") | ParenthesesExpr }
+
+Query = _{ Select | UnionAll | Values | Insert }
+Select = { 
+        ^"select" ~ Projection ~ ^"from" ~ Scan ~ 
+        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~ 
+        (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
+}
+    Projection = { (Row | Column | SubQuery ) ~ ("," ~ (Row | Column | SubQuery ))*? }
+        Column = { (Asterisk | Alias | Value) }
+            Alias = {Value ~ ^"as" ~ (String | QuotedName) }
+            Asterisk = @{ "*" }
+    Selection = { ChainExpr* }
+    Scan = { SubQuery | Table }
+        Table = @{ String | QuotedName }
+    InnerJoin = { Scan }
+    Condition = { Selection }
+UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
+SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ (String | QuotedName))? }
+Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
+Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
+EOF = { EOI | ";" }
+WHITESPACE = _{ " " | "\t" | "\n" | "\n\r" }
