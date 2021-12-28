@@ -14,8 +14,8 @@ pub enum Bool {
     And,
     /// `=`
     Eq,
-    /// `=all` (also named `in`)
-    EqAll,
+    /// `in`
+    In,
     /// `>`
     Gt,
     /// `>=`
