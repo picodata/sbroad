@@ -1,51 +1,65 @@
 Command = _{ SOI ~ Query ~ EOF }
-Keys = { ^"all" | ^"and" | ^"as" | ^"false" | ^"from" 
-	| ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
-	| ^"on" | ^"or" | ^"row" | ^"select" | ^"true" | ^"union"
-	| ^"where" | ^"values" }
+
+Query = _{ Select | UnionAll | Values | Insert }
+    Select = {
+        ^"select" ~ Projection ~ ^"from" ~ Scan ~
+        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~
+        (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
+    }
+        Projection = { Column ~ ("," ~ Column)*? }
+            Column = { Row | Asterisk | Alias | Value | SubQuery }
+                Alias = {Value ~ ^"as" ~ (String | QuotedName) }
+                Asterisk = @{ "*" }
+        Selection = { Expr* }
+        Scan = { SubQuery | Table }
+            Table = @{ String | QuotedName }
+        InnerJoin = { Scan }
+        Condition = { Selection }
+    UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
+    SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ (String | QuotedName))? }
+    Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
+    Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
+
+Expr = _{  ExprOr | ExprAnd | ExprCmp | ExprPrimary | ExprParentheses }
+    ExprParentheses = _{ "(" ~ Expr ~ ")" }
+    ExprPrimary = _{ SubQuery | Value }
+    ExprCmp = { ExprCmpLeft ~ Cmp ~ ExprCmpRight }
+        ExprCmpLeft = _{ ExprPrimary | ExprParentheses }
+        Cmp = _{ In | NotEq | GtEq | LtEq | Eq | Gt | Lt }
+            Eq = @{ "=" }
+            In = @{ ^"in" }
+            Gt = @{ ">" }
+            GtEq = @{ ">=" }
+            Lt = @{ "<" }
+            LtEq = @{ "<=" }
+            NotEq = @{ "!=" | "<>" }
+        ExprCmpRight = _{ ExprCmp | ExprCmpLeft }
+    ExprAnd = { ExprAndLeft ~ And ~ ExprAndRight }
+        ExprAndLeft = _{ ExprCmpRight }
+        And = @{ ^"and" }
+        ExprAndRight = _{ ExprAnd | ExprAndLeft }
+    ExprOr = { ExprOrLeft ~ Or ~ ExprOrRight }
+        ExprOrLeft = _{ ExprAndRight }
+        Or = @{ ^"or" }
+        ExprOrRight = _{ ExprOr | ExprOrLeft }
+
 Value = _{ Row | Bool | Null | QuotedName | Number | String }
     Bool = @{ ^"true" | ^"false" }
     Null = @{ ^"null" }
     Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
         Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
-    String = @{ !(Keys) ~ ('a'..'z' | "_" | Number)+ }
+    String = @{ !(Keyword) ~ ('a'..'z' | "_" | Number)+ }
+        Keyword = {
+            ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
+            | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
+            | ^"on" | ^"or" | ^"row" | ^"select" | ^"true" | ^"union"
+            | ^"where" | ^"values"
+        }
     QuotedName = @{ "\"" ~ String ~ "\"" ~ ("." ~ "\"" ~ String ~ "\"")? }
-    Row = { ("(" ~ Value ~ ("," ~ Value)* ~ ")") | (^"row(" ~ Value ~ ("," ~ Value)* ~ ")") }
-BinaryOp = _{ BoolOp }
-	BoolOp = { In | NotEq | GtEq | LtEq | Eq | Gt | Lt | And | Or }
-    	And = @{ ^"and" }
-        Eq = @{ "=" }
-        In = @{ ^"in" }
-        Gt = @{ ">" }
-        GtEq = @{ ">=" }
-        Lt = @{ "<" }
-        LtEq = @{ "<=" }
-        NotEq = @{ "!=" | "<>" }
-        Or = @{ ^"or" }
-        
-PrimaryExpr = _{ SubQuery | Value }
-Expr = { PrimaryExpr ~ BinaryOp ~ (Expr | PrimaryExpr) }
-ParenthesesExpr = { Expr | ("(" ~ Expr ~ ")") }
-ChainExpr = { ParenthesesExpr ~ BinaryOp ~ ChainExpr | ("(" ~ ChainExpr ~ ")") | ParenthesesExpr }
+    Row = {
+        ("(" ~ Value ~ ("," ~ Value)* ~ ")")
+        | (^"row" ~ "(" ~ Value ~ ("," ~ Value)* ~ ")")
+    }
 
-Query = _{ Select | UnionAll | Values | Insert }
-Select = { 
-        ^"select" ~ Projection ~ ^"from" ~ Scan ~ 
-        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~ 
-        (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
-}
-    Projection = { (Row | Column | SubQuery ) ~ ("," ~ (Row | Column | SubQuery ))*? }
-        Column = { (Asterisk | Alias | Value) }
-            Alias = {Value ~ ^"as" ~ (String | QuotedName) }
-            Asterisk = @{ "*" }
-    Selection = { ChainExpr* }
-    Scan = { SubQuery | Table }
-        Table = @{ String | QuotedName }
-    InnerJoin = { Scan }
-    Condition = { Selection }
-UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
-SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ (String | QuotedName))? }
-Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
-Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
 EOF = { EOI | ";" }
 WHITESPACE = _{ " " | "\t" | "\n" | "\n\r" }
