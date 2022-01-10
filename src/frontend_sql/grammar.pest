@@ -7,7 +7,7 @@ Query = _{ Select | UnionAll | Values | Insert }
         (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
         Projection = { Column ~ ("," ~ Column)*? }
-            Column = { Row | Asterisk | Alias | Value | SubQuery }
+            Column = { Row | Asterisk | Alias | Value }
                 Alias = {Value ~ ^"as" ~ (String | QuotedName) }
                 Asterisk = @{ "*" }
         Selection = { Expr* }
