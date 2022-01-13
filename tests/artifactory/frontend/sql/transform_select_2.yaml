@@ -1,0 +1,27 @@
+---
+nodes:
+  arena:
+    - children:
+        - 3
+      rule: Select
+      value: ~
+    - children:
+        - 2
+      rule: Scan
+      value: ~
+    - children: []
+      rule: Table
+      value: t
+    - children:
+        - 1
+        - 4
+      rule: Projection
+      value: ~
+    - children:
+        - 5
+      rule: Column
+      value: ~
+    - children: []
+      rule: String
+      value: a
+top: 0

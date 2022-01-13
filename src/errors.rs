@@ -6,6 +6,7 @@ const BUCKET_ID_ERROR: &str = "field doesn't contains sharding key value";
 const DUPLICATE_COLUMN_ERROR: &str = "duplicate column";
 const EMPTY_PLAN_RELATION: &str = "empty plan relations";
 const INCORRECT_BUCKET_ID_ERROR: &str = "incorrect bucket id";
+const INVALID_AST: &str = "invalid AST";
 const INVALID_BOOL_ERROR: &str = "invalid boolean";
 const INVALID_COLUMN_NAME: &str = "invalid column name";
 const INVALID_CLUSTER_SCHEMA: &str = "cluster schema is invalid";
@@ -38,6 +39,7 @@ pub enum QueryPlannerError {
     DuplicateColumn,
     EmptyPlanRelations,
     IncorrectBucketIdError,
+    InvalidAst,
     InvalidBool,
     InvalidColumnName,
     InvalidClusterSchema,
@@ -72,6 +74,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
             QueryPlannerError::EmptyPlanRelations => EMPTY_PLAN_RELATION,
             QueryPlannerError::IncorrectBucketIdError => INCORRECT_BUCKET_ID_ERROR,
+            QueryPlannerError::InvalidAst => INVALID_AST,
             QueryPlannerError::InvalidBool => INVALID_BOOL_ERROR,
             QueryPlannerError::InvalidColumnName => INVALID_COLUMN_NAME,
             QueryPlannerError::InvalidClusterSchema => INVALID_CLUSTER_SCHEMA,
