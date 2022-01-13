@@ -1,6 +1,6 @@
 Command = _{ SOI ~ Query ~ EOF }
 
-Query = _{ Select | UnionAll | Values | Insert }
+Query = _{ UnionAll | Select | Values | Insert }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~
@@ -20,28 +20,37 @@ Query = _{ Select | UnionAll | Values | Insert }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
     Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
 
-Expr = _{  ExprOr | ExprAnd | ExprCmp | ExprPrimary | ExprParentheses }
-    ExprParentheses = _{ "(" ~ Expr ~ ")" }
-    ExprPrimary = _{ SubQuery | Value }
-    ExprCmp = { ExprCmpLeft ~ Cmp ~ ExprCmpRight }
-        ExprCmpLeft = _{ ExprPrimary | ExprParentheses }
-        Cmp = _{ In | NotEq | GtEq | LtEq | Eq | Gt | Lt }
-            Eq = @{ "=" }
-            In = @{ ^"in" }
-            Gt = @{ ">" }
-            GtEq = @{ ">=" }
-            Lt = @{ "<" }
-            LtEq = @{ "<=" }
-            NotEq = @{ "!=" | "<>" }
-        ExprCmpRight = _{ ExprCmp | ExprCmpLeft }
-    ExprAnd = { ExprAndLeft ~ And ~ ExprAndRight }
-        ExprAndLeft = _{ ExprCmpRight }
-        And = @{ ^"and" }
-        ExprAndRight = _{ ExprAnd | ExprAndLeft }
-    ExprOr = { ExprOrLeft ~ Or ~ ExprOrRight }
-        ExprOrLeft = _{ ExprAndRight }
-        Or = @{ ^"or" }
-        ExprOrRight = _{ ExprOr | ExprOrLeft }
+Expr = _{  Or | And | Cmp | Primary | Parentheses }
+    Parentheses = _{ "(" ~ Expr ~ ")" }
+    Primary = _{ SubQuery | Value }
+    Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
+    Eq = { EqLeft ~ "=" ~ EqRight }
+        EqLeft = _{ Primary | Parentheses }
+        EqRight = _{ Eq | EqLeft }
+    In = { InLeft ~ ^"in" ~ InRight }
+        InLeft = _{ EqRight }
+        InRight = _{ In | InLeft }
+    Gt = { GtLeft ~ ">" ~ GtRight }
+        GtLeft = _{ InRight }
+        GtRight = _{ Gt | GtLeft }
+    GtEq = { GtEqLeft ~ ">=" ~ GtEqRight }
+        GtEqLeft = _{ GtRight }
+        GtEqRight = _{ GtEq | GtEqLeft }
+    Lt = { LtLeft ~ "<" ~ LtRight }
+        LtLeft = _{ GtEqRight }
+        LtRight = _{ Lt | LtLeft }
+    LtEq = { LtEqLeft ~ "<=" ~ LtEqRight }
+        LtEqLeft = _{ LtRight }
+        LtEqRight = _{ LtEq | LtEqLeft }
+    NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
+        NotEqLeft = _{ LtEqRight }
+        NotEqRight = _{ NotEq | NotEqLeft }  
+    And = { AndLeft ~ ^"and" ~ AndRight }
+        AndLeft = _{ Cmp | Primary | Parentheses }
+        AndRight = _{ And | AndLeft }
+    Or = { OrLeft ~ ^"or" ~ OrRight }
+        OrLeft = _{ AndRight }
+        OrRight = _{ Or | OrLeft }
 
 Value = _{ Row | Bool | Null | QuotedName | Number | String }
     Bool = @{ ^"true" | ^"false" }
