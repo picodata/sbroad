@@ -1,14 +1,17 @@
 //! Operators for expression transformations.
 
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::errors::QueryPlannerError;
+
 use super::expression::Expression;
 use super::relation::Table;
 use super::{Node, Nodes, Plan};
-use crate::errors::QueryPlannerError;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Binary operator returning Bool expression.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Bool {
     /// `&&`
     And,
@@ -28,6 +31,27 @@ pub enum Bool {
     NotEq,
     /// `||`
     Or,
+}
+
+impl Bool {
+    /// Create `Bool` from operator string.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the operator is invalid.
+    pub fn from(s: &str) -> Result<Self, QueryPlannerError> {
+        match s.to_lowercase().as_str() {
+            "and" => Ok(Bool::And),
+            "or" => Ok(Bool::Or),
+            "=" => Ok(Bool::Eq),
+            "in" => Ok(Bool::In),
+            ">" => Ok(Bool::Gt),
+            ">=" => Ok(Bool::GtEq),
+            "<" => Ok(Bool::Lt),
+            "<=" => Ok(Bool::LtEq),
+            "!=" | "<>" => Ok(Bool::NotEq),
+            _ => Err(QueryPlannerError::InvalidBool),
+        }
+    }
 }
 
 /// Relational algebra operator returning a new tuple.

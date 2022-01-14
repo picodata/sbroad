@@ -1,4 +1,3 @@
-use super::*;
 use crate::ir::value::*;
 use crate::ir::*;
 use pretty_assertions::assert_eq;
