@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn box_execute_result_serialize() {
-    let r = BoxExecuteResult {
+    let r = BoxExecuteFormat {
         metadata: vec![
             Column {
                 name: "id".into(),

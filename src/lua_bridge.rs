@@ -1,4 +1,4 @@
-use crate::executor::result::BoxExecuteResult;
+use crate::executor::result::BoxExecuteFormat;
 use tarantool::ffi::tarantool::luaT_state;
 use tarantool::hlua::{Lua, LuaError, LuaFunction};
 use tarantool::log::{say, SayLevel};
@@ -14,7 +14,7 @@ pub fn get_cluster_schema() -> Result<String, LuaError> {
 }
 
 /// Function execute sql query on selected node
-pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteResult, LuaError> {
+pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteFormat, LuaError> {
     let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
 
     lua.exec(
@@ -40,7 +40,7 @@ pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteResult, LuaEr
     )?;
 
     let exec_sql: LuaFunction<_> = lua.get("execute_sql").unwrap();
-    let res: BoxExecuteResult = exec_sql.call_with_args((bucket_id, query))?;
+    let res: BoxExecuteFormat = exec_sql.call_with_args((bucket_id, query))?;
 
     say(
         SayLevel::Error,

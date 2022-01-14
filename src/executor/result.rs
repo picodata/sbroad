@@ -32,14 +32,14 @@ impl Serialize for Value {
 impl Eq for Value {}
 
 #[derive(LuaRead, Debug, PartialEq, Eq)]
-pub struct BoxExecuteResult {
+pub struct BoxExecuteFormat {
     pub metadata: Vec<Column>,
     pub rows: Vec<Vec<Value>>,
 }
 
 /// Custom Implementation `ser::Serialize`, because if using standard `#derive[Serialize]` then each `BoxExecuteResult`
 /// record is serialized to a list. That is not the result we expect.
-impl Serialize for BoxExecuteResult {
+impl Serialize for BoxExecuteFormat {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

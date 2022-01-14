@@ -328,7 +328,7 @@ impl Plan {
                         false
                     }
                 } else {
-                    result.push(r_id); 
+                    result.push(r_id);
                     true
                 }
             })
