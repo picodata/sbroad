@@ -2,6 +2,17 @@
 //!
 //! Contains the logical plan tree and helpers.
 
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use expression::Expression;
+use operator::Relational;
+use relation::Table;
+
+use crate::errors::QueryPlannerError;
+use crate::ir::value::Value;
+
 pub mod distribution;
 pub mod expression;
 pub mod helpers;
@@ -9,13 +20,6 @@ pub mod operator;
 pub mod relation;
 pub mod tree;
 pub mod value;
-
-use crate::errors::QueryPlannerError;
-use expression::Expression;
-use operator::Relational;
-use relation::Table;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Plan tree node.
 ///
@@ -177,6 +181,38 @@ impl Plan {
             }
         }
         map
+    }
+
+    #[must_use]
+    pub fn next_id(&self) -> usize {
+        self.nodes.next_id()
+    }
+
+    /// Add constant value to the plan.
+    pub fn add_const(&mut self, v: Value) -> usize {
+        self.nodes.add_const(v)
+    }
+
+    /// Add condition note to the plan.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the condition node can't append'.
+    pub fn add_cond(
+        &mut self,
+        left: usize,
+        op: operator::Bool,
+        right: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.nodes.add_bool(left, op, right)
+    }
+
+    /// Set top node of plan
+    /// # Errors
+    /// - top node doesn't exist in AST
+    pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
+        self.get_node(top)?;
+        self.top = Some(top);
+        Ok(())
     }
 }
 
