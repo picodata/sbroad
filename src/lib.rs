@@ -12,5 +12,4 @@ mod lua_bridge;
 mod parser;
 mod query;
 mod simple_query;
-pub mod transformation;
 mod union_simple_query;

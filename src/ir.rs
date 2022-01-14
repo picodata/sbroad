@@ -18,6 +18,7 @@ pub mod expression;
 pub mod helpers;
 pub mod operator;
 pub mod relation;
+pub mod transformation;
 pub mod tree;
 pub mod value;
 
@@ -46,7 +47,7 @@ pub struct Nodes {
     /// so all nodes are stored in the single arena ("nodes" array).
     /// The positions in the array act like pointers, so it is possible
     /// only to add nodes to the plan, but never remove them.
-    pub arena: Vec<Node>,
+    arena: Vec<Node>,
 }
 
 impl Nodes {
@@ -85,7 +86,7 @@ impl Nodes {
 /// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
-    pub nodes: Nodes,
+    nodes: Nodes,
     relations: Option<HashMap<String, Table>>,
     slices: Option<Vec<Vec<usize>>>,
     top: Option<usize>,

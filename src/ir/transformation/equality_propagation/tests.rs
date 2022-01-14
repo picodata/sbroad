@@ -114,6 +114,7 @@ fn selection() {
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
+        .join("ir")
         .join("transformation")
         .join("equality_propagation")
         .join("selection.yaml");
