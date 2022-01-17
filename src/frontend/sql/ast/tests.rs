@@ -22,8 +22,7 @@ fn ast() {
 #[test]
 fn transfrom_select_2() {
     let query = r#"select a from t"#;
-    let mut ast = AbstractSyntaxTree::new(query).unwrap();
-    ast.transform_select().unwrap();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -38,8 +37,7 @@ fn transfrom_select_2() {
 #[test]
 fn transfrom_select_3() {
     let query = r#"select a from t where a = 1"#;
-    let mut ast = AbstractSyntaxTree::new(query).unwrap();
-    ast.transform_select().unwrap();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -54,8 +52,7 @@ fn transfrom_select_3() {
 #[test]
 fn transfrom_select_4() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a"#;
-    let mut ast = AbstractSyntaxTree::new(query).unwrap();
-    ast.transform_select().unwrap();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -70,8 +67,7 @@ fn transfrom_select_4() {
 #[test]
 fn transfrom_select_5() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a where t1.a > 0"#;
-    let mut ast = AbstractSyntaxTree::new(query).unwrap();
-    ast.transform_select().unwrap();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -86,8 +82,7 @@ fn transfrom_select_5() {
 #[test]
 fn traversal() {
     let query = r#"select a from t where a = 1"#;
-    let mut ast = AbstractSyntaxTree::new(query).unwrap();
-    ast.transform_select().unwrap();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
     let top = ast.top.unwrap();
     let mut dft_pre = DftPost::new(&top, |node| ast.nodes.tree_iter(node));
 
@@ -101,7 +96,7 @@ fn traversal() {
 
     let (_, a_id) = dft_pre.next().unwrap();
     let node = ast.nodes.get_node(*a_id).unwrap();
-    assert_eq!(node.rule, Type::String);
+    assert_eq!(node.rule, Type::Name);
 
     let (_, num_id) = dft_pre.next().unwrap();
     let node = ast.nodes.get_node(*num_id).unwrap();
@@ -117,7 +112,7 @@ fn traversal() {
 
     let (_, str_id) = dft_pre.next().unwrap();
     let node = ast.nodes.get_node(*str_id).unwrap();
-    assert_eq!(node.rule, Type::String);
+    assert_eq!(node.rule, Type::ProjectedName);
 
     let (_, col_id) = dft_pre.next().unwrap();
     let node = ast.nodes.get_node(*col_id).unwrap();

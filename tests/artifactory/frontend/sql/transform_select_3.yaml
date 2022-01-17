@@ -19,7 +19,7 @@ nodes:
       rule: Number
       value: 1
     - children: []
-      rule: String
+      rule: Name
       value: a
     - children:
         - 6
@@ -38,6 +38,6 @@ nodes:
       rule: Column
       value: ~
     - children: []
-      rule: String
+      rule: ProjectedName
       value: a
 top: 0

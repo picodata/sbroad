@@ -3,11 +3,10 @@ nodes:
   arena:
     - children:
         - 7
-        - 5
-        - 1
       rule: Select
       value: ~
     - children:
+        - 5
         - 2
       rule: Selection
       value: ~
@@ -20,7 +19,7 @@ nodes:
       rule: Number
       value: 1
     - children: []
-      rule: QuotedName
+      rule: Name
       value: "\"identification_number\""
     - children:
         - 6
@@ -30,6 +29,7 @@ nodes:
       rule: Table
       value: "\"test_space\""
     - children:
+        - 1
         - 10
         - 8
       rule: Projection
@@ -39,13 +39,13 @@ nodes:
       rule: Column
       value: ~
     - children: []
-      rule: QuotedName
+      rule: ProjectedName
       value: "\"product_code\""
     - children:
         - 11
       rule: Column
       value: ~
     - children: []
-      rule: QuotedName
+      rule: ProjectedName
       value: "\"identification_number\""
 top: 0

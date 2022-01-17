@@ -1,10 +1,12 @@
 extern crate pest;
 
-use crate::errors::QueryPlannerError;
+use std::cell::RefCell;
+
 use pest::iterators::Pair;
 use pest::Parser;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+
+use crate::errors::QueryPlannerError;
 
 /// Parse tree
 #[derive(Parser)]
@@ -14,7 +16,7 @@ pub struct ParseTree;
 /// A list of current rules from the actual grammar.
 /// When new tokens are added to the grammar they
 /// should be also added in the current list.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Type {
     Alias,
     And,
@@ -30,6 +32,7 @@ pub enum Type {
     Insert,
     Lt,
     LtEq,
+    Name,
     NotEq,
     Null,
     Number,
@@ -37,13 +40,14 @@ pub enum Type {
     Parentheses,
     Primary,
     Projection,
-    QuotedName,
+    ProjectedName,
     Row,
     Scan,
     Select,
     Selection,
     String,
     SubQuery,
+    SubQueryName,
     Table,
     UnionAll,
     Value,
@@ -68,6 +72,7 @@ impl Type {
             Rule::Insert => Ok(Type::Insert),
             Rule::Lt => Ok(Type::Lt),
             Rule::LtEq => Ok(Type::LtEq),
+            Rule::Name => Ok(Type::Name),
             Rule::NotEq => Ok(Type::NotEq),
             Rule::Null => Ok(Type::Null),
             Rule::Number => Ok(Type::Number),
@@ -75,13 +80,14 @@ impl Type {
             Rule::Parentheses => Ok(Type::Parentheses),
             Rule::Primary => Ok(Type::Primary),
             Rule::Projection => Ok(Type::Projection),
-            Rule::QuotedName => Ok(Type::QuotedName),
+            Rule::ProjectedName => Ok(Type::ProjectedName),
             Rule::Row => Ok(Type::Row),
             Rule::Scan => Ok(Type::Scan),
             Rule::Select => Ok(Type::Select),
             Rule::Selection => Ok(Type::Selection),
             Rule::String => Ok(Type::String),
             Rule::SubQuery => Ok(Type::SubQuery),
+            Rule::SubQueryName => Ok(Type::SubQueryName),
             Rule::Table => Ok(Type::Table),
             Rule::UnionAll => Ok(Type::UnionAll),
             Rule::Value => Ok(Type::Value),
@@ -91,11 +97,11 @@ impl Type {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Node {
     children: Vec<usize>,
-    rule: Type,
-    value: Option<String>,
+    pub(in crate::frontend::sql) rule: Type,
+    pub(in crate::frontend::sql) value: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -109,7 +115,7 @@ impl Node {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Nodes {
     arena: Vec<Node>,
 }
@@ -189,8 +195,8 @@ impl<'n> StackNode<'n> {
 /// Positions in a list act like references.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct AbstractSyntaxTree {
-    nodes: Nodes,
-    top: Option<usize>,
+    pub(in crate::frontend::sql) nodes: Nodes,
+    pub(in crate::frontend::sql) top: Option<usize>,
 }
 
 #[allow(dead_code)]
@@ -255,12 +261,15 @@ impl AbstractSyntaxTree {
         }
 
         ast.set_top(0)?;
+
+        ast.transform_select()?;
+
         Ok(ast)
     }
 
     /// `Select` node is not IR-friendly as it can have up to five children.
     /// Transform this node in IR-way (to a binary sub-tree).
-    pub fn transform_select(&mut self) -> Result<(), QueryPlannerError> {
+    fn transform_select(&mut self) -> Result<(), QueryPlannerError> {
         let mut selects: Vec<usize> = Vec::new();
         for (pos, node) in self.nodes.arena.iter().enumerate() {
             if node.rule == Type::Select {

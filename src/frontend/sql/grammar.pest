@@ -7,25 +7,28 @@ Query = _{ UnionAll | Select | Values | Insert }
         (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
         Projection = { Column ~ ("," ~ Column)*? }
-            Column = { Row | Asterisk | Alias | Value }
-                Alias = {Value ~ ^"as" ~ (String | QuotedName) }
+            Column = { Row | Asterisk | Alias | Value | ProjectedName }
+                Alias = {Value ~ ^"as" ~ ProjectedName }
+                ProjectedName = @{ Name }
+                Name = @{ String | "\"" ~ String ~ "\"" ~ (".\"" ~ String ~ "\"")?}
                 Asterisk = @{ "*" }
         Selection = { Expr* }
         Scan = { SubQuery | Table }
-            Table = @{ String | QuotedName }
+            Table = @{ Name }
         InnerJoin = { Scan }
         Condition = { Selection }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
-    SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ (String | QuotedName))? }
+    SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ SubQueryName)? }
+		SubQueryName = @{ Name }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
     Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
 
 Expr = _{  Or | And | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | Value }
+    Primary = _{ SubQuery | Value | Name }
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
     Eq = { EqLeft ~ "=" ~ EqRight }
-        EqLeft = _{ Primary | Parentheses }
+        EqLeft = _{ Primary }
         EqRight = _{ Eq | EqLeft }
     In = { InLeft ~ ^"in" ~ InRight }
         InLeft = _{ EqRight }
@@ -44,7 +47,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         LtEqRight = _{ LtEq | LtEqLeft }
     NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
         NotEqLeft = _{ LtEqRight }
-        NotEqRight = _{ NotEq | NotEqLeft }  
+        NotEqRight = _{ NotEq | NotEqLeft }
     And = { AndLeft ~ ^"and" ~ AndRight }
         AndLeft = _{ Cmp | Primary | Parentheses }
         AndRight = _{ And | AndLeft }
@@ -52,22 +55,23 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-Value = _{ Row | Bool | Null | QuotedName | Number | String }
-    Bool = @{ ^"true" | ^"false" }
-    Null = @{ ^"null" }
+String = @{ !(Keyword) ~ ('a'..'z' | "_" | Number)+ }
+    Keyword = {
+        ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
+        | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
+        | ^"on" | ^"or" | ^"row" | ^"select" | ^"true" | ^"union"
+        | ^"where" | ^"values"
+    }
     Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
         Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
-    String = @{ !(Keyword) ~ ('a'..'z' | "_" | Number)+ }
-        Keyword = {
-            ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
-            | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
-            | ^"on" | ^"or" | ^"row" | ^"select" | ^"true" | ^"union"
-            | ^"where" | ^"values"
-        }
-    QuotedName = @{ "\"" ~ String ~ "\"" ~ ("." ~ "\"" ~ String ~ "\"")? }
+
+Value = _{ Row | Bool | Null | Number | SingleQuotedString }
+    Bool = @{ ^"true" | ^"false" }
+    Null = @{ ^"null" }
+    SingleQuotedString = _{ "'" ~ String ~ "'" }
     Row = {
-        ("(" ~ Value ~ ("," ~ Value)* ~ ")")
-        | (^"row" ~ "(" ~ Value ~ ("," ~ Value)* ~ ")")
+        ("(" ~ (Value | Name) ~ ("," ~ (Value | Name))* ~ ")")
+        | (^"row" ~ "(" ~ (Value | Name) ~ ("," ~ (Value | Name))* ~ ")")
     }
 
 EOF = { EOI | ";" }

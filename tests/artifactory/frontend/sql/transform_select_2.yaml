@@ -22,6 +22,6 @@ nodes:
       rule: Column
       value: ~
     - children: []
-      rule: String
+      rule: ProjectedName
       value: a
 top: 0

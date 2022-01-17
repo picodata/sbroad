@@ -9,6 +9,11 @@ const EMPTY_PLAN_RELATION: &str = "empty plan relations";
 const EMPTY_RESULT: &str = "empty result";
 const INCORRECT_BUCKET_ID_ERROR: &str = "incorrect bucket id";
 const INVALID_AST: &str = "invalid AST";
+const INVALID_AST_CONDITION_NODE: &str = "Invalid selection condition part";
+const INVALID_AST_SCAN_NODE: &str = "Invalid scan node";
+const INVALID_AST_SELECTION_NODE: &str = "Selection node not found";
+const INVALID_AST_SUBQUERY_NODE: &str = "Invalid subquery node";
+const INVALID_AST_TOP_NODE: &str = "Top node not found";
 const INVALID_BOOL_ERROR: &str = "invalid boolean";
 const INVALID_CONSTANT: &str = "invalid constant";
 const INVALID_COLUMN_NAME: &str = "invalid column name";
@@ -34,18 +39,25 @@ const SIMPLE_UNION_QUERY_ERROR: &str = "query doesn't simple union";
 const SPACE_NOT_FOUND: &str = "space not found";
 const SPACE_FORMAT_NOT_FOUND: &str = "space format not found";
 const UNINITIALIZED_DISTRIBUTION: &str = "uninitialized distribution";
+const UNSUPPORTED_TYPE_IR_VALUE: &str = "unsupported type ir value";
 const VALUE_OUT_OF_RANGE_ERROR: &str = "value out of range";
 const TYPE_NOT_IMPLEMENTED: &str = "type is not implemented";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum QueryPlannerError {
     BucketIdError,
+    CustomError(String),
     DoSkip,
     DuplicateColumn,
     EmptyPlanRelations,
     EmptyResult,
     IncorrectBucketIdError,
     InvalidAst,
+    InvalidAstConditionNode,
+    InvalidAstScanNode,
+    InvalidAstSelectionNode,
+    InvalidAstSubQueryNode,
+    InvalidAstTopNode,
     InvalidBool,
     InvalidConstant,
     InvalidColumnName,
@@ -73,11 +85,13 @@ pub enum QueryPlannerError {
     UninitializedDistribution,
     ValueOutOfRange,
     TypeNotImplemented,
+    UnsupportedIrValueType,
 }
 
 impl fmt::Display for QueryPlannerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
+            QueryPlannerError::CustomError(s) => s.as_str(),
             QueryPlannerError::BucketIdError => BUCKET_ID_ERROR,
             QueryPlannerError::DoSkip => DO_SKIP,
             QueryPlannerError::DuplicateColumn => DUPLICATE_COLUMN_ERROR,
@@ -85,6 +99,11 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::EmptyResult => EMPTY_RESULT,
             QueryPlannerError::IncorrectBucketIdError => INCORRECT_BUCKET_ID_ERROR,
             QueryPlannerError::InvalidAst => INVALID_AST,
+            QueryPlannerError::InvalidAstConditionNode => INVALID_AST_CONDITION_NODE,
+            QueryPlannerError::InvalidAstScanNode => INVALID_AST_SCAN_NODE,
+            QueryPlannerError::InvalidAstSelectionNode => INVALID_AST_SELECTION_NODE,
+            QueryPlannerError::InvalidAstSubQueryNode => INVALID_AST_SUBQUERY_NODE,
+            QueryPlannerError::InvalidAstTopNode => INVALID_AST_TOP_NODE,
             QueryPlannerError::InvalidBool => INVALID_BOOL_ERROR,
             QueryPlannerError::InvalidConstant => INVALID_CONSTANT,
             QueryPlannerError::InvalidColumnName => INVALID_COLUMN_NAME,
@@ -112,6 +131,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::UninitializedDistribution => UNINITIALIZED_DISTRIBUTION,
             QueryPlannerError::ValueOutOfRange => VALUE_OUT_OF_RANGE_ERROR,
             QueryPlannerError::TypeNotImplemented => TYPE_NOT_IMPLEMENTED,
+            QueryPlannerError::UnsupportedIrValueType => UNSUPPORTED_TYPE_IR_VALUE,
         };
         write!(f, "{}", p)
     }

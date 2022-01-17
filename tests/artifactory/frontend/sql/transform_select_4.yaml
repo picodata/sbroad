@@ -19,10 +19,10 @@ nodes:
       rule: Eq
       value: ~
     - children: []
-      rule: String
+      rule: Name
       value: t2.a
     - children: []
-      rule: String
+      rule: Name
       value: t1.a
     - children:
         - 9

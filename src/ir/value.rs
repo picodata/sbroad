@@ -52,7 +52,6 @@ impl fmt::Display for Value {
     }
 }
 
-#[allow(dead_code)]
 impl Value {
     /// Construct a number from the string.
     ///
