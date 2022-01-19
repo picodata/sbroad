@@ -99,7 +99,7 @@ fn relational_post() {
 
     let union_id = plan.add_union_all(scan_t1_id, selection_id).unwrap();
     plan.set_top(union_id).unwrap();
-    let top = plan.top.unwrap();
+    let top = plan.get_top().unwrap();
 
     // Traverse the tree
     let mut dft_post = DftPost::new(&top, |node| plan.nodes.rel_iter(node));

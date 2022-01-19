@@ -158,6 +158,14 @@ impl Plan {
         }
     }
 
+    /// Get a top node of the plan tree.
+    ///
+    /// # Errors
+    /// - top node is None (i.e. invalid plan)
+    pub fn get_top(&self) -> Result<usize, QueryPlannerError> {
+        self.top.ok_or(QueryPlannerError::InvalidPlan)
+    }
+
     /// Construct a plan from the YAML file.
     ///
     /// # Errors
