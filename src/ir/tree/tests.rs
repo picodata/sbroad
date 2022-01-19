@@ -1,8 +1,9 @@
 use crate::ir::operator::*;
+use crate::ir::relation::*;
 use crate::ir::value::*;
 use crate::ir::*;
 use pretty_assertions::assert_eq;
-use traversal::{Bft, DftPre};
+use traversal::{Bft, DftPost, DftPre};
 
 #[test]
 fn expression_bft() {
@@ -40,7 +41,7 @@ fn expression_bft() {
 }
 
 #[test]
-fn and_chain() {
+fn and_chain_pre() {
     // (((b1 or b2) and b3) and b4) and (b5 = (b6 = b7))
 
     let mut plan = Plan::new();
@@ -72,4 +73,39 @@ fn and_chain() {
     assert_eq!(dft_pre.next(), Some((3, &b6)));
     assert_eq!(dft_pre.next(), Some((3, &b7)));
     assert_eq!(dft_pre.next(), None);
+}
+
+#[test]
+fn relational_post() {
+    // select * from t1 union all (select * from t2 where a = 1)
+    // output: scan t1, scan t2, selection, union all
+
+    // Initialize plan
+    let mut plan = Plan::new();
+
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1").unwrap();
+
+    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+    plan.add_rel(t2);
+    let scan_t2_id = plan.add_scan("t2").unwrap();
+
+    let id = plan.nodes.next_id();
+    let a = plan.add_row_from_child(id, scan_t2_id, &["a"]).unwrap();
+    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let eq = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
+    let selection_id = plan.add_select(scan_t2_id, eq, id).unwrap();
+
+    let union_id = plan.add_union_all(scan_t1_id, selection_id).unwrap();
+    plan.set_top(union_id).unwrap();
+    let top = plan.top.unwrap();
+
+    // Traverse the tree
+    let mut dft_post = DftPost::new(&top, |node| plan.nodes.rel_iter(node));
+    assert_eq!(dft_post.next(), Some((1, &scan_t1_id)));
+    assert_eq!(dft_post.next(), Some((2, &scan_t2_id)));
+    assert_eq!(dft_post.next(), Some((1, &selection_id)));
+    assert_eq!(dft_post.next(), Some((0, &union_id)));
+    assert_eq!(dft_post.next(), None);
 }

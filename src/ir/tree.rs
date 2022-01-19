@@ -1,7 +1,17 @@
 use super::expression::Expression;
-use super::operator::Bool;
+use super::operator::{Bool, Relational};
 use super::{Node, Nodes};
 use std::cell::RefCell;
+
+/// Relational node's child iterator.
+///
+/// Iterator returns next relational node in the plan tree.
+#[derive(Debug)]
+pub struct RelationalIterator<'n> {
+    current: &'n usize,
+    child: RefCell<usize>,
+    nodes: &'n Nodes,
+}
 
 /// Expression node's children iterator.
 ///
@@ -38,6 +48,15 @@ impl<'n> Nodes {
     #[must_use]
     pub fn eq_iter(&'n self, current: &'n usize) -> EqClassIterator<'n> {
         EqClassIterator {
+            current,
+            child: RefCell::new(0),
+            nodes: self,
+        }
+    }
+
+    #[must_use]
+    pub fn rel_iter(&'n self, current: &'n usize) -> RelationalIterator<'n> {
+        RelationalIterator {
             current,
             child: RefCell::new(0),
             nodes: self,
@@ -110,6 +129,32 @@ impl<'n> Iterator for EqClassIterator<'n> {
             None
         } else {
             None
+        }
+    }
+}
+
+impl<'n> Iterator for RelationalIterator<'n> {
+    type Item = &'n usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.nodes.arena.get(*self.current) {
+            Some(Node::Relational(
+                Relational::InnerJoin { children, .. }
+                | Relational::Motion { children, .. }
+                | Relational::Projection { children, .. }
+                | Relational::ScanSubQuery { children, .. }
+                | Relational::Selection { children, .. }
+                | Relational::UnionAll { children, .. },
+            )) => {
+                let step = *self.child.borrow();
+                if step < children.len() {
+                    *self.child.borrow_mut() += 1;
+                    return children.get(step);
+                }
+                None
+            }
+            Some(Node::Relational(Relational::ScanRelation { .. }) | Node::Expression(_))
+            | None => None,
         }
     }
 }
