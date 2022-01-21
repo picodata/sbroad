@@ -159,7 +159,7 @@ impl AbstractSyntaxTree {
                         stack.pop_or_err(QueryPlannerError::InvalidAstConditionNode)?;
 
                     stack.push(plan.add_select(
-                        current_scan_id,
+                        &[current_scan_id],
                         selection_id,
                         current_logical_id,
                     )?);
@@ -206,7 +206,7 @@ impl AbstractSyntaxTree {
 
                     let sq_id = stack.pop_or_err(QueryPlannerError::InvalidAstSubQueryNode)?;
 
-                    stack.push(plan.add_sub_query(sq_id, subquery_alias)?);
+                    stack.push(plan.add_sub_query(sq_id, Some(subquery_alias))?);
                 }
                 Type::Asterisk => {
                     projection.clear();
