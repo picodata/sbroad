@@ -109,3 +109,84 @@ fn relational_post() {
     assert_eq!(dft_post.next(), Some((0, &union_id)));
     assert_eq!(dft_post.next(), None);
 }
+
+#[test]
+fn selection_subquery_dfs_post() {
+    // select * from t1 where a in (select c from t2 where b = 1)
+    //
+    // ir tree:
+    // selection
+    // - scan t1
+    // - subquery
+    //     - projection: (c)
+    //         - selection
+    //             - scan t2
+    //             - filter
+    //                 - eq
+    //                     - (b)
+    //                     - (1)
+    // - filter
+    //     - in
+    //         - (a)
+    //         - (c)
+
+    // Initialize plan
+    let mut plan = Plan::new();
+
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let id1 = plan.nodes.next_id();
+    let a = plan.add_row_from_child(id1, scan_t1_id, &["a"]).unwrap();
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("b", Type::Boolean),
+            Column::new("c", Type::Boolean),
+        ],
+        &["b"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+    let scan_t2_id = plan.add_scan("t2").unwrap();
+
+    let id2 = plan.nodes.next_id();
+    let b = plan.add_row_from_child(id2, scan_t2_id, &["b"]).unwrap();
+    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let eq_op = plan.nodes.add_bool(b, Bool::Eq, const1).unwrap();
+    let selection_t2_id = plan.add_select(&[scan_t2_id], eq_op, id2).unwrap();
+    let proj_id = plan.add_proj(selection_t2_id, &["c"]).unwrap();
+    let sq_id = plan.add_sub_query(proj_id, None).unwrap();
+    let c = plan.get_row_from_rel_node(sq_id).unwrap();
+
+    let in_op = plan.nodes.add_bool(a, Bool::In, c).unwrap();
+    let selection_t1_id = plan.add_select(&[scan_t1_id, sq_id], in_op, id1).unwrap();
+
+    plan.set_top(selection_t1_id).unwrap();
+    let top = plan.get_top().unwrap();
+
+    // Traverse relational nodes in the plan tree
+    let mut dft_post = DftPost::new(&top, |node| plan.nodes.rel_iter(node));
+    assert_eq!(dft_post.next(), Some((1, &scan_t1_id)));
+    assert_eq!(dft_post.next(), Some((4, &scan_t2_id)));
+    assert_eq!(dft_post.next(), Some((3, &selection_t2_id)));
+    assert_eq!(dft_post.next(), Some((2, &proj_id)));
+    assert_eq!(dft_post.next(), Some((1, &sq_id)));
+    assert_eq!(dft_post.next(), Some((0, &selection_t1_id)));
+    assert_eq!(dft_post.next(), None);
+
+    // Traverse expression nodes in the selection t2 filter
+    let mut dft_post = DftPost::new(&eq_op, |node| plan.nodes.expr_iter(node));
+    assert_eq!(dft_post.next(), Some((1, &b)));
+    assert_eq!(dft_post.next(), Some((1, &const1)));
+    assert_eq!(dft_post.next(), Some((0, &eq_op)));
+    assert_eq!(dft_post.next(), None);
+
+    // Traverse expression nodes in the selection t1 filter
+    let mut dft_post = DftPost::new(&in_op, |node| plan.nodes.expr_iter(node));
+    assert_eq!(dft_post.next(), Some((1, &a)));
+    assert_eq!(dft_post.next(), Some((1, &c)));
+    assert_eq!(dft_post.next(), Some((0, &in_op)));
+    assert_eq!(dft_post.next(), None);
+}

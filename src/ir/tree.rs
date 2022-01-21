@@ -89,20 +89,34 @@ impl<'n> Iterator for ExpressionIterator<'n> {
                 None
             }
             Some(Node::Expression(Expression::Row { list, .. })) => {
-                let child_step = *self.child.borrow();
-                match list.get(child_step) {
-                    None => None,
-                    Some(child) => {
-                        *self.child.borrow_mut() += 1;
-                        Some(child)
+                let mut is_leaf = true;
+                for col in list {
+                    if let Some(Node::Expression(
+                        Expression::Reference { .. } | Expression::Constant { .. },
+                    )) = self.nodes.arena.get(*col)
+                    {
+                    } else {
+                        is_leaf = false;
+                        break;
                     }
                 }
+                if !is_leaf {
+                    let child_step = *self.child.borrow();
+                    match list.get(child_step) {
+                        None => return None,
+                        Some(child) => {
+                            *self.child.borrow_mut() += 1;
+                            return Some(child);
+                        }
+                    }
+                }
+                None
             }
-            None
-            | Some(
+            Some(
                 Node::Expression(Expression::Constant { .. } | Expression::Reference { .. })
                 | Node::Relational(_),
-            ) => None,
+            )
+            | None => None,
         }
     }
 }

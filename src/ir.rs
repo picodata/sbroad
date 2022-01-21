@@ -191,6 +191,30 @@ impl Plan {
         map
     }
 
+    /// Get relational node and produce a new row without aliases from its output (row with aliases).
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - node's output is not a row of aliases
+    pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, QueryPlannerError> {
+        if let Node::Relational(rel) = self.get_node(node)? {
+            if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
+                let mut cols: Vec<usize> = Vec::new();
+                for alias in list {
+                    if let Node::Expression(Expression::Alias { child, .. }) =
+                        self.get_node(*alias)?
+                    {
+                        cols.push(*child);
+                    } else {
+                        return Err(QueryPlannerError::InvalidNode);
+                    }
+                }
+                return Ok(self.nodes.add_row(cols, None));
+            }
+        }
+        Err(QueryPlannerError::InvalidRelation)
+    }
+
     #[must_use]
     pub fn next_id(&self) -> usize {
         self.nodes.next_id()
