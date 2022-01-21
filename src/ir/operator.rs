@@ -309,24 +309,37 @@ impl Plan {
     /// Add selection node
     ///
     /// # Errors
+    /// - children list is empty
     /// - filter expression is not boolean
-    /// - child node is not relational
-    /// - child output tuple is not valid
+    /// - children nodes are not relational
+    /// - first child output tuple is not valid
     pub fn add_select(
         &mut self,
-        child: usize,
+        children: &[usize],
         filter: usize,
         id: usize,
     ) -> Result<usize, QueryPlannerError> {
+        let first_child: usize = match children.len() {
+            0 => return Err(QueryPlannerError::InvalidInput),
+            _ => children[0],
+        };
+
         if let Node::Expression(Expression::Bool { .. }) = self.get_node(filter)? {
         } else {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let output = self.add_row_for_output(id, child, &[])?;
+        for child in children {
+            if let Node::Relational(_) = self.get_node(*child)? {
+            } else {
+                return Err(QueryPlannerError::InvalidRelation);
+            }
+        }
+
+        let output = self.add_row_for_output(id, first_child, &[])?;
 
         let select = Relational::Selection {
-            children: vec![child],
+            children: children.into(),
             filter,
             id,
             output,

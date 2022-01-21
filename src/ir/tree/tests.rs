@@ -95,7 +95,7 @@ fn relational_post() {
     let a = plan.add_row_from_child(id, scan_t2_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
     let eq = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
-    let selection_id = plan.add_select(scan_t2_id, eq, id).unwrap();
+    let selection_id = plan.add_select(&[scan_t2_id], eq, id).unwrap();
 
     let union_id = plan.add_union_all(scan_t1_id, selection_id).unwrap();
     plan.set_top(union_id).unwrap();

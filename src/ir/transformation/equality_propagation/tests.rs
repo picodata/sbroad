@@ -64,7 +64,7 @@ fn selection() {
     // a = 1 and b = 2 and c = 1 or d = 1
     let a1b2c1_d1 = plan.nodes.add_bool(a1b2c1, Bool::Or, d1).unwrap();
 
-    let select_id = plan.add_select(scan_id, a1b2c1_d1, logical_id).unwrap();
+    let select_id = plan.add_select(&[scan_id], a1b2c1_d1, logical_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     let candidates = plan.nodes.gather_expr_for_eq_propagation().unwrap();
