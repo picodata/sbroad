@@ -252,19 +252,19 @@ fn sub_query() {
     plan.add_rel(t);
 
     let scan_id = plan.add_scan("t").unwrap();
-    plan.add_sub_query(scan_id, "sq").unwrap();
+    plan.add_sub_query(scan_id, Some("sq")).unwrap();
 
     // Non-relational child node
     let a = 1;
     assert_eq!(
         QueryPlannerError::InvalidNode,
-        plan.add_sub_query(a, "sq").unwrap_err()
+        plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
 
     // Invalid name
     assert_eq!(
         QueryPlannerError::InvalidName,
-        plan.add_sub_query(scan_id, "").unwrap_err()
+        plan.add_sub_query(scan_id, Some("")).unwrap_err()
     );
 }
 

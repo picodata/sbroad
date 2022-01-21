@@ -103,7 +103,7 @@ pub enum Relational {
     },
     ScanSubQuery {
         /// SubQuery name
-        alias: String,
+        alias: Option<String>,
         /// Contains exactly a single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
@@ -353,16 +353,24 @@ impl Plan {
     /// # Errors
     /// - child node is not relational
     /// - child node output is not a correct tuple
-    /// - sub query name is empty
-    pub fn add_sub_query(&mut self, child: usize, alias: &str) -> Result<usize, QueryPlannerError> {
-        if alias.is_empty() {
-            return Err(QueryPlannerError::InvalidName);
-        }
+    pub fn add_sub_query(
+        &mut self,
+        child: usize,
+        alias: Option<&str>,
+    ) -> Result<usize, QueryPlannerError> {
+        let name: Option<String> = if let Some(name) = alias {
+            if name.is_empty() {
+                return Err(QueryPlannerError::InvalidName);
+            }
+            Some(String::from(name))
+        } else {
+            None
+        };
         let id = self.nodes.next_id();
         let output = self.add_row_for_output(id, child, &[])?;
 
         let sq = Relational::ScanSubQuery {
-            alias: String::from(alias),
+            alias: name,
             children: vec![child],
             id,
             output,
