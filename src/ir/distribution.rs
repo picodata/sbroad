@@ -397,6 +397,18 @@ impl Plan {
         }
         Ok(())
     }
+
+    /// Get distribution of the row node.
+    ///
+    /// # Errors
+    /// - node is invalid
+    /// - node is not a row
+    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, QueryPlannerError> {
+        if let Node::Expression(expr) = self.get_node(row_id)? {
+            return expr.distribution();
+        }
+        Err(QueryPlannerError::InvalidNode)
+    }
 }
 
 #[cfg(test)]
