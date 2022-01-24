@@ -86,8 +86,9 @@ impl Nodes {
 /// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
-    nodes: Nodes,
-    relations: Option<HashMap<String, Table>>,
+    pub(crate) nodes: Nodes,
+    pub(crate) relations: Option<HashMap<String, Table>>,
+    relational_map: Option<HashMap<usize, usize>>,
     slices: Option<Vec<Vec<usize>>>,
     top: Option<usize>,
 }
@@ -143,6 +144,7 @@ impl Plan {
             relations: None,
             slices: None,
             top: None,
+            relational_map: None,
         }
     }
 
@@ -180,15 +182,16 @@ impl Plan {
     }
 
     /// Build {logical id: position} map for relational nodes
-    #[must_use]
-    pub fn relational_id_map(&self) -> HashMap<usize, usize> {
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        for (pos, node) in self.nodes.arena.iter().enumerate() {
-            if let Node::Relational(relational) = node {
-                map.insert(relational.logical_id(), pos);
+    pub fn build_relational_map(&mut self) {
+        if self.relational_map.is_none() {
+            let mut map: HashMap<usize, usize> = HashMap::new();
+            for (pos, node) in self.nodes.arena.iter().enumerate() {
+                if let Node::Relational(relational) = node {
+                    map.insert(relational.logical_id(), pos);
+                }
             }
+            self.relational_map = Some(map);
         }
-        map
     }
 
     /// Get relational node and produce a new row without aliases from its output (row with aliases).
@@ -245,6 +248,123 @@ impl Plan {
         self.get_node(top)?;
         self.top = Some(top);
         Ok(())
+    }
+
+    /// Get relation type node
+    ///
+    /// # Errors
+    /// - node doesn't exist in the plan
+    pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, QueryPlannerError> {
+        match self.get_node(node_id)? {
+            Node::Relational(rel) => Ok(rel),
+            Node::Expression(_) => Err(QueryPlannerError::CustomError(
+                "Node isn't relational".into(),
+            )),
+        }
+    }
+
+    /// Get expression type node
+    ///
+    /// # Errors
+    /// - node doesn't exist in the plan
+    /// - node is not expression type
+    pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, QueryPlannerError> {
+        match self.get_node(node_id)? {
+            Node::Expression(exp) => Ok(exp),
+            Node::Relational(_) => Err(QueryPlannerError::CustomError(
+                "Node isn't expression".into(),
+            )),
+        }
+    }
+
+    /// Gets linked node from relational map
+    ///
+    /// # Errors
+    /// - relation map wasn't init
+    /// - relation node not found for current index
+    pub fn get_map_relational_value(&self, key: usize) -> Result<usize, QueryPlannerError> {
+        let result = *self
+            .relational_map
+            .as_ref()
+            .ok_or_else(|| {
+                QueryPlannerError::CustomError("Relation map doesn't initialize".into())
+            })?
+            .get(&key)
+            .ok_or_else(|| {
+                QueryPlannerError::CustomError("Node not found in relational map".into())
+            })?;
+
+        Ok(result)
+    }
+
+    /// Get relation node by index in internal table map
+    ///
+    /// # Errors
+    /// - node doesn't exist in the plan
+    /// - node is not relation type
+    pub fn get_mapping_relation_node(
+        &self,
+        node_id: usize,
+    ) -> Result<&Relational, QueryPlannerError> {
+        let rel_id = self.get_map_relational_value(node_id)?;
+
+        self.get_relation_node(rel_id)
+    }
+
+    /// Get alias string for `Reference` node
+    ///
+    /// # Errors
+    /// - node doesn't exist in the plan
+    /// - node is not `Reference`
+    /// - invalid references between nodes
+    pub fn get_alias_from_reference_node(
+        &self,
+        node: &Expression,
+    ) -> Result<String, QueryPlannerError> {
+        if let Expression::Reference {
+            targets,
+            position,
+            parent,
+        } = node
+        {
+            let ref_node = self.get_mapping_relation_node(*parent)?;
+
+            if let Some(list_of_column_nodes) = ref_node.children() {
+                let child_ids = targets.clone().ok_or_else(|| {
+                    QueryPlannerError::CustomError("Node refs to scan node, not alias".into())
+                })?;
+                let column_index_in_list = child_ids.get(0).ok_or_else(|| {
+                    QueryPlannerError::CustomError("Invalid child index in target".into())
+                })?;
+                let col_idx_in_rel =
+                    list_of_column_nodes
+                        .get(*column_index_in_list)
+                        .ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Not found column node with index {}",
+                                column_index_in_list
+                            ))
+                        })?;
+
+                let column_rel_node = self.get_relation_node(*col_idx_in_rel)?;
+                let column_expr_node = self.get_expression_node(column_rel_node.output())?;
+
+                let col_alias_idx = *column_expr_node
+                    .extract_row_list()?
+                    .get(*position)
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError("Invalid position in row list".into())
+                    })?;
+
+                let name = self.get_expression_node(col_alias_idx)?.get_alias_name()?;
+
+                return Ok(name);
+            }
+        }
+
+        Err(QueryPlannerError::CustomError(
+            "Node isn't reference type".into(),
+        ))
     }
 }
 

@@ -64,7 +64,7 @@ pub enum Expression {
         /// - Union nodes: two elements (left and right).
         /// - Other: single element.
         targets: Option<Vec<usize>>,
-        /// Expression position in the input tuple.
+        /// Expression position in the input tuple (i.e. `Alias` column).
         position: usize,
         /// Relational node ID, that contains current reference
         parent: usize,
@@ -102,6 +102,30 @@ impl Expression {
             return Ok(dist);
         }
         Err(QueryPlannerError::InvalidRow)
+    }
+
+    /// Gets children node id of  node.
+    ///
+    /// # Errors
+    /// - node isn't `Row`
+    pub fn extract_row_list(&self) -> Result<Vec<usize>, QueryPlannerError> {
+        match self {
+            Expression::Row { list, .. } => Ok(list.clone()),
+            _ => Err(QueryPlannerError::CustomError("Node isn't row type".into())),
+        }
+    }
+
+    /// Gets alias node name.
+    ///
+    /// # Errors
+    /// - node isn't `Alias`
+    pub fn get_alias_name(&self) -> Result<String, QueryPlannerError> {
+        match self {
+            Expression::Alias { name, .. } => Ok(name.into()),
+            _ => Err(QueryPlannerError::CustomError(
+                "Node isn't alias type".into(),
+            )),
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 //! Operators for expression transformations.
 
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +52,24 @@ impl Bool {
             "!=" | "<>" => Ok(Bool::NotEq),
             _ => Err(QueryPlannerError::InvalidBool),
         }
+    }
+}
+
+impl Display for Bool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let op = match &self {
+            Bool::And => "and",
+            Bool::Or => "or",
+            Bool::Eq => "=",
+            Bool::In => "in",
+            Bool::Gt => ">",
+            Bool::GtEq => ">=",
+            Bool::Lt => "<",
+            Bool::LtEq => "<=",
+            Bool::NotEq => "<>",
+        };
+
+        write!(f, "{}", op)
     }
 }
 

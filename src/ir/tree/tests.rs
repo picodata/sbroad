@@ -190,3 +190,62 @@ fn selection_subquery_dfs_post() {
     assert_eq!(dft_post.next(), Some((0, &in_op)));
     assert_eq!(dft_post.next(), None);
 }
+
+#[test]
+fn subtree_dfs_post() {
+    // select c from t1 where a = 1
+    //
+    // ir tree:
+    // - projection: (c)
+    //    - selection
+    //      - scan t1
+    //      - filter
+    //          - eq
+    //              - (a)
+    //              - (1)
+
+    // Initialize plan
+    let mut plan = Plan::new();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![
+            Column::new("a", Type::Boolean),
+            Column::new("c", Type::Boolean),
+        ],
+        &["a", "c"],
+    )
+    .unwrap();
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let id1 = plan.nodes.next_id();
+    let a = plan.add_row_from_child(id1, scan_t1_id, &["a"]).unwrap();
+    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let in_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
+    let selection_t1_id = plan.add_select(&[scan_t1_id], in_op, id1).unwrap();
+    let proj_id = plan.add_proj(selection_t1_id, &["c"]).unwrap();
+
+    plan.set_top(proj_id).unwrap();
+    let top = plan.get_top().unwrap();
+
+    let row_id = plan.get_relation_node(proj_id).unwrap().output();
+    let row_children = plan
+        .get_expression_node(row_id)
+        .unwrap()
+        .extract_row_list()
+        .unwrap();
+    let alias_id = row_children.get(0).unwrap();
+
+    // Traverse relational nodes in the plan tree
+    let mut dft_post = DftPost::new(&top, |node| plan.nodes.subtree_iter(node));
+    assert_eq!(dft_post.next(), Some((2, alias_id)));
+    assert_eq!(dft_post.next(), Some((1, &row_id)));
+    assert_eq!(dft_post.next(), Some((2, &scan_t1_id)));
+    assert_eq!(dft_post.next(), Some((4, &id1)));
+    assert_eq!(dft_post.next(), Some((3, &a)));
+    assert_eq!(dft_post.next(), Some((3, &const1)));
+    assert_eq!(dft_post.next(), Some((2, &in_op)));
+    assert_eq!(dft_post.next(), Some((1, &selection_t1_id)));
+    assert_eq!(dft_post.next(), Some((0, &proj_id)));
+    assert_eq!(dft_post.next(), None);
+}

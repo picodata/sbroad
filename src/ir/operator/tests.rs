@@ -33,9 +33,9 @@ fn scan_rel() {
     assert_eq!(scan_node, scan_id);
     plan.top = Some(scan_node);
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             row.distribution().unwrap(),
@@ -70,8 +70,8 @@ fn scan_rel_serialized() {
 
     let scan_output = scan_id - 1;
 
-    let map = plan.relational_id_map();
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.build_relational_map();
+    plan.set_distribution(scan_output).unwrap();
 
     let path = Path::new("")
         .join("tests")

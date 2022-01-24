@@ -1,11 +1,14 @@
+use std::collections::{HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::collection;
+use crate::errors::QueryPlannerError;
+
 use super::expression::Expression;
 use super::operator::Relational;
 use super::relation::Table;
 use super::{Node, Plan};
-use crate::collection;
-use crate::errors::QueryPlannerError;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 
 /// Tuple columns, that determinate its segment distribution.
 ///
@@ -136,11 +139,7 @@ impl Plan {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
-    pub fn set_distribution<S: ::std::hash::BuildHasher + Default>(
-        &mut self,
-        row_node: usize,
-        id_map: &HashMap<usize, usize, S>,
-    ) -> Result<(), QueryPlannerError> {
+    pub fn set_distribution(&mut self, row_node: usize) -> Result<(), QueryPlannerError> {
         let mut child_set: HashSet<usize> = HashSet::new();
         let mut child_pos_map: HashMap<(usize, usize), usize> = HashMap::new();
         let mut table_set: HashSet<String> = HashSet::new();
@@ -160,38 +159,34 @@ impl Plan {
                         ..
                     }) = self.get_node(*child)?
                     {
-                        // Get the relational node, containing this row
-                        parent_node =
-                            Some(*id_map.get(parent).ok_or(QueryPlannerError::InvalidNode)?);
-                        if let Node::Relational(relational_op) =
-                            self.get_node(parent_node.ok_or(QueryPlannerError::InvalidNode)?)?
-                        {
-                            if let Some(children) = relational_op.children() {
-                                // References in the branch node.
-                                let child_pos_list: &Vec<usize> = targets
-                                    .as_ref()
-                                    .ok_or(QueryPlannerError::InvalidReference)?;
-                                for target in child_pos_list {
-                                    let child_node: usize = *children
-                                        .get(*target)
-                                        .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                                    child_set.insert(child_node);
-                                    child_pos_map.insert((child_node, *position), pos);
-                                }
-                            } else {
-                                // References in the leaf (relation scan) node.
-                                if targets.is_some() {
-                                    return Err(QueryPlannerError::InvalidReference);
-                                }
-                                if let Relational::ScanRelation { relation, .. } = relational_op {
-                                    table_set.insert(relation.clone());
-                                    table_pos_map.insert(*position, pos);
-                                } else {
-                                    return Err(QueryPlannerError::InvalidReference);
-                                }
+                        parent_node = Some(self.get_map_relational_value(*parent)?);
+                        let relational_op = self.get_relation_node(
+                            parent_node.ok_or(QueryPlannerError::InvalidRelation)?,
+                        )?;
+
+                        if let Some(children) = relational_op.children() {
+                            // References in the branch node.
+                            let child_pos_list: &Vec<usize> = targets
+                                .as_ref()
+                                .ok_or(QueryPlannerError::InvalidReference)?;
+                            for target in child_pos_list {
+                                let child_node: usize = *children
+                                    .get(*target)
+                                    .ok_or(QueryPlannerError::ValueOutOfRange)?;
+                                child_set.insert(child_node);
+                                child_pos_map.insert((child_node, *position), pos);
                             }
                         } else {
-                            return Err(QueryPlannerError::InvalidNode);
+                            // References in the leaf (relation scan) node.
+                            if targets.is_some() {
+                                return Err(QueryPlannerError::InvalidReference);
+                            }
+                            if let Relational::ScanRelation { relation, .. } = relational_op {
+                                table_set.insert(relation.clone());
+                                table_pos_map.insert(*position, pos);
+                            } else {
+                                return Err(QueryPlannerError::InvalidReference);
+                            }
                         }
                     }
                 }

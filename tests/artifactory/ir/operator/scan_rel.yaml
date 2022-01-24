@@ -48,8 +48,8 @@ nodes:
             Segment:
               keys:
                 - positions:
-                  - 1
-                  - 0 
+                    - 1
+                    - 0
     - Relational:
         ScanRelation:
           output: 8
@@ -72,5 +72,7 @@ relations:
           - 1
           - 0
       name: t
+relational_map:
+  0: 9
 slices: ~
 top: 9

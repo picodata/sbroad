@@ -27,14 +27,14 @@ fn proj_preserve_dist_key() {
 
     plan.top = Some(proj_id);
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_output: usize = if let Node::Relational(scan) = plan.get_node(scan_id).unwrap() {
         scan.output()
     } else {
         panic!("Invalid plan!");
     };
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -49,7 +49,7 @@ fn proj_preserve_dist_key() {
     } else {
         panic!("Invalid plan!");
     };
-    plan.set_distribution(proj_output, &map).unwrap();
+    plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -73,12 +73,12 @@ fn proj_shuffle_dist_key() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_output = 8;
     let proj_output = 14;
 
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -88,7 +88,7 @@ fn proj_shuffle_dist_key() {
         );
     }
 
-    plan.set_distribution(proj_output, &map).unwrap();
+    plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -112,12 +112,12 @@ fn proj_shrink_dist_key_1() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_output = 8;
     let proj_output = 14;
 
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -127,7 +127,7 @@ fn proj_shrink_dist_key_1() {
         );
     }
 
-    plan.set_distribution(proj_output, &map).unwrap();
+    plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
         assert_eq!(&Distribution::Random, proj_row.distribution().unwrap());
     }
@@ -146,12 +146,12 @@ fn proj_shrink_dist_key_2() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_output = 8;
     let proj_output = 12;
 
-    plan.set_distribution(scan_output, &map).unwrap();
+    plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -161,7 +161,7 @@ fn proj_shrink_dist_key_2() {
         );
     }
 
-    plan.set_distribution(proj_output, &map).unwrap();
+    plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
         assert_eq!(&Distribution::Random, proj_row.distribution().unwrap());
     }
@@ -181,13 +181,13 @@ fn union_all_fallback_to_random() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;
     let union_output = 16;
 
-    plan.set_distribution(scan_t1_output, &map).unwrap();
+    plan.set_distribution(scan_t1_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -197,7 +197,7 @@ fn union_all_fallback_to_random() {
         );
     }
 
-    plan.set_distribution(scan_t2_output, &map).unwrap();
+    plan.set_distribution(scan_t2_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -207,7 +207,7 @@ fn union_all_fallback_to_random() {
         );
     }
 
-    plan.set_distribution(union_output, &map).unwrap();
+    plan.set_distribution(union_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(union_output).unwrap() {
         assert_eq!(&Distribution::Random, scan_row.distribution().unwrap());
     }
@@ -227,13 +227,13 @@ fn union_preserve_dist() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;
     let union_output = 16;
 
-    plan.set_distribution(scan_t1_output, &map).unwrap();
+    plan.set_distribution(scan_t1_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -243,7 +243,7 @@ fn union_preserve_dist() {
         );
     }
 
-    plan.set_distribution(scan_t2_output, &map).unwrap();
+    plan.set_distribution(scan_t2_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -253,7 +253,7 @@ fn union_preserve_dist() {
         );
     }
 
-    plan.set_distribution(union_output, &map).unwrap();
+    plan.set_distribution(union_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(union_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -278,13 +278,13 @@ fn join_unite_keys() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;
     let join_output = 27;
 
-    plan.set_distribution(scan_t1_output, &map).unwrap();
+    plan.set_distribution(scan_t1_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -294,7 +294,7 @@ fn join_unite_keys() {
         );
     }
 
-    plan.set_distribution(scan_t2_output, &map).unwrap();
+    plan.set_distribution(scan_t2_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
@@ -304,7 +304,7 @@ fn join_unite_keys() {
         );
     }
 
-    plan.set_distribution(join_output, &map).unwrap();
+    plan.set_distribution(join_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(join_output).unwrap() {
         assert_eq!(
             &Distribution::Segment {
