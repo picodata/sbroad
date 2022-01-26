@@ -81,8 +81,9 @@ impl Display for Bool {
 pub enum Relational {
     /// Inner Join
     InnerJoin {
-        /// Contains exactly two elements: left and right node indexes
-        /// from the plan node arena.
+        /// Contains at least two elements: left and right node indexes
+        /// from the plan node arena. Every element other that the
+        /// first two should be treated as a `SubQuery` node.
         children: Vec<usize>,
         /// Left and right tuple comparison condition.
         /// In fact - an expression tree top index from the plan node arena.
@@ -105,7 +106,7 @@ pub enum Relational {
         /// Contains at least a single element: child node index
         /// from the plan node arena. Every element other that the
         /// first one should be treated as a `SubQuery` node from
-        /// the output tuple tree.
+        /// the output tree.
         children: Vec<usize>,
         /// Logical node ID
         id: usize,
