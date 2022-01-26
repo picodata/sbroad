@@ -118,19 +118,18 @@ fn proj_shrink_dist_key_1() {
     let proj_output = 14;
 
     plan.set_distribution(scan_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
-        assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            },
-            scan_row.distribution().unwrap()
-        );
-    }
+    assert_eq!(
+        &Distribution::Segment {
+            keys: collection! { Key::new(vec![1, 0]) }
+        },
+        plan.get_distribution(scan_output).unwrap()
+    );
 
     plan.set_distribution(proj_output).unwrap();
-    if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
-        assert_eq!(&Distribution::Random, proj_row.distribution().unwrap());
-    }
+    assert_eq!(
+        &Distribution::Any,
+        plan.get_distribution(proj_output).unwrap()
+    );
 }
 
 #[test]
@@ -152,19 +151,18 @@ fn proj_shrink_dist_key_2() {
     let proj_output = 12;
 
     plan.set_distribution(scan_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
-        assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            },
-            scan_row.distribution().unwrap()
-        );
-    }
+    assert_eq!(
+        &Distribution::Segment {
+            keys: collection! { Key::new(vec![1, 0]) }
+        },
+        plan.get_distribution(scan_output).unwrap()
+    );
 
     plan.set_distribution(proj_output).unwrap();
-    if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
-        assert_eq!(&Distribution::Random, proj_row.distribution().unwrap());
-    }
+    assert_eq!(
+        &Distribution::Any,
+        plan.get_distribution(proj_output).unwrap()
+    );
 }
 
 #[test]
@@ -188,29 +186,26 @@ fn union_all_fallback_to_random() {
     let union_output = 16;
 
     plan.set_distribution(scan_t1_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
-        assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]) }
-            },
-            scan_row.distribution().unwrap()
-        );
-    }
+    assert_eq!(
+        &Distribution::Segment {
+            keys: collection! { Key::new(vec![0]) }
+        },
+        plan.get_distribution(scan_t1_output).unwrap()
+    );
 
     plan.set_distribution(scan_t2_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
-        assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1]) }
-            },
-            scan_row.distribution().unwrap()
-        );
-    }
+    assert_eq!(
+        &Distribution::Segment {
+            keys: collection! { Key::new(vec![1]) }
+        },
+        plan.get_distribution(scan_t2_output).unwrap()
+    );
 
     plan.set_distribution(union_output).unwrap();
-    if let Node::Expression(scan_row) = plan.get_node(union_output).unwrap() {
-        assert_eq!(&Distribution::Random, scan_row.distribution().unwrap());
-    }
+    assert_eq!(
+        &Distribution::Any,
+        plan.get_distribution(union_output).unwrap()
+    );
 }
 
 #[test]
