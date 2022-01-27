@@ -34,7 +34,7 @@ pub mod value;
 ///
 /// Enum was chosen as we don't want to mess with dynamic
 /// dispatching and its performance penalties.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Node {
     Expression(Expression),
     Relational(Relational),

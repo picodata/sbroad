@@ -30,7 +30,7 @@ impl Key {
 }
 
 /// Tuple distribution in the cluster.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Distribution {
     /// A tuple can be located on any data node
     Any,

@@ -24,7 +24,7 @@ use std::collections::HashSet;
 /// and should not be changed. Thanks to this fact we always know the
 /// name of any column in the tuple that should simplify AST
 /// deserialization.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Expression {
     /// Expression name.
     ///

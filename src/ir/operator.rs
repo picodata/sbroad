@@ -77,7 +77,7 @@ impl Display for Bool {
 ///
 /// Transforms input tuple(s) into the output one using
 /// relation algebra logic.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Relational {
     /// Inner Join
     InnerJoin {
