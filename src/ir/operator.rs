@@ -432,6 +432,18 @@ impl Plan {
 
         Ok(self.nodes.push(Node::Relational(union_all)))
     }
+
+    /// Get an output tuple from relational node id
+    ///
+    /// # Errors
+    /// - node is not relational
+    pub fn output(&self, rel_id: usize) -> Result<usize, QueryPlannerError> {
+        if let Node::Relational(rel) = self.get_node(rel_id)? {
+            Ok(rel.output())
+        } else {
+            Err(QueryPlannerError::InvalidRelation)
+        }
+    }
 }
 
 #[cfg(test)]

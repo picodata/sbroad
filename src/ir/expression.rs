@@ -11,7 +11,8 @@ use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use traversal::DftPost;
 
 /// Tuple tree build blocks.
 ///
@@ -499,6 +500,61 @@ impl Plan {
     ) -> Result<usize, QueryPlannerError> {
         let list = self.new_columns(id, &[left, right], true, &[1], col_names, false)?;
         Ok(self.nodes.add_row(list, None))
+    }
+
+    /// A list of relational nodes that makes up the reference.
+    /// For references in the scan node
+    ///
+    /// # Errors
+    /// - reference is invalid
+    pub fn get_relational_from_reference_node(
+        &self,
+        ref_id: usize,
+        map: &HashMap<usize, usize>,
+    ) -> Result<HashSet<usize>, QueryPlannerError> {
+        let mut rel_nodes: HashSet<usize> = HashSet::new();
+
+        if let Node::Expression(Expression::Reference {
+            targets,
+            position,
+            parent,
+        }) = self.get_node(ref_id)?
+        {
+            if let Some(rel_id) = map.get(parent) {
+                if let Node::Relational(rel) = self.get_node(*rel_id)? {
+                    if let Some(children) = rel.children() {
+                        if let Some(positions) = targets {
+                            for pos in positions {
+                                if let Some(child) = children.get(*pos) {
+                                    rel_nodes.insert(*child);
+                                }
+                            }
+                        }
+                    }
+                    return Ok(rel_nodes);
+                }
+            }
+        }
+        Err(QueryPlannerError::InvalidReference)
+    }
+
+    pub fn get_relational_from_row_nodes(
+        &self,
+        row_id: usize,
+        map: &HashMap<usize, usize>,
+    ) -> Result<HashSet<usize>, QueryPlannerError> {
+        let mut rel_nodes: HashSet<usize> = HashSet::new();
+
+        if let Node::Expression(Expression::Row { .. }) = self.get_node(row_id)? {
+            let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node));
+            for (_, node) in post_tree {
+                if let Node::Expression(Expression::Reference { .. }) = self.get_node(*node)? {
+                    rel_nodes.extend(&self.get_relational_from_reference_node(*node, map)?);
+                }
+            }
+            return Ok(rel_nodes);
+        }
+        Err(QueryPlannerError::InvalidRow)
     }
 }
 

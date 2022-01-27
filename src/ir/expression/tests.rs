@@ -1,3 +1,4 @@
+use crate::ir::relation::*;
 use crate::ir::value::*;
 use crate::ir::*;
 use pretty_assertions::assert_eq;
@@ -16,4 +17,38 @@ fn row_duplicate_column_names() {
             .add_row_of_aliases(vec![c1_alias_a, c2_alias_a], None)
             .unwrap_err()
     );
+}
+
+#[test]
+fn rel_nodes_from_reference_in_scan() {
+    // t(a int) [a]
+    // select * from t
+    let mut plan = Plan::new();
+
+    let t = Table::new_seg("t", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
+    plan.add_rel(t);
+    let scan_id = plan.add_scan("t").unwrap();
+    let output = plan.output(scan_id).unwrap();
+
+    let map = plan.relational_id_map();
+    let rel_set = plan.get_relational_from_row_nodes(output, &map).unwrap();
+    assert_eq!(true, rel_set.is_empty());
+}
+
+#[test]
+fn rel_nodes_from_reference_in_proj() {
+    // t(a int) [a]
+    // select a from t
+    let mut plan = Plan::new();
+
+    let t = Table::new_seg("t", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
+    plan.add_rel(t);
+    let scan_id = plan.add_scan("t").unwrap();
+    let proj_id = plan.add_proj(scan_id, &["a"]).unwrap();
+    let output = plan.output(proj_id).unwrap();
+
+    let map = plan.relational_id_map();
+    let rel_set = plan.get_relational_from_row_nodes(output, &map).unwrap();
+    assert_eq!(1, rel_set.len());
+    assert_eq!(Some(&scan_id), rel_set.get(&scan_id));
 }
