@@ -8,7 +8,7 @@ Query = _{ UnionAll | Select | Values | Insert }
     }
         Projection = { Column ~ ("," ~ Column)*? }
             Column = { Row | Asterisk | Alias | Value | ProjectedName }
-                Alias = {Value ~ ^"as" ~ ProjectedName }
+                Alias = {(Value | ProjectedName) ~ ^"as" ~ ProjectedName }
                 ProjectedName = @{ Name }
                 Name = @{ String | "\"" ~ String ~ "\"" ~ (".\"" ~ String ~ "\"")?}
                 Asterisk = @{ "*" }
@@ -18,7 +18,7 @@ Query = _{ UnionAll | Select | Values | Insert }
         InnerJoin = { Scan }
         Condition = { Selection }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
-    SubQuery = { "(" ~ (UnionAll | Select) ~ ")" ~ (^"as" ~ SubQueryName)? }
+    SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" ~ (^"as" ~ SubQueryName)? }
 		SubQueryName = @{ Name }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
     Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
@@ -55,7 +55,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(Keyword) ~ ('a'..'z' | "_" | Number)+ }
+String = @{ !(Keyword) ~ ('A' .. 'Z' | 'a'..'z' | "_" | Number)+ }
     Keyword = {
         ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
         | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"
