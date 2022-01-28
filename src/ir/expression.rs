@@ -515,9 +515,7 @@ impl Plan {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
 
         if let Node::Expression(Expression::Reference {
-            targets,
-            position,
-            parent,
+            targets, parent, ..
         }) = self.get_node(ref_id)?
         {
             if let Some(rel_id) = map.get(parent) {
@@ -538,6 +536,11 @@ impl Plan {
         Err(QueryPlannerError::InvalidReference)
     }
 
+    /// Get relational nodes referenced in the row.
+    ///
+    /// # Errors
+    /// - node is not row
+    /// - row is invalid
     pub fn get_relational_from_row_nodes(
         &self,
         row_id: usize,
@@ -546,7 +549,7 @@ impl Plan {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
 
         if let Node::Expression(Expression::Row { .. }) = self.get_node(row_id)? {
-            let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node));
+            let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
             for (_, node) in post_tree {
                 if let Node::Expression(Expression::Reference { .. }) = self.get_node(*node)? {
                     rel_nodes.extend(&self.get_relational_from_reference_node(*node, map)?);

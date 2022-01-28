@@ -9,6 +9,7 @@ use crate::errors::QueryPlannerError;
 
 use super::expression::Expression;
 use super::relation::Table;
+use super::transformation::redistribution::MotionPolicy;
 use super::{Node, Nodes, Plan};
 
 /// Binary operator returning Bool expression.
@@ -99,6 +100,7 @@ pub enum Relational {
         children: Vec<usize>,
         /// Logical node ID
         id: usize,
+        policy: MotionPolicy,
         /// Output tuple node index in the plan node arena.
         output: usize,
     },
@@ -234,6 +236,45 @@ impl Relational {
             Relational::ScanRelation { .. } => None,
         }
     }
+
+    /// Set new children to relational node.
+    ///
+    /// # Errors
+    /// - try to set children for the scan node (it is always a leaf node)
+    pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), QueryPlannerError> {
+        match self {
+            Relational::InnerJoin {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Motion {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Projection {
+                children: ref mut old,
+                ..
+            }
+            | Relational::ScanSubQuery {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Selection {
+                children: ref mut old,
+                ..
+            }
+            | Relational::UnionAll {
+                children: ref mut old,
+                ..
+            } => {
+                *old = children;
+                Ok(())
+            }
+            Relational::ScanRelation { .. } => Err(QueryPlannerError::CustomError(String::from(
+                "Scan is a leaf node",
+            ))),
+        }
+    }
 }
 
 impl Plan {
@@ -300,6 +341,31 @@ impl Plan {
             output,
         };
         Ok(self.nodes.push(Node::Relational(join)))
+    }
+
+    /// Add motion node.
+    ///
+    /// # Errors
+    /// - child node is not relational
+    /// - child output tuple is invalid
+    pub fn add_motion(
+        &mut self,
+        child_id: usize,
+        policy: &MotionPolicy,
+    ) -> Result<usize, QueryPlannerError> {
+        if let Node::Relational(_) = self.get_node(child_id)? {
+        } else {
+            return Err(QueryPlannerError::InvalidRelation);
+        }
+        let id = self.nodes.next_id();
+        let output = self.add_row_for_output(id, child_id, &[])?;
+        let motion = Relational::Motion {
+            children: vec![child_id],
+            id,
+            policy: policy.clone(),
+            output,
+        };
+        Ok(self.nodes.push(Node::Relational(motion)))
     }
 
     // TODO: we need a more flexible projection constructor (constants, etc)
@@ -437,9 +503,47 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn output(&self, rel_id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, QueryPlannerError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.output())
+        } else {
+            Err(QueryPlannerError::InvalidRelation)
+        }
+    }
+
+    /// Get children from relational node.
+    ///
+    /// # Errors
+    /// - node is not relational
+    pub fn get_relational_children(
+        &self,
+        rel_id: usize,
+    ) -> Result<Option<Vec<usize>>, QueryPlannerError> {
+        if let Node::Relational(rel) = self.get_node(rel_id)? {
+            Ok(rel.children())
+        } else {
+            Err(QueryPlannerError::InvalidRelation)
+        }
+    }
+
+    /// Set children for relational node
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - node is scan (always a leaf node)
+    pub fn set_relational_children(
+        &mut self,
+        rel_id: usize,
+        children: Vec<usize>,
+    ) -> Result<(), QueryPlannerError> {
+        if let Node::Relational(ref mut rel) = self
+            .nodes
+            .arena
+            .get_mut(rel_id)
+            .ok_or(QueryPlannerError::ValueOutOfRange)?
+        {
+            rel.set_children(children)?;
+            Ok(())
         } else {
             Err(QueryPlannerError::InvalidRelation)
         }

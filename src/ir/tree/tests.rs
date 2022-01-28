@@ -25,7 +25,7 @@ fn expression_bft() {
         .add_bool(c1c2_and_c2c3, Bool::Or, c4_eq_c5)
         .unwrap();
 
-    let mut bft_tree = Bft::new(&top, |node| plan.nodes.expr_iter(node));
+    let mut bft_tree = Bft::new(&top, |node| plan.nodes.expr_iter(node, true));
     assert_eq!(bft_tree.next(), Some((0, &top)));
     assert_eq!(bft_tree.next(), Some((1, &c1c2_and_c2c3)));
     assert_eq!(bft_tree.next(), Some((1, &c4_eq_c5)));
@@ -177,14 +177,14 @@ fn selection_subquery_dfs_post() {
     assert_eq!(dft_post.next(), None);
 
     // Traverse expression nodes in the selection t2 filter
-    let mut dft_post = DftPost::new(&eq_op, |node| plan.nodes.expr_iter(node));
+    let mut dft_post = DftPost::new(&eq_op, |node| plan.nodes.expr_iter(node, true));
     assert_eq!(dft_post.next(), Some((1, &b)));
     assert_eq!(dft_post.next(), Some((1, &const1)));
     assert_eq!(dft_post.next(), Some((0, &eq_op)));
     assert_eq!(dft_post.next(), None);
 
     // Traverse expression nodes in the selection t1 filter
-    let mut dft_post = DftPost::new(&in_op, |node| plan.nodes.expr_iter(node));
+    let mut dft_post = DftPost::new(&in_op, |node| plan.nodes.expr_iter(node, true));
     assert_eq!(dft_post.next(), Some((1, &a)));
     assert_eq!(dft_post.next(), Some((1, &c)));
     assert_eq!(dft_post.next(), Some((0, &in_op)));

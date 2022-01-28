@@ -29,6 +29,7 @@ const INVALID_ROW_ERROR: &str = "invalid row";
 const INVALID_SCHEMA_SPACES: &str = "not found spaces in schema";
 const INVALID_SHARDING_KEY_ERROR: &str = "invalid sharding key";
 const INVALID_SPACE_NAME: &str = "invalid space name";
+const INVALID_SUBQUERY: &str = "invalid sub-query";
 const NOT_EQUAL_ROWS: &str = "not equal rows";
 const QUERY_NOT_IMPLEMENTED: &str = "query wasn't implemented";
 const REDUNDANT_TRANSFORMATION: &str = "redundant transformation";
@@ -73,6 +74,7 @@ pub enum QueryPlannerError {
     InvalidSchemaSpaces,
     InvalidShardingKey,
     InvalidSpaceName,
+    InvalidSubQuery,
     NotEqualRows,
     QueryNotImplemented,
     RequireMotion,
@@ -119,6 +121,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::InvalidSchemaSpaces => INVALID_SCHEMA_SPACES,
             QueryPlannerError::InvalidShardingKey => INVALID_SHARDING_KEY_ERROR,
             QueryPlannerError::InvalidSpaceName => INVALID_SPACE_NAME,
+            QueryPlannerError::InvalidSubQuery => INVALID_SUBQUERY,
             QueryPlannerError::NotEqualRows => NOT_EQUAL_ROWS,
             QueryPlannerError::QueryNotImplemented => QUERY_NOT_IMPLEMENTED,
             QueryPlannerError::RedundantTransformation => REDUNDANT_TRANSFORMATION,

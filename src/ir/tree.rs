@@ -24,6 +24,7 @@ pub struct ExpressionIterator<'n> {
     current: &'n usize,
     child: RefCell<usize>,
     nodes: &'n Nodes,
+    make_row_leaf: bool,
 }
 
 #[derive(Debug)]
@@ -46,11 +47,12 @@ pub struct EqClassIterator<'n> {
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn expr_iter(&'n self, current: &'n usize) -> ExpressionIterator<'n> {
+    pub fn expr_iter(&'n self, current: &'n usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
         ExpressionIterator {
             current,
             child: RefCell::new(0),
             nodes: self,
+            make_row_leaf,
         }
     }
 
@@ -118,7 +120,7 @@ impl<'n> Iterator for ExpressionIterator<'n> {
                         break;
                     }
                 }
-                if !is_leaf {
+                if !is_leaf || !self.make_row_leaf {
                     let child_step = *self.child.borrow();
                     match list.get(child_step) {
                         None => return None,

@@ -367,7 +367,7 @@ impl Nodes {
 
         // Build equivalence classes and pair set.
         for top in &tops {
-            let bft = Bft::new(top, |node| self.expr_iter(node));
+            let bft = Bft::new(top, |node| self.expr_iter(node, true));
             for (_level, chain_top) in bft {
                 // Skip all nodes rather then boolean "and", and those "and"
                 // that were already visited.
