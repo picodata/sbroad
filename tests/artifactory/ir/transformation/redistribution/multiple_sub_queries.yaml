@@ -351,8 +351,16 @@ relations:
         positions:
           - 0
       name: t2
-slices: 
-  -
-    - 50
+relational_map:
+  28: 31
+  24: 27
+  14: 17
+  32: 46
+  10: 13
+  4: 9
+  0: 3
+  18: 23
+slices:
+  - - 50
     - 54
 top: 46

@@ -44,22 +44,19 @@ fn segment_motion_for_sub_query() {
     let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
     plan.set_top(select_id).unwrap();
 
-    let map = plan.relational_id_map();
+    plan.build_relational_map();
 
     let mut expected_rel_set: HashSet<usize> = HashSet::new();
     expected_rel_set.insert(sq_id);
     assert_eq!(
         expected_rel_set,
-        plan.get_relational_from_row_nodes(b_id, &map).unwrap()
+        plan.get_relational_from_row_nodes(b_id).unwrap()
     );
-    assert_eq!(
-        Some(sq_id),
-        plan.get_sub_query_from_row_node(b_id, &map).unwrap()
-    );
+    assert_eq!(Some(sq_id), plan.get_sub_query_from_row_node(b_id).unwrap());
 
     assert_eq!(
         QueryPlannerError::UninitializedDistribution,
-        plan.resolve_sub_query_conflicts(eq_id, &map).unwrap_err()
+        plan.resolve_sub_query_conflicts(eq_id).unwrap_err()
     );
 
     plan.add_motions().unwrap();

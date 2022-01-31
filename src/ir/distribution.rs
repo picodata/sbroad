@@ -122,38 +122,36 @@ impl Plan {
                 ..
             }) = self.get_node(node_id)?
             {
-                // Get a relational node, containing current row.
-                parent_node = Some(*id_map.get(parent).ok_or(QueryPlannerError::InvalidNode)?);
-                if let Node::Relational(relational_op) =
-                    self.get_node(parent_node.ok_or(QueryPlannerError::InvalidNode)?)?
-                {
-                    if let Some(children) = relational_op.children() {
-                        // References in the branch node.
-                        let child_pos_list: &Vec<usize> = targets
-                            .as_ref()
-                            .ok_or(QueryPlannerError::InvalidReference)?;
-                        for target in child_pos_list {
-                            let child_node: usize = *children
-                                .get(*target)
-                                .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                            child_set.insert(child_node);
-                            child_pos_map.insert((child_node, *position), pos);
-                        }
-                    } else {
-                        // References in the leaf (relation scan) node.
-                        if targets.is_some() {
-                            return Err(QueryPlannerError::InvalidReference);
-                        }
-                        if let Relational::ScanRelation { relation, .. } = relational_op {
-                            table_set.insert(relation.clone());
-                            table_pos_map.insert(*position, pos);
-                        } else {
-                            return Err(QueryPlannerError::InvalidReference);
-                        }
+                parent_node = Some(self.get_map_relational_value(*parent)?);
+                let relational_op =
+                    self.get_relation_node(parent_node.ok_or(QueryPlannerError::InvalidRelation)?)?;
+
+                if let Some(children) = relational_op.children() {
+                    // References in the branch node.
+                    let child_pos_list: &Vec<usize> = targets
+                        .as_ref()
+                        .ok_or(QueryPlannerError::InvalidReference)?;
+                    for target in child_pos_list {
+                        let child_node: usize = *children
+                            .get(*target)
+                            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+                        child_set.insert(child_node);
+                        child_pos_map.insert((child_node, *position), pos);
                     }
                 } else {
-                    return Err(QueryPlannerError::InvalidNode);
+                    // References in the leaf (relation scan) node.
+                    if targets.is_some() {
+                        return Err(QueryPlannerError::InvalidReference);
+                    }
+                    if let Relational::ScanRelation { relation, .. } = relational_op {
+                        table_set.insert(relation.clone());
+                        table_pos_map.insert(*position, pos);
+                    } else {
+                        return Err(QueryPlannerError::InvalidReference);
+                    }
                 }
+            } else {
+                return Err(QueryPlannerError::InvalidNode);
             }
             Ok(())
         };

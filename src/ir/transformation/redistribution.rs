@@ -28,21 +28,17 @@ struct BoolOp {
 
 impl BoolOp {
     fn from_expr(plan: &Plan, expr_id: usize) -> Result<Self, QueryPlannerError> {
-        if let Node::Expression(expr) = plan.get_node(expr_id)? {
-            if let Expression::Bool {
-                left, op, right, ..
-            } = expr
-            {
-                Ok(BoolOp {
-                    left: *left,
-                    op: op.clone(),
-                    right: *right,
-                })
-            } else {
-                Err(QueryPlannerError::InvalidBool)
-            }
+        if let Expression::Bool {
+            left, op, right, ..
+        } = plan.get_expression_node(expr_id)?
+        {
+            Ok(BoolOp {
+                left: *left,
+                op: op.clone(),
+                right: *right,
+            })
         } else {
-            Err(QueryPlannerError::InvalidNode)
+            Err(QueryPlannerError::InvalidBool)
         }
     }
 }
@@ -97,13 +93,13 @@ impl Plan {
     ///
     /// # Errors
     /// - reference points to multiple sub-queries (invalid SQL)
+    /// - `relational_map` is not initialized
     fn get_sub_query_from_row_node(
         &self,
         ref_id: usize,
-        map: &HashMap<usize, usize>,
     ) -> Result<Option<usize>, QueryPlannerError> {
         let mut sq_set: HashSet<usize> = HashSet::new();
-        let rel_nodes = self.get_relational_from_row_nodes(ref_id, map)?;
+        let rel_nodes = self.get_relational_from_row_nodes(ref_id)?;
         for rel_id in rel_nodes {
             if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(rel_id)? {
                 sq_set.insert(rel_id);
@@ -209,20 +205,19 @@ impl Plan {
     fn resolve_sub_query_conflicts(
         &mut self,
         expr_id: usize,
-        map: &HashMap<usize, usize>,
     ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
-            self.set_distribution(bool_op.left, map)?;
-            self.set_distribution(bool_op.right, map)?;
+            self.set_distribution(bool_op.left)?;
+            self.set_distribution(bool_op.right)?;
         }
 
         let mut strategy: HashMap<usize, MotionPolicy> = HashMap::new();
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
-            let left = self.get_sub_query_from_row_node(bool_op.left, map)?;
-            let right = self.get_sub_query_from_row_node(bool_op.right, map)?;
+            let left = self.get_sub_query_from_row_node(bool_op.left)?;
+            let right = self.get_sub_query_from_row_node(bool_op.right)?;
             match left {
                 Some(left_sq) => {
                     match right {
@@ -269,22 +264,18 @@ impl Plan {
     /// - failed to resolve distribution conflicts
     /// - failed to set distribution
     pub fn add_motions(&mut self) -> Result<(), QueryPlannerError> {
-        let map = self.relational_id_map();
+        self.build_relational_map();
 
         let nodes = self.get_relational_nodes_dfs_post()?;
         for id in &nodes {
-            let rel_op: Relational = match self.get_node(*id)? {
-                Node::Expression(_) => return Err(QueryPlannerError::InvalidNode),
-                Node::Relational(rel) => rel.clone(),
-            };
-            match rel_op {
+            match self.get_relation_node(*id)?.clone() {
                 // At the moment our grammar and IR constructor
                 // don't support projection with sub queries.
                 Relational::Projection { output, .. }
                 | Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::UnionAll { output, .. } => {
-                    self.set_distribution(output, &map)?;
+                    self.set_distribution(output)?;
                 }
                 Relational::Motion { .. } => {
                     // We can apply this transformation only once,
@@ -294,9 +285,9 @@ impl Plan {
                     )));
                 }
                 Relational::Selection { output, filter, .. } => {
-                    let strategy = self.resolve_sub_query_conflicts(filter, &map)?;
+                    let strategy = self.resolve_sub_query_conflicts(filter)?;
                     self.create_motion_nodes(*id, &strategy)?;
-                    self.set_distribution(output, &map)?;
+                    self.set_distribution(output)?;
                 }
                 Relational::InnerJoin { .. } => {
                     // TODO: resolve join conflicts and set the output row distribution

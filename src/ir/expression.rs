@@ -11,7 +11,7 @@ use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use traversal::DftPost;
 
 /// Tuple tree build blocks.
@@ -507,30 +507,35 @@ impl Plan {
     ///
     /// # Errors
     /// - reference is invalid
+    /// - `relational_map` is not initialized
     pub fn get_relational_from_reference_node(
         &self,
         ref_id: usize,
-        map: &HashMap<usize, usize>,
     ) -> Result<HashSet<usize>, QueryPlannerError> {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
+
+        if self.relational_map.is_none() {
+            return Err(QueryPlannerError::CustomError(String::from(
+                "Initialized relational map in the plan",
+            )));
+        }
 
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
         {
-            if let Some(rel_id) = map.get(parent) {
-                if let Node::Relational(rel) = self.get_node(*rel_id)? {
-                    if let Some(children) = rel.children() {
-                        if let Some(positions) = targets {
-                            for pos in positions {
-                                if let Some(child) = children.get(*pos) {
-                                    rel_nodes.insert(*child);
-                                }
+            let referred_rel_id = self.get_map_relational_value(*parent)?;
+            if let Node::Relational(rel) = self.get_node(referred_rel_id)? {
+                if let Some(children) = rel.children() {
+                    if let Some(positions) = targets {
+                        for pos in positions {
+                            if let Some(child) = children.get(*pos) {
+                                rel_nodes.insert(*child);
                             }
                         }
                     }
-                    return Ok(rel_nodes);
                 }
+                return Ok(rel_nodes);
             }
         }
         Err(QueryPlannerError::InvalidReference)
@@ -541,10 +546,10 @@ impl Plan {
     /// # Errors
     /// - node is not row
     /// - row is invalid
+    /// - `relational_map` is not initialized
     pub fn get_relational_from_row_nodes(
         &self,
         row_id: usize,
-        map: &HashMap<usize, usize>,
     ) -> Result<HashSet<usize>, QueryPlannerError> {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
 
@@ -552,7 +557,7 @@ impl Plan {
             let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
             for (_, node) in post_tree {
                 if let Node::Expression(Expression::Reference { .. }) = self.get_node(*node)? {
-                    rel_nodes.extend(&self.get_relational_from_reference_node(*node, map)?);
+                    rel_nodes.extend(&self.get_relational_from_reference_node(*node)?);
                 }
             }
             return Ok(rel_nodes);

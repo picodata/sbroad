@@ -207,6 +207,12 @@ relations:
         positions:
           - 0
       name: t2
+relational_map:
+  18: 26
+  10: 13
+  0: 3
+  4: 9
+  14: 17
 slices:
   -
     - 30
