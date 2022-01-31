@@ -207,5 +207,7 @@ relations:
         positions:
           - 0
       name: t2
-slices: ~
+slices:
+  -
+    - 30
 top: 26

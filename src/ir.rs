@@ -168,6 +168,12 @@ impl Plan {
         self.top.ok_or(QueryPlannerError::InvalidPlan)
     }
 
+    /// Get plan slices.
+    #[must_use]
+    pub fn get_slices(&self) -> Option<Vec<Vec<usize>>> {
+        self.slices.clone()
+    }
+
     /// Construct a plan from the YAML file.
     ///
     /// # Errors
@@ -365,6 +371,11 @@ impl Plan {
         Err(QueryPlannerError::CustomError(
             "Node isn't reference type".into(),
         ))
+    }
+
+    /// Set slices of the plan.
+    pub fn set_slices(&mut self, slices: Option<Vec<Vec<usize>>>) {
+        self.slices = slices;
     }
 }
 

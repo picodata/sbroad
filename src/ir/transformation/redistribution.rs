@@ -5,8 +5,8 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use traversal::DftPost;
+use std::collections::{hash_map::Entry, HashMap, HashSet};
+use traversal::{Bft, DftPost};
 
 /// A motion policy determinate what portion of data to move
 /// between data nodes.
@@ -307,7 +307,33 @@ impl Plan {
             }
         }
 
-        // TODO: gather motions (revert bft)
+        // Gather motions (revert levels in bft)
+        let mut motions: Vec<Vec<usize>> = Vec::new();
+        let top = self.get_top()?;
+        let bft_tree = Bft::new(&top, |node| self.nodes.rel_iter(node));
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        let mut max_level: usize = 0;
+        for (level, node) in bft_tree {
+            if let Node::Relational(Relational::Motion { .. }) = self.get_node(*node)? {
+                let key: usize = match map.entry(level) {
+                    Entry::Occupied(o) => *o.into_mut(),
+                    Entry::Vacant(v) => {
+                        let old_level = max_level;
+                        v.insert(old_level);
+                        max_level += 1;
+                        old_level
+                    }
+                };
+                match motions.get_mut(key) {
+                    Some(list) => list.push(*node),
+                    None => motions.push(vec![*node]),
+                }
+            }
+        }
+        if !motions.is_empty() {
+            self.set_slices(Some(motions.into_iter().rev().collect()));
+        }
+
         Ok(())
     }
 }
