@@ -63,17 +63,31 @@ impl Plan {
         Ok(nodes)
     }
 
-    /// Get boolean expressions in the sub-tree.
+    /// Get boolean expressions with row children in the sub-tree.
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    fn get_bool_nodes_dfs_post(&self, top: usize) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_bool_nodes_with_row_children(
+        &self,
+        top: usize,
+    ) -> Result<Vec<usize>, QueryPlannerError> {
         let mut nodes: Vec<usize> = Vec::new();
 
         let post_tree = DftPost::new(&top, |node| self.nodes.expr_iter(node, false));
         for (_, node) in post_tree {
-            if let Node::Expression(Expression::Bool { .. }) = self.get_node(*node)? {
-                nodes.push(*node);
+            // Append only booleans with row children.
+            if let Node::Expression(Expression::Bool { left, right, .. }) = self.get_node(*node)? {
+                let left_is_row = matches!(
+                    self.get_node(*left)?,
+                    Node::Expression(Expression::Row { .. })
+                );
+                let right_is_row = matches!(
+                    self.get_node(*right)?,
+                    Node::Expression(Expression::Row { .. })
+                );
+                if left_is_row && right_is_row {
+                    nodes.push(*node);
+                }
             }
         }
         Ok(nodes)
@@ -197,7 +211,7 @@ impl Plan {
         expr_id: usize,
         map: &HashMap<usize, usize>,
     ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
-        let nodes = self.get_bool_nodes_dfs_post(expr_id)?;
+        let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
             self.set_distribution(bool_op.left, map)?;
@@ -292,6 +306,8 @@ impl Plan {
                 }
             }
         }
+
+        // TODO: gather motions (revert bft)
         Ok(())
     }
 }

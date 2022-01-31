@@ -231,3 +231,76 @@ fn local_sub_query() {
     let expected_plan = Plan::from_yaml(&s).unwrap();
     assert_eq!(plan, expected_plan);
 }
+
+#[test]
+fn multiple_sub_queries() {
+    // t1(a int) key [a]
+    // t2(a int, b int) key [a]
+    // select * from t1 where a < (select a from t2) or a = (select b from t2)
+    let mut plan = Plan::new();
+    let mut children: Vec<usize> = Vec::new();
+
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1").unwrap();
+    children.push(scan_t1_id);
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("a", Type::Integer),
+            Column::new("b", Type::Integer),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+    let sq1_scan_t2_id = plan.add_scan("t2").unwrap();
+    let sq1_proj_id = plan.add_proj(sq1_scan_t2_id, &["a"]).unwrap();
+    let sq1_id = plan.add_sub_query(sq1_proj_id, None).unwrap();
+    children.push(sq1_id);
+    let sq1_pos = children.len() - 1;
+
+    let sq2_scan_t2_id = plan.add_scan("t2").unwrap();
+    let sq2_proj_id = plan.add_proj(sq2_scan_t2_id, &["b"]).unwrap();
+    let sq2_id = plan.add_sub_query(sq2_proj_id, None).unwrap();
+    children.push(sq2_id);
+    let sq2_pos = children.len() - 1;
+
+    let id = plan.nodes.next_id();
+    let sq1_inner_a_id = plan
+        .add_row_from_sub_query(id, &children[..], sq1_pos, &["a"])
+        .unwrap();
+    let sq1_outer_a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let less_id = plan
+        .add_bool(sq1_outer_a_id, Bool::Lt, sq1_inner_a_id)
+        .unwrap();
+
+    let sq2_inner_a_id = plan
+        .add_row_from_sub_query(id, &children[..], sq2_pos, &["b"])
+        .unwrap();
+    let sq2_outer_a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let eq_id = plan
+        .add_bool(sq2_outer_a_id, Bool::Eq, sq2_inner_a_id)
+        .unwrap();
+
+    let or_id = plan.add_bool(less_id, Bool::Or, eq_id).unwrap();
+
+    let select_id = plan.add_select(&children[..], or_id, id).unwrap();
+    plan.set_top(select_id).unwrap();
+
+    plan.add_motions().unwrap();
+
+    // Check the modified plan
+    plan.nodes.add_new_equalities().unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("ir")
+        .join("transformation")
+        .join("redistribution")
+        .join("multiple_sub_queries.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected_plan = Plan::from_yaml(&s).unwrap();
+    assert_eq!(plan, expected_plan);
+}
