@@ -306,7 +306,7 @@ fn selection_with_sub_query() {
         .add_row_from_sub_query(id, &children[..], children.len() - 1, &["b"])
         .unwrap();
     let a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
-    let eq_id = plan.add_bool(a_id, Bool::Eq, b_id).unwrap();
+    let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
 
     let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
     plan.set_top(select_id).unwrap();

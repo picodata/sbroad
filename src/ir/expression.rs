@@ -224,19 +224,6 @@ impl Nodes {
 }
 
 impl Plan {
-    /// Add boolean node.
-    ///
-    /// # Errors
-    /// - when left or right nodes are invalid
-    pub fn add_bool(
-        &mut self,
-        left: usize,
-        op: operator::Bool,
-        right: usize,
-    ) -> Result<usize, QueryPlannerError> {
-        self.nodes.add_bool(left, op, right)
-    }
-
     /// Returns a list of columns from the child node outputs.
     /// If the column list is empty then copy all the columns to a new tuple.
     ///
