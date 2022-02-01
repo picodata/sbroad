@@ -512,18 +512,17 @@ impl Plan {
         }) = self.get_node(ref_id)?
         {
             let referred_rel_id = self.get_map_relational_value(*parent)?;
-            if let Node::Relational(rel) = self.get_node(referred_rel_id)? {
-                if let Some(children) = rel.children() {
-                    if let Some(positions) = targets {
-                        for pos in positions {
-                            if let Some(child) = children.get(*pos) {
-                                rel_nodes.insert(*child);
-                            }
+            let rel = self.get_relation_node(referred_rel_id)?;
+            if let Some(children) = rel.children() {
+                if let Some(positions) = targets {
+                    for pos in positions {
+                        if let Some(child) = children.get(*pos) {
+                            rel_nodes.insert(*child);
                         }
                     }
                 }
-                return Ok(rel_nodes);
             }
+            return Ok(rel_nodes);
         }
         Err(QueryPlannerError::InvalidReference)
     }
