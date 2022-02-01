@@ -69,27 +69,27 @@ impl Nodes {
 }
 
 /// Logical plan tree structure.
-///
-/// Relations are stored in a hash-map, with a table name acting as a
-/// key to guarantee its uniqueness across the plan. The map is marked
-/// optional because plans without relations do exist (`select 1`).
-///
-/// Slice is a plan subtree under Motion node, that can be executed
-/// on a single db instance without data distribution problems (we add
-/// Motions to resolve them). Them we traverse the plan tree and collect
-/// Motions level by level in a bottom-up manner to the "slices" array
-/// of arrays. All the slices on the same level can be executed in parallel.
-/// In fact, "slices" is a prepared set of commands for the executor.
-///
-/// The plan top is marked as optional for tree creation convenience.
-/// We build the plan tree in a bottom-up manner, so the top would
-/// be added last. The plan without a top should be treated as invalid.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Plan {
+    /// Append only arena for the plan nodes.
     pub(crate) nodes: Nodes,
+    /// Relations are stored in a hash-map, with a table name acting as a
+    /// key to guarantee its uniqueness across the plan. The map is marked
+    /// optional because plans without relations do exist (`select 1`).
     pub(crate) relations: Option<HashMap<String, Table>>,
+    /// A special map to translate logical node ids to the positions in the
+    /// arena.
     relational_map: Option<HashMap<usize, usize>>,
+    /// Slice is a plan subtree under Motion node, that can be executed
+    /// on a single db instance without data distribution problems (we add
+    /// Motions to resolve them). Them we traverse the plan tree and collect
+    /// Motions level by level in a bottom-up manner to the "slices" array
+    /// of arrays. All the slices on the same level can be executed in parallel.
+    /// In fact, "slices" is a prepared set of commands for the executor.
     slices: Option<Vec<Vec<usize>>>,
+    /// The plan top is marked as optional for tree creation convenience.
+    /// We build the plan tree in a bottom-up manner, so the top would
+    /// be added last. The plan without a top should be treated as invalid.
     top: Option<usize>,
 }
 
