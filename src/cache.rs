@@ -48,6 +48,7 @@ impl Metadata {
         self.schema.is_null()
     }
 
+    #[allow(dead_code)]
     pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
         let mut result = Vec::new();
         let spaces = self.schema["spaces"].as_hash().unwrap();

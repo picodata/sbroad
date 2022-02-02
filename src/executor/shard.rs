@@ -31,7 +31,7 @@ impl Plan {
     /// # Errors
     /// - getting bucket id error
     #[allow(dead_code)]
-    fn get_bucket_ids(
+    pub fn get_bucket_ids(
         &mut self,
         node_id: usize,
         bucket_count: usize,
@@ -70,7 +70,6 @@ impl Plan {
 
                 let sharding_info = self.get_distribution(row_id)?;
                 if !sharding_info.is_unknown() {
-
                     // Queries with the complex sharding key aren't support yet (ignore them)
                     if sharding_info.get_segment_keys()?.len() > 1 {
                         return Ok(None);

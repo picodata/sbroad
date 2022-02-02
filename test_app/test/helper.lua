@@ -159,6 +159,118 @@ local config = {
           "id",
           "name"
         }
+      },
+      space_simple_shard_key = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "name",
+            type = "string",
+            is_nullable = false
+          },
+          {
+              name = "sysOp",
+              type = "integer",
+              is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "id",
+        }
+      },
+      space_simple_shard_key_hist = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "name",
+            type = "string",
+            is_nullable = false
+          },
+          {
+              name = "sysOp",
+              type = "integer",
+              is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "id"
+        }
       }
     }
   }

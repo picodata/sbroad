@@ -6,6 +6,7 @@ use fasthash::{murmur3::Hasher32, FastHasher};
 
 use crate::errors::QueryPlannerError;
 
+#[allow(dead_code)]
 pub fn get_bucket_id(
     filters: &HashMap<String, String>,
     sharding_key: &[String],

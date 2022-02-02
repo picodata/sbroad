@@ -1,9 +1,10 @@
+use crate::errors::QueryPlannerError;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use tarantool::hlua::{self, LuaRead};
 
 use crate::ir::relation::Column;
 
-#[derive(LuaRead, Debug, PartialEq)]
+#[derive(LuaRead, Debug, PartialEq, Clone)]
 pub enum Value {
     Boolean(bool),
     Number(f64),
@@ -31,10 +32,42 @@ impl Serialize for Value {
 
 impl Eq for Value {}
 
-#[derive(LuaRead, Debug, PartialEq, Eq)]
+#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
 pub struct BoxExecuteFormat {
     pub metadata: Vec<Column>,
     pub rows: Vec<Vec<Value>>,
+}
+
+impl BoxExecuteFormat {
+    /// Create empty query result set
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        BoxExecuteFormat {
+            metadata: Vec::new(),
+            rows: Vec::new(),
+        }
+    }
+
+    /// Merge two record sets. If current recordset is empty function sets metadata and appends result rows.
+    /// If the current recordset is not empty compare its metadata with the one from the new recordset.
+    /// If they differ return error.
+    ///
+    ///  # Errors
+    ///  - metadata isn't equal.
+    #[allow(dead_code)]
+    pub fn extend(&mut self, recordset: BoxExecuteFormat) -> Result<(), QueryPlannerError> {
+        if self.metadata.is_empty() {
+            self.metadata = recordset.clone().metadata;
+        }
+
+        if self.metadata != recordset.metadata {
+            return Err(QueryPlannerError::CustomError(String::from(
+                "Different metadata. BoxExecuteFormat can't be extended",
+            )));
+        }
+        self.rows.extend(recordset.rows);
+        Ok(())
+    }
 }
 
 /// Custom Implementation `ser::Serialize`, because if using standard `#derive[Serialize]` then each `BoxExecuteResult`

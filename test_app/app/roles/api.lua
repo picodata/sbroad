@@ -7,29 +7,16 @@ _G.sql_execute = nil
 
 local function query(q)
     local has_err, parser_res = pcall(
-            function()
-                return box.func["sbroad.parse_sql"]:call({ q })
-            end
+        function()
+            return box.func["sbroad.execute_query"]:call({ q })
+        end
     )
 
     if has_err == false then
         return nil, parser_res
     end
 
-    local result = nil
-    for _, rec in pairs(parser_res) do
-        local res = box.func["sbroad.execute_query"]:call({ rec[1], rec[2] })
-
-        if result == nil then
-            result = res
-        else
-            for _, item in ipairs(res.rows) do
-                table.insert(result.rows, item)
-            end
-        end
-    end
-
-    return result
+    return parser_res
 end
 
 local function insert_record(space_name, values)
