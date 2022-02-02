@@ -63,7 +63,7 @@ impl Plan {
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    fn get_bool_nodes_with_row_children(
+    pub(crate) fn get_bool_nodes_with_row_children(
         &self,
         top: usize,
     ) -> Result<Vec<usize>, QueryPlannerError> {

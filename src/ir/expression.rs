@@ -6,10 +6,10 @@
 //! - distribution of the data in the tuple
 
 use super::distribution::Distribution;
-use super::operator;
 use super::value::Value;
-use super::{Node, Nodes, Plan};
+use super::{operator, Node, Nodes, Plan};
 use crate::errors::QueryPlannerError;
+use crate::ir::operator::Bool;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use traversal::DftPost;
@@ -127,6 +127,47 @@ impl Expression {
                 "Node isn't alias type".into(),
             )),
         }
+    }
+
+    /// Checking determine distribution
+    ///
+    /// # Errors
+    /// - distribution isn't set
+    pub fn has_unknown_distribution(&self) -> Result<bool, QueryPlannerError> {
+        let d = self.distribution()?;
+        Ok(d.is_unknown())
+    }
+
+    /// Get value from const node
+    ///
+    /// # Errors
+    /// - node isn't constant type
+    pub fn get_const_value(&self) -> Result<Value, QueryPlannerError> {
+        if let Expression::Constant { value } = self.clone() {
+            return Ok(value);
+        }
+
+        Err(QueryPlannerError::CustomError(
+            "Node isn't const type".into(),
+        ))
+    }
+
+    /// The node is `Row` type checking
+    ///
+    /// # Errors
+    /// - node isn't `Row` type
+    #[must_use]
+    pub fn is_row(&self) -> bool {
+        matches!(self, Expression::Row { .. })
+    }
+
+    /// The node is `Const` type checking
+    ///
+    /// # Errors
+    /// - node isn't `Const` type
+    #[must_use]
+    pub fn is_const(&self) -> bool {
+        matches!(self, Expression::Constant { .. })
     }
 }
 
@@ -547,6 +588,65 @@ impl Plan {
                 }
             }
             return Ok(rel_nodes);
+        }
+        Err(QueryPlannerError::InvalidRow)
+    }
+
+    /// Validate that is `Bool` node with `Row` and `Const` children.
+    #[must_use]
+    pub fn is_bool_node_simple_eq(&self, node_id: usize) -> bool {
+        let node = match self.get_expression_node(node_id) {
+            Ok(e) => e,
+            Err(_) => return false,
+        };
+        if let Expression::Bool { left, op, right } = node {
+            if *op != Bool::Eq {
+                return false;
+            }
+
+            let left_node = match self.get_expression_node(*left) {
+                Ok(e) => e,
+                Err(_) => return false,
+            };
+
+            let right_node = match self.get_expression_node(*right) {
+                Ok(e) => e,
+                Err(_) => return false,
+            };
+
+            let left_is_valid = left_node.is_row() || left_node.is_const();
+            let right_is_valid = right_node.is_row() || right_node.is_const();
+            if left_is_valid && right_is_valid {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Extract `Const` value from `Row` by index
+    ///
+    /// # Errors
+    /// - node is not row
+    /// - row doesn't have const
+    /// - const value is invalid
+    #[allow(dead_code)]
+    pub fn get_child_const_from_row(
+        &self,
+        row_id: usize,
+        child_num: usize,
+    ) -> Result<Value, QueryPlannerError> {
+        let node = self.get_expression_node(row_id)?;
+        if let Expression::Row { list, .. } = node {
+            let const_node_id = list.get(child_num).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!("Child {} wasn't found", child_num))
+            })?;
+
+            let v = self
+                .get_expression_node(*const_node_id)?
+                .get_const_value()?;
+
+            return Ok(v);
         }
         Err(QueryPlannerError::InvalidRow)
     }

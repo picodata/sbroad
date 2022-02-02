@@ -96,6 +96,29 @@ impl Distribution {
             },
         }
     }
+
+    #[must_use]
+    pub fn is_unknown(&self) -> bool {
+        if let Distribution::Any = self {
+            return true;
+        }
+
+        false
+    }
+
+    /// Get sharding key index
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when distribution isn't set.
+    pub fn get_segment_keys(&self) -> Result<HashSet<Key>, QueryPlannerError> {
+        if let Distribution::Segment { keys } = self.clone() {
+            return Ok(keys);
+        }
+
+        Err(QueryPlannerError::CustomError(
+            "Distribution isn't segment".into(),
+        ))
+    }
 }
 
 impl Plan {
