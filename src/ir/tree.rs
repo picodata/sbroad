@@ -202,18 +202,9 @@ impl<'n> Iterator for SubtreeIterator<'n> {
             return match child {
                 Node::Expression(exp) => match exp {
                     Expression::Alias { child, .. } => {
-                        let child_step = *self.child.borrow();
-
-                        let mut is_leaf = false;
-                        if let Some(Node::Expression(
-                            Expression::Reference { .. } | Expression::Constant { .. },
-                        )) = self.nodes.arena.get(*child)
-                        {
-                            is_leaf = true;
-                        }
-
+                        let step = *self.child.borrow();
                         *self.child.borrow_mut() += 1;
-                        if !is_leaf && child_step == 0 {
+                        if step == 0 {
                             return Some(child);
                         }
                         None

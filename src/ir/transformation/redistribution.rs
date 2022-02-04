@@ -89,17 +89,17 @@ impl Plan {
         Ok(nodes)
     }
 
-    /// Get a sub-query from the reference node (if it points to sub-query)
+    /// Get a sub-query from the row node (if it points to sub-query)
     ///
     /// # Errors
     /// - reference points to multiple sub-queries (invalid SQL)
     /// - `relational_map` is not initialized
-    fn get_sub_query_from_row_node(
+    pub fn get_sub_query_from_row_node(
         &self,
-        ref_id: usize,
+        row_id: usize,
     ) -> Result<Option<usize>, QueryPlannerError> {
         let mut sq_set: HashSet<usize> = HashSet::new();
-        let rel_nodes = self.get_relational_from_row_nodes(ref_id)?;
+        let rel_nodes = self.get_relational_from_row_nodes(row_id)?;
         for rel_id in rel_nodes {
             if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(rel_id)? {
                 sq_set.insert(rel_id);

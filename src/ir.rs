@@ -47,7 +47,7 @@ pub struct Nodes {
     /// so all nodes are stored in the single arena ("nodes" array).
     /// The positions in the array act like pointers, so it is possible
     /// only to add nodes to the plan, but never remove them.
-    arena: Vec<Node>,
+    pub(crate) arena: Vec<Node>,
 }
 
 impl Nodes {

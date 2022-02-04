@@ -235,9 +235,16 @@ fn subtree_dfs_post() {
         .extract_row_list()
         .unwrap();
     let alias_id = row_children.get(0).unwrap();
+    let c_ref_id =
+        if let Expression::Alias { child, .. } = plan.get_expression_node(*alias_id).unwrap() {
+            child
+        } else {
+            panic!("invalid child in the row");
+        };
 
     // Traverse relational nodes in the plan tree
     let mut dft_post = DftPost::new(&top, |node| plan.nodes.subtree_iter(node));
+    assert_eq!(dft_post.next(), Some((3, c_ref_id)));
     assert_eq!(dft_post.next(), Some((2, alias_id)));
     assert_eq!(dft_post.next(), Some((1, &row_id)));
     assert_eq!(dft_post.next(), Some((2, &scan_t1_id)));

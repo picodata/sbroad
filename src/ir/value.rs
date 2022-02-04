@@ -47,7 +47,7 @@ impl fmt::Display for Value {
             Value::Boolean(v) => write!(f, "{}", v),
             Value::Null => write!(f, "NULL"),
             Value::Number(v) => write!(f, "{}", v),
-            Value::String(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "'{}'", v),
         }
     }
 }
