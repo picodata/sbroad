@@ -220,62 +220,67 @@ impl Select {
         id: usize,
     ) -> Result<Option<Select>, QueryPlannerError> {
         let sn = sp.nodes.get_syntax_node(id)?;
-        let pn = if let Some(node) = sp.get_plan_node(&sn.data)? {
-            node
+        // Check if the node is a projection
+        if let Some(Node::Relational(Relational::Projection { .. })) = sp.get_plan_node(&sn.data)? {
         } else {
             return Ok(None);
-        };
-        if let Node::Relational(Relational::Projection { .. }) = pn {
-            if let Some(lev_1) = sn.left {
-                let syntax_node_lev_1 = sp.nodes.get_syntax_node(lev_1)?;
-                let plan_node_lev_1 = sp
-                    .get_plan_node(&syntax_node_lev_1.data)?
-                    .ok_or(QueryPlannerError::InvalidNode)?;
-                match plan_node_lev_1 {
-                    Node::Relational(Relational::Selection { .. }) => {
-                        if let Some(lev_2) = syntax_node_lev_1.left {
-                            let syntax_node_lev_2 = sp.nodes.get_syntax_node(lev_2)?;
-                            let plan_node_lev_2 = sp
-                                .get_plan_node(&syntax_node_lev_2.data)?
-                                .ok_or(QueryPlannerError::InvalidNode)?;
-                            if let Node::Relational(
-                                Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                            ) = plan_node_lev_2
-                            {
-                                Ok(Some(Select {
-                                    parent,
-                                    branch,
-                                    proj: id,
-                                    scan: lev_2,
-                                    select: Some(lev_1),
-                                }))
-                            } else {
-                                Err(QueryPlannerError::InvalidPlan)
-                            }
-                        } else {
-                            Err(QueryPlannerError::CustomError(
-                                "Selection can't be a leaf node".into(),
-                            ))
-                        }
-                    }
-                    Node::Relational(
-                        Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                    ) => Ok(Some(Select {
-                        parent,
-                        branch,
-                        proj: id,
-                        scan: lev_1,
-                        select: None,
-                    })),
-                    _ => Err(QueryPlannerError::InvalidPlan),
-                }
-            } else {
-                Err(QueryPlannerError::CustomError(
+        }
+        // Get the left node
+        let left_id = match sn.left {
+            Some(id) => id,
+            None => {
+                return Err(QueryPlannerError::CustomError(
                     "Projection can't be a leaf node".into(),
                 ))
             }
-        } else {
-            Ok(None)
+        };
+        let syntax_node_left = sp.nodes.get_syntax_node(left_id)?;
+        let plan_node_left = sp
+            .get_plan_node(&syntax_node_left.data)?
+            .ok_or(QueryPlannerError::InvalidNode)?;
+        match plan_node_left {
+            // Expecting projection over selection and scan
+            Node::Relational(Relational::Selection { .. }) => {
+                // Get the next left node
+                let next_left_id = match syntax_node_left.left {
+                    Some(id) => id,
+                    None => {
+                        return Err(QueryPlannerError::CustomError(
+                            "Selection can't be a leaf node".into(),
+                        ))
+                    }
+                };
+                // We expect that the next left node is a scan
+                let syntax_node_next_left = sp.nodes.get_syntax_node(next_left_id)?;
+                let plan_node_next_left = sp
+                    .get_plan_node(&syntax_node_next_left.data)?
+                    .ok_or(QueryPlannerError::InvalidNode)?;
+                if let Node::Relational(
+                    Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+                ) = plan_node_next_left
+                {
+                    Ok(Some(Select {
+                        parent: parent,
+                        branch: branch,
+                        proj: id,
+                        scan: next_left_id,
+                        select: Some(left_id),
+                    }))
+                } else {
+                    Err(QueryPlannerError::InvalidPlan)
+                }
+            }
+            // Expecting projection over scan
+            Node::Relational(Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. }) => {
+                Ok(Some(Select {
+                    parent: parent,
+                    branch: branch,
+                    proj: id,
+                    scan: left_id,
+                    select: None,
+                }))
+            }
+            _ => Err(QueryPlannerError::InvalidPlan),
         }
     }
 
