@@ -195,7 +195,7 @@ enum Branch {
     Right,
 }
 
-/// Keeps wrapped node chain of the `SELECT` command:
+/// Keeps syntax node chain of the `SELECT` command:
 /// projection, selection, scan and the upper node over
 /// them all (parent).
 #[derive(Debug)]
@@ -204,12 +204,12 @@ struct Select {
     parent: Option<usize>,
     /// Parent's branch where projection was found
     branch: Option<Branch>,
-    /// Projection wrapped node
+    /// Projection syntax node
     proj: usize,
-    /// Scan wrapped node
+    /// Scan syntax node
     scan: usize,
-    /// Selection wrapped node
-    select: Option<usize>,
+    /// Selection syntax node
+    selection: Option<usize>,
 }
 
 impl Select {
@@ -260,11 +260,11 @@ impl Select {
                 ) = plan_node_next_left
                 {
                     Ok(Some(Select {
-                        parent: parent,
-                        branch: branch,
+                        parent,
+                        branch,
                         proj: id,
                         scan: next_left_id,
-                        select: Some(left_id),
+                        selection: Some(left_id),
                     }))
                 } else {
                     Err(QueryPlannerError::InvalidPlan)
@@ -273,11 +273,11 @@ impl Select {
             // Expecting projection over scan
             Node::Relational(Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. }) => {
                 Ok(Some(Select {
-                    parent: parent,
-                    branch: branch,
+                    parent,
+                    branch,
                     proj: id,
                     scan: left_id,
-                    select: None,
+                    selection: None,
                 }))
             }
             _ => Err(QueryPlannerError::InvalidPlan),
@@ -480,7 +480,7 @@ impl<'p> SyntaxPlan<'p> {
     }
 
     /// Gather all projections with auxiliary nodes (scan, selection, parent)
-    /// among the wrapped plan.
+    /// among the syntax tree.
     ///
     /// # Errors
     /// - got unexpected nodes under projection
@@ -569,13 +569,13 @@ impl<'p> SyntaxPlan<'p> {
         let mut top = select.scan;
 
         // Try to move scan under selection.
-        if let Some(id) = select.select {
-            let mut select = self.nodes.get_mut_syntax_node(id)?;
-            select.left = Some(top);
+        if let Some(id) = select.selection {
+            let mut selection = self.nodes.get_mut_syntax_node(id)?;
+            selection.left = Some(top);
             top = id;
         }
 
-        // Try to move select (or scan if select doesn't exist) under parent.
+        // Try to move selection (or scan if selection doesn't exist) under parent.
         if let Some(id) = select.parent {
             let mut parent = self.nodes.get_mut_syntax_node(id)?;
             match select.branch {
@@ -604,9 +604,9 @@ impl<'p> SyntaxPlan<'p> {
             }
         }
 
-        // Update the wrapped plan top if it was current projection
+        // Update the syntax plan top if it was current projection
         if self.get_top()? == select.proj {
-            if let Some(select_id) = select.select {
+            if let Some(select_id) = select.selection {
                 self.set_top(select_id)?;
             } else {
                 self.set_top(select.scan)?;
