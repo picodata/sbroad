@@ -283,68 +283,6 @@ impl Select {
             _ => Err(QueryPlannerError::InvalidPlan),
         }
     }
-
-    /// Reorder `SELECT` chain to:
-    ///
-    /// parent (if some) -branch-> selection (if some) -left-> scan -left-> projection
-    ///
-    /// # Errors
-    /// - select nodes (parent, scan, projection, selection) are invalid
-    fn reorder(&self, sp: &mut SyntaxPlan) -> Result<(), QueryPlannerError> {
-        // Move projection under scan.
-        let mut proj = sp.nodes.get_mut_syntax_node(self.proj)?;
-        proj.left = None;
-        let mut scan = sp.nodes.get_mut_syntax_node(self.scan)?;
-        scan.left = Some(self.proj);
-        let mut top = self.scan;
-
-        // Try to move scan under selection.
-        if let Some(id) = self.select {
-            let mut select = sp.nodes.get_mut_syntax_node(id)?;
-            select.left = Some(top);
-            top = id;
-        }
-
-        // Try to move select (or scan if select doesn't exist) under parent.
-        if let Some(id) = self.parent {
-            let mut parent = sp.nodes.get_mut_syntax_node(id)?;
-            match self.branch {
-                Some(Branch::Left) => {
-                    parent.left = Some(top);
-                }
-                Some(Branch::Right) => {
-                    let mut found: bool = false;
-                    for child in &mut parent.right {
-                        if child == &self.proj {
-                            *child = top;
-                            found = true;
-                        }
-                    }
-                    if !found {
-                        return Err(QueryPlannerError::CustomError(
-                            "Parent node doesn't contain projection in its right children".into(),
-                        ));
-                    }
-                }
-                None => {
-                    return Err(QueryPlannerError::CustomError(
-                        "Selection structure is in inconsistent state.".into(),
-                    ))
-                }
-            }
-        }
-
-        // Update the wrapped plan top if it was current projection
-        if sp.get_top()? == self.proj {
-            if let Some(select_id) = self.select {
-                sp.set_top(select_id)?;
-            } else {
-                sp.set_top(self.scan)?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// A wrapper over original plan tree.
@@ -585,7 +523,7 @@ impl<'p> SyntaxPlan<'p> {
         let selects = self.gather_selects()?;
         if let Some(selects) = selects {
             for select in &selects {
-                select.reorder(self)?;
+                self.reorder(select)?;
             }
         }
         Ok(())
@@ -614,6 +552,68 @@ impl<'p> SyntaxPlan<'p> {
         sp.move_proj_under_scan()?;
 
         Ok(sp)
+    }
+
+    /// Reorder `SELECT` chain to:
+    ///
+    /// parent (if some) -branch-> selection (if some) -left-> scan -left-> projection
+    ///
+    /// # Errors
+    /// - select nodes (parent, scan, projection, selection) are invalid
+    fn reorder(&mut self, select: &Select) -> Result<(), QueryPlannerError> {
+        // Move projection under scan.
+        let mut proj = self.nodes.get_mut_syntax_node(select.proj)?;
+        proj.left = None;
+        let mut scan = self.nodes.get_mut_syntax_node(select.scan)?;
+        scan.left = Some(select.proj);
+        let mut top = select.scan;
+
+        // Try to move scan under selection.
+        if let Some(id) = select.select {
+            let mut select = self.nodes.get_mut_syntax_node(id)?;
+            select.left = Some(top);
+            top = id;
+        }
+
+        // Try to move select (or scan if select doesn't exist) under parent.
+        if let Some(id) = select.parent {
+            let mut parent = self.nodes.get_mut_syntax_node(id)?;
+            match select.branch {
+                Some(Branch::Left) => {
+                    parent.left = Some(top);
+                }
+                Some(Branch::Right) => {
+                    let mut found: bool = false;
+                    for child in &mut parent.right {
+                        if child == &select.proj {
+                            *child = top;
+                            found = true;
+                        }
+                    }
+                    if !found {
+                        return Err(QueryPlannerError::CustomError(
+                            "Parent node doesn't contain projection in its right children".into(),
+                        ));
+                    }
+                }
+                None => {
+                    return Err(QueryPlannerError::CustomError(
+                        "Selection structure is in inconsistent state.".into(),
+                    ))
+                }
+            }
+        }
+
+        // Update the wrapped plan top if it was current projection
+        if self.get_top()? == select.proj {
+            if let Some(select_id) = select.select {
+                self.set_top(select_id)?;
+            } else {
+                self.set_top(select.scan)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
