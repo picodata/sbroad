@@ -99,9 +99,9 @@ fn one_table_projection() {
     assert_eq!(
         format!(
             "{} {} {}",
-            r#"SELECT identification_number as "identification_number", product_code as "product_code""#,
+            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
             r#"FROM "hash_testing""#,
-            r#"WHERE (identification_number) = 1"#
+            r#"WHERE ("identification_number") = 1"#
         ),
         sql
     );
@@ -126,10 +126,10 @@ fn one_table_with_asterisk() {
     assert_eq!(
         format!(
             "{} {} {} {}",
-            r#"SELECT identification_number as "identification_number", product_code as "product_code","#,
-            r#"product_units as "product_units", sys_op as "sys_op", bucket_id as "bucket_id""#,
+            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code","#,
+            r#""product_units" as "product_units", "sys_op" as "sys_op", "bucket_id" as "bucket_id""#,
             r#"FROM "hash_testing""#,
-            r#"WHERE (identification_number) = 1"#
+            r#"WHERE ("identification_number") = 1"#
         ),
         sql
     );
@@ -159,9 +159,9 @@ fn union_all() {
     assert_eq!(
         format!(
             "{} {} {}",
-            r#"SELECT product_code as "product_code" FROM "hash_testing" WHERE (identification_number) = 1"#,
+            r#"SELECT "product_code" as "product_code" FROM "hash_testing" WHERE ("identification_number") = 1"#,
             r#"UNION ALL"#,
-            r#"SELECT product_code as "product_code" FROM "hash_testing_hist" WHERE (product_code) = 'a'"#
+            r#"SELECT "product_code" as "product_code" FROM "hash_testing_hist" WHERE ("product_code") = 'a'"#
         ),
         sql
     );
@@ -188,9 +188,9 @@ fn from_sub_query() {
     assert_eq!(
         format!(
             "{} {} {}",
-            r#"SELECT product_code as "product_code" FROM"#,
-            r#"(SELECT product_code as "product_code" FROM "hash_testing" WHERE (identification_number) = 1) as "t1""#,
-            r#"WHERE (product_code) = 'a'"#
+            r#"SELECT "product_code" as "product_code" FROM"#,
+            r#"(SELECT "product_code" as "product_code" FROM "hash_testing" WHERE ("identification_number") = 1) as "t1""#,
+            r#"WHERE ("product_code") = 'a'"#
         ),
         sql
     );
@@ -221,11 +221,11 @@ fn from_sub_query_with_union() {
     assert_eq!(
         format!(
             "{} {} {} {} {}",
-            r#"SELECT product_code as "product_code" FROM"#,
-            r#"(SELECT product_code as "product_code" FROM "hash_testing" WHERE (identification_number) = 1"#,
+            r#"SELECT "product_code" as "product_code" FROM"#,
+            r#"(SELECT "product_code" as "product_code" FROM "hash_testing" WHERE ("identification_number") = 1"#,
             r#"UNION ALL"#,
-            r#"SELECT product_code as "product_code" FROM "hash_testing_hist" WHERE (product_code) = 'a') as "t1""#,
-            r#"WHERE (product_code) = 'a'"#,
+            r#"SELECT "product_code" as "product_code" FROM "hash_testing_hist" WHERE ("product_code") = 'a') as "t1""#,
+            r#"WHERE ("product_code") = 'a'"#,
         ),
         sql
     );

@@ -118,7 +118,10 @@ impl Plan {
                         Expression::Bool { op, .. } => sql.push_str(&format!("{}", op)),
                         Expression::Constant { value, .. } => sql.push_str(&format!("{}", value)),
                         Expression::Reference { .. } => {
-                            sql.push_str(&self.get_alias_from_reference_node(expr)?);
+                            sql.push_str(&format!(
+                                "\"{}\"",
+                                &self.get_alias_from_reference_node(expr)?
+                            ));
                         }
                     },
                 },
