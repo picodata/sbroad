@@ -6,7 +6,7 @@ use std::fmt::Formatter;
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer, Serialize};
-use tarantool::hlua::{self, LuaRead};
+use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
 

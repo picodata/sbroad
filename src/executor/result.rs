@@ -1,6 +1,6 @@
 use crate::errors::QueryPlannerError;
 use serde::ser::{Serialize, SerializeMap, Serializer};
-use tarantool::hlua::{self, LuaRead};
+use tarantool::tlua::{self, LuaRead};
 
 use crate::ir::relation::Column;
 

@@ -14,7 +14,7 @@ pest = "2.0"
 pest_derive = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
-tarantool = { git = "https://sbroad-cargo-token:t-nZyqJVVuhGQv17BX6v@gitlab.com/picodata/picodata/tarantool-module.git", rev="6f6bc329"}
+tarantool = { git = "https://sbroad-cargo-token:t-nZyqJVVuhGQv17BX6v@gitlab.com/picodata/picodata/tarantool-module.git", rev="d8921ec6"}
 traversal = "0.1.2"
 yaml-rust = "0.4.1"
 

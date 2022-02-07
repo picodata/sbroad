@@ -11,7 +11,7 @@ else
 	endif
 endif
 build:
-	cargo build
+	cargo build --release
 
 integration_test_app:
 	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
@@ -24,6 +24,6 @@ lint:
 
 build_test_app:
 	cd test_app && cartridge build
-	cp -rf target/debug/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
+	cp -rf target/release/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
 test_all: test build build_test_app integration_test_app

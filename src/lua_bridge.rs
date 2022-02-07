@@ -1,10 +1,9 @@
 use crate::executor::result::BoxExecuteFormat;
-use tarantool::ffi::tarantool::luaT_state;
-use tarantool::hlua::{Lua, LuaError, LuaFunction};
+use tarantool::tlua::{LuaError, LuaFunction};
 
 /// Function get cartridge cluster schema
 pub fn get_cluster_schema() -> Result<String, LuaError> {
-    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
+    let lua = tarantool::lua_state();
 
     let get_schema: LuaFunction<_> = lua.eval("return require('cartridge').get_schema")?;
     let res = get_schema.call()?;
@@ -14,7 +13,7 @@ pub fn get_cluster_schema() -> Result<String, LuaError> {
 
 /// Function execute sql query on selected node
 pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteFormat, LuaError> {
-    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
+    let lua = tarantool::lua_state();
 
     lua.exec(
         r#"
@@ -46,7 +45,7 @@ pub fn exec_query(bucket_id: u64, query: &str) -> Result<BoxExecuteFormat, LuaEr
 
 /// Sends query to all instances and merges results after (map-reduce).
 pub fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, LuaError> {
-    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
+    let lua = tarantool::lua_state();
 
     lua.exec(
         r#"
@@ -96,7 +95,7 @@ pub fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, LuaError> {
 
 /// Function get summary count of bucket from vshard
 pub fn bucket_count() -> Result<u64, LuaError> {
-    let lua = unsafe { Lua::from_existing_state(luaT_state(), false) };
+    let lua = tarantool::lua_state();
 
     let bucket_count_fn: LuaFunction<_> =
         lua.eval("return require('vshard').router.bucket_count")?;
