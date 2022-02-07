@@ -166,3 +166,32 @@ fn union_all() {
         sql
     );
 }
+
+#[test]
+fn from_sub_query() {
+    let query = r#"SELECT product_code
+    FROM (SELECT product_code
+    FROM "hash_testing"
+    WHERE "identification_number" = 1) as t1
+    WHERE "product_code" = 'a'"#;
+
+    let mut metadata = Metadata::new();
+    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(&metadata).unwrap();
+    plan.build_relational_map();
+
+    let top_id = plan.get_top().unwrap();
+    let sql = plan.subtree_as_sql(top_id).unwrap();
+
+    assert_eq!(
+        format!(
+            "{} {} {}",
+            r#"SELECT product_code as "product_code" FROM"#,
+            r#"(SELECT product_code as "product_code" FROM "hash_testing" WHERE (identification_number) = 1) as "t1""#,
+            r#"WHERE (product_code) = 'a'"#
+        ),
+        sql
+    );
+}

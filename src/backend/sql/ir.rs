@@ -43,6 +43,25 @@ impl Plan {
         Ok(result)
     }
 
+    /// Check that node is the first child of selection or projection operator.
+    ///
+    /// # Errors
+    /// - node is invalid
+    pub fn is_first_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
+        for id in 0..self.nodes.next_id() {
+            let node = self.get_node(id)?;
+            if let Node::Relational(
+                Relational::Projection { children, .. } | Relational::Selection { children, .. },
+            ) = node
+            {
+                if children.first() == Some(&node_id) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     #[allow(dead_code)]
     fn subtree_as_sql(&self, node_id: usize) -> Result<String, QueryPlannerError> {
         let mut sql = String::new();
@@ -73,7 +92,7 @@ impl Plan {
             match data {
                 // TODO: should we care about plans without projections?
                 // Or they should be treated as invalid?
-                SyntaxData::Alias(s) => sql.push_str(&format!("\"{}\"", s.as_str())),
+                SyntaxData::Alias(s) => sql.push_str(&format!("as \"{}\"", s.as_str())),
                 SyntaxData::CloseParenthesis => sql.push(')'),
                 SyntaxData::Comma => sql.push(','),
                 SyntaxData::Condition => sql.push_str("on"),
@@ -90,18 +109,17 @@ impl Plan {
                         Relational::ScanRelation { relation, .. } => {
                             sql.push_str(&format!("FROM \"{}\"", relation));
                         }
-                        Relational::ScanSubQuery { .. } => {}
+                        Relational::ScanSubQuery { .. } => sql.push_str("FROM"),
                         Relational::Selection { .. } => sql.push_str("WHERE"),
                         Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                     },
                     Node::Expression(expr) => match expr {
-                        Expression::Alias { .. } => sql.push_str("as"),
+                        Expression::Alias { .. } | Expression::Row { .. } => {}
                         Expression::Bool { op, .. } => sql.push_str(&format!("{}", op)),
                         Expression::Constant { value, .. } => sql.push_str(&format!("{}", value)),
                         Expression::Reference { .. } => {
                             sql.push_str(&self.get_alias_from_reference_node(expr)?);
                         }
-                        Expression::Row { .. } => {}
                     },
                 },
             }

@@ -410,24 +410,26 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Expression::Row { list, .. } => {
                     if let Some(sq_id) = self.plan.get_sub_query_from_row_node(id)? {
-                        // replace current row with the referred sub-query
-                        let rel = self.plan.get_relation_node(sq_id)?;
-                        self.nodes.add_sq(rel, id)
-                    } else {
-                        let mut nodes: Vec<usize> =
-                            vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                        if let Some((last, elements)) = list.split_last() {
-                            for elem in elements {
-                                nodes.push(self.nodes.get_syntax_node_id(*elem)?);
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                            }
-                            nodes.push(self.nodes.get_syntax_node_id(*last)?);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                            let sn = SyntaxNode::new_pointer(id, None, &nodes);
-                            return Ok(self.nodes.push_syntax_node(sn));
+                        // Replace current row with the referred sub-query
+                        // (except the case when sub-query is located in the FROM clause).
+                        if !self.plan.is_first_child(sq_id)? {
+                            let rel = self.plan.get_relation_node(sq_id)?;
+                            return self.nodes.add_sq(rel, id);
                         }
-                        Err(QueryPlannerError::InvalidRow)
                     }
+                    let mut nodes: Vec<usize> =
+                        vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
+                    if let Some((last, elements)) = list.split_last() {
+                        for elem in elements {
+                            nodes.push(self.nodes.get_syntax_node_id(*elem)?);
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                        }
+                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+                        let sn = SyntaxNode::new_pointer(id, None, &nodes);
+                        return Ok(self.nodes.push_syntax_node(sn));
+                    }
+                    Err(QueryPlannerError::InvalidRow)
                 }
                 Expression::Bool { left, right, .. } => {
                     let sn = SyntaxNode::new_pointer(
