@@ -396,3 +396,85 @@ fn inner_join_with_sq() {
         sql
     );
 }
+
+#[test]
+fn selection_with_sq() {
+    // TODO: Replace with SQL when frontend implements sub-queries.
+
+    // SELECT product_code FROM "hash_testing"
+    // WHERE "identification_number" in
+    // (SELECT id FROM "history" WHERE "id" = 1)
+    // AND "product_code" < 'a'
+    let mut plan = Plan::new();
+
+    let hash_testing = Table::new_seg(
+        "hash_testing",
+        vec![
+            Column::new("product_code", Type::Number),
+            Column::new("identification_number", Type::String),
+        ],
+        &["identification_number", "product_code"],
+    )
+    .unwrap();
+    plan.add_rel(hash_testing);
+    let scan_hash_testing = plan.add_scan("hash_testing").unwrap();
+
+    let history =
+        Table::new_seg("history", vec![Column::new("id", Type::Number)], &["id"]).unwrap();
+    plan.add_rel(history);
+    let scan_history = plan.add_scan("history").unwrap();
+    let hs_id = plan.nodes.next_id();
+    let history_id_row = plan
+        .add_row_from_child(hs_id, scan_history, &["id"])
+        .unwrap();
+    let hs_const_1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let hs_condition = plan
+        .nodes
+        .add_bool(history_id_row, Bool::Eq, hs_const_1)
+        .unwrap();
+    let hs_select = plan
+        .add_select(&[scan_history], hs_condition, hs_id)
+        .unwrap();
+    let hs_project = plan.add_proj(hs_select, &["id"]).unwrap();
+    let hs_sq = plan.add_sub_query(hs_project, None).unwrap();
+
+    let select_id = plan.nodes.next_id();
+    let identification_number = plan
+        .add_row_from_child(select_id, scan_hash_testing, &["identification_number"])
+        .unwrap();
+    let bool_in = plan
+        .nodes
+        .add_bool(identification_number, Bool::In, hs_sq)
+        .unwrap();
+    let product_code = plan
+        .add_row_from_child(select_id, scan_hash_testing, &["product_code"])
+        .unwrap();
+    let const_a = plan.add_const(Value::string_from_str("a"));
+    let bool_lt = plan
+        .nodes
+        .add_bool(product_code, Bool::Lt, const_a)
+        .unwrap();
+    let bool_and = plan.nodes.add_bool(bool_in, Bool::And, bool_lt).unwrap();
+    let select = plan
+        .add_select(&[scan_hash_testing], bool_and, select_id)
+        .unwrap();
+    let project = plan.add_proj(select, &["product_code"]).unwrap();
+    plan.set_top(project).unwrap();
+
+    plan.build_relational_map();
+
+    let top_id = plan.get_top().unwrap();
+
+    let sql = plan.subtree_as_sql(top_id).unwrap();
+
+    assert_eq!(
+        format!(
+            "{} {} {} {}",
+            r#"SELECT "product_code" as "product_code" FROM "hash_testing""#,
+            r#"WHERE ("identification_number") in"#,
+            r#"(SELECT "id" as "id" FROM "history" WHERE ("id") = 1)"#,
+            r#"and ("product_code") < 'a'"#,
+        ),
+        sql
+    );
+}
