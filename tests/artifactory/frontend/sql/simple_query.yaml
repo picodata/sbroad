@@ -19,7 +19,7 @@ nodes:
       rule: Number
       value: 1
     - children: []
-      rule: Name
+      rule: Reference
       value: "\"identification_number\""
     - children:
         - 6
@@ -35,17 +35,40 @@ nodes:
       rule: Projection
       value: ~
     - children:
-        - 9
+        - 15
       rule: Column
       value: ~
     - children: []
-      rule: ProjectedName
+      rule: Reference
       value: "\"product_code\""
     - children:
-        - 11
+        - 13
       rule: Column
       value: ~
     - children: []
-      rule: ProjectedName
+      rule: Reference
       value: "\"identification_number\""
-top: 0
+    - children: []
+      rule: AliasName
+      value: "\"identification_number\""
+    - children:
+        - 11
+        - 12
+      rule: Alias
+      value: ~
+    - children: []
+      rule: AliasName
+      value: "\"product_code\""
+    - children:
+        - 9
+        - 14
+      rule: Alias
+      value: ~
+top: 7
+map:
+  4:
+    - 5
+  9:
+    - 1
+  11:
+    - 1

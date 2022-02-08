@@ -202,8 +202,46 @@ impl Plan {
         Ok(())
     }
 
+    /// Check that the sub-query is an additional child of the parent relational node.
+    fn sub_query_is_additional_child(
+        &self,
+        rel_id: usize,
+        sq_id: usize,
+    ) -> Result<bool, QueryPlannerError> {
+        let children = if let Some(children) = self.get_relational_children(rel_id)? {
+            children
+        } else {
+            return Ok(false);
+        };
+        match self.get_relation_node(rel_id)? {
+            Relational::Selection { .. } | Relational::Projection { .. } => {
+                Ok(children.get(0) != Some(&sq_id))
+            }
+            Relational::InnerJoin { .. } => {
+                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
+            }
+            _ => Err(QueryPlannerError::CustomError(String::from(
+                "Trying to check if sub-query is an additional child of the wrong node.",
+            ))),
+        }
+    }
+
+    fn get_additional_sq(
+        &self,
+        rel_id: usize,
+        row_id: usize,
+    ) -> Result<Option<usize>, QueryPlannerError> {
+        if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
+            if self.sub_query_is_additional_child(rel_id, sq_id)? {
+                return Ok(Some(sq_id));
+            }
+        }
+        Ok(None)
+    }
+
     fn resolve_sub_query_conflicts(
         &mut self,
+        rel_id: usize,
         expr_id: usize,
     ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
@@ -216,8 +254,8 @@ impl Plan {
         let mut strategy: HashMap<usize, MotionPolicy> = HashMap::new();
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
-            let left = self.get_sub_query_from_row_node(bool_op.left)?;
-            let right = self.get_sub_query_from_row_node(bool_op.right)?;
+            let left = self.get_additional_sq(rel_id, bool_op.left)?;
+            let right = self.get_additional_sq(rel_id, bool_op.right)?;
             match left {
                 Some(left_sq) => {
                     match right {
@@ -283,9 +321,10 @@ impl Plan {
                     )));
                 }
                 Relational::Selection { output, filter, .. } => {
-                    let strategy = self.resolve_sub_query_conflicts(filter)?;
-                    self.create_motion_nodes(*id, &strategy)?;
                     self.set_distribution(output)?;
+                    let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
+                    println!("strategy {:?}", strategy);
+                    self.create_motion_nodes(*id, &strategy)?;
                 }
                 Relational::InnerJoin { .. } => {
                     // TODO: resolve join conflicts and set the output row distribution

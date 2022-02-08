@@ -20,7 +20,7 @@ fn ast() {
 }
 
 #[test]
-fn transfrom_select_2() {
+fn transform_select_2() {
     let query = r#"select a from t"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
@@ -35,7 +35,7 @@ fn transfrom_select_2() {
 }
 
 #[test]
-fn transfrom_select_3() {
+fn transform_select_3() {
     let query = r#"select a from t where a = 1"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
@@ -50,7 +50,7 @@ fn transfrom_select_3() {
 }
 
 #[test]
-fn transfrom_select_4() {
+fn transform_select_4() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
@@ -65,7 +65,7 @@ fn transfrom_select_4() {
 }
 
 #[test]
-fn transfrom_select_5() {
+fn transform_select_5() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a where t1.a > 0"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
@@ -84,48 +84,57 @@ fn traversal() {
     let query = r#"select a from t where a = 1"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let top = ast.top.unwrap();
-    let mut dft_pre = DftPost::new(&top, |node| ast.nodes.tree_iter(node));
+    let mut dft_post = DftPost::new(&top, |node| ast.nodes.tree_iter(node));
 
-    let (_, table_id) = dft_pre.next().unwrap();
+    let (_, table_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*table_id).unwrap();
     assert_eq!(node.rule, Type::Table);
 
-    let (_, scan_id) = dft_pre.next().unwrap();
+    let (_, scan_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
 
-    let (_, a_id) = dft_pre.next().unwrap();
+    let (_, a_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*a_id).unwrap();
-    assert_eq!(node.rule, Type::Name);
+    assert_eq!(node.rule, Type::Reference);
 
-    let (_, num_id) = dft_pre.next().unwrap();
+    let (_, num_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*num_id).unwrap();
     assert_eq!(node.rule, Type::Number);
 
-    let (_, eq_id) = dft_pre.next().unwrap();
+    let (_, eq_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*eq_id).unwrap();
     assert_eq!(node.rule, Type::Eq);
 
-    let (_, selection_id) = dft_pre.next().unwrap();
+    let (_, selection_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*selection_id).unwrap();
     assert_eq!(node.rule, Type::Selection);
 
-    let (_, str_id) = dft_pre.next().unwrap();
+    let (_, str_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*str_id).unwrap();
-    assert_eq!(node.rule, Type::ProjectedName);
+    assert_eq!(node.rule, Type::Reference);
 
-    let (_, col_id) = dft_pre.next().unwrap();
+    let (_, alias_name_id) = dft_post.next().unwrap();
+    let node = ast.nodes.get_node(*alias_name_id).unwrap();
+    assert_eq!(node.rule, Type::AliasName);
+
+    let (_, alias_id) = dft_post.next().unwrap();
+    let node = ast.nodes.get_node(*alias_id).unwrap();
+    assert_eq!(node.rule, Type::Alias);
+
+    let (_, col_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*col_id).unwrap();
     assert_eq!(node.rule, Type::Column);
 
-    let (_, projection_id) = dft_pre.next().unwrap();
+    let (_, projection_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
-    // This node can be skipped during AST -> IR
-    let (_, select_id) = dft_pre.next().unwrap();
-    let node = ast.nodes.get_node(*select_id).unwrap();
-    assert_eq!(node.rule, Type::Select);
-
-    assert_eq!(None, dft_pre.next());
+    assert_eq!(None, dft_post.next());
+}
+#[test]
+fn invalid_query() {
+    let query = r#"select a frAm t"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap_err();
+    assert_eq!("Invalid command.", format!("{}", ast));
 }

@@ -32,8 +32,10 @@ impl Key {
 /// Tuple distribution in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Distribution {
-    /// A tuple can be located on any data node
+    /// A tuple can be located on any data node.
     Any,
+    /// A tuple is located on all data nodes (constants).
+    Replicated,
     /// Tuple distribution is set by the distribution key.
     /// Example: tuples from the segmented table.
     Segment {
@@ -47,11 +49,13 @@ impl Distribution {
     fn union(left: &Distribution, right: &Distribution) -> Distribution {
         match left {
             Distribution::Any => Distribution::Any,
+            Distribution::Replicated => right.clone(),
             Distribution::Segment {
                 keys: ref keys_left,
                 ..
             } => match right {
                 Distribution::Any => Distribution::Any,
+                Distribution::Replicated => left.clone(),
                 Distribution::Segment {
                     keys: ref keys_right,
                     ..
@@ -73,12 +77,13 @@ impl Distribution {
     /// Calculate a new distribution for the tuple combined from the two different tuples.
     fn join(left: &Distribution, right: Distribution) -> Distribution {
         match left {
-            Distribution::Any => right,
+            Distribution::Any | Distribution::Replicated => right,
             Distribution::Segment {
                 keys: ref keys_left,
                 ..
             } => match right {
                 Distribution::Any => Distribution::Any,
+                Distribution::Replicated => left.clone(),
                 Distribution::Segment {
                     keys: ref keys_right,
                     ..
@@ -104,20 +109,6 @@ impl Distribution {
         }
 
         false
-    }
-
-    /// Get sharding key index
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError` when distribution isn't set.
-    pub fn get_segment_keys(&self) -> Result<HashSet<Key>, QueryPlannerError> {
-        if let Distribution::Segment { keys } = self.clone() {
-            return Ok(keys);
-        }
-
-        Err(QueryPlannerError::CustomError(
-            "Distribution isn't segment".into(),
-        ))
     }
 }
 
@@ -173,8 +164,6 @@ impl Plan {
                         return Err(QueryPlannerError::InvalidReference);
                     }
                 }
-            } else {
-                return Err(QueryPlannerError::InvalidNode);
             }
             Ok(())
         };
@@ -192,8 +181,13 @@ impl Plan {
 
         match child_set.len() {
             0 => {
-                // Scan
-                self.set_scan_dist(&table_set, &table_pos_map, row_node)?;
+                if table_set.is_empty() {
+                    // A row of constants.
+                    self.set_const_dist(row_node)?;
+                } else {
+                    // Scan
+                    self.set_scan_dist(&table_set, &table_pos_map, row_node)?;
+                }
             }
             1 => {
                 // Single child
@@ -244,6 +238,7 @@ impl Plan {
                 match child_dist {
                     None => return Err(QueryPlannerError::UninitializedDistribution),
                     Some(Distribution::Any) => return Ok(Distribution::Any),
+                    Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Segment { keys }) => {
                         let mut new_keys: HashSet<Key> = HashSet::new();
                         for key in keys {
@@ -271,6 +266,19 @@ impl Plan {
             }
         }
         Err(QueryPlannerError::InvalidRow)
+    }
+
+    fn set_const_dist(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
+        if let Node::Expression(Expression::Row {
+            ref mut distribution,
+            ..
+        }) = self.get_mut_node(row_id)?
+        {
+            *distribution = Some(Distribution::Replicated);
+        } else {
+            return Err(QueryPlannerError::InvalidRow);
+        }
+        Ok(())
     }
 
     fn set_scan_dist(

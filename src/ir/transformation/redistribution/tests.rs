@@ -1,5 +1,7 @@
 use super::*;
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::mock::MetadataMock;
+use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::relation::*;
 use crate::ir::*;
 use pretty_assertions::assert_eq;
@@ -53,7 +55,8 @@ fn segment_motion_for_sub_query() {
 
     assert_eq!(
         QueryPlannerError::UninitializedDistribution,
-        plan.resolve_sub_query_conflicts(eq_id).unwrap_err()
+        plan.resolve_sub_query_conflicts(select_id, eq_id)
+            .unwrap_err()
     );
 
     plan.add_motions().unwrap();
@@ -293,4 +296,26 @@ fn multiple_sub_queries() {
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
     assert_eq!(plan, expected_plan);
+}
+
+#[test]
+fn union_all_in_sq() {
+    let query = r#"SELECT *
+    FROM
+        (SELECT "identification_number", "product_code"
+        FROM "hash_testing"
+        WHERE "sys_op" = 1
+        UNION ALL
+        SELECT "identification_number", "product_code"
+        FROM "hash_testing_hist"
+        WHERE "sys_op" > 1) AS "t3"
+    WHERE "identification_number" = 1"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    // assert_eq!("", serde_yaml::to_string(&plan).unwrap());
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
 }

@@ -43,8 +43,8 @@ g.after_each(
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("query", { [[SELECT * FROM "testing_space" as "a"
-            INNER JOIN "testing_space" as "b" ON "a"."id" = "b"."a_id"
+    local _, err = api:call("query", { [[SELECT * FROM "testing_space"
+            INNER JOIN "testing_space" ON "testing_space"."id" = "testing_space"."a_id"
         WHERE "id" = 5 and "name" = '123']] })
     t.assert_equals(err, "query wasn't implemented")
 end

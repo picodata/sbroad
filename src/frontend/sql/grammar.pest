@@ -6,17 +6,18 @@ Query = _{ UnionAll | Select | Values | Insert }
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~
         (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
-        Projection = { Column ~ ("," ~ Column)*? }
-            Column = { Row | Asterisk | Alias | Value | ProjectedName }
-                Alias = {(Value | ProjectedName) ~ ^"as" ~ ProjectedName }
-                ProjectedName = @{ Name }
-                Name = @{ String | "\"" ~ String ~ "\"" ~ (".\"" ~ String ~ "\"")?}
+        Projection = { ((Asterisk | Column) ~ ("," ~ (Asterisk | Column))*?) }
+            Column = { Row | Alias | Value | Reference }
+                Alias = {(Value | Reference) ~ ^"as" ~ AliasName }
+                AliasName = @{ Name }
+                Reference = @{ Name }
+                    Name = @{ String | "\"" ~ String ~ "\"" ~ (".\"" ~ String ~ "\"")?}
                 Asterisk = @{ "*" }
         Selection = { Expr* }
         Scan = { SubQuery | Table }
             Table = @{ Name }
         InnerJoin = { Scan }
-        Condition = { Selection }
+        Condition = { Expr* }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
     SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" ~ (^"as" ~ SubQueryName)? }
 		SubQueryName = @{ Name }
@@ -25,7 +26,7 @@ Query = _{ UnionAll | Select | Values | Insert }
 
 Expr = _{  Or | And | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | Value | Name }
+    Primary = _{ SubQuery | Value | Reference }
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
     Eq = { EqLeft ~ "=" ~ EqRight }
         EqLeft = _{ Primary }
@@ -70,8 +71,8 @@ Value = _{ Row | Bool | Null | Number | SingleQuotedString }
     Null = @{ ^"null" }
     SingleQuotedString = _{ "'" ~ String ~ "'" }
     Row = {
-        ("(" ~ (Value | Name) ~ ("," ~ (Value | Name))* ~ ")")
-        | (^"row" ~ "(" ~ (Value | Name) ~ ("," ~ (Value | Name))* ~ ")")
+        ("(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
+        | (^"row" ~ "(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
     }
 
 EOF = { EOI | ";" }

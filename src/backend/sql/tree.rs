@@ -1,6 +1,6 @@
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,6 +21,8 @@ pub enum SyntaxData {
     From,
     /// "("
     OpenParenthesis,
+    /// "=, >, <, and, or, ..""
+    Operator(String),
     /// plan node id
     PlanId(usize),
 }
@@ -76,6 +78,14 @@ impl SyntaxNode {
     fn new_from() -> Self {
         SyntaxNode {
             data: SyntaxData::From,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_operator(value: &str) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Operator(value.into()),
             left: None,
             right: Vec::new(),
         }
@@ -500,12 +510,32 @@ impl<'p> SyntaxPlan<'p> {
                     }
                     Err(QueryPlannerError::InvalidRow)
                 }
-                Expression::Bool { left, right, .. } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*left)?),
-                        &[self.nodes.get_syntax_node_id(*right)?],
-                    );
+                Expression::Bool {
+                    left, right, op, ..
+                } => {
+                    let sn = if *op == Bool::Or {
+                        SyntaxNode::new_pointer(
+                            id,
+                            Some(self.nodes.push_syntax_node(SyntaxNode::new_open())),
+                            &[
+                                self.nodes.get_syntax_node_id(*left)?,
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
+                                self.nodes.get_syntax_node_id(*right)?,
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ],
+                        )
+                    } else {
+                        SyntaxNode::new_pointer(
+                            id,
+                            Some(self.nodes.get_syntax_node_id(*left)?),
+                            &[
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
+                                self.nodes.get_syntax_node_id(*right)?,
+                            ],
+                        )
+                    };
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },

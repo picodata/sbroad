@@ -589,9 +589,9 @@ impl Plan {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Validate that is `Bool` node with `Row` and `Const` children.
+    /// Check that the node is a boolean equality and its children are both rows.
     #[must_use]
-    pub fn is_bool_node_simple_eq(&self, node_id: usize) -> bool {
+    pub fn is_bool_eq_with_rows(&self, node_id: usize) -> bool {
         let node = match self.get_expression_node(node_id) {
             Ok(e) => e,
             Err(_) => return false,
@@ -611,9 +611,7 @@ impl Plan {
                 Err(_) => return false,
             };
 
-            let left_is_valid = left_node.is_row() || left_node.is_const();
-            let right_is_valid = right_node.is_row() || right_node.is_const();
-            if left_is_valid && right_is_valid {
+            if left_node.is_row() && right_node.is_row() {
                 return true;
             }
         }

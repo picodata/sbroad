@@ -149,8 +149,8 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError` when the node with requested index
     /// doesn't exist.
-    pub fn get_node(&self, pos: usize) -> Result<&Node, QueryPlannerError> {
-        match self.nodes.arena.get(pos) {
+    pub fn get_node(&self, id: usize) -> Result<&Node, QueryPlannerError> {
+        match self.nodes.arena.get(id) {
             None => Err(QueryPlannerError::ValueOutOfRange),
             Some(node) => Ok(node),
         }

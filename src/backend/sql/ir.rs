@@ -99,7 +99,7 @@ impl Plan {
         };
 
         for (id, data) in nodes.iter().enumerate() {
-            if let Some(' ') = sql.chars().last() {
+            if let Some(' ' | '(') = sql.chars().last() {
             } else if need_delim_after(id) {
                 sql.push_str(delim);
             }
@@ -111,6 +111,7 @@ impl Plan {
                 SyntaxData::Comma => sql.push(','),
                 SyntaxData::Condition => sql.push_str("on"),
                 SyntaxData::From => sql.push_str("FROM"),
+                SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                 SyntaxData::OpenParenthesis => sql.push('('),
                 SyntaxData::PlanId(id) => match self.get_node(*id)? {
                     Node::Relational(rel) => match rel {
@@ -129,8 +130,9 @@ impl Plan {
                         Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                     },
                     Node::Expression(expr) => match expr {
-                        Expression::Alias { .. } | Expression::Row { .. } => {}
-                        Expression::Bool { op, .. } => sql.push_str(&format!("{}", op)),
+                        Expression::Alias { .. }
+                        | Expression::Bool { .. }
+                        | Expression::Row { .. } => {}
                         Expression::Constant { value, .. } => sql.push_str(&format!("{}", value)),
                         Expression::Reference { .. } => {
                             sql.push_str(&format!(

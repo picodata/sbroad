@@ -367,6 +367,28 @@ impl Plan {
         Ok(proj_id)
     }
 
+    /// Add projection node (use a list of expressions instead of alias names).
+    ///
+    /// # Errors
+    /// - child node is not relational
+    /// - child output tuple is invalid
+    /// - columns are not aliases or have duplicate names
+    pub fn add_proj_internal(
+        &mut self,
+        child: usize,
+        columns: &[usize],
+    ) -> Result<usize, QueryPlannerError> {
+        let output = self.nodes.add_row_of_aliases(columns.to_vec(), None)?;
+        let proj = Relational::Projection {
+            children: vec![child],
+            output,
+        };
+
+        let proj_id = self.nodes.push(Node::Relational(proj));
+        self.replace_parent_in_subtree(output, None, Some(proj_id))?;
+        Ok(proj_id)
+    }
+
     /// Add selection node
     ///
     /// # Errors
