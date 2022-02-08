@@ -43,23 +43,33 @@ impl Plan {
         Ok(result)
     }
 
-    /// Check that node is the first child of selection or projection operator.
+    /// Check that node is an additional child of some relational operator.
     ///
     /// # Errors
     /// - node is invalid
-    pub fn is_first_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
+    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
         for id in 0..self.nodes.next_id() {
             let node = self.get_node(id)?;
-            if let Node::Relational(
-                Relational::Projection { children, .. } | Relational::Selection { children, .. },
-            ) = node
-            {
-                if children.first() == Some(&node_id) {
-                    return Ok(true);
-                }
+            match node {
+                Node::Relational(rel) => match rel {
+                    Relational::Projection { children, .. }
+                    | Relational::Selection { children, .. } => {
+                        if children.first() == Some(&node_id) {
+                            return Ok(false);
+                        }
+                    }
+                    Relational::InnerJoin { children, .. }
+                    | Relational::UnionAll { children, .. } => {
+                        if children.first() == Some(&node_id) || children.get(1) == Some(&node_id) {
+                            return Ok(false);
+                        }
+                    }
+                    _ => continue,
+                },
+                Node::Expression(_) => continue,
             }
         }
-        Ok(false)
+        Ok(true)
     }
 
     /// Transform plan sub-tree (pointed by top) to sql string
@@ -100,6 +110,7 @@ impl Plan {
                 SyntaxData::CloseParenthesis => sql.push(')'),
                 SyntaxData::Comma => sql.push(','),
                 SyntaxData::Condition => sql.push_str("on"),
+                SyntaxData::From => sql.push_str("FROM"),
                 SyntaxData::OpenParenthesis => sql.push('('),
                 SyntaxData::PlanId(id) => match self.get_node(*id)? {
                     Node::Relational(rel) => match rel {
@@ -111,9 +122,9 @@ impl Plan {
                         }
                         Relational::Projection { .. } => sql.push_str("SELECT"),
                         Relational::ScanRelation { relation, .. } => {
-                            sql.push_str(&format!("FROM \"{}\"", relation));
+                            sql.push_str(&format!("\"{}\"", relation));
                         }
-                        Relational::ScanSubQuery { .. } => sql.push_str("FROM"),
+                        Relational::ScanSubQuery { .. } => {}
                         Relational::Selection { .. } => sql.push_str("WHERE"),
                         Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                     },

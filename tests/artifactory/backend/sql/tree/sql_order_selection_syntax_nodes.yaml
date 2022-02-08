@@ -1,9 +1,10 @@
 # select a from t where (a) = (1)
 # selection 16
 #     - scan 6
-#         - projection 17
+#         - projection 18
 #             - left none
 #             - alias 2 
+#             - from 17
 #     - eq 15
 #         - row 10
 #             - left none
@@ -52,7 +53,7 @@ arena:
   #6
   - data:
       PlanId: 3
-    left: 17
+    left: 18
     right: []
   #7
   - data:
@@ -109,20 +110,25 @@ arena:
     right:
       - 15
   #17
+  - data: From
+    left: ~
+    right: []
+  #18
   - data:
       PlanId: 16
     left: ~
     right:
       - 2
+      - 17
 map:
-  3: 6
-  6: 11
-  14: 2
-  7: 14
-  15: 5
   12: 16
+  3: 6
+  14: 2
+  16: 18
+  15: 5
+  5: 10
+  6: 11
+  7: 14
   13: 0
   4: 7
-  16: 17
-  5: 10
   8: 15

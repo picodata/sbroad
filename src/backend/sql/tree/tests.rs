@@ -60,6 +60,7 @@ fn sql_order_selection() {
     assert_eq!(Some(SyntaxData::PlanId(13)), nodes_iter.next()); // ref
     assert_eq!(Some(SyntaxData::PlanId(14)), nodes_iter.next()); // alias
     assert_eq!(Some(SyntaxData::Alias("a".into())), nodes_iter.next()); // name a
+    assert_eq!(Some(SyntaxData::From), nodes_iter.next()); // from
     assert_eq!(Some(SyntaxData::PlanId(3)), nodes_iter.next()); // scan
     assert_eq!(Some(SyntaxData::PlanId(12)), nodes_iter.next()); // selection
     assert_eq!(Some(SyntaxData::PlanId(5)), nodes_iter.next()); // row

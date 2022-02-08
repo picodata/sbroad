@@ -9,14 +9,16 @@ use traversal::DftPost;
 /// Payload of the syntax tree node.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum SyntaxData {
-    /// "... as alias_name"
+    /// "as alias_name"
     Alias(String),
     /// ")"
     CloseParenthesis,
     /// ","
     Comma,
-    /// "... on"
+    /// "on"
     Condition,
+    /// "from"
+    From,
     /// "("
     OpenParenthesis,
     /// plan node id
@@ -71,6 +73,14 @@ impl SyntaxNode {
         }
     }
 
+    fn new_from() -> Self {
+        SyntaxNode {
+            data: SyntaxData::From,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
     fn new_open() -> Self {
         SyntaxNode {
             data: SyntaxData::OpenParenthesis,
@@ -84,6 +94,15 @@ impl SyntaxNode {
             data: SyntaxData::PlanId(id),
             left,
             right: right.into(),
+        }
+    }
+
+    fn left_id_or_err(&self) -> Result<usize, QueryPlannerError> {
+        match self.left {
+            Some(id) => Ok(id),
+            None => Err(QueryPlannerError::CustomError(
+                "Left node is not set.".into(),
+            )),
         }
     }
 }
@@ -210,9 +229,18 @@ struct Select {
     scan: usize,
     /// Selection syntax node
     selection: Option<usize>,
+    /// Join syntax node
+    join: Option<usize>,
 }
 
 impl Select {
+    /// Constructor.
+    ///
+    /// There are four valid combinations of the `SELECT` command:
+    /// - projection -> selection -> join -> scan
+    /// - projection -> join -> scan
+    /// - projection -> selection -> scan
+    /// - projection -> scan
     fn new(
         sp: &SyntaxPlan,
         parent: Option<usize>,
@@ -220,68 +248,108 @@ impl Select {
         id: usize,
     ) -> Result<Option<Select>, QueryPlannerError> {
         let sn = sp.nodes.get_syntax_node(id)?;
-        // Check if the node is a projection
+        // Expecting projection
+        // projection -> ...
         if let Some(Node::Relational(Relational::Projection { .. })) = sp.get_plan_node(&sn.data)? {
         } else {
             return Ok(None);
         }
-        // Get the left node
-        let left_id = match sn.left {
-            Some(id) => id,
-            None => {
-                return Err(QueryPlannerError::CustomError(
-                    "Projection can't be a leaf node".into(),
-                ))
-            }
-        };
-        let syntax_node_left = sp.nodes.get_syntax_node(left_id)?;
-        let plan_node_left = sp
-            .get_plan_node(&syntax_node_left.data)?
-            .ok_or(QueryPlannerError::InvalidNode)?;
+        let left_id = sn.left_id_or_err()?;
+        let sn_left = sp.nodes.get_syntax_node(left_id)?;
+        let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+
         match plan_node_left {
-            // Expecting projection over selection and scan
+            // Expecting projection over selection
+            // projection -> selection -> ...
             Node::Relational(Relational::Selection { .. }) => {
-                // Get the next left node
-                let next_left_id = match syntax_node_left.left {
-                    Some(id) => id,
-                    None => {
-                        return Err(QueryPlannerError::CustomError(
-                            "Selection can't be a leaf node".into(),
-                        ))
+                let next_left_id = sn_left.left_id_or_err()?;
+                let sn_next_left = sp.nodes.get_syntax_node(next_left_id)?;
+                let plan_node_next_left = sp.plan_node_or_err(&sn_next_left.data)?;
+
+                match plan_node_next_left {
+                    // Expecting selection over join
+                    // projection -> selection -> join -> ...
+                    Node::Relational(Relational::InnerJoin { .. }) => {
+                        let next_next_left_id = sn_next_left.left_id_or_err()?;
+                        let sn_next_next_left = sp.nodes.get_syntax_node(next_next_left_id)?;
+                        let plan_node_next_next_left =
+                            sp.plan_node_or_err(&sn_next_next_left.data)?;
+
+                        // Expecting join over scan
+                        // projection -> selection -> join -> scan
+                        if let Node::Relational(
+                            Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+                        ) = plan_node_next_next_left
+                        {
+                            let select = Select {
+                                parent,
+                                branch,
+                                proj: id,
+                                scan: next_next_left_id,
+                                selection: Some(left_id),
+                                join: Some(next_left_id),
+                            };
+                            return Ok(Some(select));
+                        }
                     }
-                };
-                // We expect that the next left node is a scan
-                let syntax_node_next_left = sp.nodes.get_syntax_node(next_left_id)?;
-                let plan_node_next_left = sp
-                    .get_plan_node(&syntax_node_next_left.data)?
-                    .ok_or(QueryPlannerError::InvalidNode)?;
-                if let Node::Relational(
-                    Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                ) = plan_node_next_left
-                {
-                    Ok(Some(Select {
-                        parent,
-                        branch,
-                        proj: id,
-                        scan: next_left_id,
-                        selection: Some(left_id),
-                    }))
-                } else {
-                    Err(QueryPlannerError::InvalidPlan)
+                    // Expecting selection over scan
+                    // projection -> selection -> scan
+                    Node::Relational(
+                        Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+                    ) => {
+                        return Ok(Some(Select {
+                            parent,
+                            branch,
+                            proj: id,
+                            scan: next_left_id,
+                            selection: Some(left_id),
+                            join: None,
+                        }));
+                    }
+                    _ => {
+                        return Err(QueryPlannerError::InvalidPlan);
+                    }
                 }
             }
             // Expecting projection over scan
+            // projection -> scan
             Node::Relational(Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. }) => {
-                Ok(Some(Select {
+                return Ok(Some(Select {
                     parent,
                     branch,
                     proj: id,
                     scan: left_id,
                     selection: None,
-                }))
+                    join: None,
+                }));
             }
-            _ => Err(QueryPlannerError::InvalidPlan),
+            // Expecting projection over inner join
+            // projection -> join -> ...
+            Node::Relational(Relational::InnerJoin { .. }) => {
+                let next_left_id = sn_left.left_id_or_err()?;
+                let sn_next_left = sp.nodes.get_syntax_node(next_left_id)?;
+                let plan_node_next_left = sp.plan_node_or_err(&sn_next_left.data)?;
+
+                // Expecting join over scan
+                // projection -> join -> scan
+                if let Node::Relational(
+                    Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+                ) = plan_node_next_left
+                {
+                    let select = Select {
+                        parent,
+                        branch,
+                        proj: id,
+                        scan: next_left_id,
+                        selection: None,
+                        join: Some(left_id),
+                    };
+                    return Ok(Some(select));
+                }
+            }
+            _ => return Err(QueryPlannerError::InvalidPlan),
         }
+        Err(QueryPlannerError::InvalidPlan)
     }
 }
 
@@ -348,6 +416,7 @@ impl<'p> SyntaxPlan<'p> {
                                 nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
                             }
                             nodes.push(self.nodes.get_syntax_node_id(*last)?);
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 Some(self.nodes.get_syntax_node_id(left_id)?),
@@ -412,7 +481,7 @@ impl<'p> SyntaxPlan<'p> {
                     if let Some(sq_id) = self.plan.get_sub_query_from_row_node(id)? {
                         // Replace current row with the referred sub-query
                         // (except the case when sub-query is located in the FROM clause).
-                        if !self.plan.is_first_child(sq_id)? {
+                        if self.plan.is_additional_child(sq_id)? {
                             let rel = self.plan.get_relation_node(sq_id)?;
                             return self.nodes.add_sq(rel, id);
                         }
@@ -453,6 +522,16 @@ impl<'p> SyntaxPlan<'p> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Get the plan node from the syntax tree node or fail.
+    ///
+    /// # Errors
+    /// - plan node is invalid
+    /// - syntax tree node doesn't have a plan node
+    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<&Node, QueryPlannerError> {
+        self.get_plan_node(data)?
+            .ok_or_else(|| QueryPlannerError::CustomError("Plan node is not found.".into()))
     }
 
     /// Set top of the tree.
@@ -558,7 +637,8 @@ impl<'p> SyntaxPlan<'p> {
 
     /// Reorder `SELECT` chain to:
     ///
-    /// parent (if some) -branch-> selection (if some) -left-> scan -left-> projection
+    /// parent (if some) -branch-> selection (if some) -left->
+    /// join (if some) -left-> scan -left-> projection
     ///
     /// # Errors
     /// - select nodes (parent, scan, projection, selection) are invalid
@@ -570,14 +650,26 @@ impl<'p> SyntaxPlan<'p> {
         scan.left = Some(select.proj);
         let mut top = select.scan;
 
-        // Try to move scan under selection.
         if let Some(id) = select.selection {
             let mut selection = self.nodes.get_mut_syntax_node(id)?;
-            selection.left = Some(top);
+
+            match select.join {
+                // Try to move join under selection.
+                Some(join_id) => {
+                    selection.left = Some(join_id);
+                    // Try to move scan under join.
+                    let mut join = self.nodes.get_mut_syntax_node(join_id)?;
+                    join.left = Some(top);
+                }
+                // Try to move scan under selection.
+                None => {
+                    selection.left = Some(top);
+                }
+            }
             top = id;
         }
 
-        // Try to move selection (or scan if selection doesn't exist) under parent.
+        // Try to move new top under parent.
         if let Some(id) = select.parent {
             let mut parent = self.nodes.get_mut_syntax_node(id)?;
             match select.branch {
