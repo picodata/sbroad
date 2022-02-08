@@ -264,8 +264,6 @@ impl Plan {
     /// - failed to resolve distribution conflicts
     /// - failed to set distribution
     pub fn add_motions(&mut self) -> Result<(), QueryPlannerError> {
-        self.build_relational_map();
-
         let nodes = self.get_relational_nodes_dfs_post()?;
         for id in &nodes {
             match self.get_relation_node(*id)?.clone() {

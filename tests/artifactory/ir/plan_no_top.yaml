@@ -1,24 +1,27 @@
 ---
 nodes:
   arena:
+#0
     - Expression:
         Reference:
           targets: ~
           position: 0
-          parent: 0
+          parent: 3
+#1
     - Expression:
         Alias:
           name: a
           child: 0
+#2
     - Expression:
         Row:
           list:
             - 1
           distribution: ~
+#3
     - Relational:
         ScanRelation:
           output: 2
-          id: 0
           relation: t
 relations:
   t:

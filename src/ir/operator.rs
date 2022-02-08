@@ -89,8 +89,6 @@ pub enum Relational {
         /// Left and right tuple comparison condition.
         /// In fact - an expression tree top index from the plan node arena.
         condition: usize,
-        /// Logical node ID
-        id: usize,
         /// Output tuple node index from the plan node arena.
         output: usize,
     },
@@ -98,8 +96,6 @@ pub enum Relational {
         /// Contains exactly a single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
-        /// Logical node ID
-        id: usize,
         policy: MotionPolicy,
         /// Output tuple node index in the plan node arena.
         output: usize,
@@ -110,16 +106,12 @@ pub enum Relational {
         /// first one should be treated as a `SubQuery` node from
         /// the output tree.
         children: Vec<usize>,
-        /// Logical node ID
-        id: usize,
         /// Output tuple node index in the plan node arena.
         output: usize,
     },
     ScanRelation {
         /// Output tuple node index in the plan node arena.
         output: usize,
-        /// Logical node ID
-        id: usize,
         /// Relation name.
         relation: String,
     },
@@ -129,8 +121,6 @@ pub enum Relational {
         /// Contains exactly a single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
-        /// Logical node ID
-        id: usize,
         /// Output tuple node index in the plan node arena.
         output: usize,
     },
@@ -142,8 +132,6 @@ pub enum Relational {
         children: Vec<usize>,
         /// Filter expression node index in the plan node arena.
         filter: usize,
-        /// Logical node ID
-        id: usize,
         /// Output tuple node index in the plan node arena.
         output: usize,
     },
@@ -151,8 +139,6 @@ pub enum Relational {
         /// Contains exactly two elements: left and right node indexes
         /// from the plan node arena.
         children: Vec<usize>,
-        /// Logical node ID
-        id: usize,
         /// Output tuple node index in the plan node arena.
         output: usize,
     },
@@ -206,20 +192,6 @@ impl Relational {
             | Relational::ScanSubQuery { output, .. }
             | Relational::Selection { output, .. }
             | Relational::UnionAll { output, .. } => *output,
-        }
-    }
-
-    /// Get logical id of the relational node.
-    #[must_use]
-    pub fn logical_id(&self) -> usize {
-        match self {
-            Relational::InnerJoin { id, .. }
-            | Relational::Motion { id, .. }
-            | Relational::Projection { id, .. }
-            | Relational::ScanRelation { id, .. }
-            | Relational::ScanSubQuery { id, .. }
-            | Relational::Selection { id, .. }
-            | Relational::UnionAll { id, .. } => *id,
         }
     }
 
@@ -283,7 +255,6 @@ impl Plan {
     /// # Errors
     /// - relation is invalid
     pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
-        let logical_id = self.nodes.next_id();
         let nodes = &mut self.nodes;
 
         if let Some(relations) = &self.relations {
@@ -293,18 +264,20 @@ impl Plan {
                         let mut refs: Vec<usize> = Vec::new();
 
                         for (pos, col) in columns.iter().enumerate() {
-                            let r_id = nodes.add_ref(logical_id, None, pos);
+                            let r_id = nodes.add_ref(None, None, pos);
                             let alias_id = nodes.add_alias(&col.name, r_id)?;
                             refs.push(alias_id);
                         }
 
+                        let output_id = nodes.add_row_of_aliases(refs, None)?;
                         let scan = Relational::ScanRelation {
-                            id: logical_id,
-                            output: nodes.add_row_of_aliases(refs, None)?,
+                            output: output_id,
                             relation: String::from(table),
                         };
 
-                        return Ok(nodes.push(Node::Relational(scan)));
+                        let scan_id = nodes.push(Node::Relational(scan));
+                        self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
+                        return Ok(scan_id);
                     }
                     //TODO: implement virtual tables as well
                     _ => return Err(QueryPlannerError::InvalidRelation),
@@ -325,22 +298,23 @@ impl Plan {
         left: usize,
         right: usize,
         condition: usize,
-        id: usize,
     ) -> Result<usize, QueryPlannerError> {
         if let Node::Expression(Expression::Bool { .. }) = self.get_node(condition)? {
         } else {
             return Err(QueryPlannerError::InvalidBool);
         }
 
-        let output = self.add_row_for_join(id, left, right)?;
-
+        let output = self.add_row_for_join(left, right)?;
         let join = Relational::InnerJoin {
             children: vec![left, right],
             condition,
-            id,
             output,
         };
-        Ok(self.nodes.push(Node::Relational(join)))
+
+        let join_id = self.nodes.push(Node::Relational(join));
+        self.replace_parent_in_subtree(condition, None, Some(join_id))?;
+        self.replace_parent_in_subtree(output, None, Some(join_id))?;
+        Ok(join_id)
     }
 
     /// Add motion node.
@@ -357,15 +331,16 @@ impl Plan {
         } else {
             return Err(QueryPlannerError::InvalidRelation);
         }
-        let id = self.nodes.next_id();
-        let output = self.add_row_for_output(id, child_id, &[])?;
+
+        let output = self.add_row_for_output(child_id, &[])?;
         let motion = Relational::Motion {
             children: vec![child_id],
-            id,
             policy: policy.clone(),
             output,
         };
-        Ok(self.nodes.push(Node::Relational(motion)))
+        let motion_id = self.nodes.push(Node::Relational(motion));
+        self.replace_parent_in_subtree(output, None, Some(motion_id))?;
+        Ok(motion_id)
     }
 
     // TODO: we need a more flexible projection constructor (constants, etc)
@@ -381,15 +356,15 @@ impl Plan {
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let id = self.nodes.next_id();
-        let output = self.add_row_for_output(id, child, col_names)?;
-
+        let output = self.add_row_for_output(child, col_names)?;
         let proj = Relational::Projection {
             children: vec![child],
-            id,
             output,
         };
-        Ok(self.nodes.push(Node::Relational(proj)))
+
+        let proj_id = self.nodes.push(Node::Relational(proj));
+        self.replace_parent_in_subtree(output, None, Some(proj_id))?;
+        Ok(proj_id)
     }
 
     /// Add selection node
@@ -403,7 +378,6 @@ impl Plan {
         &mut self,
         children: &[usize],
         filter: usize,
-        id: usize,
     ) -> Result<usize, QueryPlannerError> {
         let first_child: usize = match children.len() {
             0 => return Err(QueryPlannerError::InvalidInput),
@@ -422,16 +396,17 @@ impl Plan {
             }
         }
 
-        let output = self.add_row_for_output(id, first_child, &[])?;
-
+        let output = self.add_row_for_output(first_child, &[])?;
         let select = Relational::Selection {
             children: children.into(),
             filter,
-            id,
             output,
         };
 
-        Ok(self.nodes.push(Node::Relational(select)))
+        let select_id = self.nodes.push(Node::Relational(select));
+        self.replace_parent_in_subtree(filter, None, Some(select_id))?;
+        self.replace_parent_in_subtree(output, None, Some(select_id))?;
+        Ok(select_id)
     }
 
     /// Add sub query scan node.
@@ -452,17 +427,17 @@ impl Plan {
         } else {
             None
         };
-        let id = self.nodes.next_id();
-        let output = self.add_row_for_output(id, child, &[])?;
 
+        let output = self.add_row_for_output(child, &[])?;
         let sq = Relational::ScanSubQuery {
             alias: name,
             children: vec![child],
-            id,
             output,
         };
 
-        Ok(self.nodes.push(Node::Relational(sq)))
+        let sq_id = self.nodes.push(Node::Relational(sq));
+        self.replace_parent_in_subtree(output, None, Some(sq_id))?;
+        Ok(sq_id)
     }
 
     /// Add union all node.
@@ -487,16 +462,15 @@ impl Plan {
             return Err(QueryPlannerError::NotEqualRows);
         }
 
-        let id = self.nodes.next_id();
-        let output = self.add_row_for_union(id, left, right)?;
-
+        let output = self.add_row_for_union(left, right)?;
         let union_all = Relational::UnionAll {
             children: vec![left, right],
-            id,
             output,
         };
 
-        Ok(self.nodes.push(Node::Relational(union_all)))
+        let union_all_id = self.nodes.push(Node::Relational(union_all));
+        self.replace_parent_in_subtree(output, None, Some(union_all_id))?;
+        Ok(union_all_id)
     }
 
     /// Get an output tuple from relational node id

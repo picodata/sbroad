@@ -91,11 +91,10 @@ fn relational_post() {
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2").unwrap();
 
-    let id = plan.nodes.next_id();
-    let a = plan.add_row_from_child(id, scan_t2_id, &["a"]).unwrap();
+    let a = plan.add_row_from_child(scan_t2_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
     let eq = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
-    let selection_id = plan.add_select(&[scan_t2_id], eq, id).unwrap();
+    let selection_id = plan.add_select(&[scan_t2_id], eq).unwrap();
 
     let union_id = plan.add_union_all(scan_t1_id, selection_id).unwrap();
     plan.set_top(union_id).unwrap();
@@ -136,8 +135,7 @@ fn selection_subquery_dfs_post() {
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1").unwrap();
-    let id1 = plan.nodes.next_id();
-    let a = plan.add_row_from_child(id1, scan_t1_id, &["a"]).unwrap();
+    let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
 
     let t2 = Table::new_seg(
         "t2",
@@ -151,17 +149,16 @@ fn selection_subquery_dfs_post() {
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2").unwrap();
 
-    let id2 = plan.nodes.next_id();
-    let b = plan.add_row_from_child(id2, scan_t2_id, &["b"]).unwrap();
+    let b = plan.add_row_from_child(scan_t2_id, &["b"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
     let eq_op = plan.nodes.add_bool(b, Bool::Eq, const1).unwrap();
-    let selection_t2_id = plan.add_select(&[scan_t2_id], eq_op, id2).unwrap();
+    let selection_t2_id = plan.add_select(&[scan_t2_id], eq_op).unwrap();
     let proj_id = plan.add_proj(selection_t2_id, &["c"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     let c = plan.get_row_from_rel_node(sq_id).unwrap();
 
     let in_op = plan.nodes.add_bool(a, Bool::In, c).unwrap();
-    let selection_t1_id = plan.add_select(&[scan_t1_id, sq_id], in_op, id1).unwrap();
+    let selection_t1_id = plan.add_select(&[scan_t1_id, sq_id], in_op).unwrap();
 
     plan.set_top(selection_t1_id).unwrap();
     let top = plan.get_top().unwrap();
@@ -218,11 +215,11 @@ fn subtree_dfs_post() {
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1").unwrap();
-    let id1 = plan.nodes.next_id();
-    let a = plan.add_row_from_child(id1, scan_t1_id, &["a"]).unwrap();
+    let a_ref = plan.nodes.next_id();
+    let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
     let in_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
-    let selection_t1_id = plan.add_select(&[scan_t1_id], in_op, id1).unwrap();
+    let selection_t1_id = plan.add_select(&[scan_t1_id], in_op).unwrap();
     let proj_id = plan.add_proj(selection_t1_id, &["c"]).unwrap();
 
     plan.set_top(proj_id).unwrap();
@@ -248,7 +245,7 @@ fn subtree_dfs_post() {
     assert_eq!(dft_post.next(), Some((2, alias_id)));
     assert_eq!(dft_post.next(), Some((1, &row_id)));
     assert_eq!(dft_post.next(), Some((2, &scan_t1_id)));
-    assert_eq!(dft_post.next(), Some((4, &id1)));
+    assert_eq!(dft_post.next(), Some((4, &a_ref)));
     assert_eq!(dft_post.next(), Some((3, &a)));
     assert_eq!(dft_post.next(), Some((3, &const1)));
     assert_eq!(dft_post.next(), Some((2, &in_op)));

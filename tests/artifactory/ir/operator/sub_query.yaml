@@ -4,7 +4,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 0 
+          parent: 5 
           position: 0
     - Expression:
         Alias:
@@ -13,7 +13,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 0 
+          parent: 5 
           position: 1
     - Expression:
         Alias:
@@ -32,12 +32,11 @@ nodes:
     - Relational:
         ScanRelation:
           output: 4
-          id: 0
           relation: t
     - Expression:
         Reference:
           targets: ~
-          parent: 6
+          parent: 11
           position: 0
     - Expression:
         Alias:
@@ -46,7 +45,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 6
+          parent: 11
           position: 1
     - Expression:
         Alias:

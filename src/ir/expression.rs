@@ -60,6 +60,8 @@ pub enum Expression {
     /// - target(s) in the relational nodes list of children
     /// - column position in the child(ren) output tuple
     Reference {
+        /// Relational node ID, that contains current reference.
+        parent: Option<usize>,
         /// Targets in the relational node children list.
         /// - Leaf nodes (relation scans): None.
         /// - Union nodes: two elements (left and right).
@@ -67,8 +69,6 @@ pub enum Expression {
         targets: Option<Vec<usize>>,
         /// Expression position in the input tuple (i.e. `Alias` column).
         position: usize,
-        /// Relational node ID, that contains current reference
-        parent: usize,
     },
     /// Top of the tuple tree.
     ///
@@ -169,6 +169,15 @@ impl Expression {
     pub fn is_const(&self) -> bool {
         matches!(self, Expression::Constant { .. })
     }
+
+    /// Replace parent in the reference node with the new one.
+    pub fn replace_parent_in_reference(&mut self, from_id: Option<usize>, to_id: Option<usize>) {
+        if let Expression::Reference { parent, .. } = self {
+            if *parent == from_id {
+                *parent = to_id;
+            }
+        }
+    }
 }
 
 impl Nodes {
@@ -216,7 +225,7 @@ impl Nodes {
     /// Add reference node.
     pub fn add_ref(
         &mut self,
-        parent: usize,
+        parent: Option<usize>,
         targets: Option<Vec<usize>>,
         position: usize,
     ) -> usize {
@@ -278,7 +287,6 @@ impl Plan {
     /// - column names don't exits
     pub fn new_columns(
         &mut self,
-        logical_id: usize,
         children: &[usize],
         is_join: bool,
         targets: &[usize],
@@ -349,7 +357,7 @@ impl Plan {
                         targets.iter().copied().collect()
                     };
                     // Add new references and aliases to arena (if we need them).
-                    let r_id = self.nodes.add_ref(logical_id, Some(new_targets), pos);
+                    let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
                     if need_aliases {
                         let a_id = self.nodes.add_alias(&name, r_id)?;
                         result.push(a_id);
@@ -385,7 +393,7 @@ impl Plan {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
                 // Add new references and aliases to arena (if we need them).
-                let r_id = self.nodes.add_ref(logical_id, Some(new_targets), *pos);
+                let r_id = self.nodes.add_ref(None, Some(new_targets), *pos);
                 if need_aliases {
                     if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
                         result.push(a_id);
@@ -415,11 +423,10 @@ impl Plan {
     /// - column names don't exits
     pub fn add_row_for_output(
         &mut self,
-        id: usize,
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[child], false, &[0], col_names, true)?;
+        let list = self.new_columns(&[child], false, &[0], col_names, true)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -430,11 +437,10 @@ impl Plan {
     /// - children are inconsistent relational nodes
     pub fn add_row_for_union(
         &mut self,
-        id: usize,
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[left, right], false, &[0, 1], &[], true)?;
+        let list = self.new_columns(&[left, right], false, &[0, 1], &[], true)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -447,11 +453,10 @@ impl Plan {
     /// - children are inconsistent relational nodes
     pub fn add_row_for_join(
         &mut self,
-        id: usize,
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[left, right], true, &[0, 1], &[], true)?;
+        let list = self.new_columns(&[left, right], true, &[0, 1], &[], true)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -465,11 +470,10 @@ impl Plan {
     /// - column names don't exit
     pub fn add_row_from_child(
         &mut self,
-        id: usize,
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[child], false, &[0], col_names, false)?;
+        let list = self.new_columns(&[child], false, &[0], col_names, false)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -483,12 +487,11 @@ impl Plan {
     /// - column names don't exit
     pub fn add_row_from_sub_query(
         &mut self,
-        id: usize,
         children: &[usize],
         children_pos: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, children, false, &[children_pos], col_names, false)?;
+        let list = self.new_columns(children, false, &[children_pos], col_names, false)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -502,12 +505,11 @@ impl Plan {
     /// - column names don't exit
     pub fn add_row_from_left_branch(
         &mut self,
-        id: usize,
         left: usize,
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[left, right], true, &[0], col_names, false)?;
+        let list = self.new_columns(&[left, right], true, &[0], col_names, false)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -521,12 +523,11 @@ impl Plan {
     /// - column names don't exits
     pub fn add_row_from_right_branch(
         &mut self,
-        id: usize,
         left: usize,
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(id, &[left, right], true, &[1], col_names, false)?;
+        let list = self.new_columns(&[left, right], true, &[1], col_names, false)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -542,17 +543,13 @@ impl Plan {
     ) -> Result<HashSet<usize>, QueryPlannerError> {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
 
-        if self.relational_map.is_none() {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Initialized relational map in the plan",
-            )));
-        }
-
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
         {
-            let referred_rel_id = self.get_map_relational_value(*parent)?;
+            let referred_rel_id = parent.ok_or(QueryPlannerError::CustomError(
+                "Reference node has no parent".into(),
+            ))?;
             let rel = self.get_relation_node(referred_rel_id)?;
             if let Some(children) = rel.children() {
                 if let Some(positions) = targets {
@@ -649,6 +646,31 @@ impl Plan {
             return Ok(v);
         }
         Err(QueryPlannerError::InvalidRow)
+    }
+
+    /// Replace parent for all references in the expression subtree of the current node.
+    ///
+    /// # Errors
+    /// - node is invalid
+    /// - node is not expression
+    pub fn replace_parent_in_subtree(
+        &mut self,
+        node_id: usize,
+        from_id: Option<usize>,
+        to_id: Option<usize>,
+    ) -> Result<(), QueryPlannerError> {
+        let mut references: Vec<usize> = Vec::new();
+        let subtree = DftPost::new(&node_id, |node| self.nodes.expr_iter(node, false));
+        for (_, id) in subtree {
+            if let Node::Expression(Expression::Reference { .. }) = self.get_node(*id)? {
+                references.push(*id);
+            }
+        }
+        for id in references {
+            let node = self.get_mut_expression_node(id)?;
+            node.replace_parent_in_reference(from_id, to_id);
+        }
+        Ok(())
     }
 }
 

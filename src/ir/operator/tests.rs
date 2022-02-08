@@ -33,8 +33,6 @@ fn scan_rel() {
     assert_eq!(scan_node, scan_id);
     plan.top = Some(scan_node);
 
-    plan.build_relational_map();
-
     plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
         assert_eq!(
@@ -70,7 +68,6 @@ fn scan_rel_serialized() {
 
     let scan_output = scan_id - 1;
 
-    plan.build_relational_map();
     plan.set_distribution(scan_output).unwrap();
 
     let path = Path::new("")
@@ -154,30 +151,25 @@ fn selection() {
 
     let scan_id = plan.add_scan("t").unwrap();
 
-    let logical_id = plan.nodes.next_id();
-    let ref_row = plan
-        .add_row_from_child(logical_id, scan_id, &["a", "b"])
-        .unwrap();
+    let ref_row = plan.add_row_from_child(scan_id, &["a", "b"]).unwrap();
     let const_1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
     let const_10 = plan.nodes.add_const(Value::number_from_str("10").unwrap());
     let const_row = plan.nodes.add_row(vec![const_1, const_10], None);
     let gt_id = plan.nodes.add_bool(ref_row, Bool::Gt, const_row).unwrap();
 
     // Correct Selection operator
-    plan.add_select(&[scan_id], gt_id, logical_id).unwrap();
+    plan.add_select(&[scan_id], gt_id).unwrap();
 
     // Non-boolean filter
     assert_eq!(
         QueryPlannerError::InvalidBool,
-        plan.add_select(&[scan_id], const_row, logical_id)
-            .unwrap_err()
+        plan.add_select(&[scan_id], const_row).unwrap_err()
     );
 
     // Non-relational child
     assert_eq!(
         QueryPlannerError::InvalidRelation,
-        plan.add_select(&[const_row], gt_id, logical_id)
-            .unwrap_err()
+        plan.add_select(&[const_row], gt_id).unwrap_err()
     );
 }
 
@@ -301,14 +293,13 @@ fn selection_with_sub_query() {
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
-    let id = plan.nodes.next_id();
     let b_id = plan
-        .add_row_from_sub_query(id, &children[..], children.len() - 1, &["b"])
+        .add_row_from_sub_query(&children[..], children.len() - 1, &["b"])
         .unwrap();
-    let a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], eq_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     let path = Path::new("")
@@ -356,17 +347,14 @@ fn join() {
     plan.add_rel(t2);
     let scan_t2 = plan.add_scan("t2").unwrap();
 
-    let logical_id = plan.nodes.next_id();
     let a_row = plan
-        .add_row_from_left_branch(logical_id, scan_t1, scan_t2, &["a"])
+        .add_row_from_left_branch(scan_t1, scan_t2, &["a"])
         .unwrap();
     let d_row = plan
-        .add_row_from_right_branch(logical_id, scan_t1, scan_t2, &["d"])
+        .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
-    let join = plan
-        .add_join(scan_t1, scan_t2, condition, logical_id)
-        .unwrap();
+    let join = plan.add_join(scan_t1, scan_t2, condition).unwrap();
     plan.top = Some(join);
 }
 
@@ -412,17 +400,15 @@ fn join_duplicate_columns() {
     plan.add_rel(t2);
     let scan_t2 = plan.add_scan("t2").unwrap();
 
-    let logical_id = plan.nodes.next_id();
     let a_row = plan
-        .add_row_from_left_branch(logical_id, scan_t1, scan_t2, &["a"])
+        .add_row_from_left_branch(scan_t1, scan_t2, &["a"])
         .unwrap();
     let d_row = plan
-        .add_row_from_right_branch(logical_id, scan_t1, scan_t2, &["d"])
+        .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     assert_eq!(
         QueryPlannerError::DuplicateColumn,
-        plan.add_join(scan_t1, scan_t2, condition, logical_id)
-            .unwrap_err()
+        plan.add_join(scan_t1, scan_t2, condition).unwrap_err()
     );
 }

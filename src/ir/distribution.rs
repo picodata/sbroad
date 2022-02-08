@@ -145,7 +145,7 @@ impl Plan {
                 ..
             }) = self.get_node(node_id)?
             {
-                parent_node = Some(self.get_map_relational_value(*parent)?);
+                parent_node = *parent;
                 let relational_op =
                     self.get_relation_node(parent_node.ok_or(QueryPlannerError::InvalidRelation)?)?;
 

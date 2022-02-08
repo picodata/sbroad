@@ -6,7 +6,7 @@ nodes:
         Reference:
           targets: ~
           position: 0
-          parent: 0
+          parent: 3
     #1
     - Expression:
         Alias:
@@ -22,7 +22,6 @@ nodes:
     - Relational:
         ScanRelation:
           output: 2
-          id: 0
           relation: t
     #4
     - Expression:
@@ -30,7 +29,7 @@ nodes:
           targets:
             - 0
           position: 0
-          parent: 4
+          parent: 12
     #5
     - Expression:
         Row:
@@ -60,7 +59,7 @@ nodes:
           targets:
             - 0
           position: 0
-          parent: 4
+          parent: 12
     #10
     - Expression:
         Alias:
@@ -78,7 +77,6 @@ nodes:
           children:
             - 3
           filter: 8
-          id: 4
           output: 11
     #13
     - Expression:
@@ -86,7 +84,7 @@ nodes:
           targets:
             - 0
           position: 0
-          parent: 13
+          parent: 16
     #14
     - Expression:
         Alias:
@@ -103,7 +101,6 @@ nodes:
         Projection:
           children:
             - 12
-          id: 13
           output: 15
 relations:
   t:
@@ -115,9 +112,5 @@ relations:
         positions:
           - 0
       name: t
-relational_map:
-  4: 12
-  13: 16
-  0: 3
 slices: ~
 top: 16

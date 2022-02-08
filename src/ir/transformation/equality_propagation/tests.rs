@@ -32,39 +32,30 @@ fn selection() {
 
     let scan_id = plan.add_scan("t").unwrap();
 
-    let logical_id = plan.nodes.next_id();
     // a = 1
-    let a = plan
-        .add_row_from_child(logical_id, scan_id, &["a"])
-        .unwrap();
+    let a = plan.add_row_from_child(scan_id, &["a"]).unwrap();
     let const_a1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
     let a1 = plan.nodes.add_bool(a, Bool::Eq, const_a1).unwrap();
     // b = 2
-    let b = plan
-        .add_row_from_child(logical_id, scan_id, &["b"])
-        .unwrap();
+    let b = plan.add_row_from_child(scan_id, &["b"]).unwrap();
     let const_b2 = plan.nodes.add_const(Value::number_from_str("2").unwrap());
     let b2 = plan.nodes.add_bool(b, Bool::Eq, const_b2).unwrap();
     // a = 1 and b = 2
     let a1b2 = plan.nodes.add_bool(a1, Bool::And, b2).unwrap();
     // c = 1
-    let c = plan
-        .add_row_from_child(logical_id, scan_id, &["c"])
-        .unwrap();
+    let c = plan.add_row_from_child(scan_id, &["c"]).unwrap();
     let const_c1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
     let c1 = plan.nodes.add_bool(c, Bool::Eq, const_c1).unwrap();
     // a = 1 and b = 2 and c = 1
     let a1b2c1 = plan.nodes.add_bool(a1b2, Bool::And, c1).unwrap();
     // d = 1
-    let d = plan
-        .add_row_from_child(logical_id, scan_id, &["d"])
-        .unwrap();
+    let d = plan.add_row_from_child(scan_id, &["d"]).unwrap();
     let const_d1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
     let d1 = plan.nodes.add_bool(d, Bool::Eq, const_d1).unwrap();
     // a = 1 and b = 2 and c = 1 or d = 1
     let a1b2c1_d1 = plan.nodes.add_bool(a1b2c1, Bool::Or, d1).unwrap();
 
-    let select_id = plan.add_select(&[scan_id], a1b2c1_d1, logical_id).unwrap();
+    let select_id = plan.add_select(&[scan_id], a1b2c1_d1).unwrap();
     plan.set_top(select_id).unwrap();
 
     let candidates = plan.nodes.gather_expr_for_eq_propagation().unwrap();

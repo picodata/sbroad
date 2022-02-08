@@ -34,17 +34,14 @@ fn segment_motion_for_sub_query() {
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
-    let id = plan.nodes.next_id();
     let b_id = plan
-        .add_row_from_sub_query(id, &children[..], children.len() - 1, &["b"])
+        .add_row_from_sub_query(&children[..], children.len() - 1, &["b"])
         .unwrap();
-    let a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], eq_id).unwrap();
     plan.set_top(select_id).unwrap();
-
-    plan.build_relational_map();
 
     let mut expected_rel_set: HashSet<usize> = HashSet::new();
     expected_rel_set.insert(sq_id);
@@ -103,14 +100,13 @@ fn full_motion_less_for_sub_query() {
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
-    let id = plan.nodes.next_id();
     let b_id = plan
-        .add_row_from_sub_query(id, &children[..], children.len() - 1, &["b"])
+        .add_row_from_sub_query(&children[..], children.len() - 1, &["b"])
         .unwrap();
-    let a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let less_id = plan.add_cond(a_id, Bool::Lt, b_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], less_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], less_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     plan.add_motions().unwrap();
@@ -157,14 +153,13 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
-    let id = plan.nodes.next_id();
     let a_id = plan
-        .add_row_from_sub_query(id, &children[..], children.len() - 1, &["a"])
+        .add_row_from_sub_query(&children[..], children.len() - 1, &["a"])
         .unwrap();
-    let b_id = plan.add_row_from_child(id, scan_t1_id, &["b"]).unwrap();
+    let b_id = plan.add_row_from_child(scan_t1_id, &["b"]).unwrap();
     let eq_id = plan.add_cond(b_id, Bool::Eq, a_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], eq_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     plan.add_motions().unwrap();
@@ -203,14 +198,13 @@ fn local_sub_query() {
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
-    let id = plan.nodes.next_id();
     let inner_a_id = plan
-        .add_row_from_sub_query(id, &children[..], children.len() - 1, &["a"])
+        .add_row_from_sub_query(&children[..], children.len() - 1, &["a"])
         .unwrap();
-    let outer_a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let outer_a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let eq_id = plan.add_cond(outer_a_id, Bool::Eq, inner_a_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], eq_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], eq_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     plan.add_motions().unwrap();
@@ -264,26 +258,25 @@ fn multiple_sub_queries() {
     children.push(sq2_id);
     let sq2_pos = children.len() - 1;
 
-    let id = plan.nodes.next_id();
     let sq1_inner_a_id = plan
-        .add_row_from_sub_query(id, &children[..], sq1_pos, &["a"])
+        .add_row_from_sub_query(&children[..], sq1_pos, &["a"])
         .unwrap();
-    let sq1_outer_a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let sq1_outer_a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let less_id = plan
         .add_cond(sq1_outer_a_id, Bool::Lt, sq1_inner_a_id)
         .unwrap();
 
     let sq2_inner_a_id = plan
-        .add_row_from_sub_query(id, &children[..], sq2_pos, &["b"])
+        .add_row_from_sub_query(&children[..], sq2_pos, &["b"])
         .unwrap();
-    let sq2_outer_a_id = plan.add_row_from_child(id, scan_t1_id, &["a"]).unwrap();
+    let sq2_outer_a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let eq_id = plan
         .add_cond(sq2_outer_a_id, Bool::Eq, sq2_inner_a_id)
         .unwrap();
 
     let or_id = plan.add_cond(less_id, Bool::Or, eq_id).unwrap();
 
-    let select_id = plan.add_select(&children[..], or_id, id).unwrap();
+    let select_id = plan.add_select(&children[..], or_id).unwrap();
     plan.set_top(select_id).unwrap();
 
     plan.add_motions().unwrap();

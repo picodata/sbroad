@@ -27,8 +27,6 @@ fn proj_preserve_dist_key() {
 
     plan.top = Some(proj_id);
 
-    plan.build_relational_map();
-
     let scan_output: usize = if let Node::Relational(scan) = plan.get_node(scan_id).unwrap() {
         scan.output()
     } else {
@@ -73,8 +71,6 @@ fn proj_shuffle_dist_key() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    plan.build_relational_map();
-
     let scan_output = 8;
     let proj_output = 14;
 
@@ -112,8 +108,6 @@ fn proj_shrink_dist_key_1() {
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
 
-    plan.build_relational_map();
-
     let scan_output = 8;
     let proj_output = 14;
 
@@ -144,8 +138,6 @@ fn proj_shrink_dist_key_2() {
         .join("shrink_dist_key_2.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
-
-    plan.build_relational_map();
 
     let scan_output = 8;
     let proj_output = 12;
@@ -178,8 +170,6 @@ fn union_all_fallback_to_random() {
         .join("union_fallback_to_random.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
-
-    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;
@@ -221,8 +211,6 @@ fn union_preserve_dist() {
         .join("union_preserve_dist.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
-
-    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;
@@ -272,8 +260,6 @@ fn join_unite_keys() {
         .join("join_unite_keys.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
-
-    plan.build_relational_map();
 
     let scan_t1_output = 4;
     let scan_t2_output = 10;

@@ -8,7 +8,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 0 
+          parent: 9 
           position: 0
     - Expression:
         Alias:
@@ -17,7 +17,7 @@ nodes:
     - Expression:
         Reference:
           targets: ~
-          parent: 0 
+          parent: 9 
           position: 1
     - Expression:
         Alias:
@@ -36,12 +36,11 @@ nodes:
     - Relational:
         ScanRelation:
           output: 4
-          id: 0
           relation: t
     - Expression:
         Reference:
           targets: ~
-          parent: 5 
+          parent: 9 
           position: 1
     - Expression:
         Alias:
@@ -58,7 +57,6 @@ nodes:
                   - 0
     - Relational:
         Projection:
-          id: 5
           children:
             - 5
           output: 8

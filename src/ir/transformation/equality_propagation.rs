@@ -105,7 +105,7 @@ use traversal::{Bft, DftPre};
 struct EqClassRef {
     targets: Option<Vec<usize>>,
     position: usize,
-    parent: usize,
+    parent: Option<usize>,
 }
 
 impl EqClassRef {

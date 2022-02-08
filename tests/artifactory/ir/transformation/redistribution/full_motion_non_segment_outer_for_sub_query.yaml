@@ -5,7 +5,7 @@ nodes:
         Reference:
           targets: ~
           position: 0
-          parent: 0
+          parent: 5
     - Expression:
         Alias:
           name: a
@@ -14,7 +14,7 @@ nodes:
         Reference:
           targets: ~
           position: 1
-          parent: 0
+          parent: 5
     - Expression:
         Alias:
           name: b
@@ -32,13 +32,12 @@ nodes:
     - Relational:
         ScanRelation:
           output: 4
-          id: 0
           relation: t1
     - Expression:
         Reference:
           targets: ~
           position: 0
-          parent: 6
+          parent: 9
     - Expression:
         Alias:
           name: a
@@ -55,14 +54,13 @@ nodes:
     - Relational:
         ScanRelation:
           output: 8
-          id: 6
           relation: t2
     - Expression:
         Reference:
           targets:
             - 0
           position: 0
-          parent: 10
+          parent: 13
     - Expression:
         Alias:
           name: a
@@ -80,14 +78,13 @@ nodes:
         Projection:
           children:
             - 9
-          id: 10
           output: 12
     - Expression:
         Reference:
           targets:
             - 0
           position: 0
-          parent: 14
+          parent: 17
     - Expression:
         Alias:
           name: a
@@ -106,14 +103,13 @@ nodes:
           alias: ~
           children:
             - 13
-          id: 14
           output: 16
     - Expression:
         Reference:
           targets:
             - 1
           position: 0
-          parent: 18
+          parent: 28
     - Expression:
         Row:
           list:
@@ -128,7 +124,7 @@ nodes:
           targets:
             - 0
           position: 1
-          parent: 18
+          parent: 28
     - Expression:
         Row:
           list:
@@ -144,7 +140,7 @@ nodes:
           targets:
             - 0
           position: 0
-          parent: 18
+          parent: 28
     - Expression:
         Alias:
           name: a
@@ -154,7 +150,7 @@ nodes:
           targets:
             - 0
           position: 1
-          parent: 18
+          parent: 28
     - Expression:
         Alias:
           name: b
@@ -175,14 +171,13 @@ nodes:
             - 5
             - 32
           filter: 22
-          id: 18
           output: 27
     - Expression:
         Reference:
           targets:
             - 0
           position: 0
-          parent: 29
+          parent: 32
     - Expression:
         Alias:
           name: a
@@ -196,7 +191,6 @@ nodes:
         Motion:
           children:
             - 17
-          id: 29
           policy: Full
           output: 31
 relations:
@@ -220,12 +214,6 @@ relations:
         positions:
           - 0
       name: t2
-relational_map:
-  0: 5
-  10: 13
-  14: 17
-  18: 28
-  6: 9
 slices: 
   -
     - 32

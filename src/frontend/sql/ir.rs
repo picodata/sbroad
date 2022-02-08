@@ -98,7 +98,6 @@ impl AbstractSyntaxTree {
         let dft_pre = DftPost::new(&top, |node| self.nodes.tree_iter(node));
 
         let mut current_scan_id = 0;
-        let mut current_logical_id = 0;
         let mut stack = Stack::new();
         let mut projection = vec![];
         let mut subquery_alias = "";
@@ -120,11 +119,7 @@ impl AbstractSyntaxTree {
                 Type::Name => {
                     if let Some(name) = &node.value {
                         let col = name.trim_matches('\"');
-                        stack.push(plan.add_row_from_child(
-                            current_logical_id,
-                            current_scan_id,
-                            &[col],
-                        )?);
+                        stack.push(plan.add_row_from_child(current_scan_id, &[col])?);
                     }
                 }
                 Type::Number | Type::String => {
@@ -158,11 +153,7 @@ impl AbstractSyntaxTree {
                     let selection_id =
                         stack.pop_or_err(QueryPlannerError::InvalidAstConditionNode)?;
 
-                    stack.push(plan.add_select(
-                        &[current_scan_id],
-                        selection_id,
-                        current_logical_id,
-                    )?);
+                    stack.push(plan.add_select(&[current_scan_id], selection_id)?);
                 }
                 Type::ProjectedName => {
                     // save projection column for append it later
@@ -212,9 +203,8 @@ impl AbstractSyntaxTree {
                     projection.clear();
                 }
                 Type::Scan => {
-                    // extract current scan node id from stack and getting logical id for appending other node
+                    // extract current scan node id from stack for appending other node
                     current_scan_id = stack.pop_or_err(QueryPlannerError::InvalidAstScanNode)?;
-                    current_logical_id = plan.next_id();
                 }
                 Type::Column | Type::Select => {}
                 rule => {

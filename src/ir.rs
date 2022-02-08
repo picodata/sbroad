@@ -77,9 +77,6 @@ pub struct Plan {
     /// key to guarantee its uniqueness across the plan. The map is marked
     /// optional because plans without relations do exist (`select 1`).
     pub(crate) relations: Option<HashMap<String, Table>>,
-    /// A special map to translate logical node ids to the positions in the
-    /// arena.
-    relational_map: Option<HashMap<usize, usize>>,
     /// Slice is a plan subtree under Motion node, that can be executed
     /// on a single db instance without data distribution problems (we add
     /// Motions to resolve them). Them we traverse the plan tree and collect
@@ -144,7 +141,6 @@ impl Plan {
             relations: None,
             slices: None,
             top: None,
-            relational_map: None,
         }
     }
 
@@ -155,6 +151,18 @@ impl Plan {
     /// doesn't exist.
     pub fn get_node(&self, pos: usize) -> Result<&Node, QueryPlannerError> {
         match self.nodes.arena.get(pos) {
+            None => Err(QueryPlannerError::ValueOutOfRange),
+            Some(node) => Ok(node),
+        }
+    }
+
+    /// Get a mutable node by its pointer (position in the node arena).
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the node with requested index
+    /// doesn't exist.
+    pub fn get_mut_node(&mut self, id: usize) -> Result<&mut Node, QueryPlannerError> {
+        match self.nodes.arena.get_mut(id) {
             None => Err(QueryPlannerError::ValueOutOfRange),
             Some(node) => Ok(node),
         }
@@ -185,19 +193,6 @@ impl Plan {
         };
         plan.check()?;
         Ok(plan)
-    }
-
-    /// Build {logical id: position} map for relational nodes
-    pub fn build_relational_map(&mut self) {
-        if self.relational_map.is_none() {
-            let mut map: HashMap<usize, usize> = HashMap::new();
-            for (pos, node) in self.nodes.arena.iter().enumerate() {
-                if let Node::Relational(relational) = node {
-                    map.insert(relational.logical_id(), pos);
-                }
-            }
-            self.relational_map = Some(map);
-        }
     }
 
     /// Get relational node and produce a new row without aliases from its output (row with aliases).
@@ -269,6 +264,22 @@ impl Plan {
         }
     }
 
+    /// Get mutable relation type node
+    ///
+    /// # Errors
+    /// - node doesn't exist in the plan
+    pub fn get_mut_relation_node(
+        &mut self,
+        node_id: usize,
+    ) -> Result<&mut Relational, QueryPlannerError> {
+        match self.get_mut_node(node_id)? {
+            Node::Relational(rel) => Ok(rel),
+            Node::Expression(_) => Err(QueryPlannerError::CustomError(
+                "Node isn't relational".into(),
+            )),
+        }
+    }
+
     /// Get expression type node
     ///
     /// # Errors
@@ -283,38 +294,21 @@ impl Plan {
         }
     }
 
-    /// Gets linked node from relational map
-    ///
-    /// # Errors
-    /// - relation map wasn't init
-    /// - relation node not found for current index
-    pub fn get_map_relational_value(&self, key: usize) -> Result<usize, QueryPlannerError> {
-        let result = *self
-            .relational_map
-            .as_ref()
-            .ok_or_else(|| {
-                QueryPlannerError::CustomError("Relation map doesn't initialize".into())
-            })?
-            .get(&key)
-            .ok_or_else(|| {
-                QueryPlannerError::CustomError("Node not found in relational map".into())
-            })?;
-
-        Ok(result)
-    }
-
-    /// Get relation node by index in internal table map
+    /// Get mutable expression type node
     ///
     /// # Errors
     /// - node doesn't exist in the plan
-    /// - node is not relation type
-    pub fn get_mapping_relation_node(
-        &self,
+    /// - node is not expression type
+    pub fn get_mut_expression_node(
+        &mut self,
         node_id: usize,
-    ) -> Result<&Relational, QueryPlannerError> {
-        let rel_id = self.get_map_relational_value(node_id)?;
-
-        self.get_relation_node(rel_id)
+    ) -> Result<&mut Expression, QueryPlannerError> {
+        match self.get_mut_node(node_id)? {
+            Node::Expression(exp) => Ok(exp),
+            Node::Relational(_) => Err(QueryPlannerError::CustomError(
+                "Node isn't expression".into(),
+            )),
+        }
     }
 
     /// Get alias string for `Reference` node
@@ -333,7 +327,13 @@ impl Plan {
             parent,
         } = node
         {
-            let ref_node = self.get_mapping_relation_node(*parent)?;
+            let ref_node = if let Some(parent) = parent {
+                self.get_relation_node(*parent)?
+            } else {
+                return Err(QueryPlannerError::CustomError(
+                    "Reference node has no parent".into(),
+                ));
+            };
 
             if let Some(list_of_column_nodes) = ref_node.children() {
                 let child_ids = targets.clone().ok_or_else(|| {
