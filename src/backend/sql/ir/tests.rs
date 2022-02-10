@@ -1,4 +1,4 @@
-use crate::cache::Metadata;
+use crate::executor::engine::mock::MetadataMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::operator::Bool;
 use crate::ir::relation::*;
@@ -6,95 +6,16 @@ use crate::ir::value::*;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
-const CARTRIDGE_SCHEMA: &str = r#"spaces:
-  hash_testing:
-    is_local: false
-    temporary: false
-    engine: "memtx"
-    format:
-      - name: "identification_number"
-        type: "integer"
-        is_nullable: false
-      - name: "product_code"
-        type: "string"
-        is_nullable: false
-      - name: "product_units"
-        type: "boolean"
-        is_nullable: false
-      - name: "sys_op"
-        type: "number"
-        is_nullable: false
-      - name: "bucket_id"
-        type: "unsigned"
-        is_nullable: true
-    indexes:
-      - name: "id"
-        unique: true
-        type: "TREE"
-        parts:
-          - path: "identification_number"
-            is_nullable: false
-            type: "integer"
-      - name: bucket_id
-        unique: false
-        parts:
-          - path: "bucket_id"
-            is_nullable: true
-            type: "unsigned"
-        type: "TREE"
-    sharding_key:
-      - identification_number
-      - product_code
-  hash_testing_hist:
-    is_local: false
-    temporary: false
-    engine: "memtx"
-    format:
-      - name: "identification_number"
-        type: "integer"
-        is_nullable: false
-      - name: "product_code"
-        type: "string"
-        is_nullable: false
-      - name: "product_units"
-        type: "boolean"
-        is_nullable: false
-      - name: "sys_op"
-        type: "number"
-        is_nullable: false
-      - name: "bucket_id"
-        type: "unsigned"
-        is_nullable: true
-    indexes:
-      - name: "id"
-        unique: true
-        type: "TREE"
-        parts:
-          - path: "identification_number"
-            is_nullable: false
-            type: "integer"
-      - name: bucket_id
-        unique: false
-        parts:
-          - path: "bucket_id"
-            is_nullable: true
-            type: "unsigned"
-        type: "TREE"
-    sharding_key:
-      - identification_number
-      - product_code"#;
-
 #[test]
 fn one_table_projection() {
     let query = r#"SELECT "identification_number", "product_code"
     FROM "hash_testing"
     WHERE "identification_number" = 1"#;
 
-    let mut metadata = Metadata::new();
-    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+    let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(&metadata).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
 
     let top_id = plan.get_top().unwrap();
     let sql = plan.subtree_as_sql(top_id).unwrap();
@@ -116,11 +37,10 @@ fn one_table_with_asterisk() {
     FROM "hash_testing"
     WHERE "identification_number" = 1"#;
 
-    let mut metadata = Metadata::new();
-    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+    let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(&metadata).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
 
     let top_id = plan.get_top().unwrap();
     let sql = plan.subtree_as_sql(top_id).unwrap();
@@ -148,11 +68,10 @@ fn union_all() {
     WHERE "product_code" = 'a' 
     "#;
 
-    let mut metadata = Metadata::new();
-    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+    let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(&metadata).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
 
     let top_id = plan.get_top().unwrap();
     let sql = plan.subtree_as_sql(top_id).unwrap();
@@ -176,11 +95,10 @@ fn from_sub_query() {
     WHERE "identification_number" = 1) as t1
     WHERE "product_code" = 'a'"#;
 
-    let mut metadata = Metadata::new();
-    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+    let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(&metadata).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
 
     let top_id = plan.get_top().unwrap();
     let sql = plan.subtree_as_sql(top_id).unwrap();
@@ -208,11 +126,10 @@ fn from_sub_query_with_union() {
     WHERE "product_code" = 'a') as "t1"
   WHERE "product_code" = 'a'"#;
 
-    let mut metadata = Metadata::new();
-    metadata.load(CARTRIDGE_SCHEMA).unwrap();
+    let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(&metadata).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
 
     let top_id = plan.get_top().unwrap();
     let sql = plan.subtree_as_sql(top_id).unwrap();

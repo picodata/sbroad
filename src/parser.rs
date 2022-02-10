@@ -7,13 +7,11 @@ use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
-use crate::bucket::str_to_bucket_id;
-use crate::cache::Metadata;
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::{cartridge, Engine};
 use crate::executor::Query;
-use crate::lua_bridge::{bucket_count, get_cluster_schema};
 
-thread_local!(static CARTRIDGE_SCHEMA: RefCell<Metadata> = RefCell::new(Metadata::new()));
+thread_local!(static QUERY_ENGINE: RefCell<cartridge::Runtime> = RefCell::new(cartridge::Runtime::new().unwrap()));
 
 #[derive(Serialize, Deserialize)]
 struct Args {
@@ -26,8 +24,9 @@ It must be called in function `apply_config()` in lua cartridge application.
  */
 #[no_mangle]
 pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
-    CARTRIDGE_SCHEMA.with(|s| {
-        *s.borrow_mut() = Metadata::new();
+    QUERY_ENGINE.with(|s| {
+        let v = &mut *s.borrow_mut();
+        v.clear_metadata();
     });
 
     ctx.return_mp(&true).unwrap();
@@ -45,13 +44,12 @@ impl AsTuple for BucketCalcArgs {}
 pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<BucketCalcArgs>().unwrap();
-    let bucket_count = match bucket_count() {
-        Ok(c) => c,
-        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
-    };
-    let result = str_to_bucket_id(&args.val, bucket_count.try_into().unwrap());
-    ctx.return_mp(&result).unwrap();
-    0
+
+    QUERY_ENGINE.with(|e| {
+        let result = e.clone().into_inner().determine_bucket_id(&args.val);
+        ctx.return_mp(&result).unwrap();
+        0
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,32 +64,19 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    CARTRIDGE_SCHEMA.with(|s| {
-        let mut schema = s.clone().into_inner();
+    QUERY_ENGINE.with(|s| {
+        let mut engine = s.clone().into_inner();
         // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
-        if schema.is_empty() {
-            let text_schema = match get_cluster_schema() {
-                Ok(s) => s,
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        "parser.rs",
-                        40,
-                        Option::from("get cluster schema error"),
-                        &format!("{:?}", e),
-                    );
-                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-                }
-            };
-            match schema.load(&text_schema) {
-                Ok(_) => *s.borrow_mut() = schema.clone(),
+        if engine.has_metadata() {
+            match engine.load_metadata() {
+                Ok(_) => *s.borrow_mut() = engine.clone(),
                 Err(e) => {
                     return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
                 }
             };
         }
 
-        let mut query = match Query::new(&schema, args.query.as_str()) {
+        let mut query = match Query::new(engine, args.query.as_str()) {
             Ok(q) => q,
             Err(e) => {
                 say(
@@ -114,14 +99,12 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
         }
 
-        let result = match query.exec() {
+        match query.exec() {
             Ok(q) => {
                 ctx.return_mp(&q).unwrap();
                 0
             }
             Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
-        };
-
-        result
+        }
     })
 }

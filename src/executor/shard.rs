@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use traversal::DftPost;
 
 use crate::{
-    bucket::str_to_bucket_id,
     errors::QueryPlannerError,
     ir::{expression::Expression, Plan},
 };
@@ -31,11 +30,10 @@ impl Plan {
     /// # Errors
     /// - getting bucket id error
     #[allow(dead_code)]
-    pub fn get_bucket_ids(
+    pub fn get_sharding_keys(
         &mut self,
         node_id: usize,
-        bucket_count: usize,
-    ) -> Result<Option<HashSet<usize>>, QueryPlannerError> {
+    ) -> Result<Option<HashSet<String>>, QueryPlannerError> {
         let top_node = self.get_relation_node(node_id)?;
 
         // Determine query sharding keys
@@ -87,13 +85,13 @@ impl Plan {
         if shard_keys.is_empty() {
             return Ok(None);
         }
-        let mut result = HashSet::new();
-        for k in shard_keys {
-            let hash = str_to_bucket_id(&k, bucket_count);
-            result.insert(hash);
-        }
+        // let mut result = HashSet::new();
+        // for k in shard_keys {
+        //     let hash = str_to_bucket_id(&k, bucket_count);
+        //     result.insert(hash);
+        // }
 
-        Ok(Some(result))
+        Ok(Some(shard_keys))
     }
 }
 

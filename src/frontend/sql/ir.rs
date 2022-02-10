@@ -1,7 +1,7 @@
 use traversal::DftPost;
 
-use crate::cache::Metadata;
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::Metadata;
 use crate::frontend::sql::ast::{AbstractSyntaxTree, Node, Type};
 use crate::ir::operator::Bool;
 use crate::ir::value::Value;
@@ -88,7 +88,10 @@ impl AbstractSyntaxTree {
     /// - IR plan can't be built.
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    pub fn to_ir(&self, metadata: &Metadata) -> Result<Plan, QueryPlannerError> {
+    pub fn to_ir<T>(&self, metadata: &T) -> Result<Plan, QueryPlannerError>
+    where
+        T: Metadata,
+    {
         let mut plan = Plan::new();
 
         let top = match self.top {

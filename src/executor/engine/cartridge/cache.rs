@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use yaml_rust::YamlLoader;
 
 use crate::errors::QueryPlannerError;
+use crate::executor::Metadata;
 use crate::ir::relation::{Column, Table, Type};
 
 use self::yaml_rust::yaml;
@@ -14,7 +15,7 @@ use self::yaml_rust::yaml;
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
 /// as it is managed by Tarantool's vshard module.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Metadata {
+pub struct ClusterSchema {
     /// Tarantool cartridge schema
     schema: yaml::Yaml,
 
@@ -22,9 +23,9 @@ pub struct Metadata {
     tables: HashMap<String, Table>,
 }
 
-impl Metadata {
+impl ClusterSchema {
     pub fn new() -> Self {
-        Metadata {
+        ClusterSchema {
             schema: yaml::Yaml::Null,
             tables: HashMap::new(),
         }
@@ -44,10 +45,6 @@ impl Metadata {
         Err(QueryPlannerError::InvalidClusterSchema)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.schema.is_null()
-    }
-
     #[allow(dead_code)]
     pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
         let mut result = Vec::new();
@@ -64,23 +61,11 @@ impl Metadata {
         result
     }
 
-    /// Get table segment form cache by table name
-    ///
-    /// # Errors
-    /// Returns `QueryPlannerError` when table was not found.
-    #[allow(dead_code)]
-    pub fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
-        match self.tables.get(table_name) {
-            Some(v) => Ok(v.clone()),
-            None => Err(QueryPlannerError::SpaceNotFound),
-        }
-    }
-
     /// Transform space information from schema to table segments
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when schema contains errors.
-    pub fn init_table_segments(&mut self) -> Result<(), QueryPlannerError> {
+    fn init_table_segments(&mut self) -> Result<(), QueryPlannerError> {
         self.tables.clear();
         let spaces = match self.schema["spaces"].as_hash() {
             Some(v) => v,
@@ -131,6 +116,24 @@ impl Metadata {
         }
 
         Ok(())
+    }
+
+    pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
+        self.schema.is_null()
+    }
+}
+
+impl Metadata for ClusterSchema {
+    /// Get table segment form cache by table name
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when table was not found.
+    #[allow(dead_code)]
+    fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
+        match self.tables.get(table_name) {
+            Some(v) => Ok(v.clone()),
+            None => Err(QueryPlannerError::SpaceNotFound),
+        }
     }
 }
 
@@ -216,7 +219,7 @@ fn test_yaml_schema_parser() {
       - identification_number
       - product_code";
 
-    let mut s = Metadata::new();
+    let mut s = ClusterSchema::new();
     s.load(test_schema).unwrap();
 
     let mut expected_keys = Vec::new();
@@ -269,7 +272,7 @@ fn test_getting_table_segment() {
       - identification_number
       - product_code";
 
-    let mut s = Metadata::new();
+    let mut s = ClusterSchema::new();
     s.load(test_schema).unwrap();
 
     let expected = Table::new_seg(
