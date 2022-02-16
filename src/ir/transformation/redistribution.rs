@@ -323,7 +323,6 @@ impl Plan {
                 Relational::Selection { output, filter, .. } => {
                     self.set_distribution(output)?;
                     let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
-                    println!("strategy {:?}", strategy);
                     self.create_motion_nodes(*id, &strategy)?;
                 }
                 Relational::InnerJoin { .. } => {

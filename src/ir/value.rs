@@ -25,6 +25,16 @@ impl From<bool> for Trivalent {
     }
 }
 
+/// Interface for converting execute engine `Value` (const, results, etc)
+/// types to IR `Value` type
+pub trait AsIrVal {
+    /// Transform object to IR `Value`.
+    ///
+    /// # Errors
+    /// Returns transformatio
+    fn as_ir_value(&self) -> Result<Value, QueryPlannerError>;
+}
+
 /// Values are used to keep constants from the query
 /// or results for the virtual tables.
 #[derive(Serialize, Deserialize, Hash, PartialEq, Debug, Clone)]

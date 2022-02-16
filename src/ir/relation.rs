@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
+use crate::ir::value::AsIrVal;
 
 use super::distribution::Key;
 use super::value::Value;
@@ -236,6 +237,65 @@ impl Table {
     }
 
     //TODO: constructors for Virtual and VirtualSegment
+}
+
+/// Result tuple storage, created by the executor. All tuples
+/// have a distribution key.
+#[derive(PartialEq, Debug, Clone)]
+pub struct VirtualTable {
+    /// List of the columns.
+    columns: Vec<Column>,
+    /// "Raw" tuples (list of values) in a hash map (hashed by distribution key)
+    tuples: Vec<Vec<Value>>,
+    /// Distribution key (list of the column positions)
+    key: Option<Key>,
+    /// Unique table name (we need to generate it ourselves).
+    name: String,
+}
+
+impl VirtualTable {
+    #[must_use]
+    pub fn new(name: &str) -> Self {
+        VirtualTable {
+            columns: vec![],
+            tuples: vec![],
+            key: None,
+            name: String::from(name),
+        }
+    }
+
+    /// Add column to virtual table
+    pub fn add_column(&mut self, col: Column) {
+        self.columns.push(col);
+    }
+
+    /// Adds custom values tuple to virtual table
+    ///
+    /// # Errors
+    /// Returns IR `Value` transformation error
+    pub fn add_tuple<T>(&mut self, tuple: Vec<T>) -> Result<(), QueryPlannerError>
+    where
+        T: AsIrVal,
+    {
+        let mut t = vec![];
+
+        for el in tuple {
+            t.push(el.as_ir_value()?);
+        }
+
+        self.add_values_tuple(t);
+        Ok(())
+    }
+
+    /// Add value rows to table
+    pub fn add_values_tuple(&mut self, tuple: Vec<Value>) {
+        self.tuples.push(tuple);
+    }
+
+    /// Set virtual table distribution
+    pub fn set_distribution(&mut self, key: Key) {
+        self.key = Some(key);
+    }
 }
 
 #[cfg(test)]

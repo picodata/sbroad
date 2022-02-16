@@ -247,3 +247,29 @@ fn table_converting() {
     let s = serde_yaml::to_string(&t).unwrap();
     Table::seg_from_yaml(&s).unwrap();
 }
+
+#[test]
+fn virtual_table() {
+    let mut vtable = VirtualTable::new("test");
+
+    vtable.add_column(Column {
+        name: "name".into(),
+        r#type: Type::Integer,
+    });
+
+    vtable.add_values_tuple(vec![Value::number_from_str("1").unwrap()]);
+
+    vtable.set_distribution(Key::new(vec![1]));
+
+    let expected = VirtualTable {
+        columns: vec![Column {
+            name: "name".into(),
+            r#type: Type::Integer,
+        }],
+        tuples: vec![vec![Value::number_from_str("1").unwrap()]],
+        key: Some(Key::new(vec![1])),
+        name: String::from("test"),
+    };
+
+    assert_eq!(expected, vtable)
+}

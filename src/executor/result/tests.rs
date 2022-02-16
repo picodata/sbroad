@@ -54,3 +54,77 @@ fn box_execute_result_serialize() {
     ];
     assert_eq!(correct_serialize_msg_expected, actual);
 }
+
+#[test]
+fn convert_to_vtable() {
+    let r = BoxExecuteFormat {
+        metadata: vec![
+            Column {
+                name: "id".into(),
+                r#type: Type::Integer,
+            },
+            Column {
+                name: "name".into(),
+                r#type: Type::String,
+            },
+            Column {
+                name: "count".into(),
+                r#type: Type::Unsigned,
+            },
+            Column {
+                name: "price".into(),
+                r#type: Type::Number,
+            },
+        ],
+        rows: vec![
+            vec![
+                Value::Integer(1),
+                Value::String("тест".into()),
+                Value::Unsigned(1),
+                Value::Number(1.5),
+            ],
+            vec![
+                Value::Integer(2),
+                Value::String("тест2".into()),
+                Value::Unsigned(5),
+                Value::Number(2.0),
+            ],
+        ],
+    };
+
+    let mut excepted = VirtualTable::new("test_vtable");
+
+    excepted.add_column(Column {
+        name: "id".into(),
+        r#type: Type::Integer,
+    });
+    excepted.add_column(Column {
+        name: "name".into(),
+        r#type: Type::String,
+    });
+    excepted.add_column(Column {
+        name: "count".into(),
+        r#type: Type::Unsigned,
+    });
+
+    excepted.add_column(Column {
+        name: "price".into(),
+        r#type: Type::Number,
+    });
+
+    excepted.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::string_from_str("тест"),
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("1.5").unwrap(),
+    ]);
+
+    excepted.add_values_tuple(vec![
+        IrValue::number_from_str("2").unwrap(),
+        IrValue::string_from_str("тест2"),
+        IrValue::number_from_str("5").unwrap(),
+        IrValue::number_from_str("2.0").unwrap(),
+    ]);
+
+    assert_eq!(excepted, r.as_virtual_table("test_vtable").unwrap());
+}

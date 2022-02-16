@@ -1,8 +1,10 @@
 use crate::errors::QueryPlannerError;
+use decimal::d128;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use tarantool::tlua::{self, LuaRead};
 
-use crate::ir::relation::Column;
+use crate::ir::relation::{Column, VirtualTable};
+use crate::ir::value::{AsIrVal, Value as IrValue};
 
 #[derive(LuaRead, Debug, PartialEq, Clone)]
 pub enum Value {
@@ -11,6 +13,19 @@ pub enum Value {
     Integer(i64),
     String(String),
     Unsigned(u64),
+}
+
+/// IR `Value` convertor implementation
+impl AsIrVal for Value {
+    fn as_ir_value(&self) -> Result<IrValue, QueryPlannerError> {
+        match &self {
+            Value::Boolean(v) => Ok(IrValue::Boolean(*v)),
+            Value::Number(v) => Ok(IrValue::number_from_str(&v.to_string())?),
+            Value::Integer(v) => Ok(IrValue::Number(d128::from(*v))),
+            Value::String(v) => Ok(IrValue::String(v.clone())),
+            Value::Unsigned(v) => Ok(IrValue::Number(d128::from(*v))),
+        }
+    }
 }
 
 /// Custom Implementation `ser::Serialize`, because if using standard `#derive[Serialize]` then each `Value` type
@@ -67,6 +82,25 @@ impl BoxExecuteFormat {
         }
         self.rows.extend(recordset.rows);
         Ok(())
+    }
+
+    /// Converts result to virtual table for linker
+    ///
+    /// # Errors
+    /// - convert to virtual table error
+    #[allow(dead_code)]
+    pub fn as_virtual_table(&self, name: &str) -> Result<VirtualTable, QueryPlannerError> {
+        let mut result = VirtualTable::new(name);
+
+        for col in &self.metadata {
+            result.add_column(col.clone());
+        }
+
+        for t in &self.rows {
+            result.add_tuple(t.clone())?;
+        }
+
+        Ok(result)
     }
 }
 
