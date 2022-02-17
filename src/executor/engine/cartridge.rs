@@ -69,6 +69,17 @@ impl Engine for Runtime {
             }
         };
 
+        say(
+            SayLevel::Debug,
+            file!(),
+            line!().try_into().unwrap_or(0),
+            None,
+            &format!(
+                "distribution keys is {:?} bucket {:?}",
+                shard_key, cast_bucket_id
+            ),
+        );
+
         let lua = tarantool::lua_state();
         lua.exec(
             r#"
@@ -113,6 +124,14 @@ impl Engine for Runtime {
 
     /// Sends query to all instances and merges results after (map-reduce).
     fn mp_exec_query(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        say(
+            SayLevel::Debug,
+            file!(),
+            line!().try_into().unwrap_or(0),
+            None,
+            "distribution keys were not found",
+        );
+
         let lua = tarantool::lua_state();
 
         lua.exec(

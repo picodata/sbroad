@@ -34,15 +34,6 @@ impl Plan {
         &mut self,
         node_id: usize,
     ) -> Result<Option<HashSet<String>>, QueryPlannerError> {
-        let top_node = self.get_relation_node(node_id)?;
-
-        // Determine query sharding keys
-        let distribute_query_row = self.get_expression_node(top_node.output())?;
-        if distribute_query_row.has_unknown_distribution()? {
-            // Fallback to broadcast.
-            return Ok(None);
-        }
-
         let mut dist_keys: HashSet<String> = HashSet::new();
         let filter_nodes = self.get_bool_eq_with_rows(node_id);
         for filter_id in filter_nodes {

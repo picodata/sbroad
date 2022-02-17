@@ -1,7 +1,3 @@
-use std::convert::TryInto;
-
-use tarantool::log::{say, SayLevel};
-
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
 pub use crate::executor::engine::Metadata;
@@ -51,77 +47,20 @@ where
     /// - query can't be executed in cluster
     /// - invalid bucket id
     pub fn exec(&mut self) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            "start query execute",
-        );
-
         let top = self.plan.get_top()?;
 
         let mut result = BoxExecuteFormat::new();
         let sql = &self.plan.subtree_as_sql(top)?;
 
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            &format!("query: {}", sql),
-        );
-
         if let Some(shard_keys) = self.plan.get_sharding_keys(top)? {
-            say(
-                SayLevel::Debug,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                None,
-                "distribution keys were found",
-            );
-
             // sending query to nodes
             for shard in shard_keys {
                 // exec query on node
-                let temp_result = match self.engine.exec_query(&shard, sql) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        say(
-                            SayLevel::Error,
-                            file!(),
-                            line!().try_into().unwrap_or(0),
-                            None,
-                            &format!("{:?}", e),
-                        );
-                        return Err(QueryPlannerError::LuaError(e.to_string()));
-                    }
-                };
-
+                let temp_result = self.engine.exec_query(&shard, sql)?;
                 result.extend(temp_result)?;
             }
         } else {
-            say(
-                SayLevel::Debug,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                None,
-                "distribution keys were not found",
-            );
-
-            let temp_result = match self.engine.mp_exec_query(sql) {
-                Ok(r) => r,
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        None,
-                        &format!("{:?}", e),
-                    );
-                    return Err(QueryPlannerError::LuaError(e.to_string()));
-                }
-            };
+            let temp_result = self.engine.mp_exec_query(sql)?;
 
             result.extend(temp_result)?;
         }
@@ -137,3 +76,6 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
