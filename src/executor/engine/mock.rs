@@ -1,10 +1,14 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
+use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
 use crate::ir::relation::{Column, Table, Type};
+use crate::ir::value::Value as IrValue;
 
 #[derive(Debug, Clone)]
 pub struct MetadataMock {
@@ -41,6 +45,22 @@ impl MetadataMock {
         tables.insert(
             "\"hash_testing_hist\"".to_string(),
             Table::new_seg("\"hash_testing_hist\"", columns.clone(), &sharding_key).unwrap(),
+        );
+
+        let sharding_key = vec!["\"identification_number\""];
+        tables.insert(
+            "\"hash_single_testing\"".to_string(),
+            Table::new_seg("\"hash_single_testing\"", columns.clone(), &sharding_key).unwrap(),
+        );
+
+        tables.insert(
+            "\"hash_single_testing_hist\"".to_string(),
+            Table::new_seg(
+                "\"hash_single_testing_hist\"",
+                columns.clone(),
+                &sharding_key,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -87,8 +107,7 @@ impl MetadataMock {
 #[derive(Debug, Clone)]
 pub struct EngineMock {
     metadata: MetadataMock,
-    pub shard_query: BoxExecuteFormat,
-    pub mp_query: BoxExecuteFormat,
+    pub query_result: RefCell<BoxExecuteFormat>,
 }
 
 impl Engine for EngineMock {
@@ -114,41 +133,87 @@ impl Engine for EngineMock {
         Ok(())
     }
 
-    fn exec_query(
+    fn materialize_motion(
         &self,
-        _shard_key: &str,
-        _query: &str,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        Ok(self.shard_query.clone())
+        _plan: &mut ExecutionPlan,
+        _motion_node_id: usize,
+    ) -> Result<VirtualTable, QueryPlannerError> {
+        let mut vtable = VirtualTable::new("test");
+
+        vtable.add_column(Column {
+            name: "identification_number".into(),
+            r#type: Type::Integer,
+        });
+
+        vtable.add_values_tuple(vec![IrValue::number_from_str("2")?]);
+        vtable.add_values_tuple(vec![IrValue::number_from_str("3")?]);
+
+        Ok(vtable)
     }
 
-    fn mp_exec_query(&self, _query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        Ok(self.mp_query.clone())
+    fn exec(
+        &self,
+        plan: &mut ExecutionPlan,
+        top_id: usize,
+    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let sql = plan.subtree_as_sql(top_id)?;
+
+        if let Some(shard_keys) = plan.discovery(top_id)? {
+            for shard in shard_keys {
+                self.exec_query(&shard, &sql)?;
+            }
+        } else {
+            self.mp_exec_query(&sql)?;
+        }
+
+        let mut result = self.query_result.borrow_mut();
+
+        // sorting for test reproduce
+        result.rows.sort_by_key(|k| k[0].to_string());
+
+        Ok(result.clone())
     }
 
     fn determine_bucket_id(&self, _s: &str) -> usize {
-        return 1;
+        1
     }
 }
 
 impl EngineMock {
     pub fn new() -> Self {
+        let result_cell = RefCell::new(BoxExecuteFormat {
+            metadata: vec![],
+            rows: vec![],
+        });
+
         EngineMock {
             metadata: MetadataMock::new(),
-            shard_query: BoxExecuteFormat {
-                metadata: vec![Column {
-                    name: "FIRST_NAME".into(),
-                    r#type: Type::String,
-                }],
-                rows: vec![vec![Value::String(String::from("is shard query"))]],
-            },
-            mp_query: BoxExecuteFormat {
-                metadata: vec![Column {
-                    name: "product_code".into(),
-                    r#type: Type::String,
-                }],
-                rows: vec![vec![Value::String(String::from("is map reduce query"))]],
-            },
+            query_result: result_cell,
         }
+    }
+
+    fn exec_query(
+        &self,
+        shard_key: &str,
+        query: &str,
+    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let mut result = self.query_result.borrow_mut();
+
+        result.rows.push(vec![
+            Value::String(format!("query send to [{}] shard", shard_key)),
+            Value::String(String::from(query)),
+        ]);
+
+        Ok(result.clone())
+    }
+
+    fn mp_exec_query(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let mut result = self.query_result.borrow_mut();
+
+        result.rows.push(vec![
+            Value::String(String::from("query send to all shards")),
+            Value::String(String::from(query)),
+        ]);
+        Ok(result.clone())
     }
 }

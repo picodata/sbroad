@@ -132,22 +132,20 @@ nodes:
           output: 23
 relations:
   t1:
-    Segment:
-      columns:
-        - name: a
-          type: integer
-      key:
-        positions:
-          - 0
-      name: t1
+    columns:
+      - name: a
+        type: integer
+    key:
+      positions:
+        - 0
+    name: t1
   t2:
-    Segment:
-      columns:
-        - name: b
-          type: integer
-      key:
-        positions:
-          - 0
-      name: t2
+    columns:
+      - name: b
+        type: integer
+    key:
+      positions:
+        - 0
+    name: t2
 slices: ~
 top: 24

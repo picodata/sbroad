@@ -41,7 +41,7 @@ pub enum Node {
 }
 
 /// Plan nodes storage.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Nodes {
     /// We don't want to mess with the borrow checker and RefCell/Rc,
     /// so all nodes are stored in the single arena ("nodes" array).
@@ -69,7 +69,7 @@ impl Nodes {
 }
 
 /// Logical plan tree structure.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Plan {
     /// Append only arena for the plan nodes.
     pub(crate) nodes: Nodes,
@@ -189,7 +189,7 @@ impl Plan {
     pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
         let plan: Plan = match serde_yaml::from_str(s) {
             Ok(p) => p,
-            Err(_) => return Err(QueryPlannerError::Serialization),
+            Err(e) => return Err(QueryPlannerError::CustomError(e.to_string())),
         };
         plan.check()?;
         Ok(plan)

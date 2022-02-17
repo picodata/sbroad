@@ -31,7 +31,7 @@ pub trait AsIrVal {
     /// Transform object to IR `Value`.
     ///
     /// # Errors
-    /// Returns transformatio
+    /// Returns transformation
     fn as_ir_value(&self) -> Result<Value, QueryPlannerError>;
 }
 
@@ -50,6 +50,8 @@ pub enum Value {
     /// String type.
     String(String),
 }
+
+impl Eq for Value {}
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

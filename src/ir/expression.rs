@@ -5,14 +5,17 @@
 //! - the order of the columns (and we can get their types as well)
 //! - distribution of the data in the tuple
 
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
+use traversal::DftPost;
+
+use crate::errors::QueryPlannerError;
+use crate::ir::operator::Bool;
+
 use super::distribution::Distribution;
 use super::value::Value;
 use super::{operator, Node, Nodes, Plan};
-use crate::errors::QueryPlannerError;
-use crate::ir::operator::Bool;
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use traversal::DftPost;
 
 /// Tuple tree build blocks.
 ///
@@ -285,6 +288,7 @@ impl Plan {
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
     /// - column names don't exits
+    #[allow(clippy::too_many_lines)]
     pub fn new_columns(
         &mut self,
         children: &[usize],
@@ -301,12 +305,18 @@ impl Plan {
         // to both children to give us additional information
         // during transformations.
         if (targets.len() > 2) || targets.is_empty() {
-            return Err(QueryPlannerError::InvalidRow);
+            return Err(QueryPlannerError::CustomError(format!(
+                "Invalid target length: {}",
+                targets.len()
+            )));
         }
 
         if let Some(max) = targets.iter().max() {
             if *max >= children.len() {
-                return Err(QueryPlannerError::InvalidRow);
+                return Err(QueryPlannerError::CustomError(format!(
+                    "Invalid children length: {}",
+                    children.len()
+                )));
             }
         }
 
@@ -318,12 +328,16 @@ impl Plan {
                 let target_child: usize = if let Some(target) = targets.get(*target_idx) {
                     *target
                 } else {
-                    return Err(QueryPlannerError::InvalidRow);
+                    return Err(QueryPlannerError::CustomError(
+                        "Failed to find the child node pointed by target index".into(),
+                    ));
                 };
                 let child_node: usize = if let Some(child) = children.get(target_child) {
                     *child
                 } else {
-                    return Err(QueryPlannerError::InvalidRow);
+                    return Err(QueryPlannerError::CustomError(
+                        "Child node not found".into(),
+                    ));
                 };
 
                 let child_row_list: Vec<usize> =
@@ -333,10 +347,12 @@ impl Plan {
                         {
                             list.clone()
                         } else {
-                            return Err(QueryPlannerError::InvalidRow);
+                            return Err(QueryPlannerError::CustomError(
+                                "Child node is not a row".into(),
+                            ));
                         }
                     } else {
-                        return Err(QueryPlannerError::InvalidNode);
+                        return Err(QueryPlannerError::InvalidRelation);
                     };
 
                 for (pos, alias_node) in child_row_list.iter().enumerate() {
@@ -346,7 +362,9 @@ impl Plan {
                         {
                             String::from(name)
                         } else {
-                            return Err(QueryPlannerError::InvalidRow);
+                            return Err(QueryPlannerError::CustomError(
+                                "Child node is not an alias".into(),
+                            ));
                         };
                     let new_targets: Vec<usize> = if is_join {
                         // Reference in a join tuple points to at first to the left,
@@ -373,12 +391,14 @@ impl Plan {
         let target_child: usize = if let Some(target) = targets.get(0) {
             *target
         } else {
-            return Err(QueryPlannerError::InvalidRow);
+            return Err(QueryPlannerError::CustomError("Target is empty".into()));
         };
         let child_node: usize = if let Some(child) = children.get(target_child) {
             *child
         } else {
-            return Err(QueryPlannerError::InvalidRow);
+            return Err(QueryPlannerError::CustomError(
+                "Failed to get a child pointed by the target".into(),
+            ));
         };
 
         let map = if let Node::Relational(relational_op) = self.get_node(child_node)? {
@@ -388,7 +408,6 @@ impl Plan {
         };
 
         let mut result: Vec<usize> = Vec::new();
-
         let all_found = col_names.iter().all(|col| {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.iter().copied().collect();
@@ -411,7 +430,11 @@ impl Plan {
         if all_found {
             return Ok(result);
         }
-        Err(QueryPlannerError::InvalidRow)
+
+        Err(QueryPlannerError::CustomError(format!(
+            "Some of the columns {:?} were not found in the table",
+            col_names,
+        )))
     }
 
     /// New output for a single child node (have aliases).

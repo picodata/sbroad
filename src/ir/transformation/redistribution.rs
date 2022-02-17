@@ -1,12 +1,14 @@
+use std::cmp::Ordering;
+use std::collections::{hash_map::Entry, HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+use traversal::{Bft, DftPost};
+
 use crate::errors::QueryPlannerError;
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::collections::{hash_map::Entry, HashMap, HashSet};
-use traversal::{Bft, DftPost};
 
 /// A motion policy determinate what portion of data to move
 /// between data nodes.
@@ -19,7 +21,23 @@ pub enum MotionPolicy {
     /// No need to move data.
     Local,
 }
-#[derive(Debug)]
+
+impl MotionPolicy {
+    /// Extract `Segment` policy
+    ///
+    /// # Errors
+    /// - police is nlt `Segment`
+    pub fn get_segment_key(self) -> Result<Key, QueryPlannerError> {
+        if let MotionPolicy::Segment(k) = self {
+            return Ok(k);
+        }
+
+        Err(QueryPlannerError::CustomError(String::from(
+            "Policy is not segment",
+        )))
+    }
+}
+
 struct BoolOp {
     left: usize,
     op: Bool,
@@ -151,6 +169,36 @@ impl Plan {
         }
     }
 
+    /// Extract motion node id from row node
+    ///
+    /// # Errors
+    /// - invalid node
+    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, QueryPlannerError> {
+        let rel_nodes = self.get_relational_from_row_nodes(node_id)?;
+        let mut motion_set: HashSet<usize> = HashSet::new();
+
+        for child in rel_nodes {
+            if self.get_relation_node(child)?.is_motion() {
+                motion_set.insert(child);
+            }
+        }
+
+        match motion_set.len().cmp(&1) {
+            Ordering::Equal => {
+                let motion_id = motion_set.iter().next().ok_or_else(|| {
+                    QueryPlannerError::CustomError(
+                        "Failed to get the first motion node from the set.".into(),
+                    )
+                })?;
+                Ok(Some(*motion_id))
+            }
+            Ordering::Less => Ok(None),
+            Ordering::Greater => Err(QueryPlannerError::CustomError(
+                "Node must contains only once motion".into(),
+            )),
+        }
+    }
+
     /// Choose a `MotionPolicy` strategy for the inner row.
     ///
     /// # Errors
@@ -164,7 +212,7 @@ impl Plan {
     ) -> Result<MotionPolicy, QueryPlannerError> {
         let outer_dist = self.get_distribution(outer_id)?;
         let inner_dist = self.get_distribution(inner_id)?;
-        if let Bool::Eq = op {
+        if Bool::Eq == *op || Bool::In == *op {
             if let Distribution::Segment {
                 keys: ref keys_outer,
             } = outer_dist

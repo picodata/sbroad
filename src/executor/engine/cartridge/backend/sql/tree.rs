@@ -1,10 +1,14 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+use traversal::DftPost;
+
 use crate::errors::QueryPlannerError;
+use crate::executor::ir::ExecutionPlan;
+use crate::executor::vtable::VirtualTable;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
-use crate::ir::{Node, Plan};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use traversal::DftPost;
+use crate::ir::Node;
 
 /// Payload of the syntax tree node.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -25,6 +29,8 @@ pub enum SyntaxData {
     Operator(String),
     /// plan node id
     PlanId(usize),
+    /// virtual table
+    VTable(VirtualTable),
 }
 
 /// A syntax tree node.
@@ -113,6 +119,14 @@ impl SyntaxNode {
             None => Err(QueryPlannerError::CustomError(
                 "Left node is not set.".into(),
             )),
+        }
+    }
+
+    fn new_vtable(value: VirtualTable) -> Self {
+        SyntaxNode {
+            data: SyntaxData::VTable(value),
+            left: None,
+            right: Vec::new(),
         }
     }
 }
@@ -366,17 +380,21 @@ impl Select {
 /// A wrapper over original plan tree.
 /// We can modify it as we wish without any influence
 /// on the original plan tree.
-pub struct SyntaxPlan<'p> {
+pub struct SyntaxPlan<'p, 'e> {
     pub(crate) nodes: SyntaxNodes,
     top: Option<usize>,
-    plan: &'p Plan,
+    plan: &'p ExecutionPlan<'e>,
 }
 
 #[allow(dead_code)]
-impl<'p> SyntaxPlan<'p> {
+impl<'p, 'e> SyntaxPlan<'p, 'e>
+where
+    'e: 'p,
+{
     #[allow(clippy::too_many_lines)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
-        match self.plan.get_node(id)? {
+        let ir_plan = self.plan.get_ir_plan();
+        match ir_plan.get_node(id)? {
             Node::Relational(rel) => match rel {
                 Relational::InnerJoin {
                     children,
@@ -405,9 +423,6 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::Motion { .. } => Err(QueryPlannerError::CustomError(
-                    "Motion nodes can't be serialized to SQL".into(),
-                )),
                 Relational::Projection {
                     children, output, ..
                 } => {
@@ -417,7 +432,7 @@ impl<'p> SyntaxPlan<'p> {
                     // We don't need the row node itself, only its children.
                     // Otherwise we'll produce redundant parentheses between
                     // `SELECT` and `FROM`.
-                    let expr = self.plan.get_expression_node(*output)?;
+                    let expr = ir_plan.get_expression_node(*output)?;
                     if let Expression::Row { list, .. } = expr {
                         let mut nodes: Vec<usize> = Vec::new();
                         if let Some((last, elements)) = list.split_last() {
@@ -478,6 +493,10 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(id, None, &children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
+                Relational::Motion { .. } => {
+                    let sn = SyntaxNode::new_pointer(id, None, &[]);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
             },
             Node::Expression(expr) => match expr {
                 Expression::Constant { .. } | Expression::Reference { .. } => {
@@ -493,11 +512,27 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Row { list, .. } => {
-                    if let Some(sq_id) = self.plan.get_sub_query_from_row_node(id)? {
+                    if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
+                        // Replace motion node to virtual table node
+                        let vtable = self.plan.get_motion_vtable(motion_id)?;
+                        let sn = SyntaxNode::new_pointer(
+                            id,
+                            None,
+                            &[
+                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ],
+                        );
+
+                        return Ok(self.nodes.push_syntax_node(sn));
+                    }
+
+                    if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {
                         // Replace current row with the referred sub-query
                         // (except the case when sub-query is located in the FROM clause).
                         if self.plan.is_additional_child(sq_id)? {
-                            let rel = self.plan.get_relation_node(sq_id)?;
+                            let rel = ir_plan.get_relation_node(sq_id)?;
                             return self.nodes.add_sq(rel, id);
                         }
                     }
@@ -553,7 +588,7 @@ impl<'p> SyntaxPlan<'p> {
     /// - plan node is invalid
     pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<&Node>, QueryPlannerError> {
         if let SyntaxData::PlanId(id) = data {
-            Ok(Some(self.plan.get_node(*id)?))
+            Ok(Some(self.plan.get_ir_plan().get_node(*id)?))
         } else {
             Ok(None)
         }
@@ -645,7 +680,7 @@ impl<'p> SyntaxPlan<'p> {
         Ok(())
     }
 
-    fn empty(plan: &'p Plan) -> Self {
+    fn empty(plan: &'p ExecutionPlan<'e>) -> Self {
         SyntaxPlan {
             nodes: SyntaxNodes::new(),
             top: None,
@@ -653,11 +688,12 @@ impl<'p> SyntaxPlan<'p> {
         }
     }
 
-    pub fn new(plan: &'p Plan, top: usize) -> Result<Self, QueryPlannerError> {
+    pub fn new(plan: &'p ExecutionPlan<'e>, top: usize) -> Result<Self, QueryPlannerError> {
         let mut sp = SyntaxPlan::empty(plan);
+        let ir_plan = plan.get_ir_plan();
 
         // Wrap plan's nodes and preserve their ids.
-        let dft_post = DftPost::new(&top, |node| plan.nodes.subtree_iter(node));
+        let dft_post = DftPost::new(&top, |node| ir_plan.nodes.subtree_iter(node));
         for (_, id) in dft_post {
             // it works only for post-order traversal
             let sn_id = sp.add_plan_node(*id)?;
@@ -666,7 +702,6 @@ impl<'p> SyntaxPlan<'p> {
             }
         }
         sp.move_proj_under_scan()?;
-
         Ok(sp)
     }
 

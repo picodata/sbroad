@@ -1,10 +1,14 @@
-use super::*;
+use std::fs;
+use std::path::Path;
+
+use pretty_assertions::assert_eq;
+
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value;
-use pretty_assertions::assert_eq;
-use std::fs;
-use std::path::Path;
+use crate::ir::Plan;
+
+use super::*;
 
 #[test]
 fn sql_order_selection() {
@@ -35,9 +39,10 @@ fn sql_order_selection() {
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
     assert_eq!(expected_plan, plan);
+    let exec_plan = ExecutionPlan::from(&plan);
 
     // test the syntax plan
-    let sp = SyntaxPlan::new(&plan, plan.get_top().unwrap()).unwrap();
+    let sp = SyntaxPlan::new(&exec_plan, plan.get_top().unwrap()).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -48,9 +53,10 @@ fn sql_order_selection() {
     let s = fs::read_to_string(path).unwrap();
     let expected_syntax_nodes = SyntaxNodes::from_yaml(&s).unwrap();
     assert_eq!(expected_syntax_nodes, sp.nodes);
+    let exec_plan = ExecutionPlan::from(&plan);
 
     // get nodes in the sql-convenient order
-    let nodes = plan.get_sql_order(plan.get_top().unwrap()).unwrap();
+    let nodes = exec_plan.get_sql_order(plan.get_top().unwrap()).unwrap();
     let mut nodes_iter = nodes.into_iter();
     assert_eq!(Some(SyntaxData::PlanId(16)), nodes_iter.next()); // projection
     assert_eq!(Some(SyntaxData::PlanId(13)), nodes_iter.next()); // ref

@@ -29,11 +29,10 @@ fn table_seg() {
         &["b", "a"],
     )
     .unwrap();
-    if let Table::Segment { key, .. } = &t {
-        assert_eq!(2, key.positions.len());
-        assert_eq!(0, key.positions[1]);
-        assert_eq!(1, key.positions[0]);
-    }
+
+    assert_eq!(2, t.key.positions.len());
+    assert_eq!(0, t.key.positions[1]);
+    assert_eq!(1, t.key.positions[0]);
 }
 
 #[test]
@@ -246,30 +245,4 @@ fn table_converting() {
 
     let s = serde_yaml::to_string(&t).unwrap();
     Table::seg_from_yaml(&s).unwrap();
-}
-
-#[test]
-fn virtual_table() {
-    let mut vtable = VirtualTable::new("test");
-
-    vtable.add_column(Column {
-        name: "name".into(),
-        r#type: Type::Integer,
-    });
-
-    vtable.add_values_tuple(vec![Value::number_from_str("1").unwrap()]);
-
-    vtable.set_distribution(Key::new(vec![1]));
-
-    let expected = VirtualTable {
-        columns: vec![Column {
-            name: "name".into(),
-            r#type: Type::Integer,
-        }],
-        tuples: vec![vec![Value::number_from_str("1").unwrap()]],
-        key: Some(Key::new(vec![1])),
-        name: String::from("test"),
-    };
-
-    assert_eq!(expected, vtable)
 }

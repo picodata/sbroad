@@ -1,12 +1,11 @@
-Segment:
-  columns:
-    - name: a
-      type: Boolean
-    - name: b
-      type: String
-    - name: a
-      type: String
-  name: t
-  key:
-    positions:
-      - 0
+columns:
+  - name: a
+    type: Boolean
+  - name: b
+    type: String
+  - name: a
+    type: String
+name: t
+key:
+  positions:
+    - 0

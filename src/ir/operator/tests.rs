@@ -1,13 +1,16 @@
-use super::*;
+use std::fs;
+use std::path::Path;
+
+use pretty_assertions::assert_eq;
+
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::ir::distribution::*;
 use crate::ir::relation::*;
 use crate::ir::value::*;
 use crate::ir::*;
-use pretty_assertions::assert_eq;
-use std::fs;
-use std::path::Path;
+
+use super::*;
 
 #[test]
 fn scan_rel() {
@@ -101,7 +104,9 @@ fn projection() {
 
     // Invalid alias names in the output
     assert_eq!(
-        QueryPlannerError::InvalidRow,
+        QueryPlannerError::CustomError(
+            r#"Some of the columns ["a", "e"] were not found in the table"#.into()
+        ),
         plan.add_proj(scan_id, &["a", "e"]).unwrap_err()
     );
 
@@ -249,7 +254,7 @@ fn sub_query() {
     // Non-relational child node
     let a = 1;
     assert_eq!(
-        QueryPlannerError::InvalidNode,
+        QueryPlannerError::InvalidRelation,
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
 

@@ -1,7 +1,10 @@
-use crate::executor::engine::mock::MetadataMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
-use pretty_assertions::assert_eq;
 use std::collections::HashSet;
+
+use pretty_assertions::assert_eq;
+
+use crate::executor::engine::mock::MetadataMock;
+use crate::executor::ir::ExecutionPlan;
+use crate::frontend::sql::ast::AbstractSyntaxTree;
 
 #[test]
 fn simple_union_query() {
@@ -15,14 +18,14 @@ fn simple_union_query() {
     let metadata = &MetadataMock::new();
 
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    // let plan = ast.to_ir(&metadata).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.add_motions().unwrap();
+    let mut ex_plan = ExecutionPlan::from(&plan);
 
     let top = plan.get_top().unwrap();
     // let expected = HashSet::from([3940]);
     let expected = HashSet::from(["1".into()]);
-    assert_eq!(Some(expected), plan.get_sharding_keys(top).unwrap())
+    assert_eq!(Some(expected), ex_plan.discovery(top).unwrap())
 }
 
 #[test]
@@ -39,12 +42,13 @@ fn simple_disjunction_in_union_query() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.add_motions().unwrap();
+    let mut ex_plan = ExecutionPlan::from(&plan);
 
     let top = plan.get_top().unwrap();
     // let expected = HashSet::from([3940, 18512]);
 
     let expected = HashSet::from(["1".into(), "100".into()]);
-    assert_eq!(Some(expected), plan.get_sharding_keys(top).unwrap())
+    assert_eq!(Some(expected), ex_plan.discovery(top).unwrap())
 }
 
 #[test]
@@ -65,11 +69,11 @@ WHERE "identification_number" = 1 AND "product_code" = '222'"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.add_motions().unwrap();
+    let mut ex_plan = ExecutionPlan::from(&plan);
 
     let top = plan.get_top().unwrap();
-    // let expected = vec![2927];
 
-    assert_eq!(None, plan.get_sharding_keys(top).unwrap())
+    assert_eq!(None, ex_plan.discovery(top).unwrap())
 }
 
 #[test]
@@ -94,9 +98,9 @@ WHERE ("identification_number" = 1
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.add_motions().unwrap();
+    let mut ex_plan = ExecutionPlan::from(&plan);
 
     let top = plan.get_top().unwrap();
-    // let expected = vec![2927, 22116, 6673, 4203, 23260, 6558];
 
-    assert_eq!(None, plan.get_sharding_keys(top).unwrap())
+    assert_eq!(None, ex_plan.discovery(top).unwrap())
 }

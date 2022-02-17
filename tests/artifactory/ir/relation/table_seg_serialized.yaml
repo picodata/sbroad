@@ -1,19 +1,18 @@
-Segment:
-  columns:
-    - name: a
-      type: Boolean
-    - name: b
-      type: Number
-    - name: c
-      type: String
-    - name: d
-      type: String
-    - name: e
-      type: Integer
-    - name: f
-      type: Unsigned
-  name: t
-  key:
-    positions:
-      - 0
-      - 3
+columns:
+  - name: a
+    type: Boolean
+  - name: b
+    type: Number
+  - name: c
+    type: String
+  - name: d
+    type: String
+  - name: e
+    type: Integer
+  - name: f
+    type: Unsigned
+name: t
+key:
+  positions:
+    - 0
+    - 3

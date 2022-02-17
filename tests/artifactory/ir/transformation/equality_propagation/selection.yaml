@@ -256,19 +256,18 @@ nodes:
           right: 43
 relations:
   t:
-    Segment:
-      columns:
-        - name: a
-          type: boolean
-        - name: b
-          type: number
-        - name: c
-          type: string
-        - name: d
-          type: string
-      key:
-        positions:
-          - 0
-      name: t
+    columns:
+      - name: a
+        type: boolean
+      - name: b
+        type: number
+      - name: c
+        type: string
+      - name: d
+        type: string
+    key:
+      positions:
+        - 0
+    name: t
 slices: ~
 top: 38

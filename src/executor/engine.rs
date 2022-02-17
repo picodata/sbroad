@@ -1,5 +1,7 @@
 use crate::errors::QueryPlannerError;
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
+use crate::executor::vtable::VirtualTable;
 
 pub mod cartridge;
 
@@ -39,21 +41,25 @@ pub trait Engine {
     /// Load metadate information to storage
     fn load_metadata(&mut self) -> Result<(), QueryPlannerError>;
 
-    /// Execute sql query on the particular shard
+    /// Materialize result motion node to virtual table
     ///
     /// # Errors
     /// - internal executor errors
-    fn exec_query(
+    fn materialize_motion(
         &self,
-        shard_key: &str,
-        query: &str,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError>;
+        plan: &mut ExecutionPlan,
+        motion_node_id: usize,
+    ) -> Result<VirtualTable, QueryPlannerError>;
 
     /// Execute sql query on the all shards in cluster
     ///
     /// # Errors
     /// - internal executor errors
-    fn mp_exec_query(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError>;
+    fn exec(
+        &self,
+        plan: &mut ExecutionPlan,
+        top_id: usize,
+    ) -> Result<BoxExecuteFormat, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &str) -> usize;

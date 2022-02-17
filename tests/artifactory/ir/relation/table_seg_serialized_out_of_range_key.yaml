@@ -1,8 +1,7 @@
-Segment:
-  columns:
-    - name: a
-      type: Boolean
-  name: t
-  key:
-    positions:
-      - 10
+columns:
+  - name: a
+    type: Boolean
+name: t
+key:
+  positions:
+    - 10

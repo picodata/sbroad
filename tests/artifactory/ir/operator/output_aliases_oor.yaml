@@ -24,15 +24,14 @@ nodes:
           relation: t
 relations:
   t:
-    Segment:
-      columns:
-        - name: a
-          type: Number
-        - name: b
-          type: Number
-      key:
-        positions:
-          - 0
-      name: t
+    columns:
+      - name: a
+        type: Number
+      - name: b
+        type: Number
+    key:
+      positions:
+        - 0
+    name: t
 slices: ~
 top: 3

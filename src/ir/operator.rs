@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::errors::QueryPlannerError;
 
 use super::expression::Expression;
-use super::relation::Table;
 use super::transformation::redistribution::MotionPolicy;
 use super::{Node, Nodes, Plan};
 
@@ -211,6 +210,24 @@ impl Relational {
         }
     }
 
+    /// The node is `Motion` type checking
+    ///
+    /// # Errors
+    /// - node isn't `Row` type
+    #[must_use]
+    pub fn is_motion(&self) -> bool {
+        matches!(self, &Relational::Motion { .. })
+    }
+
+    /// The node is `ScanSubQuery` type checking
+    ///
+    /// # Errors
+    /// - node isn't `Row` type
+    #[must_use]
+    pub fn is_subquery(&self) -> bool {
+        matches!(self, &Relational::ScanSubQuery { .. })
+    }
+
     /// Set new children to relational node.
     ///
     /// # Errors
@@ -330,30 +347,23 @@ impl Plan {
 
         if let Some(relations) = &self.relations {
             if let Some(rel) = relations.get(table) {
-                match rel {
-                    Table::Segment { ref columns, .. } => {
-                        let mut refs: Vec<usize> = Vec::new();
-
-                        for (pos, col) in columns.iter().enumerate() {
-                            let r_id = nodes.add_ref(None, None, pos);
-                            let col_alias_id = nodes.add_alias(&col.name, r_id)?;
-                            refs.push(col_alias_id);
-                        }
-
-                        let output_id = nodes.add_row_of_aliases(refs, None)?;
-                        let scan = Relational::ScanRelation {
-                            output: output_id,
-                            relation: String::from(table),
-                            alias: alias.map(String::from),
-                        };
-
-                        let scan_id = nodes.push(Node::Relational(scan));
-                        self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
-                        return Ok(scan_id);
-                    }
-                    //TODO: implement virtual tables as well
-                    _ => return Err(QueryPlannerError::InvalidRelation),
+                let mut refs: Vec<usize> = Vec::new();
+                for (pos, col) in rel.columns.iter().enumerate() {
+                    let r_id = nodes.add_ref(None, None, pos);
+                    let col_alias_id = nodes.add_alias(&col.name, r_id)?;
+                    refs.push(col_alias_id);
                 }
+
+                let output_id = nodes.add_row_of_aliases(refs, None)?;
+                let scan = Relational::ScanRelation {
+                    output: output_id,
+                    relation: String::from(table),
+                    alias: alias.map(String::from),
+                };
+
+                let scan_id = nodes.push(Node::Relational(scan));
+                self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
+                return Ok(scan_id);
             }
         }
         Err(QueryPlannerError::InvalidRelation)

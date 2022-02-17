@@ -1,10 +1,14 @@
-use super::tree::{SyntaxData, SyntaxPlan};
+use itertools::Itertools;
+
 use crate::errors::QueryPlannerError;
+use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
-use crate::ir::{Node, Plan};
+use crate::ir::Node;
 
-impl Plan {
+use super::tree::{SyntaxData, SyntaxPlan};
+
+impl<'e> ExecutionPlan<'e> {
     /// Traverse plan sub-tree (pointed by top) in the order
     /// convenient for SQL serialization.
     ///
@@ -39,7 +43,6 @@ impl Plan {
                 }
             }
         }
-
         Ok(result)
     }
 
@@ -48,8 +51,9 @@ impl Plan {
     /// # Errors
     /// - node is invalid
     pub fn is_additional_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
-        for id in 0..self.nodes.next_id() {
-            let node = self.get_node(id)?;
+        let ir_plan = self.get_ir_plan();
+        for id in 0..ir_plan.nodes.next_id() {
+            let node = ir_plan.get_node(id)?;
             match node {
                 Node::Relational(rel) => match rel {
                     Relational::Projection { children, .. }
@@ -98,11 +102,13 @@ impl Plan {
             result
         };
 
+        let ir_plan = self.get_ir_plan();
         for (id, data) in nodes.iter().enumerate() {
             if let Some(' ' | '(') = sql.chars().last() {
             } else if need_delim_after(id) {
                 sql.push_str(delim);
             }
+
             match data {
                 // TODO: should we care about plans without projections?
                 // Or they should be treated as invalid?
@@ -113,7 +119,7 @@ impl Plan {
                 SyntaxData::From => sql.push_str("FROM"),
                 SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                 SyntaxData::OpenParenthesis => sql.push('('),
-                SyntaxData::PlanId(id) => match self.get_node(*id)? {
+                SyntaxData::PlanId(id) => match ir_plan.get_node(*id)? {
                     Node::Relational(rel) => match rel {
                         Relational::InnerJoin { .. } => sql.push_str("INNER JOIN"),
                         Relational::Motion { .. } => {
@@ -135,7 +141,7 @@ impl Plan {
                         | Expression::Row { .. } => {}
                         Expression::Constant { value, .. } => sql.push_str(&format!("{}", value)),
                         Expression::Reference { position, .. } => {
-                            let rel_id: usize = self
+                            let rel_id: usize = ir_plan
                                 .get_relational_from_reference_node(*id)?
                                 .into_iter()
                                 .next()
@@ -144,19 +150,30 @@ impl Plan {
                                         "Reference points to a non-relational node.".into(),
                                     )
                                 })?;
-                            let rel_node = self.get_relation_node(rel_id)?;
-                            if let Some(name) = rel_node.scan_name(self, *position)? {
+                            let rel_node = ir_plan.get_relation_node(rel_id)?;
+                            if let Some(name) = rel_node.scan_name(ir_plan, *position)? {
                                 sql.push_str(&format!(
                                     "{}.{}",
                                     name,
-                                    &self.get_alias_from_reference_node(expr)?
+                                    &ir_plan.get_alias_from_reference_node(expr)?
                                 ));
                             } else {
-                                sql.push_str(&self.get_alias_from_reference_node(expr)?);
+                                sql.push_str(&ir_plan.get_alias_from_reference_node(expr)?);
                             }
                         }
                     },
                 },
+                SyntaxData::VTable(vtable) => {
+                    let mut tuples = Vec::new();
+                    for tuple in vtable.get_tuples() {
+                        tuples.push(format!(
+                            "({})",
+                            (tuple.iter().map(ToString::to_string)).join(",")
+                        ));
+                    }
+
+                    sql.push_str(&format!("VALUES {}", tuples.join(",")));
+                }
             }
         }
 

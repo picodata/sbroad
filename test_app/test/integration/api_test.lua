@@ -161,3 +161,49 @@ g.test_complex_shard_key_union_query = function()
     })
 end
 
+
+g.test_simple_motion_query = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key"
+        WHERE "id" in (SELECT "id" FROM "testing_space_hist" WHERE "product_units" > 3)]] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+        },
+        rows = {
+            { 1, "ok" },
+        },
+    })
+end
+
+
+g.test_motion_query = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT * FROM (
+            SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" > 0
+            UNION ALL
+            SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
+        ) as "t1"
+        WHERE "id" in (SELECT "id" FROM (
+            SELECT "id", "name" FROM "testing_space" WHERE "product_units" < 3
+            UNION ALL
+            SELECT "id", "name" FROM "testing_space_hist" WHERE "product_units" > 3
+        ) as "t2"
+        WHERE "id" = 1 and "name" = '123')]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+        },
+        rows = {
+            { 1, "ok" },
+            { 1, "ok_hist" }
+        },
+    })
+end

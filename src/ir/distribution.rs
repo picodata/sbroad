@@ -294,43 +294,26 @@ impl Plan {
             let table: &Table = relations
                 .get(table_name)
                 .ok_or(QueryPlannerError::InvalidRelation)?;
-            match table {
-                Table::Segment { key, .. } | Table::VirtualSegment { key, .. } => {
-                    let mut new_key: Key = Key::new(Vec::new());
-                    let all_found = key.positions.iter().all(|pos| {
-                        table_pos_map.get(pos).map_or(false, |v| {
-                            new_key.positions.push(*v);
-                            true
-                        })
+            let mut new_key: Key = Key::new(Vec::new());
+            let all_found = table.key.positions.iter().all(|pos| {
+                table_pos_map.get(pos).map_or(false, |v| {
+                    new_key.positions.push(*v);
+                    true
+                })
+            });
+            if all_found {
+                if let Node::Expression(Expression::Row {
+                    ref mut distribution,
+                    ..
+                }) = self
+                    .nodes
+                    .arena
+                    .get_mut(row_node)
+                    .ok_or(QueryPlannerError::InvalidRow)?
+                {
+                    *distribution = Some(Distribution::Segment {
+                        keys: collection! { new_key },
                     });
-                    if all_found {
-                        if let Node::Expression(Expression::Row {
-                            ref mut distribution,
-                            ..
-                        }) = self
-                            .nodes
-                            .arena
-                            .get_mut(row_node)
-                            .ok_or(QueryPlannerError::InvalidRow)?
-                        {
-                            *distribution = Some(Distribution::Segment {
-                                keys: collection! { new_key },
-                            });
-                        }
-                    }
-                }
-                Table::Virtual { .. } => {
-                    if let Node::Expression(Expression::Row {
-                        ref mut distribution,
-                        ..
-                    }) = self
-                        .nodes
-                        .arena
-                        .get_mut(row_node)
-                        .ok_or(QueryPlannerError::InvalidRow)?
-                    {
-                        *distribution = Some(Distribution::Any);
-                    }
                 }
             }
             Ok(())

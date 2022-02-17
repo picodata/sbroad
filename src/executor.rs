@@ -1,13 +1,16 @@
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
 pub use crate::executor::engine::Metadata;
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::Plan;
 
 pub mod engine;
-pub mod result;
-pub mod shard;
+pub(crate) mod ir;
+mod result;
+mod shard;
+mod vtable;
 
 /// Query object for executing
 #[allow(dead_code)]
@@ -46,25 +49,23 @@ where
     /// # Errors
     /// - query can't be executed in cluster
     /// - invalid bucket id
-    pub fn exec(&mut self) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let top = self.plan.get_top()?;
+    pub fn exec(&self) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let mut exec_plan = ExecutionPlan::from(&self.plan);
 
-        let mut result = BoxExecuteFormat::new();
-        let sql = &self.plan.subtree_as_sql(top)?;
-
-        if let Some(shard_keys) = self.plan.get_sharding_keys(top)? {
-            // sending query to nodes
-            for shard in shard_keys {
-                // exec query on node
-                let temp_result = self.engine.exec_query(&shard, sql)?;
-                result.extend(temp_result)?;
+        let ir_plan = exec_plan.get_ir_plan();
+        if let Some(slices) = ir_plan.get_slices() {
+            for motion_level in slices {
+                for motion_id in motion_level {
+                    // TODO: make it work in parallel
+                    let vtable = self.engine.materialize_motion(&mut exec_plan, motion_id)?;
+                    exec_plan.add_motion_result(motion_id, vtable)?;
+                }
             }
-        } else {
-            let temp_result = self.engine.mp_exec_query(sql)?;
-
-            result.extend(temp_result)?;
         }
-        Ok(result)
+
+        let top = exec_plan.get_ir_plan().get_top()?;
+
+        self.engine.exec(&mut exec_plan, top)
     }
 
     /// Apply optimize rules

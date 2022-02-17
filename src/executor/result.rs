@@ -1,11 +1,15 @@
-use crate::errors::QueryPlannerError;
+use std::fmt;
+
 use decimal::d128;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use tarantool::tlua::{self, LuaRead};
 
-use crate::ir::relation::{Column, VirtualTable};
+use crate::errors::QueryPlannerError;
+use crate::executor::vtable::VirtualTable;
+use crate::ir::relation::Column;
 use crate::ir::value::{AsIrVal, Value as IrValue};
 
+/// `Value` cointains tarantool datatypes
 #[derive(LuaRead, Debug, PartialEq, Clone)]
 pub enum Value {
     Boolean(bool),
@@ -13,6 +17,18 @@ pub enum Value {
     Integer(i64),
     String(String),
     Unsigned(u64),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
+            Value::Boolean(v) => write!(f, "{}", v),
+            Value::Number(v) => write!(f, "{}", v),
+            Value::Integer(v) => write!(f, "{}", v),
+            Value::Unsigned(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "'{}'", v),
+        }
+    }
 }
 
 /// IR `Value` convertor implementation
@@ -47,10 +63,12 @@ impl Serialize for Value {
 
 impl Eq for Value {}
 
+type BoxExecuteTuple = Vec<Value>;
+
 #[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
 pub struct BoxExecuteFormat {
     pub metadata: Vec<Column>,
-    pub rows: Vec<Vec<Value>>,
+    pub rows: Vec<BoxExecuteTuple>,
 }
 
 impl BoxExecuteFormat {

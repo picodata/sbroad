@@ -1,6 +1,8 @@
-use crate::executor::engine::mock::MetadataMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
 use pretty_assertions::assert_eq;
+
+use crate::executor::engine::mock::MetadataMock;
+use crate::executor::ir::ExecutionPlan;
+use crate::frontend::sql::ast::AbstractSyntaxTree;
 
 #[test]
 fn one_table_projection() {
@@ -11,9 +13,10 @@ fn one_table_projection() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -35,9 +38,10 @@ fn one_table_with_asterisk() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -65,9 +69,10 @@ fn union_all() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -91,9 +96,10 @@ fn from_sub_query() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -122,9 +128,10 @@ fn from_sub_query_with_union() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -148,9 +155,10 @@ fn inner_join() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -174,9 +182,10 @@ fn inner_join_with_sq() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
 
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(
@@ -200,8 +209,9 @@ fn selection_with_sq() {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
     let top_id = plan.get_top().unwrap();
-    let sql = plan.subtree_as_sql(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
 
     assert_eq!(
         format!(

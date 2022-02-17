@@ -1,6 +1,5 @@
-Segment:
-  columns: ~
-  name: t
-  key:
-    positions:
-      - 0
+columns: ~
+name: t
+key:
+  positions:
+    - 0

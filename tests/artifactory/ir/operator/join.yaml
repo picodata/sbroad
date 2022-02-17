@@ -149,26 +149,24 @@ nodes:
           output: 27
 relations:
   t2:
-    Segment:
-      columns:
-        - name: c
-          type: Boolean
-        - name: d
-          type: Number
-      key:
-        positions:
-          - 1
-      name: t2
+    columns:
+      - name: c
+        type: Boolean
+      - name: d
+        type: Number
+    key:
+      positions:
+        - 1
+    name: t2
   t1:
-    Segment:
-      columns:
-        - name: a
-          type: Boolean
-        - name: b
-          type: Number
-      key:
-        positions:
-          - 0
-      name: t1
+    columns:
+      - name: a
+        type: Boolean
+      - name: b
+        type: Number
+    key:
+      positions:
+        - 0
+    name: t1
 slices: ~
 top: 28

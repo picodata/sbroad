@@ -9,10 +9,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
-use crate::ir::value::AsIrVal;
 
 use super::distribution::Key;
-use super::value::Value;
 
 /// Supported column types.
 #[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
@@ -128,48 +126,19 @@ impl Column {
 ///
 /// Tables are the tuple storages in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub enum Table {
-    /// Already existing table segment on some cluster data node.
-    Segment {
-        /// List of the columns.
-        columns: Vec<Column>,
-        /// Distribution key of the output tuples (column positions).
-        key: Key,
-        /// Unique table name.
-        name: String,
-    },
-    /// Result tuple storage, created by the executor. All tuples
-    /// are distributed randomly.
-    Virtual {
-        /// List of the columns.
-        columns: Vec<Column>,
-        /// List of the "raw" tuples (list of values).
-        data: Vec<Vec<Value>>,
-        /// Unique table name (we need to generate it ourselves).
-        name: String,
-    },
-    /// Result tuple storage, created by the executor. All tuples
-    /// have a distribution key.
-    VirtualSegment {
-        /// List of the columns.
-        columns: Vec<Column>,
-        /// "Raw" tuples (list of values) in a hash map (hashed by distribution key)
-        data: HashMap<String, Vec<Vec<Value>>>,
-        /// Distribution key (list of the column positions)
-        key: Key,
-        /// Unique table name (we need to generate it ourselves).
-        name: String,
-    },
+pub struct Table {
+    /// List of the columns.
+    pub columns: Vec<Column>,
+    /// Distribution key of the output tuples (column positions).
+    pub key: Key,
+    /// Unique table name.
+    name: String,
 }
 
 impl Table {
     #[must_use]
     pub fn name(&self) -> &str {
-        match self {
-            Table::Segment { name, .. }
-            | Table::Virtual { name, .. }
-            | Table::VirtualSegment { name, .. } => name,
-        }
+        &self.name
     }
 
     /// Table segment constructor.
@@ -198,7 +167,7 @@ impl Table {
             .collect();
         let positions = res_positions?;
 
-        Ok(Table::Segment {
+        Ok(Table {
             name: n.into(),
             columns: c,
             key: Key::new(positions),
@@ -214,87 +183,22 @@ impl Table {
             Ok(t) => t,
             Err(_) => return Err(QueryPlannerError::Serialization),
         };
-        if let Table::Segment { columns, key, .. } = &ts {
-            let mut uniq_cols: HashSet<&str> = HashSet::new();
-            let cols = columns;
+        let mut uniq_cols: HashSet<&str> = HashSet::new();
+        let cols = ts.columns.clone();
 
-            let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
+        let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
 
-            if !no_duplicates {
-                return Err(QueryPlannerError::DuplicateColumn);
-            }
-
-            let in_range = key.positions.iter().all(|pos| *pos < cols.len());
-
-            if !in_range {
-                return Err(QueryPlannerError::ValueOutOfRange);
-            }
-
-            Ok(ts)
-        } else {
-            Err(QueryPlannerError::Serialization)
-        }
-    }
-
-    //TODO: constructors for Virtual and VirtualSegment
-}
-
-/// Result tuple storage, created by the executor. All tuples
-/// have a distribution key.
-#[derive(PartialEq, Debug, Clone)]
-pub struct VirtualTable {
-    /// List of the columns.
-    columns: Vec<Column>,
-    /// "Raw" tuples (list of values) in a hash map (hashed by distribution key)
-    tuples: Vec<Vec<Value>>,
-    /// Distribution key (list of the column positions)
-    key: Option<Key>,
-    /// Unique table name (we need to generate it ourselves).
-    name: String,
-}
-
-impl VirtualTable {
-    #[must_use]
-    pub fn new(name: &str) -> Self {
-        VirtualTable {
-            columns: vec![],
-            tuples: vec![],
-            key: None,
-            name: String::from(name),
-        }
-    }
-
-    /// Add column to virtual table
-    pub fn add_column(&mut self, col: Column) {
-        self.columns.push(col);
-    }
-
-    /// Adds custom values tuple to virtual table
-    ///
-    /// # Errors
-    /// Returns IR `Value` transformation error
-    pub fn add_tuple<T>(&mut self, tuple: Vec<T>) -> Result<(), QueryPlannerError>
-    where
-        T: AsIrVal,
-    {
-        let mut t = vec![];
-
-        for el in tuple {
-            t.push(el.as_ir_value()?);
+        if !no_duplicates {
+            return Err(QueryPlannerError::DuplicateColumn);
         }
 
-        self.add_values_tuple(t);
-        Ok(())
-    }
+        let in_range = ts.key.positions.iter().all(|pos| *pos < cols.len());
 
-    /// Add value rows to table
-    pub fn add_values_tuple(&mut self, tuple: Vec<Value>) {
-        self.tuples.push(tuple);
-    }
+        if !in_range {
+            return Err(QueryPlannerError::ValueOutOfRange);
+        }
 
-    /// Set virtual table distribution
-    pub fn set_distribution(&mut self, key: Key) {
-        self.key = Some(key);
+        Ok(ts)
     }
 }
 

@@ -322,25 +322,23 @@ nodes:
           output: 53
 relations:
   t1:
-    Segment:
-      columns:
-        - name: a
-          type: integer
-      key:
-        positions:
-          - 0
-      name: t1
+    columns:
+      - name: a
+        type: integer
+    key:
+      positions:
+        - 0
+    name: t1
   t2:
-    Segment:
-      columns:
-        - name: a
-          type: integer
-        - name: b
-          type: integer
-      key:
-        positions:
-          - 0
-      name: t2
+    columns:
+      - name: a
+        type: integer
+      - name: b
+        type: integer
+    key:
+      positions:
+        - 0
+    name: t2
 slices:
   - - 50
     - 54

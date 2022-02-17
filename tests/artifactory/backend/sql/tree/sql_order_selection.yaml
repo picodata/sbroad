@@ -104,13 +104,12 @@ nodes:
           output: 15
 relations:
   t:
-    Segment:
-      columns:
-        - name: a
-          type: boolean
-      key:
-        positions:
-          - 0
-      name: t
+    columns:
+      - name: a
+        type: boolean
+    key:
+      positions:
+        - 0
+    name: t
 slices: ~
 top: 16

@@ -62,15 +62,14 @@ nodes:
           output: 8
 relations:
   t:
-    Segment:
-      columns:
-        - name: a
-          type: Boolean
-        - name: b
-          type: Number
-      key:
-        positions:
-          - 1
-      name: t
+    columns:
+      - name: a
+        type: Boolean
+      - name: b
+        type: Number
+    key:
+      positions:
+        - 1
+    name: t
 slices: ~
 top: 9

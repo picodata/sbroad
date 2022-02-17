@@ -25,13 +25,12 @@ nodes:
           relation: t
 relations:
   t:
-    Segment:
-      columns:
-        - name: a
-          type: Boolean
-      key:
-        positions:
-          - 0
-      name: t
+    columns:
+      - name: a
+        type: Boolean
+    key:
+      positions:
+        - 0
+    name: t
 slices: ~
 top: 42

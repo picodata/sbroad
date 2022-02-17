@@ -7,8 +7,11 @@ use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::bucket::str_to_bucket_id;
 use crate::executor::engine::cartridge::cache::ClusterSchema;
 use crate::executor::engine::Engine;
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
+use crate::executor::vtable::VirtualTable;
 
+mod backend;
 pub mod bucket;
 pub mod cache;
 
@@ -56,6 +59,108 @@ impl Engine for Runtime {
         self.metadata.load(&res)
     }
 
+    /// Execute sub tree on the nodes
+    fn exec(
+        &self,
+        plan: &mut ExecutionPlan,
+        top_id: usize,
+    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let mut result = BoxExecuteFormat::new();
+        let sql = plan.subtree_as_sql(top_id)?;
+
+        if let Some(shard_keys) = plan.discovery(top_id)? {
+            // sending query to nodes
+            for shard in shard_keys {
+                // exec query on node
+                let temp_result = self.exec_query(&shard, &sql)?;
+                result.extend(temp_result)?;
+            }
+        } else {
+            let temp_result = mp_exec_query(&sql)?;
+
+            result.extend(temp_result)?;
+        }
+        Ok(result)
+    }
+
+    /// Transform sub query result to virtual table
+    fn materialize_motion(
+        &self,
+        plan: &mut ExecutionPlan,
+        motion_node_id: usize,
+    ) -> Result<VirtualTable, QueryPlannerError> {
+        let top = &plan.get_motion_subtree_root(motion_node_id)?;
+
+        let result = self.exec(plan, *top)?;
+        return result.as_virtual_table(&format!("motion_{}", motion_node_id));
+    }
+
+    /// Calculation ``bucket_id`` function
+    fn determine_bucket_id(&self, s: &str) -> usize {
+        str_to_bucket_id(s, self.bucket_count)
+    }
+}
+
+impl Runtime {
+    pub fn new() -> Result<Self, QueryPlannerError> {
+        let mut result = Runtime {
+            metadata: ClusterSchema::new(),
+            bucket_count: 0,
+        };
+
+        result.set_bucket_count()?;
+
+        Ok(result)
+    }
+
+    /// Function get summary count of bucket from vshard
+    fn set_bucket_count(&mut self) -> Result<(), QueryPlannerError> {
+        let lua = tarantool::lua_state();
+
+        let bucket_count_fn: LuaFunction<_> =
+            match lua.eval("return require('vshard').router.bucket_count") {
+                Ok(v) => v,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("set_bucket_count"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!(
+                        "Failed lua function load: {}",
+                        e
+                    )));
+                }
+            };
+
+        let bucket_count: u64 = match bucket_count_fn.call() {
+            Ok(r) => r,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("set_bucket_count"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(e.to_string()));
+            }
+        };
+
+        self.bucket_count = match bucket_count.try_into() {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(QueryPlannerError::CustomError(String::from(
+                    "Invalid bucket count",
+                )));
+            }
+        };
+
+        Ok(())
+    }
+
     /// Function execute sql query on selected node
     fn exec_query(
         &self,
@@ -81,7 +186,7 @@ impl Engine for Runtime {
         );
 
         let lua = tarantool::lua_state();
-        lua.exec(
+        match lua.exec(
             r#"
         local vshard = require('vshard')
         local yaml = require('yaml')
@@ -101,10 +206,27 @@ impl Engine for Runtime {
             return res
         end
     "#,
-        )
-        .unwrap();
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("exec_query"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!(
+                    "Failed lua code loading: {:?}",
+                    e
+                )));
+            }
+        }
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_sql").unwrap();
+        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
+        })?;
+
         let res: BoxExecuteFormat = match exec_sql.call_with_args((cast_bucket_id, query)) {
             Ok(v) => v,
             Err(e) => {
@@ -121,21 +243,22 @@ impl Engine for Runtime {
 
         Ok(res)
     }
+}
 
-    /// Sends query to all instances and merges results after (map-reduce).
-    fn mp_exec_query(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            "distribution keys were not found",
-        );
+/// Sends query to all instances and merges results after (map-reduce).
+fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    say(
+        SayLevel::Debug,
+        file!(),
+        line!().try_into().unwrap_or(0),
+        None,
+        "distribution keys were not found",
+    );
 
-        let lua = tarantool::lua_state();
+    let lua = tarantool::lua_state();
 
-        lua.exec(
-            r#"
+    match lua.exec(
+        r#"
         local vshard = require('vshard')
         local yaml = require('yaml')
 
@@ -172,75 +295,40 @@ impl Engine for Runtime {
             return result
         end
     "#,
-        )
-        .unwrap();
-
-        let exec_sql: LuaFunction<_> = lua.get("map_reduce_execute_sql").unwrap();
-        let res: BoxExecuteFormat = match exec_sql.call_with_args(query) {
-            Ok(v) => v,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("mp_exec_query"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
-
-        Ok(res)
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("mp_exec_query"),
+                &format!("{:?}", e),
+            );
+            return Err(QueryPlannerError::LuaError(format!(
+                "Failed lua code loading: {:?}",
+                e
+            )));
+        }
     }
 
-    /// Calculation ``bucket_id`` function
-    fn determine_bucket_id(&self, s: &str) -> usize {
-        str_to_bucket_id(s, self.bucket_count)
-    }
-}
+    let exec_sql: LuaFunction<_> = lua.get("map_reduce_execute_sql").ok_or_else(|| {
+        QueryPlannerError::LuaError("Lua function `map_reduce_execute_sql` not found".into())
+    })?;
 
-impl Runtime {
-    pub fn new() -> Result<Self, QueryPlannerError> {
-        let mut result = Runtime {
-            metadata: ClusterSchema::new(),
-            bucket_count: 0,
-        };
+    let res: BoxExecuteFormat = match exec_sql.call_with_args(query) {
+        Ok(v) => v,
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("mp_exec_query"),
+                &format!("{:?}", e),
+            );
+            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+        }
+    };
 
-        result.set_bucket_count()?;
-
-        Ok(result)
-    }
-
-    /// Function get summary count of bucket from vshard
-    fn set_bucket_count(&mut self) -> Result<(), QueryPlannerError> {
-        let lua = tarantool::lua_state();
-
-        let bucket_count_fn: LuaFunction<_> = lua
-            .eval("return require('vshard').router.bucket_count")
-            .unwrap();
-        let bucket_count: u64 = match bucket_count_fn.call() {
-            Ok(r) => r,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("load metadata"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(e.to_string()));
-            }
-        };
-
-        self.bucket_count = match bucket_count.try_into() {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(QueryPlannerError::CustomError(String::from(
-                    "Invalid bucket count",
-                )));
-            }
-        };
-
-        Ok(())
-    }
+    Ok(res)
 }
