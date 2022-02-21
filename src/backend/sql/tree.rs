@@ -469,8 +469,13 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::ScanRelation { .. } => {
-                    let sn = SyntaxNode::new_pointer(id, None, &[]);
+                Relational::ScanRelation { alias, .. } => {
+                    let children: Vec<usize> = if let Some(name) = alias {
+                        vec![self.nodes.push_syntax_node(SyntaxNode::new_alias(name))]
+                    } else {
+                        Vec::new()
+                    };
+                    let sn = SyntaxNode::new_pointer(id, None, &children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },

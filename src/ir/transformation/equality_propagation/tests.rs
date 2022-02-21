@@ -30,7 +30,7 @@ fn selection() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
 
     // a = 1
     let a = plan.add_row_from_child(scan_id, &["a"]).unwrap();

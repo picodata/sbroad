@@ -110,13 +110,15 @@ pub enum Relational {
         output: usize,
     },
     ScanRelation {
+        // Scan name.
+        alias: Option<String>,
         /// Output tuple node index in the plan node arena.
         output: usize,
         /// Relation name.
         relation: String,
     },
     ScanSubQuery {
-        /// SubQuery name
+        /// SubQuery name.
         alias: Option<String>,
         /// Contains exactly a single element: child node index
         /// from the plan node arena.
@@ -247,6 +249,71 @@ impl Relational {
             ))),
         }
     }
+
+    /// Get relational scan name if it exists.
+    ///
+    /// # Errors
+    /// - plan tree is invalid (failed to retrieve child nodes)
+    pub fn scan_name<'n>(
+        &'n self,
+        plan: &'n Plan,
+        position: usize,
+    ) -> Result<Option<&'n str>, QueryPlannerError> {
+        match self {
+            Relational::ScanRelation {
+                alias, relation, ..
+            } => Ok(alias.as_deref().or_else(|| Some(relation.as_str()))),
+            Relational::ScanSubQuery { alias, .. } => Ok(alias.as_deref()),
+            Relational::Projection { .. }
+            | Relational::Selection { .. }
+            | Relational::InnerJoin { .. } => {
+                let self_output_node = plan.get_expression_node(self.output())?;
+                if let Expression::Row { list, .. } = self_output_node {
+                    let col_id = *list.get(position).ok_or_else(|| {
+                        QueryPlannerError::CustomError(String::from("Row has no such alias"))
+                    })?;
+                    let col_node = plan.get_expression_node(col_id)?;
+                    if let Expression::Alias { child, .. } = col_node {
+                        let child_node = plan.get_expression_node(*child)?;
+                        if let Expression::Reference { position: pos, .. } = child_node {
+                            let rel_ids = plan.get_relational_from_reference_node(*child)?;
+                            let rel_node = plan.get_relation_node(
+                                rel_ids.into_iter().next().ok_or_else(|| {
+                                    QueryPlannerError::CustomError(String::from(
+                                        "No relational node",
+                                    ))
+                                })?,
+                            )?;
+                            return rel_node.scan_name(plan, *pos);
+                        }
+                    } else {
+                        return Err(QueryPlannerError::CustomError(String::from(
+                            "Expected an alias in the output row",
+                        )));
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Set new scan name to relational node.
+    ///
+    /// # Errors
+    /// - relational node is not a scan.
+    pub fn set_scan_name(&mut self, name: Option<String>) -> Result<(), QueryPlannerError> {
+        match self {
+            Relational::ScanRelation { ref mut alias, .. }
+            | Relational::ScanSubQuery { ref mut alias, .. } => {
+                *alias = name;
+                Ok(())
+            }
+            _ => Err(QueryPlannerError::CustomError(
+                "Relational node is not a scan.".into(),
+            )),
+        }
+    }
 }
 
 impl Plan {
@@ -254,7 +321,11 @@ impl Plan {
     ///
     /// # Errors
     /// - relation is invalid
-    pub fn add_scan(&mut self, table: &str) -> Result<usize, QueryPlannerError> {
+    pub fn add_scan(
+        &mut self,
+        table: &str,
+        alias: Option<&str>,
+    ) -> Result<usize, QueryPlannerError> {
         let nodes = &mut self.nodes;
 
         if let Some(relations) = &self.relations {
@@ -265,14 +336,15 @@ impl Plan {
 
                         for (pos, col) in columns.iter().enumerate() {
                             let r_id = nodes.add_ref(None, None, pos);
-                            let alias_id = nodes.add_alias(&col.name, r_id)?;
-                            refs.push(alias_id);
+                            let col_alias_id = nodes.add_alias(&col.name, r_id)?;
+                            refs.push(col_alias_id);
                         }
 
                         let output_id = nodes.add_row_of_aliases(refs, None)?;
                         let scan = Relational::ScanRelation {
                             output: output_id,
                             relation: String::from(table),
+                            alias: alias.map(String::from),
                         };
 
                         let scan_id = nodes.push(Node::Relational(scan));

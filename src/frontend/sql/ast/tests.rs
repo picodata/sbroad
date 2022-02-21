@@ -94,6 +94,10 @@ fn traversal() {
     let node = ast.nodes.get_node(*scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
 
+    let (_, sel_name_a_id) = dft_post.next().unwrap();
+    let node = ast.nodes.get_node(*sel_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+
     let (_, a_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*a_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
@@ -109,6 +113,10 @@ fn traversal() {
     let (_, selection_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*selection_id).unwrap();
     assert_eq!(node.rule, Type::Selection);
+
+    let (_, prj_name_a_id) = dft_post.next().unwrap();
+    let node = ast.nodes.get_node(*prj_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
 
     let (_, str_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*str_id).unwrap();

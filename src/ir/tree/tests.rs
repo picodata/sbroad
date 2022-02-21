@@ -85,11 +85,11 @@ fn relational_post() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
     let a = plan.add_row_from_child(scan_t2_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
@@ -134,7 +134,7 @@ fn selection_subquery_dfs_post() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
 
     let t2 = Table::new_seg(
@@ -147,7 +147,7 @@ fn selection_subquery_dfs_post() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
     let b = plan.add_row_from_child(scan_t2_id, &["b"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());
@@ -214,7 +214,7 @@ fn subtree_dfs_post() {
     )
     .unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     let a_ref = plan.nodes.next_id();
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::number_from_str("1").unwrap());

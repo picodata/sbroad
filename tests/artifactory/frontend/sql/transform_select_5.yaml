@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children:
-        - 14
+        - 20
       rule: Select
       value: ~
     - children:
-        - 9
+        - 15
         - 2
       rule: Selection
       value: ~
@@ -18,39 +18,63 @@ nodes:
     - children: []
       rule: Number
       value: 0
-    - children: []
-      rule: Reference
-      value: t1.a
     - children:
         - 6
+        - 5
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: a
+    - children: []
+      rule: ScanName
+      value: t1
+    - children:
+        - 8
       rule: Condition
       value: ~
     - children:
-        - 8
-        - 7
-      rule: Eq
-      value: ~
-    - children: []
-      rule: Reference
-      value: t2.a
-    - children: []
-      rule: Reference
-      value: t1.a
-    - children:
         - 12
-        - 10
-        - 5
-      rule: InnerJoin
+        - 9
+      rule: Eq
       value: ~
     - children:
         - 11
+        - 10
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: a
+    - children: []
+      rule: ScanName
+      value: t2
+    - children:
+        - 14
+        - 13
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: a
+    - children: []
+      rule: ScanName
+      value: t1
+    - children:
+        - 18
+        - 16
+        - 7
+      rule: InnerJoin
+      value: ~
+    - children:
+        - 17
       rule: Scan
       value: ~
     - children: []
       rule: Table
       value: t2
     - children:
-        - 13
+        - 19
       rule: Scan
       value: ~
     - children: []
@@ -58,21 +82,21 @@ nodes:
       value: t1
     - children:
         - 1
-        - 15
+        - 21
       rule: Projection
       value: ~
     - children: []
       rule: Asterisk
       value: "*"
-top: 14
+top: 20
 map:
-  15:
-    - 1
   4:
-    - 9
-  8:
-    - 12
-    - 10
-  7:
-    - 12
-    - 10
+    - 15
+  21:
+    - 1
+  12:
+    - 18
+    - 16
+  9:
+    - 18
+    - 16

@@ -29,7 +29,7 @@ fn scan_rel() {
     let scan_output = 8;
     let scan_node = 9;
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
     assert_eq!(scan_node, scan_id);
     plan.top = Some(scan_node);
 
@@ -63,7 +63,7 @@ fn scan_rel_serialized() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
     plan.top = Some(scan_id);
 
     let scan_output = scan_id - 1;
@@ -97,7 +97,7 @@ fn projection() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
 
     // Invalid alias names in the output
     assert_eq!(
@@ -149,7 +149,7 @@ fn selection() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
 
     let ref_row = plan.add_row_from_child(scan_id, &["a", "b"]).unwrap();
     let const_1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
@@ -191,11 +191,11 @@ fn union_all() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
     plan.add_union_all(scan_t2_id, scan_t1_id).unwrap();
 }
@@ -215,13 +215,13 @@ fn union_all_col_amount_mismatch() {
     .unwrap();
     plan.add_rel(t1);
 
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     // Check errors for children with different amount of column
     let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
     plan.add_rel(t2);
 
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     assert_eq!(
         QueryPlannerError::NotEqualRows,
         plan.add_union_all(scan_t2_id, scan_t1_id).unwrap_err()
@@ -243,7 +243,7 @@ fn sub_query() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
     plan.add_sub_query(scan_id, Some("sq")).unwrap();
 
     // Non-relational child node
@@ -283,12 +283,12 @@ fn selection_with_sub_query() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Integer)], &["b"]).unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
@@ -333,7 +333,7 @@ fn join() {
     )
     .unwrap();
     plan.add_rel(t1);
-    let scan_t1 = plan.add_scan("t1").unwrap();
+    let scan_t1 = plan.add_scan("t1", None).unwrap();
 
     let t2 = Table::new_seg(
         "t2",
@@ -345,7 +345,7 @@ fn join() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let scan_t2 = plan.add_scan("t2").unwrap();
+    let scan_t2 = plan.add_scan("t2", None).unwrap();
 
     let a_row = plan
         .add_row_from_left_branch(scan_t1, scan_t2, &["a"])
@@ -386,7 +386,7 @@ fn join_duplicate_columns() {
     )
     .unwrap();
     plan.add_rel(t1);
-    let scan_t1 = plan.add_scan("t1").unwrap();
+    let scan_t1 = plan.add_scan("t1", None).unwrap();
 
     let t2 = Table::new_seg(
         "t2",
@@ -398,7 +398,7 @@ fn join_duplicate_columns() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let scan_t2 = plan.add_scan("t2").unwrap();
+    let scan_t2 = plan.add_scan("t2", None).unwrap();
 
     let a_row = plan
         .add_row_from_left_branch(scan_t1, scan_t2, &["a"])

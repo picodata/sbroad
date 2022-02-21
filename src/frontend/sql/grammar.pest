@@ -3,24 +3,25 @@ Command = _{ SOI ~ Query ~ EOF }
 Query = _{ UnionAll | Select | Values | Insert }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin)? ~
-        (^"on" ~ Condition)? ~ (^"where" ~ Selection)?
+        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
+        ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
         Projection = { ((Asterisk | Column) ~ ("," ~ (Asterisk | Column))*?) }
             Column = { Row | Alias | Value | Reference }
                 Alias = {(Value | Reference) ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }
-                Reference = @{ Name }
-                    Name = @{ String | "\"" ~ String ~ "\"" ~ (".\"" ~ String ~ "\"")?}
+                Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
+                    ColumnName = @{ Name }
+                    ScanName = @{ Name }
+                    Name = @{ String | ("\"" ~ String ~ "\"") }
                 Asterisk = @{ "*" }
         Selection = { Expr* }
-        Scan = { SubQuery | Table }
+        Scan = { (SubQuery | Table) ~ (^"as" ~ ScanName)? }
             Table = @{ Name }
         InnerJoin = { Scan }
         Condition = { Expr* }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (UnionAll | SubQuery | Select) }
-    SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" ~ (^"as" ~ SubQueryName)? }
-		SubQueryName = @{ Name }
+    SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
     Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
 
@@ -56,7 +57,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(Keyword) ~ ('A' .. 'Z' | 'a'..'z' | "_" | Number)+ }
+String = @{ !(Keyword) ~ ('A' .. 'Z' | 'a'..'z' | "_" | Int)+ }
     Keyword = {
         ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
         | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"

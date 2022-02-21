@@ -108,13 +108,25 @@ impl AbstractSyntaxTree {
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
+                    if let Some(ast_scan_name_id) = node.children.get(1) {
+                        let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
+                        if let Type::ScanName = ast_scan_name.rule {
+                            // Update scan name in the plan.
+                            let scan = plan.get_mut_relation_node(plan_child_id)?;
+                            scan.set_scan_name(ast_scan_name.value.clone())?;
+                        } else {
+                            return Err(QueryPlannerError::CustomError(
+                                "Expected scan name AST node.".into(),
+                            ));
+                        }
+                    }
                 }
                 Type::Table => {
                     if let Some(node_val) = &node.value {
-                        let table = node_val.as_str().trim_matches('\"');
+                        let table = node_val.as_str();
                         let t = metadata.get_table_segment(table)?;
                         plan.add_rel(t);
-                        let scan_id = plan.add_scan(table)?;
+                        let scan_id = plan.add_scan(table, None)?;
                         map.add(*id, scan_id);
                     } else {
                         return Err(QueryPlannerError::CustomError(
@@ -143,8 +155,7 @@ impl AbstractSyntaxTree {
                     } else {
                         None
                     };
-                    let name = alias_name.as_deref().map(|s| s.trim_matches('\"'));
-                    let plan_sq_id = plan.add_sub_query(plan_child_id, name)?;
+                    let plan_sq_id = plan.add_sub_query(plan_child_id, alias_name.as_deref())?;
                     map.add(*id, plan_sq_id);
                 }
                 Type::Reference => {
@@ -164,16 +175,54 @@ impl AbstractSyntaxTree {
                             "Referred relational node is not found.".into(),
                         )
                     })?;
-                    let col_name = node
-                        .value
-                        .as_ref()
-                        .ok_or_else(|| {
-                            QueryPlannerError::CustomError("Column name is not found.".into())
-                        })?
-                        .trim_matches('\"')
-                        .to_string();
+
+                    let get_column_name = |ast_id: usize| -> Result<&str, QueryPlannerError> {
+                        let ast_col_name = self.nodes.get_node(ast_id)?;
+                        if let Type::ColumnName = ast_col_name.rule {
+                            Ok(ast_col_name.value.as_deref().ok_or_else(|| {
+                                QueryPlannerError::CustomError("Empty AST column name".into())
+                            })?)
+                        } else {
+                            Err(QueryPlannerError::CustomError(
+                                "Expected column name AST node.".into(),
+                            ))
+                        }
+                    };
+
+                    let col_name: &str = if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
+                        (node.children.get(0), node.children.get(1))
+                    {
+                        // Check that scan name in the reference matches to the one in scan node.
+                        let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
+                        if let Type::ScanName = ast_scan_name.rule {
+                            let plan_scan_name =
+                                plan.get_relation_node(plan_rel_id)?.scan_name(&plan, 0)?;
+                            let scan_name = ast_scan_name.value.as_deref();
+                            if plan_scan_name != scan_name {
+                                return Err(QueryPlannerError::CustomError(
+                                    "Scan name is not matched.".into(),
+                                ));
+                            }
+                        } else {
+                            return Err(QueryPlannerError::CustomError(
+                                "Expected scan name AST node.".into(),
+                            ));
+                        };
+                        // Get column name.
+                        get_column_name(*ast_col_name_id)?
+                    } else if let (Some(ast_col_name_id), None) =
+                        (node.children.get(0), node.children.get(1))
+                    {
+                        // Get the column name.
+                        get_column_name(*ast_col_name_id)?
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "No child node found in the AST reference.".into(),
+                        ));
+                    };
+
                     let ref_list =
-                        plan.new_columns(&[plan_rel_id], false, &[0], &[col_name.as_str()], false)?;
+                        plan.new_columns(&[plan_rel_id], false, &[0], &[col_name], false)?;
                     let ref_id = *ref_list.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError("Referred column is not found.".into())
                     })?;
@@ -223,8 +272,7 @@ impl AbstractSyntaxTree {
                         .as_ref()
                         .ok_or_else(|| {
                             QueryPlannerError::CustomError("Alias name is not found.".into())
-                        })?
-                        .trim_matches('\"');
+                        })?;
                     let plan_alias_id = plan.nodes.add_alias(name, plan_ref_id)?;
                     map.add(*id, plan_alias_id);
                 }
@@ -351,7 +399,11 @@ impl AbstractSyntaxTree {
                     let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
                     map.add(*id, plan_union_all_id);
                 }
-                Type::AliasName | Type::SubQueryName | Type::Select => {}
+                Type::AliasName
+                | Type::ColumnName
+                | Type::ScanName
+                | Type::Select
+                | Type::SubQueryName => {}
                 rule => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Not implements type: {:?}",

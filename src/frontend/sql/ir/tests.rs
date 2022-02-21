@@ -17,8 +17,8 @@ fn simple_query_to_ir() {
     assert_eq!(
         format!(
             "{} {}",
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing" WHERE ("identification_number") = (1)"#,
+            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (1)"#,
         ),
         sql
     );
@@ -41,9 +41,9 @@ fn complex_cond_query_transform() {
     assert_eq!(
         format!(
             "{} {} {}",
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing" WHERE (("identification_number") = (1) and ("product_code") = ('1')"#,
-            r#"or ("identification_number") = (2) and ("product_code") = ('2'))"#,
+            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE (("hash_testing"."identification_number") = (1) and ("hash_testing"."product_code") = ('1')"#,
+            r#"or ("hash_testing"."identification_number") = (2) and ("hash_testing"."product_code") = ('2'))"#,
         ),
         sql
     );
@@ -72,13 +72,13 @@ fn simple_union_query_transform() {
     assert_eq!(
         format!(
             "{} {} {} {} {} {} {}",
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code" FROM"#,
-            r#"(SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing" WHERE ("sys_op") = (1)"#,
+            r#"SELECT "t3"."identification_number" as "identification_number", "t3"."product_code" as "product_code" FROM"#,
+            r#"(SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (1)"#,
             r#"UNION ALL"#,
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing_hist" WHERE ("sys_op") > (1)) as "t3""#,
-            r#"WHERE ("identification_number") = (1)"#,
+            r#"SELECT "hash_testing_hist"."identification_number" as "identification_number", "hash_testing_hist"."product_code" as "product_code""#,
+            r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (1)) as "t3""#,
+            r#"WHERE ("t3"."identification_number") = (1)"#,
         ),
         sql
     );
@@ -111,14 +111,14 @@ WHERE ("identification_number" = 1
     assert_eq!(
         format!(
             "{} {} {} {} {} {} {} {}",
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code" FROM"#,
-            r#"(SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing" WHERE ("sys_op") = (1)"#,
+            r#"SELECT "t3"."identification_number" as "identification_number", "t3"."product_code" as "product_code" FROM"#,
+            r#"(SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (1)"#,
             r#"UNION ALL"#,
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing_hist" WHERE ("sys_op") > (1)) as "t3""#,
-            r#"WHERE (("identification_number") = (1) or (("identification_number") = (2) or ("identification_number") = (3)))"#,
-            r#"and (("product_code") = ('1') or ("product_code") = ('2'))"#,
+            r#"SELECT "hash_testing_hist"."identification_number" as "identification_number", "hash_testing_hist"."product_code" as "product_code""#,
+            r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (1)) as "t3""#,
+            r#"WHERE (("t3"."identification_number") = (1) or (("t3"."identification_number") = (2) or ("t3"."identification_number") = (3)))"#,
+            r#"and (("t3"."product_code") = ('1') or ("t3"."product_code") = ('2'))"#,
         ),
         sql
     );
@@ -140,10 +140,10 @@ fn sub_query_in_selection() {
     assert_eq!(
         format!(
             "{} {} {} {}",
-            r#"SELECT "identification_number" as "identification_number", "product_code" as "product_code""#,
-            r#"FROM "hash_testing" WHERE ("identification_number") in"#,
-            r#"(SELECT "identification_number" as "identification_number" FROM "hash_testing_hist""#,
-            r#"WHERE ("product_code") = ('a'))"#,
+            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") in"#,
+            r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number" FROM "hash_testing_hist""#,
+            r#"WHERE ("hash_testing_hist"."product_code") = ('a'))"#,
         ),
         sql
     );
@@ -161,4 +161,26 @@ fn inner_join() {
     let plan_err = ast.to_ir(metadata).unwrap_err();
 
     assert_eq!("Joins are not implemented yet.", format!("{}", plan_err));
+}
+
+#[test]
+fn simple_query_with_unquoted_aliases() {
+    let query = r#"SELECT t."identification_number", "product_code" FROM "hash_testing" as t
+    WHERE t."identification_number" = 1"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
+
+    let top_id = plan.get_top().unwrap();
+    let sql = plan.subtree_as_sql(top_id).unwrap();
+
+    assert_eq!(
+        format!(
+            "{} {}",
+            r#"SELECT t."identification_number" as "identification_number", t."product_code" as "product_code""#,
+            r#"FROM "hash_testing" as t WHERE (t."identification_number") = (1)"#,
+        ),
+        sql
+    );
 }

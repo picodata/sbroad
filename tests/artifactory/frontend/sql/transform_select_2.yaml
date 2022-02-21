@@ -18,18 +18,22 @@ nodes:
       rule: Projection
       value: ~
     - children:
-        - 7
+        - 8
       rule: Column
       value: ~
-    - children: []
+    - children:
+        - 6
       rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
       value: a
     - children: []
       rule: AliasName
       value: a
     - children:
         - 5
-        - 6
+        - 7
       rule: Alias
       value: ~
 top: 3

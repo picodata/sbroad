@@ -27,7 +27,7 @@ fn rel_nodes_from_reference_in_scan() {
 
     let t = Table::new_seg("t", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t);
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
     let output = plan.get_relational_output(scan_id).unwrap();
 
     let rel_set = plan.get_relational_from_row_nodes(output).unwrap();
@@ -42,7 +42,7 @@ fn rel_nodes_from_reference_in_proj() {
 
     let t = Table::new_seg("t", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t);
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
     let proj_id = plan.add_proj(scan_id, &["a"]).unwrap();
     let output = plan.get_relational_output(proj_id).unwrap();
 

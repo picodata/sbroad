@@ -13,7 +13,7 @@ fn sql_order_selection() {
     let mut plan = Plan::new();
     let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
     plan.add_rel(t);
-    let scan_id = plan.add_scan("t").unwrap();
+    let scan_id = plan.add_scan("t", None).unwrap();
 
     let a_id = plan.add_row_from_child(scan_id, &["a"]).unwrap();
     let const_1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());

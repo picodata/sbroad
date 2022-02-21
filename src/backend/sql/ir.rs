@@ -106,7 +106,7 @@ impl Plan {
             match data {
                 // TODO: should we care about plans without projections?
                 // Or they should be treated as invalid?
-                SyntaxData::Alias(s) => sql.push_str(&format!("as \"{}\"", s.as_str())),
+                SyntaxData::Alias(s) => sql.push_str(&format!("as {}", s.as_str())),
                 SyntaxData::CloseParenthesis => sql.push(')'),
                 SyntaxData::Comma => sql.push(','),
                 SyntaxData::Condition => sql.push_str("on"),
@@ -123,7 +123,7 @@ impl Plan {
                         }
                         Relational::Projection { .. } => sql.push_str("SELECT"),
                         Relational::ScanRelation { relation, .. } => {
-                            sql.push_str(&format!("\"{}\"", relation));
+                            sql.push_str(relation);
                         }
                         Relational::ScanSubQuery { .. } => {}
                         Relational::Selection { .. } => sql.push_str("WHERE"),
@@ -134,11 +134,26 @@ impl Plan {
                         | Expression::Bool { .. }
                         | Expression::Row { .. } => {}
                         Expression::Constant { value, .. } => sql.push_str(&format!("{}", value)),
-                        Expression::Reference { .. } => {
-                            sql.push_str(&format!(
-                                "\"{}\"",
-                                &self.get_alias_from_reference_node(expr)?
-                            ));
+                        Expression::Reference { position, .. } => {
+                            let rel_id: usize = self
+                                .get_relational_from_reference_node(*id)?
+                                .into_iter()
+                                .next()
+                                .ok_or_else(|| {
+                                    QueryPlannerError::CustomError(
+                                        "Reference points to a non-relational node.".into(),
+                                    )
+                                })?;
+                            let rel_node = self.get_relation_node(rel_id)?;
+                            if let Some(name) = rel_node.scan_name(self, *position)? {
+                                sql.push_str(&format!(
+                                    "{}.{}",
+                                    name,
+                                    &self.get_alias_from_reference_node(expr)?
+                                ));
+                            } else {
+                                sql.push_str(&self.get_alias_from_reference_node(expr)?);
+                            }
                         }
                     },
                 },

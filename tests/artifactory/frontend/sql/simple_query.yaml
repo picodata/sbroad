@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children:
-        - 7
+        - 8
       rule: Select
       value: ~
     - children:
-        - 5
+        - 6
         - 2
       rule: Selection
       value: ~
@@ -18,11 +18,15 @@ nodes:
     - children: []
       rule: Number
       value: 1
-    - children: []
+    - children:
+        - 5
       rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
       value: "\"identification_number\""
     - children:
-        - 6
+        - 7
       rule: Scan
       value: ~
     - children: []
@@ -30,45 +34,53 @@ nodes:
       value: "\"test_space\""
     - children:
         - 1
-        - 10
-        - 8
+        - 12
+        - 9
       rule: Projection
       value: ~
     - children:
-        - 15
+        - 18
       rule: Column
       value: ~
-    - children: []
-      rule: Reference
-      value: "\"product_code\""
-    - children:
-        - 13
-      rule: Column
-      value: ~
-    - children: []
-      rule: Reference
-      value: "\"identification_number\""
-    - children: []
-      rule: AliasName
-      value: "\"identification_number\""
     - children:
         - 11
-        - 12
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "\"product_code\""
+    - children:
+        - 16
+      rule: Column
+      value: ~
+    - children:
+        - 14
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "\"identification_number\""
+    - children: []
+      rule: AliasName
+      value: "\"identification_number\""
+    - children:
+        - 13
+        - 15
       rule: Alias
       value: ~
     - children: []
       rule: AliasName
       value: "\"product_code\""
     - children:
-        - 9
-        - 14
+        - 10
+        - 17
       rule: Alias
       value: ~
-top: 7
+top: 8
 map:
+  10:
+    - 1
+  13:
+    - 1
   4:
-    - 5
-  9:
-    - 1
-  11:
-    - 1
+    - 6

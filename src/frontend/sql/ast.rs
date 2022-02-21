@@ -27,6 +27,7 @@ pub enum Type {
     Asterisk,
     Bool,
     Column,
+    ColumnName,
     Condition,
     Gt,
     Eq,
@@ -47,6 +48,7 @@ pub enum Type {
     Reference,
     Row,
     Scan,
+    ScanName,
     Select,
     Selection,
     String,
@@ -68,6 +70,7 @@ impl Type {
             Rule::Asterisk => Ok(Type::Asterisk),
             Rule::Bool => Ok(Type::Bool),
             Rule::Column => Ok(Type::Column),
+            Rule::ColumnName => Ok(Type::ColumnName),
             Rule::Condition => Ok(Type::Condition),
             Rule::Gt => Ok(Type::Gt),
             Rule::Eq => Ok(Type::Eq),
@@ -88,11 +91,11 @@ impl Type {
             Rule::Reference => Ok(Type::Reference),
             Rule::Row => Ok(Type::Row),
             Rule::Scan => Ok(Type::Scan),
+            Rule::ScanName => Ok(Type::ScanName),
             Rule::Select => Ok(Type::Select),
             Rule::Selection => Ok(Type::Selection),
             Rule::String => Ok(Type::String),
             Rule::SubQuery => Ok(Type::SubQuery),
-            Rule::SubQueryName => Ok(Type::SubQueryName),
             Rule::Table => Ok(Type::Table),
             Rule::UnionAll => Ok(Type::UnionAll),
             Rule::Value => Ok(Type::Value),
@@ -617,7 +620,30 @@ impl AbstractSyntaxTree {
                                 columns.push((*child_id, None));
                             }
                             Type::Reference => {
-                                columns.push((*child_id, col_child.value.clone()));
+                                let col_name_id: usize = if let (Some(_), Some(col_name_id)) =
+                                    (col_child.children.get(0), col_child.children.get(1))
+                                {
+                                    *col_name_id
+                                } else if let (Some(col_name_id), None) =
+                                    (col_child.children.get(0), col_child.children.get(1))
+                                {
+                                    *col_name_id
+                                } else {
+                                    return Err(QueryPlannerError::CustomError(
+                                        "Column doesn't have any children".into(),
+                                    ));
+                                };
+                                let col_name = self.nodes.get_node(col_name_id)?;
+                                let name: String = col_name
+                                    .value
+                                    .as_ref()
+                                    .ok_or_else(|| {
+                                        QueryPlannerError::CustomError(
+                                            "Column name is empty".into(),
+                                        )
+                                    })?
+                                    .clone();
+                                columns.push((*child_id, Some(name)));
                             }
                             _ => {
                                 pos += 1;

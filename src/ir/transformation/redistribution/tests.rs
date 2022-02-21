@@ -18,7 +18,7 @@ fn segment_motion_for_sub_query() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg(
@@ -31,7 +31,7 @@ fn segment_motion_for_sub_query() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
@@ -85,7 +85,7 @@ fn full_motion_less_for_sub_query() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg(
@@ -98,7 +98,7 @@ fn full_motion_less_for_sub_query() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
@@ -146,12 +146,12 @@ fn full_motion_non_segment_outer_for_sub_query() {
     )
     .unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
@@ -191,12 +191,12 @@ fn local_sub_query() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2").unwrap();
+    let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
@@ -236,7 +236,7 @@ fn multiple_sub_queries() {
 
     let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
     plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1").unwrap();
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
     let t2 = Table::new_seg(
@@ -249,13 +249,13 @@ fn multiple_sub_queries() {
     )
     .unwrap();
     plan.add_rel(t2);
-    let sq1_scan_t2_id = plan.add_scan("t2").unwrap();
+    let sq1_scan_t2_id = plan.add_scan("t2", None).unwrap();
     let sq1_proj_id = plan.add_proj(sq1_scan_t2_id, &["a"]).unwrap();
     let sq1_id = plan.add_sub_query(sq1_proj_id, None).unwrap();
     children.push(sq1_id);
     let sq1_pos = children.len() - 1;
 
-    let sq2_scan_t2_id = plan.add_scan("t2").unwrap();
+    let sq2_scan_t2_id = plan.add_scan("t2", None).unwrap();
     let sq2_proj_id = plan.add_proj(sq2_scan_t2_id, &["b"]).unwrap();
     let sq2_id = plan.add_sub_query(sq2_proj_id, None).unwrap();
     children.push(sq2_id);
