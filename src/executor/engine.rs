@@ -9,6 +9,16 @@ pub trait Metadata {
         &self,
         table_name: &str,
     ) -> Result<crate::ir::relation::Table, QueryPlannerError>;
+
+    fn to_name(s: &str) -> String {
+        if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
+            s.to_string()
+        } else if s.to_uppercase() == s {
+            s.to_lowercase()
+        } else {
+            format!("\"{}\"", s)
+        }
+    }
 }
 
 /// `Engine` trait is interface for working with execution engine.

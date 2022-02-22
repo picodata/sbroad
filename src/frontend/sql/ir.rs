@@ -77,6 +77,15 @@ impl Translation {
     }
 }
 
+fn to_name(s: &str) -> String {
+    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
+        return s.to_string();
+    }
+    s.trim_start_matches('"')
+        .trim_end_matches('"')
+        .to_lowercase()
+}
+
 impl AbstractSyntaxTree {
     /// Transform AST to IR plan tree.
     ///
@@ -113,7 +122,7 @@ impl AbstractSyntaxTree {
                         if let Type::ScanName = ast_scan_name.rule {
                             // Update scan name in the plan.
                             let scan = plan.get_mut_relation_node(plan_child_id)?;
-                            scan.set_scan_name(ast_scan_name.value.clone())?;
+                            scan.set_scan_name(ast_scan_name.value.as_ref().map(|s| to_name(s)))?;
                         } else {
                             return Err(QueryPlannerError::CustomError(
                                 "Expected scan name AST node.".into(),
@@ -151,7 +160,7 @@ impl AbstractSyntaxTree {
                                 ast_alias.rule
                             )));
                         }
-                        ast_alias.value.clone()
+                        ast_alias.value.as_deref().map(to_name)
                     } else {
                         None
                     };
@@ -176,10 +185,11 @@ impl AbstractSyntaxTree {
                         )
                     })?;
 
-                    let get_column_name = |ast_id: usize| -> Result<&str, QueryPlannerError> {
+                    let get_column_name = |ast_id: usize| -> Result<String, QueryPlannerError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
                         if let Type::ColumnName = ast_col_name.rule {
-                            Ok(ast_col_name.value.as_deref().ok_or_else(|| {
+                            let name: Option<String> = ast_col_name.value.as_deref().map(to_name);
+                            Ok(name.ok_or_else(|| {
                                 QueryPlannerError::CustomError("Empty AST column name".into())
                             })?)
                         } else {
@@ -189,7 +199,7 @@ impl AbstractSyntaxTree {
                         }
                     };
 
-                    let col_name: &str = if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
+                    let col_name: String = if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
                         (node.children.get(0), node.children.get(1))
                     {
                         // Check that scan name in the reference matches to the one in scan node.
@@ -222,7 +232,7 @@ impl AbstractSyntaxTree {
                     };
 
                     let ref_list =
-                        plan.new_columns(&[plan_rel_id], false, &[0], &[col_name], false)?;
+                        plan.new_columns(&[plan_rel_id], false, &[0], &[&col_name], false)?;
                     let ref_id = *ref_list.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError("Referred column is not found.".into())
                     })?;
@@ -273,7 +283,7 @@ impl AbstractSyntaxTree {
                         .ok_or_else(|| {
                             QueryPlannerError::CustomError("Alias name is not found.".into())
                         })?;
-                    let plan_alias_id = plan.nodes.add_alias(name, plan_ref_id)?;
+                    let plan_alias_id = plan.nodes.add_alias(&to_name(name), plan_ref_id)?;
                     map.add(*id, plan_alias_id);
                 }
                 Type::Column => {

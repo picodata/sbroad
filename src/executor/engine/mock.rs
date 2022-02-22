@@ -13,7 +13,8 @@ pub struct MetadataMock {
 
 impl Metadata for MetadataMock {
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
-        match self.tables.get(table_name) {
+        let name = Self::to_name(table_name);
+        match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::SpaceNotFound),
         }

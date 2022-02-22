@@ -54,7 +54,7 @@ impl ClusterSchema {
             let current_space_name = space_name.as_str().unwrap();
             if current_space_name == space {
                 for k in params["sharding_key"].as_vec().unwrap() {
-                    result.push(k.as_str().unwrap().to_string().to_lowercase());
+                    result.push(Self::to_name(k.as_str().unwrap()));
                 }
             }
         }
@@ -86,14 +86,14 @@ impl ClusterSchema {
                                 Some(t) => Type::new(t)?,
                                 None => return Err(QueryPlannerError::TypeNotImplemented),
                             };
-                            result.push(Column::new(name, t));
+                            result.push(Column::new(&Self::to_name(name), t));
                         }
                         result
                     }
                     None => return Err(QueryPlannerError::SpaceFormatNotFound),
                 };
 
-                let keys = match params["sharding_key"].as_vec() {
+                let keys: Vec<String> = match params["sharding_key"].as_vec() {
                     Some(keys) => {
                         let mut result = Vec::new();
                         for k in keys {
@@ -101,15 +101,17 @@ impl ClusterSchema {
                                 Some(k) => k,
                                 None => return Err(QueryPlannerError::InvalidColumnName),
                             };
-                            result.push(key);
+                            result.push(Self::to_name(key));
                         }
                         result
                     }
                     None => return Err(QueryPlannerError::SpaceFormatNotFound),
                 };
 
-                let t = Table::new_seg(current_space_name, fields, &keys)?;
-                self.tables.insert(current_space_name.to_string(), t);
+                let table_name: String = ClusterSchema::to_name(current_space_name);
+                let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
+                let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
+                self.tables.insert(table_name, t);
             } else {
                 return Err(QueryPlannerError::InvalidSpaceName);
             }
@@ -179,7 +181,7 @@ fn test_yaml_schema_parser() {
             type: \"unsigned\"
             is_nullable: true
     sharding_key:
-      - ID
+      - \"ID\"
   hash_testing:
     is_local: false
     temporary: false
@@ -216,16 +218,17 @@ fn test_yaml_schema_parser() {
             type: \"unsigned\"
         type: \"TREE\"
     sharding_key:
-      - identification_number
-      - product_code";
+      - \"identification_number\"
+      - \"product_code\"";
 
     let mut s = ClusterSchema::new();
     s.load(test_schema).unwrap();
 
     let mut expected_keys = Vec::new();
-    expected_keys.push("identification_number".to_string());
-    expected_keys.push("product_code".to_string());
+    expected_keys.push("\"identification_number\"".to_string());
+    expected_keys.push("\"product_code\"".to_string());
 
+    // FIXME: do we need "to_name()" here?
     let actual_keys = s.get_sharding_key_by_space("hash_testing");
     assert_eq!(actual_keys, expected_keys)
 }
@@ -269,22 +272,22 @@ fn test_getting_table_segment() {
             type: \"unsigned\"
         type: \"TREE\"
     sharding_key:
-      - identification_number
-      - product_code";
+      - \"identification_number\"
+      - \"product_code\"";
 
     let mut s = ClusterSchema::new();
     s.load(test_schema).unwrap();
 
     let expected = Table::new_seg(
-        "hash_testing",
+        "\"hash_testing\"",
         vec![
-            Column::new("identification_number", Type::Integer),
-            Column::new("product_code", Type::String),
-            Column::new("product_units", Type::Boolean),
-            Column::new("sys_op", Type::Number),
-            Column::new("bucket_id", Type::Unsigned),
+            Column::new("\"identification_number\"", Type::Integer),
+            Column::new("\"product_code\"", Type::String),
+            Column::new("\"product_units\"", Type::Boolean),
+            Column::new("\"sys_op\"", Type::Number),
+            Column::new("\"bucket_id\"", Type::Unsigned),
         ],
-        &["identification_number", "product_code"],
+        &["\"identification_number\"", "\"product_code\""],
     )
     .unwrap();
 
@@ -292,5 +295,5 @@ fn test_getting_table_segment() {
         s.get_table_segment("invalid_table").unwrap_err(),
         QueryPlannerError::SpaceNotFound
     );
-    assert_eq!(s.get_table_segment("hash_testing").unwrap(), expected)
+    assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected)
 }
