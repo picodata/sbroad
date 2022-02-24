@@ -590,7 +590,9 @@ impl Plan {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.children())
         } else {
-            Err(QueryPlannerError::InvalidRelation)
+            Err(QueryPlannerError::CustomError(
+                "Invalid relational node".into(),
+            ))
         }
     }
 

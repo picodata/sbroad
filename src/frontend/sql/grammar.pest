@@ -57,7 +57,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(Keyword) ~ ('A' .. 'Z' | 'a'..'z' | "_" | Int)+ }
+String = @{ !(Keyword) ~ ('A' .. 'Z' | 'a'..'z' | "_" | ASCII_DIGIT)+ }
     Keyword = {
         ^"all" | ^"and" | ^"as" | ^"false" | ^"from"
         | ^"in" | ^"inner" | ^"insert" | ^"into" | ^"join" | ^"null"

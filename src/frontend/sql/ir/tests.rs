@@ -151,16 +151,47 @@ fn sub_query_in_selection() {
 
 #[test]
 fn inner_join() {
-    let query = r#"SELECT * FROM "hash_testing"
-        INNER JOIN "hash_testing_hist"
-        ON "hash_testing"."identification_number" = "hash_testing_hist"."identification_number"
+    let query = r#"SELECT "id", "product_units" FROM "hash_testing"
+        INNER JOIN (SELECT "id" FROM "test_space") as t
+        ON "hash_testing"."identification_number" = t."id"
+        WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
+
+    let top_id = plan.get_top().unwrap();
+    let sql = plan.subtree_as_sql(top_id).unwrap();
+
+    assert_eq!(
+        format!(
+            "{} {} {} {}",
+            r#"SELECT t."id" as "id", "hash_testing"."product_units" as "product_units""#,
+            r#"FROM "hash_testing" INNER JOIN (SELECT "test_space"."id" as "id" FROM "test_space") as t"#,
+            r#"ON ("hash_testing"."identification_number") = (t."id")"#,
+            r#"WHERE ("hash_testing"."identification_number") = (5) and ("hash_testing"."product_code") = ('123')"#,
+        ),
+        sql
+    );
+}
+
+#[test]
+fn inner_join_duplicate_columns() {
+    // Tables "test_space" and "hash_testing" have the same columns "sys_op" and "bucket_id",
+    // that cause a "duplicate column" error in the output tuple of the INNER JOIN node.
+    // The error is handled by renaming the columns within a sub-query (inner_join test).
+    //
+    // TODO: improve reference resolution to avoid this error.
+    let query = r#"SELECT "id", "product_units" FROM "hash_testing"
+        INNER JOIN "test_space" as t
+        ON "hash_testing"."identification_number" = t."id"
         WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.to_ir(metadata).unwrap_err();
 
-    assert_eq!("Joins are not implemented yet.", format!("{}", plan_err));
+    assert_eq!(QueryPlannerError::DuplicateColumn, plan_err);
 }
 
 #[test]

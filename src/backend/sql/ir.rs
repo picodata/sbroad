@@ -109,7 +109,7 @@ impl Plan {
                 SyntaxData::Alias(s) => sql.push_str(&format!("as {}", s.as_str())),
                 SyntaxData::CloseParenthesis => sql.push(')'),
                 SyntaxData::Comma => sql.push(','),
-                SyntaxData::Condition => sql.push_str("on"),
+                SyntaxData::Condition => sql.push_str("ON"),
                 SyntaxData::From => sql.push_str("FROM"),
                 SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                 SyntaxData::OpenParenthesis => sql.push('('),

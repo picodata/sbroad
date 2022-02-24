@@ -216,7 +216,9 @@ impl Plan {
                 return Ok(self.nodes.add_row(cols, None));
             }
         }
-        Err(QueryPlannerError::InvalidRelation)
+        Err(QueryPlannerError::CustomError(
+            "Node is not relational".into(),
+        ))
     }
 
     #[must_use]

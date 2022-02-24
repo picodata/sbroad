@@ -81,9 +81,7 @@ fn to_name(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
         return s.to_string();
     }
-    s.trim_start_matches('"')
-        .trim_end_matches('"')
-        .to_lowercase()
+    s.to_lowercase()
 }
 
 impl AbstractSyntaxTree {
@@ -103,10 +101,10 @@ impl AbstractSyntaxTree {
             Some(t) => t,
             None => return Err(QueryPlannerError::InvalidAst),
         };
-        let dft_pre = DftPost::new(&top, |node| self.nodes.tree_iter(node));
+        let dft_post = DftPost::new(&top, |node| self.nodes.tree_iter(node));
         let mut map = Translation::new();
 
-        for (_, id) in dft_pre {
+        for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?.clone();
             match &node.rule {
                 Type::Scan => {
@@ -174,16 +172,6 @@ impl AbstractSyntaxTree {
                         let plan_id = map.get(ast_id)?;
                         plan_rel_list.push(plan_id);
                     }
-                    if plan_rel_list.len() > 1 {
-                        return Err(QueryPlannerError::CustomError(
-                            "Joins are not implemented yet.".into(),
-                        ));
-                    }
-                    let plan_rel_id = *plan_rel_list.get(0).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Referred relational node is not found.".into(),
-                        )
-                    })?;
 
                     let get_column_name = |ast_id: usize| -> Result<String, QueryPlannerError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
@@ -199,44 +187,156 @@ impl AbstractSyntaxTree {
                         }
                     };
 
-                    let col_name: String = if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
-                        (node.children.get(0), node.children.get(1))
+                    // Reference to the join node.
+                    if let (Some(plan_left_id), Some(plan_right_id)) =
+                        (plan_rel_list.get(0), plan_rel_list.get(1))
                     {
-                        // Check that scan name in the reference matches to the one in scan node.
-                        let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
-                        if let Type::ScanName = ast_scan_name.rule {
-                            let plan_scan_name =
-                                plan.get_relation_node(plan_rel_id)?.scan_name(&plan, 0)?;
-                            let scan_name = ast_scan_name.value.as_deref();
-                            if plan_scan_name != scan_name {
+                        if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
+                            (node.children.get(0), node.children.get(1))
+                        {
+                            let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
+                            if let Type::ScanName = ast_scan_name.rule {
+                                // Check that the scan name matches to the children in the join node.
+                                let left_name =
+                                    plan.get_relation_node(*plan_left_id)?.scan_name(&plan, 0)?;
+                                let right_name = plan
+                                    .get_relation_node(*plan_right_id)?
+                                    .scan_name(&plan, 0)?;
+                                let scan_name = ast_scan_name.value.as_deref();
+                                let col_name = get_column_name(*ast_col_name_id)?;
+                                // Determine the referred side of the join (left or right).
+                                if left_name == scan_name {
+                                    let left_col_map = plan
+                                        .get_relation_node(*plan_left_id)?
+                                        .output_alias_position_map(&plan.nodes)?;
+                                    if left_col_map.get(&col_name).is_some() {
+                                        let ref_id = plan.add_row_from_left_branch(
+                                            *plan_left_id,
+                                            *plan_right_id,
+                                            &[&col_name],
+                                        )?;
+                                        map.add(*id, ref_id);
+                                    } else {
+                                        return Err(QueryPlannerError::CustomError(format!(
+                                            "Column '{}' not found in for the join left child '{:?}'.",
+                                            col_name, left_name
+                                        )));
+                                    }
+                                } else if right_name == scan_name {
+                                    let right_col_map = plan
+                                        .get_relation_node(*plan_right_id)?
+                                        .output_alias_position_map(&plan.nodes)?;
+                                    if right_col_map.get(&col_name).is_some() {
+                                        let ref_id = plan.add_row_from_right_branch(
+                                            *plan_left_id,
+                                            *plan_right_id,
+                                            &[&col_name],
+                                        )?;
+                                        map.add(*id, ref_id);
+                                    } else {
+                                        return Err(QueryPlannerError::CustomError(format!(
+                                            "Column '{}' not found in for the join right child '{:?}'.",
+                                            col_name, right_name
+                                        )));
+                                    }
+                                } else {
+                                    return Err(QueryPlannerError::CustomError(
+                                        "Left and right plan nodes do not match the AST scan name."
+                                            .into(),
+                                    ));
+                                }
+                            } else {
                                 return Err(QueryPlannerError::CustomError(
-                                    "Scan name is not matched.".into(),
+                                    "Expected AST node to be a scan name.".into(),
                                 ));
                             }
+                        } else if let (Some(ast_col_name_id), None) =
+                            (node.children.get(0), node.children.get(1))
+                        {
+                            // Determine the referred side of the join (left or right).
+                            let col_name = get_column_name(*ast_col_name_id)?;
+                            let left_col_map = plan
+                                .get_relation_node(*plan_left_id)?
+                                .output_alias_position_map(&plan.nodes)?;
+                            if left_col_map.get(&col_name).is_some() {
+                                let ref_id = plan.add_row_from_left_branch(
+                                    *plan_left_id,
+                                    *plan_right_id,
+                                    &[&col_name],
+                                )?;
+                                map.add(*id, ref_id);
+                            }
+                            let right_col_map = plan
+                                .get_relation_node(*plan_right_id)?
+                                .output_alias_position_map(&plan.nodes)?;
+                            if right_col_map.get(&col_name).is_some() {
+                                let ref_id = plan.add_row_from_right_branch(
+                                    *plan_left_id,
+                                    *plan_right_id,
+                                    &[&col_name],
+                                )?;
+                                map.add(*id, ref_id);
+                            }
+                            return Err(QueryPlannerError::CustomError(format!(
+                                "Column '{}' not found in for the join left or right children.",
+                                col_name
+                            )));
                         } else {
                             return Err(QueryPlannerError::CustomError(
-                                "Expected scan name AST node.".into(),
+                                "Expected children nodes contain a column name.".into(),
                             ));
                         };
-                        // Get column name.
-                        get_column_name(*ast_col_name_id)?
-                    } else if let (Some(ast_col_name_id), None) =
-                        (node.children.get(0), node.children.get(1))
+
+                    // Reference to a single child node.
+                    } else if let (Some(plan_rel_id), None) =
+                        (plan_rel_list.get(0), plan_rel_list.get(1))
                     {
-                        // Get the column name.
-                        get_column_name(*ast_col_name_id)?
+                        let col_name: String =
+                            if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
+                                (node.children.get(0), node.children.get(1))
+                            {
+                                // Check that scan name in the reference matches to the one in scan node.
+                                let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
+                                if let Type::ScanName = ast_scan_name.rule {
+                                    let plan_scan_name = plan
+                                        .get_relation_node(*plan_rel_id)?
+                                        .scan_name(&plan, 0)?;
+                                    let scan_name = ast_scan_name.value.as_deref();
+                                    if plan_scan_name != scan_name {
+                                        return Err(QueryPlannerError::CustomError(
+                                            "Scan name is not matched.".into(),
+                                        ));
+                                    }
+                                } else {
+                                    return Err(QueryPlannerError::CustomError(
+                                        "Expected AST node to be a scan name.".into(),
+                                    ));
+                                };
+                                // Get column name.
+                                get_column_name(*ast_col_name_id)?
+                            } else if let (Some(ast_col_name_id), None) =
+                                (node.children.get(0), node.children.get(1))
+                            {
+                                // Get the column name.
+                                get_column_name(*ast_col_name_id)?
+                            } else {
+                                return Err(QueryPlannerError::CustomError(
+                                    "No child node found in the AST reference.".into(),
+                                ));
+                            };
+
+                        let ref_list =
+                            plan.new_columns(&[*plan_rel_id], false, &[0], &[&col_name], false)?;
+                        let ref_id = *ref_list.get(0).ok_or_else(|| {
+                            QueryPlannerError::CustomError("Referred column is not found.".into())
+                        })?;
+                        map.add(*id, ref_id);
                     } else {
                         return Err(QueryPlannerError::CustomError(
-                            "No child node found in the AST reference.".into(),
+                            "Expected one or two referred relational nodes, got less or more."
+                                .into(),
                         ));
-                    };
-
-                    let ref_list =
-                        plan.new_columns(&[plan_rel_id], false, &[0], &[&col_name], false)?;
-                    let ref_id = *ref_list.get(0).ok_or_else(|| {
-                        QueryPlannerError::CustomError("Referred column is not found.".into())
-                    })?;
-                    map.add(*id, ref_id);
+                    }
                 }
                 Type::Number | Type::String => {
                     let val = Value::from_node(&node)?;
@@ -328,6 +428,35 @@ impl AbstractSyntaxTree {
                     let op = Bool::from_node_type(&node.rule)?;
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(*id, cond_id);
+                }
+                Type::Condition => {
+                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError("Condition has no children.".into())
+                    })?;
+                    let plan_child_id = map.get(*ast_child_id)?;
+                    map.add(*id, plan_child_id);
+                }
+                Type::InnerJoin => {
+                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Left node id is not found among join children.".into(),
+                        )
+                    })?;
+                    let plan_left_id = map.get(*ast_left_id)?;
+                    let ast_right_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Right node id is not found among join children.".into(),
+                        )
+                    })?;
+                    let plan_right_id = map.get(*ast_right_id)?;
+                    let ast_cond_id = node.children.get(2).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Condition node id is not found among join children.".into(),
+                        )
+                    })?;
+                    let plan_cond_id = map.get(*ast_cond_id)?;
+                    let plan_join_id = plan.add_join(plan_left_id, plan_right_id, plan_cond_id)?;
+                    map.add(*id, plan_join_id);
                 }
                 Type::Selection => {
                     let ast_child_id = node.children.get(0).ok_or_else(|| {
