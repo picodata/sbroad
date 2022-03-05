@@ -115,10 +115,6 @@ impl Distribution {
 impl Plan {
     /// Calculate and set tuple distribution.
     ///
-    /// As the references in the `Row` expression contain only logical ID of the parent relational nodes,
-    /// we need at first traverse all the plan nodes and build a "logical id - array position" map with
-    /// `relational_id_map()` function and pass its reference to this function.
-    ///
     /// # Errors
     /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
     pub fn set_distribution(&mut self, row_node: usize) -> Result<(), QueryPlannerError> {
@@ -411,6 +407,22 @@ impl Plan {
             return expr.distribution();
         }
         Err(QueryPlannerError::InvalidNode)
+    }
+
+    /// Get distribution of the row node or initialize it if not set.
+    ///
+    /// # Errors
+    /// - node is invalid
+    /// - node is not a row
+    /// - row contains broken references
+    pub fn get_or_init_distribution(
+        &mut self,
+        row_id: usize,
+    ) -> Result<&Distribution, QueryPlannerError> {
+        if let Err(QueryPlannerError::UninitializedDistribution) = self.get_distribution(row_id) {
+            self.set_distribution(row_id)?;
+        }
+        self.get_distribution(row_id)
     }
 }
 

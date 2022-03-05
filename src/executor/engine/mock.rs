@@ -69,6 +69,17 @@ impl MetadataMock {
             Table::new_seg("\"history\"", columns.clone(), sharding_key).unwrap(),
         );
 
+        let columns = vec![
+            Column::new("\"a\"", Type::Number),
+            Column::new("\"b\"", Type::Number),
+            Column::new("\"c\"", Type::Number),
+        ];
+        let sharding_key: &[&str] = &["\"a\"", "\"b\""];
+        tables.insert(
+            "\"t\"".to_string(),
+            Table::new_seg("\"t\"", columns.clone(), sharding_key).unwrap(),
+        );
+
         MetadataMock { tables }
     }
 }

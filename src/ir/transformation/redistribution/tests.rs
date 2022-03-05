@@ -315,7 +315,163 @@ fn union_all_in_sq() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.add_motions().unwrap();
-    // assert_eq!("", serde_yaml::to_string(&plan).unwrap());
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn inner_join_eq_for_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN "t"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn join_inner_sq_eq_for_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn join_inner_eq_non_match_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."pc", "t2"."id")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(Key {
+                positions: vec![0, 1]
+            })
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn join_inner_sq_eq_for_keys_with_const() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", 1, "t1"."product_code") = ("t2"."id", 1, "t2"."pc")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn join_inner_sq_less_for_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", "t1"."product_code") < ("t2"."id", "t2"."pc")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Full);
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn join_inner_sq_eq_no_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", 1) = (1, "t2"."pc")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Full);
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn join_inner_sq_eq_no_outer_keys() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", 1) = ("t2"."id", "t2"."pc")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Full);
+    } else {
+        panic!("Expected a motion node");
+    }
 }
