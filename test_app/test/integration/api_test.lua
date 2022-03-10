@@ -43,10 +43,18 @@ g.after_each(
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
+    local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]] })
+    t.assert_equals(err, "CustomError(\"Invalid command.\")")
+end
+
+g.test_join_query_is_valid = function()
+    local api = cluster:server("api-1").net_box
+
     local _, err = api:call("query", { [[SELECT * FROM "testing_space"
-            INNER JOIN "testing_space" ON "testing_space"."id" = "testing_space"."a_id"
+            INNER JOIN (SELECT "id" AS "inner_id", "name" AS "inner_name" FROM "testing_space") as t
+            ON ("testing_space"."id", "testing_space"."name") = (t."inner_id", t."inner_name")
         WHERE "id" = 5 and "name" = '123']] })
-    t.assert_equals(err, "query wasn't implemented")
+    t.assert_equals(err, nil)
 end
 
 g.test_simple_shard_key_query = function()

@@ -7,7 +7,6 @@ use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
-use crate::errors::QueryPlannerError;
 use crate::executor::engine::{cartridge, Engine};
 use crate::executor::Query;
 
@@ -87,11 +86,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                     &format!("{:?}", e),
                 );
                 // Temporary error for parsing ast error because someone query types aren't implemented
-                return tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
-                    "{}",
-                    QueryPlannerError::QueryNotImplemented.to_string()
-                );
+                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
             }
         };
 

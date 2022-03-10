@@ -408,15 +408,9 @@ impl AbstractSyntaxTree {
                         // reference-to-row logic in AST code, we should unwrap it back.
                         let plan_id = if rows.get(&plan_child_id).is_some() {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
-                            if let Expression::Row { list, .. } = plan_inner_expr {
-                                *list.get(0).ok_or_else(|| {
-                                    QueryPlannerError::CustomError("Row is empty.".into())
-                                })?
-                            } else {
-                                return Err(QueryPlannerError::CustomError(
-                                    "Expected a row expression.".into(),
-                                ));
-                            }
+                            *plan_inner_expr.extract_row_list()?.get(0).ok_or_else(|| {
+                                QueryPlannerError::CustomError("Row is empty.".into())
+                            })?
                         } else {
                             plan_child_id
                         };
