@@ -475,3 +475,144 @@ fn join_inner_sq_eq_no_outer_keys() {
         panic!("Expected a motion node");
     }
 }
+
+#[test]
+fn inner_join_full_policy_sq_in_filter() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN "t"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+    AND ("t"."a", "t"."b") >=
+    (SELECT "hash_testing"."sys_op", "hash_testing"."bucket_id" FROM "hash_testing")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Full);
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn inner_join_local_policy_sq_in_filter() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN "t"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+    AND ("t"."a", "t"."b") =
+    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn inner_join_local_policy_sq_with_union_all_in_filter() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN "t"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+    AND ("t"."a", "t"."b") =
+    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
+    UNION ALL
+    SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code" FROM "hash_testing_hist")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn inner_join_full_policy_sq_with_union_all_in_filter() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN "t"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+    AND ("t"."a", "t"."b") =
+    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
+    UNION ALL
+    SELECT "hash_testing_hist"."product_code", "hash_testing_hist"."identification_number" FROM "hash_testing_hist")"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(Key {
+                positions: vec![0, 1]
+            })
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn join_inner_and_local_full_policies() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
+    AND "t1"."identification_number" = "t2"."pc""#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn join_inner_or_local_full_policies() {
+    let query = r#"SELECT * FROM "hash_testing" AS "t1"
+    INNER JOIN
+    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
+    OR "t1"."identification_number" = "t2"."pc""#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Full);
+    } else {
+        panic!("Expected a motion node");
+    }
+}

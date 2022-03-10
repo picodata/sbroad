@@ -1,7 +1,6 @@
 extern crate pest;
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::mem::swap;
 
 use pest::iterators::Pair;
@@ -125,7 +124,7 @@ impl ParseNode {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ParseNodes {
-    arena: Vec<ParseNode>,
+    pub(crate) arena: Vec<ParseNode>,
 }
 
 #[allow(dead_code)]
@@ -688,7 +687,12 @@ impl AbstractSyntaxTree {
     /// - Projection, selection and inner join nodes don't have valid children.
     fn build_ref_to_relation_map(&mut self) -> Result<(), QueryPlannerError> {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
-        for rel_node in &self.nodes.arena {
+        // Traverse relational nodes in Post Order and then enter their subtrees
+        // and map expressions to relational nodes.
+        let top = self.get_top()?;
+        let tree = DftPost::new(&top, |node| self.nodes.ast_iter(node));
+        for (_, node_id) in tree {
+            let rel_node = self.nodes.get_node(*node_id)?;
             match rel_node.rule {
                 Type::Projection => {
                     let rel_id = rel_node.children.get(0).ok_or_else(|| {
@@ -697,11 +701,13 @@ impl AbstractSyntaxTree {
                         )
                     })?;
                     for top in rel_node.children.iter().skip(1) {
-                        let subtree = DftPost::new(top, |node| self.nodes.tree_iter(node));
+                        let subtree = DftPost::new(top, |node| self.nodes.ast_iter(node));
                         for (_, id) in subtree {
                             let node = self.nodes.get_node(*id)?;
                             if let Type::Reference | Type::Asterisk = node.rule {
-                                map.insert(*id, vec![*rel_id]);
+                                if let Entry::Vacant(entry) = map.entry(*id) {
+                                    entry.insert(vec![*rel_id]);
+                                }
                             }
                         }
                     }
@@ -717,11 +723,13 @@ impl AbstractSyntaxTree {
                             "AST selection doesn't have a filter child.".into(),
                         )
                     })?;
-                    let subtree = DftPost::new(filter, |node| self.nodes.tree_iter(node));
+                    let subtree = DftPost::new(filter, |node| self.nodes.ast_iter(node));
                     for (_, id) in subtree {
                         let node = self.nodes.get_node(*id)?;
                         if node.rule == Type::Reference {
-                            map.insert(*id, vec![*rel_id]);
+                            if let Entry::Vacant(entry) = map.entry(*id) {
+                                entry.insert(vec![*rel_id]);
+                            }
                         }
                     }
                 }
@@ -741,11 +749,14 @@ impl AbstractSyntaxTree {
                             "AST inner join doesn't have a condition child.".into(),
                         )
                     })?;
-                    let subtree = DftPost::new(cond_id, |node| self.nodes.tree_iter(node));
+                    // ast_iter is not working here - we have to ignore sub-queries in the join condition.
+                    let subtree = DftPost::new(cond_id, |node| self.nodes.ast_iter(node));
                     for (_, id) in subtree {
                         let node = self.nodes.get_node(*id)?;
                         if node.rule == Type::Reference {
-                            map.insert(*id, vec![*left_id, *right_id]);
+                            if let Entry::Vacant(entry) = map.entry(*id) {
+                                entry.insert(vec![*left_id, *right_id]);
+                            }
                         }
                     }
                 }
@@ -768,41 +779,6 @@ impl AbstractSyntaxTree {
             .get(&id)
             .cloned()
             .ok_or_else(|| QueryPlannerError::CustomError("Reference is not found.".into()))
-    }
-}
-
-#[derive(Debug)]
-pub struct TreeIterator<'n> {
-    current: &'n usize,
-    child: RefCell<usize>,
-    nodes: &'n ParseNodes,
-}
-
-impl<'n> Iterator for TreeIterator<'n> {
-    type Item = &'n usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(node) = self.nodes.arena.get(*self.current) {
-            let step = *self.child.borrow();
-            if step < node.children.len() {
-                *self.child.borrow_mut() += 1;
-                return node.children.get(step);
-            }
-            None
-        } else {
-            None
-        }
-    }
-}
-
-impl<'n> ParseNodes {
-    #[allow(dead_code)]
-    pub fn tree_iter(&'n self, current: &'n usize) -> TreeIterator<'n> {
-        TreeIterator {
-            current,
-            child: RefCell::new(0),
-            nodes: self,
-        }
     }
 }
 

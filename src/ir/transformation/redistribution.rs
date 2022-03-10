@@ -19,7 +19,7 @@ pub enum MotionPolicy {
     /// No need to move data.
     Local,
 }
-
+#[derive(Debug)]
 struct BoolOp {
     left: usize,
     op: Bool,
@@ -263,9 +263,11 @@ impl Plan {
         rel_id: usize,
         row_id: usize,
     ) -> Result<Option<usize>, QueryPlannerError> {
-        if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
-            if self.sub_query_is_additional_child(rel_id, sq_id)? {
-                return Ok(Some(sq_id));
+        if self.get_expression_node(row_id)?.is_row() {
+            if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
+                if self.sub_query_is_additional_child(rel_id, sq_id)? {
+                    return Ok(Some(sq_id));
+                }
             }
         }
         Ok(None)

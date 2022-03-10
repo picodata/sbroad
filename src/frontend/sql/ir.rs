@@ -101,7 +101,7 @@ impl AbstractSyntaxTree {
             Some(t) => t,
             None => return Err(QueryPlannerError::InvalidAst),
         };
-        let dft_post = DftPost::new(&top, |node| self.nodes.tree_iter(node));
+        let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
         let mut map = Translation::new();
         let mut rows: HashSet<usize> = HashSet::new();
 
@@ -203,7 +203,9 @@ impl AbstractSyntaxTree {
                                 let right_name = plan
                                     .get_relation_node(*plan_right_id)?
                                     .scan_name(&plan, 0)?;
-                                let scan_name = ast_scan_name.value.as_deref();
+                                let scan_name_str: Option<String> =
+                                    ast_scan_name.value.as_deref().map(to_name);
+                                let scan_name: Option<&str> = scan_name_str.as_deref();
                                 let col_name = get_column_name(*ast_col_name_id)?;
                                 // Determine the referred side of the join (left or right).
                                 if left_name == scan_name {

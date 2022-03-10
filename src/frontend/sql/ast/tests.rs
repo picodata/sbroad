@@ -84,7 +84,7 @@ fn traversal() {
     let query = r#"select a from t where a = 1"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let top = ast.top.unwrap();
-    let mut dft_post = DftPost::new(&top, |node| ast.nodes.tree_iter(node));
+    let mut dft_post = DftPost::new(&top, |node| ast.nodes.ast_iter(node));
 
     let (_, table_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*table_id).unwrap();
