@@ -67,8 +67,9 @@ String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "_"
     Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
         Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
 
-Value = _{ Row | Bool | Null | Number | SingleQuotedString }
-    Bool = @{ ^"true" | ^"false" }
+Value = _{ Row | True | False | Null | Number | SingleQuotedString }
+    True = @{ ^"true" }
+    False = @{ ^"false" }
     Null = @{ ^"null" }
     SingleQuotedString = _{ "'" ~ String ~ "'" }
     Row = {

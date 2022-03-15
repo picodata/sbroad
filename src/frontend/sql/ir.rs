@@ -44,9 +44,11 @@ impl Value {
         };
 
         match s.rule {
+            Type::False => Ok(Value::Boolean(false)),
+            Type::Null => Ok(Value::Null),
             Type::Number => Ok(Value::number_from_str(val.as_str())?),
             Type::String => Ok(Value::string_from_str(val.as_str())),
-            Type::Null => Ok(Value::Null),
+            Type::True => Ok(Value::Boolean(true)),
             _ => Err(QueryPlannerError::UnsupportedIrValueType),
         }
     }
@@ -345,7 +347,7 @@ impl AbstractSyntaxTree {
                         ));
                     }
                 }
-                Type::Number | Type::String => {
+                Type::Number | Type::String | Type::Null | Type::True | Type::False => {
                     let val = Value::from_node(&node)?;
                     map.add(*id, plan.add_const(val));
                 }

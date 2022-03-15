@@ -67,7 +67,7 @@ impl<'e> ExecutionPlan<'e> {
         )))
     }
 
-    /// Extarct policy from motion node
+    /// Extract policy from motion node
     ///
     /// # Errors
     /// - node is not `Relation` type

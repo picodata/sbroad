@@ -5,7 +5,7 @@
 //! - the order of the columns (and we can get their types as well)
 //! - distribution of the data in the tuple
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
@@ -155,22 +155,59 @@ impl Expression {
         ))
     }
 
-    /// The node is `Row` type checking
-    ///
-    /// # Errors
-    /// - node isn't `Row` type
+    /// The node is a row expression.
     #[must_use]
     pub fn is_row(&self) -> bool {
         matches!(self, Expression::Row { .. })
     }
 
-    /// The node is `Const` type checking
-    ///
-    /// # Errors
-    /// - node isn't `Const` type
+    /// The node is a constant expression.
     #[must_use]
     pub fn is_const(&self) -> bool {
         matches!(self, Expression::Constant { .. })
+    }
+
+    /// The node is a boolean.
+    ///
+    /// # Errors
+    /// - If node isn't a boolean expression, a boolean constant
+    /// or a single boolean column row.
+    pub fn is_bool(&self, plan: &Plan) -> Result<bool, QueryPlannerError> {
+        match self {
+            Expression::Bool { .. }
+            | Expression::Constant {
+                value: Value::Boolean(_),
+                ..
+            } => return Ok(true),
+            Expression::Row { list, .. } => {
+                if let (Some(node_id), None) = (list.first(), list.get(1)) {
+                    let expr = plan.get_expression_node(*node_id)?;
+                    return expr.is_bool(plan);
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    /// The node is NULL.
+    ///
+    /// # Errors
+    /// - If node isn't a NULL constant or a single NULL column row.
+    pub fn is_null(&self, plan: &Plan) -> Result<bool, QueryPlannerError> {
+        match self {
+            Expression::Constant {
+                value: Value::Null, ..
+            } => return Ok(true),
+            Expression::Row { list, .. } => {
+                if let (Some(node_id), None) = (list.first(), list.get(1)) {
+                    let expr = plan.get_expression_node(*node_id)?;
+                    return expr.is_null(plan);
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     /// Replace parent in the reference node with the new one.
@@ -692,6 +729,64 @@ impl Plan {
             node.replace_parent_in_reference(from_id, to_id);
         }
         Ok(())
+    }
+
+    /// Clone an expression tree.
+    ///
+    /// # Errors
+    /// - Node is not an expression.
+    /// - Internal errors during the expression tree copy.
+    pub fn expr_clone(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
+        let subtree = DftPost::new(&expr_id, |node| self.nodes.expr_iter(node, false));
+        let mut nodes: Vec<usize> = Vec::new();
+        for (_, id) in subtree {
+            nodes.push(*id);
+        }
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for id in nodes {
+            let expr = self.get_expression_node(id)?.clone();
+            let new_id = match expr {
+                Expression::Alias { .. }
+                | Expression::Constant { .. }
+                | Expression::Reference { .. } => self.nodes.push(Node::Expression(expr)),
+                Expression::Bool { left, op, right } => {
+                    let new_left_id = *map.get(&left).ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Left child of bool node {} wasn't found in the clone map",
+                            id
+                        ))
+                    })?;
+                    let new_right_id = *map.get(&right).ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Right child of bool node {} wasn't found in the clone map",
+                            id
+                        ))
+                    })?;
+                    self.nodes.add_bool(new_left_id, op.clone(), new_right_id)?
+                }
+                Expression::Row { list, distribution } => {
+                    let mut new_list: Vec<usize> = Vec::new();
+                    for column_id in list {
+                        let new_column_id = *map.get(&column_id).ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Row column node {} wasn't found in the clone map",
+                                id
+                            ))
+                        })?;
+                        new_list.push(new_column_id);
+                    }
+                    self.nodes.add_row(new_list, distribution.clone())
+                }
+            };
+            map.insert(id, new_id);
+        }
+        let new_expr_id = *map.get(&expr_id).ok_or_else(|| {
+            QueryPlannerError::CustomError(format!(
+                "Expression node {} wasn't found in the clone map",
+                expr_id
+            ))
+        })?;
+        Ok(new_expr_id)
     }
 }
 
