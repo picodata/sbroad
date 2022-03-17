@@ -639,8 +639,7 @@ impl Plan {
     /// The node is a trivalent (boolean or NULL).
     ///
     /// # Errors
-    /// - If node isn't a trivalent expression, a trivalent constant
-    /// or a single trivalent column row.
+    /// - If node is not an expression.
     pub fn is_trivalent(&self, expr_id: usize) -> Result<bool, QueryPlannerError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {

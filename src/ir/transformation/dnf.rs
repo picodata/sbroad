@@ -76,7 +76,7 @@ use crate::ir::Plan;
 use std::collections::VecDeque;
 use traversal::DftPost;
 
-/// A chain of the boolean expressions concatenated by AND.
+/// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
 #[derive(Clone, Debug)]
 struct Chain {
     nodes: VecDeque<usize>,
@@ -120,13 +120,13 @@ impl Chain {
         Ok(None)
     }
 
-    /// Pop boolean nodes other than AND and OR (we keep then in the front).
+    /// Pop trivalent nodes other than AND and OR (we keep then in the front).
     fn pop_front(&mut self) -> Option<usize> {
         self.nodes.pop_front()
     }
 
     /// Convert a chain to a new expression tree
-    /// (all boolean expressions are cloned to the new nodes in arena).
+    /// (all trivalent expressions are cloned to the new nodes in arena).
     fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
         let mut top_id: Option<usize> = None;
         while let Some(expr_id) = self.pop_front() {
@@ -188,10 +188,10 @@ impl Plan {
         self.add_cond(left_expr_id, Bool::Or, right_expr_id)
     }
 
-    /// Convert an expression tree of boolean nodes to a disjunctive normal form (DNF).
+    /// Convert an expression tree of trivalent nodes to a disjunctive normal form (DNF).
     ///
     /// # Errors
-    /// - If the expression tree is not a boolean expression.
+    /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
     /// - Failed to convert the AND chain to a new expression tree.
     /// - Failed to concatenate the AND expression trees to the OR tree.
@@ -249,7 +249,7 @@ impl Plan {
             .ok_or_else(|| QueryPlannerError::CustomError("Chain returned no expressions".into()))
     }
 
-    /// Convert an expression tree of boolean nodes to a conjunctive
+    /// Convert an expression tree of trivalent nodes to a conjunctive
     /// normal form (CNF) for the whole plan.
     ///
     /// # Errors
