@@ -93,11 +93,13 @@ impl Chain {
     /// while other nodes in the front of the chain double-ended queue.
     fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), QueryPlannerError> {
         let expr = plan.get_expression_node(expr_id)?;
-        if let Expression::Bool { op, .. } = expr {
-            if let Bool::And | Bool::Or = *op {
-                self.nodes.push_back(expr_id);
-                return Ok(());
-            }
+        if let Expression::Bool {
+            op: Bool::And | Bool::Or,
+            ..
+        } = expr
+        {
+            self.nodes.push_back(expr_id);
+            return Ok(());
         }
         self.nodes.push_front(expr_id);
         Ok(())
@@ -107,10 +109,12 @@ impl Chain {
     fn pop_back(&mut self, plan: &Plan) -> Result<Option<usize>, QueryPlannerError> {
         if let Some(expr_id) = self.nodes.back() {
             let expr = plan.get_expression_node(*expr_id)?;
-            if let Expression::Bool { op, .. } = expr {
-                if let Bool::And | Bool::Or = *op {
-                    return Ok(self.nodes.pop_back());
-                }
+            if let Expression::Bool {
+                op: Bool::And | Bool::Or,
+                ..
+            } = expr
+            {
+                return Ok(self.nodes.pop_back());
             }
         }
         Ok(None)
@@ -126,16 +130,16 @@ impl Chain {
     fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
         let mut top_id: Option<usize> = None;
         while let Some(expr_id) = self.pop_front() {
-            let left_id: usize = if let Some(id) = top_id {
-                id
-            } else {
-                let new_expr_id = plan.expr_clone(expr_id)?;
-                top_id = Some(new_expr_id);
-                continue;
-            };
-
-            let right_id = plan.expr_clone(expr_id)?;
-            top_id = Some(plan.concat_and(left_id, right_id)?);
+            match top_id {
+                None => {
+                    let new_expr_id = plan.expr_clone(expr_id)?;
+                    top_id = Some(new_expr_id);
+                }
+                Some(left_id) => {
+                    let right_id = plan.expr_clone(expr_id)?;
+                    top_id = Some(plan.concat_and(left_id, right_id)?);
+                }
+            }
         }
         let new_top_id =
             top_id.ok_or_else(|| QueryPlannerError::CustomError("Empty chain".into()))?;
@@ -149,18 +153,16 @@ impl Plan {
         left_expr_id: usize,
         right_expr_id: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let left_expr = self.get_expression_node(left_expr_id)?;
-        if !left_expr.is_bool(self)? && !left_expr.is_null(self)? {
+        if !self.is_trivalent(left_expr_id)? {
             return Err(QueryPlannerError::CustomError(format!(
                 "Left expression is not a boolean expression or NULL: {:?}",
-                left_expr
+                self.get_expression_node(left_expr_id)?
             )));
         }
-        let right_expr = self.get_expression_node(right_expr_id)?;
-        if !right_expr.is_bool(self)? && !right_expr.is_null(self)? {
+        if !self.is_trivalent(right_expr_id)? {
             return Err(QueryPlannerError::CustomError(format!(
                 "Right expression is not a boolean expression or NULL: {:?}",
-                right_expr
+                self.get_expression_node(right_expr_id)?
             )));
         }
         self.add_cond(left_expr_id, Bool::And, right_expr_id)
@@ -171,18 +173,16 @@ impl Plan {
         left_expr_id: usize,
         right_expr_id: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let left_expr = self.get_expression_node(left_expr_id)?;
-        if !left_expr.is_bool(self)? && !left_expr.is_null(self)? {
+        if !self.is_trivalent(left_expr_id)? {
             return Err(QueryPlannerError::CustomError(format!(
                 "Left expression is not a boolean expression or NULL: {:?}",
-                left_expr
+                self.get_expression_node(left_expr_id)?
             )));
         }
-        let right_expr = self.get_expression_node(right_expr_id)?;
-        if !right_expr.is_bool(self)? && !right_expr.is_null(self)? {
+        if !self.is_trivalent(right_expr_id)? {
             return Err(QueryPlannerError::CustomError(format!(
                 "Right expression is not a boolean expression or NULL: {:?}",
-                right_expr
+                self.get_expression_node(right_expr_id)?
             )));
         }
         self.add_cond(left_expr_id, Bool::Or, right_expr_id)
@@ -239,20 +239,14 @@ impl Plan {
         let mut new_top_id: Option<usize> = None;
         while let Some(mut chain) = result.pop_front() {
             let ir_chain_top = chain.as_plan(self)?;
-            if let Some(top_id) = new_top_id {
-                new_top_id = Some(self.concat_or(top_id, ir_chain_top)?);
-            } else {
-                new_top_id = Some(ir_chain_top);
+            new_top_id = match new_top_id {
+                Some(top_id) => Some(self.concat_or(top_id, ir_chain_top)?),
+                None => Some(ir_chain_top),
             }
         }
 
-        if let Some(top_id) = new_top_id {
-            Ok(top_id)
-        } else {
-            Err(QueryPlannerError::CustomError(
-                "Chain returned no expressions".into(),
-            ))
-        }
+        new_top_id
+            .ok_or_else(|| QueryPlannerError::CustomError("Chain returned no expressions".into()))
     }
 
     /// Convert an expression tree of boolean nodes to a conjunctive

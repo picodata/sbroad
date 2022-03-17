@@ -167,49 +167,6 @@ impl Expression {
         matches!(self, Expression::Constant { .. })
     }
 
-    /// The node is a boolean.
-    ///
-    /// # Errors
-    /// - If node isn't a boolean expression, a boolean constant
-    /// or a single boolean column row.
-    pub fn is_bool(&self, plan: &Plan) -> Result<bool, QueryPlannerError> {
-        match self {
-            Expression::Bool { .. }
-            | Expression::Constant {
-                value: Value::Boolean(_),
-                ..
-            } => return Ok(true),
-            Expression::Row { list, .. } => {
-                if let (Some(node_id), None) = (list.first(), list.get(1)) {
-                    let expr = plan.get_expression_node(*node_id)?;
-                    return expr.is_bool(plan);
-                }
-            }
-            _ => {}
-        }
-        Ok(false)
-    }
-
-    /// The node is NULL.
-    ///
-    /// # Errors
-    /// - If node isn't a NULL constant or a single NULL column row.
-    pub fn is_null(&self, plan: &Plan) -> Result<bool, QueryPlannerError> {
-        match self {
-            Expression::Constant {
-                value: Value::Null, ..
-            } => return Ok(true),
-            Expression::Row { list, .. } => {
-                if let (Some(node_id), None) = (list.first(), list.get(1)) {
-                    let expr = plan.get_expression_node(*node_id)?;
-                    return expr.is_null(plan);
-                }
-            }
-            _ => {}
-        }
-        Ok(false)
-    }
-
     /// Replace parent in the reference node with the new one.
     pub fn replace_parent_in_reference(&mut self, from_id: Option<usize>, to_id: Option<usize>) {
         if let Expression::Reference { parent, .. } = self {
@@ -677,6 +634,29 @@ impl Plan {
         }
 
         false
+    }
+
+    /// The node is a trivalent (boolean or NULL).
+    ///
+    /// # Errors
+    /// - If node isn't a trivalent expression, a trivalent constant
+    /// or a single trivalent column row.
+    pub fn is_trivalent(&self, expr_id: usize) -> Result<bool, QueryPlannerError> {
+        let expr = self.get_expression_node(expr_id)?;
+        match expr {
+            Expression::Bool { .. }
+            | Expression::Constant {
+                value: Value::Boolean(_) | Value::Null,
+                ..
+            } => return Ok(true),
+            Expression::Row { list, .. } => {
+                if let (Some(inner_id), None) = (list.first(), list.get(1)) {
+                    return self.is_trivalent(*inner_id);
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     /// Extract `Const` value from `Row` by index
