@@ -173,7 +173,7 @@ local config = {
           {
             name = "name",
             type = "string",
-            is_nullable = false
+            is_nullable = true
           },
           {
               name = "sysOp",
@@ -229,7 +229,7 @@ local config = {
           {
             name = "name",
             type = "string",
-            is_nullable = false
+            is_nullable = true
           },
           {
               name = "sysOp",

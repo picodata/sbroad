@@ -17,6 +17,7 @@ pub enum Value {
     Integer(i64),
     String(String),
     Unsigned(u64),
+    Null(tlua::Null),
 }
 
 impl fmt::Display for Value {
@@ -27,6 +28,7 @@ impl fmt::Display for Value {
             Value::Integer(v) => write!(f, "{}", v),
             Value::Unsigned(v) => write!(f, "{}", v),
             Value::String(v) => write!(f, "'{}'", v),
+            Value::Null(_) => write!(f, "NULL"),
         }
     }
 }
@@ -40,6 +42,7 @@ impl AsIrVal for Value {
             Value::Integer(v) => Ok(IrValue::Number(d128::from(*v))),
             Value::String(v) => Ok(IrValue::String(v.clone())),
             Value::Unsigned(v) => Ok(IrValue::Number(d128::from(*v))),
+            Value::Null(_) => Ok(IrValue::Null),
         }
     }
 }
@@ -57,6 +60,7 @@ impl Serialize for Value {
             Value::Integer(v) => serializer.serialize_i64(*v),
             Value::String(v) => serializer.serialize_str(v),
             Value::Unsigned(v) => serializer.serialize_u64(*v),
+            Value::Null(_) => serializer.serialize_none(),
         }
     }
 }

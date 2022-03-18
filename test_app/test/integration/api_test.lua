@@ -1,6 +1,5 @@
 local t = require('luatest')
 local g = t.group('integration_api')
-local fiber = require('fiber')
 
 local helper = require('test.helper')
 local cluster = helper.cluster
@@ -20,6 +19,9 @@ g.before_each(
 
         r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 1, name = "ok_hist", sysOp = 3 }})
         r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 2, name = "ok_hist_2", sysOp = 1 }})
+        t.assert_equals(r, true)
+
+        local r = api:call("insert_record", { "space_simple_shard_key", { id = 10, name = box.NULL, sysOp = 0 } })
         t.assert_equals(r, true)
     end
 )
@@ -204,6 +206,22 @@ g.test_motion_query = function()
         rows = {
             { 1, "ok" },
             { 1, "ok_hist" }
+        },
+    })
+end
+
+g.test_null_col_result = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key" WHERE "id" = 10]] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+        },
+        rows = {
+            { 10, box.NULL },
         },
     })
 end
