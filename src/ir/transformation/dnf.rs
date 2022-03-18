@@ -71,10 +71,9 @@
 
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::Bool;
 use crate::ir::Plan;
 use std::collections::VecDeque;
-use traversal::DftPost;
 
 /// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
 #[derive(Clone, Debug)]
@@ -145,6 +144,10 @@ impl Chain {
             top_id.ok_or_else(|| QueryPlannerError::CustomError("Empty chain".into()))?;
         Ok(new_top_id)
     }
+}
+
+fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+    plan.expr_tree_to_dnf(top_id)
 }
 
 impl Plan {
@@ -257,46 +260,7 @@ impl Plan {
     /// - If the plan doesn't contain relational operators where expected.
     /// - If failed to convert an expression tree to a CNF.
     pub fn set_dnf(&mut self) -> Result<(), QueryPlannerError> {
-        let mut nodes: Vec<usize> = Vec::new();
-        let top_id = self.get_top()?;
-        let subtree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
-        for (_, id) in subtree {
-            nodes.push(*id);
-        }
-        for id in &nodes {
-            let rel = self.get_relation_node(*id)?;
-            let new_tree_id = match rel {
-                Relational::Selection {
-                    filter: tree_id, ..
-                }
-                | Relational::Projection {
-                    output: tree_id, ..
-                }
-                | Relational::InnerJoin {
-                    condition: tree_id, ..
-                } => {
-                    let expr_id = *tree_id;
-                    self.expr_tree_to_dnf(expr_id)?
-                }
-                _ => continue,
-            };
-            let rel = self.get_mut_relation_node(*id)?;
-            match rel {
-                Relational::Selection {
-                    filter: tree_id, ..
-                }
-                | Relational::Projection {
-                    output: tree_id, ..
-                }
-                | Relational::InnerJoin {
-                    condition: tree_id, ..
-                } => {
-                    *tree_id = new_tree_id;
-                }
-                _ => continue,
-            }
-        }
-        Ok(())
+        self.transform_expr_trees(&call_expr_tree_to_dnf)
     }
 }
 
