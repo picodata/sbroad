@@ -151,46 +151,6 @@ fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, QueryP
 }
 
 impl Plan {
-    fn concat_and(
-        &mut self,
-        left_expr_id: usize,
-        right_expr_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
-        if !self.is_trivalent(left_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Left expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(left_expr_id)?
-            )));
-        }
-        if !self.is_trivalent(right_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Right expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(right_expr_id)?
-            )));
-        }
-        self.add_cond(left_expr_id, Bool::And, right_expr_id)
-    }
-
-    fn concat_or(
-        &mut self,
-        left_expr_id: usize,
-        right_expr_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
-        if !self.is_trivalent(left_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Left expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(left_expr_id)?
-            )));
-        }
-        if !self.is_trivalent(right_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Right expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(right_expr_id)?
-            )));
-        }
-        self.add_cond(left_expr_id, Bool::Or, right_expr_id)
-    }
-
     /// Convert an expression tree of trivalent nodes to a disjunctive normal form (DNF).
     ///
     /// # Errors
