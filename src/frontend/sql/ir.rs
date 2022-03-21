@@ -190,6 +190,24 @@ impl AbstractSyntaxTree {
                         }
                     };
 
+                    let get_scan_name =
+                        |col_name: &str,
+                         plan_id: usize|
+                         -> Result<Option<String>, QueryPlannerError> {
+                            let child = plan.get_relation_node(plan_id)?;
+                            let col_position = child
+                                .output_alias_position_map(&plan.nodes)?
+                                .get(col_name)
+                                .copied();
+                            match col_position {
+                                Some(pos) => Ok(plan
+                                    .get_relation_node(plan_id)?
+                                    .scan_name(&plan, pos)?
+                                    .map(String::from)),
+                                None => Ok(None),
+                            }
+                        };
+
                     // Reference to the join node.
                     if let (Some(plan_left_id), Some(plan_right_id)) =
                         (plan_rel_list.get(0), plan_rel_list.get(1))
@@ -199,16 +217,13 @@ impl AbstractSyntaxTree {
                         {
                             let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
                             if let Type::ScanName = ast_scan_name.rule {
-                                // Check that the scan name matches to the children in the join node.
-                                let left_name =
-                                    plan.get_relation_node(*plan_left_id)?.scan_name(&plan, 0)?;
-                                let right_name = plan
-                                    .get_relation_node(*plan_right_id)?
-                                    .scan_name(&plan, 0)?;
-                                let scan_name_str: Option<String> =
-                                    ast_scan_name.value.as_deref().map(to_name);
-                                let scan_name: Option<&str> = scan_name_str.as_deref();
+                                // Get the column name and its positions in the output tuples.
                                 let col_name = get_column_name(*ast_col_name_id)?;
+                                let left_name = get_scan_name(&col_name, *plan_left_id)?;
+                                let right_name = get_scan_name(&col_name, *plan_right_id)?;
+                                // Check that the AST scan name matches to the children scan names in the plan join node.
+                                let scan_name: Option<String> =
+                                    ast_scan_name.value.as_deref().map(to_name);
                                 // Determine the referred side of the join (left or right).
                                 if left_name == scan_name {
                                     let left_col_map = plan
@@ -300,39 +315,39 @@ impl AbstractSyntaxTree {
                     } else if let (Some(plan_rel_id), None) =
                         (plan_rel_list.get(0), plan_rel_list.get(1))
                     {
-                        let col_name: String =
-                            if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
-                                (node.children.get(0), node.children.get(1))
-                            {
-                                // Check that scan name in the reference matches to the one in scan node.
-                                let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
-                                if let Type::ScanName = ast_scan_name.rule {
-                                    let plan_scan_name = plan
-                                        .get_relation_node(*plan_rel_id)?
-                                        .scan_name(&plan, 0)?;
-                                    let scan_name = ast_scan_name.value.as_deref();
-                                    if plan_scan_name != scan_name {
-                                        return Err(QueryPlannerError::CustomError(
-                                            "Scan name is not matched.".into(),
-                                        ));
-                                    }
-                                } else {
+                        let col_name: String = if let (
+                            Some(ast_scan_name_id),
+                            Some(ast_col_name_id),
+                        ) = (node.children.get(0), node.children.get(1))
+                        {
+                            // Get column name.
+                            let col_name = get_column_name(*ast_col_name_id)?;
+                            // Check that scan name in the reference matches to the one in scan node.
+                            let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
+                            if let Type::ScanName = ast_scan_name.rule {
+                                let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
+                                if plan_scan_name != ast_scan_name.value {
                                     return Err(QueryPlannerError::CustomError(
-                                        "Expected AST node to be a scan name.".into(),
-                                    ));
-                                };
-                                // Get column name.
-                                get_column_name(*ast_col_name_id)?
-                            } else if let (Some(ast_col_name_id), None) =
-                                (node.children.get(0), node.children.get(1))
-                            {
-                                // Get the column name.
-                                get_column_name(*ast_col_name_id)?
+                                            format!("Scan name for the column {:?} doesn't match: expected {:?}, found {:?}",
+                                            get_column_name(*ast_col_name_id), plan_scan_name, ast_scan_name.value
+                                        )));
+                                }
                             } else {
                                 return Err(QueryPlannerError::CustomError(
-                                    "No child node found in the AST reference.".into(),
+                                    "Expected AST node to be a scan name.".into(),
                                 ));
                             };
+                            col_name
+                        } else if let (Some(ast_col_name_id), None) =
+                            (node.children.get(0), node.children.get(1))
+                        {
+                            // Get the column name.
+                            get_column_name(*ast_col_name_id)?
+                        } else {
+                            return Err(QueryPlannerError::CustomError(
+                                "No child node found in the AST reference.".into(),
+                            ));
+                        };
 
                         let ref_list =
                             plan.new_columns(&[*plan_rel_id], false, &[0], &[&col_name], false)?;

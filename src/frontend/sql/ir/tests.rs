@@ -224,3 +224,60 @@ fn simple_query_with_unquoted_aliases() {
         sql
     );
 }
+
+#[test]
+fn inner_join_1() {
+    let query = r#"SELECT *
+    FROM
+        (SELECT "id", "FIRST_NAME"
+        FROM "test_space"
+        WHERE "sys_op" < 0
+                AND "sysFrom" >= 0
+        UNION ALL
+        SELECT "id", "FIRST_NAME"
+        FROM "test_space_hist"
+        WHERE "sysFrom" <= 0) AS "t3"
+    INNER JOIN
+        (SELECT "identification_number", "product_code"
+        FROM "hash_testing_hist"
+        WHERE "sys_op" > 0
+        UNION ALL
+        SELECT "identification_number", "product_code"
+        FROM "hash_single_testing_hist"
+        WHERE "sys_op" <= 0) AS "t8"
+        ON "t3"."id" = "t8"."identification_number"
+    WHERE "id" = 1 AND "t8"."identification_number" = 1 AND "product_code" = '123'"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan = ast.to_ir(metadata).unwrap();
+    let ex_plan = ExecutionPlan::from(&plan);
+
+    let top_id = plan.get_top().unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+
+    assert_eq!(
+        format!(
+            "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            r#"SELECT "t3"."id" as "id", "t3"."FIRST_NAME" as "FIRST_NAME","#,
+            r#""t8"."identification_number" as "identification_number","#,
+            r#""t8"."product_code" as "product_code" FROM"#,
+            r#"(SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+            r#"FROM "test_space" WHERE ("test_space"."sys_op") < (0) and ("test_space"."sysFrom") >= (0)"#,
+            r#"UNION ALL"#,
+            r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
+            r#"FROM "test_space_hist" WHERE ("test_space_hist"."sysFrom") <= (0))"#,
+            r#"as "t3""#,
+            r#"INNER JOIN"#,
+            r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number","#,
+            r#""hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (0)"#,
+            r#"UNION ALL"#,
+            r#"SELECT "hash_single_testing_hist"."identification_number" as "identification_number","#,
+            r#""hash_single_testing_hist"."product_code" as "product_code" FROM "hash_single_testing_hist""#,
+            r#"WHERE ("hash_single_testing_hist"."sys_op") <= (0))"#,
+            r#"as "t8" ON ("t3"."id") = ("t8"."identification_number")"#,
+            r#"WHERE ("t3"."id") = (1) and ("t8"."identification_number") = (1) and ("t8"."product_code") = ('123')"#,
+        ),
+        sql
+    );
+}

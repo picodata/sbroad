@@ -284,30 +284,27 @@ impl Relational {
             Relational::Projection { .. }
             | Relational::Selection { .. }
             | Relational::InnerJoin { .. } => {
-                let self_output_node = plan.get_expression_node(self.output())?;
-                if let Expression::Row { list, .. } = self_output_node {
-                    let col_id = *list.get(position).ok_or_else(|| {
-                        QueryPlannerError::CustomError(String::from("Row has no such alias"))
-                    })?;
-                    let col_node = plan.get_expression_node(col_id)?;
-                    if let Expression::Alias { child, .. } = col_node {
-                        let child_node = plan.get_expression_node(*child)?;
-                        if let Expression::Reference { position: pos, .. } = child_node {
-                            let rel_ids = plan.get_relational_from_reference_node(*child)?;
-                            let rel_node = plan.get_relation_node(
-                                rel_ids.into_iter().next().ok_or_else(|| {
-                                    QueryPlannerError::CustomError(String::from(
-                                        "No relational node",
-                                    ))
-                                })?,
-                            )?;
-                            return rel_node.scan_name(plan, *pos);
-                        }
-                    } else {
-                        return Err(QueryPlannerError::CustomError(String::from(
-                            "Expected an alias in the output row",
-                        )));
+                let output_row = plan.get_expression_node(self.output())?;
+                let list = output_row.extract_row_list()?;
+                let col_id = *list.get(position).ok_or_else(|| {
+                    QueryPlannerError::CustomError(String::from("Row has no such alias"))
+                })?;
+                let col_node = plan.get_expression_node(col_id)?;
+                if let Expression::Alias { child, .. } = col_node {
+                    let child_node = plan.get_expression_node(*child)?;
+                    if let Expression::Reference { position: pos, .. } = child_node {
+                        let rel_ids = plan.get_relational_from_reference_node(*child)?;
+                        let rel_node = plan.get_relation_node(
+                            rel_ids.into_iter().next().ok_or_else(|| {
+                                QueryPlannerError::CustomError(String::from("No relational node"))
+                            })?,
+                        )?;
+                        return rel_node.scan_name(plan, *pos);
                     }
+                } else {
+                    return Err(QueryPlannerError::CustomError(String::from(
+                        "Expected an alias in the output row",
+                    )));
                 }
                 Ok(None)
             }
