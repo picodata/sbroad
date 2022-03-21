@@ -14,11 +14,14 @@ use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
-use std::collections::HashMap;
-use traversal::DftPost;
 
+/// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
 fn call_expr_tree_replace_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
-    plan.expr_tree_replace_in(top_id)
+    plan.expr_tree_replace_bool(top_id, &call_from_in, &[Bool::In])
+}
+
+fn call_from_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+    plan.from_in(top_id)
 }
 
 impl Plan {
@@ -65,57 +68,6 @@ impl Plan {
             return Ok(top_id);
         }
         Ok(expr_id)
-    }
-
-    /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
-    fn expr_tree_replace_in(&mut self, top_id: usize) -> Result<usize, QueryPlannerError> {
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        let mut nodes: Vec<usize> = Vec::new();
-        let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
-        for (_, id) in subtree {
-            nodes.push(*id);
-        }
-        for id in &nodes {
-            let expr = self.get_expression_node(*id)?;
-            if let Expression::Bool { op: Bool::In, .. } = expr {
-                let new_id = self.from_in(*id)?;
-                map.insert(*id, new_id);
-            }
-        }
-        let mut new_top_id = top_id;
-        for id in &nodes {
-            let expr = self.get_mut_expression_node(*id)?;
-            // If expression has a IN operator child, replace it with
-            // the new node from the map.
-            match expr {
-                Expression::Alias { child, .. } => {
-                    if let Some(new_id) = map.get(child) {
-                        *child = *new_id;
-                    }
-                }
-                Expression::Bool { left, right, .. } => {
-                    if let Some(new_id) = map.get(left) {
-                        *left = *new_id;
-                    }
-                    if let Some(new_id) = map.get(right) {
-                        *right = *new_id;
-                    }
-                }
-                Expression::Row { list, .. } => {
-                    for id in list {
-                        if let Some(new_id) = map.get(id) {
-                            *id = *new_id;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        // Check if the top node is an IN operator itself.
-        if let Some(new_id) = map.get(&top_id) {
-            new_top_id = *new_id;
-        }
-        Ok(new_top_id)
     }
 
     /// Replace all IN operators with the OR-ed chain of equalities.

@@ -8,8 +8,10 @@ pub mod equality_propagation;
 pub mod redistribution;
 
 use crate::errors::QueryPlannerError;
+use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::Plan;
+use std::collections::HashMap;
 use traversal::DftPost;
 
 impl Plan {
@@ -113,5 +115,67 @@ impl Plan {
             }
         }
         Ok(())
+    }
+
+    /// Replace boolean operators in an expression subtree with the
+    /// new boolean expressions produced by the user defined function.
+    ///
+    /// # Errors
+    ///  If expression subtree iterator returns a non-expression node.
+    pub fn expr_tree_replace_bool(
+        &mut self,
+        top_id: usize,
+        f: &dyn Fn(&mut Plan, usize) -> Result<usize, QueryPlannerError>,
+        ops: &[Bool],
+    ) -> Result<usize, QueryPlannerError> {
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        let mut nodes: Vec<usize> = Vec::new();
+        let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
+        for (_, id) in subtree {
+            nodes.push(*id);
+        }
+        for id in &nodes {
+            let expr = self.get_expression_node(*id)?;
+            if let Expression::Bool { op, .. } = expr {
+                if ops.contains(op) || ops.is_empty() {
+                    let new_tree_id = f(self, *id)?;
+                    map.insert(*id, new_tree_id);
+                }
+            }
+        }
+        let mut new_top_id = top_id;
+        for id in &nodes {
+            let expr = self.get_mut_expression_node(*id)?;
+            // For all expressions in the subtree try to replace their children
+            // with the new nodes from the map.
+            match expr {
+                Expression::Alias { child, .. } => {
+                    if let Some(new_id) = map.get(child) {
+                        *child = *new_id;
+                    }
+                }
+                Expression::Bool { left, right, .. } => {
+                    if let Some(new_id) = map.get(left) {
+                        *left = *new_id;
+                    }
+                    if let Some(new_id) = map.get(right) {
+                        *right = *new_id;
+                    }
+                }
+                Expression::Row { list, .. } => {
+                    for id in list {
+                        if let Some(new_id) = map.get(id) {
+                            *id = *new_id;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Check if the top node is an new node itself.
+        if let Some(new_id) = map.get(&top_id) {
+            new_top_id = *new_id;
+        }
+        Ok(new_top_id)
     }
 }
