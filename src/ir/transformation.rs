@@ -6,6 +6,7 @@ pub mod bool_in;
 pub mod dnf;
 pub mod equality_propagation;
 pub mod redistribution;
+pub mod split_columns;
 
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
