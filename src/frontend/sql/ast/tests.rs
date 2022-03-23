@@ -144,5 +144,14 @@ fn traversal() {
 fn invalid_query() {
     let query = r#"select a frAm t"#;
     let ast = AbstractSyntaxTree::new(query).unwrap_err();
-    assert_eq!("Invalid command.", format!("{}", ast));
+    assert_eq!(
+        format!(
+            "{} {} {} {}",
+            r#"Parsing error: Error { variant: ParsingError { positives:"#,
+            r#"[Alias, Asterisk, Number, True, False, Null, Row], negatives: [] },"#,
+            r#"location: Pos(7), line_col: Pos((1, 8)), path: None, line: "select a frAm t","#,
+            r#"continued_line: None }"#,
+        ),
+        format!("{}", ast),
+    );
 }

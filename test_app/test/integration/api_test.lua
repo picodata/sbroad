@@ -46,7 +46,7 @@ g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]] })
-    t.assert_equals(err, "CustomError(\"Invalid command.\")")
+    t.assert_equals(err, "CustomError(\"Parsing error: Error { variant: ParsingError { positives: [SubQuery], negatives: [] }, location: Pos(41), line_col: Pos((1, 42)), path: None, line: \\\"SELECT * FROM \\\\\\\"testing_space\\\\\\\" INNER JOIN \\\\\\\"testing_space\\\\\\\"\\\", continued_line: None }\")")
 end
 
 g.test_join_query_is_valid = function()

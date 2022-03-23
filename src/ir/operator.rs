@@ -372,9 +372,10 @@ impl Plan {
         right: usize,
         condition: usize,
     ) -> Result<usize, QueryPlannerError> {
-        if let Node::Expression(Expression::Bool { .. }) = self.get_node(condition)? {
-        } else {
-            return Err(QueryPlannerError::InvalidBool);
+        if !self.is_trivalent(condition)? {
+            return Err(QueryPlannerError::CustomError(String::from(
+                "Condition is not a trivalent expression",
+            )));
         }
 
         let output = self.add_row_for_join(left, right)?;
@@ -479,9 +480,10 @@ impl Plan {
             _ => children[0],
         };
 
-        if let Node::Expression(Expression::Bool { .. }) = self.get_node(filter)? {
-        } else {
-            return Err(QueryPlannerError::InvalidBool);
+        if !self.is_trivalent(filter)? {
+            return Err(QueryPlannerError::CustomError(
+                "Filter expression is not a trivalent expression.".into(),
+            ));
         }
 
         for child in children {

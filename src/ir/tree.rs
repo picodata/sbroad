@@ -45,6 +45,16 @@ pub struct EqClassIterator<'n> {
     nodes: &'n Nodes,
 }
 
+/// Children iterator for "and"-ed expression chains.
+///
+/// Iterator returns the next child for the chained `Bool::And` nodes.
+#[derive(Debug)]
+pub struct AndIterator<'n> {
+    current: &'n usize,
+    child: RefCell<usize>,
+    nodes: &'n Nodes,
+}
+
 impl<'n> Nodes {
     #[must_use]
     pub fn expr_iter(&'n self, current: &'n usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
@@ -59,6 +69,15 @@ impl<'n> Nodes {
     #[must_use]
     pub fn eq_iter(&'n self, current: &'n usize) -> EqClassIterator<'n> {
         EqClassIterator {
+            current,
+            child: RefCell::new(0),
+            nodes: self,
+        }
+    }
+
+    #[must_use]
+    pub fn and_iter(&'n self, current: &'n usize) -> AndIterator<'n> {
+        AndIterator {
             current,
             child: RefCell::new(0),
             nodes: self,
@@ -150,6 +169,33 @@ impl<'n> Iterator for EqClassIterator<'n> {
         })) = self.nodes.arena.get(*self.current)
         {
             if (*op != Bool::And) && (*op != Bool::Eq) {
+                return None;
+            }
+            let child_step = *self.child.borrow();
+            if child_step == 0 {
+                *self.child.borrow_mut() += 1;
+                return Some(left);
+            } else if child_step == 1 {
+                *self.child.borrow_mut() += 1;
+                return Some(right);
+            }
+            None
+        } else {
+            None
+        }
+    }
+}
+
+impl<'n> Iterator for AndIterator<'n> {
+    type Item = &'n usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.nodes.arena.get(*self.current);
+        if let Some(Node::Expression(Expression::Bool {
+            left, op, right, ..
+        })) = node
+        {
+            if *op != Bool::And {
                 return None;
             }
             let child_step = *self.child.borrow();

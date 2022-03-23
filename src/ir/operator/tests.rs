@@ -165,9 +165,9 @@ fn selection() {
     // Correct Selection operator
     plan.add_select(&[scan_id], gt_id).unwrap();
 
-    // Non-boolean filter
+    // Non-trivalent filter
     assert_eq!(
-        QueryPlannerError::InvalidBool,
+        QueryPlannerError::CustomError("Filter expression is not a trivalent expression.".into()),
         plan.add_select(&[scan_id], const_row).unwrap_err()
     );
 

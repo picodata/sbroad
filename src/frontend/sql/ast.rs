@@ -251,7 +251,12 @@ impl AbstractSyntaxTree {
 
         let mut command_pair = match ParseTree::parse(Rule::Command, query) {
             Ok(p) => p,
-            Err(_) => return Err(QueryPlannerError::CustomError("Invalid command.".into())),
+            Err(e) => {
+                return Err(QueryPlannerError::CustomError(format!(
+                    "Parsing error: {:?}",
+                    e
+                )))
+            }
         };
         let top_pair = command_pair.next().ok_or_else(|| {
             QueryPlannerError::CustomError("No query found in the parse tree.".to_string())

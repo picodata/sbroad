@@ -658,6 +658,24 @@ impl Plan {
         Ok(false)
     }
 
+    /// The node is a reference (or a row of a single reference column).
+    ///
+    /// # Errors
+    /// - If node is not an expression.
+    pub fn is_ref(&self, expr_id: usize) -> Result<bool, QueryPlannerError> {
+        let expr = self.get_expression_node(expr_id)?;
+        match expr {
+            Expression::Reference { .. } => return Ok(true),
+            Expression::Row { list, .. } => {
+                if let (Some(inner_id), None) = (list.first(), list.get(1)) {
+                    return self.is_ref(*inner_id);
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
     /// Extract `Const` value from `Row` by index
     ///
     /// # Errors
