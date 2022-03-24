@@ -18,7 +18,7 @@ build:
         - make
     artifacts:
       paths:
-        - target/debug/libsbroad.so
+        - target/release/libsbroad.so
       expire_in: 1 week
 
 lint:
