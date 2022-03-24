@@ -1,7 +1,10 @@
 use super::*;
+use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::mock::MetadataMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::distribution::*;
+use crate::ir::operator::Relational;
 use crate::ir::relation::*;
 use crate::ir::*;
 use pretty_assertions::assert_eq;
@@ -615,4 +618,66 @@ fn join_inner_or_local_full_policies() {
     } else {
         panic!("Expected a motion node");
     }
+}
+
+#[test]
+fn join1() {
+    let query = r#"SELECT *
+    FROM
+        (SELECT "id", "FIRST_NAME"
+        FROM "test_space"
+        WHERE "sys_op" < 0
+                AND "sysFrom" >= 0
+        UNION ALL
+        SELECT "id", "FIRST_NAME"
+        FROM "test_space_hist"
+        WHERE "sysFrom" <= 0) AS "t3"
+    INNER JOIN
+        (SELECT "identification_number"
+        FROM "hash_testing_hist"
+        WHERE "sys_op" > 0
+        UNION ALL
+        SELECT "identification_number"
+        FROM "hash_single_testing_hist"
+        WHERE "sys_op" <= 0) AS "t8"
+        ON "t3"."id" = "t8"."identification_number"
+    WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(*policy, MotionPolicy::Segment(Key { positions: vec![0] }));
+    } else {
+        panic!("Expected a motion node");
+    }
+
+    // Check distribution of the join output tuple.
+    let mut join_node: Option<&Relational> = None;
+    for node in &plan.nodes.arena {
+        if let Node::Relational(rel) = node {
+            if matches!(rel, Relational::InnerJoin { .. }) {
+                join_node = Some(rel);
+                break;
+            }
+        }
+    }
+    let join = join_node.unwrap();
+    let dist = plan.get_distribution(join.output()).unwrap();
+    assert_eq!(
+        &Distribution::Segment {
+            keys: collection! { Key::new(vec![0]) },
+        },
+        dist,
+    );
 }

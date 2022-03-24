@@ -75,30 +75,37 @@ impl Distribution {
     }
 
     /// Calculate a new distribution for the tuple combined from the two different tuples.
-    fn join(left: &Distribution, right: Distribution) -> Distribution {
-        match left {
-            Distribution::Any | Distribution::Replicated => right,
-            Distribution::Segment {
-                keys: ref keys_left,
-                ..
-            } => match right {
-                Distribution::Any => Distribution::Any,
-                Distribution::Replicated => left.clone(),
+    fn join(left: &Distribution, right: &Distribution) -> Distribution {
+        match (left, right) {
+            (Distribution::Any, Distribution::Any | Distribution::Replicated)
+            | (Distribution::Replicated, Distribution::Any) => Distribution::Any,
+            (Distribution::Replicated, Distribution::Replicated) => Distribution::Replicated,
+            (Distribution::Any | Distribution::Replicated, Distribution::Segment { .. }) => {
+                right.clone()
+            }
+            (Distribution::Segment { .. }, Distribution::Any | Distribution::Replicated) => {
+                left.clone()
+            }
+            (
+                Distribution::Segment {
+                    keys: ref keys_left,
+                    ..
+                },
                 Distribution::Segment {
                     keys: ref keys_right,
                     ..
-                } => {
-                    let mut keys: HashSet<Key> = HashSet::new();
-                    for key in keys_left.union(keys_right) {
-                        keys.insert(Key::new(key.positions.clone()));
-                    }
-                    if keys.is_empty() {
-                        Distribution::Any
-                    } else {
-                        Distribution::Segment { keys }
-                    }
+                },
+            ) => {
+                let mut keys: HashSet<Key> = HashSet::new();
+                for key in keys_left.union(keys_right) {
+                    keys.insert(Key::new(key.positions.clone()));
                 }
-            },
+                if keys.is_empty() {
+                    Distribution::Any
+                } else {
+                    Distribution::Segment { keys }
+                }
+            }
         }
     }
 
@@ -117,26 +124,29 @@ impl Plan {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
-    pub fn set_distribution(&mut self, row_node: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_distribution(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
         let mut child_set: HashSet<usize> = HashSet::new();
         let mut child_pos_map: HashMap<(usize, usize), usize> = HashMap::new();
         let mut table_set: HashSet<String> = HashSet::new();
         let mut table_pos_map: HashMap<usize, usize> = HashMap::default();
         let mut parent_node: Option<usize> = None;
 
-        let mut populate_maps = |pos: usize, node_id: usize| -> Result<(), QueryPlannerError> {
-            if let Node::Expression(Expression::Reference {
+        let mut populate_maps = |pos: usize, expr_id: usize| -> Result<(), QueryPlannerError> {
+            let expr = self.get_expression_node(expr_id)?;
+            if let Expression::Reference {
                 targets,
                 position,
                 parent,
                 ..
-            }) = self.get_node(node_id)?
+            } = expr
             {
                 parent_node = *parent;
-                let relational_op =
-                    self.get_relation_node(parent_node.ok_or(QueryPlannerError::InvalidRelation)?)?;
+                let parent_id = parent.ok_or(QueryPlannerError::CustomError(
+                    "Parent node is not set".to_string(),
+                ))?;
+                let rel_op = self.get_relation_node(parent_id)?;
 
-                if let Some(children) = relational_op.children() {
+                if let Some(children) = rel_op.children() {
                     // References in the branch node.
                     let child_pos_list: &Vec<usize> = targets
                         .as_ref()
@@ -153,7 +163,7 @@ impl Plan {
                     if targets.is_some() {
                         return Err(QueryPlannerError::InvalidReference);
                     }
-                    if let Relational::ScanRelation { relation, .. } = relational_op {
+                    if let Relational::ScanRelation { relation, .. } = rel_op {
                         table_set.insert(relation.clone());
                         table_pos_map.insert(*position, pos);
                     } else {
@@ -164,13 +174,13 @@ impl Plan {
             Ok(())
         };
 
-        if let Node::Expression(Expression::Row { list, .. }) = self.get_node(row_node)? {
+        if let Node::Expression(Expression::Row { list, .. }) = self.get_node(row_id)? {
             // Gather information about children nodes, that are pointed by the row references.
-            for (pos, node) in list.iter().enumerate() {
-                if let Node::Expression(Expression::Alias { child, .. }) = self.get_node(*node)? {
+            for (pos, id) in list.iter().enumerate() {
+                if let Node::Expression(Expression::Alias { child, .. }) = self.get_node(*id)? {
                     populate_maps(pos, *child)?;
                 } else {
-                    populate_maps(pos, *node)?;
+                    populate_maps(pos, *id)?;
                 }
             }
         }
@@ -179,10 +189,10 @@ impl Plan {
             0 => {
                 if table_set.is_empty() {
                     // A row of constants.
-                    self.set_const_dist(row_node)?;
+                    self.set_const_dist(row_id)?;
                 } else {
                     // Scan
-                    self.set_scan_dist(&table_set, &table_pos_map, row_node)?;
+                    self.set_scan_dist(&table_set, &table_pos_map, row_id)?;
                 }
             }
             1 => {
@@ -198,7 +208,7 @@ impl Plan {
                 }) = self
                     .nodes
                     .arena
-                    .get_mut(row_node)
+                    .get_mut(row_id)
                     .ok_or(QueryPlannerError::InvalidRow)?
                 {
                     *distribution = Some(suggested_dist);
@@ -206,12 +216,10 @@ impl Plan {
             }
             2 => {
                 // Union, join
-                self.set_two_children_node_dist(
-                    &child_set,
-                    &child_pos_map,
-                    &parent_node,
-                    row_node,
-                )?;
+                let parent_id = parent_node.ok_or_else(|| {
+                    QueryPlannerError::CustomError("Parent node is not set".to_string())
+                })?;
+                self.set_two_children_node_dist(&child_set, &child_pos_map, parent_id, row_id)?;
             }
             _ => return Err(QueryPlannerError::InvalidReference),
         }
@@ -326,57 +334,52 @@ impl Plan {
         &mut self,
         child_set: &HashSet<usize>,
         child_pos_map: &HashMap<(usize, usize), usize>,
-        parent_node: &Option<usize>,
-        row_node: usize,
+        parent_id: usize,
+        row_id: usize,
     ) -> Result<(), QueryPlannerError> {
         let mut child_set_iter = child_set.iter();
-        let left_child = *child_set_iter
-            .next()
-            .ok_or(QueryPlannerError::InvalidNode)?;
-        let right_child = *child_set_iter
-            .next()
-            .ok_or(QueryPlannerError::InvalidNode)?;
-
-        let is_union_all: bool = matches!(
-            self.get_node(parent_node.ok_or(QueryPlannerError::InvalidNode)?)?,
-            Node::Relational(Relational::UnionAll { .. })
-        );
-
-        let is_join: bool = matches!(
-            self.get_node(parent_node.ok_or(QueryPlannerError::InvalidNode)?)?,
-            Node::Relational(Relational::InnerJoin { .. })
-        );
-
-        let left_dist = self.dist_from_child(left_child, child_pos_map)?;
-        let right_dist = self.dist_from_child(right_child, child_pos_map)?;
-
-        if is_union_all {
-            if let Node::Expression(Expression::Row {
-                ref mut distribution,
-                ..
-            }) = self
-                .nodes
-                .arena
-                .get_mut(row_node)
-                .ok_or(QueryPlannerError::InvalidRow)?
-            {
-                *distribution = Some(Distribution::union(&left_dist, &right_dist));
+        let (left_id, right_id) = match child_set_iter.next() {
+            Some(left_id) => match child_set_iter.next() {
+                Some(right_id) => (*left_id, *right_id),
+                None => {
+                    return Err(QueryPlannerError::CustomError(
+                        "Invalid row: expected two children but only one child set".to_string(),
+                    ))
+                }
+            },
+            None => {
+                return Err(QueryPlannerError::CustomError(
+                    "Invalid row: expected two children but no child set".to_string(),
+                ))
             }
-        } else if is_join {
-            if let Node::Expression(Expression::Row {
-                ref mut distribution,
-                ..
-            }) = self
-                .nodes
-                .arena
-                .get_mut(row_node)
-                .ok_or(QueryPlannerError::InvalidRow)?
-            {
-                *distribution = Some(Distribution::join(&left_dist, right_dist));
+        };
+
+        let left_dist = self.dist_from_child(left_id, child_pos_map)?;
+        let right_dist = self.dist_from_child(right_id, child_pos_map)?;
+
+        let parent = self.get_relation_node(parent_id)?;
+        let new_dist = match parent {
+            Relational::UnionAll { .. } => Distribution::union(&left_dist, &right_dist),
+            Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist),
+            _ => {
+                return Err(QueryPlannerError::CustomError(
+                    "Invalid row: expected UnionAll or InnerJoin".to_string(),
+                ))
             }
+        };
+        let expr = self.get_mut_expression_node(row_id)?;
+        if let Expression::Row {
+            ref mut distribution,
+            ..
+        } = expr
+        {
+            *distribution = Some(new_dist);
         } else {
-            return Err(QueryPlannerError::InvalidNode);
-        }
+            return Err(QueryPlannerError::CustomError(
+                "Invalid row: expected Row".to_string(),
+            ));
+        };
+
         Ok(())
     }
 

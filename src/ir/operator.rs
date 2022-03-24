@@ -210,19 +210,13 @@ impl Relational {
         }
     }
 
-    /// The node is `Motion` type checking
-    ///
-    /// # Errors
-    /// - node isn't `Row` type
+    /// Check node is a motion.
     #[must_use]
     pub fn is_motion(&self) -> bool {
         matches!(self, &Relational::Motion { .. })
     }
 
-    /// The node is `ScanSubQuery` type checking
-    ///
-    /// # Errors
-    /// - node isn't `Row` type
+    /// Check node is a sub-query scan.
     #[must_use]
     pub fn is_subquery(&self) -> bool {
         matches!(self, &Relational::ScanSubQuery { .. })
