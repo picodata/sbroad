@@ -277,7 +277,8 @@ impl Relational {
             Relational::ScanSubQuery { alias, .. } => Ok(alias.as_deref()),
             Relational::Projection { .. }
             | Relational::Selection { .. }
-            | Relational::InnerJoin { .. } => {
+            | Relational::InnerJoin { .. }
+            | Relational::Motion { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.extract_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
@@ -302,7 +303,7 @@ impl Relational {
                 }
                 Ok(None)
             }
-            _ => Ok(None),
+            Relational::UnionAll { .. } => Ok(None),
         }
     }
 

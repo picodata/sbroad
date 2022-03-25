@@ -1,4 +1,5 @@
 local t = require('luatest')
+local fiber = require('fiber')
 local g = t.group('integration_api')
 
 local helper = require('test.helper')
@@ -222,6 +223,65 @@ g.test_null_col_result = function()
         },
         rows = {
             { 10, box.NULL },
+        },
+    })
+end
+
+g.test_join_motion_query = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT "t3"."id", "t3"."name", "t8"."product_units"
+FROM
+    (SELECT "id", "name"
+        FROM "space_simple_shard_key"
+        WHERE "sysOp" > 0
+    UNION ALL
+        SELECT "id", "name"
+        FROM "space_simple_shard_key_hist"
+        WHERE "sysOp" > 0) AS "t3"
+INNER JOIN
+    (SELECT "id" as "id1", "product_units"
+    FROM "testing_space"
+    WHERE "product_units" < 0
+    UNION ALL
+    SELECT "id" as "id1", "product_units"
+    FROM "testing_space_hist"
+    WHERE "product_units" > 0) AS "t8"
+    ON "t3"."id" = "t8"."id1"
+WHERE "t3"."id" = 1]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {
+            { 1, "ok", 5 },
+            { 1, "ok_hist", 5 }
+        },
+    })
+end
+
+g.test_anonymous_cols_naming = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT * FROM "testing_space"
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
+        OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "123", 1, 360}
         },
     })
 end

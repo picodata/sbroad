@@ -18,7 +18,7 @@ pub struct VirtualTable {
     /// "Raw" tuples (list of values)
     tuples: Vec<VTableTuple>,
     /// Unique table name (we need to generate it ourselves).
-    name: String,
+    name: Option<String>,
     /// Tuples grouped by the corresponding shards.
     /// Value `HashSet` contains indexes from the `tuples` attribute
     hashing: HashMap<String, HashSet<usize>>,
@@ -26,11 +26,11 @@ pub struct VirtualTable {
 
 impl VirtualTable {
     #[must_use]
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
         VirtualTable {
             columns: vec![],
             tuples: vec![],
-            name: String::from(name),
+            name: None,
             hashing: HashMap::new(),
         }
     }
@@ -69,6 +69,12 @@ impl VirtualTable {
         self.tuples.clone()
     }
 
+    /// Get vtable columns list
+    #[must_use]
+    pub fn get_columns(&self) -> Vec<Column> {
+        self.columns.clone()
+    }
+
     /// Get tuples was distributed by sharding keys
     #[must_use]
     pub fn get_tuple_distribution(&self) -> HashMap<String, HashSet<usize>> {
@@ -94,6 +100,23 @@ impl VirtualTable {
                 }
             };
         }
+    }
+
+    /// Set vtable alias name
+    pub fn set_alias(&mut self, name: &str) -> Result<(), QueryPlannerError> {
+        if name.is_empty() {
+            return Err(QueryPlannerError::CustomError(
+                "Can't set empty alias for virtual table".into(),
+            ));
+        }
+
+        self.name = Some(String::from(name));
+        Ok(())
+    }
+
+    /// Get vtable alias name
+    pub fn get_alias(&self) -> Option<String> {
+        self.name.clone()
     }
 }
 

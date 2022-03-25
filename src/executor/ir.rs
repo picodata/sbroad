@@ -82,6 +82,21 @@ impl<'e> ExecutionPlan<'e> {
         )))
     }
 
+    /// Get motion alias name
+    ///
+    /// # Errors
+    /// - node is not valid
+    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<String>, QueryPlannerError> {
+        let sq_id = &self.get_motion_child(node_id)?;
+        if let Relational::ScanSubQuery { alias, .. } =
+            self.get_ir_plan().get_relation_node(*sq_id)?
+        {
+            return Ok(alias.clone());
+        }
+
+        Ok(None)
+    }
+
     /// Get root from motion sub tree
     ///
     /// # Errors
@@ -96,7 +111,10 @@ impl<'e> ExecutionPlan<'e> {
     /// # Errors
     /// - node is not `Relation` type
     /// - node does not contain children
-    fn get_motion_child(&self, node_id: usize) -> Result<usize, QueryPlannerError> {
+    pub(in crate::executor) fn get_motion_child(
+        &self,
+        node_id: usize,
+    ) -> Result<usize, QueryPlannerError> {
         let node = self.get_ir_plan().get_relation_node(node_id)?;
         if !node.is_motion() {
             return Err(CustomError(format!(

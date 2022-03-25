@@ -199,7 +199,12 @@ fn inner_join_duplicate_columns() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.to_ir(metadata).unwrap_err();
 
-    assert_eq!(QueryPlannerError::DuplicateColumn, plan_err);
+    assert_eq!(
+        QueryPlannerError::CustomError(
+            "Row can't be added because `\"sys_op\"` already has an alias".into()
+        ),
+        plan_err
+    );
 }
 
 #[test]

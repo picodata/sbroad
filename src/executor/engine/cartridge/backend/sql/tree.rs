@@ -394,6 +394,7 @@ where
     #[allow(clippy::too_many_lines)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
         let ir_plan = self.plan.get_ir_plan();
+
         match ir_plan.get_node(id)? {
             Node::Relational(rel) => match rel {
                 Relational::InnerJoin {
@@ -494,7 +495,19 @@ where
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Motion { .. } => {
-                    let sn = SyntaxNode::new_pointer(id, None, &[]);
+                    let vtable = self.plan.get_motion_vtable(id)?;
+                    let mut children = Vec::from([
+                        self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                        self.nodes
+                            .push_syntax_node(SyntaxNode::new_vtable(vtable.clone())),
+                        self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                    ]);
+
+                    if let Some(name) = &vtable.get_alias() {
+                        children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                    }
+
+                    let sn = SyntaxNode::new_pointer(id, None, &children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },
@@ -515,17 +528,19 @@ where
                     if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        let sn = SyntaxNode::new_pointer(
-                            id,
-                            None,
-                            &[
-                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
-                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                            ],
-                        );
+                        if vtable.get_alias().is_none() {
+                            let sn = SyntaxNode::new_pointer(
+                                id,
+                                None,
+                                &[
+                                    self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                    self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
+                                    self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                                ],
+                            );
 
-                        return Ok(self.nodes.push_syntax_node(sn));
+                            return Ok(self.nodes.push_syntax_node(sn));
+                        }
                     }
 
                     if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {

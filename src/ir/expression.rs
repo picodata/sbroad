@@ -260,7 +260,10 @@ impl Nodes {
                 .ok_or(QueryPlannerError::InvalidNode)?
             {
                 if !names.insert(String::from(name)) {
-                    return Err(QueryPlannerError::DuplicateColumn);
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Row can't be added because `{}` already has an alias",
+                        name
+                    )));
                 }
             } else {
                 return Err(QueryPlannerError::InvalidRow);

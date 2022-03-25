@@ -413,7 +413,9 @@ fn join_duplicate_columns() {
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     assert_eq!(
-        QueryPlannerError::DuplicateColumn,
+        QueryPlannerError::CustomError(
+            "Row can't be added because `a` already has an alias".into()
+        ),
         plan.add_join(scan_t1, scan_t2, condition).unwrap_err()
     );
 }

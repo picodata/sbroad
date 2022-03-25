@@ -14,7 +14,7 @@ build:
 	cargo build --release
 
 integration_test_app:
-	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
+	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
 
 test:
 	cargo test

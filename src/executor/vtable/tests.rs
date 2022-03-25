@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn virtual_table() {
-    let mut vtable = VirtualTable::new("test");
+    let mut vtable = VirtualTable::new();
 
     vtable.add_column(Column {
         name: "name".into(),
@@ -13,13 +13,15 @@ fn virtual_table() {
 
     vtable.add_values_tuple(vec![Value::number_from_str("1").unwrap()]);
 
+    vtable.set_alias("test").unwrap();
+
     let expected = VirtualTable {
         columns: vec![Column {
             name: "name".into(),
             r#type: Type::Integer,
         }],
         tuples: vec![vec![Value::number_from_str("1").unwrap()]],
-        name: String::from("test"),
+        name: Some(String::from("test")),
         hashing: HashMap::new(),
     };
 

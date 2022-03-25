@@ -154,7 +154,9 @@ impl Table {
             .all(|(pos, col)| matches!(pos_map.insert(&col.name, pos), None));
 
         if !no_duplicates {
-            return Err(QueryPlannerError::DuplicateColumn);
+            return Err(QueryPlannerError::CustomError(
+                "Table has duplicated columns and couldn't be loaded".into(),
+            ));
         }
 
         let keys = &k;
@@ -189,7 +191,9 @@ impl Table {
         let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
 
         if !no_duplicates {
-            return Err(QueryPlannerError::DuplicateColumn);
+            return Err(QueryPlannerError::CustomError(
+                "Table contains duplicate cols and couldn't convert to yaml.".into(),
+            ));
         }
 
         let in_range = ts.key.positions.iter().all(|pos| *pos < cols.len());

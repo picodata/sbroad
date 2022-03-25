@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;

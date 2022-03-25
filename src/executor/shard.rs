@@ -96,7 +96,6 @@ impl<'e> ExecutionPlan<'e> {
                     ir_plan.set_distribution(left_id)?;
                 }
                 let left_dist = ir_plan.get_distribution(left_id)?;
-
                 // Gather right constants corresponding to the left keys.
                 if let Distribution::Segment { keys } = left_dist {
                     for key in keys {

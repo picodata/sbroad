@@ -111,8 +111,8 @@ impl BoxExecuteFormat {
     /// # Errors
     /// - convert to virtual table error
     #[allow(dead_code)]
-    pub fn as_virtual_table(&self, name: &str) -> Result<VirtualTable, QueryPlannerError> {
-        let mut result = VirtualTable::new(name);
+    pub fn as_virtual_table(&self) -> Result<VirtualTable, QueryPlannerError> {
+        let mut result = VirtualTable::new();
 
         for col in &self.metadata {
             result.add_column(col.clone());

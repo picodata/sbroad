@@ -7,6 +7,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
+use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
 
@@ -135,10 +136,20 @@ impl Engine for EngineMock {
 
     fn materialize_motion(
         &self,
-        _plan: &mut ExecutionPlan,
-        _motion_node_id: usize,
+        plan: &mut ExecutionPlan,
+        motion_node_id: usize,
     ) -> Result<VirtualTable, QueryPlannerError> {
-        let mut vtable = VirtualTable::new("test");
+        let sq_id = &plan.get_motion_child(motion_node_id)?;
+
+        let mut vtable = VirtualTable::new();
+
+        if let Relational::ScanSubQuery { alias, .. } =
+            &plan.get_ir_plan().get_relation_node(*sq_id)?
+        {
+            if let Some(name) = alias {
+                vtable.set_alias(name)?;
+            }
+        }
 
         vtable.add_column(Column {
             name: "identification_number".into(),

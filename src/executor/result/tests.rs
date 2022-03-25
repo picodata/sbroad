@@ -92,7 +92,7 @@ fn convert_to_vtable() {
         ],
     };
 
-    let mut excepted = VirtualTable::new("test_vtable");
+    let mut excepted = VirtualTable::new();
 
     excepted.add_column(Column {
         name: "id".into(),
@@ -126,5 +126,5 @@ fn convert_to_vtable() {
         IrValue::number_from_str("2.0").unwrap(),
     ]);
 
-    assert_eq!(excepted, r.as_virtual_table("test_vtable").unwrap());
+    assert_eq!(excepted, r.as_virtual_table().unwrap());
 }

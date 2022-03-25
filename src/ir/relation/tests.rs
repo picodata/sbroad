@@ -55,7 +55,9 @@ fn table_seg_duplicate_columns() {
             &["b", "a"],
         )
         .unwrap_err(),
-        QueryPlannerError::DuplicateColumn
+        QueryPlannerError::CustomError(
+            "Table has duplicated columns and couldn't be loaded".into()
+        )
     );
 }
 
@@ -114,7 +116,9 @@ fn table_seg_serialized_duplicate_columns() {
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
         Table::seg_from_yaml(&s).unwrap_err(),
-        QueryPlannerError::DuplicateColumn
+        QueryPlannerError::CustomError(
+            "Table contains duplicate cols and couldn't convert to yaml.".into()
+        )
     );
 }
 

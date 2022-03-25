@@ -68,6 +68,14 @@ impl Engine for Runtime {
         let mut result = BoxExecuteFormat::new();
         let sql = plan.subtree_as_sql(top_id)?;
 
+        say(
+            SayLevel::Debug,
+            file!(),
+            line!().try_into().unwrap_or(0),
+            Option::from("exec"),
+            &format!("exec query: {:?}", sql),
+        );
+
         if let Some(shard_keys) = plan.discovery(top_id)? {
             // sending query to nodes
             for shard in shard_keys {
@@ -92,7 +100,13 @@ impl Engine for Runtime {
         let top = &plan.get_motion_subtree_root(motion_node_id)?;
 
         let result = self.exec(plan, *top)?;
-        return result.as_virtual_table(&format!("motion_{}", motion_node_id));
+        let mut vtable = result.as_virtual_table()?;
+
+        if let Some(name) = &plan.get_motion_alias(motion_node_id)? {
+            vtable.set_alias(name)?;
+        }
+
+        Ok(vtable)
     }
 
     /// Calculation ``bucket_id`` function
