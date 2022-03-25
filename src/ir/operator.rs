@@ -273,7 +273,7 @@ impl Relational {
         match self {
             Relational::ScanRelation {
                 alias, relation, ..
-            } => Ok(alias.as_deref().or_else(|| Some(relation.as_str()))),
+            } => Ok(alias.as_deref().or(Some(relation.as_str()))),
             Relational::ScanSubQuery { alias, .. } => Ok(alias.as_deref()),
             Relational::Projection { .. }
             | Relational::Selection { .. }

@@ -70,7 +70,7 @@ impl Value {
     /// # Errors
     /// Returns `QueryPlannerError` when a string is not a number.
     pub fn number_from_str(f: &str) -> Result<Self, QueryPlannerError> {
-        if let Ok(d) = d128::from_str(&f.to_string()) {
+        if let Ok(d) = d128::from_str(f) {
             return Ok(Value::Number(d));
         }
         Err(QueryPlannerError::InvalidNumber)

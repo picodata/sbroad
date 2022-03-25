@@ -366,7 +366,7 @@ impl Plan {
                         vec![*target_idx]
                     } else {
                         // Reference in union tuple points to **both** left and right children.
-                        targets.iter().copied().collect()
+                        targets.to_vec()
                     };
                     // Add new references and aliases to arena (if we need them).
                     let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
@@ -404,7 +404,7 @@ impl Plan {
         let mut result: Vec<usize> = Vec::new();
         let all_found = col_names.iter().all(|col| {
             map.get(*col).map_or(false, |pos| {
-                let new_targets: Vec<usize> = targets.iter().copied().collect();
+                let new_targets: Vec<usize> = targets.to_vec();
                 // Add new references and aliases to arena (if we need them).
                 let r_id = self.nodes.add_ref(None, Some(new_targets), *pos);
                 if need_aliases {

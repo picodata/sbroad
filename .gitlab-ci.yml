@@ -10,7 +10,7 @@ cache:
 default:
     tags:
         - picodata
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.3
+    image: registry.gitlab.com/picodata/dockers/brod-builder:0.7
 
 build:
     stage: build
