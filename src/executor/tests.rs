@@ -79,7 +79,7 @@ fn map_reduce_query() {
                 "{} {} {}",
                 r#"SELECT "hash_testing"."product_code" as "product_code""#,
                 r#"FROM "hash_testing""#,
-                r#"WHERE ("hash_testing"."identification_number") = (1) and ("hash_testing"."product_code") = ('457')"#,
+                r#"WHERE ("hash_testing"."identification_number", "hash_testing"."product_code") = (1, '457')"#,
             )
         )
     ]);

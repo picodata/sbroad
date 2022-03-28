@@ -73,6 +73,12 @@ where
     /// # Errors
     /// - transformation can't be applied
     pub fn optimize(&mut self) -> Result<(), QueryPlannerError> {
+        self.plan.replace_in_operator()?;
+        self.plan.split_columns()?;
+        self.plan.set_dnf()?;
+        // TODO: make it a plan method and rename to "derive_equalities()".
+        self.plan.nodes.add_new_equalities()?;
+        self.plan.merge_tuples()?;
         self.plan.add_motions()?;
         Ok(())
     }
