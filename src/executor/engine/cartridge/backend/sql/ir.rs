@@ -3,8 +3,8 @@ use itertools::Itertools;
 use crate::errors::QueryPlannerError;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
 use crate::ir::Node;
+use crate::ir::operator::Relational;
 
 use super::tree::{SyntaxData, SyntaxPlan};
 
@@ -173,26 +173,46 @@ impl<'e> ExecutionPlan<'e> {
                     // increase base of global counter of anonymous cols
                     let cols_count = vtable.get_columns().len();
                     let rows_count = vtable.get_tuples().len();
-                    anonymous_col_idx_base += cols_count * rows_count - (cols_count - 1);
 
-                    let columns = vtable
-                        .get_columns()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            format!("COLUMN_{} as \"{}\"", anonymous_col_idx_base + i, c.name)
-                        })
-                        .collect::<Vec<String>>()
-                        .join(",");
+                    let cols = |base_idx| {
+                        vtable
+                            .get_columns()
+                            .iter()
+                            .enumerate()
+                            .map(|(i, c)| format!("COLUMN_{} as \"{}\"", base_idx + i, c.name))
+                            .collect::<Vec<String>>()
+                            .join(",")
+                    };
 
-                    let tuples = vtable
-                        .get_tuples()
-                        .iter()
-                        .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
-                        .collect::<Vec<String>>()
-                        .join(",");
+                    if rows_count == 0 {
+                        anonymous_col_idx_base += 1;
 
-                    sql.push_str(&format!("SELECT {} FROM (VALUES {})", columns, tuples));
+                        let tuples = (0..cols_count)
+                            .map(|_| "null")
+                            .collect::<Vec<&str>>()
+                            .join(",");
+
+                        sql.push_str(&format!(
+                            "SELECT {} FROM (VALUES ({})) WHERE FALSE",
+                            cols(anonymous_col_idx_base),
+                            tuples
+                        ));
+                    } else {
+                        anonymous_col_idx_base += cols_count * rows_count - (cols_count - 1);
+
+                        let tuples = vtable
+                            .get_tuples()
+                            .iter()
+                            .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
+                            .collect::<Vec<String>>()
+                            .join(",");
+
+                        sql.push_str(&format!(
+                            "SELECT {} FROM (VALUES {})",
+                            cols(anonymous_col_idx_base),
+                            tuples
+                        ));
+                    }
                 }
             }
         }

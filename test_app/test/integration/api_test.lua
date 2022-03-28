@@ -285,3 +285,50 @@ g.test_anonymous_cols_naming = function()
         },
     })
 end
+
+g.test_empty_motion_result = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+        },
+        rows = {},
+    })
+
+    r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
+    WHERE ("id", "name") in (SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+        },
+        rows = {},
+    })
+
+
+    r, err = api:call("query", { [[SELECT * FROM "testing_space"
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
+        OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "123", 1, 360}
+        },
+    })
+end
