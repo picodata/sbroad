@@ -380,17 +380,14 @@ impl Select {
 /// A wrapper over original plan tree.
 /// We can modify it as we wish without any influence
 /// on the original plan tree.
-pub struct SyntaxPlan<'p, 'e> {
+pub struct SyntaxPlan<'p> {
     pub(crate) nodes: SyntaxNodes,
     top: Option<usize>,
-    plan: &'p ExecutionPlan<'e>,
+    plan: &'p ExecutionPlan,
 }
 
 #[allow(dead_code)]
-impl<'p, 'e> SyntaxPlan<'p, 'e>
-where
-    'e: 'p,
-{
+impl<'p> SyntaxPlan<'p> {
     #[allow(clippy::too_many_lines)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
         let ir_plan = self.plan.get_ir_plan();
@@ -528,19 +525,17 @@ where
                     if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        if vtable.get_alias().is_none() {
-                            let sn = SyntaxNode::new_pointer(
-                                id,
-                                None,
-                                &[
-                                    self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                    self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
-                                    self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                                ],
-                            );
+                        let sn = SyntaxNode::new_pointer(
+                            id,
+                            None,
+                            &[
+                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ],
+                        );
 
-                            return Ok(self.nodes.push_syntax_node(sn));
-                        }
+                        return Ok(self.nodes.push_syntax_node(sn));
                     }
 
                     if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {
@@ -695,7 +690,7 @@ where
         Ok(())
     }
 
-    fn empty(plan: &'p ExecutionPlan<'e>) -> Self {
+    fn empty(plan: &'p ExecutionPlan) -> Self {
         SyntaxPlan {
             nodes: SyntaxNodes::new(),
             top: None,
@@ -703,7 +698,7 @@ where
         }
     }
 
-    pub fn new(plan: &'p ExecutionPlan<'e>, top: usize) -> Result<Self, QueryPlannerError> {
+    pub fn new(plan: &'p ExecutionPlan, top: usize) -> Result<Self, QueryPlannerError> {
         let mut sp = SyntaxPlan::empty(plan);
         let ir_plan = plan.get_ir_plan();
 

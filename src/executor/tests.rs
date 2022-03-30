@@ -1,9 +1,10 @@
-use pretty_assertions::assert_eq;
-
+use super::*;
 use crate::executor::engine::mock::EngineMock;
 use crate::executor::result::Value;
-
-use super::*;
+use crate::executor::vtable::VirtualTable;
+use crate::ir::relation::{Column, Type};
+use crate::ir::value::Value as IrValue;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn shard_query() {
@@ -11,13 +12,13 @@ fn shard_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket = query.engine.determine_bucket_id("1");
     expected
         .rows
         .push(vec![
-            Value::String(String::from("query send to [1] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket)),
             Value::String(String::from(r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") = (1)"#))
         ]);
     assert_eq!(expected, query.exec().unwrap())
@@ -39,13 +40,13 @@ fn shard_union_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket = query.engine.determine_bucket_id("1");
     expected
         .rows
         .push(vec![
-            Value::String(String::from("query send to [1] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket)),
             Value::String(
                 format!(
                     "{} {}{} {} {}{} {}",
@@ -69,11 +70,11 @@ fn map_reduce_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket = query.engine.determine_bucket_id(&["1", "457"].join(""));
     expected.rows.push(vec![
-        Value::String(String::from("query send to all shards")),
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(
             format!(
                 "{} {} {}",
@@ -94,14 +95,22 @@ fn linker_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_table = virtual_table_23();
+    virtual_table.set_alias("test").unwrap();
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket2 = query.engine.determine_bucket_id("2");
+    let bucket3 = query.engine.determine_bucket_id("3");
     expected.rows.extend(vec![
         vec![
-            Value::String(String::from("query send to [2] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
             Value::String(format!(
                 "{} {} {}",
                 r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
@@ -110,7 +119,7 @@ fn linker_test() {
             )),
         ],
         vec![
-            Value::String(String::from("query send to [3] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {} {}",
                 r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
@@ -140,14 +149,22 @@ fn union_linker_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_table = virtual_table_23();
+    virtual_table.set_alias("\"t2\"").unwrap();
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket2 = query.engine.determine_bucket_id("2");
+    let bucket3 = query.engine.determine_bucket_id("3");
     expected.rows.extend(vec![
         vec![
-            Value::String(String::from("query send to [2] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
             Value::String(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
@@ -166,7 +183,7 @@ fn union_linker_test() {
             )
         ],
         vec![
-            Value::String(String::from("query send to [3] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
@@ -210,20 +227,27 @@ INNER JOIN
     FROM "hash_single_testing_hist"
     WHERE "sys_op" <= 0) AS "t8"
     ON "t3"."id" = "t8"."identification_number"
-WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
+WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
 
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_table = virtual_table_23();
+    virtual_table.set_alias("\"t8\"").unwrap();
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket2 = query.engine.determine_bucket_id("2");
 
     expected.rows.extend(vec![
         vec![
-            Value::String(String::from("query send to [1] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(
                 format!(
                     "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
@@ -233,7 +257,7 @@ WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
                     r#"FROM ("#,
                     r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
                     r#"FROM "test_space""#,
-                    r#"WHERE ("test_space"."sys_op") < (0) and ("test_space"."sysFrom") >= (0)"#,
+                    r#"WHERE (0) > ("test_space"."sys_op") and ("test_space"."sysFrom") >= (0)"#,
                     r#"UNION ALL"#,
                     r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
                     r#"FROM "test_space_hist""#,
@@ -242,58 +266,8 @@ WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
                     r#") as "t8""#,
-                    r#"ON ("t3"."id") = ("t8"."identification_number")"#,
-                    r#"WHERE ("t3"."id") = (1) and ("t8"."identification_number") = (1)"#
-                )
-            )
-        ],
-        vec![
-            Value::String(String::from("query send to [2] shard")),
-            Value::String(
-                format!(
-                    "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
-                    r#"SELECT "t3"."id" as "id""#,
-                    r#""t3"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#""t8"."identification_number" as "identification_number""#,
-                    r#"FROM ("#,
-                    r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#"FROM "test_space""#,
-                    r#"WHERE ("test_space"."sys_op") < (0) and ("test_space"."sysFrom") >= (0)"#,
-                    r#"UNION ALL"#,
-                    r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#"FROM "test_space_hist""#,
-                    r#"WHERE ("test_space_hist"."sysFrom") <= (0)"#,
-                    r#") as "t3""#,
-                    r#"INNER JOIN"#,
-                    r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
-                    r#") as "t8""#,
-                    r#"ON ("t3"."id") = ("t8"."identification_number")"#,
-                    r#"WHERE ("t3"."id") = (1) and ("t8"."identification_number") = (1)"#
-                )
-            )
-        ],
-        vec![
-            Value::String(String::from("query send to [3] shard")),
-            Value::String(
-                format!(
-                    "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
-                    r#"SELECT "t3"."id" as "id""#,
-                    r#""t3"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#""t8"."identification_number" as "identification_number""#,
-                    r#"FROM ("#,
-                    r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#"FROM "test_space""#,
-                    r#"WHERE ("test_space"."sys_op") < (0) and ("test_space"."sysFrom") >= (0)"#,
-                    r#"UNION ALL"#,
-                    r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
-                    r#"FROM "test_space_hist""#,
-                    r#"WHERE ("test_space_hist"."sysFrom") <= (0)"#,
-                    r#") as "t3""#,
-                    r#"INNER JOIN"#,
-                    r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
-                    r#") as "t8""#,
-                    r#"ON ("t3"."id") = ("t8"."identification_number")"#,
-                    r#"WHERE ("t3"."id") = (1) and ("t8"."identification_number") = (1)"#
+                    r#"ON ("t3"."id") = (SELECT COLUMN_4 as "identification_number" FROM (VALUES (2),(3)))"#,
+                    r#"WHERE ("t3"."id", "t8"."identification_number") = (2, 2)"#
                 )
             )
         ],
@@ -311,14 +285,25 @@ fn anonymous_col_index_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(engine, sql).unwrap();
-    query.optimize().unwrap();
+    let motion1_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    query
+        .engine
+        .add_virtual_table(motion1_id, virtual_table_23())
+        .unwrap();
+    let motion2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
+    query
+        .engine
+        .add_virtual_table(motion2_id, virtual_table_23())
+        .unwrap();
 
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
+    let bucket2 = query.engine.determine_bucket_id("2");
+    let bucket3 = query.engine.determine_bucket_id("3");
     expected.rows.extend(vec![
         vec![
-            Value::String(String::from("query send to [2] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
             Value::String(format!(
                 "{} {}, {}, {}, {}, {} {} {} {} {} {}",
                 "SELECT",
@@ -335,7 +320,7 @@ fn anonymous_col_index_test() {
             )),
         ],
         vec![
-            Value::String(String::from("query send to [3] shard")),
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {}, {}, {}, {}, {} {} {} {} {} {}",
                 "SELECT",
@@ -354,4 +339,19 @@ fn anonymous_col_index_test() {
     ]);
 
     assert_eq!(expected, result)
+}
+
+/// Helper function to create a "test" virtual table.
+fn virtual_table_23() -> VirtualTable {
+    let mut virtual_table = VirtualTable::new();
+
+    virtual_table.add_column(Column {
+        name: "identification_number".into(),
+        r#type: Type::Integer,
+    });
+
+    virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+    virtual_table.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
+
+    virtual_table
 }

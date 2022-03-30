@@ -12,9 +12,9 @@ fn bool_in1() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.replace_in_operator().unwrap();
-    let ex_plan = ExecutionPlan::from(&plan);
+    let ex_plan = ExecutionPlan::from(plan);
 
-    let top_id = plan.get_top().unwrap();
+    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let sql = ex_plan.subtree_as_sql(top_id).unwrap();
     assert_eq!(
         format!(
@@ -35,9 +35,9 @@ fn bool_in2() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.replace_in_operator().unwrap();
-    let ex_plan = ExecutionPlan::from(&plan);
+    let ex_plan = ExecutionPlan::from(plan);
 
-    let top_id = plan.get_top().unwrap();
+    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let sql = ex_plan.subtree_as_sql(top_id).unwrap();
     assert_eq!(
         format!(
@@ -57,9 +57,9 @@ fn bool_in3() {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.to_ir(metadata).unwrap();
     plan.replace_in_operator().unwrap();
-    let ex_plan = ExecutionPlan::from(&plan);
+    let ex_plan = ExecutionPlan::from(plan);
 
-    let top_id = plan.get_top().unwrap();
+    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let sql = ex_plan.subtree_as_sql(top_id).unwrap();
     assert_eq!(
         format!(

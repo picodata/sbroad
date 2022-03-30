@@ -77,8 +77,8 @@ impl VirtualTable {
 
     /// Get tuples was distributed by sharding keys
     #[must_use]
-    pub fn get_tuple_distribution(&self) -> HashMap<String, HashSet<usize>> {
-        self.hashing.clone()
+    pub fn get_tuple_distribution(&self) -> &HashMap<String, HashSet<usize>> {
+        &self.hashing
     }
 
     /// Distribute tuples by sharding key columns

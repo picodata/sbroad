@@ -1,4 +1,5 @@
 use crate::errors::QueryPlannerError;
+use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
@@ -28,7 +29,7 @@ pub trait Engine {
     type Metadata;
 
     /// Return object of metadata storage
-    fn metadata(&self) -> Self::Metadata
+    fn metadata(&self) -> &Self::Metadata
     where
         Self: Sized;
 
@@ -49,6 +50,7 @@ pub trait Engine {
         &self,
         plan: &mut ExecutionPlan,
         motion_node_id: usize,
+        buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError>;
 
     /// Execute sql query on the all shards in cluster
@@ -59,10 +61,11 @@ pub trait Engine {
         &self,
         plan: &mut ExecutionPlan,
         top_id: usize,
+        buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value
-    fn determine_bucket_id(&self, s: &str) -> usize;
+    fn determine_bucket_id(&self, s: &str) -> u64;
 }
 
 #[cfg(test)]

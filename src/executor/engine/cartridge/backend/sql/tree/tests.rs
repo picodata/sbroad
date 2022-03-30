@@ -39,10 +39,11 @@ fn sql_order_selection() {
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
     assert_eq!(expected_plan, plan);
-    let exec_plan = ExecutionPlan::from(&plan);
+    let exec_plan = ExecutionPlan::from(plan.clone());
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // test the syntax plan
-    let sp = SyntaxPlan::new(&exec_plan, plan.get_top().unwrap()).unwrap();
+    let sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -53,10 +54,12 @@ fn sql_order_selection() {
     let s = fs::read_to_string(path).unwrap();
     let expected_syntax_nodes = SyntaxNodes::from_yaml(&s).unwrap();
     assert_eq!(expected_syntax_nodes, sp.nodes);
-    let exec_plan = ExecutionPlan::from(&plan);
+
+    let exec_plan = ExecutionPlan::from(plan);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // get nodes in the sql-convenient order
-    let nodes = exec_plan.get_sql_order(plan.get_top().unwrap()).unwrap();
+    let nodes = exec_plan.get_sql_order(top_id).unwrap();
     let mut nodes_iter = nodes.into_iter();
     assert_eq!(Some(SyntaxData::PlanId(16)), nodes_iter.next()); // projection
     assert_eq!(Some(SyntaxData::PlanId(13)), nodes_iter.next()); // ref

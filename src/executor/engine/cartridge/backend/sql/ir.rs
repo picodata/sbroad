@@ -3,12 +3,12 @@ use itertools::Itertools;
 use crate::errors::QueryPlannerError;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
-use crate::ir::Node;
 use crate::ir::operator::Relational;
+use crate::ir::Node;
 
 use super::tree::{SyntaxData, SyntaxPlan};
 
-impl<'e> ExecutionPlan<'e> {
+impl ExecutionPlan {
     /// Traverse plan sub-tree (pointed by top) in the order
     /// convenient for SQL serialization.
     ///

@@ -77,7 +77,7 @@ use std::collections::VecDeque;
 
 /// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
 #[derive(Clone, Debug)]
-struct Chain {
+pub struct Chain {
     nodes: VecDeque<usize>,
 }
 
@@ -144,6 +144,11 @@ impl Chain {
             top_id.ok_or_else(|| QueryPlannerError::CustomError("Empty chain".into()))?;
         Ok(new_top_id)
     }
+
+    /// Return a mutable reference to the chain nodes.
+    pub fn get_mut_nodes(&mut self) -> &mut VecDeque<usize> {
+        &mut self.nodes
+    }
 }
 
 fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
@@ -151,14 +156,12 @@ fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, QueryP
 }
 
 impl Plan {
-    /// Convert an expression tree of trivalent nodes to a disjunctive normal form (DNF).
+    /// Get the DNF "AND" chains from the expression tree.
     ///
     /// # Errors
     /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
-    /// - Failed to convert the AND chain to a new expression tree.
-    /// - Failed to concatenate the AND expression trees to the OR tree.
-    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn get_dnf_chains(&self, top_id: usize) -> Result<VecDeque<Chain>, QueryPlannerError> {
         let mut result: VecDeque<Chain> = VecDeque::new();
         let mut stack: Vec<Chain> = Vec::new();
 
@@ -198,6 +201,18 @@ impl Plan {
             }
             stack.push(chain);
         }
+
+        Ok(result)
+    }
+
+    /// Convert an expression tree of trivalent nodes to a disjunctive normal form (DNF).
+    ///
+    /// # Errors
+    /// - Failed to retrieve DNF chains.
+    /// - Failed to convert the AND chain to a new expression tree.
+    /// - Failed to concatenate the AND expression trees to the OR tree.
+    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<usize, QueryPlannerError> {
+        let mut result = self.get_dnf_chains(top_id)?;
 
         let mut new_top_id: Option<usize> = None;
         while let Some(mut chain) = result.pop_front() {

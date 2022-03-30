@@ -107,6 +107,17 @@ impl Value {
     }
 }
 
+impl From<Value> for String {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::Boolean(b) => b.to_string(),
+            Value::Null => "NULL".to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s,
+        }
+    }
+}
+
 impl From<Trivalent> for Value {
     fn from(f: Trivalent) -> Self {
         match f {

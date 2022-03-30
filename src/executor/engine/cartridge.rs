@@ -4,16 +4,17 @@ use tarantool::log::{say, SayLevel};
 use tarantool::tlua::LuaFunction;
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::cartridge::bucket::str_to_bucket_id;
+use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::ClusterSchema;
+use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::Engine;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 
 mod backend;
-pub mod bucket;
 pub mod cache;
+pub mod hash;
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
@@ -25,8 +26,8 @@ pub struct Runtime {
 impl Engine for Runtime {
     type Metadata = ClusterSchema;
 
-    fn metadata(&self) -> Self::Metadata {
-        self.metadata.clone()
+    fn metadata(&self) -> &Self::Metadata {
+        &self.metadata
     }
 
     fn has_metadata(&self) -> bool {
@@ -64,42 +65,36 @@ impl Engine for Runtime {
         &self,
         plan: &mut ExecutionPlan,
         top_id: usize,
+        buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let mut result = BoxExecuteFormat::new();
         let sql = plan.subtree_as_sql(top_id)?;
 
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            Option::from("exec"),
-            &format!("exec query: {:?}", sql),
-        );
-
-        if let Some(shard_keys) = plan.discovery(top_id)? {
-            // sending query to nodes
-            for shard in shard_keys {
-                // exec query on node
-                let temp_result = self.exec_query(&shard, &sql)?;
-                result.extend(temp_result)?;
+        match buckets {
+            Buckets::All => {
+                result.extend(cluster_exec_query(&sql)?)?;
             }
-        } else {
-            let temp_result = mp_exec_query(&sql)?;
-
-            result.extend(temp_result)?;
+            Buckets::Filtered(list) => {
+                for bucket in list {
+                    let temp_result = bucket_exec_query(*bucket, &sql)?;
+                    result.extend(temp_result)?;
+                }
+            }
         }
+
         Ok(result)
     }
 
-    /// Transform sub query result to virtual table
+    /// Transform sub query results into a virtual table.
     fn materialize_motion(
         &self,
         plan: &mut ExecutionPlan,
         motion_node_id: usize,
+        buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError> {
         let top = &plan.get_motion_subtree_root(motion_node_id)?;
 
-        let result = self.exec(plan, *top)?;
+        let result = self.exec(plan, *top, buckets)?;
         let mut vtable = result.as_virtual_table()?;
 
         if let Some(name) = &plan.get_motion_alias(motion_node_id)? {
@@ -109,8 +104,8 @@ impl Engine for Runtime {
         Ok(vtable)
     }
 
-    /// Calculation ``bucket_id`` function
-    fn determine_bucket_id(&self, s: &str) -> usize {
+    /// Calculate bucket for a key.
+    fn determine_bucket_id(&self, s: &str) -> u64 {
         str_to_bucket_id(s, self.bucket_count)
     }
 }
@@ -174,93 +169,79 @@ impl Runtime {
 
         Ok(())
     }
-
-    /// Function execute sql query on selected node
-    fn exec_query(
-        &self,
-        shard_key: &str,
-        query: &str,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let cast_bucket_id: u64 = match self.determine_bucket_id(shard_key).try_into() {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(QueryPlannerError::CustomError("Invalid bucket id".into()));
-            }
-        };
-
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            &format!(
-                "distribution keys is {:?} bucket {:?}",
-                shard_key, cast_bucket_id
-            ),
-        );
-
-        let lua = tarantool::lua_state();
-        match lua.exec(
-            r#"
-        local vshard = require('vshard')
-        local yaml = require('yaml')
-
-        function execute_sql(bucket_id, query)
-            local res, err = vshard.router.call(
-                bucket_id,
-                'read',
-                'box.execute',
-                { query }
-            )
-
-            if err ~= nil then
-                error(err)
-            end
-
-            return res
-        end
-    "#,
-        ) {
-            Ok(_) => {}
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("exec_query"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!(
-                    "Failed lua code loading: {:?}",
-                    e
-                )));
-            }
-        }
-
-        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
-        })?;
-
-        let res: BoxExecuteFormat = match exec_sql.call_with_args((cast_bucket_id, query)) {
-            Ok(v) => v,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("exec_query"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
-
-        Ok(res)
-    }
 }
 
-/// Sends query to all instances and merges results after (map-reduce).
-fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+/// Send the query to a single bucket and merge results (map-reduce).
+fn bucket_exec_query(bucket: u64, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    say(
+        SayLevel::Debug,
+        file!(),
+        line!().try_into().unwrap_or(0),
+        None,
+        &format!("Execute a query {:?} on bucket {:?}", query, bucket),
+    );
+
+    let lua = tarantool::lua_state();
+    match lua.exec(
+        r#"
+    local vshard = require('vshard')
+    local yaml = require('yaml')
+
+    function execute_sql(bucket_id, query)
+        local res, err = vshard.router.call(
+            bucket_id,
+            'read',
+            'box.execute',
+            { query }
+        )
+
+        if err ~= nil then
+            error(err)
+        end
+
+        return res
+    end
+"#,
+    ) {
+        Ok(_) => {}
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("exec_query"),
+                &format!("{:?}", e),
+            );
+            return Err(QueryPlannerError::LuaError(format!(
+                "Failed lua code loading: {:?}",
+                e
+            )));
+        }
+    }
+
+    let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
+        QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
+    })?;
+
+    let res: BoxExecuteFormat = match exec_sql.call_with_args((bucket, query)) {
+        Ok(v) => v,
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("exec_query"),
+                &format!("{:?}", e),
+            );
+            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+        }
+    };
+
+    Ok(res)
+}
+
+/// Send the query to all instances and merge results (map-reduce).
+fn cluster_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
     say(
         SayLevel::Debug,
         file!(),
@@ -316,7 +297,7 @@ fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
                 SayLevel::Error,
                 file!(),
                 line!().try_into().unwrap_or(0),
-                Option::from("mp_exec_query"),
+                Option::from("cluster_exec_query"),
                 &format!("{:?}", e),
             );
             return Err(QueryPlannerError::LuaError(format!(
@@ -337,7 +318,7 @@ fn mp_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
                 SayLevel::Error,
                 file!(),
                 line!().try_into().unwrap_or(0),
-                Option::from("mp_exec_query"),
+                Option::from("cluster_exec_query"),
                 &format!("{:?}", e),
             );
             return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));

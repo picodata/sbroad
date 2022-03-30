@@ -324,9 +324,6 @@ impl Nodes {
                 }
             }
         }
-        if tops.is_empty() {
-            return Err(QueryPlannerError::RedundantTransformation);
-        }
         Ok(tops)
     }
 

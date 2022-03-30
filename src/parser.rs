@@ -90,10 +90,6 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             }
         };
 
-        if let Err(e) = query.optimize() {
-            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-        }
-
         match query.exec() {
             Ok(q) => {
                 ctx.return_mp(&q).unwrap();

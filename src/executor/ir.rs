@@ -8,13 +8,13 @@ use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::Plan;
 
 #[derive(Debug, Clone)]
-pub struct ExecutionPlan<'e> {
-    plan: &'e Plan,
+pub struct ExecutionPlan {
+    plan: Plan,
     vtables: Option<HashMap<usize, VirtualTable>>,
 }
 
-impl<'e> From<&'e Plan> for ExecutionPlan<'e> {
-    fn from(plan: &'e Plan) -> Self {
+impl From<Plan> for ExecutionPlan {
+    fn from(plan: Plan) -> Self {
         ExecutionPlan {
             plan,
             vtables: None,
@@ -22,9 +22,14 @@ impl<'e> From<&'e Plan> for ExecutionPlan<'e> {
     }
 }
 
-impl<'e> ExecutionPlan<'e> {
+impl ExecutionPlan {
     pub fn get_ir_plan(&self) -> &Plan {
-        self.plan
+        &self.plan
+    }
+
+    #[allow(dead_code)]
+    pub fn get_mut_ir_plan(&mut self) -> &mut Plan {
+        &mut self.plan
     }
 
     /// Add materialize motion result to translation map of virtual tables
@@ -55,7 +60,7 @@ impl<'e> ExecutionPlan<'e> {
 
     /// Get motion virtual table
     pub fn get_motion_vtable(&self, motion_id: usize) -> Result<VirtualTable, QueryPlannerError> {
-        if let Some(vtable) = self.vtables.clone() {
+        if let Some(vtable) = &self.vtables {
             if let Some(result) = vtable.get(&motion_id) {
                 return Ok(result.clone());
             }

@@ -1,19 +1,19 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
+use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::Engine;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
-use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, Table, Type};
-use crate::ir::value::Value as IrValue;
 
 #[derive(Debug, Clone)]
 pub struct MetadataMock {
     tables: HashMap<String, Table>,
+    bucket_count: usize,
 }
 
 impl Metadata for MetadataMock {
@@ -101,24 +101,27 @@ impl MetadataMock {
             Table::new_seg("\"t\"", columns.clone(), sharding_key).unwrap(),
         );
 
-        MetadataMock { tables }
+        MetadataMock {
+            tables,
+            bucket_count: 10000,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct EngineMock {
     metadata: MetadataMock,
-    pub query_result: RefCell<BoxExecuteFormat>,
+    virtual_tables: HashMap<usize, VirtualTable>,
 }
 
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
 
-    fn metadata(&self) -> Self::Metadata
+    fn metadata(&self) -> &Self::Metadata
     where
         Self: Sized,
     {
-        self.metadata.clone()
+        &self.metadata
     }
 
     fn has_metadata(&self) -> bool {
@@ -136,95 +139,85 @@ impl Engine for EngineMock {
 
     fn materialize_motion(
         &self,
-        plan: &mut ExecutionPlan,
+        _plan: &mut ExecutionPlan,
         motion_node_id: usize,
+        _buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError> {
-        let sq_id = &plan.get_motion_child(motion_node_id)?;
-
-        let mut vtable = VirtualTable::new();
-
-        if let Relational::ScanSubQuery { alias, .. } =
-            &plan.get_ir_plan().get_relation_node(*sq_id)?
-        {
-            if let Some(name) = alias {
-                vtable.set_alias(name)?;
-            }
+        if let Some(virtual_table) = self.virtual_tables.get(&motion_node_id) {
+            Ok(virtual_table.clone())
+        } else {
+            Err(QueryPlannerError::CustomError(
+                "No virtual table found for motion node".to_string(),
+            ))
         }
-
-        vtable.add_column(Column {
-            name: "identification_number".into(),
-            r#type: Type::Integer,
-        });
-
-        vtable.add_values_tuple(vec![IrValue::number_from_str("2")?]);
-        vtable.add_values_tuple(vec![IrValue::number_from_str("3")?]);
-
-        Ok(vtable)
     }
 
     fn exec(
         &self,
         plan: &mut ExecutionPlan,
         top_id: usize,
+        buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let mut result = BoxExecuteFormat::new();
         let sql = plan.subtree_as_sql(top_id)?;
 
-        if let Some(shard_keys) = plan.discovery(top_id)? {
-            for shard in shard_keys {
-                self.exec_query(&shard, &sql)?;
+        match buckets {
+            Buckets::All => {
+                result.extend(cluster_exec_query(&sql)?)?;
             }
-        } else {
-            self.mp_exec_query(&sql)?;
+            Buckets::Filtered(list) => {
+                for bucket in list {
+                    let temp_result = bucket_exec_query(*bucket, &sql)?;
+                    result.extend(temp_result)?;
+                }
+            }
         }
 
-        let mut result = self.query_result.borrow_mut();
-
-        // sorting for test reproduce
+        // Sort results to make tests reproducible.
         result.rows.sort_by_key(|k| k[0].to_string());
-
-        Ok(result.clone())
+        Ok(result)
     }
 
-    fn determine_bucket_id(&self, _s: &str) -> usize {
-        1
+    fn determine_bucket_id(&self, s: &str) -> u64 {
+        str_to_bucket_id(s, self.metadata.bucket_count)
     }
 }
 
 impl EngineMock {
     pub fn new() -> Self {
-        let result_cell = RefCell::new(BoxExecuteFormat {
-            metadata: vec![],
-            rows: vec![],
-        });
-
         EngineMock {
             metadata: MetadataMock::new(),
-            query_result: result_cell,
+            virtual_tables: HashMap::new(),
         }
     }
 
-    fn exec_query(
-        &self,
-        shard_key: &str,
-        query: &str,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let mut result = self.query_result.borrow_mut();
-
-        result.rows.push(vec![
-            Value::String(format!("query send to [{}] shard", shard_key)),
-            Value::String(String::from(query)),
-        ]);
-
-        Ok(result.clone())
+    pub fn add_virtual_table(
+        &mut self,
+        id: usize,
+        table: VirtualTable,
+    ) -> Result<(), QueryPlannerError> {
+        self.virtual_tables.insert(id, table);
+        Ok(())
     }
+}
 
-    fn mp_exec_query(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let mut result = self.query_result.borrow_mut();
+fn bucket_exec_query(bucket: u64, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    let mut result = BoxExecuteFormat::new();
 
-        result.rows.push(vec![
-            Value::String(String::from("query send to all shards")),
-            Value::String(String::from(query)),
-        ]);
-        Ok(result.clone())
-    }
+    result.rows.push(vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(String::from(query)),
+    ]);
+
+    Ok(result.clone())
+}
+
+fn cluster_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    let mut result = BoxExecuteFormat::new();
+
+    result.rows.push(vec![
+        Value::String(String::from("Execute query on all buckets")),
+        Value::String(String::from(query)),
+    ]);
+    Ok(result.clone())
 }
