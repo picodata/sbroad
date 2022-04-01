@@ -275,6 +275,60 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     assert_eq!(expected, result)
 }
 
+#[test]
+fn join_linker2_test() {
+    let sql = r#"select "t1"."id" from "test_space" as "t1"
+    inner join (
+        select "id" as "id1", "id" as "id2" from "test_space_hist"
+    ) as "t2" on "t1"."id" = 1"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(engine, sql).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "id1".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_column(Column {
+        name: "id2".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("1").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("2").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+    virtual_table.set_alias("\"t2\"").unwrap();
+
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+    let bucket1 = query.engine.determine_bucket_id("1");
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+        Value::String(format!(
+            "{} {} {} {}",
+            r#"SELECT "t1"."id" as "id" FROM "test_space" as "t1""#,
+            r#"INNER JOIN"#,
+            r#"(SELECT COLUMN_3 as "id1",COLUMN_4 as "id2" FROM (VALUES (1,1),(2,2)))"#,
+            r#"as "t2" ON ("t1"."id") = (1)"#
+        )),
+    ]]);
+    assert_eq!(expected, result)
+}
+
 // select * from "test_1" where "identification_number" in (select COLUMN_2 as "b" from (values (1), (2))) or "identification_number" in (select COLUMN_2 as "c" from (values (3), (4)));
 #[test]
 fn anonymous_col_index_test() {

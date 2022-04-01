@@ -81,6 +81,7 @@ impl ExecutionPlan {
     /// # Errors
     /// - plan is invalid and can't be transformed
     #[allow(dead_code)]
+    #[allow(clippy::too_many_lines)]
     pub fn subtree_as_sql(&self, node_id: usize) -> Result<String, QueryPlannerError> {
         let mut sql = String::new();
         let nodes = self.get_sql_order(node_id)?;

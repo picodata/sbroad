@@ -747,6 +747,13 @@ impl<'p> SyntaxPlan<'p> {
                 }
             }
             top = id;
+        } else {
+            // Try to move scan under join.
+            if let Some(join_id) = select.join {
+                let mut join = self.nodes.get_mut_syntax_node(join_id)?;
+                join.left = Some(top);
+                top = join_id;
+            }
         }
 
         // Try to move new top under parent.
@@ -780,11 +787,7 @@ impl<'p> SyntaxPlan<'p> {
 
         // Update the syntax plan top if it was current projection
         if self.get_top()? == select.proj {
-            if let Some(select_id) = select.selection {
-                self.set_top(select_id)?;
-            } else {
-                self.set_top(select.scan)?;
-            }
+            self.set_top(top)?;
         }
 
         Ok(())

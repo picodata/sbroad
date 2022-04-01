@@ -230,25 +230,26 @@ end
 g.test_join_motion_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT "t3"."id", "t3"."name", "t8"."product_units"
-FROM
-    (SELECT "id", "name"
-        FROM "space_simple_shard_key"
-        WHERE "sysOp" > 0
-    UNION ALL
-        SELECT "id", "name"
-        FROM "space_simple_shard_key_hist"
-        WHERE "sysOp" > 0) AS "t3"
-INNER JOIN
-    (SELECT "id" as "id1", "product_units"
-    FROM "testing_space"
-    WHERE "product_units" < 0
-    UNION ALL
-    SELECT "id" as "id1", "product_units"
-    FROM "testing_space_hist"
-    WHERE "product_units" > 0) AS "t8"
-    ON "t3"."id" = "t8"."id1"
-WHERE "t3"."id" = 1]] })
+    local r, err = api:call("query",
+    { [[SELECT "t3"."id", "t3"."name", "t8"."product_units"
+    FROM
+        (SELECT "id", "name"
+            FROM "space_simple_shard_key"
+            WHERE "sysOp" > 0
+        UNION ALL
+            SELECT "id", "name"
+            FROM "space_simple_shard_key_hist"
+            WHERE "sysOp" > 0) AS "t3"
+    INNER JOIN
+        (SELECT "id" as "id1", "product_units"
+        FROM "testing_space"
+        WHERE "product_units" < 0
+        UNION ALL
+        SELECT "id" as "id1", "product_units"
+        FROM "testing_space_hist"
+        WHERE "product_units" > 0) AS "t8"
+        ON "t3"."id" = "t8"."id1"
+    WHERE "t3"."id" = 1]] })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {

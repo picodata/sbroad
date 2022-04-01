@@ -247,7 +247,7 @@ fn cluster_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError
         file!(),
         line!().try_into().unwrap_or(0),
         None,
-        "distribution keys were not found",
+        &format!("Execute a query {:?} on all instances", query),
     );
 
     let lua = tarantool::lua_state();
