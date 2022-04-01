@@ -46,36 +46,6 @@ impl ExecutionPlan {
         Ok(result)
     }
 
-    /// Check that node is an additional child of some relational operator.
-    ///
-    /// # Errors
-    /// - node is invalid
-    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
-        let ir_plan = self.get_ir_plan();
-        for id in 0..ir_plan.nodes.next_id() {
-            let node = ir_plan.get_node(id)?;
-            match node {
-                Node::Relational(rel) => match rel {
-                    Relational::Projection { children, .. }
-                    | Relational::Selection { children, .. } => {
-                        if children.first() == Some(&node_id) {
-                            return Ok(false);
-                        }
-                    }
-                    Relational::InnerJoin { children, .. }
-                    | Relational::UnionAll { children, .. } => {
-                        if children.first() == Some(&node_id) || children.get(1) == Some(&node_id) {
-                            return Ok(false);
-                        }
-                    }
-                    _ => continue,
-                },
-                Node::Expression(_) => continue,
-            }
-        }
-        Ok(true)
-    }
-
     /// Transform plan sub-tree (pointed by top) to sql string
     ///
     /// # Errors

@@ -142,7 +142,7 @@ impl Plan {
     /// Get a sub-query from the row node (if it points to sub-query)
     ///
     /// # Errors
-    /// - reference points to multiple sub-queries (invalid SQL)
+    /// - row contains multiple sub-queries (we don't support this at the moment)
     /// - `relational_map` is not initialized
     pub fn get_sub_query_from_row_node(
         &self,
@@ -158,14 +158,18 @@ impl Plan {
         match sq_set.len().cmp(&1) {
             Ordering::Equal => sq_set.iter().next().map_or_else(
                 || {
-                    Err(QueryPlannerError::CustomError(String::from(
-                        "Failed to get the first sub-query node from the set.",
+                    Err(QueryPlannerError::CustomError(format!(
+                        "Failed to get the first sub-query node from the row: {:?}.",
+                        self.get_expression_node(row_id)?
                     )))
                 },
                 |sq_id| Ok(Some(*sq_id)),
             ),
             Ordering::Less => Ok(None),
-            Ordering::Greater => Err(QueryPlannerError::InvalidSubQuery),
+            Ordering::Greater => Err(QueryPlannerError::CustomError(format!(
+                "Found multiple sub-queries in a single row: {:?}.",
+                self.get_expression_node(row_id)?
+            ))),
         }
     }
 
@@ -282,30 +286,6 @@ impl Plan {
         Ok(())
     }
 
-    /// Check that the sub-query is an additional child of the parent relational node.
-    fn sub_query_is_additional_child(
-        &self,
-        rel_id: usize,
-        sq_id: usize,
-    ) -> Result<bool, QueryPlannerError> {
-        let children = if let Some(children) = self.get_relational_children(rel_id)? {
-            children
-        } else {
-            return Ok(false);
-        };
-        match self.get_relation_node(rel_id)? {
-            Relational::Selection { .. } | Relational::Projection { .. } => {
-                Ok(children.get(0) != Some(&sq_id))
-            }
-            Relational::InnerJoin { .. } => {
-                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
-            }
-            _ => Err(QueryPlannerError::CustomError(String::from(
-                "Trying to check if sub-query is an additional child of the wrong node.",
-            ))),
-        }
-    }
-
     fn get_additional_sq(
         &self,
         rel_id: usize,
@@ -313,7 +293,7 @@ impl Plan {
     ) -> Result<Option<usize>, QueryPlannerError> {
         if self.get_expression_node(row_id)?.is_row() {
             if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
-                if self.sub_query_is_additional_child(rel_id, sq_id)? {
+                if self.is_additional_child_of_rel(rel_id, sq_id)? {
                     return Ok(Some(sq_id));
                 }
             }

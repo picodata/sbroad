@@ -383,6 +383,77 @@ fn join_linker3_test() {
     assert_eq!(expected, result)
 }
 
+#[test]
+fn join_linker4_test() {
+    let sql = r#"SELECT t1."id" FROM "test_space" as t1 JOIN
+    (SELECT "FIRST_NAME" as "r_id" FROM "test_space") as t2
+    on t1."id" = t2."r_id" and
+    t1."FIRST_NAME" = (SELECT "FIRST_NAME" as "fn" FROM "test_space" WHERE "id" = 1)"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(engine, sql).unwrap();
+
+    let motion_t2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_t2 = VirtualTable::new();
+    virtual_t2.add_column(Column {
+        name: "r_id".into(),
+        r#type: Type::Integer,
+    });
+    virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
+    virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+    virtual_t2.set_alias("t2").unwrap();
+    query
+        .engine
+        .add_virtual_table(motion_t2_id, virtual_t2)
+        .unwrap();
+
+    let motion_sq_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
+    let mut virtual_sq = VirtualTable::new();
+    virtual_sq.add_column(Column {
+        name: "fn".into(),
+        r#type: Type::Integer,
+    });
+    virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+    virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
+    query
+        .engine
+        .add_virtual_table(motion_sq_id, virtual_sq)
+        .unwrap();
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+    let bucket1 = query.engine.determine_bucket_id("1");
+    let bucket2 = query.engine.determine_bucket_id("2");
+
+    expected.rows.extend(vec![
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+            Value::String(format!(
+                "{} {} {} {} {}",
+                r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
+                r#"INNER JOIN"#,
+                r#"(SELECT COLUMN_2 as "r_id" FROM (VALUES (1),(2))) as t2"#,
+                r#"ON (t1."id") = (t2."r_id")"#,
+                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_4 as "fn" FROM (VALUES (2),(3)))"#,
+            )),
+        ],
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+            Value::String(format!(
+                "{} {} {} {} {}",
+                r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
+                r#"INNER JOIN"#,
+                r#"(SELECT COLUMN_2 as "r_id" FROM (VALUES (1),(2))) as t2"#,
+                r#"ON (t1."id") = (t2."r_id")"#,
+                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_4 as "fn" FROM (VALUES (2),(3)))"#,
+            )),
+        ],
+    ]);
+    assert_eq!(expected, result)
+}
+
 // select * from "test_1" where "identification_number" in (select COLUMN_2 as "b" from (values (1), (2))) or "identification_number" in (select COLUMN_2 as "c" from (values (3), (4)));
 #[test]
 fn anonymous_col_index_test() {

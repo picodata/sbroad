@@ -49,11 +49,27 @@ impl Chain {
                 Bool::Lt => (*right, *left, Bool::Gt),
                 Bool::LtEq => (*right, *left, Bool::GtEq),
             };
+
+            // If boolean expression contains a reference to an additional
+            //  sub-query, it should be added to the "other" list.
+            let left_sq = plan.get_sub_query_from_row_node(left_id)?;
+            let right_sq = plan.get_sub_query_from_row_node(right_id)?;
+            for sq_id in [left_sq, right_sq].iter().flatten() {
+                if plan.is_additional_child(*sq_id)? {
+                    self.other.push(expr_id);
+                    return Ok(());
+                }
+            }
+
             match self.grouped.entry(group_op) {
                 Entry::Occupied(mut entry) => {
                     let (left, right) = entry.get_mut();
                     let new_left_id = plan.expr_clone(left_id)?;
                     let new_right_id = plan.expr_clone(right_id)?;
+                    println!(
+                        "occupied new_left_id {}, new_right_id {}",
+                        new_left_id, new_right_id
+                    );
                     plan.get_columns_or_self(new_left_id)?
                         .iter()
                         .for_each(|id| {
@@ -68,6 +84,10 @@ impl Chain {
                 Entry::Vacant(entry) => {
                     let new_left_id = plan.expr_clone(left_id)?;
                     let new_right_id = plan.expr_clone(right_id)?;
+                    println!(
+                        "vacant new_left_id {}, new_right_id {}",
+                        new_left_id, new_right_id
+                    );
                     entry.insert((
                         plan.get_columns_or_self(new_left_id)?,
                         plan.get_columns_or_self(new_right_id)?,

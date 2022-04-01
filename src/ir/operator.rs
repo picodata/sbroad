@@ -10,6 +10,7 @@ use crate::errors::QueryPlannerError;
 use super::expression::Expression;
 use super::transformation::redistribution::MotionPolicy;
 use super::{Node, Nodes, Plan};
+use traversal::Bft;
 
 /// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
@@ -620,6 +621,58 @@ impl Plan {
             Ok(())
         } else {
             Err(QueryPlannerError::InvalidRelation)
+        }
+    }
+
+    /// Check if the node is an additional child of some relational node.
+    ///
+    /// # Errors
+    /// - Failed to get plan top
+    /// - Node returned by the relational iterator is not relational (bug)
+    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
+        let top_id = self.get_top()?;
+        let rel_tree = Bft::new(&top_id, |node| self.nodes.rel_iter(node));
+        for (_, id) in rel_tree {
+            let rel = self.get_relation_node(*id)?;
+            match rel {
+                Relational::Selection { children, .. } => {
+                    if children.iter().skip(1).any(|&c| c == node_id) {
+                        return Ok(true);
+                    }
+                }
+                Relational::InnerJoin { children, .. } => {
+                    if children.iter().skip(2).any(|&c| c == node_id) {
+                        return Ok(true);
+                    }
+                }
+                _ => continue,
+            }
+        }
+        Ok(false)
+    }
+
+    /// Check that the sub-query is an additional child of the parent relational node.
+    ///
+    /// # Errors
+    /// - If relational node is not relational.
+    pub fn is_additional_child_of_rel(
+        &self,
+        rel_id: usize,
+        sq_id: usize,
+    ) -> Result<bool, QueryPlannerError> {
+        let children = if let Some(children) = self.get_relational_children(rel_id)? {
+            children
+        } else {
+            return Ok(false);
+        };
+        match self.get_relation_node(rel_id)? {
+            Relational::Selection { .. } | Relational::Projection { .. } => {
+                Ok(children.get(0) != Some(&sq_id))
+            }
+            Relational::InnerJoin { .. } => {
+                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
+            }
+            _ => Ok(false),
         }
     }
 }

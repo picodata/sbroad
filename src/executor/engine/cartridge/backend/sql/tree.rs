@@ -543,7 +543,7 @@ impl<'p> SyntaxPlan<'p> {
                     if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {
                         // Replace current row with the referred sub-query
                         // (except the case when sub-query is located in the FROM clause).
-                        if self.plan.is_additional_child(sq_id)? {
+                        if ir_plan.is_additional_child(sq_id)? {
                             let rel = ir_plan.get_relation_node(sq_id)?;
                             return self.nodes.add_sq(rel, id);
                         }
