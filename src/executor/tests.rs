@@ -96,8 +96,7 @@ fn linker_test() {
 
     let mut query = Query::new(engine, sql).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
-    let mut virtual_table = virtual_table_23();
-    virtual_table.set_alias("test").unwrap();
+    let virtual_table = virtual_table_23();
     query
         .engine
         .add_virtual_table(motion_id, virtual_table)
@@ -150,8 +149,7 @@ fn union_linker_test() {
 
     let mut query = Query::new(engine, sql).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
-    let mut virtual_table = virtual_table_23();
-    virtual_table.set_alias("\"t2\"").unwrap();
+    let virtual_table = virtual_table_23();
     query
         .engine
         .add_virtual_table(motion_id, virtual_table)
@@ -266,7 +264,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
                     r#") as "t8""#,
-                    r#"ON ("t3"."id") = (SELECT COLUMN_4 as "identification_number" FROM (VALUES (2),(3)))"#,
+                    r#"ON ("t3"."id") = ("t8"."identification_number")"#,
                     r#"WHERE ("t3"."id", "t8"."identification_number") = (2, 2)"#
                 )
             )
@@ -324,6 +322,62 @@ fn join_linker2_test() {
             r#"INNER JOIN"#,
             r#"(SELECT COLUMN_3 as "id1",COLUMN_4 as "id2" FROM (VALUES (1,1),(2,2)))"#,
             r#"as "t2" ON ("t1"."id") = (1)"#
+        )),
+    ]]);
+    assert_eq!(expected, result)
+}
+
+#[test]
+fn join_linker3_test() {
+    let sql = r#"SELECT "t2"."id1" FROM
+    (SELECT "id" FROM "test_space") AS "t1"
+    INNER JOIN
+    (SELECT "id" as "id1", "FIRST_NAME" FROM "test_space") AS "t2"
+    ON "t2"."id1" = 1"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(engine, sql).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "id1".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_column(Column {
+        name: "id2".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("1").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("2").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+    virtual_table.set_alias("\"t2\"").unwrap();
+
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+    let bucket1 = query.engine.determine_bucket_id("1");
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+        Value::String(format!(
+            "{} {} {} {} {}",
+            r#"SELECT "t2"."id1" as "id1" FROM"#,
+            r#"(SELECT "test_space"."id" as "id" FROM "test_space") as "t1""#,
+            r#"INNER JOIN"#,
+            r#"(SELECT COLUMN_3 as "id1",COLUMN_4 as "id2" FROM (VALUES (1,1),(2,2))) as "t2""#,
+            r#"ON ("t2"."id1") = (1)"#,
         )),
     ]]);
     assert_eq!(expected, result)

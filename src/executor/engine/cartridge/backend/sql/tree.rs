@@ -525,17 +525,20 @@ impl<'p> SyntaxPlan<'p> {
                     if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        let sn = SyntaxNode::new_pointer(
-                            id,
-                            None,
-                            &[
-                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
-                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                            ],
-                        );
+                        if vtable.get_alias().is_none() {
+                            println!("id {}, motion id {}, vtable {:?}", id, motion_id, vtable);
+                            let sn = SyntaxNode::new_pointer(
+                                id,
+                                None,
+                                &[
+                                    self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                    self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
+                                    self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                                ],
+                            );
 
-                        return Ok(self.nodes.push_syntax_node(sn));
+                            return Ok(self.nodes.push_syntax_node(sn));
+                        }
                     }
 
                     if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {

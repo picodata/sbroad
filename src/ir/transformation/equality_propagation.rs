@@ -319,8 +319,6 @@ impl Nodes {
                     self.arena.get(*top).ok_or(QueryPlannerError::InvalidNode)?
                 {
                     tops.push(*top);
-                } else {
-                    return Err(QueryPlannerError::InvalidBool);
                 }
             }
         }
