@@ -526,7 +526,6 @@ impl<'p> SyntaxPlan<'p> {
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
                         if vtable.get_alias().is_none() {
-                            println!("id {}, motion id {}, vtable {:?}", id, motion_id, vtable);
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 None,

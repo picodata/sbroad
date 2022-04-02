@@ -265,7 +265,7 @@ where
                                     .to_string(),
                             )
                         })?;
-                        let buckets = first_buckets.disjunct(second_buckets);
+                        let buckets = first_buckets.conjunct(second_buckets);
                         self.bucket_map.insert(*output, buckets);
                     } else {
                         return Err(QueryPlannerError::CustomError(

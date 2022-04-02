@@ -116,3 +116,22 @@ fn union_complex_cond_query() {
 
     assert_eq!(expected, buckets);
 }
+
+#[test]
+fn union_query_conjunction() {
+    let query = r#"SELECT * FROM "test_space" WHERE "id" = 1
+    UNION ALL
+    SELECT * FROM "test_space_hist" WHERE "id" = 2"#;
+
+    let engine = EngineMock::new();
+    let mut query = Query::new(engine, query).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    let bucket1 = query.engine.determine_bucket_id("1");
+    let bucket2 = query.engine.determine_bucket_id("2");
+    let expected = Buckets::new_filtered([bucket1, bucket2].into());
+
+    assert_eq!(expected, buckets);
+}
