@@ -65,7 +65,7 @@ fn segment_motion_for_sub_query() {
     plan.add_motions().unwrap();
 
     // Check the modified plan
-    plan.nodes.add_new_equalities().unwrap();
+    plan.derive_equalities().unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -118,7 +118,7 @@ fn full_motion_less_for_sub_query() {
     plan.add_motions().unwrap();
 
     // Check the modified plan
-    plan.nodes.add_new_equalities().unwrap();
+    plan.derive_equalities().unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -171,7 +171,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
     plan.add_motions().unwrap();
 
     // Check the modified plan
-    plan.nodes.add_new_equalities().unwrap();
+    plan.derive_equalities().unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -216,7 +216,7 @@ fn local_sub_query() {
     plan.add_motions().unwrap();
 
     // Check the modified plan
-    plan.nodes.add_new_equalities().unwrap();
+    plan.derive_equalities().unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -288,7 +288,7 @@ fn multiple_sub_queries() {
     plan.add_motions().unwrap();
 
     // Check the modified plan
-    plan.nodes.add_new_equalities().unwrap();
+    plan.derive_equalities().unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")

@@ -10,6 +10,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
 use crate::ir::relation::{Column, Table, Type};
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct MetadataMock {
     tables: HashMap<String, Table>,
@@ -60,12 +61,7 @@ impl MetadataMock {
 
         tables.insert(
             "\"hash_single_testing_hist\"".to_string(),
-            Table::new_seg(
-                "\"hash_single_testing_hist\"",
-                columns.clone(),
-                &sharding_key,
-            )
-            .unwrap(),
+            Table::new_seg("\"hash_single_testing_hist\"", columns, &sharding_key).unwrap(),
         );
 
         let columns = vec![
@@ -84,25 +80,26 @@ impl MetadataMock {
 
         tables.insert(
             "\"test_space_hist\"".to_string(),
-            Table::new_seg("\"test_space_hist\"", columns.clone(), &sharding_key).unwrap(),
+            Table::new_seg("\"test_space_hist\"", columns, &sharding_key).unwrap(),
         );
 
         let columns = vec![Column::new("\"id\"", Type::Number)];
         let sharding_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
-            Table::new_seg("\"history\"", columns.clone(), sharding_key).unwrap(),
+            Table::new_seg("\"history\"", columns, sharding_key).unwrap(),
         );
 
         let columns = vec![
             Column::new("\"a\"", Type::Number),
             Column::new("\"b\"", Type::Number),
             Column::new("\"c\"", Type::Number),
+            Column::new("\"d\"", Type::Number),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t\"".to_string(),
-            Table::new_seg("\"t\"", columns.clone(), sharding_key).unwrap(),
+            Table::new_seg("\"t\"", columns, sharding_key).unwrap(),
         );
 
         MetadataMock {
@@ -112,6 +109,7 @@ impl MetadataMock {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct EngineMock {
     metadata: MetadataMock,
@@ -133,7 +131,7 @@ impl Engine for EngineMock {
     }
 
     fn clear_metadata(&mut self) {
-        self.metadata.tables.clear()
+        self.metadata.tables.clear();
     }
 
     fn load_metadata(&mut self) -> Result<(), QueryPlannerError> {
@@ -167,11 +165,11 @@ impl Engine for EngineMock {
 
         match buckets {
             Buckets::All => {
-                result.extend(cluster_exec_query(&sql)?)?;
+                result.extend(cluster_exec_query(&sql))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
-                    let temp_result = bucket_exec_query(*bucket, &sql)?;
+                    let temp_result = bucket_exec_query(*bucket, &sql);
                     result.extend(temp_result)?;
                 }
             }
@@ -188,6 +186,7 @@ impl Engine for EngineMock {
 }
 
 impl EngineMock {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         EngineMock {
             metadata: MetadataMock::new(),
@@ -195,17 +194,13 @@ impl EngineMock {
         }
     }
 
-    pub fn add_virtual_table(
-        &mut self,
-        id: usize,
-        table: VirtualTable,
-    ) -> Result<(), QueryPlannerError> {
+    #[allow(dead_code)]
+    pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
         self.virtual_tables.insert(id, table);
-        Ok(())
     }
 }
 
-fn bucket_exec_query(bucket: u64, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+fn bucket_exec_query(bucket: u64, query: &str) -> BoxExecuteFormat {
     let mut result = BoxExecuteFormat::new();
 
     result.rows.push(vec![
@@ -213,15 +208,15 @@ fn bucket_exec_query(bucket: u64, query: &str) -> Result<BoxExecuteFormat, Query
         Value::String(String::from(query)),
     ]);
 
-    Ok(result.clone())
+    result
 }
 
-fn cluster_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+fn cluster_exec_query(query: &str) -> BoxExecuteFormat {
     let mut result = BoxExecuteFormat::new();
 
     result.rows.push(vec![
         Value::String(String::from("Execute query on all buckets")),
         Value::String(String::from(query)),
     ]);
-    Ok(result.clone())
+    result
 }

@@ -21,7 +21,7 @@ impl Plan {
         self.split_columns()?;
         self.set_dnf()?;
         // TODO: make it a plan method and rename to "derive_equalities()".
-        self.nodes.add_new_equalities()?;
+        self.derive_equalities()?;
         self.merge_tuples()?;
         self.add_motions()?;
         Ok(())

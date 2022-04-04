@@ -7,7 +7,7 @@
 //!
 //! It spawns new equalities that can be helpful for the final motion
 //! transformation (compares left and right row distribution in the
-//! joins and subqueries, in a case of a distribution conflict inserts
+//! joins and sub-queries, in a case of a distribution conflict inserts
 //! a motion node).
 //!
 //! That is why equality propagation deducts only new equalities with rows
@@ -42,34 +42,30 @@
 //! or (a) = 1 and (c) = (b) and (b) = 1
 //! ```
 //!
-//! 1. We traverse the plan nodes list and collect subtree top nodes for
-//!    selection filter and join condition. In a current example wa have
-//!    only selection filter (second "OR" in the where clause). It is
-//!    implemented in `gather_expr_for_eq_propagation()`.
+//! 1. We collect all the "AND"-ed chains in the plan tree with the
+//!    infrastructure from the merge tuples transformation. As a result
+//!    we only need to extend these "AND"-ed chains with the new equalities.
 //!
-//!    Selection filter is a tree constructed from the "AND"-ed chains
-//!    ((a) = 1 and (c) = (b) and (b) = 1) of boolean expressions. These
-//!    chains are bind with "OR" expressions. We are interested in the chains
-//!    as only their elements can form equivalence classes.
+//!    In a current example we'll get two "AND"-ed chains:
+//!    - `(a) = 1 and (c) = (e) and (b) = 1 and (d) = 1 and (e) = 4 and (f) = 1 and (a) = (f)`
+//!    - `(a) = 1 and (c) = (b) and (b) = 1`
+//!    as `(e) = 3` doesn't contain "AND"s.
 //!
-//!    Each chain can produce multiple equivalence classes. For example,
+//! 2. Each chain may produce multiple equality classes (where all the
+//!    element are equal to each other). For example, the first chain
 //!    ```
 //!    (a) = 1 and (c) = (e) and (b) = 1 and (d) = 1 and (e) = 4 and (f) = 1
 //!    and (a) = (f)
 //!    ```
-//!    produces two eq classes: {a, 1, b, d, f} and {c, e, 4}.
-//!    Also, every chain is a tree structure, so it can be represented by its
-//!    top (`(f) = 1 AND (a) = (f)` in the example above).
+//!    produces two eq classes: `{a, 1, b, d, f}` and `{c, e, 4}`.
 //!
-//! 2. Traverse the filter tree top-down level by level (BFT) and look for the
-//!    chain tops. When a chain top is found, traverse the whole chain of the
-//!    "AND"-ed boolean expressions in DFT preorder manner. All traversed nodes
-//!    are added to visited set as we want to escape them next time in BFT loop.
+//! 3. When we populate equality classes with the new equalities, we always put
+//!    NULLs and other constants that are not self equivalent into a separate
+//!    class that should not be merged with other classes.
 //!
-//! 3. After traversing any chain we build its equivalence classes. Some classes
-//!    in the list can be splitted (because of the order of equalities in the chain)
-//!    and they should be merged later.
-//!    `(a) = 1 and (c) = (b) and (b) = 1` after DFT produces two eq classes: `{a, 1, b}`
+//! 4. Some classes in the chain can be splitted (because of the order of equalities
+//!    in the chain) and they should be merged later.
+//!    `(a) = 1 and (c) = (b) and (b) = 1` produces two eq classes: `{a, 1, b}`
 //!    and `{c, b, 1}`. They can be merged into a single eq class `{a, 1, b, c}`
 //!
 //!    We also track already existing references pairs in equalities (there is no need
@@ -80,25 +76,28 @@
 //!    elements to produce a new equivalence (need two items at least), so nothing to
 //!    add in this example.
 //!
-//!    But an example from the step 1 produces eq class chain [{a, 1, b, d, f}, {c, e, 4}]
+//!    But an example from the step 1 produces eq class chain `[{a, 1, b, d, f}, {c, e, 4}]`
 //!    with pairs `{c, e, a, f}`. After removing constants and subtracting pairs we get a
 //!    new pair to produce:
 //!    `[{a, b, d, f} - {c, e, a, f}, {c, e} - {c, e, a, f}] -> [{b, d}, {}] -> [{b, d}]`
 //!
-//! 4. We collect all equivalence classes in the chains (a chain is determined by its top)
-//!    with `eq_class_suggestions()` function. Then we produce new equality boolean nodes
-//!    in the plan united with "AND" for each chain and append them under the chain top node
-//!    (`add_new_equalities()`).
+//! 5. After the new eq classes were produced, their elements should be added to the
+//!    "AND"-ed chain. We don't want to produce all possible combinations, so we use
+//!    a `tuple_windows()` function instead. For example, from the eq class of `{a, b, c}`
+//!    it produces `(a) = (b) and (b) = (c)` combinations.
+//!
+//! 6. Finally, we transform the "AND"-ed chains into a plan subtree and attach them back
+//!    to the plan tree.
 
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Bool, Relational};
-use crate::ir::value::Value;
-use crate::ir::{Node, Nodes};
+use crate::ir::operator::Bool;
+use crate::ir::transformation::merge_tuples::Chain;
+use crate::ir::value::{Trivalent, Value};
+use crate::ir::Plan;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
-use traversal::{Bft, DftPre};
 
 /// A copy of the `Expression::Reference` with traits for the `HashSet`.
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -125,24 +124,11 @@ impl EqClassRef {
         Err(QueryPlannerError::InvalidReference)
     }
 
-    fn from_single_col_row(expr: &Expression, nodes: &Nodes) -> Result<Self, QueryPlannerError> {
-        if let Expression::Row { list, .. } = expr {
-            if list.len() == 1 {
-                let col = *list.get(0).ok_or(QueryPlannerError::ValueOutOfRange)?;
-                if let Node::Expression(expr) =
-                    nodes.arena.get(col).ok_or(QueryPlannerError::InvalidNode)?
-                {
-                    return EqClassRef::from_ref(expr);
-                }
-            }
-            return Err(QueryPlannerError::DoSkip);
-        }
-        Err(QueryPlannerError::InvalidRow)
-    }
-
-    fn to_single_col_row(&self, nodes: &mut Nodes) -> usize {
-        let r_node = nodes.add_ref(self.parent, self.targets.clone(), self.position);
-        nodes.add_row(vec![r_node], None)
+    fn to_single_col_row(&self, plan: &mut Plan) -> usize {
+        let id = plan
+            .nodes
+            .add_ref(self.parent, self.targets.clone(), self.position);
+        plan.nodes.add_row(vec![id], None)
     }
 }
 
@@ -168,8 +154,9 @@ impl EqClassConst {
         Err(QueryPlannerError::InvalidConstant)
     }
 
-    fn to_const(&self, nodes: &mut Nodes) -> usize {
-        nodes.add_const(self.value.clone())
+    fn to_const(&self, plan: &mut Plan) -> usize {
+        let const_id = plan.add_const(self.value.clone());
+        plan.nodes.add_row(vec![const_id], None)
     }
 }
 
@@ -181,10 +168,19 @@ enum EqClassExpr {
 }
 
 impl EqClassExpr {
-    fn to_node(&self, nodes: &mut Nodes) -> usize {
+    fn to_plan(&self, plan: &mut Plan) -> usize {
         match self {
-            EqClassExpr::EqClassConst(ec_const) => ec_const.to_const(nodes),
-            EqClassExpr::EqClassRef(ec_ref) => ec_ref.to_single_col_row(nodes),
+            EqClassExpr::EqClassConst(ec_const) => ec_const.to_const(plan),
+            EqClassExpr::EqClassRef(ec_ref) => ec_ref.to_single_col_row(plan),
+        }
+    }
+
+    fn is_self_equivalent(&self) -> bool {
+        match self {
+            EqClassExpr::EqClassConst(ec_const) => {
+                ec_const.value.eq(&ec_const.value) == Trivalent::True
+            }
+            EqClassExpr::EqClassRef(_) => true,
         }
     }
 }
@@ -219,12 +215,18 @@ impl EqClass {
 /// A list of equivalence classes from a single "AND"-ed chain of expressions.
 #[derive(Clone, PartialEq, Debug)]
 struct EqClassChain {
+    /// Groups of equivalence classes of the "AND"-e chain (all element are equal to each other).
     list: Vec<EqClass>,
+    /// A set of equalities where both sides are references.
+    pairs: HashSet<EqClassExpr, RepeatableState>,
 }
 
 impl EqClassChain {
     fn new() -> Self {
-        EqClassChain { list: Vec::new() }
+        EqClassChain {
+            list: Vec::new(),
+            pairs: HashSet::with_hasher(RepeatableState),
+        }
     }
 
     /// Insert a new pair to the equality classes chain.
@@ -232,8 +234,13 @@ impl EqClassChain {
         let mut ok = false;
 
         // Insert a pair to all equality classes that have equal element.
+        // If one of the sides doesn't satisfy self equivalence, produce
+        // a new equality class.
         for class in &mut self.list {
-            if class.set.get(left).is_some() || class.set.get(right).is_some() {
+            if (class.set.get(left).is_some() || class.set.get(right).is_some())
+                && left.is_self_equivalent()
+                && right.is_self_equivalent()
+            {
                 class.set.insert(left.clone());
                 class.set.insert(right.clone());
                 ok = true;
@@ -247,11 +254,23 @@ impl EqClassChain {
             class.set.insert(right.clone());
             self.list.push(class);
         }
+
+        // If both sides are references, add them to the pairs set.
+        if let (EqClassExpr::EqClassRef(_), EqClassExpr::EqClassRef(_)) = (left, right) {
+            self.pairs.insert(left.clone());
+            self.pairs.insert(right.clone());
+        }
     }
 
-    /// Merge equality classes in the chain if they contain common elements
-    fn merged_copy(&self) -> Self {
+    /// Merge equality classes in the chain if they contain common elements.
+    /// The only exception - we do not merge equality classes containing "NULL"
+    /// as `NULL != NULL` (the result is "NULL" itself).
+    fn merge(&self) -> Self {
         let mut result = EqClassChain::new();
+        result.pairs = self.pairs.clone();
+
+        // A set of indexes of the equality classes in the chain
+        // that contain common elements and should not be reinspected.
         let mut matched: HashSet<usize> = HashSet::new();
 
         for i in 0..self.list.len() {
@@ -270,12 +289,18 @@ impl EqClassChain {
 
                     if let Some(item) = self.list.get(j) {
                         let mut buf = EqClass::new();
+                        let mut is_self_equivalent = true;
 
                         for expr in item.set.intersection(&new_class.set) {
+                            if expr.is_self_equivalent() {
+                                is_self_equivalent = false;
+                                buf = EqClass::new();
+                                break;
+                            }
                             buf.set.insert(expr.clone());
                         }
 
-                        if !buf.set.is_empty() {
+                        if !buf.set.is_empty() && is_self_equivalent {
                             matched.insert(j);
                         }
 
@@ -291,205 +316,184 @@ impl EqClassChain {
 
         result
     }
+
+    fn subtract_pairs(&self) -> Self {
+        let mut result = EqClassChain::new();
+        result.pairs = self.pairs.clone();
+
+        for class in &self.list {
+            let ec_ref = class.ref_copy();
+            let mut buf = EqClass::new();
+
+            for expr in ec_ref.set.difference(&self.pairs) {
+                buf.set.insert(expr.clone());
+            }
+
+            result.list.push(buf);
+        }
+
+        result
+    }
 }
 
-impl Nodes {
-    /// Scan all the plan nodes and return a list of boolean expressions
-    /// from selection and join nodes that can be used for equality
-    /// propagation transformation.
-    ///
-    /// Other relational operators simply create references to the input tuple
-    /// and don't contain any weird expression trees under hood. So, skip them.
-    ///
-    /// TODO: IR can support arbitrary expressions in projections as well, but
-    /// at the moment we forbid this functionality at the parser level.
-    ///
-    /// # Errors
-    /// - invalid nodes
-    /// - no candidates for the current transformation (`RedundantTransformation` error)
-    fn gather_expr_for_eq_propagation(&self) -> Result<Vec<usize>, QueryPlannerError> {
-        let mut tops: Vec<usize> = Vec::new();
-        for node in &self.arena {
-            if let Node::Relational(
-                Relational::Selection { filter: top, .. }
-                | Relational::InnerJoin { condition: top, .. },
-            ) = node
-            {
-                if let Node::Expression(Expression::Bool { .. }) =
-                    self.arena.get(*top).ok_or(QueryPlannerError::InvalidNode)?
-                {
-                    tops.push(*top);
-                }
-            }
-        }
-        Ok(tops)
+/// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
+fn call_expr_tree_derive_equalities(
+    plan: &mut Plan,
+    top_id: usize,
+) -> Result<usize, QueryPlannerError> {
+    plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
+}
+
+fn call_build_and_chains(
+    plan: &mut Plan,
+    nodes: &[usize],
+) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
+    let mut chains = plan.populate_and_chains(nodes)?;
+    for chain in chains.values_mut() {
+        chain.extend_equality_operator(plan)?;
     }
+    Ok(chains)
+}
 
-    // Get expression node value and convert it to the suitable one for an equivalence class or error.
-    // DoSkip is a special case of an error - nothing bad had happened, the target node doesn't contain
-    // anything interesting for us, skip it without any serious error.
-    fn node_to_eq_class_expr(&self, node: usize) -> Result<EqClassExpr, QueryPlannerError> {
-        if let Node::Expression(expr) =
-            self.arena.get(node).ok_or(QueryPlannerError::InvalidNode)?
-        {
-            match expr {
-                Expression::Constant { .. } => {
-                    Ok(EqClassExpr::EqClassConst(EqClassConst::from_const(expr)?))
-                }
-                Expression::Reference { .. } => {
-                    Ok(EqClassExpr::EqClassRef(EqClassRef::from_ref(expr)?))
-                }
-                Expression::Row { .. } => match EqClassRef::from_single_col_row(expr, self) {
-                    Ok(ecr) => Ok(EqClassExpr::EqClassRef(ecr)),
-                    Err(e) => Err(e),
-                },
-                _ => Err(QueryPlannerError::DoSkip),
-            }
-        } else {
-            Err(QueryPlannerError::InvalidNode)
-        }
-    }
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+    chain.as_plan_ecs(plan)
+}
 
-    /// Returns suggestions with new equations that should be added under specific node.
-    /// The result is serialized as a hash map:
-    /// - key: node position in the plan nodes, that is the top of the "AND"-ed expression chain.
-    ///        The new expressions should be added under it.
-    /// - value: a chain of equivalence classes to produce new equalities.
-    fn eq_class_suggestions(&self) -> Result<HashMap<usize, EqClassChain>, QueryPlannerError> {
-        let tops = self.gather_expr_for_eq_propagation()?;
-        let mut visited: HashSet<usize> = HashSet::new();
-        let mut map: HashMap<usize, EqClassChain> = HashMap::new();
+impl Chain {
+    fn extend_equality_operator(&mut self, plan: &mut Plan) -> Result<(), QueryPlannerError> {
+        if let Some((left_vec, right_vec)) = self.get_grouped().get(&Bool::Eq) {
+            let mut eq_classes = EqClassChain::new();
 
-        // Build equivalence classes and pair set.
-        for top in &tops {
-            let bft = Bft::new(top, |node| self.expr_iter(node, true));
-            for (_level, chain_top) in bft {
-                // Skip all nodes rather then boolean "and", and those "and"
-                // that were already visited.
-                let is_and: bool = if let Node::Expression(Expression::Bool { op, .. }) = self
-                    .arena
-                    .get(*chain_top)
-                    .ok_or(QueryPlannerError::InvalidNode)?
+            for (left_id, right_id) in left_vec.iter().zip(right_vec.iter()) {
+                let left_eqe = plan.try_to_eq_class_expr(*left_id);
+                let right_eqe = plan.try_to_eq_class_expr(*right_id);
+                if let (Err(QueryPlannerError::DoSkip), _) | (_, Err(QueryPlannerError::DoSkip)) =
+                    (&left_eqe, &right_eqe)
                 {
-                    *op == Bool::And
-                } else {
-                    false
-                };
-                if !is_and || visited.get(chain_top).is_some() {
                     continue;
                 }
-
-                // Iterate the chain of "and"-ed equivalents to build equivalence
-                // classes. All traversed "and" nodes are placed to the visited set.
-                let mut eq_classes = EqClassChain::new();
-                let mut pairs: HashSet<EqClassExpr, RepeatableState> =
-                    HashSet::with_hasher(RepeatableState);
-                let mut res = EqClassChain::new();
-                let chain = DftPre::new(chain_top, |node| self.eq_iter(node));
-                for (_l, item) in chain {
-                    visited.insert(*item);
-                    if let Node::Expression(Expression::Bool {
-                        left, op, right, ..
-                    }) = self
-                        .arena
-                        .get(*item)
-                        .ok_or(QueryPlannerError::InvalidNode)?
-                    {
-                        if (*op != Bool::Eq) && (*op != Bool::In) {
-                            continue;
-                        }
-
-                        let eqe_left_res = self.node_to_eq_class_expr(*left);
-                        let eqe_right_res = self.node_to_eq_class_expr(*right);
-                        if let Ok(ref el) = eqe_left_res {
-                            if let Ok(ref er) = eqe_right_res {
-                                eq_classes.insert(el, er);
-                                if let EqClassExpr::EqClassRef(_) = el {
-                                    if let EqClassExpr::EqClassRef(_) = er {
-                                        pairs.insert(el.clone());
-                                        pairs.insert(er.clone());
-                                    }
-                                }
-                            }
-                        };
-                    }
-                }
-
-                let merged_eq_classes = eq_classes.merged_copy();
-
-                // Remove everything from each equality class except references
-                for class in &merged_eq_classes.list {
-                    let ec_ref = class.ref_copy();
-
-                    // Remove already matched pairs from the equality class
-                    let mut new_class = EqClass::new();
-                    for elem in ec_ref.set.difference(&pairs) {
-                        new_class.set.insert(elem.clone());
-                    }
-
-                    if !new_class.set.is_empty() {
-                        res.list.push(new_class);
-                    }
-                }
-                if !res.list.is_empty() {
-                    map.insert(*chain_top, res);
-                }
+                eq_classes.insert(&left_eqe?, &right_eqe?);
             }
-        }
-        Ok(map)
-    }
 
-    /// Collect equality classes in the plan, analyze them, derive new
-    /// equality nodes and append them to the plan.
-    ///
-    /// # Errors
-    /// - Invalid node or bool, can be caused only by internal logical errors.
-    pub fn add_new_equalities(&mut self) -> Result<(), QueryPlannerError> {
-        let map = self.eq_class_suggestions()?;
-        for (top, chain) in &map {
-            let mut left_child: usize =
-                if let Node::Expression(Expression::Bool { left, op, .. }) =
-                    self.arena.get(*top).ok_or(QueryPlannerError::InvalidBool)?
-                {
-                    // In a case of `Bool::Eq` current top never has "AND"-ed children, so skip it.
-                    // We should never get anything except `Bool::And` under normal conditions.
-                    if *op != Bool::And {
-                        continue;
-                    }
-                    *left
-                } else {
-                    continue;
-                };
+            let ecs = eq_classes.merge().subtract_pairs();
 
-            // Build "AND"-ed chain of new equalities linked on the right sight to the
-            // left child of the top node. Left side of this new chain is still not
-            // linked to the top.
-            for ec in &chain.list {
+            for ec in &ecs.list {
                 // Do not generate new equalities from a empty or single element lists.
                 if ec.set.len() <= 1 {
                     continue;
                 }
 
                 for (a, b) in (&ec.set).iter().tuple_windows() {
-                    let a_node = a.to_node(self);
-                    let b_node = b.to_node(self);
-
-                    let eq_node = self.add_bool(a_node, Bool::Eq, b_node)?;
-                    let and_node = self.add_bool(left_child, Bool::And, eq_node)?;
-                    left_child = and_node;
+                    let left_id = a.to_plan(plan);
+                    let right_id = b.to_plan(plan);
+                    let eq_id = plan.add_cond(left_id, Bool::Eq, right_id)?;
+                    self.insert(plan, eq_id)?;
                 }
             }
+        }
 
-            // Link new chain to the top node (instead of its left element).
-            if let Node::Expression(Expression::Bool { ref mut left, .. }) = self
-                .arena
-                .get_mut(*top)
-                .ok_or(QueryPlannerError::InvalidBool)?
-            {
-                *left = left_child;
+        Ok(())
+    }
+
+    fn as_plan_ecs(&self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+        let other_top_id = match self.get_other().split_first() {
+            Some((first, other)) => {
+                let mut top_id = *first;
+                for id in other {
+                    top_id = plan.add_cond(top_id, Bool::And, *id)?;
+                }
+                Some(top_id)
+            }
+            None => None,
+        };
+
+        // Chain is grouped by the operators in the hash map.
+        // To make serialization non-flaky, we extract operators
+        // in a deterministic order.
+        let mut grouped_top_id: Option<usize> = None;
+        // No need for "And" and "Or" operators.
+        let ordered_ops = &[
+            Bool::Eq,
+            Bool::Gt,
+            Bool::GtEq,
+            Bool::In,
+            Bool::Lt,
+            Bool::LtEq,
+            Bool::NotEq,
+        ];
+        for op in ordered_ops {
+            if let Some((left_vec, right_vec)) = self.get_grouped().get(op) {
+                if let Some((first, other_pairs)) = left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| (*l, *r))
+                    .collect::<Vec<(usize, usize)>>()
+                    .split_first()
+                {
+                    let left_row_id = plan.nodes.add_row(vec![first.0], None);
+                    let right_row_id = plan.nodes.add_row(vec![first.1], None);
+                    let mut op_top_id = plan.add_cond(left_row_id, op.clone(), right_row_id)?;
+
+                    for (l_id, r_id) in other_pairs {
+                        let left_row_id = plan.nodes.add_row(vec![*l_id], None);
+                        let right_row_id = plan.nodes.add_row(vec![*r_id], None);
+                        let cond_id = plan.add_cond(left_row_id, op.clone(), right_row_id)?;
+                        op_top_id = plan.add_cond(op_top_id, Bool::And, cond_id)?;
+                    }
+                    match grouped_top_id {
+                        Some(id) => {
+                            grouped_top_id = Some(plan.add_cond(id, Bool::And, op_top_id)?);
+                        }
+                        None => {
+                            grouped_top_id = Some(op_top_id);
+                        }
+                    }
+                }
             }
         }
-        Ok(())
+        match (grouped_top_id, other_top_id) {
+            (Some(grouped_top_id), Some(other_top_id)) => {
+                Ok(plan.add_cond(grouped_top_id, Bool::And, other_top_id)?)
+            }
+            (Some(grouped_top_id), None) => Ok(grouped_top_id),
+            (None, Some(other_top_id)) => Ok(other_top_id),
+            (None, None) => Err(QueryPlannerError::CustomError(
+                "No expressions to merge".to_string(),
+            )),
+        }
+    }
+}
+
+impl Plan {
+    // DoSkip is a special case of an error - nothing bad had happened, the target node doesn't contain
+    // anything interesting for us, skip it without any serious error.
+    fn try_to_eq_class_expr(&self, expr_id: usize) -> Result<EqClassExpr, QueryPlannerError> {
+        let expr = self.get_expression_node(expr_id)?;
+        match expr {
+            Expression::Constant { .. } => {
+                Ok(EqClassExpr::EqClassConst(EqClassConst::from_const(expr)?))
+            }
+            Expression::Reference { .. } => {
+                Ok(EqClassExpr::EqClassRef(EqClassRef::from_ref(expr)?))
+            }
+            Expression::Row { list, .. } => {
+                if let (Some(col_id), None) = (list.get(0), list.get(1)) {
+                    self.try_to_eq_class_expr(*col_id)
+                } else {
+                    // We don't support more than a single column in a row.
+                    Err(QueryPlannerError::DoSkip)
+                }
+            }
+            _ => Err(QueryPlannerError::DoSkip),
+        }
+    }
+
+    /// Derive new equalities in the expression tree.
+    ///
+    /// # Errors
+    /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
+    pub fn derive_equalities(&mut self) -> Result<(), QueryPlannerError> {
+        self.transform_expr_trees(&call_expr_tree_derive_equalities)
     }
 }
 

@@ -1,16 +1,29 @@
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use traversal::Bft;
 
 fn call_expr_tree_merge_tuples(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
-    plan.expr_tree_merge_tuples(top_id)
+    plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
+fn call_build_and_chains(
+    plan: &mut Plan,
+    nodes: &[usize],
+) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
+    plan.populate_and_chains(nodes)
+}
+
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+    chain.as_plan(plan)
+}
+
+/// "AND" chain grouped by the operator type.
 #[derive(Debug)]
-struct Chain {
+pub struct Chain {
     // Left and right sides of the boolean expression
     // grouped by the operator.
     grouped: HashMap<Bool, (Vec<usize>, Vec<usize>)>,
@@ -18,20 +31,34 @@ struct Chain {
     other: Vec<usize>,
 }
 
+impl Default for Chain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Chain {
-    fn new() -> Self {
+    /// Create a new chain.
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             grouped: HashMap::new(),
             other: Vec::new(),
         }
     }
 
-    fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), QueryPlannerError> {
+    /// Add a new expression to the chain.
+    ///
+    /// # Errors
+    /// - Failed if the node is not an expression.
+    /// - Failed if expression is not an "AND" or "OR".
+    /// - There is something wrong with our sub-queries.
+    pub fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), QueryPlannerError> {
         let bool_expr = plan.get_expression_node(expr_id)?;
         if let Expression::Bool { left, op, right } = bool_expr {
             let (left_id, right_id, group_op) = match *op {
                 Bool::And | Bool::Or => {
-                    // We can only merge tuples in non AND/OR expressions.
+                    // We expect only AND/OR expressions.
                     return Err(QueryPlannerError::CustomError(format!(
                         "AND/OR expressions are not supported: {:?}",
                         bool_expr
@@ -66,10 +93,6 @@ impl Chain {
                     let (left, right) = entry.get_mut();
                     let new_left_id = plan.expr_clone(left_id)?;
                     let new_right_id = plan.expr_clone(right_id)?;
-                    println!(
-                        "occupied new_left_id {}, new_right_id {}",
-                        new_left_id, new_right_id
-                    );
                     plan.get_columns_or_self(new_left_id)?
                         .iter()
                         .for_each(|id| {
@@ -84,10 +107,6 @@ impl Chain {
                 Entry::Vacant(entry) => {
                     let new_left_id = plan.expr_clone(left_id)?;
                     let new_right_id = plan.expr_clone(right_id)?;
-                    println!(
-                        "vacant new_left_id {}, new_right_id {}",
-                        new_left_id, new_right_id
-                    );
                     entry.insert((
                         plan.get_columns_or_self(new_left_id)?,
                         plan.get_columns_or_self(new_right_id)?,
@@ -157,6 +176,18 @@ impl Chain {
     fn is_empty(&self) -> bool {
         self.grouped.is_empty() && self.other.is_empty()
     }
+
+    /// Return boolean expression nodes grouped by the operator.
+    #[must_use]
+    pub fn get_grouped(&self) -> &HashMap<Bool, (Vec<usize>, Vec<usize>)> {
+        &self.grouped
+    }
+
+    /// Return "other" boolean expression nodes.
+    #[must_use]
+    pub fn get_other(&self) -> &Vec<usize> {
+        &self.other
+    }
 }
 
 impl Plan {
@@ -168,12 +199,18 @@ impl Plan {
         }
     }
 
-    fn populate_and_chains(
+    /// Returns all the DNF "And" chains with their tops from list of nodes.
+    ///
+    /// # Errors
+    /// - Failed to get an expression node where expected.
+    /// - Failed to insert the node to the "And" chain.
+    pub fn populate_and_chains(
         &mut self,
         nodes: &[usize],
-    ) -> Result<HashMap<usize, Chain>, QueryPlannerError> {
+    ) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
         let mut visited: HashSet<usize> = HashSet::new();
-        let mut chains: HashMap<usize, Chain> = HashMap::new();
+        let mut chains: HashMap<usize, Chain, RepeatableState> =
+            HashMap::with_hasher(RepeatableState);
 
         for id in nodes {
             if visited.contains(id) {
@@ -223,13 +260,31 @@ impl Plan {
         Ok(chains)
     }
 
-    fn expr_tree_merge_tuples(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
+    /// Build all the "AND" chains in subtree with `f_build_chains` function,
+    /// transform back every chain to a plan expression with `f_to_plan` function
+    /// and return a new expression subtree.
+    ///
+    /// # Errors
+    /// - Failed to build an expression subtree for some chain.
+    /// - The plan is invalid (some bugs).
+    pub fn expr_tree_modify_and_chains(
+        &mut self,
+        expr_id: usize,
+        f_build_chains: &dyn Fn(
+            &mut Plan,
+            &[usize],
+        ) -> Result<
+            HashMap<usize, Chain, RepeatableState>,
+            QueryPlannerError,
+        >,
+        f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, QueryPlannerError>,
+    ) -> Result<usize, QueryPlannerError> {
         let mut nodes: Vec<usize> = Vec::new();
         let tree = Bft::new(&expr_id, |node| self.nodes.expr_iter(node, false));
         for (_, id) in tree {
             nodes.push(*id);
         }
-        let chains = self.populate_and_chains(&nodes)?;
+        let chains = f_build_chains(self, &nodes)?;
 
         // Replace nodes' children with the merged tuples.
         for id in nodes {
@@ -238,7 +293,7 @@ impl Plan {
                 Expression::Alias { child, .. } => {
                     let chain = chains.get(child);
                     if let Some(chain) = chain {
-                        let new_child_id = chain.as_plan(self)?;
+                        let new_child_id = f_to_plan(chain, self)?;
                         let expr_mut = self.get_mut_expression_node(id)?;
                         if let Expression::Alias {
                             child: ref mut child_id,
@@ -259,7 +314,7 @@ impl Plan {
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
-                            let new_child_id = chain.as_plan(self)?;
+                            let new_child_id = f_to_plan(chain, self)?;
                             let expr_mut = self.get_mut_expression_node(id)?;
                             if let Expression::Bool {
                                 left: ref mut left_id,
@@ -286,7 +341,7 @@ impl Plan {
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
-                            let new_child_id = chain.as_plan(self)?;
+                            let new_child_id = f_to_plan(chain, self)?;
                             let expr_mut = self.get_mut_expression_node(id)?;
                             if let Expression::Row { ref mut list, .. } = expr_mut {
                                 if let Some(child_id) = list.get_mut(pos) {
@@ -312,7 +367,7 @@ impl Plan {
 
         // Try to replace the subtree top node (if it is also AND).
         if let Some(top_chain) = chains.get(&expr_id) {
-            let new_expr_id = top_chain.as_plan(self)?;
+            let new_expr_id = f_to_plan(top_chain, self)?;
             return Ok(new_expr_id);
         }
 

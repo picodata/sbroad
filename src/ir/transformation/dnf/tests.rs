@@ -120,3 +120,26 @@ fn dnf5() {
         sql
     );
 }
+
+#[test]
+fn dnf6() {
+    let query = r#"SELECT "a" FROM "t"
+    WHERE "a" = 1 and "c" = 1 OR "b" = 2"#;
+
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.to_ir(metadata).unwrap();
+    plan.set_dnf().unwrap();
+    let ex_plan = ExecutionPlan::from(plan);
+
+    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
+    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    assert_eq!(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (1) and ("t"."c") = (1) or ("t"."b") = (2))"#,
+        ),
+        sql
+    );
+}

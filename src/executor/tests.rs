@@ -97,10 +97,7 @@ fn linker_test() {
     let mut query = Query::new(engine, sql).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let virtual_table = virtual_table_23();
-    query
-        .engine
-        .add_virtual_table(motion_id, virtual_table)
-        .unwrap();
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -150,10 +147,7 @@ fn union_linker_test() {
     let mut query = Query::new(engine, sql).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let virtual_table = virtual_table_23();
-    query
-        .engine
-        .add_virtual_table(motion_id, virtual_table)
-        .unwrap();
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -233,10 +227,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     virtual_table.set_alias("\"t8\"").unwrap();
-    query
-        .engine
-        .add_virtual_table(motion_id, virtual_table)
-        .unwrap();
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -265,7 +256,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                     r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
                     r#") as "t8""#,
                     r#"ON ("t3"."id") = ("t8"."identification_number")"#,
-                    r#"WHERE ("t3"."id", "t8"."identification_number") = (2, 2)"#
+                    r#"WHERE ("t3"."id", "t3"."id", "t8"."identification_number") = ("t8"."identification_number", 2, 2)"#
                 )
             )
         ],
@@ -304,10 +295,7 @@ fn join_linker2_test() {
     ]);
     virtual_table.set_alias("\"t2\"").unwrap();
 
-    query
-        .engine
-        .add_virtual_table(motion_id, virtual_table)
-        .unwrap();
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -359,10 +347,7 @@ fn join_linker3_test() {
     ]);
     virtual_table.set_alias("\"t2\"").unwrap();
 
-    query
-        .engine
-        .add_virtual_table(motion_id, virtual_table)
-        .unwrap();
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -403,10 +388,7 @@ fn join_linker4_test() {
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_t2.set_alias("t2").unwrap();
-    query
-        .engine
-        .add_virtual_table(motion_t2_id, virtual_t2)
-        .unwrap();
+    query.engine.add_virtual_table(motion_t2_id, virtual_t2);
 
     let motion_sq_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
     let mut virtual_sq = VirtualTable::new();
@@ -416,10 +398,7 @@ fn join_linker4_test() {
     });
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
-    query
-        .engine
-        .add_virtual_table(motion_sq_id, virtual_sq)
-        .unwrap();
+    query.engine.add_virtual_table(motion_sq_id, virtual_sq);
 
     let result = query.exec().unwrap();
 
@@ -467,13 +446,11 @@ fn anonymous_col_index_test() {
     let motion1_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     query
         .engine
-        .add_virtual_table(motion1_id, virtual_table_23())
-        .unwrap();
+        .add_virtual_table(motion1_id, virtual_table_23());
     let motion2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
     query
         .engine
-        .add_virtual_table(motion2_id, virtual_table_23())
-        .unwrap();
+        .add_virtual_table(motion2_id, virtual_table_23());
 
     let result = query.exec().unwrap();
 

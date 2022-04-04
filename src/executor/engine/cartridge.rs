@@ -9,9 +9,9 @@ use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::Engine;
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::Metadata;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
+use crate::executor::Metadata;
 
 mod backend;
 pub mod cache;

@@ -5,6 +5,7 @@ use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 
 pub mod cartridge;
+pub mod mock;
 
 /// `Metadata` trait is interface for working with metadata storage, that was needed the query execute.
 pub trait Metadata {
@@ -69,6 +70,3 @@ pub trait Engine {
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &str) -> u64;
 }
-
-#[cfg(test)]
-pub mod mock;
