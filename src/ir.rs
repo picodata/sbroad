@@ -453,5 +453,6 @@ impl Plan {
     }
 }
 
+mod explain;
 #[cfg(test)]
 mod tests;

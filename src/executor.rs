@@ -263,6 +263,14 @@ where
         vtable.set_index(index);
         Ok(())
     }
+
+    /// Query explain
+    ///
+    /// # Errors
+    /// - Failed to build explain
+    pub fn explain(&self) -> Result<String, QueryPlannerError> {
+        self.exec_plan.get_ir_plan().as_explain()
+    }
 }
 
 #[cfg(test)]

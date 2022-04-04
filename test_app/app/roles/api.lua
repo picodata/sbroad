@@ -2,10 +2,29 @@ local vshard = require('vshard')
 local cartridge = require('cartridge')
 
 _G.query = nil
+_G.explain = nil
 _G.calculate_bucket_id = nil
 _G.calculate_bucket_id_by_dict = nil
 _G.sql_execute = nil
 
+
+local function explain(query)
+    local has_err, res = pcall(
+        function()
+            return box.func["sbroad.explain"]:call({ query })
+        end
+    )
+
+    if has_err == false then
+        return nil, res
+    end
+    
+    local res_lines = {}
+    for line in res:gmatch("[^\r\n]+") do
+        table.insert(res_lines, line)
+    end
+    return res_lines
+end
 
 local function query(query, params)
     local has_err, parser_res = pcall(
@@ -54,6 +73,7 @@ local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
     _G.query = query
+    _G.explain = explain
     _G.calculate_bucket_id = calculate_bucket_id
     _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
     _G.sql_execute = sql_execute
@@ -77,6 +97,10 @@ local function init(opts) -- luacheck: no unused args
 
     box.schema.func.create('sbroad.load_lua_extra_function', {
         if_not_exists = true, language = 'C'
+    })
+
+    box.schema.func.create('sbroad.explain', {
+            if_not_exists = true, language = 'C'
     })
 
     box.func["sbroad.load_lua_extra_function"]:call({})

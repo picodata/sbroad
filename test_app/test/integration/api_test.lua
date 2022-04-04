@@ -439,3 +439,40 @@ g.test_insert_3 = function()
         },
     })
 end
+
+g.test_invalid_explain = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call("explain", { [[SELECT "id", "name" FROM "testing_space"
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+
+    t.assert_equals(err, "Explain hasn't supported node Motion { children: [43], policy: Full, generation: None, output: 81 } yet")
+end
+
+g.test_valid_explain = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("explain", { [[SELECT * FROM (
+            SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 0
+            UNION ALL
+            SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
+        ) as "t1"
+        WHERE "id" = 1 ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        {
+            "projection (\"t1\".\"id\" -> \"id\", \"t1\".\"name\" -> \"name\")",
+            "    selection ROW(\"t1\".\"id\") = ROW(1)",
+            "        scan \"t1\"",
+            "            union all",
+            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
+            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
+            "                        scan \"space_simple_shard_key_hist\"",
+            "                projection (\"space_simple_shard_key\".\"id\" -> \"id\", \"space_simple_shard_key\".\"name\" -> \"name\")",
+            "                    selection ROW(\"space_simple_shard_key\".\"sysOp\") < ROW(0)",
+            "                        scan \"space_simple_shard_key\"",
+        }
+    )
+end
