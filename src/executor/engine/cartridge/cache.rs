@@ -15,18 +15,22 @@ use self::yaml_rust::yaml;
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
 /// as it is managed by Tarantool's vshard module.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ClusterSchema {
+pub struct ClusterAppConfig {
     /// Tarantool cartridge schema
     schema: yaml::Yaml,
+
+    /// Execute response waiting timeout in seconds.
+    waiting_timeout: u64,
 
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
 }
 
-impl ClusterSchema {
+impl ClusterAppConfig {
     pub fn new() -> Self {
-        ClusterSchema {
+        ClusterAppConfig {
             schema: yaml::Yaml::Null,
+            waiting_timeout: 360,
             tables: HashMap::new(),
         }
     }
@@ -35,11 +39,13 @@ impl ClusterSchema {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when process was terminated.
-    pub fn load(&mut self, s: &str) -> Result<(), QueryPlannerError> {
+    pub fn load_schema(&mut self, s: &str) -> Result<(), QueryPlannerError> {
         if let Ok(docs) = YamlLoader::load_from_str(s) {
-            self.schema = docs[0].clone();
-            self.init_table_segments()?;
-            return Ok(());
+            if let Some(doc) = docs.get(0) {
+                self.schema = doc.clone();
+                self.init_table_segments()?;
+                return Ok(());
+            }
         }
 
         Err(QueryPlannerError::InvalidClusterSchema)
@@ -59,6 +65,10 @@ impl ClusterSchema {
             }
         }
         result
+    }
+
+    pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
+        self.schema.is_null()
     }
 
     /// Transform space information from schema to table segments
@@ -108,7 +118,7 @@ impl ClusterSchema {
                     None => return Err(QueryPlannerError::SpaceFormatNotFound),
                 };
 
-                let table_name: String = ClusterSchema::to_name(current_space_name);
+                let table_name: String = ClusterAppConfig::to_name(current_space_name);
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
                 let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
                 self.tables.insert(table_name, t);
@@ -120,12 +130,15 @@ impl ClusterSchema {
         Ok(())
     }
 
-    pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
-        self.schema.is_null()
+    /// Setup response waiting timeout for executor
+    pub fn set_exec_waiting_timeout(&mut self, timeout: u64) {
+        if timeout > 0 {
+            self.waiting_timeout = timeout;
+        }
     }
 }
 
-impl Metadata for ClusterSchema {
+impl Metadata for ClusterAppConfig {
     /// Get table segment form cache by table name
     ///
     /// # Errors
@@ -136,6 +149,11 @@ impl Metadata for ClusterSchema {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::SpaceNotFound),
         }
+    }
+
+    /// Get response waiting timeout for executor
+    fn get_exec_waiting_timeout(&self) -> u64 {
+        self.waiting_timeout
     }
 }
 

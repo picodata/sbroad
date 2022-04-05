@@ -13,6 +13,8 @@ pub trait Metadata {
         table_name: &str,
     ) -> Result<crate::ir::relation::Table, QueryPlannerError>;
 
+    fn get_exec_waiting_timeout(&self) -> u64;
+
     fn to_name(s: &str) -> String {
         if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
             s.to_string()

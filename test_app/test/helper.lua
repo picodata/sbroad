@@ -44,6 +44,7 @@ helper.cluster = cartridge_helpers.Cluster:new({
 })
 
 local config = {
+  ["executor_waiting_timeout"] = 200,
   ["schema"] = {
     spaces = {
       testing_space = {

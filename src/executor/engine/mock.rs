@@ -24,6 +24,10 @@ impl Metadata for MetadataMock {
             None => Err(QueryPlannerError::SpaceNotFound),
         }
     }
+
+    fn get_exec_waiting_timeout(&self) -> u64 {
+        0
+    }
 }
 
 impl MetadataMock {

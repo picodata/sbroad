@@ -82,8 +82,8 @@ fn test_yaml_schema_parser() {
       - \"identification_number\"
       - \"product_code\"";
 
-    let mut s = ClusterSchema::new();
-    s.load(test_schema).unwrap();
+    let mut s = ClusterAppConfig::new();
+    s.load_schema(test_schema).unwrap();
 
     let mut expected_keys = Vec::new();
     expected_keys.push("\"identification_number\"".to_string());
@@ -136,8 +136,8 @@ fn test_getting_table_segment() {
       - \"identification_number\"
       - \"product_code\"";
 
-    let mut s = ClusterSchema::new();
-    s.load(test_schema).unwrap();
+    let mut s = ClusterAppConfig::new();
+    s.load_schema(test_schema).unwrap();
 
     let expected = Table::new_seg(
         "\"hash_testing\"",
@@ -157,4 +157,14 @@ fn test_getting_table_segment() {
         QueryPlannerError::SpaceNotFound
     );
     assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected)
+}
+
+#[test]
+fn test_waiting_timeout() {
+    let mut s = ClusterAppConfig::new();
+    s.set_exec_waiting_timeout(200);
+
+    assert_ne!(s.get_exec_waiting_timeout(), 360);
+
+    assert_eq!(s.get_exec_waiting_timeout(), 200);
 }

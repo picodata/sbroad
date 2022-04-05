@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::convert::TryInto;
 
 use tarantool::log::{say, SayLevel};
@@ -6,10 +5,11 @@ use tarantool::tlua::LuaFunction;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::cache::ClusterSchema;
+use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::Engine;
 use crate::executor::ir::ExecutionPlan;
+use crate::executor::Metadata;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 
@@ -19,13 +19,13 @@ pub mod hash;
 
 #[derive(Debug, Clone)]
 pub struct Runtime {
-    metadata: ClusterSchema,
+    metadata: ClusterAppConfig,
     bucket_count: usize,
 }
 
 /// Implements `Engine` interface for tarantool cartridge application
 impl Engine for Runtime {
-    type Metadata = ClusterSchema;
+    type Metadata = ClusterAppConfig;
 
     fn metadata(&self) -> &Self::Metadata {
         &self.metadata
@@ -36,16 +36,34 @@ impl Engine for Runtime {
     }
 
     fn clear_metadata(&mut self) {
-        self.metadata = ClusterSchema::new();
+        self.metadata = ClusterAppConfig::new();
     }
 
     fn load_metadata(&mut self) -> Result<(), QueryPlannerError> {
         let lua = tarantool::lua_state();
-        let get_schema: LuaFunction<_> =
-            lua.eval("return require('cartridge').get_schema").unwrap();
 
-        let res: String = match get_schema.call() {
-            Ok(res) => res,
+        match lua.exec(
+            r#"
+    local cartridge = require('cartridge')
+
+    function get_schema()
+        return cartridge.get_schema()
+    end
+
+    function get_waiting_timeout()
+        local cfg = cartridge.config_get_readonly()
+
+        if cfg["executor_waiting_timeout"] == nil then
+            return 0
+        end
+
+        return cfg["executor_waiting_timeout"]
+    end
+
+
+    "#,
+        ) {
+            Ok(_) => {}
             Err(e) => {
                 say(
                     SayLevel::Error,
@@ -54,11 +72,50 @@ impl Engine for Runtime {
                     Option::from("load metadata"),
                     &format!("{:?}", e),
                 );
+                return Err(QueryPlannerError::LuaError(format!(
+                    "Failed to load Lua code: {:?}",
+                    e
+                )));
+            }
+        }
+
+        let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
+
+        let res: String = match get_schema.call() {
+            Ok(res) => res,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("getting schema"),
+                    &format!("{:?}", e),
+                );
                 return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
             }
         };
 
-        self.metadata.load(&res)
+        self.metadata.load_schema(&res)?;
+
+        let timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
+
+        let waiting_timeout: u64 = match timeout.call() {
+            Ok(res) => res,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("getting waiting timeout"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+            }
+        };
+
+        self.metadata.set_exec_waiting_timeout(waiting_timeout);
+
+        Ok(())
     }
 
     /// Execute sub tree on the nodes
@@ -71,14 +128,7 @@ impl Engine for Runtime {
         let mut result = BoxExecuteFormat::new();
         let sql = plan.subtree_as_sql(top_id)?;
 
-        match buckets {
-            Buckets::All => {
-                result.extend(cluster_exec_query(&sql)?)?;
-            }
-            Buckets::Filtered(list) => {
-                result.extend(bucket_exec_query(list, &sql)?)?;
-            }
-        }
+        result.extend(self.exec_query(&sql, buckets)?)?;
 
         Ok(result)
     }
@@ -111,7 +161,7 @@ impl Engine for Runtime {
 impl Runtime {
     pub fn new() -> Result<Self, QueryPlannerError> {
         let mut result = Runtime {
-            metadata: ClusterSchema::new(),
+            metadata: ClusterAppConfig::new(),
             bucket_count: 0,
         };
 
@@ -167,30 +217,28 @@ impl Runtime {
 
         Ok(())
     }
-}
 
-/// Send the query to a single bucket and merge results (map-reduce).
-fn bucket_exec_query(
-    buckets: &HashSet<u64>,
-    query: &str,
-) -> Result<BoxExecuteFormat, QueryPlannerError> {
-    let lua = tarantool::lua_state();
-    match lua.exec(
-        r#"
-    local vshard = require('vshard')
+    fn exec_query(
+        &self,
+        query: &str,
+        buckets: &Buckets,
+    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let lua = tarantool::lua_state();
+        match lua.exec(
+            r#"local vshard = require('vshard')
     local yaml = require('yaml')
     local log = require('log')
 
     ---get_uniq_replicaset_for_buckets - gets unique set of replicaset by bucket list
     ---@param buckets table - list of buckets.
     function get_uniq_replicaset_for_buckets(buckets)
-        local res = {}
         local uniq_replicas = {}
         for _, bucket_id in pairs(buckets) do
             local current_replicaset = vshard.router.route(bucket_id)
             uniq_replicas[current_replicaset.uuid] = current_replicaset
         end
 
+        local res = {}
         for _, r in pairs(uniq_replicas) do
             table.insert(res, r)
         end
@@ -198,8 +246,20 @@ fn bucket_exec_query(
         return res
     end
 
-    function execute_sql(buckets, query)
-        local replicas = get_uniq_replicaset_for_buckets(buckets)
+    function execute_sql(query, buckets, waiting_timeout)
+        log.debug("Execution query: " .. query)
+        log.debug("Execution waiting timeout " .. tostring(waiting_timeout) .. "s")
+
+        local replicas = nil
+
+        if next(buckets) == nil then
+            replicas = vshard.router.routeall()
+            log.debug("Execution query on all instaces")
+        else
+            replicas = get_uniq_replicaset_for_buckets(buckets)
+            log.debug("Execution query on some instaces")
+        end
+
         local result = nil
         local futures = {}
 
@@ -209,11 +269,10 @@ fn bucket_exec_query(
                  error(err)
              end
              table.insert(futures, future)
-             log.debug("Execute a query " .. query .. " on replica")
         end
 
         for _, future in ipairs(futures) do
-             future:wait_result(360)
+             future:wait_result(waiting_timeout)
              local res = future:result()
 
              if res[1] == nil then
@@ -229,132 +288,51 @@ fn bucket_exec_query(
              end
          end
 
-        return result
+    return result
     end
 "#,
-    ) {
-        Ok(_) => {}
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("exec_query"),
-                &format!("{:?}", e),
-            );
-            return Err(QueryPlannerError::LuaError(format!(
-                "Failed lua code loading: {:?}",
-                e
-            )));
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("exec_query"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!(
+                    "Failed lua code loading: {:?}",
+                    e
+                )));
+            }
         }
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
+        })?;
+
+        let lua_buckets = match buckets {
+            Buckets::All => vec![],
+            Buckets::Filtered(list) => list.iter().copied().collect(),
+        };
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let res: BoxExecuteFormat =
+            match exec_sql.call_with_args((query, lua_buckets, waiting_timeout)) {
+                Ok(v) => v,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("exec_query"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+        Ok(res)
     }
-
-    let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
-        QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
-    })?;
-
-    let lua_buckets: Vec<u64> = buckets.iter().copied().collect();
-    let res: BoxExecuteFormat = match exec_sql.call_with_args((lua_buckets, query)) {
-        Ok(v) => v,
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("exec_query"),
-                &format!("{:?}", e),
-            );
-            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-        }
-    };
-
-    Ok(res)
-}
-
-/// Send the query to all instances and merge results (map-reduce).
-fn cluster_exec_query(query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
-    say(
-        SayLevel::Debug,
-        file!(),
-        line!().try_into().unwrap_or(0),
-        None,
-        &format!("Execute a query {:?} on all instances", query),
-    );
-
-    let lua = tarantool::lua_state();
-
-    match lua.exec(
-        r#"
-        local vshard = require('vshard')
-        local yaml = require('yaml')
-
-        function map_reduce_execute_sql(query)
-            local replicas = vshard.router.routeall()
-
-            local result = nil
-            local futures = {}
-            for _, replica in pairs(replicas) do
-                 local future, err = replica:callro("box.execute", { query }, {is_async = true})
-                 if err ~= nil then
-                     error(err)
-                 end
-                 table.insert(futures, future)
-            end
-
-            for _, future in ipairs(futures) do
-                 future:wait_result(360)
-                 local res = future:result()
-
-                 if res[1] == nil then
-                     error(res[2])
-                 end
-
-                 if result == nil then
-                     result = res[1]
-                 else
-                     for _, item in pairs(res[1].rows) do
-                        table.insert(result.rows, item)
-                     end
-                 end
-             end
-
-            return result
-        end
-    "#,
-    ) {
-        Ok(_) => {}
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("cluster_exec_query"),
-                &format!("{:?}", e),
-            );
-            return Err(QueryPlannerError::LuaError(format!(
-                "Failed lua code loading: {:?}",
-                e
-            )));
-        }
-    }
-
-    let exec_sql: LuaFunction<_> = lua.get("map_reduce_execute_sql").ok_or_else(|| {
-        QueryPlannerError::LuaError("Lua function `map_reduce_execute_sql` not found".into())
-    })?;
-
-    let res: BoxExecuteFormat = match exec_sql.call_with_args(query) {
-        Ok(v) => v,
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("cluster_exec_query"),
-                &format!("{:?}", e),
-            );
-            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-        }
-    };
-
-    Ok(res)
 }
