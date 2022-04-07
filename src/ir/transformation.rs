@@ -5,7 +5,6 @@
 pub mod bool_in;
 pub mod dnf;
 pub mod equality_propagation;
-mod helpers;
 pub mod merge_tuples;
 pub mod redistribution;
 pub mod split_columns;
@@ -182,3 +181,6 @@ impl Plan {
         Ok(new_top_id)
     }
 }
+
+#[cfg(test)]
+mod helpers;
