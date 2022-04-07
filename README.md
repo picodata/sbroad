@@ -1,91 +1,64 @@
-# sbrod
+# SQL Broadcaster (sbroad)
 
-
+Current library contains a query planner and executor for the distributed SQL in Tarantool `vshard` cluster.
 
 ## Getting started
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+First, you need an already installed `rust`, `tarantool` and `cartridge-cli` in your environment. Then run
+```bash
+git clone https://gitlab.com/picodata/picodata/sbroad.git
+cd sbroad
+make test_all
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/picodata/brod/sbrod.git
-git branch -M main
-git push -uf origin main
+An example of the `sbroad` integration with Tarantool can be found in the `test_app` folder.
+
+## Architecture
+
+`sbroad` library consists of the three main parts:
+
+- SQL frontend
+- planner
+- executor
+
+We try to keep the planner independent from the other modules. For example, we can implement some other frontend and use already implemented planner and executor.
+
+More information about the ideas behind `sbroad` can be found in the [design presentation](doc/design/sbroad.pdf). Internal details can be found with the module documentation:
+```
+cargo doc --open
 ```
 
-## Integrate with your tools
+### SQL frontend
 
-- [ ] [Set up project integrations](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/integrations/)
+We use a custom [PEG](src/frontend/sql/grammar.pest) for the `pest` parser generator to compile a SQL query and a `vshard` cluster schema into the planner's intermediate representation (IR).
+The SQL query passes three main steps:
 
-## Collaborate with your team
+- the parse tree (PT) iterator. It is produced by `pest` parser generated for our grammar.
+- abstract syntax tree (AST). It is a wrapper over the PT nodes to transform them to a more IR friendly tree. Also we have our own iterator to traverse the AST in the convenient order.
+- plan intermediate representation (IR). A fully self-describing tree with the information from the SQL query and a table schema. It can be used by the planner for further transformations.
 
-- [ ] [Invite team members and collaborators](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Automatically merge when pipeline succeeds](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### Planner
 
-## Test and Deploy
+The main goal of the planner is to insert the data motion nodes in the IR tree to instruct the executor where and what portions of data to transfer between Tarantool instancies in the cluster.
 
-Use the built-in continuous integration in GitLab.
+To make these motions efficient (i.e. transfer as less data amount as possible) we rely on the tuple distribution information. When we detect a distribution conflict, a motion node should be inserted to solve it. So, the better information about distribution we have in every tuple of the IR tree, the less data we move over the cluster. To achieve it, the planner applies many IR transformations other than the motion derivation.
 
-- [ ] [Get started with GitLab CI/CD](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://docs.gitlab.com/ee/user/clusters/agent/)
+### Executor
+An executor is located on the coordinator node in the `vshard` cluster. It collects all the intermediate results of the plan execution in memory and executes IR plan tree in the bottom-up manner.
 
-***
+1. Collects all the motion nodes from the bottom layer. In theory all the motions in the same layer can be executed in parallel (we haven't implemented it yet).
+1. For every motion
+   - inspect the IR sub-tree and detect the buckets to execute the query.
+   - build a valid SQL query from IR sub-tree.
+   - map-reduce this SQL query (we send it to the shards deduced from the buckets).
+   - build a virtual table with the query results, corresponding to the original motion.
+1. Move to the next motion layer in the IR tree.
+1. For every motion
+   - link the virtual table results of the motion from the previous layer we depend on.
+   - inspect the IR sub-tree and detect the buckets to execute the query.
+   - build a valid SQL query from IR sub-tree (virtual table is serialized as `VALUES (), .., ()`).
+   - map-reduce this SQL query.
+   - build a virtual table with the query results, corresponding to the original motion.
+1. Goto step `3` till we are done with motion layers.
+1. Execute the final IR top subtree and return the user a final result.
 
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://gitlab.com/-/experiment/new_project_readme_content:b7482b9c54f5f80efa796886e0e04788?https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
-
+The most complicated logic here can be found in the IR to SQL serialization (SQL backend) and bucket deduction (to execute the result SQL query on).

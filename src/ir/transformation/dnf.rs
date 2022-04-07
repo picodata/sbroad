@@ -15,7 +15,7 @@
 //! ((a = 1) and (b = 2) or (a = 3)) and (c = 4)
 //! ```
 //! can be converted to a tree:
-//! ```
+//! ```text
 //!                         ┌─────┐
 //!                         │ AND │
 //!                         └┬───┬┘
@@ -48,7 +48,8 @@
 //! ```
 //!
 //! The corresponding tree:
-//! ```
+//! ```text
+//! 
 //!                         ┌────┐
 //!                         │ OR │
 //!                         └┬──┬┘

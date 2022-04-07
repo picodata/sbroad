@@ -1,8 +1,11 @@
 [package]
 name = "sbroad"
 version = "0.1.0"
-authors = ["Igor Kuznetsov <kuznetsovin@gmail.com>"]
-edition = "2018"
+authors = [
+    "Denis Smirnov <sd@picodata.io>",
+    "Igor Kuznetsov <kuznetsovin@gmail.com>",
+]
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
