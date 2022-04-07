@@ -1,10 +1,10 @@
 # SQL Broadcaster (sbroad)
 
-Current library contains a query planner and executor for the distributed SQL in Tarantool `vshard` cluster.
+Currently the library contains a query planner and an executor for the distributed SQL in a Tarantool `vshard` cluster.
 
 ## Getting started
 
-First, you need an already installed `rust`, `tarantool` and `cartridge-cli` in your environment. Then run
+First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools installed and available in your environment. Then run:
 ```bash
 git clone https://gitlab.com/picodata/picodata/sbroad.git
 cd sbroad
@@ -14,51 +14,51 @@ An example of the `sbroad` integration with Tarantool can be found in the `test_
 
 ## Architecture
 
-`sbroad` library consists of the three main parts:
+The `sbroad` library consists of three main parts:
 
 - SQL frontend
 - planner
 - executor
 
-We try to keep the planner independent from the other modules. For example, we can implement some other frontend and use already implemented planner and executor.
+We try to keep the planner independent from other modules. For example, we can implement some other frontend and use the already implemented planner and executor.
 
-More information about the ideas behind `sbroad` can be found in the [design presentation](doc/design/sbroad.pdf). Internal details can be found with the module documentation:
+More information about the ideas behind `sbroad` can be found in the [Sbroad internal design presentation](doc/design/sbroad.pdf). You can also find out more details in the built-in module documentation:
 ```
 cargo doc --open
 ```
 
 ### SQL frontend
 
-We use a custom [PEG](src/frontend/sql/grammar.pest) for the `pest` parser generator to compile a SQL query and a `vshard` cluster schema into the planner's intermediate representation (IR).
+We use a custom [PEG](src/frontend/sql/grammar.pest) for the `pest` parser generator to compile an SQL query and a `vshard` cluster schema into the planner's intermediate representation (IR).
 The SQL query passes three main steps:
 
-- the parse tree (PT) iterator. It is produced by `pest` parser generated for our grammar.
-- abstract syntax tree (AST). It is a wrapper over the PT nodes to transform them to a more IR friendly tree. Also we have our own iterator to traverse the AST in the convenient order.
-- plan intermediate representation (IR). A fully self-describing tree with the information from the SQL query and a table schema. It can be used by the planner for further transformations.
+- the parse tree (PT) iterator, which is produced by the `pest` parser generated for our grammar.
+- abstract syntax tree (AST). It is a wrapper over the PT nodes to transform them into a more IR-friendly tree. Also we have our own iterator to traverse the AST in the convenient order.
+- planning intermediate representation (IR), which is a complete self-describing tree with an information derived from the SQL query and the table schema. It can be used by the planner for further transformations.
 
 ### Planner
 
-The main goal of the planner is to insert the data motion nodes in the IR tree to instruct the executor where and what portions of data to transfer between Tarantool instancies in the cluster.
+The main goal of the planner is to insert the data motion nodes in the IR tree to instruct the executor where and what portions of data to transfer from one Tarantool instance to another within a cluster.
 
-To make these motions efficient (i.e. transfer as less data amount as possible) we rely on the tuple distribution information. When we detect a distribution conflict, a motion node should be inserted to solve it. So, the better information about distribution we have in every tuple of the IR tree, the less data we move over the cluster. To achieve it, the planner applies many IR transformations other than the motion derivation.
+To make these motions efficient (i.e. transfer as less data amount as possible) we rely on the tuple distribution information. In case of a distribution conflict we decide to solve it by inserting a motion node. The better information about distribution we have in every tuple of the IR tree, the less data we move over the cluster. To save on data transfer the planner applies many IR transformations other than the motion derivation.
 
 ### Executor
-An executor is located on the coordinator node in the `vshard` cluster. It collects all the intermediate results of the plan execution in memory and executes IR plan tree in the bottom-up manner.
+The executor is located on the coordinator node in the `vshard` cluster. It collects all the intermediate results of the plan execution in memory and executes the IR plan tree in the bottom-up manner. It goes like this:
 
-1. Collects all the motion nodes from the bottom layer. In theory all the motions in the same layer can be executed in parallel (we haven't implemented it yet).
-1. For every motion
-   - inspect the IR sub-tree and detect the buckets to execute the query.
-   - build a valid SQL query from IR sub-tree.
-   - map-reduce this SQL query (we send it to the shards deduced from the buckets).
-   - build a virtual table with the query results, corresponding to the original motion.
-1. Move to the next motion layer in the IR tree.
-1. For every motion
-   - link the virtual table results of the motion from the previous layer we depend on.
-   - inspect the IR sub-tree and detect the buckets to execute the query.
-   - build a valid SQL query from IR sub-tree (virtual table is serialized as `VALUES (), .., ()`).
-   - map-reduce this SQL query.
-   - build a virtual table with the query results, corresponding to the original motion.
-1. Goto step `3` till we are done with motion layers.
-1. Execute the final IR top subtree and return the user a final result.
+1. The executor collects all the motion nodes from the bottom layer. In theory all the motions in the same layer can be executed in parallel (this feature is yet to come).
+1. For every motion the executor:
+   - inspects the IR sub-tree and detects the buckets to execute the query for.
+   - builds a valid SQL query from the IR sub-tree.
+   - performs map-reduce for that SQL query (we send it to the shards deduced from the buckets).
+   - builds a virtual table with query results that correspond to the original motion.
+1. Moves to the next motion layer in the IR tree.
+1. For every motion the executor then:
+   - links the virtual table results of the motion from the previous layer we depend on.
+   - inspects the IR sub-tree and detects the buckets to execute the query.
+   - builds a valid SQL query from the IR sub-tree (the virtual table is serialized as `VALUES (), .., ()`).
+   - performs map-reduce for that SQL query.
+   - builds a virtual table with query results that correspond to the original motion.
+1. Repeats step 3 till we are done with motion layers.
+1. Executes the final IR top subtree and returns the final result to the user.
 
-The most complicated logic here can be found in the IR to SQL serialization (SQL backend) and bucket deduction (to execute the result SQL query on).
+The most complicated logic here can be found in the IR to SQL serialization (SQL backend) and bucket deduction (to execute the resulting SQL query on).
