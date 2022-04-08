@@ -272,7 +272,768 @@ local config = {
         sharding_key = {
           "id"
         }
-      }
+      },
+      col1_transactions_actual = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "col1",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "col1",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1",
+        }
+      },
+      col1_transactions_history = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false,
+          },
+          {
+            name = "col1",
+            type = "integer",
+            is_nullable = false,
+            unique=false,
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_to",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            type = "TREE",
+            unique = true,
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "col1",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1",
+        }
+      },
+      col1_col2_transactions_actual = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "col1",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "col2",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "col1",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "integer"
+              },
+              {
+                path = "col2",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1", "col2"
+        }
+      },
+      col1_col2_transactions_history = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "col1",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "col2",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_to",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "col1",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "integer"
+              },
+              {
+                path = "col2",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1", "col2"
+        }
+      },
+      cola_accounts_actual = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "cola",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "colb",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "cola",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "cola",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "cola",
+        }
+      },
+      cola_accounts_history = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "cola",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "colb",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_to",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "cola",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "cola",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "cola",
+        }
+      },
+      cola_colb_accounts_history = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "cola",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "colb",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_to",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "cola",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "cola",
+                is_nullable = false,
+                type = "integer"
+              },
+              {
+                path = "colb",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "cola", "colb"
+        }
+      },
+      cola_colb_accounts_actual = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "cola",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "colb",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "cola",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "cola",
+                is_nullable = false,
+                type = "integer"
+              },
+              {
+                path = "colb",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "cola", "colb"
+        }
+      },
+      col1_col2_transactions_num_actual = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "col1",
+            type = "number",
+            is_nullable = false
+          },
+          {
+            name = "col2",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "col1",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "number"
+              },
+              {
+                path = "col2",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1", "col2"
+        }
+      },
+      col1_col2_transactions_num_history = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "id",
+            type = "number",
+            is_nullable = false
+          },
+          {
+            name = "col1",
+            type = "number",
+            is_nullable = false
+          },
+          {
+            name = "col2",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "amount",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "account_id",
+            type = "integer",
+            is_nullable = true
+          },
+          {
+            name = "sys_from",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "sys_to",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "id",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "id",
+                is_nullable = false,
+                type = "number"
+              }
+            }
+          },
+          {
+            name = "col1",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "col1",
+                is_nullable = false,
+                type = "number"
+              },
+              {
+                path = "col2",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "col1", "col2"
+        }
+      },
     }
   }
 }
