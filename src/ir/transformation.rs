@@ -183,4 +183,4 @@ impl Plan {
 }
 
 #[cfg(test)]
-mod helpers;
+pub mod helpers;

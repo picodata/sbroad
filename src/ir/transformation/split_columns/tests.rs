@@ -1,49 +1,33 @@
+use crate::executor::engine::mock::MetadataMock;
+use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
-use crate::executor::engine::mock::MetadataMock;
-use crate::executor::ir::ExecutionPlan;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
+fn split_columns(plan: &mut Plan) {
+    plan.split_columns().unwrap();
+}
 
 #[test]
 fn split_columns1() {
-    let query = r#"SELECT "a" FROM "t" WHERE ("a", 2) = (1, "b")"#;
-
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
-    plan.split_columns().unwrap();
-    let ex_plan = ExecutionPlan::from(plan);
-
-    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
-    assert_eq!(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1) and (2) = ("t"."b")"#,
-        ),
-        sql
+    let input = r#"SELECT "a" FROM "t" WHERE ("a", 2) = (1, "b")"#;
+    let expected = format!(
+        "{}",
+        r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1) and (2) = ("t"."b")"#,
     );
+
+    assert_eq!(sql_to_sql(input, &split_columns), expected);
 }
 
 #[test]
 fn split_columns2() {
-    let query = r#"SELECT "a" FROM "t" WHERE "a" = 1"#;
-
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
-    plan.split_columns().unwrap();
-    let ex_plan = ExecutionPlan::from(plan);
-
-    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
-    assert_eq!(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1)"#,
-        ),
-        sql
+    let input = r#"SELECT "a" FROM "t" WHERE "a" = 1"#;
+    let expected = format!(
+        "{}",
+        r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1)"#,
     );
+
+    assert_eq!(sql_to_sql(input, &split_columns), expected);
 }
 
 #[test]
@@ -67,43 +51,23 @@ fn split_columns3() {
 
 #[test]
 fn split_columns4() {
-    let query = r#"SELECT "a" FROM "t" WHERE "a" in (1, 2)"#;
-
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
-    plan.split_columns().unwrap();
-    let ex_plan = ExecutionPlan::from(plan);
-
-    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
-    assert_eq!(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") in (1, 2)"#,
-        ),
-        sql
+    let input = r#"SELECT "a" FROM "t" WHERE "a" in (1, 2)"#;
+    let expected = format!(
+        "{}",
+        r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") in (1, 2)"#,
     );
+
+    assert_eq!(sql_to_sql(input, &split_columns), expected);
 }
 
 #[test]
 fn split_columns5() {
-    let query = r#"SELECT "a" FROM "t" WHERE ("a", 2) < (1, "b") and "a" > 2"#;
-
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
-    plan.split_columns().unwrap();
-    let ex_plan = ExecutionPlan::from(plan);
-
-    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
-    assert_eq!(
-        format!(
-            "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") < (1) and (2) < ("t"."b")"#,
-            r#"and ("t"."a") > (2)"#,
-        ),
-        sql
+    let input = r#"SELECT "a" FROM "t" WHERE ("a", 2) < (1, "b") and "a" > 2"#;
+    let expected = format!(
+        "{} {}",
+        r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") < (1) and (2) < ("t"."b")"#,
+        r#"and ("t"."a") > (2)"#,
     );
+
+    assert_eq!(sql_to_sql(input, &split_columns), expected);
 }

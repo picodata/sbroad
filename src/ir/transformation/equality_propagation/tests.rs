@@ -1,5 +1,10 @@
-use crate::ir::transformation::helpers::transform_sql;
+use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::Plan;
 use pretty_assertions::assert_eq;
+
+fn derive_equalities(plan: &mut Plan) {
+    plan.derive_equalities().unwrap();
+}
 
 #[test]
 fn equality_propagation1() {
@@ -13,7 +18,7 @@ fn equality_propagation1() {
         r#"and ("t"."c") = ("t"."a") or ("t"."d") = (1))"#,
     );
 
-    assert_eq!(transform_sql(input), expected);
+    assert_eq!(sql_to_sql(input, &derive_equalities), expected);
 }
 
 #[test]
@@ -26,7 +31,7 @@ fn equality_propagation2() {
         r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (NULL) and ("t"."b") = (NULL)"#,
     );
 
-    assert_eq!(transform_sql(input), expected);
+    assert_eq!(sql_to_sql(input, &derive_equalities), expected);
 }
 
 #[test]
@@ -40,7 +45,7 @@ fn equality_propagation3() {
         r#"WHERE ("t"."a") = (1) and ("t"."b") = (NULL) and ("t"."a") = (NULL)"#,
     );
 
-    assert_eq!(transform_sql(input), expected);
+    assert_eq!(sql_to_sql(input, &derive_equalities), expected);
 }
 
 #[test]
@@ -55,7 +60,7 @@ fn equality_propagation4() {
         r#"and ("t"."b") = (1) and ("t"."a") = ("t"."b")"#,
     );
 
-    assert_eq!(transform_sql(input), expected);
+    assert_eq!(sql_to_sql(input, &derive_equalities), expected);
 }
 
 #[test]
@@ -72,5 +77,5 @@ fn equality_propagation5() {
         r#"and ("t"."d") = ("t"."b")"#,
     );
 
-    assert_eq!(transform_sql(input), expected);
+    assert_eq!(sql_to_sql(input, &derive_equalities), expected);
 }

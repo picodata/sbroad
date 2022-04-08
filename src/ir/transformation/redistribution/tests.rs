@@ -1,12 +1,11 @@
 use super::*;
 use crate::collection;
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::mock::MetadataMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::distribution::*;
 use crate::ir::operator::Relational;
 use crate::ir::relation::*;
-use crate::ir::*;
+use crate::ir::transformation::helpers::sql_to_ir;
+use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -304,19 +303,17 @@ fn multiple_sub_queries() {
 #[test]
 fn union_all_in_sq() {
     let query = r#"SELECT *
-    FROM
-        (SELECT "identification_number", "product_code"
-        FROM "hash_testing"
-        WHERE "sys_op" = 1
-        UNION ALL
-        SELECT "identification_number", "product_code"
-        FROM "hash_testing_hist"
-        WHERE "sys_op" > 1) AS "t3"
-    WHERE "identification_number" = 1"#;
+        FROM
+            (SELECT "identification_number", "product_code"
+            FROM "hash_testing"
+            WHERE "sys_op" = 1
+            UNION ALL
+            SELECT "identification_number", "product_code"
+            FROM "hash_testing_hist"
+            WHERE "sys_op" > 1) AS "t3"
+        WHERE "identification_number" = 1"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -325,12 +322,10 @@ fn union_all_in_sq() {
 #[test]
 fn inner_join_eq_for_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN "t"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")"#;
+        INNER JOIN "t"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -339,13 +334,11 @@ fn inner_join_eq_for_keys() {
 #[test]
 fn join_inner_sq_eq_for_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -354,13 +347,11 @@ fn join_inner_sq_eq_for_keys() {
 #[test]
 fn join_inner_eq_non_match_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."pc", "t2"."id")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t2"."pc", "t2"."id")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -386,13 +377,11 @@ fn join_inner_eq_non_match_keys() {
 #[test]
 fn join_inner_sq_eq_for_keys_with_const() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", 1, "t1"."product_code") = ("t2"."id", 1, "t2"."pc")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", 1, "t1"."product_code") = ("t2"."id", 1, "t2"."pc")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -401,13 +390,11 @@ fn join_inner_sq_eq_for_keys_with_const() {
 #[test]
 fn join_inner_sq_less_for_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", "t1"."product_code") < ("t2"."id", "t2"."pc")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", "t1"."product_code") < ("t2"."id", "t2"."pc")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -428,13 +415,11 @@ fn join_inner_sq_less_for_keys() {
 #[test]
 fn join_inner_sq_eq_no_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", 1) = (1, "t2"."pc")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", 1) = (1, "t2"."pc")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -455,13 +440,11 @@ fn join_inner_sq_eq_no_keys() {
 #[test]
 fn join_inner_sq_eq_no_outer_keys() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", 1) = ("t2"."id", "t2"."pc")"#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", 1) = ("t2"."id", "t2"."pc")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -482,14 +465,12 @@ fn join_inner_sq_eq_no_outer_keys() {
 #[test]
 fn inner_join_full_policy_sq_in_filter() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN "t"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
-    AND ("t"."a", "t"."b") >=
-    (SELECT "hash_testing"."sys_op", "hash_testing"."bucket_id" FROM "hash_testing")"#;
+        INNER JOIN "t"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+        AND ("t"."a", "t"."b") >=
+        (SELECT "hash_testing"."sys_op", "hash_testing"."bucket_id" FROM "hash_testing")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -510,14 +491,12 @@ fn inner_join_full_policy_sq_in_filter() {
 #[test]
 fn inner_join_local_policy_sq_in_filter() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN "t"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
-    AND ("t"."a", "t"."b") =
-    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing")"#;
+        INNER JOIN "t"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+        AND ("t"."a", "t"."b") =
+        (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -526,16 +505,14 @@ fn inner_join_local_policy_sq_in_filter() {
 #[test]
 fn inner_join_local_policy_sq_with_union_all_in_filter() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN "t"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
-    AND ("t"."a", "t"."b") =
-    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
-    UNION ALL
-    SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code" FROM "hash_testing_hist")"#;
+        INNER JOIN "t"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+        AND ("t"."a", "t"."b") =
+        (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
+        UNION ALL
+        SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code" FROM "hash_testing_hist")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -544,16 +521,14 @@ fn inner_join_local_policy_sq_with_union_all_in_filter() {
 #[test]
 fn inner_join_full_policy_sq_with_union_all_in_filter() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN "t"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
-    AND ("t"."a", "t"."b") =
-    (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
-    UNION ALL
-    SELECT "hash_testing_hist"."product_code", "hash_testing_hist"."identification_number" FROM "hash_testing_hist")"#;
+        INNER JOIN "t"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")
+        AND ("t"."a", "t"."b") =
+        (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing"
+        UNION ALL
+        SELECT "hash_testing_hist"."product_code", "hash_testing_hist"."identification_number" FROM "hash_testing_hist")"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -579,14 +554,12 @@ fn inner_join_full_policy_sq_with_union_all_in_filter() {
 #[test]
 fn join_inner_and_local_full_policies() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
-    AND "t1"."identification_number" = "t2"."pc""#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
+        AND "t1"."identification_number" = "t2"."pc""#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -595,14 +568,12 @@ fn join_inner_and_local_full_policies() {
 #[test]
 fn join_inner_or_local_full_policies() {
     let query = r#"SELECT * FROM "hash_testing" AS "t1"
-    INNER JOIN
-    (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
-    ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
-    OR "t1"."identification_number" = "t2"."pc""#;
+        INNER JOIN
+        (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
+        ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
+        OR "t1"."identification_number" = "t2"."pc""#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -623,29 +594,27 @@ fn join_inner_or_local_full_policies() {
 #[test]
 fn join1() {
     let query = r#"SELECT *
-    FROM
-        (SELECT "id", "FIRST_NAME"
-        FROM "test_space"
-        WHERE "sys_op" < 0
-                AND "sysFrom" >= 0
-        UNION ALL
-        SELECT "id", "FIRST_NAME"
-        FROM "test_space_hist"
-        WHERE "sysFrom" <= 0) AS "t3"
-    INNER JOIN
-        (SELECT "identification_number"
-        FROM "hash_testing_hist"
-        WHERE "sys_op" > 0
-        UNION ALL
-        SELECT "identification_number"
-        FROM "hash_single_testing_hist"
-        WHERE "sys_op" <= 0) AS "t8"
-        ON "t3"."id" = "t8"."identification_number"
-    WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
+        FROM
+            (SELECT "id", "FIRST_NAME"
+            FROM "test_space"
+            WHERE "sys_op" < 0
+                    AND "sysFrom" >= 0
+            UNION ALL
+            SELECT "id", "FIRST_NAME"
+            FROM "test_space_hist"
+            WHERE "sysFrom" <= 0) AS "t3"
+        INNER JOIN
+            (SELECT "identification_number"
+            FROM "hash_testing_hist"
+            WHERE "sys_op" > 0
+            UNION ALL
+            SELECT "identification_number"
+            FROM "hash_single_testing_hist"
+            WHERE "sys_op" <= 0) AS "t8"
+            ON "t3"."id" = "t8"."identification_number"
+        WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
 
-    let metadata = &MetadataMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = sql_to_ir(query);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
