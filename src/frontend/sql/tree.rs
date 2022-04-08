@@ -31,6 +31,7 @@ impl<'n> Iterator for AstIterator<'n> {
 impl<'n> ParseNodes {
     /// Returns an iterator over the children of the node.
     #[allow(dead_code)]
+    #[must_use]
     pub fn ast_iter(&'n self, current: &'n usize) -> AstIterator<'n> {
         AstIterator {
             current,

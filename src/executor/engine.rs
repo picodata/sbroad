@@ -12,6 +12,10 @@ pub mod cartridge;
 
 /// A metadata storage trait of the cluster.
 pub trait Metadata {
+    /// Get a table by name.
+    ///
+    /// # Errors
+    /// - Failed to get table by name from the metadata.
     fn get_table_segment(
         &self,
         table_name: &str,
@@ -19,6 +23,7 @@ pub trait Metadata {
 
     fn get_exec_waiting_timeout(&self) -> u64;
 
+    #[must_use]
     fn to_name(s: &str) -> String {
         if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
             s.to_string()
@@ -46,6 +51,9 @@ pub trait Engine {
     fn clear_metadata(&mut self);
 
     /// Load metadate information to storage
+    ///
+    /// # Errors
+    /// - Failed to load metadata.
     fn load_metadata(&mut self) -> Result<(), QueryPlannerError>;
 
     /// Materialize result motion node to virtual table

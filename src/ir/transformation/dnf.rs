@@ -49,7 +49,7 @@
 //!
 //! The corresponding tree:
 //! ```text
-//! 
+//!
 //!                         ┌────┐
 //!                         │ OR │
 //!                         └┬──┬┘

@@ -137,14 +137,26 @@ pub struct ParseNodes {
     pub(crate) arena: Vec<ParseNode>,
 }
 
+impl Default for ParseNodes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 impl ParseNodes {
     /// Get a node from arena
+    ///
+    /// # Errors
+    /// - Failed to get a node from arena.
     pub fn get_node(&self, node: usize) -> Result<&ParseNode, QueryPlannerError> {
         self.arena.get(node).ok_or(QueryPlannerError::InvalidNode)
     }
 
     /// Get a mutable node from arena
+    ///
+    /// # Errors
+    /// - Failed to get a node from arena.
     pub fn get_mut_node(&mut self, node: usize) -> Result<&mut ParseNode, QueryPlannerError> {
         self.arena
             .get_mut(node)
@@ -159,11 +171,13 @@ impl ParseNodes {
     }
 
     /// Get next node id
+    #[must_use]
     pub fn next_id(&self) -> usize {
         self.arena.len()
     }
 
     /// Constructor
+    #[must_use]
     pub fn new() -> Self {
         ParseNodes { arena: Vec::new() }
     }
@@ -171,6 +185,9 @@ impl ParseNodes {
     /// Adds children to already existing node.
     /// New elements are added to the beginning of the current list
     /// as we use inverted node order.
+    ///
+    /// # Errors
+    /// - Failed to retrieve node from arena.
     pub fn add_child(
         &mut self,
         node: Option<usize>,
@@ -188,6 +205,9 @@ impl ParseNodes {
     }
 
     /// Update node's value (string from pairs)
+    ///
+    /// # Errors
+    /// - Target node is present in the arena.
     pub fn update_value(
         &mut self,
         node: usize,
@@ -226,6 +246,9 @@ pub struct AbstractSyntaxTree {
 #[allow(dead_code)]
 impl AbstractSyntaxTree {
     /// Set the top of AST.
+    ///
+    /// # Errors
+    /// - The new top is not in the arena.
     pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
         self.nodes.get_node(top)?;
         self.top = Some(top);
@@ -233,12 +256,18 @@ impl AbstractSyntaxTree {
     }
 
     /// Get the top of AST.
+    ///
+    /// # Errors
+    /// - AST tree doesn't have a top node.
     pub fn get_top(&self) -> Result<usize, QueryPlannerError> {
         self.top
             .ok_or_else(|| QueryPlannerError::CustomError("No top node found in AST".to_string()))
     }
 
     /// Serialize AST from YAML.
+    ///
+    /// # Errors
+    /// - Failed to parse YAML.
     pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
         let ast: AbstractSyntaxTree = match serde_yaml::from_str(s) {
             Ok(p) => p,
@@ -249,6 +278,9 @@ impl AbstractSyntaxTree {
 
     /// Constructor.
     /// Builds a tree (nodes are in postorder reverse).
+    ///
+    /// # Errors
+    /// - Failed to parse an SQL query.
     pub fn new(query: &str) -> Result<Self, QueryPlannerError> {
         let mut ast = AbstractSyntaxTree {
             nodes: ParseNodes::new(),

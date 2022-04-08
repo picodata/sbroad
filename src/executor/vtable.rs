@@ -24,6 +24,12 @@ pub struct VirtualTable {
     hashing: HashMap<String, HashSet<usize>>,
 }
 
+impl Default for VirtualTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VirtualTable {
     #[must_use]
     pub fn new() -> Self {

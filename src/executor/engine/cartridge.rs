@@ -162,6 +162,10 @@ impl Engine for Runtime {
 }
 
 impl Runtime {
+    /// Create new Tarantool cartridge runtime.
+    ///
+    /// # Errors
+    /// - Failed to detect the correct amount of buckets.
     pub fn new() -> Result<Self, QueryPlannerError> {
         let mut result = Runtime {
             metadata: ClusterAppConfig::new(),

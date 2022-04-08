@@ -28,7 +28,14 @@ pub struct ClusterAppConfig {
     tables: HashMap<String, Table>,
 }
 
+impl Default for ClusterAppConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClusterAppConfig {
+    #[must_use]
     pub fn new() -> Self {
         ClusterAppConfig {
             schema: yaml::Yaml::Null,
@@ -53,7 +60,12 @@ impl ClusterAppConfig {
         Err(QueryPlannerError::InvalidClusterSchema)
     }
 
+    /// Get table sharding key.
+    ///
+    /// # Panics
+    /// - Invalid schema.
     #[allow(dead_code)]
+    #[must_use]
     pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
         let mut result = Vec::new();
         let spaces = self.schema["spaces"].as_hash().unwrap();

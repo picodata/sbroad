@@ -75,6 +75,12 @@ pub struct BoxExecuteFormat {
     pub rows: Vec<BoxExecuteTuple>,
 }
 
+impl Default for BoxExecuteFormat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BoxExecuteFormat {
     /// Create empty query result set
     #[allow(dead_code)]
