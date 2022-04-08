@@ -27,8 +27,8 @@
 //! and row(t1.a) = row(t2.b))
 //! where row(a) = 1 and row(b) = 1
 //! ```
-//! We don't produce (1) = (1) equality as it don't give any new information,
-//! but row(a) = row(b) can be pushed down to the join condition.
+//! We don't produce `(1) = (1)` equality as it don't give any new information,
+//! but `row(a) = row(b)` can be pushed down to the join condition.
 //!
 //! Currently implementation produces new equalities only for constants, references
 //! and rows that contain a single reference column.

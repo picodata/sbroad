@@ -1,3 +1,28 @@
+//! Executor module.
+//!
+//! The executor is located on the coordinator node in the cluster.
+//! It collects all the intermediate results of the plan execution
+//! in memory and executes the IR plan tree in the bottom-up manner.
+//! It goes like this:
+//!
+//! 1. The executor collects all the motion nodes from the bottom layer.
+//!    In theory all the motions in the same layer can be executed in parallel
+//!    (this feature is yet to come).
+//! 2. For every motion the executor:
+//!    - inspects the IR sub-tree and detects the buckets to execute the query for.
+//!    - builds a valid SQL query from the IR sub-tree.
+//!    - performs map-reduce for that SQL query (we send it to the shards deduced from the buckets).
+//!    - builds a virtual table with query results that correspond to the original motion.
+//! 3. Moves to the next motion layer in the IR tree.
+//! 4. For every motion the executor then:
+//!    - links the virtual table results of the motion from the previous layer we depend on.
+//!    - inspects the IR sub-tree and detects the buckets to execute the query.
+//!    - builds a valid SQL query from the IR sub-tree.
+//!    - performs map-reduce for that SQL query.
+//!    - builds a virtual table with query results that correspond to the original motion.
+//! 5. Repeats step 3 till we are done with motion layers.
+//! 6. Executes the final IR top subtree and returns the final result to the user.
+
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::Engine;
@@ -28,7 +53,7 @@ impl Plan {
     }
 }
 
-/// Query object for executing
+/// Query to execute.
 pub struct Query<T>
 where
     T: Engine,

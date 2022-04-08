@@ -1,3 +1,15 @@
+//! Merge tuples in a disjunction of boolean expressions
+//! into a single tuple.
+//!
+//! Example:
+//! ```sql
+//! select * from t where (a = 1) and (b = 2) and (c = 3)
+//! ```
+//! is converted to:
+//! ```sql
+//! select * from t where (a, b, c) = (1, 2, 3)
+//! ```
+
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;

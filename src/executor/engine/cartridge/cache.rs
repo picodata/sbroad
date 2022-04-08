@@ -1,3 +1,5 @@
+//! Metadata cache module.
+
 extern crate yaml_rust;
 
 use std::collections::HashMap;

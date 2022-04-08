@@ -1,3 +1,5 @@
+//! Bucket hash module.
+
 use fasthash::{murmur3::Hasher32, FastHasher};
 use std::hash::Hasher;
 

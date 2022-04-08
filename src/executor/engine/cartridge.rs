@@ -1,3 +1,5 @@
+//! Tarantool cartridge engine module.
+
 use std::convert::TryInto;
 
 use tarantool::log::{say, SayLevel};
@@ -17,6 +19,7 @@ mod backend;
 pub mod cache;
 pub mod hash;
 
+/// Tarantool cartridge metadata and topology.
 #[derive(Debug, Clone)]
 pub struct Runtime {
     metadata: ClusterAppConfig,

@@ -1,3 +1,8 @@
+//! Abstract syntax tree (AST) module.
+//!
+//! This module contains a definition of the abstract syntax tree
+//! constructed from the nodes of the `pest` tree iterator nodes.
+
 extern crate pest;
 
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -13,7 +18,7 @@ use crate::errors::QueryPlannerError;
 /// Parse tree
 #[derive(Parser)]
 #[grammar = "frontend/sql/grammar.pest"]
-pub struct ParseTree;
+struct ParseTree;
 
 /// A list of current rules from the actual grammar.
 /// When new tokens are added to the grammar they
@@ -106,6 +111,7 @@ impl Type {
     }
 }
 
+/// Parse node is a wrapper over the pest pair.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ParseNode {
     pub(in crate::frontend::sql) children: Vec<usize>,
@@ -124,6 +130,8 @@ impl ParseNode {
     }
 }
 
+/// A storage arena of the parse nodes
+/// (a node position in the arena vector acts like a reference).
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ParseNodes {
     pub(crate) arena: Vec<ParseNode>,
@@ -207,8 +215,7 @@ impl<'n> StackParseNode<'n> {
     }
 }
 
-/// AST where all the nodes are kept in a list.
-/// Positions in a list act like references.
+/// AST is a tree build on the top of the parse nodes arena.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct AbstractSyntaxTree {
     pub(in crate::frontend::sql) nodes: ParseNodes,

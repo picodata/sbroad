@@ -1,3 +1,5 @@
+//! Resolve distribution conflicts and insert motion nodes to IR.
+
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -10,8 +12,7 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
 
-/// A motion policy determinate what portion of data to move
-/// between data nodes.
+/// Determinate what portion of data to move between data nodes in cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MotionPolicy {
     /// Move all data.

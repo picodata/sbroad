@@ -1,3 +1,5 @@
+//! Tuple distribution module.
+
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -33,6 +35,7 @@ impl Key {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Distribution {
     /// A tuple can be located on any data node.
+    /// Example: projection removes the segment key columns.
     Any,
     /// A tuple is located on all data nodes (constants).
     Replicated,

@@ -1,6 +1,9 @@
+//! AST traversal iterator module.
+
 use crate::frontend::sql::ast::ParseNodes;
 use std::cell::RefCell;
 
+/// AST traversal iterator.
 #[derive(Debug)]
 pub struct AstIterator<'n> {
     current: &'n usize,
@@ -26,6 +29,7 @@ impl<'n> Iterator for AstIterator<'n> {
 }
 
 impl<'n> ParseNodes {
+    /// Returns an iterator over the children of the node.
     #[allow(dead_code)]
     pub fn ast_iter(&'n self, current: &'n usize) -> AstIterator<'n> {
         AstIterator {

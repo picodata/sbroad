@@ -1,3 +1,5 @@
+//! IR tree traversal module.
+
 use std::cell::RefCell;
 use std::cmp::Ordering;
 
@@ -27,6 +29,7 @@ pub struct ExpressionIterator<'n> {
     make_row_leaf: bool,
 }
 
+/// Expression and relational nodes iterator.
 #[derive(Debug)]
 pub struct SubtreeIterator<'n> {
     current: &'n usize,

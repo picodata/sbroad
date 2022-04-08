@@ -1,3 +1,7 @@
+//! Engine module.
+//!
+//! Traits that define an execution engine interface.
+
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
@@ -6,7 +10,7 @@ use crate::executor::vtable::VirtualTable;
 
 pub mod cartridge;
 
-/// `Metadata` trait is interface for working with metadata storage, that was needed the query execute.
+/// A metadata storage trait of the cluster.
 pub trait Metadata {
     fn get_table_segment(
         &self,
@@ -26,7 +30,7 @@ pub trait Metadata {
     }
 }
 
-/// `Engine` trait is interface for working with execution engine.
+/// An execution engine trait.
 pub trait Engine {
     type Metadata;
 

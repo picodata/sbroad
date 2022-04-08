@@ -1,6 +1,10 @@
+//! Helper module with functions and structures for the IR.
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::BuildHasher;
 
+/// A helper macros to build a hash map or set
+/// from the list of arguments.
 #[macro_export]
 macro_rules! collection {
     // map-like

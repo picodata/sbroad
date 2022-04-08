@@ -1,4 +1,4 @@
-//! Replace all boolean "IN: operators with a chian of equalities,
+//! Replace all boolean "IN": operators with a chian of equalities,
 //! combined by "OR" operator.
 //!
 //! For example, the following query:

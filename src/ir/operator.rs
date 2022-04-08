@@ -1,4 +1,6 @@
-//! Operators for expression transformations.
+//! Tuple operators module.
+//!
+//! Contains operator nodes that transform the tuples in IR tree.
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};

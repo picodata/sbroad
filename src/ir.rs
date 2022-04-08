@@ -1,4 +1,4 @@
-//! Intermediate representation.
+//! Intermediate representation (IR) module.
 //!
 //! Contains the logical plan tree and helpers.
 

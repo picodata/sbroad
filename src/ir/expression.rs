@@ -1,6 +1,7 @@
-//! Expressions are the building blocks of the tuple.
+//! Expression module.
 //!
-//! They provide us information about:
+//! Expressions are the building blocks of the tuple.
+//! They provide information about:
 //! - what input tuple's columns where used to build our tuple
 //! - the order of the columns (and we can get their types as well)
 //! - distribution of the data in the tuple
