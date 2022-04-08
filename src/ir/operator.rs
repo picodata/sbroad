@@ -38,7 +38,7 @@ pub enum Bool {
 }
 
 impl Bool {
-    /// Create `Bool` from operator string.
+    /// Creates `Bool` from the operator string.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the operator is invalid.
@@ -78,43 +78,43 @@ impl Display for Bool {
 
 /// Relational algebra operator returning a new tuple.
 ///
-/// Transforms input tuple(s) into the output one using
+/// Transforms input tuple(s) into the output one using the
 /// relation algebra logic.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Relational {
     /// Inner Join
     InnerJoin {
         /// Contains at least two elements: left and right node indexes
-        /// from the plan node arena. Every element other that the
-        /// first two should be treated as a `SubQuery` node.
+        /// from the plan node arena. Every element other than those
+        /// two should be treated as a `SubQuery` node.
         children: Vec<usize>,
         /// Left and right tuple comparison condition.
-        /// In fact - an expression tree top index from the plan node arena.
+        /// In fact it is an expression tree top index from the plan node arena.
         condition: usize,
-        /// Output tuple node index from the plan node arena.
+        /// Outputs tuple node index from the plan node arena.
         output: usize,
     },
     Motion {
-        /// Contains exactly a single element: child node index
+        /// Contains exactly one single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
         policy: MotionPolicy,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
     Projection {
-        /// Contains at least a single element: child node index
-        /// from the plan node arena. Every element other that the
+        /// Contains at least one single element: child node index
+        /// from the plan node arena. Every element other than the
         /// first one should be treated as a `SubQuery` node from
         /// the output tree.
         children: Vec<usize>,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
     ScanRelation {
         // Scan name.
         alias: Option<String>,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
         /// Relation name.
         relation: String,
@@ -122,35 +122,35 @@ pub enum Relational {
     ScanSubQuery {
         /// SubQuery name.
         alias: Option<String>,
-        /// Contains exactly a single element: child node index
+        /// Contains exactly one single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
     Selection {
-        /// Contains at least a single element: child node index
-        /// from the plan node arena. Every element other that the
+        /// Contains at least one single element: child node index
+        /// from the plan node arena. Every element other than the
         /// first one should be treated as a `SubQuery` node from
         /// the filter tree.
         children: Vec<usize>,
-        /// Filter expression node index in the plan node arena.
+        /// Filters expression node index in the plan node arena.
         filter: usize,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
     UnionAll {
         /// Contains exactly two elements: left and right node indexes
         /// from the plan node arena.
         children: Vec<usize>,
-        /// Output tuple node index in the plan node arena.
+        /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
 }
 
 #[allow(dead_code)]
 impl Relational {
-    /// Get an <column name - position> map from the output tuple.
+    /// Gets a <column name - position> map from the output tuple.
     ///
     /// We expect that the top level of the node's expression tree
     /// is a row of aliases with unique names.
@@ -166,11 +166,11 @@ impl Relational {
         if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
         {
             let valid = list.iter().enumerate().all(|(pos, item)| {
-                // Check that expressions in the row list are all aliases
+                // Checks that expressions in the row list are all aliases
                 if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
                     nodes.arena.get(*item)
                 {
-                    // Populate the map and check duplicate absence
+                    // Populates the map and checks for duplicates
                     if map.insert(String::from(name), pos).is_none() {
                         return true;
                     }
@@ -185,7 +185,7 @@ impl Relational {
         Err(QueryPlannerError::ValueOutOfRange)
     }
 
-    /// Get output tuple node index in plan node arena.
+    /// Gets output tuple node index in plan node arena.
     #[must_use]
     pub fn output(&self) -> usize {
         match self {
@@ -199,7 +199,7 @@ impl Relational {
         }
     }
 
-    // Get a copy of the children nodes.
+    // Gets a copy of the children nodes.
     #[must_use]
     pub fn children(&self) -> Option<Vec<usize>> {
         match self {
@@ -213,19 +213,19 @@ impl Relational {
         }
     }
 
-    /// Check node is a motion.
+    /// Checks that the node is a motion.
     #[must_use]
     pub fn is_motion(&self) -> bool {
         matches!(self, &Relational::Motion { .. })
     }
 
-    /// Check node is a sub-query scan.
+    /// Checks that the node is a sub-query scan.
     #[must_use]
     pub fn is_subquery(&self) -> bool {
         matches!(self, &Relational::ScanSubQuery { .. })
     }
 
-    /// Set new children to relational node.
+    /// Sets new children to relational node.
     ///
     /// # Errors
     /// - try to set children for the scan node (it is always a leaf node)
@@ -264,7 +264,7 @@ impl Relational {
         }
     }
 
-    /// Get relational scan name if it exists.
+    /// Gets relational scan name if it exists.
     ///
     /// # Errors
     /// - plan tree is invalid (failed to retrieve child nodes)
@@ -310,7 +310,7 @@ impl Relational {
         }
     }
 
-    /// Set new scan name to relational node.
+    /// Sets new scan name to relational node.
     ///
     /// # Errors
     /// - relational node is not a scan.
@@ -329,7 +329,7 @@ impl Relational {
 }
 
 impl Plan {
-    /// Add a scan node.
+    /// Adds a scan node.
     ///
     /// # Errors
     /// - relation is invalid
@@ -364,7 +364,7 @@ impl Plan {
         Err(QueryPlannerError::InvalidRelation)
     }
 
-    /// Add inner join node.
+    /// Adds inner join node.
     ///
     /// # Errors
     /// - condition is not a boolean expression
@@ -395,7 +395,7 @@ impl Plan {
         Ok(join_id)
     }
 
-    /// Add motion node.
+    /// Adds motion node.
     ///
     /// # Errors
     /// - child node is not relational
@@ -423,7 +423,7 @@ impl Plan {
 
     // TODO: we need a more flexible projection constructor (constants, etc)
 
-    /// Add projection node.
+    /// Adds projection node.
     ///
     /// # Errors
     /// - child node is not relational
@@ -445,7 +445,7 @@ impl Plan {
         Ok(proj_id)
     }
 
-    /// Add projection node (use a list of expressions instead of alias names).
+    /// Adds projection node (use a list of expressions instead of alias names).
     ///
     /// # Errors
     /// - child node is not relational
@@ -467,7 +467,7 @@ impl Plan {
         Ok(proj_id)
     }
 
-    /// Add selection node
+    /// Adds selection node
     ///
     /// # Errors
     /// - children list is empty
@@ -510,7 +510,7 @@ impl Plan {
         Ok(select_id)
     }
 
-    /// Add sub query scan node.
+    /// Adds sub query scan node.
     ///
     /// # Errors
     /// - child node is not relational
@@ -541,7 +541,7 @@ impl Plan {
         Ok(sq_id)
     }
 
-    /// Add union all node.
+    /// Adds union all node.
     ///
     /// # Errors
     /// - children nodes are not relational
@@ -574,7 +574,7 @@ impl Plan {
         Ok(union_all_id)
     }
 
-    /// Get an output tuple from relational node id
+    /// Gets an output tuple from relational node id
     ///
     /// # Errors
     /// - node is not relational
@@ -586,7 +586,7 @@ impl Plan {
         }
     }
 
-    /// Get children from relational node.
+    /// Gets children from relational node.
     ///
     /// # Errors
     /// - node is not relational
@@ -603,7 +603,7 @@ impl Plan {
         }
     }
 
-    /// Set children for relational node
+    /// Sets children for relational node
     ///
     /// # Errors
     /// - node is not relational
@@ -626,7 +626,7 @@ impl Plan {
         }
     }
 
-    /// Check if the node is an additional child of some relational node.
+    /// Checks if the node is an additional child of some relational node.
     ///
     /// # Errors
     /// - Failed to get plan top
@@ -653,10 +653,10 @@ impl Plan {
         Ok(false)
     }
 
-    /// Check that the sub-query is an additional child of the parent relational node.
+    /// Checks that the sub-query is an additional child of the parent relational node.
     ///
     /// # Errors
-    /// - If relational node is not relational.
+    /// - If the node is not relational.
     pub fn is_additional_child_of_rel(
         &self,
         rel_id: usize,

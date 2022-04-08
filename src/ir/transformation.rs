@@ -17,10 +17,10 @@ use std::collections::HashMap;
 use traversal::DftPost;
 
 impl Plan {
-    /// Concatenate trivalents (boolean or NULL expressions) to the AND node.
+    /// Concatenates trivalents (boolean or NULL expressions) to the AND node.
     ///
     /// # Errors
-    /// - If left or right child is not a trivalent.
+    /// - If the left or right child is not a trivalent.
     pub fn concat_and(
         &mut self,
         left_expr_id: usize,
@@ -41,10 +41,10 @@ impl Plan {
         self.add_cond(left_expr_id, Bool::And, right_expr_id)
     }
 
-    /// Concatenate trivalents (boolean or NULL expressions) to the OR node.
+    /// Concatenates trivalents (boolean or NULL expressions) to the OR node.
     ///
     /// # Errors
-    /// - If left or right child is not a trivalent.
+    /// - If the left or right child is not a trivalent.
     pub fn concat_or(
         &mut self,
         left_expr_id: usize,
@@ -65,9 +65,9 @@ impl Plan {
         self.add_cond(left_expr_id, Bool::Or, right_expr_id)
     }
 
-    /// Transform all expression subtrees in the plan
+    /// Transforms all expression subtrees in the plan
     /// for selection, projection and inner join nodes
-    /// with the passed function.
+    /// using the defined function.
     ///
     /// # Errors
     /// - If failed to get the plan top node.
@@ -119,7 +119,7 @@ impl Plan {
         Ok(())
     }
 
-    /// Replace boolean operators in an expression subtree with the
+    /// Replaces boolean operators in an expression subtree with the
     /// new boolean expressions produced by the user defined function.
     ///
     /// # Errors
@@ -148,7 +148,7 @@ impl Plan {
         let mut new_top_id = top_id;
         for id in &nodes {
             let expr = self.get_mut_expression_node(*id)?;
-            // For all expressions in the subtree try to replace their children
+            // For all expressions in the subtree tries to replace their children
             // with the new nodes from the map.
             match expr {
                 Expression::Alias { child, .. } => {
@@ -174,7 +174,7 @@ impl Plan {
                 _ => {}
             }
         }
-        // Check if the top node is an new node itself.
+        // Checks if the top node is a new node.
         if let Some(new_id) = map.get(&top_id) {
             new_top_id = *new_id;
         }

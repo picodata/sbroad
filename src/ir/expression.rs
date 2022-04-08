@@ -20,14 +20,14 @@ use super::{operator, Node, Nodes, Plan};
 
 /// Tuple tree build blocks.
 ///
-/// Tuple describes a single portion of data moved among the cluster.
+/// A tuple describes a single portion of data moved among cluster nodes.
 /// It consists of the ordered, strictly typed expressions with names
 /// (columns) and additional information about data distribution policy.
 ///
 /// Tuple is a tree with a `Row` top (level 0) and a list of the named
-/// `Alias` columns (level 1). This convention is used among the code
-/// and should not be changed. Thanks to this fact we always know the
-/// name of any column in the tuple that should simplify AST
+/// `Alias` columns (level 1). This convention is used across the code
+/// and should not be changed. It ensures that we always know the
+/// name of any column in the tuple and therefore simplifies AST
 /// deserialization.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Expression {
@@ -64,7 +64,7 @@ pub enum Expression {
     /// - target(s) in the relational nodes list of children
     /// - column position in the child(ren) output tuple
     Reference {
-        /// Relational node ID, that contains current reference.
+        /// Relational node ID that contains current reference.
         parent: Option<usize>,
         /// Targets in the relational node children list.
         /// - Leaf nodes (relation scans): None.
@@ -76,9 +76,9 @@ pub enum Expression {
     },
     /// Top of the tuple tree.
     ///
-    /// If current tuple is the output for some relational operator it should
-    /// consist from the list of aliases. Otherwise (rows in selection filter
-    /// or in join condition) we don't insist on the aliases in the list.
+    /// If the current tuple is the output for some relational operator, it should
+    /// consist of the list of aliases. Otherwise (rows in selection filter
+    /// or in join condition) we don't require aliases in the list.
     ///
     ///
     ///  Example: (a, b, 1).
@@ -93,7 +93,7 @@ pub enum Expression {
 
 #[allow(dead_code)]
 impl Expression {
-    /// Get current row distribution.
+    /// Gets current row distribution.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the function is called on expression
@@ -109,7 +109,7 @@ impl Expression {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Gets children node id of  node.
+    /// Gets children node id of the node.
     ///
     /// # Errors
     /// - node isn't `Row`
@@ -133,7 +133,7 @@ impl Expression {
         }
     }
 
-    /// Checking determine distribution
+    /// Checks for distribution determination
     ///
     /// # Errors
     /// - distribution isn't set
@@ -142,7 +142,7 @@ impl Expression {
         Ok(d.is_unknown())
     }
 
-    /// Get value from const node
+    /// Gets value from const node
     ///
     /// # Errors
     /// - node isn't constant type
@@ -168,7 +168,7 @@ impl Expression {
         matches!(self, Expression::Constant { .. })
     }
 
-    /// Replace parent in the reference node with the new one.
+    /// Replaces parent in the reference node with the new one.
     pub fn replace_parent_in_reference(&mut self, from_id: Option<usize>, to_id: Option<usize>) {
         if let Expression::Reference { parent, .. } = self {
             if *parent == from_id {
@@ -179,7 +179,7 @@ impl Expression {
 }
 
 impl Nodes {
-    /// Add alias node.
+    /// Adds alias node.
     ///
     /// # Errors
     /// - child node is invalid
@@ -198,7 +198,7 @@ impl Nodes {
         Ok(self.push(Node::Expression(alias)))
     }
 
-    /// Add boolean node.
+    /// Adds boolean node.
     ///
     /// # Errors
     /// - when left or right nodes are invalid
@@ -215,12 +215,12 @@ impl Nodes {
         Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
     }
 
-    /// Add constant node.
+    /// Adds constant node.
     pub fn add_const(&mut self, value: Value) -> usize {
         self.push(Node::Expression(Expression::Constant { value }))
     }
 
-    /// Add reference node.
+    /// Adds reference node.
     pub fn add_ref(
         &mut self,
         parent: Option<usize>,
@@ -235,12 +235,12 @@ impl Nodes {
         self.push(Node::Expression(r))
     }
 
-    /// Add row node.
+    /// Adds row node.
     pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
         self.push(Node::Expression(Expression::Row { list, distribution }))
     }
 
-    /// Add row node, where every column has an alias.
+    /// Adds row node, where every column has an alias.
     /// Mostly used for relational node output.
     ///
     /// # Errors
@@ -276,16 +276,16 @@ impl Nodes {
 
 impl Plan {
     /// Returns a list of columns from the child node outputs.
-    /// If the column list is empty then copy all the columns to a new tuple.
+    /// If the column list is empty then copies all the columns to a new tuple.
     ///
-    /// `is_join` option "on" builds an output tuple for the left child and
+    /// The `is_join` option "on" builds an output tuple for the left child and
     /// appends the right child's one to it. Otherwise we build an output tuple
-    /// only from the first child (left).
+    /// only from the first (left) child.
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
-    /// - column names don't exits
+    /// - column names don't exist
     #[allow(clippy::too_many_lines)]
     pub fn new_columns(
         &mut self,
@@ -295,11 +295,11 @@ impl Plan {
         col_names: &[&str],
         need_aliases: bool,
     ) -> Result<Vec<usize>, QueryPlannerError> {
-        // We can pass two target children nodes only in a case
+        // We can pass two target children nodes only in case
         // of `UnionAll` and `InnerlJoin`.
         // - For the `UnionAll` operator we need only the first
         // child to get correct column names for a new tuple
-        // (second child aliases would be shadowed). But each reference should point
+        // (the second child aliases would be shadowed). But each reference should point
         // to both children to give us additional information
         // during transformations.
         if (targets.len() > 2) || targets.is_empty() {
@@ -365,14 +365,14 @@ impl Plan {
                             ));
                         };
                     let new_targets: Vec<usize> = if is_join {
-                        // Reference in a join tuple points to at first to the left,
+                        // Reference in a join tuple first points to the left,
                         // then to the right child.
                         vec![*target_idx]
                     } else {
                         // Reference in union tuple points to **both** left and right children.
                         targets.to_vec()
                     };
-                    // Add new references and aliases to arena (if we need them).
+                    // Adds new references and aliases to arena (if we need them).
                     let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
                     if need_aliases {
                         let a_id = self.nodes.add_alias(&name, r_id)?;
@@ -409,7 +409,7 @@ impl Plan {
         let all_found = col_names.iter().all(|col| {
             map.get(*col).map_or(false, |pos| {
                 let new_targets: Vec<usize> = targets.to_vec();
-                // Add new references and aliases to arena (if we need them).
+                // Adds new references and aliases to arena (if we need them).
                 let r_id = self.nodes.add_ref(None, Some(new_targets), *pos);
                 if need_aliases {
                     if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
@@ -435,13 +435,13 @@ impl Plan {
         )))
     }
 
-    /// New output for a single child node (have aliases).
+    /// New output for a single child node (with aliases).
     ///
     /// If column names are empty, copy all the columns from the child.
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - child is an inconsistent relational node
-    /// - column names don't exits
+    /// - column names don't exist
     pub fn add_row_for_output(
         &mut self,
         child: usize,
@@ -488,7 +488,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - child is an inconsistent relational node
-    /// - column names don't exit
+    /// - column names don't exist
     pub fn add_row_from_child(
         &mut self,
         child: usize,
@@ -505,7 +505,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children nodes are not a relational
-    /// - column names don't exit
+    /// - column names don't exist
     pub fn add_row_from_sub_query(
         &mut self,
         children: &[usize],
@@ -523,7 +523,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children are inconsistent relational nodes
-    /// - column names don't exit
+    /// - column names don't exist
     pub fn add_row_from_left_branch(
         &mut self,
         left: usize,
@@ -541,7 +541,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children are inconsistent relational nodes
-    /// - column names don't exits
+    /// - column names don't exist
     pub fn add_row_from_right_branch(
         &mut self,
         left: usize,
@@ -589,7 +589,7 @@ impl Plan {
     /// Get relational nodes referenced in the row.
     ///
     /// # Errors
-    /// - node is not row
+    /// - node is not a row
     /// - row is invalid
     /// - `relational_map` is not initialized
     pub fn get_relational_from_row_nodes(
@@ -683,7 +683,7 @@ impl Plan {
     /// Extract `Const` value from `Row` by index
     ///
     /// # Errors
-    /// - node is not row
+    /// - node is not a row
     /// - row doesn't have const
     /// - const value is invalid
     #[allow(dead_code)]
@@ -711,7 +711,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is invalid
-    /// - node is not expression
+    /// - node is not an expression
     pub fn replace_parent_in_subtree(
         &mut self,
         node_id: usize,

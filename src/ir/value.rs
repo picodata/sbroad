@@ -28,7 +28,7 @@ impl From<bool> for Trivalent {
 /// Interface for converting execute engine `Value` (const, results, etc)
 /// types to IR `Value` type
 pub trait AsIrVal {
-    /// Transform object to IR `Value`.
+    /// Transforms object to IR `Value`.
     ///
     /// # Errors
     /// Returns transformation
@@ -43,8 +43,8 @@ pub enum Value {
     Boolean(bool),
     /// SQL NULL (unknown in the terms of three-valued logic).
     Null,
-    /// Number uses libdecnumber to correctly serialize any form
-    /// of the number to the same bytes (`1e0`, `1` and `1.0`
+    /// The number uses libdecnumber to correctly serialize any form
+    /// of the number to the same bytes (eg. `1e0`, `1` and `1.0`
     /// should be equivalent).
     Number(d128),
     /// String type.
@@ -65,7 +65,7 @@ impl fmt::Display for Value {
 }
 
 impl Value {
-    /// Construct a number from the string.
+    /// Constructs a number from the string.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when a string is not a number.
@@ -76,14 +76,14 @@ impl Value {
         Err(QueryPlannerError::InvalidNumber)
     }
 
-    /// Construct a string from the Rust `String`.
+    /// Constructs a string from the Rust `String`.
     #[must_use]
     pub fn string_from_str(f: &str) -> Self {
         Value::String(String::from(f))
     }
 
-    /// Check equality of the two values.
-    /// Result uses three-valued logic.
+    /// Checks equality of the two values.
+    /// The result uses three-valued logic.
     #[must_use]
     pub fn eq(&self, other: &Value) -> Trivalent {
         match &*self {

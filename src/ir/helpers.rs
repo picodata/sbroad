@@ -3,7 +3,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::BuildHasher;
 
-/// A helper macros to build a hash map or set
+/// Helper macros to build a hash map or set
 /// from the list of arguments.
 #[macro_export]
 macro_rules! collection {
@@ -19,9 +19,9 @@ macro_rules! collection {
     }};
 }
 
-/// By default `HashSet` uses `RandomState` to initialize the hasher.
-/// Because of that we can't get repeatable order in the set between
-/// runs that can cause flaky tests (in some cases).
+/// By default, `HashSet` uses `RandomState` to initialize the hasher.
+/// Because of that, we can't get repeatable order in the set between
+/// runs that can cause flaky test results in some cases.
 #[derive(Clone)]
 pub struct RepeatableState;
 

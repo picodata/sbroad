@@ -12,7 +12,7 @@ use super::operator::Relational;
 use super::relation::Table;
 use super::{Node, Plan};
 
-/// Tuple columns, that determinate its segment distribution.
+/// Tuple columns that determinate its segment distribution.
 ///
 /// If table T1 is segmented by columns (a, b) and produces
 /// tuples with columns (a, b, c), it means that for any T1 tuple
@@ -77,7 +77,7 @@ impl Distribution {
         }
     }
 
-    /// Calculate a new distribution for the tuple combined from the two different tuples.
+    /// Calculate a new distribution for the tuple combined from two different tuples.
     fn join(left: &Distribution, right: &Distribution) -> Distribution {
         match (left, right) {
             (Distribution::Any, Distribution::Any | Distribution::Replicated)
@@ -178,7 +178,7 @@ impl Plan {
         };
 
         if let Node::Expression(Expression::Row { list, .. }) = self.get_node(row_id)? {
-            // Gather information about children nodes, that are pointed by the row references.
+            // Gather information about children nodes that are referred to by the row references.
             for (pos, id) in list.iter().enumerate() {
                 if let Node::Expression(Expression::Alias { child, .. }) = self.get_node(*id)? {
                     populate_maps(pos, *child)?;
@@ -386,7 +386,7 @@ impl Plan {
         Ok(())
     }
 
-    /// Get distribution of the row node.
+    /// Gets distribution of the row node.
     ///
     /// # Errors
     /// - node is invalid
@@ -398,7 +398,7 @@ impl Plan {
         Err(QueryPlannerError::InvalidNode)
     }
 
-    /// Get distribution of the row node or initialize it if not set.
+    /// Gets distribution of the row node or initializes it if not set.
     ///
     /// # Errors
     /// - node is invalid

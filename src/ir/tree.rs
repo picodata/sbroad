@@ -9,7 +9,7 @@ use super::{Node, Nodes};
 
 /// Relational node's child iterator.
 ///
-/// Iterator returns next relational node in the plan tree.
+/// The iterator returns the next relational node in the plan tree.
 #[derive(Debug)]
 pub struct RelationalIterator<'n> {
     current: &'n usize,
@@ -19,7 +19,7 @@ pub struct RelationalIterator<'n> {
 
 /// Expression node's children iterator.
 ///
-/// Iterator returns the next child for expression
+/// The iterator returns the next child for expression
 /// nodes. It is required to use `traversal` crate.
 #[derive(Debug)]
 pub struct ExpressionIterator<'n> {
@@ -39,7 +39,7 @@ pub struct SubtreeIterator<'n> {
 
 /// Children iterator for "and"-ed equivalent expressions.
 ///
-/// Iterator returns the next child for the chained `Bool::And`
+/// The iterator returns the next child for the chained `Bool::And`
 /// and `Bool::Eq` nodes.
 #[derive(Debug)]
 pub struct EqClassIterator<'n> {
@@ -50,7 +50,7 @@ pub struct EqClassIterator<'n> {
 
 /// Children iterator for "and"-ed expression chains.
 ///
-/// Iterator returns the next child for the chained `Bool::And` nodes.
+/// The iterator returns the next child for the chained `Bool::And` nodes.
 #[derive(Debug)]
 pub struct AndIterator<'n> {
     current: &'n usize,

@@ -117,7 +117,7 @@ fn table_seg_serialized_duplicate_columns() {
     assert_eq!(
         Table::seg_from_yaml(&s).unwrap_err(),
         QueryPlannerError::CustomError(
-            "Table contains duplicate cols and couldn't convert to yaml.".into()
+            "Table contains duplicate columns. Unable to convert to YAML.".into()
         )
     );
 }

@@ -48,7 +48,7 @@ pub struct Column {
     pub r#type: Type,
 }
 
-/// Msgpack serializer for column
+/// Msgpack serializer for a column
 impl SerSerialize for Column {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -124,7 +124,7 @@ impl Column {
 
 /// Table is a tuple storage in the cluster.
 ///
-/// Tables are the tuple storages in the cluster.
+/// Tables are tuple storages in the cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Table {
     /// List of the columns.
@@ -192,7 +192,7 @@ impl Table {
 
         if !no_duplicates {
             return Err(QueryPlannerError::CustomError(
-                "Table contains duplicate cols and couldn't convert to yaml.".into(),
+                "Table contains duplicate columns. Unable to convert to YAML.".into(),
             ));
         }
 
