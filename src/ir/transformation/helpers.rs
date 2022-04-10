@@ -5,7 +5,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::Plan;
 
-/// Compile an SQL query to IR plan.
+/// Compiles an SQL query to IR plan.
 #[allow(dead_code)]
 pub fn sql_to_ir(input: &str) -> Plan {
     let metadata = &MetadataMock::new();
@@ -14,7 +14,7 @@ pub fn sql_to_ir(input: &str) -> Plan {
     plan
 }
 
-/// Compile and transform an SQL query to a new SQL.
+/// Compiles and transforms an SQL query to a new SQL.
 #[allow(dead_code)]
 pub fn sql_to_sql(input: &str, f_transform: &dyn Fn(&mut Plan)) -> String {
     let mut plan = sql_to_ir(input);
