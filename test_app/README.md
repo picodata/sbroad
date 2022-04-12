@@ -1,89 +1,41 @@
-# Simple Tarantool Cartridge-based application
+# Cartridge integration test application
 
-This a simplest application based on Tarantool Cartridge.
+The application was created for integration testing of the `sbroad` library. It may also serve as a usage example of `sbroad`.
 
-## Quick start
+## Build the application
 
-To build application and setup topology:
-
-```bash
-cartridge build
-cartridge start -d
-cartridge replicasets setup --bootstrap-vshard
+``` bash
+cd .. && make build_test_app
 ```
 
-Now you can visit http://localhost:8081 and see your application's Admin Web UI.
-
-**Note**, that application stateboard is always started by default.
-See [`.cartridge.yml`](./.cartridge.yml) file to change this behavior.
-
-## Application
-
-Application entry point is [`init.lua`](./init.lua) file.
-It configures Cartridge, initializes admin functions and exposes metrics endpoints.
-Before requiring `cartridge` module `package_compat.cfg()` is called.
-It configures package search path to correctly start application on production
-(e.g. using `systemd`).
-
-## Roles
-
-Application has one simple role, [`app.roles.custom`](./app/roles/custom.lua).
-It exposes `/hello` and `/metrics` endpoints:
+## Run test application
 
 ```bash
-curl localhost:8081/hello
-curl localhost:8081/metrics
-```
+cartridge start
+ ``` 
 
-Also, Cartridge roles [are registered](./init.lua)
-(`vshard-storage`, `vshard-router` and `metrics`).
+## Architecture
 
-You can add your own role, but don't forget to register in using
-`cartridge.cfg` call.
+The application includes two roles:
 
-## Instances configuration
+- `api`
+- `storage`
 
-Configuration of instances that can be used to start application
-locally is places in [instances.yml](./instances.yml).
-It is used by `cartridge start`.
+The `api` role has two functions: 
 
-## Topology configuration
+- `query(sql)`
+- `insert_record(space, values_map)`
 
-Topology configuration is described in [`replicasets.yml`](./replicasets.yml).
-It is used by `cartridge replicasets setup`.
+The `query` function executes the sql query from the `sql` parameter.
 
-## Tests
+The `insert_record` function detects the bucket from `values_map` parameter and calls `insert_map` function on the bucket storage. 
 
-Simple unit and integration tests are placed in [`test`](./test) directory.
+The `storage` role has the `insert_map(space, values_map)` function, which inserts map of values `values_map` into `space`.
 
-First, we need to install test dependencies:
+## General observations
 
-```bash
-./deps.sh
-```
+As the `sbroad` library caches the cluster cartridge schema internally, any `sbroad` function that is called checks the internal cluster schema, and if that is empty it loads the schema from the main app. If the app schema was updated then the internal cache needs to be cleared. To clear the cache we need to add the `invalidate_caching_schema` call to the `apply_config` cartridge function.
 
-Then, run linter:
+## Local load testing
 
-```bash
-.rocks/bin/luacheck .
-```
-
-Now we can run tests:
-
-```bash
-cartridge stop  # to prevent "address already in use" error
-.rocks/bin/luatest -v
-```
-
-## Admin
-
-Application has admin function [`probe`](./app/admin.lua) configured.
-You can use it to probe instances:
-
-```bash
-cartridge start -d  # if you've stopped instances
-cartridge admin probe \
-  --name test_app \
-  --run-dir ./tmp/run \
-  --uri localhost:3302
-```
+More information in [stress-test](../stress-test) folder.
