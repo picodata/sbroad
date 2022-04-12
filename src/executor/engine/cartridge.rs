@@ -271,7 +271,7 @@ impl Runtime {
         local futures = {}
 
         for _, replica in pairs(replicas) do
-             local future, err = replica:callro("box.execute", { query }, {is_async = true})
+             local future, err = replica:callbre("box.execute", { query }, {is_async = true})
              if err ~= nil then
                  error(err)
              end
