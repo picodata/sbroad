@@ -51,6 +51,29 @@ pub enum Value {
     String(String),
 }
 
+impl From<crate::executor::result::Value> for Value {
+    fn from(value: crate::executor::result::Value) -> Self {
+        match value {
+            crate::executor::result::Value::Boolean(v) => Value::Boolean(v),
+            // Here is absolutely stupid solution!
+            // d128 supports floating point values, and f64 conversion cannot cause errors. 
+            // But in crate d128 there is no implementation of `From<f64>`, and the development 
+            // of the crate is dead.
+            // We have only one way to convert f64 to d128 is a `FromStr` trait, which is also 
+            // not implemented idiomatically. Realization despite the signature with a potential 
+            // error, but always returns a value. For this reason, this trait does not implement 
+            // a Error, since we can be sure that all checks were passed when f64 was received.
+            crate::executor::result::Value::Number(v) => Value::Number(
+                d128::from_str(&v.to_string()).expect("Invalid decimal float literal"),
+            ),
+            crate::executor::result::Value::Integer(v) => Value::Number(d128::from(v)),
+            crate::executor::result::Value::String(v) => Value::String(v),
+            crate::executor::result::Value::Unsigned(v) => Value::Number(d128::from(v)),
+            crate::executor::result::Value::Null(_) => Value::Null,
+        }
+    }
+}
+
 impl Eq for Value {}
 
 impl fmt::Display for Value {

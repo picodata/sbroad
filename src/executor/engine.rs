@@ -2,11 +2,14 @@
 //!
 //! Traits that define an execution engine interface.
 
+use std::collections::HashMap;
+
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
+use crate::ir::value::Value as IrValue;
 
 pub mod cartridge;
 
@@ -33,6 +36,13 @@ pub trait Metadata {
             format!("\"{}\"", s)
         }
     }
+
+    /// Provides an `Vec<&str>` with sharding keys or an error
+    ///
+    /// # Errors
+    /// - Metadata does not contains space
+    /// - Metadata contains incorrect sharding keys format
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError>;
 }
 
 /// An execution engine trait.
@@ -77,6 +87,17 @@ pub trait Engine {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError>;
+
+    /// Filter lua table values and return in right order
+    ///
+    /// # Errors
+    /// - args does not contains all sharding keys
+    /// - internal metadata errors
+    fn extract_sharding_keys(
+        &self,
+        space: String,
+        args: HashMap<String, IrValue>,
+    ) -> Result<Vec<IrValue>, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &str) -> u64;

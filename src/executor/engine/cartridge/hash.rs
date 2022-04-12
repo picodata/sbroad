@@ -1,13 +1,14 @@
 //! Bucket hash module.
 
-use fasthash::{murmur3::Hasher32, FastHasher};
-use std::hash::Hasher;
+use hash32::{Hasher, Murmur3Hasher};
 
-/// Determine bucket value using `murmur3` hash function
-pub(in crate::executor::engine) fn str_to_bucket_id(s: &str, bucket_count: usize) -> u64 {
-    let mut hash = Hasher32::new();
-    hash.write(s.as_bytes());
-    hash.finish() % bucket_count as u64 + 1
+#[must_use]
+/// A simple function to calculate the bucket id from a string slice.
+/// `(MurMur3 hash at str) % bucket_count + 1`
+pub fn str_to_bucket_id(s: &str, bucket_count: usize) -> u64 {
+    let mut hasher = Murmur3Hasher::default();
+    hasher.write(s.as_bytes());
+    u64::from(hasher.finish()) % bucket_count as u64 + 1
 }
 
 #[cfg(test)]

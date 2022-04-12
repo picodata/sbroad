@@ -36,7 +36,7 @@ use std::collections::HashMap;
 mod bucket;
 pub mod engine;
 pub(crate) mod ir;
-mod result;
+pub mod result;
 mod vtable;
 
 impl Plan {

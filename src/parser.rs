@@ -1,3 +1,5 @@
+mod extargs;
+
 use std::cell::RefCell;
 use std::convert::TryInto;
 use std::os::raw::c_int;
@@ -7,8 +9,11 @@ use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
+use crate::errors::QueryPlannerError;
 use crate::executor::engine::{cartridge, Engine};
 use crate::executor::Query;
+
+use self::extargs::{BucketCalcArgs, BucketCalcArgsDict};
 
 thread_local!(static QUERY_ENGINE: RefCell<cartridge::Runtime> = RefCell::new(cartridge::Runtime::new().unwrap()));
 
@@ -32,22 +37,55 @@ pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -
     0
 }
 
-#[derive(Serialize, Deserialize)]
-struct BucketCalcArgs {
-    pub val: String,
-}
-
-impl AsTuple for BucketCalcArgs {}
-
 #[no_mangle]
 pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<BucketCalcArgs>().unwrap();
 
     QUERY_ENGINE.with(|e| {
-        let result = e.clone().into_inner().determine_bucket_id(&args.val);
+        let result = e.clone().into_inner().determine_bucket_id(&args.rec);
         ctx.return_mp(&result).unwrap();
         0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    QUERY_ENGINE.with(|e| {
+        let mut engine = e.clone().into_inner();
+        // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
+        if engine.has_metadata() {
+            match engine.load_metadata() {
+                Ok(_) => *e.borrow_mut() = engine.clone(),
+                Err(e) => {
+                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+                }
+            };
+        }
+
+        // Closure for more concise error propagation from calls nested in the bucket calculation
+        let propagate_err = || -> Result<u64, QueryPlannerError> {
+            // Deserialization error
+            let bca = BucketCalcArgsDict::try_from(args)?;
+            // Error in filtering bucket calculation arguments by sharding keys
+            let fk = engine
+                .extract_sharding_keys(bca.space, bca.rec)?
+                .into_iter()
+                .fold(String::new(), |mut acc, v| {
+                    let s: String = v.into();
+                    acc.push_str(s.as_str());
+                    acc
+                });
+            Ok(e.clone().into_inner().determine_bucket_id(fk.as_str()))
+        };
+
+        match propagate_err() {
+            Ok(bucket_id) => {
+                ctx.return_mp(&bucket_id).unwrap();
+                0
+            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+        }
     })
 }
 

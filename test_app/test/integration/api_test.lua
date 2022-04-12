@@ -43,6 +43,21 @@ g.after_each(
     end
 )
 
+g.test_bucket_id_calculation = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("calculate_bucket_id", { "testing_space", { id = 1, name = "123", product_units = 1 } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1, name = "123", product_units = 1 } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    _, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
+    t.assert_equals(err, "CustomError(\"The dict of args missed key/value to calculate bucket_id. Column: name\")")
+end
+
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 

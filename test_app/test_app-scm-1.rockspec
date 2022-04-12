@@ -8,8 +8,8 @@ dependencies = {
     'tarantool',
     'lua >= 5.1',
     'checks == 3.1.0-1',
-    'cartridge == 2.6.0-1',
-    'metrics == 0.8.0-1',
+    'cartridge == 2.7.3-1',
+    'metrics == 0.12.0-1',
     'cartridge-cli-extensions == 1.1.1-1',
     'luatest',
     'luacov'

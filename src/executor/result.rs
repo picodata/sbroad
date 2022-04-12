@@ -1,7 +1,9 @@
 use std::fmt;
 
 use decimal::d128;
+use serde::de::Visitor;
 use serde::ser::{Serialize, SerializeMap, Serializer};
+use serde::Deserialize;
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
@@ -62,6 +64,76 @@ impl Serialize for Value {
             Value::Unsigned(v) => serializer.serialize_u64(*v),
             Value::Null(_) => serializer.serialize_none(),
         }
+    }
+}
+
+struct ValueVistor;
+
+impl<'de> Visitor<'de> for ValueVistor {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a tarantool value enum implementation")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::Boolean(value))
+    }
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::Integer(value))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::Unsigned(value))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::Number(value))
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::String(v.to_string()))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::String(value))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Value::Null(tlua::Null))
+    }
+}
+
+/// Custom Implementation `de::Deserialize`, because if using standard `#derive[Deserialize]`
+/// then each `Value` type record deserialize as Value
+/// and it doesn't correct for result format
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ValueVistor)
     }
 }
 

@@ -60,27 +60,6 @@ impl ClusterAppConfig {
         Err(QueryPlannerError::InvalidClusterSchema)
     }
 
-    /// Get table sharding key.
-    ///
-    /// # Panics
-    /// - Invalid schema.
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn get_sharding_key_by_space(self, space: &str) -> Vec<String> {
-        let mut result = Vec::new();
-        let spaces = self.schema["spaces"].as_hash().unwrap();
-
-        for (space_name, params) in spaces.iter() {
-            let current_space_name = space_name.as_str().unwrap();
-            if current_space_name == space {
-                for k in params["sharding_key"].as_vec().unwrap() {
-                    result.push(Self::to_name(k.as_str().unwrap()));
-                }
-            }
-        }
-        result
-    }
-
     pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
         self.schema.is_null()
     }
@@ -168,6 +147,28 @@ impl Metadata for ClusterAppConfig {
     /// Get response waiting timeout for executor
     fn get_exec_waiting_timeout(&self) -> u64 {
         self.waiting_timeout
+    }
+
+    /// Get sharding keys by space name
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
+        if let Some(vec) = self.schema["spaces"][space]["sharding_key"].as_vec() {
+            return vec
+                .iter()
+                .try_fold(Vec::new(), |mut acc: Vec<&str>, str| match str.as_str() {
+                    Some(val) => {
+                        acc.push(val);
+                        Ok(acc)
+                    }
+                    _ => Err(QueryPlannerError::CustomError(format!(
+                        "Schema {} contains incorrect sharding keys format",
+                        space
+                    ))),
+                });
+        }
+        Err(QueryPlannerError::CustomError(format!(
+            "Failed to get space {} or sharding key",
+            space
+        )))
     }
 }
 

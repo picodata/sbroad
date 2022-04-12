@@ -9,10 +9,12 @@ use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
 use crate::ir::relation::{Column, Table, Type};
+use crate::ir::value::Value as IrValue;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct MetadataMock {
+    schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
 }
@@ -28,6 +30,14 @@ impl Metadata for MetadataMock {
 
     fn get_exec_waiting_timeout(&self) -> u64 {
         0
+    }
+
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
+        Ok(self
+            .schema
+            .get(space)
+            .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>())
+            .unwrap())
     }
 }
 
@@ -103,6 +113,15 @@ impl MetadataMock {
         );
 
         MetadataMock {
+            schema: [
+                ("EMPLOYEES".into(), vec!["ID".into()]),
+                (
+                    "hash_testing".into(),
+                    vec!["identification_number".into(), "product_code".into()],
+                ),
+            ]
+            .into_iter()
+            .collect(),
             tables,
             bucket_count: 10000,
         }
@@ -178,6 +197,22 @@ impl Engine for EngineMock {
         // Sort results to make tests reproducible.
         result.rows.sort_by_key(|k| k[0].to_string());
         Ok(result)
+    }
+
+    fn extract_sharding_keys(
+        &self,
+        space: String,
+        args: HashMap<String, IrValue>,
+    ) -> Result<Vec<IrValue>, QueryPlannerError> {
+        Ok(self
+            .metadata()
+            .get_sharding_key_by_space(&space)
+            .unwrap()
+            .iter()
+            .fold(Vec::new(), |mut acc: Vec<IrValue>, &v| {
+                acc.push(args.get(v).unwrap().clone());
+                acc
+            }))
     }
 
     fn determine_bucket_id(&self, s: &str) -> u64 {

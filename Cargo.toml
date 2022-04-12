@@ -11,7 +11,7 @@ edition = "2021"
 
 [dependencies]
 decimal = "2.1.0"
-fasthash = "0.4.0"
+hash32 = "0.2"
 itertools = "0.10.3"
 pest = "2.0"
 pest_derive = "2.0"
@@ -20,10 +20,10 @@ serde_yaml = "0.8"
 tarantool = { git = "https://sbroad-cargo-token:t-nZyqJVVuhGQv17BX6v@gitlab.com/picodata/picodata/tarantool-module.git", rev="d8921ec6"}
 traversal = "0.1.2"
 yaml-rust = "0.4.1"
+rmp-serde = "0.14"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
-rmp-serde = "0.14"
 
 [lib]
 crate-type = ["cdylib"]

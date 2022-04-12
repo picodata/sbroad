@@ -1,5 +1,6 @@
 //! Tarantool cartridge engine module.
 
+use std::collections::HashMap;
 use std::convert::TryInto;
 
 use tarantool::log::{say, SayLevel};
@@ -14,6 +15,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Metadata;
+use crate::ir::value::Value as IrValue;
 
 mod backend;
 pub mod cache;
@@ -153,6 +155,31 @@ impl Engine for Runtime {
         }
 
         Ok(vtable)
+    }
+
+    /// Extract from the `HashMap<String, Value>` only those values that
+    /// correspond to the fields of the sharding key.
+    /// Returns the values of sharding keys in ordered form
+    fn extract_sharding_keys(
+        &self,
+        space: String,
+        rec: HashMap<String, IrValue>,
+    ) -> Result<Vec<IrValue>, QueryPlannerError> {
+        self.metadata()
+            .get_sharding_key_by_space(space.as_str())?
+            .iter()
+            .try_fold(Vec::new(), |mut acc: Vec<IrValue>, &val| {
+                match rec.get(val) {
+                    Some(value) => {
+                        acc.push(value.clone());
+                        Ok(acc)
+                    }
+                    None => Err(QueryPlannerError::CustomError(format!(
+                        "The dict of args missed key/value to calculate bucket_id. Column: {}",
+                        val
+                    ))),
+                }
+            })
     }
 
     /// Calculate bucket for a key.

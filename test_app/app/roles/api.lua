@@ -2,8 +2,11 @@ local vshard = require('vshard')
 local cartridge = require('cartridge')
 
 _G.query = nil
+_G.calculate_bucket_id = nil
+_G.calculate_bucket_id_by_dict = nil
 _G.insert_record = nil
 _G.sql_execute = nil
+
 
 local function query(q)
     local has_err, parser_res = pcall(
@@ -19,7 +22,8 @@ local function query(q)
     return parser_res
 end
 
-local function insert_record(space_name, values)
+local function calculate_bucket_id(space_name, values)
+    checks('string', 'table')
     local shard_key = cartridge.config_get_deepcopy().schema.spaces[space_name].sharding_key
 
     local shard_val = ''
@@ -27,7 +31,28 @@ local function insert_record(space_name, values)
         shard_val = shard_val .. tostring(values[key])
     end
 
-    values['bucket_id'] = box.func["sbroad.calculate_bucket_id"]:call({ shard_val })
+    local bucket_id = box.func["sbroad.calculate_bucket_id"]:call({ shard_val })
+    return bucket_id
+end
+
+local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no unused args
+    checks('string', 'table')
+
+    local has_err, calc_err = pcall(
+        function()
+            return box.func["sbroad.calculate_bucket_id_by_dict"]:call({ space_name, values })
+        end
+    )
+
+    if has_err == false then
+        return nil, calc_err
+    end
+
+    return calc_err
+end
+
+local function insert_record(space_name, values)
+    values['bucket_id'] = calculate_bucket_id(space_name, values)
 	local res = vshard.router.call(
         values['bucket_id'],
          "write",
@@ -41,13 +66,27 @@ local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
     _G.query = query
+    _G.calculate_bucket_id = calculate_bucket_id
+    _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
     _G.insert_record = insert_record
     _G.sql_execute = sql_execute
 
-    box.schema.func.create('sbroad.parse_sql', { if_not_exists = true, language = 'C' })
-    box.schema.func.create('sbroad.invalidate_caching_schema', { if_not_exists = true, language = 'C' })
-    box.schema.func.create('sbroad.calculate_bucket_id', { if_not_exists = true, language = 'C' })
-    box.schema.func.create('sbroad.execute_query', { if_not_exists = true, language = 'C' })
+
+    box.schema.func.create('sbroad.parse_sql', { 
+            if_not_exists = true, language = 'C' 
+    })
+    box.schema.func.create('sbroad.invalidate_caching_schema', { 
+            if_not_exists = true, language = 'C' 
+    })
+    box.schema.func.create('sbroad.calculate_bucket_id', { 
+            if_not_exists = true, language = 'C' 
+    })
+    box.schema.func.create('sbroad.calculate_bucket_id_by_dict', { 
+            if_not_exists = true, language = 'C' 
+    })
+    box.schema.func.create('sbroad.execute_query', { 
+            if_not_exists = true, language = 'C' 
+    })
 
     return true
 end

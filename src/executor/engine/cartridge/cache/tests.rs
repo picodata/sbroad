@@ -85,12 +85,10 @@ fn test_yaml_schema_parser() {
     let mut s = ClusterAppConfig::new();
     s.load_schema(test_schema).unwrap();
 
-    let mut expected_keys = Vec::new();
-    expected_keys.push("\"identification_number\"".to_string());
-    expected_keys.push("\"product_code\"".to_string());
+    let expected_keys = vec!["identification_number", "product_code"];
 
     // FIXME: do we need "to_name()" here?
-    let actual_keys = s.get_sharding_key_by_space("hash_testing");
+    let actual_keys = s.get_sharding_key_by_space("hash_testing").unwrap();
     assert_eq!(actual_keys, expected_keys)
 }
 
