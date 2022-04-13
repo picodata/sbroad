@@ -1,7 +1,7 @@
 use decimal::d128;
 
 use crate::{
-    executor::engine::{mock::EngineMock, Engine},
+    executor::engine::{cartridge::hash::str_to_bucket_id, mock::EngineMock, Engine},
     ir::value::Value as IrValue,
     parser::extargs::BucketCalcArgsDict,
 };
@@ -26,7 +26,10 @@ fn bucket_calc_args() {
             acc
         });
 
-    assert_eq!(engine.determine_bucket_id(&filtered_args), 2377);
+    assert_eq!(
+        engine.determine_bucket_id(&filtered_args),
+        str_to_bucket_id("100.0", 10000)
+    );
 
     let args = BucketCalcArgsDict {
         space: "hash_testing".into(),
@@ -55,5 +58,8 @@ fn bucket_calc_args() {
             acc.push_str(s.as_str());
             acc
         });
-    assert_eq!(engine.determine_bucket_id(&filtered_args), 7704);
+    assert_eq!(
+        engine.determine_bucket_id(&filtered_args),
+        str_to_bucket_id("93312fff100af", 10000)
+    );
 }
