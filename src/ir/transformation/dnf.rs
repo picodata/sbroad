@@ -11,7 +11,7 @@
 //! chain in every "OR" node, so "OR" is treated as a "fork" node.
 //!
 //! For example:
-//! ```
+//! ```text
 //! ((a = 1) and (b = 2) or (a = 3)) and (c = 4)
 //! ```
 //! can be converted to a tree:
@@ -37,13 +37,13 @@
 //! ```
 //!
 //! Here is the list of all the chains ("paths") from the top to the bottom:
-//! ```
+//! ```text
 //! 1. (c = 4) and (a = 1) and (b = 2)
 //! 2. (c = 4) and (a = 3)
 //! ```
 //!
 //! To build the DNF we unite the chains with the "OR" node:
-//! ```
+//! ```text
 //! ((c = 4) and (a = 1) and (b = 2)) or ((c = 4) and (a = 3))
 //! ```
 //!
@@ -73,7 +73,7 @@
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
-use crate::ir::Plan;
+use crate::ir::{Node, Plan};
 use std::collections::VecDeque;
 
 /// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
@@ -83,9 +83,9 @@ pub struct Chain {
 }
 
 impl Chain {
-    fn new() -> Self {
+    fn with_capacity(capacity: usize) -> Self {
         Chain {
-            nodes: VecDeque::new(),
+            nodes: VecDeque::with_capacity(capacity),
         }
     }
 
@@ -163,10 +163,19 @@ impl Plan {
     /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
     pub fn get_dnf_chains(&self, top_id: usize) -> Result<VecDeque<Chain>, QueryPlannerError> {
-        let mut result: VecDeque<Chain> = VecDeque::new();
-        let mut stack: Vec<Chain> = Vec::new();
+        let capacity: usize = self.nodes.arena.iter().fold(0_usize, |acc, node| {
+            acc + match node {
+                Node::Expression(Expression::Bool {
+                    op: Bool::And | Bool::Or,
+                    ..
+                }) => 1,
+                _ => 0,
+            }
+        });
+        let mut result: VecDeque<Chain> = VecDeque::with_capacity(capacity);
+        let mut stack: Vec<Chain> = Vec::with_capacity(capacity);
 
-        let mut top_chain = Chain::new();
+        let mut top_chain = Chain::with_capacity(capacity);
         top_chain.push(top_id, self)?;
         stack.push(top_chain);
 

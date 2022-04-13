@@ -77,12 +77,9 @@ impl Plan {
         &mut self,
         f: &dyn Fn(&mut Plan, usize) -> Result<usize, QueryPlannerError>,
     ) -> Result<(), QueryPlannerError> {
-        let mut nodes: Vec<usize> = Vec::new();
         let top_id = self.get_top()?;
         let ir_tree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
-        for (_, id) in ir_tree {
-            nodes.push(*id);
-        }
+        let nodes: Vec<usize> = ir_tree.map(|(_, id)| *id).collect();
         for id in &nodes {
             let rel = self.get_relation_node(*id)?;
             let new_tree_id = match rel {
@@ -131,11 +128,8 @@ impl Plan {
         ops: &[Bool],
     ) -> Result<usize, QueryPlannerError> {
         let mut map: HashMap<usize, usize> = HashMap::new();
-        let mut nodes: Vec<usize> = Vec::new();
         let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
-        for (_, id) in subtree {
-            nodes.push(*id);
-        }
+        let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
         for id in &nodes {
             let expr = self.get_expression_node(*id)?;
             if let Expression::Bool { op, .. } = expr {

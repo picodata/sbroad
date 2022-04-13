@@ -43,18 +43,12 @@ pub struct Chain {
     other: Vec<usize>,
 }
 
-impl Default for Chain {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Chain {
     /// Create a new chain.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            grouped: HashMap::new(),
+            grouped: HashMap::with_capacity(capacity),
             other: Vec::new(),
         }
     }
@@ -220,9 +214,9 @@ impl Plan {
         &mut self,
         nodes: &[usize],
     ) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
-        let mut visited: HashSet<usize> = HashSet::new();
+        let mut visited: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
         let mut chains: HashMap<usize, Chain, RepeatableState> =
-            HashMap::with_hasher(RepeatableState);
+            HashMap::with_capacity_and_hasher(nodes.len(), RepeatableState);
 
         for id in nodes {
             if visited.contains(id) {
@@ -231,12 +225,8 @@ impl Plan {
             visited.insert(*id);
 
             let tree_and = Bft::new(id, |node| self.nodes.and_iter(node));
-            let mut nodes_and: Vec<usize> = Vec::new();
-            for (_, and_id) in tree_and {
-                nodes_and.push(*and_id);
-            }
-            let mut chain = Chain::new();
-            let mut nodes_for_chain: Vec<usize> = Vec::new();
+            let nodes_and: Vec<usize> = tree_and.map(|(_, id)| *id).collect();
+            let mut nodes_for_chain: Vec<usize> = Vec::with_capacity(nodes_and.len());
             for and_id in nodes_and {
                 let expr = self.get_expression_node(and_id)?;
                 if let Expression::Bool {
@@ -261,6 +251,7 @@ impl Plan {
                     }
                 }
             }
+            let mut chain = Chain::with_capacity(nodes_for_chain.len());
             for node_id in nodes_for_chain {
                 chain.insert(self, node_id)?;
             }
@@ -291,11 +282,8 @@ impl Plan {
         >,
         f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, QueryPlannerError>,
     ) -> Result<usize, QueryPlannerError> {
-        let mut nodes: Vec<usize> = Vec::new();
         let tree = Bft::new(&expr_id, |node| self.nodes.expr_iter(node, false));
-        for (_, id) in tree {
-            nodes.push(*id);
-        }
+        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
         let chains = f_build_chains(self, &nodes)?;
 
         // Replace nodes' children with the merged tuples.

@@ -222,11 +222,11 @@ impl SyntaxNodes {
         self.arena.len()
     }
 
-    /// Constructor
-    pub fn new() -> Self {
+    /// Constructor with pre-allocated memory
+    pub fn with_capacity(capacity: usize) -> Self {
         SyntaxNodes {
-            arena: Vec::new(),
-            map: HashMap::new(),
+            arena: Vec::with_capacity(capacity),
+            map: HashMap::with_capacity(capacity),
         }
     }
 }
@@ -492,7 +492,7 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Motion { .. } => {
-                    let vtable = self.plan.get_motion_vtable(id)?;
+                    let vtable = self.plan.get_motion_vtable(id)?.clone();
                     let mut children = Vec::from([
                         self.nodes.push_syntax_node(SyntaxNode::new_open()),
                         self.nodes
@@ -524,7 +524,7 @@ impl<'p> SyntaxPlan<'p> {
                 Expression::Row { list, .. } => {
                     if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
                         // Replace motion node to virtual table node
-                        let vtable = self.plan.get_motion_vtable(motion_id)?;
+                        let vtable = self.plan.get_motion_vtable(motion_id)?.clone();
                         if vtable.get_alias().is_none() {
                             let sn = SyntaxNode::new_pointer(
                                 id,
@@ -694,7 +694,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn empty(plan: &'p ExecutionPlan) -> Self {
         SyntaxPlan {
-            nodes: SyntaxNodes::new(),
+            nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id()),
             top: None,
             plan,
         }

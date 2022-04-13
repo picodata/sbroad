@@ -10,6 +10,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ahash = "0.7"
 decimal = "2.1.0"
 hash32 = "0.2"
 itertools = "0.10.3"
@@ -24,6 +25,12 @@ rmp-serde = "0.14"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
+criterion = "0.3"
 
 [lib]
-crate-type = ["cdylib"]
+name = "sbroad"
+crate-type = ["cdylib", "rlib"]
+
+[[bench]]
+name = "parse"
+harness = false

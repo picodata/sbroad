@@ -322,7 +322,7 @@ impl Plan {
     pub fn get_alias_from_reference_node(
         &self,
         node: &Expression,
-    ) -> Result<String, QueryPlannerError> {
+    ) -> Result<&str, QueryPlannerError> {
         if let Expression::Reference {
             targets,
             position,
@@ -364,9 +364,11 @@ impl Plan {
                         QueryPlannerError::CustomError("Invalid position in row list".into())
                     })?;
 
-                let name = self.get_expression_node(col_alias_idx)?.get_alias_name()?;
-
-                return Ok(name);
+                let col_alias_node = self.get_expression_node(col_alias_idx)?;
+                match col_alias_node {
+                    Expression::Alias { name, .. } => return Ok(name),
+                    _ => return Err(QueryPlannerError::CustomError("Expected alias node".into())),
+                }
             }
         }
 

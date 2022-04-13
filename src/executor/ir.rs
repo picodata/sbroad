@@ -23,6 +23,7 @@ impl From<Plan> for ExecutionPlan {
 }
 
 impl ExecutionPlan {
+    #[must_use]
     pub fn get_ir_plan(&self) -> &Plan {
         &self.plan
     }
@@ -59,15 +60,18 @@ impl ExecutionPlan {
     }
 
     /// Get motion virtual table
-    pub fn get_motion_vtable(&self, motion_id: usize) -> Result<VirtualTable, QueryPlannerError> {
+    ///
+    /// # Errors
+    /// - Failed to find a virtual table for the motion node.
+    pub fn get_motion_vtable(&self, motion_id: usize) -> Result<&VirtualTable, QueryPlannerError> {
         if let Some(vtable) = &self.vtables {
             if let Some(result) = vtable.get(&motion_id) {
-                return Ok(result.clone());
+                return Ok(result);
             }
         }
 
         Err(QueryPlannerError::CustomError(format!(
-            "Motion node ({}) not found in the virtual table",
+            "Motion node ({}) doesn't have a corresponding virtual table",
             motion_id
         )))
     }

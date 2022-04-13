@@ -33,11 +33,11 @@ use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::Plan;
 use std::collections::HashMap;
 
-mod bucket;
+pub mod bucket;
 pub mod engine;
-pub(crate) mod ir;
+pub mod ir;
 pub mod result;
-mod vtable;
+pub mod vtable;
 
 impl Plan {
     /// Apply optimization rules to the plan.
@@ -90,6 +90,11 @@ where
             bucket_map: HashMap::new(),
         };
         Ok(query)
+    }
+
+    /// Get the execution plan of the query.
+    pub fn get_exec_plan(&self) -> &ExecutionPlan {
+        &self.exec_plan
     }
 
     /// Execute distributed query.

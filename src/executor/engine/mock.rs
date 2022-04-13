@@ -36,12 +36,24 @@ impl Metadata for MetadataMock {
         Ok(self
             .schema
             .get(space)
-            .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>())
+            .map(|v| v.iter().map(String::as_str).collect::<Vec<&str>>())
             .unwrap())
     }
 }
 
+impl Default for MetadataMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetadataMock {
+    /// Mock engine constructor.
+    ///
+    /// # Panics
+    /// - If schema is invalid.
+    #[allow(clippy::too_many_lines)]
+    #[must_use]
     pub fn new() -> Self {
         let mut tables = HashMap::new();
 
@@ -220,8 +232,15 @@ impl Engine for EngineMock {
     }
 }
 
+impl Default for EngineMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EngineMock {
     #[allow(dead_code)]
+    #[must_use]
     pub fn new() -> Self {
         EngineMock {
             metadata: MetadataMock::new(),

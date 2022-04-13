@@ -21,16 +21,19 @@ pub enum Buckets {
 
 impl Buckets {
     /// Get all buckets in the cluster.
+    #[must_use]
     pub fn new_all() -> Self {
         Buckets::All
     }
 
     /// Get a filtered set of buckets.
+    #[must_use]
     pub fn new_filtered(buckets: HashSet<u64>) -> Self {
         Buckets::Filtered(buckets)
     }
 
     /// Disjunction of two sets of buckets.
+    #[must_use]
     pub fn disjunct(&self, buckets: &Buckets) -> Buckets {
         match (self, buckets) {
             (Buckets::All, Buckets::All) => Buckets::All,
@@ -44,6 +47,7 @@ impl Buckets {
     }
 
     /// Conjunction of two sets of buckets.
+    #[must_use]
     pub fn conjunct(&self, buckets: &Buckets) -> Buckets {
         match (self, buckets) {
             (Buckets::All, _) | (_, Buckets::All) => Buckets::All,
@@ -182,12 +186,9 @@ where
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
     pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, QueryPlannerError> {
-        let mut nodes: Vec<usize> = Vec::new();
         let ir_plan = self.exec_plan.get_ir_plan();
         let rel_tree = DftPost::new(&top_id, |node| ir_plan.nodes.rel_iter(node));
-        for (_, node_id) in rel_tree {
-            nodes.push(*node_id);
-        }
+        let nodes: Vec<usize> = rel_tree.map(|(_, id)| *id).collect();
 
         for node_id in nodes {
             if self.bucket_map.get(&node_id).is_some() {

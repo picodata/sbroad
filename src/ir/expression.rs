@@ -6,6 +6,7 @@
 //! - the order of the columns (and we can get their types as well)
 //! - distribution of the data in the tuple
 
+use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -252,7 +253,7 @@ impl Nodes {
         list: Vec<usize>,
         distribution: Option<Distribution>,
     ) -> Result<usize, QueryPlannerError> {
-        let mut names: HashSet<String> = HashSet::new();
+        let mut names: HashSet<String> = HashSet::with_capacity(list.len());
 
         for alias_node in &list {
             if let Node::Expression(Expression::Alias { name, .. }) = self
@@ -318,7 +319,7 @@ impl Plan {
             }
         }
 
-        let mut result: Vec<usize> = Vec::new();
+        let mut result: Vec<usize> = Vec::with_capacity(col_names.len());
 
         if col_names.is_empty() {
             let required_targets = if is_join { targets } else { &targets[0..1] };
@@ -399,40 +400,64 @@ impl Plan {
             ));
         };
 
-        let map = if let Node::Relational(relational_op) = self.get_node(child_node)? {
-            relational_op.output_alias_position_map(&self.nodes)?
-        } else {
-            return Err(QueryPlannerError::InvalidNode);
-        };
-
-        let mut result: Vec<usize> = Vec::new();
-        let all_found = col_names.iter().all(|col| {
-            map.get(*col).map_or(false, |pos| {
-                let new_targets: Vec<usize> = targets.to_vec();
-                // Adds new references and aliases to arena (if we need them).
-                let r_id = self.nodes.add_ref(None, Some(new_targets), *pos);
-                if need_aliases {
-                    if let Ok(a_id) = self.nodes.add_alias(col, r_id) {
-                        result.push(a_id);
-                        true
-                    } else {
-                        false
+        let map: HashMap<&str, usize, RandomState> =
+            if let Node::Relational(relational_op) = self.get_node(child_node)? {
+                let output_id = relational_op.output();
+                let output = self.get_expression_node(output_id)?;
+                if let Expression::Row { list, .. } = output {
+                    let state = RandomState::new();
+                    let mut map: HashMap<&str, usize, RandomState> =
+                        HashMap::with_capacity_and_hasher(list.len(), state);
+                    for (pos, col_id) in list.iter().enumerate() {
+                        let alias = self.get_expression_node(*col_id)?;
+                        if let Expression::Alias { ref name, .. } = alias {
+                            if map.insert(name, pos).is_some() {
+                                return Err(QueryPlannerError::CustomError(format!(
+                                    "Duplicate column name {} at position {}",
+                                    name, pos
+                                )));
+                            }
+                        } else {
+                            return Err(QueryPlannerError::CustomError(
+                                "Child node is not an alias".into(),
+                            ));
+                        }
                     }
+                    map
                 } else {
-                    result.push(r_id);
-                    true
+                    return Err(QueryPlannerError::CustomError(
+                        "Relational output tuple is not a row".into(),
+                    ));
                 }
+            } else {
+                return Err(QueryPlannerError::InvalidNode);
+            };
+
+        let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
+        let all_found = col_names.iter().all(|col| {
+            map.get(col).map_or(false, |pos| {
+                refs.push((col, targets.to_vec(), *pos));
+                true
             })
         });
-
-        if all_found {
-            return Ok(result);
+        if !all_found {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Some of the columns {:?} were not found in the table",
+                col_names,
+            )));
         }
 
-        Err(QueryPlannerError::CustomError(format!(
-            "Some of the columns {:?} were not found in the table",
-            col_names,
-        )))
+        for (col, new_targets, pos) in refs {
+            let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
+            if need_aliases {
+                let a_id = self.nodes.add_alias(col, r_id)?;
+                result.push(a_id);
+            } else {
+                result.push(r_id);
+            }
+        }
+
+        Ok(result)
     }
 
     /// New output for a single child node (with aliases).
@@ -739,11 +764,8 @@ impl Plan {
     /// - Internal errors during the expression tree copy.
     pub fn expr_clone(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
         let subtree = DftPost::new(&expr_id, |node| self.nodes.expr_iter(node, false));
-        let mut nodes: Vec<usize> = Vec::new();
-        for (_, id) in subtree {
-            nodes.push(*id);
-        }
-        let mut map: HashMap<usize, usize> = HashMap::new();
+        let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
+        let mut map: HashMap<usize, usize> = HashMap::with_capacity(nodes.len());
         for id in nodes {
             let expr = self.get_expression_node(id)?.clone();
             let new_id = match expr {
@@ -766,7 +788,7 @@ impl Plan {
                     self.nodes.add_bool(new_left_id, op.clone(), new_right_id)?
                 }
                 Expression::Row { list, distribution } => {
-                    let mut new_list: Vec<usize> = Vec::new();
+                    let mut new_list: Vec<usize> = Vec::with_capacity(list.len());
                     for column_id in list {
                         let new_column_id = *map.get(&column_id).ok_or_else(|| {
                             QueryPlannerError::CustomError(format!(

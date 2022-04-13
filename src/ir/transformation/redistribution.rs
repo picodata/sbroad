@@ -101,12 +101,8 @@ impl Plan {
     /// - plan doesn't contain the top node
     fn get_relational_nodes_dfs_post(&self) -> Result<Vec<usize>, QueryPlannerError> {
         let top = self.get_top()?;
-        let mut nodes: Vec<usize> = Vec::new();
-
         let post_tree = DftPost::new(&top, |node| self.nodes.rel_iter(node));
-        for (_, node) in post_tree {
-            nodes.push(*node);
-        }
+        let nodes: Vec<usize> = post_tree.map(|(_, id)| *id).collect();
         Ok(nodes)
     }
 
@@ -251,8 +247,8 @@ impl Plan {
         rel_id: usize,
         strategy: &HashMap<usize, MotionPolicy>,
     ) -> Result<(), QueryPlannerError> {
-        let children = if let Some(children) = self.get_relational_children(rel_id)? {
-            children
+        let children: Vec<usize> = if let Some(children) = self.get_relational_children(rel_id)? {
+            children.to_vec()
         } else {
             return Err(QueryPlannerError::CustomError(String::from(
                 "Trying to add motions under the leaf relational node.",
@@ -272,15 +268,15 @@ impl Plan {
 
         // Add motions.
         let mut children_with_motions: Vec<usize> = Vec::new();
-        for child in &children {
-            if let Some(policy) = strategy.get(child) {
+        for child in children {
+            if let Some(policy) = strategy.get(&child) {
                 if let MotionPolicy::Local = policy {
-                    children_with_motions.push(*child);
+                    children_with_motions.push(child);
                 } else {
-                    children_with_motions.push(self.add_motion(*child, policy)?);
+                    children_with_motions.push(self.add_motion(child, policy)?);
                 }
             } else {
-                children_with_motions.push(*child);
+                children_with_motions.push(child);
             }
         }
         self.set_relational_children(rel_id, children_with_motions)?;
@@ -377,7 +373,7 @@ impl Plan {
     /// # Errors
     /// - If the node is not a join node.
     /// - Join node has no children.
-    fn get_join_children(&self, join_id: usize) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_join_children(&self, join_id: usize) -> Result<&[usize], QueryPlannerError> {
         let join = self.get_relation_node(join_id)?;
         if let Relational::InnerJoin { .. } = join {
         } else {
@@ -474,7 +470,7 @@ impl Plan {
         })?;
 
         for key in keys {
-            let child = self.get_join_child_by_key(key, row_map, &children)?;
+            let child = self.get_join_child_by_key(key, row_map, children)?;
             if child == outer_child {
                 outer_keys.push(key.clone());
             } else if child == inner_child {

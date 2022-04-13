@@ -109,6 +109,9 @@ impl VirtualTable {
     }
 
     /// Set vtable alias name
+    ///
+    /// # Errors
+    /// - Try to set an empty alias name to the virtual table.
     pub fn set_alias(&mut self, name: &str) -> Result<(), QueryPlannerError> {
         if name.is_empty() {
             return Err(QueryPlannerError::CustomError(
@@ -121,6 +124,7 @@ impl VirtualTable {
     }
 
     /// Get vtable alias name
+    #[must_use]
     pub fn get_alias(&self) -> Option<String> {
         self.name.clone()
     }

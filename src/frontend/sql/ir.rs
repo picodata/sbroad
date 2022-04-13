@@ -61,9 +61,9 @@ struct Translation {
 }
 
 impl Translation {
-    fn new() -> Self {
+    fn with_capacity(capacity: usize) -> Self {
         Translation {
-            map: HashMap::new(),
+            map: HashMap::with_capacity(capacity),
         }
     }
 
@@ -105,8 +105,8 @@ impl AbstractSyntaxTree {
             None => return Err(QueryPlannerError::InvalidAst),
         };
         let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
-        let mut map = Translation::new();
-        let mut rows: HashSet<usize> = HashSet::new();
+        let mut map = Translation::with_capacity(self.nodes.next_id());
+        let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
 
         for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?.clone();
@@ -230,7 +230,7 @@ impl AbstractSyntaxTree {
                                     let left_col_map = plan
                                         .get_relation_node(*plan_left_id)?
                                         .output_alias_position_map(&plan.nodes)?;
-                                    if left_col_map.get(&col_name).is_some() {
+                                    if left_col_map.get(&col_name.as_str()).is_some() {
                                         let ref_id = plan.add_row_from_left_branch(
                                             *plan_left_id,
                                             *plan_right_id,
@@ -248,7 +248,7 @@ impl AbstractSyntaxTree {
                                     let right_col_map = plan
                                         .get_relation_node(*plan_right_id)?
                                         .output_alias_position_map(&plan.nodes)?;
-                                    if right_col_map.get(&col_name).is_some() {
+                                    if right_col_map.get(&col_name.as_str()).is_some() {
                                         let ref_id = plan.add_row_from_right_branch(
                                             *plan_left_id,
                                             *plan_right_id,
@@ -281,7 +281,7 @@ impl AbstractSyntaxTree {
                             let left_col_map = plan
                                 .get_relation_node(*plan_left_id)?
                                 .output_alias_position_map(&plan.nodes)?;
-                            if left_col_map.get(&col_name).is_some() {
+                            if left_col_map.get(&col_name.as_str()).is_some() {
                                 let ref_id = plan.add_row_from_left_branch(
                                     *plan_left_id,
                                     *plan_right_id,
@@ -293,7 +293,7 @@ impl AbstractSyntaxTree {
                             let right_col_map = plan
                                 .get_relation_node(*plan_right_id)?
                                 .output_alias_position_map(&plan.nodes)?;
-                            if right_col_map.get(&col_name).is_some() {
+                            if right_col_map.get(&col_name.as_str()).is_some() {
                                 let ref_id = plan.add_row_from_right_branch(
                                     *plan_left_id,
                                     *plan_right_id,

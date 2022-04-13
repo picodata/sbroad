@@ -1,7 +1,7 @@
 //! Equality propagation deduces new equality expressions in join conditions
 //! and selection filters.
 //! For example:
-//! ```
+//! ```text
 //! (a = 1) and (b = 1) => (a = b)
 //! ```
 //!
@@ -14,7 +14,7 @@
 //! containing references (at the moment only rows with a single column of
 //! the reference type are supported). Constants are replicated and do not
 //! produce distribution conflicts.
-//! ```
+//! ```text
 //! select * from (select t1.a, t2.b from t1 join t2 on row(t1.c) = row(t2.d))
 //! where row(a) = 1 and row(b) = 1
 //! =>
@@ -35,7 +35,7 @@
 //!
 //! # Implementation
 //! Let's look on an example:
-//! ```
+//! ```sql
 //! select * from t where
 //! (a) = 1 and (c) = (e) and (b) = 1 and (d) = 1 and (e) = 4 and (f) = 1 and (a) = (f)
 //! or (e) = 3
@@ -53,7 +53,7 @@
 //!
 //! 2. Each chain may produce multiple equality classes (where all the
 //!    element are equal to each other). For example, the first chain
-//!    ```
+//!    ```text
 //!    (a) = 1 and (c) = (e) and (b) = 1 and (d) = 1 and (e) = 4 and (f) = 1
 //!    and (a) = (f)
 //!    ```

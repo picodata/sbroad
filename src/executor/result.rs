@@ -179,6 +179,7 @@ impl Default for BoxExecuteFormat {
 
 impl BoxExecuteFormat {
     /// Create empty query result set
+    #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
         BoxExecuteFormat {

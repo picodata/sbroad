@@ -2,6 +2,7 @@
 //!
 //! Contains operator nodes that transform the tuples in IR tree.
 
+use ahash::RandomState;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -157,21 +158,22 @@ impl Relational {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the output tuple is invalid.
-    pub fn output_alias_position_map(
-        &self,
-        nodes: &Nodes,
-    ) -> Result<HashMap<String, usize>, QueryPlannerError> {
-        let mut map: HashMap<String, usize> = HashMap::new();
-
+    pub fn output_alias_position_map<'rel_op, 'nodes>(
+        &'rel_op self,
+        nodes: &'nodes Nodes,
+    ) -> Result<HashMap<&'nodes str, usize, RandomState>, QueryPlannerError> {
         if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
         {
+            let state = RandomState::new();
+            let mut map: HashMap<&str, usize, RandomState> =
+                HashMap::with_capacity_and_hasher(list.len(), state);
             let valid = list.iter().enumerate().all(|(pos, item)| {
                 // Checks that expressions in the row list are all aliases
                 if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
                     nodes.arena.get(*item)
                 {
                     // Populates the map and checks for duplicates
-                    if map.insert(String::from(name), pos).is_none() {
+                    if map.insert(name, pos).is_none() {
                         return true;
                     }
                 }
@@ -180,9 +182,13 @@ impl Relational {
             if valid {
                 return Ok(map);
             }
-            return Err(QueryPlannerError::InvalidPlan);
+            return Err(QueryPlannerError::CustomError(
+                "Invalid output tuple".to_string(),
+            ));
         }
-        Err(QueryPlannerError::ValueOutOfRange)
+        Err(QueryPlannerError::CustomError(
+            "Failed to find an output tuple node in the arena".to_string(),
+        ))
     }
 
     /// Gets output tuple node index in plan node arena.
@@ -201,14 +207,14 @@ impl Relational {
 
     // Gets a copy of the children nodes.
     #[must_use]
-    pub fn children(&self) -> Option<Vec<usize>> {
+    pub fn children(&self) -> Option<&[usize]> {
         match self {
             Relational::InnerJoin { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
             | Relational::Selection { children, .. }
-            | Relational::UnionAll { children, .. } => Some(children.clone()),
+            | Relational::UnionAll { children, .. } => Some(children),
             Relational::ScanRelation { .. } => None,
         }
     }
@@ -342,7 +348,7 @@ impl Plan {
 
         if let Some(relations) = &self.relations {
             if let Some(rel) = relations.get(table) {
-                let mut refs: Vec<usize> = Vec::new();
+                let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
                 for (pos, col) in rel.columns.iter().enumerate() {
                     let r_id = nodes.add_ref(None, None, pos);
                     let col_alias_id = nodes.add_alias(&col.name, r_id)?;
@@ -593,7 +599,7 @@ impl Plan {
     pub fn get_relational_children(
         &self,
         rel_id: usize,
-    ) -> Result<Option<Vec<usize>>, QueryPlannerError> {
+    ) -> Result<Option<&[usize]>, QueryPlannerError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.children())
         } else {

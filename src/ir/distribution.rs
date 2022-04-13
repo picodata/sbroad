@@ -128,8 +128,17 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
     pub fn set_distribution(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
-        let mut child_set: HashSet<usize> = HashSet::new();
-        let mut child_pos_map: HashMap<(usize, usize), usize> = HashMap::new();
+        let row_expr = self.get_expression_node(row_id)?;
+        let capacity = match row_expr {
+            Expression::Row { list, .. } => list.len(),
+            _ => {
+                return Err(QueryPlannerError::CustomError(
+                    "Expected Row expression".to_string(),
+                ))
+            }
+        };
+        let mut child_set: HashSet<usize> = HashSet::with_capacity(capacity);
+        let mut child_pos_map: HashMap<(usize, usize), usize> = HashMap::with_capacity(capacity);
         let mut table_set: HashSet<String> = HashSet::new();
         let mut table_pos_map: HashMap<usize, usize> = HashMap::default();
         let mut parent_node: Option<usize> = None;
