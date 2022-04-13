@@ -20,6 +20,7 @@ test:
 	cargo test
 
 lint:
+	cargo fmt --all -- --check
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
 
 build_test_app:
