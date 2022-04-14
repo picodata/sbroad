@@ -88,6 +88,12 @@ local function init(opts) -- luacheck: no unused args
             if_not_exists = true, language = 'C' 
     })
 
+    box.schema.func.create('sbroad.load_lua_extra_function', {
+        if_not_exists = true, language = 'C'
+    })
+
+    box.func["sbroad.load_lua_extra_function"]:call({})
+
     return true
 end
 

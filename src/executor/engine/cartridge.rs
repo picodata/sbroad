@@ -258,10 +258,62 @@ impl Runtime {
         buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let lua = tarantool::lua_state();
-        match lua.exec(
-            r#"local vshard = require('vshard')
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
+        })?;
+
+        let lua_buckets = match buckets {
+            Buckets::All => vec![],
+            Buckets::Filtered(list) => list.iter().copied().collect(),
+        };
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let res: BoxExecuteFormat =
+            match exec_sql.call_with_args((query, lua_buckets, waiting_timeout)) {
+                Ok(v) => v,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("exec_query"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+        Ok(res)
+    }
+}
+
+/// Extra lua functions loader. It is necessary for query execution.
+///
+/// # Errors
+/// - Failed to load lua code.
+pub fn load_extra_function() -> Result<(), QueryPlannerError> {
+    let lua = tarantool::lua_state();
+
+    match lua.exec(
+        r#"local vshard = require('vshard')
     local yaml = require('yaml')
     local log = require('log')
+    local cartridge = require('cartridge')
+
+    function get_schema()
+        return cartridge.get_schema()
+    end
+
+    function get_waiting_timeout()
+        local cfg = cartridge.config_get_readonly()
+
+        if cfg["executor_waiting_timeout"] == nil then
+            return 0
+        end
+
+        return cfg["executor_waiting_timeout"]
+    end
 
     ---get_uniq_replicaset_for_buckets - gets unique set of replicaset by bucket list
     ---@param buckets table - list of buckets.
@@ -325,48 +377,20 @@ impl Runtime {
     return result
     end
 "#,
-        ) {
-            Ok(_) => {}
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("exec_query"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!(
-                    "Failed lua code loading: {:?}",
-                    e
-                )));
-            }
+    ) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("exec_query"),
+                &format!("{:?}", e),
+            );
+            Err(QueryPlannerError::LuaError(format!(
+                "Failed lua code loading: {:?}",
+                e
+            )))
         }
-
-        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
-        })?;
-
-        let lua_buckets = match buckets {
-            Buckets::All => vec![],
-            Buckets::Filtered(list) => list.iter().copied().collect(),
-        };
-
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        let res: BoxExecuteFormat =
-            match exec_sql.call_with_args((query, lua_buckets, waiting_timeout)) {
-                Ok(v) => v,
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("exec_query"),
-                        &format!("{:?}", e),
-                    );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                }
-            };
-
-        Ok(res)
     }
 }

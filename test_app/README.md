@@ -34,6 +34,8 @@ The `storage` role has the `insert_map(space, values_map)` function, which inser
 
 ## General observations
 
+`Sbroad` library uses internal lua functions in the cartridge executor and preloads them with `load_lua_extra_function` call in the `init` cartridge function.
+
 As the `sbroad` library caches the cluster cartridge schema internally, any `sbroad` function that is called checks the internal cluster schema, and if that is empty it loads the schema from the main app. If the app schema was updated then the internal cache needs to be cleared. To clear the cache we need to add the `invalidate_caching_schema` call to the `apply_config` cartridge function.
 
 ## Local load testing

@@ -1,5 +1,3 @@
-mod extargs;
-
 use std::cell::RefCell;
 use std::convert::TryInto;
 use std::os::raw::c_int;
@@ -10,10 +8,13 @@ use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::cartridge::load_extra_function;
 use crate::executor::engine::{cartridge, Engine};
 use crate::executor::Query;
 
 use self::extargs::{BucketCalcArgs, BucketCalcArgsDict};
+
+mod extargs;
 
 thread_local!(static QUERY_ENGINE: RefCell<cartridge::Runtime> = RefCell::new(cartridge::Runtime::new().unwrap()));
 
@@ -35,6 +36,19 @@ pub extern "C" fn invalidate_caching_schema(ctx: FunctionCtx, _: FunctionArgs) -
 
     ctx.return_mp(&true).unwrap();
     0
+}
+
+#[no_mangle]
+pub extern "C" fn load_lua_extra_function(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
+    match load_extra_function() {
+        Ok(_) => {
+            ctx.return_mp(&true).unwrap();
+            0
+        }
+        Err(e) => {
+            tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string())
+        }
+    }
 }
 
 #[no_mangle]
