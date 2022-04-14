@@ -10,11 +10,11 @@ let queries = Array.from(
     (_, id) => `SELECT *
                 FROM (
                          SELECT "id", "gov_number"
-                         FROM VEHICLE_ACTUAL
+                         FROM "vehicle_actual"
                          WHERE "sys_op" = 0
                          UNION ALL
                          SELECT "id", "gov_number"
-                         FROM VEHICLE_HISTORY
+                         FROM "vehicle_history"
                          WHERE "sys_op" < 1
                      ) as "t1"
                 WHERE "id" = ${id}`

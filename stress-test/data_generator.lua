@@ -22,7 +22,7 @@ api:eval("function set_schema(s) local cartridge = require('cartridge'); cartrid
 
 local config = {
     spaces = {
-        VEHICLE_ACTUAL = {
+        vehicle_actual = {
             format = {
                 {
                     name = "id",
@@ -81,7 +81,7 @@ local config = {
             is_local = false,
             sharding_key = { "id" },
         },
-        VEHICLE_HISTORY = {
+        vehicle_history = {
             format = {
                 {
                     name = "id",
@@ -159,7 +159,7 @@ storage2:eval("return box.space.VEHICLE_HISTORY:truncate();")
 
 for i = 1, record_count, 1 do
     api:call("insert_record", {
-        "VEHICLE_ACTUAL",
+        "vehicle_actual",
         {
             id = i,
             gov_number = "a777a750",
@@ -168,7 +168,7 @@ for i = 1, record_count, 1 do
     })
 
     api:call("insert_record", {
-        "VEHICLE_HISTORY",
+        "vehicle_history",
         {
             id = i,
             gov_number = "a777a750",
@@ -184,16 +184,16 @@ fiber.sleep(3)
 print(
         string.format(
                 "Storage 1 has %d actual and %d history records",
-                storage1:eval("return box.space.VEHICLE_ACTUAL:count();"),
-                storage1:eval("return box.space.VEHICLE_HISTORY:count();")
+                storage1:eval("return box.space.vehicle_actual:count();"),
+                storage1:eval("return box.space.vehicle_history:count();")
         )
 )
 
 print(
         string.format(
                 "Storage 2 has %d actual and %d history records",
-                storage2:eval("return box.space.VEHICLE_ACTUAL:count();"),
-                storage2:eval("return box.space.VEHICLE_HISTORY:count();")
+                storage2:eval("return box.space.vehicle_actual:count();"),
+                storage2:eval("return box.space.vehicle_history:count();")
         )
 )
 
