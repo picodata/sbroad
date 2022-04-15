@@ -630,16 +630,34 @@ impl Plan {
     ) -> Result<HashSet<usize>, QueryPlannerError> {
         let mut rel_nodes: HashSet<usize> = HashSet::new();
 
-        if let Node::Expression(Expression::Row { .. }) = self.get_node(row_id)? {
-            let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
-            for (_, node) in post_tree {
-                if let Node::Expression(Expression::Reference { .. }) = self.get_node(*node)? {
-                    rel_nodes.extend(&self.get_relational_from_reference_node(*node)?);
+        let row = self.get_expression_node(row_id)?;
+        if let Expression::Row { .. } = row {
+        } else {
+            return Err(QueryPlannerError::CustomError("Node is not a row".into()));
+        }
+        let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
+        for (_, id) in post_tree {
+            let reference = self.get_expression_node(*id)?;
+            if let Expression::Reference {
+                targets, parent, ..
+            } = reference
+            {
+                let referred_rel_id = parent.ok_or(QueryPlannerError::CustomError(
+                    "Reference node has no parent".into(),
+                ))?;
+                let rel = self.get_relation_node(referred_rel_id)?;
+                if let Some(children) = rel.children() {
+                    if let Some(positions) = targets {
+                        for pos in positions {
+                            if let Some(child) = children.get(*pos) {
+                                rel_nodes.insert(*child);
+                            }
+                        }
+                    }
                 }
             }
-            return Ok(rel_nodes);
         }
-        Err(QueryPlannerError::InvalidRow)
+        Ok(rel_nodes)
     }
 
     /// Check that the node is a boolean equality and its children are both rows.
