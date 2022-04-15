@@ -318,8 +318,8 @@ impl Plan {
                 )));
             }
         }
-
-        let mut result: Vec<usize> = Vec::with_capacity(col_names.len());
+        
+        let mut result: Vec<usize> = Vec::new();
 
         if col_names.is_empty() {
             let required_targets = if is_join { targets } else { &targets[0..1] };
@@ -353,7 +353,7 @@ impl Plan {
                     } else {
                         return Err(QueryPlannerError::InvalidRelation);
                     };
-
+                result.reserve(child_row_list.len());
                 for (pos, alias_node) in child_row_list.iter().enumerate() {
                     let name: String =
                         if let Node::Expression(Expression::Alias { ref name, .. }) =
@@ -387,6 +387,7 @@ impl Plan {
             return Ok(result);
         }
 
+        result.reserve(col_names.len());
         let target_child: usize = if let Some(target) = targets.get(0) {
             *target
         } else {
@@ -400,6 +401,10 @@ impl Plan {
             ));
         };
 
+        let mut col_names_set: HashSet<&str> = HashSet::with_capacity(col_names.len());
+        for col_name in col_names {
+            col_names_set.insert(col_name);
+        }
         let map: HashMap<&str, usize, RandomState> =
             if let Node::Relational(relational_op) = self.get_node(child_node)? {
                 let output_id = relational_op.output();
@@ -407,10 +412,13 @@ impl Plan {
                 if let Expression::Row { list, .. } = output {
                     let state = RandomState::new();
                     let mut map: HashMap<&str, usize, RandomState> =
-                        HashMap::with_capacity_and_hasher(list.len(), state);
+                        HashMap::with_capacity_and_hasher(col_names.len(), state);
                     for (pos, col_id) in list.iter().enumerate() {
                         let alias = self.get_expression_node(*col_id)?;
                         if let Expression::Alias { ref name, .. } = alias {
+                            if !col_names_set.contains(&name.as_str()) {
+                                continue;
+                            }
                             if map.insert(name, pos).is_some() {
                                 return Err(QueryPlannerError::CustomError(format!(
                                     "Duplicate column name {} at position {}",
