@@ -318,7 +318,6 @@ impl Plan {
                 )));
             }
         }
-        
         let mut result: Vec<usize> = Vec::new();
 
         if col_names.is_empty() {

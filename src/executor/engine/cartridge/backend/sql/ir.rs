@@ -92,7 +92,10 @@ impl ExecutionPlan {
             match data {
                 // TODO: should we care about plans without projections?
                 // Or they should be treated as invalid?
-                SyntaxData::Alias(s) => sql.push_str(&format!("as {}", s.as_str())),
+                SyntaxData::Alias(s) => {
+                    sql.push_str("as ");
+                    sql.push_str(s);
+                }
                 SyntaxData::CloseParenthesis => sql.push(')'),
                 SyntaxData::Comma => sql.push(','),
                 SyntaxData::Condition => sql.push_str("ON"),
@@ -133,7 +136,9 @@ impl ExecutionPlan {
                                 let alias = &ir_plan.get_alias_from_reference_node(expr)?;
 
                                 if let Some(name) = rel_node.scan_name(ir_plan, *position)? {
-                                    sql.push_str(&format!("{}.{}", name, alias));
+                                    sql.push_str(name);
+                                    sql.push('.');
+                                    sql.push_str(alias);
                                 } else {
                                     sql.push_str(alias);
                                 }
