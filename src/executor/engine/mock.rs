@@ -3,12 +3,14 @@ use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
-use crate::executor::Metadata;
+use crate::executor::{Metadata, QueryCache};
+use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
 
@@ -146,10 +148,22 @@ impl MetadataMock {
 pub struct EngineMock {
     metadata: MetadataMock,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
+    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
 }
 
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
+    type Ast = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, AbstractSyntaxTree>;
+
+    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
+        Ok(())
+    }
+
+    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache> {
+        &self.query_cache
+    }
 
     fn metadata(&self) -> &Self::Metadata
     where
@@ -251,9 +265,11 @@ impl EngineMock {
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
+        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
         EngineMock {
             metadata: MetadataMock::new(),
             virtual_tables: RefCell::new(HashMap::new()),
+            query_cache: RefCell::new(cache),
         }
     }
 

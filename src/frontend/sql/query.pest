@@ -62,7 +62,7 @@ String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "_"
     Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
         Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
 
-Value = _{ Row | True | False | Null | Number | SingleQuotedString }
+Value = _{ Parameter | Row | True | False | Null | Number | SingleQuotedString }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }
@@ -71,6 +71,7 @@ Value = _{ Row | True | False | Null | Number | SingleQuotedString }
         ("(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
         | (^"row" ~ "(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
     }
+    Parameter = @{ "?" }
 
 EOF = { EOI | ";" }
 WHITESPACE = _{ " " | "\t" | "\n" | "\n\r" }

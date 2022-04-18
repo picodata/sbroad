@@ -9,7 +9,6 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::mem::swap;
 
 use pest::iterators::Pair;
-use pest::Parser;
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
@@ -17,8 +16,8 @@ use crate::errors::QueryPlannerError;
 
 /// Parse tree
 #[derive(Parser)]
-#[grammar = "frontend/sql/grammar.pest"]
-struct ParseTree;
+#[grammar = "frontend/sql/query.pest"]
+pub(super) struct ParseTree;
 
 /// A list of current rules from the actual grammar.
 /// When new tokens are added to the grammar they
@@ -46,6 +45,7 @@ pub enum Type {
     Null,
     Number,
     Or,
+    Parameter,
     Parentheses,
     Primary,
     Projection,
@@ -90,6 +90,7 @@ impl Type {
             Rule::Null => Ok(Type::Null),
             Rule::Number => Ok(Type::Number),
             Rule::Or => Ok(Type::Or),
+            Rule::Parameter => Ok(Type::Parameter),
             Rule::Parentheses => Ok(Type::Parentheses),
             Rule::Primary => Ok(Type::Primary),
             Rule::Projection => Ok(Type::Projection),
@@ -121,7 +122,7 @@ pub struct ParseNode {
 
 #[allow(dead_code)]
 impl ParseNode {
-    fn new(rule: Rule, value: Option<String>) -> Result<Self, QueryPlannerError> {
+    pub(super) fn new(rule: Rule, value: Option<String>) -> Result<Self, QueryPlannerError> {
         Ok(ParseNode {
             children: vec![],
             rule: Type::from_rule(rule)?,
@@ -223,24 +224,24 @@ impl ParseNodes {
 }
 
 /// A wrapper over the pair to keep its parent as well.
-struct StackParseNode<'n> {
-    parent: Option<usize>,
-    pair: Pair<'n, Rule>,
+pub(super) struct StackParseNode<'n> {
+    pub(super) parent: Option<usize>,
+    pub(super) pair: Pair<'n, Rule>,
 }
 
 impl<'n> StackParseNode<'n> {
     /// Constructor
-    fn new(pair: Pair<'n, Rule>, parent: Option<usize>) -> Self {
+    pub(super) fn new(pair: Pair<'n, Rule>, parent: Option<usize>) -> Self {
         StackParseNode { parent, pair }
     }
 }
 
 /// AST is a tree build on the top of the parse nodes arena.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct AbstractSyntaxTree {
     pub(in crate::frontend::sql) nodes: ParseNodes,
     pub(in crate::frontend::sql) top: Option<usize>,
-    map: HashMap<usize, Vec<usize>>,
+    pub(super) map: HashMap<usize, Vec<usize>>,
 }
 
 #[allow(dead_code)]
@@ -276,70 +277,9 @@ impl AbstractSyntaxTree {
         Ok(ast)
     }
 
-    /// Constructor.
-    /// Builds a tree (nodes are in postorder reverse).
-    ///
-    /// # Errors
-    /// - Failed to parse an SQL query.
-    pub fn new(query: &str) -> Result<Self, QueryPlannerError> {
-        let mut ast = AbstractSyntaxTree {
-            nodes: ParseNodes::new(),
-            top: None,
-            map: HashMap::new(),
-        };
-
-        let mut command_pair = match ParseTree::parse(Rule::Command, query) {
-            Ok(p) => p,
-            Err(e) => {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Parsing error: {:?}",
-                    e
-                )))
-            }
-        };
-        let top_pair = command_pair.next().ok_or_else(|| {
-            QueryPlannerError::CustomError("No query found in the parse tree.".to_string())
-        })?;
-        let top = StackParseNode::new(top_pair, None);
-
-        let mut stack: Vec<StackParseNode> = vec![top];
-
-        while !stack.is_empty() {
-            let stack_node: StackParseNode = match stack.pop() {
-                Some(n) => n,
-                None => break,
-            };
-
-            // Save node to AST
-            let node = ast.nodes.push_node(ParseNode::new(
-                stack_node.pair.as_rule(),
-                Some(String::from(stack_node.pair.as_str())),
-            )?);
-
-            // Update parent's node children list
-            ast.nodes.add_child(stack_node.parent, node)?;
-            // Clean parent values (only leafs should contain data)
-            if let Some(parent) = stack_node.parent {
-                ast.nodes.update_value(parent, None)?;
-            }
-
-            for parse_child in stack_node.pair.into_inner() {
-                stack.push(StackParseNode::new(parse_child, Some(node)));
-            }
-        }
-
-        ast.set_top(0)?;
-
-        ast.transform_select()?;
-        ast.add_aliases_to_projection()?;
-        ast.build_ref_to_relation_map()?;
-
-        Ok(ast)
-    }
-
     /// `Select` node is not IR-friendly as it can have up to five children.
     /// Transform this node in IR-way (to a binary sub-tree).
-    fn transform_select(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn transform_select(&mut self) -> Result<(), QueryPlannerError> {
         let mut selects: HashSet<usize> = HashSet::new();
         for (id, node) in self.nodes.arena.iter().enumerate() {
             if node.rule == Type::Select {
@@ -645,7 +585,7 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - columns are invalid
-    fn add_aliases_to_projection(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn add_aliases_to_projection(&mut self) -> Result<(), QueryPlannerError> {
         let mut columns: Vec<(usize, Option<String>)> = Vec::new();
         // Collect projection columns and their names.
         for (_, node) in self.nodes.arena.iter().enumerate() {
@@ -731,7 +671,7 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - Projection, selection and inner join nodes don't have valid children.
-    fn build_ref_to_relation_map(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn build_ref_to_relation_map(&mut self) -> Result<(), QueryPlannerError> {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
         // Traverse relational nodes in Post Order and then enter their subtrees
         // and map expressions to relational nodes.

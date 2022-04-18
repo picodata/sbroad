@@ -172,5 +172,6 @@ impl Metadata for ClusterAppConfig {
     }
 }
 
+pub mod lru;
 #[cfg(test)]
 mod tests;

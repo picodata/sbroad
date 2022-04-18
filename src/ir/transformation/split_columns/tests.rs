@@ -1,5 +1,6 @@
 use crate::executor::engine::mock::MetadataMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_sql;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;

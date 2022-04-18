@@ -2,14 +2,16 @@ extern crate sbroad;
 
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
+use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::engine::cartridge::hash::str_to_bucket_id;
-use sbroad::executor::engine::{Engine, LocalMetadata};
+use sbroad::executor::engine::{Engine, LocalMetadata, Metadata, QueryCache};
 use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::result::{BoxExecuteFormat, Value};
 use sbroad::executor::vtable::VirtualTable;
-use sbroad::executor::Metadata;
+use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::relation::{Column, Table, Type};
 use sbroad::ir::value::Value as IrValue;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 #[allow(clippy::module_name_repetitions)]
@@ -205,10 +207,22 @@ impl MetadataMock {
 pub struct EngineMock {
     metadata: MetadataMock,
     virtual_tables: HashMap<usize, VirtualTable>,
+    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
 }
 
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
+    type Ast = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, AbstractSyntaxTree>;
+
+    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
+        Ok(())
+    }
+
+    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache> {
+        &self.query_cache
+    }
 
     fn metadata(&self) -> &Self::Metadata
     where
@@ -310,9 +324,11 @@ impl EngineMock {
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
+        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
         EngineMock {
             metadata: MetadataMock::new(),
             virtual_tables: HashMap::new(),
+            query_cache: RefCell::new(cache),
         }
     }
 

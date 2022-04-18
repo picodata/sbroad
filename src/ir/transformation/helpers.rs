@@ -3,6 +3,7 @@
 use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::Ast;
 use crate::ir::Plan;
 
 /// Compiles an SQL query to IR plan.

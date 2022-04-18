@@ -28,11 +28,13 @@ use std::collections::HashMap;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::Engine;
-pub use crate::executor::engine::Metadata;
+use crate::executor::engine::{Metadata, QueryCache};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::Ast;
 use crate::ir::Plan;
+use base64ct::{Base64, Encoding};
+use sha2::{Digest, Sha256};
 
 pub mod bucket;
 pub mod engine;
@@ -55,21 +57,21 @@ impl Plan {
 }
 
 /// Query to execute.
-pub struct Query<'a, T>
+pub struct Query<'a, E>
 where
-    T: Engine,
+    E: Engine,
 {
     /// Execution plan
     exec_plan: ExecutionPlan,
     /// Execution engine
-    engine: &'a T,
+    engine: &'a E,
     /// Bucket map
     bucket_map: HashMap<usize, Buckets>,
 }
 
-impl<'a, T> Query<'a, T>
+impl<'a, E> Query<'a, E>
 where
-    T: Engine,
+    E: Engine,
 {
     /// Create a new query.
     ///
@@ -78,11 +80,26 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(engine: &'a T, sql: &str) -> Result<Self, QueryPlannerError>
+    pub fn new(engine: &'a E, sql: &str) -> Result<Self, QueryPlannerError>
     where
-        T::Metadata: Metadata,
+        E::Metadata: Metadata,
+        E::QueryCache: QueryCache<String, E::Ast>,
+        E::Ast: Ast,
     {
-        let ast = AbstractSyntaxTree::new(sql)?;
+        let hash = Sha256::digest(sql.as_bytes());
+        let key = Base64::encode_string(&hash);
+
+        let query_cache = engine.query_cache_rc();
+        let mut ast = Ast::empty();
+        if let Some(cached_ast) = query_cache.borrow_mut().get(&key)? {
+            ast = cached_ast;
+        }
+        if ast.is_empty() {
+            query_cache.borrow_mut().put(key.clone(), Ast::new(sql)?)?;
+            ast = query_cache.borrow_mut().get(&key)?.ok_or_else(|| {
+                QueryPlannerError::CustomError("Failed to get AST from the query cache".to_string())
+            })?;
+        }
         let mut plan = ast.to_ir(engine.metadata())?;
         plan.optimize()?;
         let query = Query {

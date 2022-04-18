@@ -1,5 +1,6 @@
 //! Tarantool cartridge engine module.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -8,13 +9,15 @@ use tarantool::tlua::LuaFunction;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
-use crate::executor::Metadata;
+use crate::executor::{Metadata, QueryCache};
+use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::value::Value as IrValue;
 
 mod backend;
@@ -24,20 +27,33 @@ pub mod hash;
 /// Tarantool cartridge metadata and topology.
 #[derive(Debug, Clone)]
 pub struct Runtime {
+    // query_cache:
     metadata: ClusterAppConfig,
     bucket_count: usize,
+    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
 }
 
 /// Implements `Engine` interface for tarantool cartridge application
 impl Engine for Runtime {
     type Metadata = ClusterAppConfig;
+    type Ast = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, AbstractSyntaxTree>;
+
+    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
+        Ok(())
+    }
+
+    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache> {
+        &self.query_cache
+    }
 
     fn metadata(&self) -> &Self::Metadata {
         &self.metadata
     }
 
     fn clear_metadata(&mut self) {
-        self.metadata = ClusterAppConfig::new();
+        self.metadata = Self::Metadata::new();
     }
 
     fn is_metadata_empty(&self) -> bool {
@@ -161,9 +177,11 @@ impl Runtime {
     /// # Errors
     /// - Failed to detect the correct amount of buckets.
     pub fn new() -> Result<Self, QueryPlannerError> {
+        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY)?;
         let mut result = Runtime {
             metadata: ClusterAppConfig::new(),
             bucket_count: 0,
+            query_cache: RefCell::new(cache),
         };
 
         result.set_bucket_count()?;

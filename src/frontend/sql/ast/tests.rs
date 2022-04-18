@@ -1,4 +1,5 @@
 use super::*;
+use crate::frontend::Ast;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -148,7 +149,7 @@ fn invalid_query() {
         format!(
             "{} {} {} {}",
             r#"Parsing error: Error { variant: ParsingError { positives:"#,
-            r#"[Alias, Asterisk, Number, True, False, Null, Row], negatives: [] },"#,
+            r#"[Alias, Asterisk, Number, True, False, Null, Row, Parameter], negatives: [] },"#,
             r#"location: Pos(7), line_col: Pos((1, 8)), path: None, line: "select a frAm t","#,
             r#"continued_line: None }"#,
         ),

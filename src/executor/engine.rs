@@ -2,6 +2,7 @@
 //!
 //! Traits that define an execution engine interface.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
@@ -12,6 +13,28 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::value::Value as IrValue;
 
 pub mod cartridge;
+
+pub trait QueryCache<Key, Value> {
+    /// Builds a new cache with the given capacity.
+    ///
+    /// # Errors
+    /// - Capacity is not valid (zero).
+    fn new(capacity: usize) -> Result<Self, QueryPlannerError>
+    where
+        Self: Sized;
+
+    /// Returns a value from the cache.
+    ///
+    /// # Errors
+    /// - Internal error (should never happen).
+    fn get(&mut self, key: &Key) -> Result<Option<Value>, QueryPlannerError>;
+
+    /// Inserts a key-value pair into the cache.
+    ///
+    /// # Errors
+    /// - Internal error (should never happen).
+    fn put(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError>;
+}
 
 /// A metadata storage trait of the cluster.
 pub trait Metadata {
@@ -56,6 +79,8 @@ pub struct LocalMetadata {
 /// An execution engine trait.
 pub trait Engine {
     type Metadata;
+    type QueryCache;
+    type Ast;
 
     /// Return object of metadata storage
     fn metadata(&self) -> &Self::Metadata
@@ -79,6 +104,16 @@ pub trait Engine {
     /// # Errors
     /// - Failed to update metadata information (invalid metadata).
     fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError>;
+
+    /// Flush the query cache.
+    ///
+    /// # Errors
+    /// - Invalid capacity (zero).
+    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError>;
+
+    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache>
+    where
+        Self: Sized;
 
     /// Materialize result motion node to virtual table
     ///

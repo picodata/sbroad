@@ -3,6 +3,7 @@ use pretty_assertions::assert_eq;
 use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::Ast;
 
 #[test]
 fn one_table_projection() {
