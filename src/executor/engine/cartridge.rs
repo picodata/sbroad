@@ -36,53 +36,16 @@ impl Engine for Runtime {
         &self.metadata
     }
 
-    fn has_metadata(&self) -> bool {
-        self.metadata.is_empty()
-    }
-
     fn clear_metadata(&mut self) {
         self.metadata = ClusterAppConfig::new();
     }
 
     fn load_metadata(&mut self) -> Result<(), QueryPlannerError> {
-        let lua = tarantool::lua_state();
-
-        match lua.exec(
-            r#"
-    local cartridge = require('cartridge')
-
-    function get_schema()
-        return cartridge.get_schema()
-    end
-
-    function get_waiting_timeout()
-        local cfg = cartridge.config_get_readonly()
-
-        if cfg["executor_waiting_timeout"] == nil then
-            return 0
-        end
-
-        return cfg["executor_waiting_timeout"]
-    end
-
-
-    "#,
-        ) {
-            Ok(_) => {}
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("load metadata"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!(
-                    "Failed to load Lua code: {:?}",
-                    e
-                )));
-            }
+        if !&self.metadata.is_empty() {
+            return Ok(());
         }
+
+        let lua = tarantool::lua_state();
 
         let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
 

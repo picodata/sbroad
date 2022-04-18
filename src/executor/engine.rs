@@ -54,9 +54,6 @@ pub trait Engine {
     where
         Self: Sized;
 
-    /// Checking that metadata isn't empty
-    fn has_metadata(&self) -> bool;
-
     /// Clear metadata information
     fn clear_metadata(&mut self);
 

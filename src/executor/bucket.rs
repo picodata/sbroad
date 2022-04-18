@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use traversal::DftPost;
+
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
 use crate::executor::Query;
@@ -5,8 +9,6 @@ use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
-use std::collections::HashSet;
-use traversal::DftPost;
 
 /// Buckets are used to determine which nodes to send the query to.
 #[derive(Clone, Debug, PartialEq)]
@@ -58,7 +60,7 @@ impl Buckets {
     }
 }
 
-impl<T> Query<T>
+impl<'a, T> Query<'a, T>
 where
     T: Engine,
 {

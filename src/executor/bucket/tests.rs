@@ -14,8 +14,8 @@ fn simple_union_query() {
     ) as "t3"
     WHERE "id" = 1"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, query).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, query).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -35,8 +35,8 @@ fn simple_disjunction_in_union_query() {
     ) as "t3"
     WHERE ("id" = 1) OR ("id" = 100)"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, query).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, query).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -61,8 +61,8 @@ fn complex_shard_key_union_query() {
         WHERE "sys_op" > 1) AS "t3"
     WHERE "identification_number" = 1 AND "product_code" = '222'"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, query).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, query).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -90,8 +90,8 @@ fn union_complex_cond_query() {
         AND ("product_code" = '222'
         OR "product_code" = '111')"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, query).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, query).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -123,8 +123,8 @@ fn union_query_conjunction() {
     UNION ALL
     SELECT * FROM "test_space_hist" WHERE "id" = 2"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, query).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, query).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();

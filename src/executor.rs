@@ -23,6 +23,8 @@
 //! 5. Repeats step 3 till we are done with motion layers.
 //! 6. Executes the final IR top subtree and returns the final result to the user.
 
+use std::collections::HashMap;
+
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::Engine;
@@ -31,7 +33,6 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::Plan;
-use std::collections::HashMap;
 
 pub mod bucket;
 pub mod engine;
@@ -54,19 +55,19 @@ impl Plan {
 }
 
 /// Query to execute.
-pub struct Query<T>
+pub struct Query<'a, T>
 where
     T: Engine,
 {
     /// Execution plan
     exec_plan: ExecutionPlan,
     /// Execution engine
-    engine: T,
+    engine: &'a mut T,
     /// Bucket map
     bucket_map: HashMap<usize, Buckets>,
 }
 
-impl<T> Query<T>
+impl<'a, T> Query<'a, T>
 where
     T: Engine,
 {
@@ -77,7 +78,7 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(engine: T, sql: &str) -> Result<Self, QueryPlannerError>
+    pub fn new(engine: &'a mut T, sql: &str) -> Result<Self, QueryPlannerError>
     where
         T::Metadata: Metadata,
     {
@@ -93,6 +94,7 @@ where
     }
 
     /// Get the execution plan of the query.
+    #[must_use]
     pub fn get_exec_plan(&self) -> &ExecutionPlan {
         &self.exec_plan
     }

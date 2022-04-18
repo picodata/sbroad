@@ -57,7 +57,9 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
     let args = args.into_struct::<BucketCalcArgs>().unwrap();
 
     QUERY_ENGINE.with(|e| {
-        let result = e.clone().into_inner().determine_bucket_id(&args.rec);
+        let engine = &mut *e.borrow_mut();
+
+        let result = engine.determine_bucket_id(&args.rec);
         ctx.return_mp(&result).unwrap();
         0
     })
@@ -66,16 +68,11 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
 #[no_mangle]
 pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     QUERY_ENGINE.with(|e| {
-        let mut engine = e.clone().into_inner();
+        let engine = &mut *e.borrow_mut();
         // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
-        if engine.has_metadata() {
-            match engine.load_metadata() {
-                Ok(_) => *e.borrow_mut() = engine.clone(),
-                Err(e) => {
-                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-                }
-            };
-        }
+        if let Err(e) = engine.load_metadata() {
+            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+        };
 
         // Closure for more concise error propagation from calls nested in the bucket calculation
         let propagate_err = || -> Result<u64, QueryPlannerError> {
@@ -90,7 +87,7 @@ pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionAr
                     acc.push_str(s.as_str());
                     acc
                 });
-            Ok(e.clone().into_inner().determine_bucket_id(fk.as_str()))
+            Ok(engine.determine_bucket_id(fk.as_str()))
         };
 
         match propagate_err() {
@@ -115,17 +112,12 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
-    QUERY_ENGINE.with(|s| {
-        let mut engine = s.clone().into_inner();
+    QUERY_ENGINE.with(|e| {
+        let engine = &mut *e.borrow_mut();
         // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
-        if engine.has_metadata() {
-            match engine.load_metadata() {
-                Ok(_) => *s.borrow_mut() = engine.clone(),
-                Err(e) => {
-                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-                }
-            };
-        }
+        if let Err(e) = engine.load_metadata() {
+            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+        };
 
         let mut query = match Query::new(engine, args.query.as_str()) {
             Ok(q) => q,

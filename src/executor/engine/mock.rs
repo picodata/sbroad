@@ -157,10 +157,6 @@ impl Engine for EngineMock {
         &self.metadata
     }
 
-    fn has_metadata(&self) -> bool {
-        self.metadata.tables.is_empty()
-    }
-
     fn clear_metadata(&mut self) {
         self.metadata.tables.clear();
     }
