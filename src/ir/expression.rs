@@ -400,7 +400,8 @@ impl Plan {
             ));
         };
 
-        let mut col_names_set: HashSet<&str> = HashSet::with_capacity(col_names.len());
+        let mut col_names_set: HashSet<&str, RandomState> =
+            HashSet::with_capacity_and_hasher(col_names.len(), RandomState::new());
         for col_name in col_names {
             col_names_set.insert(col_name);
         }
