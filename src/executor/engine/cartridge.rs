@@ -40,49 +40,59 @@ impl Engine for Runtime {
         self.metadata = ClusterAppConfig::new();
     }
 
-    fn load_metadata(&mut self) -> Result<(), QueryPlannerError> {
+    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
+        if self.metadata.is_empty() {
+            let lua = tarantool::lua_state();
+
+            let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
+
+            let res: String = match get_schema.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting schema"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+            return Ok(Some(res));
+        }
+        Ok(None)
+    }
+
+    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError> {
+        if self.metadata.is_empty() {
+            let lua = tarantool::lua_state();
+            let timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
+
+            let waiting_timeout: u64 = match timeout.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting waiting timeout"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+            return Ok(Some(waiting_timeout));
+        }
+        Ok(None)
+    }
+
+    fn update_metadata(&mut self, schema: String, timeout: u64) -> Result<(), QueryPlannerError> {
         if !&self.metadata.is_empty() {
             return Ok(());
         }
-
-        let lua = tarantool::lua_state();
-
-        let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
-
-        let res: String = match get_schema.call() {
-            Ok(res) => res,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("getting schema"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
-
-        self.metadata.load_schema(&res)?;
-
-        let timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
-
-        let waiting_timeout: u64 = match timeout.call() {
-            Ok(res) => res,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("getting waiting timeout"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
-
-        self.metadata.set_exec_waiting_timeout(waiting_timeout);
-
+        self.metadata.load_schema(&schema)?;
+        self.metadata.set_exec_waiting_timeout(timeout);
         Ok(())
     }
 

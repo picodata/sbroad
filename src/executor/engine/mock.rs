@@ -161,7 +161,15 @@ impl Engine for EngineMock {
         self.metadata.tables.clear();
     }
 
-    fn load_metadata(&mut self) -> Result<(), QueryPlannerError> {
+    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
+        Ok(Some("".to_string()))
+    }
+
+    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError> {
+        Ok(Some(0))
+    }
+
+    fn update_metadata(&mut self, _schema: String, _timeout: u64) -> Result<(), QueryPlannerError> {
         self.metadata = MetadataMock::new();
         Ok(())
     }

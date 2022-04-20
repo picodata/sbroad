@@ -57,11 +57,23 @@ pub trait Engine {
     /// Clear metadata information
     fn clear_metadata(&mut self);
 
-    /// Load metadate information to storage
+    /// Retrieve cluster schema.
     ///
     /// # Errors
-    /// - Failed to load metadata.
-    fn load_metadata(&mut self) -> Result<(), QueryPlannerError>;
+    /// - Failed to retrieve cluster schema.
+    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError>;
+
+    /// Retrieve timeout to wait for execution completion.
+    ///
+    /// # Errors
+    /// - Failed to get timeout from the configuration.
+    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError>;
+
+    /// Update cached metadata information.
+    ///
+    /// # Errors
+    /// - Failed to update metadata information (invalid metadata).
+    fn update_metadata(&mut self, schema: String, timeout: u64) -> Result<(), QueryPlannerError>;
 
     /// Materialize result motion node to virtual table
     ///

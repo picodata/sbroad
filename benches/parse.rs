@@ -227,8 +227,8 @@ fn query1() {
             ) AS "t3"
         WHERE
             "reestrid" = 452842574"#;
-    let engine = EngineMock::new();
-    let mut query = Query::new(engine, sql).unwrap();
+    let mut engine = EngineMock::new();
+    let mut query = Query::new(&mut engine, sql).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     query.bucket_discovery(top_id).unwrap();
     query.get_exec_plan().subtree_as_sql(top_id).unwrap();

@@ -67,12 +67,12 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
 
 #[no_mangle]
 pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    let ret_code = load_metadata();
+    if ret_code != 0 {
+        return ret_code;
+    }
     QUERY_ENGINE.with(|e| {
         let engine = &mut *e.borrow_mut();
-        // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
-        if let Err(e) = engine.load_metadata() {
-            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-        };
 
         // Closure for more concise error propagation from calls nested in the bucket calculation
         let propagate_err = || -> Result<u64, QueryPlannerError> {
@@ -112,13 +112,12 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
     let args = args.into_struct::<Args>().unwrap();
 
+    let ret_code = load_metadata();
+    if ret_code != 0 {
+        return ret_code;
+    }
     QUERY_ENGINE.with(|e| {
         let engine = &mut *e.borrow_mut();
-        // Update cartridge schema after cache invalidation by calling `apply_config()` in lua code.
-        if let Err(e) = engine.load_metadata() {
-            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-        };
-
         let mut query = match Query::new(engine, args.query.as_str()) {
             Ok(q) => q,
             Err(e) => {
@@ -142,4 +141,38 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
         }
     })
+}
+
+fn load_metadata() -> c_int {
+    // Tarantool can yield in the middle of a current closure,
+    // so we can hold only an immutable reference to the engine.
+    let mut schema: Option<String> = None;
+    let mut timeout: Option<u64> = None;
+    QUERY_ENGINE.with(|e| {
+        let engine = &*e.borrow();
+        match (engine.get_schema(), engine.get_timeout()) {
+            (Ok(s), Ok(t)) => {
+                schema = s;
+                timeout = t;
+                0
+            }
+            (Err(e), _) | (_, Err(e)) => {
+                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+            }
+        }
+    });
+
+    // Tarantool never yields here, so it is possible to hold
+    // a mutable reference to the engine.
+    if let (Some(schema), Some(timeout)) = (schema, timeout) {
+        QUERY_ENGINE.with(|e| {
+            let engine = &mut *e.borrow_mut();
+            if let Err(e) = engine.update_metadata(schema, timeout) {
+                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+            }
+            0
+        });
+    }
+
+    0
 }
