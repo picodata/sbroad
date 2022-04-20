@@ -152,10 +152,10 @@ print("loading data was started")
 local storage1 = nb.connect("admin:app-cluster-cookie@localhost:3302")
 local storage2 = nb.connect("admin:app-cluster-cookie@localhost:3304")
 
-storage1:eval("return box.space.VEHICLE_ACTUAL:truncate();")
-storage1:eval("return box.space.VEHICLE_HISTORY:truncate();")
-storage2:eval("return box.space.VEHICLE_ACTUAL:truncate();")
-storage2:eval("return box.space.VEHICLE_HISTORY:truncate();")
+storage1:eval("return box.space.vehicle_actual:truncate();")
+storage1:eval("return box.space.vehicle_history:truncate();")
+storage2:eval("return box.space.vehicle_actual:truncate();")
+storage2:eval("return box.space.vehicle_history:truncate();")
 
 for i = 1, record_count, 1 do
     api:call("insert_record", {
