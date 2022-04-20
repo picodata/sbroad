@@ -32,7 +32,7 @@ impl Args {
     }
 
     fn get_params(&self) -> Result<Vec<IrValue>, QueryPlannerError> {
-        let mut values: Vec<IrValue> = Vec::new();
+        let mut values = Vec::new();
         for param in &self.params {
             values.push(param.clone().as_ir_value()?);
         }
@@ -76,7 +76,9 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
     QUERY_ENGINE.with(|e| {
         let engine = &mut *e.borrow_mut();
 
-        let result = engine.determine_bucket_id(&args.rec);
+        let params = IrValue::string_from_str(&args.rec);
+        let result = engine.determine_bucket_id(&[&params]);
+
         ctx.return_mp(&result).unwrap();
         0
     })
@@ -96,15 +98,9 @@ pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionAr
             // Deserialization error
             let bca = BucketCalcArgsDict::try_from(args)?;
             // Error in filtering bucket calculation arguments by sharding keys
-            let fk = engine
-                .extract_sharding_keys(bca.space, bca.rec)?
-                .into_iter()
-                .fold(String::new(), |mut acc, v| {
-                    let s: String = v.into();
-                    acc.push_str(s.as_str());
-                    acc
-                });
-            Ok(engine.determine_bucket_id(fk.as_str()))
+            let tuple = engine.extract_sharding_keys(bca.space, &bca.rec)?;
+
+            Ok(engine.determine_bucket_id(&tuple))
         };
 
         match propagate_err() {

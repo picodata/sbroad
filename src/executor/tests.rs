@@ -16,7 +16,9 @@ fn shard_query() {
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket = query.engine.determine_bucket_id("1");
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
         .rows
         .push(vec![
@@ -44,7 +46,8 @@ fn shard_union_query() {
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket = query.engine.determine_bucket_id("1");
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
         .rows
         .push(vec![
@@ -74,7 +77,12 @@ fn map_reduce_query() {
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket = query.engine.determine_bucket_id(&["1", "457"].join(""));
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param457 = IrValue::string_from_str("457");
+
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param457]);
+
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(
@@ -104,8 +112,13 @@ fn linker_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket2 = query.engine.determine_bucket_id("2");
-    let bucket3 = query.engine.determine_bucket_id("3");
+
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+
+    let param3 = IrValue::number_from_str("3").unwrap();
+    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
+
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket3)),
@@ -154,8 +167,13 @@ fn union_linker_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket2 = query.engine.determine_bucket_id("2");
-    let bucket3 = query.engine.determine_bucket_id("3");
+
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+
+    let param3 = IrValue::number_from_str("3").unwrap();
+    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
+
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket3)),
@@ -234,7 +252,9 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket2 = query.engine.determine_bucket_id("2");
+
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -302,7 +322,9 @@ fn join_linker2_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket1 = query.engine.determine_bucket_id("1");
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
@@ -354,7 +376,9 @@ fn join_linker3_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket1 = query.engine.determine_bucket_id("1");
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
@@ -405,8 +429,12 @@ fn join_linker4_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket1 = query.engine.determine_bucket_id("1");
-    let bucket2 = query.engine.determine_bucket_id("2");
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
+
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -457,8 +485,11 @@ fn anonymous_col_index_test() {
     let result = query.exec().unwrap();
 
     let mut expected = BoxExecuteFormat::new();
-    let bucket2 = query.engine.determine_bucket_id("2");
-    let bucket3 = query.engine.determine_bucket_id("3");
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+
+    let param3 = IrValue::number_from_str("3").unwrap();
+    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket3)),

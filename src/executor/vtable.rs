@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::vec;
 
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +8,10 @@ use crate::ir::relation::Column;
 use crate::ir::value::{AsIrVal, Value};
 
 type VTableTuple = Vec<Value>;
+type ShardingKey = Vec<Value>;
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+struct ShardingRecord(ShardingKey, usize);
 
 /// Result tuple storage, created by the executor. All tuples
 /// have a distribution key.
@@ -19,9 +23,8 @@ pub struct VirtualTable {
     tuples: Vec<VTableTuple>,
     /// Unique table name (we need to generate it ourselves).
     name: Option<String>,
-    /// Tuples grouped by the corresponding shards.
-    /// Value `HashSet` contains indexes from the `tuples` attribute
-    hashing: HashMap<String, HashSet<usize>>,
+    /// Unique distribution keys of virtual table tuples
+    distribution_key: Option<Key>,
 }
 
 impl Default for VirtualTable {
@@ -37,7 +40,7 @@ impl VirtualTable {
             columns: vec![],
             tuples: vec![],
             name: None,
-            hashing: HashMap::new(),
+            distribution_key: None,
         }
     }
 
@@ -82,30 +85,34 @@ impl VirtualTable {
     }
 
     /// Get tuples was distributed by sharding keys
-    #[must_use]
-    pub fn get_tuple_distribution(&self) -> &HashMap<String, HashSet<usize>> {
-        &self.hashing
+    ///
+    /// # Errors
+    /// - Distribution key not found
+    pub fn get_tuple_distribution(&self) -> Result<Vec<Vec<&Value>>, QueryPlannerError> {
+        let mut result = vec![];
+        for tuple in &self.tuples {
+            let mut shard_key_tuple = vec![];
+            if let Some(k) = &self.distribution_key {
+                for part in &k.positions {
+                    if let Some(p) = tuple.get(*part) {
+                        shard_key_tuple.push(p);
+                    }
+                }
+
+                result.push(shard_key_tuple);
+            } else {
+                return Err(QueryPlannerError::CustomError(
+                    "Distribution key not found".into(),
+                ));
+            }
+        }
+
+        Ok(result)
     }
 
     /// Distribute tuples by sharding key columns
-    pub fn hashing_tuple_by_shard(&mut self, sharding_key: &Key) {
-        for (tid, tuple) in self.tuples.iter().enumerate() {
-            let mut key = String::new();
-            for part in &sharding_key.positions {
-                if let Some(p) = tuple.get(*part) {
-                    key.push_str(p.to_string().as_str());
-                }
-            }
-
-            match self.hashing.get_mut(&key) {
-                None => {
-                    self.hashing.insert(key, HashSet::from([tid]));
-                }
-                Some(item) => {
-                    item.insert(tid);
-                }
-            };
-        }
+    pub fn set_distribution(&mut self, sharding_key: &Key) {
+        self.distribution_key = Some(sharding_key.clone());
     }
 
     /// Set vtable alias name

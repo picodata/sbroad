@@ -1,9 +1,12 @@
 extern crate sbroad;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
-use sbroad::executor::engine::cartridge::hash::str_to_bucket_id;
+use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{Engine, LocalMetadata, Metadata, QueryCache};
 use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::result::{BoxExecuteFormat, Value};
@@ -12,8 +15,6 @@ use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::relation::{Column, Table, Type};
 use sbroad::ir::value::Value as IrValue;
 use sbroad::ir::Plan;
-use std::cell::RefCell;
-use std::collections::HashMap;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -295,24 +296,24 @@ impl Engine for EngineMock {
         Ok(result)
     }
 
-    fn extract_sharding_keys(
-        &self,
+    fn extract_sharding_keys<'engine, 'rec>(
+        &'engine self,
         space: String,
-        args: HashMap<String, IrValue>,
-    ) -> Result<Vec<IrValue>, QueryPlannerError> {
+        args: &'rec HashMap<String, IrValue>,
+    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError> {
         Ok(self
             .metadata()
             .get_sharding_key_by_space(&space)
             .unwrap()
             .iter()
-            .fold(Vec::new(), |mut acc: Vec<IrValue>, &v| {
-                acc.push(args.get(v).unwrap().clone());
+            .fold(Vec::new(), |mut acc: Vec<&IrValue>, &v| {
+                acc.push(args.get(v).unwrap());
                 acc
             }))
     }
 
-    fn determine_bucket_id(&self, s: &str) -> u64 {
-        str_to_bucket_id(s, self.metadata.bucket_count)
+    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64 {
+        bucket_id_by_tuple(s, self.metadata.bucket_count)
     }
 }
 

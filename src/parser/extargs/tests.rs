@@ -16,15 +16,7 @@ fn bucket_calc_args() {
             .cloned()
             .collect(),
     };
-    let filtered_args = engine
-        .extract_sharding_keys(args.space, args.rec)
-        .unwrap()
-        .into_iter()
-        .fold(String::new(), |mut acc, v| {
-            let s: String = v.into();
-            acc.push_str(s.as_str());
-            acc
-        });
+    let filtered_args = engine.extract_sharding_keys(args.space, &args.rec).unwrap();
 
     assert_eq!(
         engine.determine_bucket_id(&filtered_args),
@@ -49,15 +41,8 @@ fn bucket_calc_args() {
         .cloned()
         .collect(),
     };
-    let filtered_args = engine
-        .extract_sharding_keys(args.space, args.rec)
-        .unwrap()
-        .into_iter()
-        .fold(String::new(), |mut acc, v| {
-            let s: String = v.into();
-            acc.push_str(s.as_str());
-            acc
-        });
+    let filtered_args = engine.extract_sharding_keys(args.space, &args.rec).unwrap();
+
     assert_eq!(
         engine.determine_bucket_id(&filtered_args),
         str_to_bucket_id("93312fff100af", 10000)

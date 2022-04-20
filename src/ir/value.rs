@@ -1,10 +1,13 @@
 //! Value module.
 
-use crate::errors::QueryPlannerError;
-use decimal::d128;
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+
+use decimal::d128;
+use serde::{Deserialize, Serialize};
+
+use crate::errors::QueryPlannerError;
+use crate::executor::engine::cartridge::hash::ToHashString;
 
 /// SQL uses three-valued logic. We need to implement
 /// it to compare values with each other.
@@ -103,6 +106,17 @@ impl Value {
                 Value::Null => Trivalent::Unknown,
                 Value::String(o) => s.eq(o).into(),
             },
+        }
+    }
+}
+
+impl ToHashString for Value {
+    fn to_hash_string(&self) -> String {
+        match self {
+            Value::Boolean(v) => v.to_string(),
+            Value::Number(v) => v.to_string(),
+            Value::String(v) => v.to_string(),
+            Value::Null => "NULL".to_string(),
         }
     }
 }

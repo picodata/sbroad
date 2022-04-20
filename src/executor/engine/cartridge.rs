@@ -11,7 +11,6 @@ use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
-use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
@@ -20,6 +19,8 @@ use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
+
+use self::hash::bucket_id_by_tuple;
 
 mod backend;
 pub mod cache;
@@ -172,18 +173,18 @@ impl Engine for Runtime {
     /// Extract from the `HashMap<String, Value>` only those values that
     /// correspond to the fields of the sharding key.
     /// Returns the values of sharding keys in ordered form
-    fn extract_sharding_keys(
-        &self,
+    fn extract_sharding_keys<'engine, 'rec>(
+        &'engine self,
         space: String,
-        rec: HashMap<String, IrValue>,
-    ) -> Result<Vec<IrValue>, QueryPlannerError> {
+        rec: &'rec HashMap<String, IrValue>,
+    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError> {
         self.metadata()
             .get_sharding_key_by_space(space.as_str())?
             .iter()
-            .try_fold(Vec::new(), |mut acc: Vec<IrValue>, &val| {
+            .try_fold(Vec::new(), |mut acc: Vec<&IrValue>, &val| {
                 match rec.get(val) {
                     Some(value) => {
-                        acc.push(value.clone());
+                        acc.push(value);
                         Ok(acc)
                     }
                     None => Err(QueryPlannerError::CustomError(format!(
@@ -195,8 +196,8 @@ impl Engine for Runtime {
     }
 
     /// Calculate bucket for a key.
-    fn determine_bucket_id(&self, s: &str) -> u64 {
-        str_to_bucket_id(s, self.bucket_count)
+    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count)
     }
 }
 

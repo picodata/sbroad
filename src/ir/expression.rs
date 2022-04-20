@@ -157,6 +157,20 @@ impl Expression {
         ))
     }
 
+    /// Gets reference value from const node
+    ///
+    /// # Errors
+    /// - node isn't constant type
+    pub fn get_const_value_ref(&self) -> Result<&Value, QueryPlannerError> {
+        if let Expression::Constant { value } = self {
+            return Ok(value);
+        }
+
+        Err(QueryPlannerError::CustomError(
+            "Node isn't const type".into(),
+        ))
+    }
+
     /// The node is a row expression.
     #[must_use]
     pub fn is_row(&self) -> bool {

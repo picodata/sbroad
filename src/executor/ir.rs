@@ -44,7 +44,7 @@ impl ExecutionPlan {
     ) -> Result<(), QueryPlannerError> {
         let mut motion_result = vtable;
         if let MotionPolicy::Segment(shard_key) = &self.get_motion_policy(motion_id)? {
-            motion_result.hashing_tuple_by_shard(shard_key);
+            motion_result.set_distribution(shard_key);
         }
 
         let mut virtual_tables = match &self.vtables {

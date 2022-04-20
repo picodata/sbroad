@@ -9,6 +9,7 @@ use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::value::Value;
 
 /// Buckets are used to determine which nodes to send the query to.
 #[derive(Clone, Debug, PartialEq)]
@@ -104,10 +105,10 @@ where
                     // tuple with the same distribution as the left side.
                     if let Some(motion_id) = ir_plan.get_motion_from_row(right_id)? {
                         let virtual_table = self.exec_plan.get_motion_vtable(motion_id)?;
-                        let hashed_keys = virtual_table.get_tuple_distribution().keys();
+                        let hashed_keys = virtual_table.get_tuple_distribution()?;
                         let mut bucket_ids: HashSet<u64> = HashSet::new();
-                        for bucket_str in hashed_keys {
-                            bucket_ids.insert(self.engine.determine_bucket_id(bucket_str));
+                        for shard_key in hashed_keys {
+                            bucket_ids.insert(self.engine.determine_bucket_id(&shard_key));
                         }
                         if !bucket_ids.is_empty() {
                             buckets.push(Buckets::new_filtered(bucket_ids));
@@ -117,7 +118,7 @@ where
                     // The right side is a regular row with constants
                     // on the positions of the left keys (if we are lucky).
                     for key in keys {
-                        let mut values: Vec<String> = Vec::new();
+                        let mut values: Vec<&Value> = Vec::new();
                         for position in &key.positions {
                             let right_column_id =
                                 *right_columns.get(*position).ok_or_else(|| {
@@ -128,7 +129,7 @@ where
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;
                             if let Expression::Constant { .. } = right_column_expr {
-                                values.push(right_column_expr.get_const_value()?.into());
+                                values.push(right_column_expr.get_const_value_ref()?);
                             } else {
                                 // One of the columns is not a constant. Skip this key.
                                 values = Vec::new();
@@ -136,8 +137,7 @@ where
                             }
                         }
                         if !values.is_empty() {
-                            let bucket_str = values.join("");
-                            let bucket = self.engine.determine_bucket_id(&bucket_str);
+                            let bucket = self.engine.determine_bucket_id(&values);
                             buckets.push(Buckets::new_filtered([bucket].into()));
                         }
                     }
@@ -209,8 +209,8 @@ where
                     MotionPolicy::Segment(_) => {
                         let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
                         let mut buckets: HashSet<u64> = HashSet::new();
-                        for key in virtual_table.get_tuple_distribution().keys() {
-                            let bucket = self.engine.determine_bucket_id(key);
+                        for key in virtual_table.get_tuple_distribution()? {
+                            let bucket = self.engine.determine_bucket_id(&key);
                             buckets.insert(bucket);
                         }
                         self.bucket_map

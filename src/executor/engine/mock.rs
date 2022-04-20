@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
-use crate::executor::engine::cartridge::hash::str_to_bucket_id;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
@@ -14,6 +13,8 @@ use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
+
+use super::cartridge::hash::bucket_id_by_tuple;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -236,24 +237,24 @@ impl Engine for EngineMock {
         Ok(result)
     }
 
-    fn extract_sharding_keys(
-        &self,
+    fn extract_sharding_keys<'engine, 'rec>(
+        &'engine self,
         space: String,
-        args: HashMap<String, IrValue>,
-    ) -> Result<Vec<IrValue>, QueryPlannerError> {
+        args: &'rec HashMap<String, IrValue>,
+    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError> {
         Ok(self
             .metadata()
             .get_sharding_key_by_space(&space)
             .unwrap()
             .iter()
-            .fold(Vec::new(), |mut acc: Vec<IrValue>, &v| {
-                acc.push(args.get(v).unwrap().clone());
+            .fold(Vec::new(), |mut acc: Vec<&IrValue>, &v| {
+                acc.push(args.get(v).unwrap());
                 acc
             }))
     }
 
-    fn determine_bucket_id(&self, s: &str) -> u64 {
-        str_to_bucket_id(s, self.metadata.bucket_count)
+    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64 {
+        bucket_id_by_tuple(s, self.metadata.bucket_count)
     }
 }
 

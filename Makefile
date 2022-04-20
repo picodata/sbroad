@@ -13,6 +13,9 @@ endif
 build:
 	cargo build --release
 
+bench_check:
+	cargo bench --no-run
+
 integration_test_app:
 	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
 
@@ -27,4 +30,4 @@ build_test_app:
 	cd test_app && cartridge build
 	cp -rf target/release/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
-test_all: test build build_test_app integration_test_app
+test_all: test bench_check build build_test_app integration_test_app

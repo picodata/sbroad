@@ -22,7 +22,7 @@ fn virtual_table() {
         }],
         tuples: vec![vec![Value::number_from_str("1").unwrap()]],
         name: Some(String::from("test")),
-        hashing: HashMap::new(),
+        distribution_key: None,
     };
 
     assert_eq!(expected, vtable)

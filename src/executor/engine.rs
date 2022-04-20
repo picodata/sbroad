@@ -144,14 +144,14 @@ pub trait Engine {
     /// # Errors
     /// - args does not contains all sharding keys
     /// - internal metadata errors
-    fn extract_sharding_keys(
-        &self,
+    fn extract_sharding_keys<'engine, 'rec>(
+        &'engine self,
         space: String,
-        args: HashMap<String, IrValue>,
-    ) -> Result<Vec<IrValue>, QueryPlannerError>;
+        args: &'rec HashMap<String, IrValue>,
+    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value
-    fn determine_bucket_id(&self, s: &str) -> u64;
+    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64;
 }
 
 #[cfg(test)]
