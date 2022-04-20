@@ -136,51 +136,76 @@ impl Plan {
         Ok(nodes)
     }
 
-    /// Get a sub-query from the row node (if it points to sub-query)
+    /// Get a single sub-query from the row node.
     ///
     /// # Errors
-    /// - row contains multiple sub-queries (we don't support this at the moment)
-    /// - `relational_map` is not initialized
+    /// - Row node is not of a row type
+    /// There are more than one sub-queries in the row node.
     pub fn get_sub_query_from_row_node(
         &self,
         row_id: usize,
     ) -> Result<Option<usize>, QueryPlannerError> {
+        let rel_ids = self.get_relational_from_row_nodes(row_id)?;
+        self.get_sub_query_among_rel_nodes(&rel_ids)
+    }
+
+    /// Get a single sub-query from among the list of relational nodes.
+    ///
+    /// # Errors
+    /// - Some of the nodes are not relational
+    /// - There are more than one sub-query
+    pub fn get_sub_query_among_rel_nodes(
+        &self,
+        rel_nodes: &HashSet<usize>,
+    ) -> Result<Option<usize>, QueryPlannerError> {
         let mut sq_set: HashSet<usize> = HashSet::new();
-        let rel_nodes = self.get_relational_from_row_nodes(row_id)?;
         for rel_id in rel_nodes {
-            if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(rel_id)? {
-                sq_set.insert(rel_id);
+            if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(*rel_id)? {
+                sq_set.insert(*rel_id);
             }
         }
         match sq_set.len().cmp(&1) {
             Ordering::Equal => sq_set.iter().next().map_or_else(
                 || {
                     Err(QueryPlannerError::CustomError(format!(
-                        "Failed to get the first sub-query node from the row: {:?}.",
-                        self.get_expression_node(row_id)?
+                        "Failed to get the first sub-query node from the list of relational nodes: {:?}.",
+                        rel_nodes
                     )))
                 },
                 |sq_id| Ok(Some(*sq_id)),
             ),
             Ordering::Less => Ok(None),
             Ordering::Greater => Err(QueryPlannerError::CustomError(format!(
-                "Found multiple sub-queries in a single row: {:?}.",
-                self.get_expression_node(row_id)?
+                "Found multiple sub-queries in a list of relational nodes: {:?}.",
+                rel_nodes
             ))),
         }
+    }
+
+    /// Extract a motion node id from the row node
+    ///
+    /// # Errors
+    /// - Row node is not of a row type
+    /// - There are more than one motion nodes in the row node
+    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, QueryPlannerError> {
+        let rel_nodes = self.get_relational_from_row_nodes(node_id)?;
+        self.get_motion_among_rel_nodes(&rel_nodes)
     }
 
     /// Extract motion node id from row node
     ///
     /// # Errors
-    /// - invalid node
-    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, QueryPlannerError> {
-        let rel_nodes = self.get_relational_from_row_nodes(node_id)?;
+    /// - Some of the nodes are not relational
+    /// - There are more than one motion node
+    pub fn get_motion_among_rel_nodes(
+        &self,
+        rel_nodes: &HashSet<usize>,
+    ) -> Result<Option<usize>, QueryPlannerError> {
         let mut motion_set: HashSet<usize> = HashSet::new();
 
         for child in rel_nodes {
-            if self.get_relation_node(child)?.is_motion() {
-                motion_set.insert(child);
+            if self.get_relation_node(*child)?.is_motion() {
+                motion_set.insert(*child);
             }
         }
 
@@ -195,7 +220,7 @@ impl Plan {
             }
             Ordering::Less => Ok(None),
             Ordering::Greater => Err(QueryPlannerError::CustomError(
-                "Node must contains only once motion".into(),
+                "Node must contain only a single motion".into(),
             )),
         }
     }

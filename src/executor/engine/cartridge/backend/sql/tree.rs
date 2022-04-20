@@ -522,7 +522,11 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Row { list, .. } => {
-                    if let Some(motion_id) = ir_plan.get_motion_from_row(id)? {
+                    // In projections with a huge amount of columns it can be
+                    // very expensive to retrieve corresponding relational nodes.
+                    let rel_ids = ir_plan.get_relational_from_row_nodes(id)?;
+
+                    if let Some(motion_id) = ir_plan.get_motion_among_rel_nodes(&rel_ids)? {
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?.clone();
                         if vtable.get_alias().is_none() {
@@ -540,7 +544,7 @@ impl<'p> SyntaxPlan<'p> {
                         }
                     }
 
-                    if let Some(sq_id) = ir_plan.get_sub_query_from_row_node(id)? {
+                    if let Some(sq_id) = ir_plan.get_sub_query_among_rel_nodes(&rel_ids)? {
                         // Replace current row with the referred sub-query
                         // (except the case when sub-query is located in the FROM clause).
                         if ir_plan.is_additional_child(sq_id)? {
