@@ -221,6 +221,10 @@ impl Engine for EngineMock {
         self.metadata.tables.clear();
     }
 
+    fn is_metadata_empty(&self) -> bool {
+        self.metadata.tables.is_empty()
+    }
+
     fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
         Ok(Some("".to_string()))
     }

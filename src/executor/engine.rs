@@ -57,6 +57,9 @@ pub trait Engine {
     /// Clear metadata information
     fn clear_metadata(&mut self);
 
+    /// Check if the cache is empty.
+    fn is_metadata_empty(&self) -> bool;
+
     /// Retrieve cluster schema.
     ///
     /// # Errors

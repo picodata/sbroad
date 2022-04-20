@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
@@ -144,7 +145,7 @@ impl MetadataMock {
 #[derive(Debug, Clone)]
 pub struct EngineMock {
     metadata: MetadataMock,
-    virtual_tables: HashMap<usize, VirtualTable>,
+    virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
 }
 
 impl Engine for EngineMock {
@@ -159,6 +160,10 @@ impl Engine for EngineMock {
 
     fn clear_metadata(&mut self) {
         self.metadata.tables.clear();
+    }
+
+    fn is_metadata_empty(&self) -> bool {
+        self.metadata.tables.is_empty()
     }
 
     fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
@@ -180,7 +185,7 @@ impl Engine for EngineMock {
         motion_node_id: usize,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError> {
-        if let Some(virtual_table) = self.virtual_tables.get(&motion_node_id) {
+        if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
             Ok(virtual_table.clone())
         } else {
             Err(QueryPlannerError::CustomError(
@@ -248,13 +253,13 @@ impl EngineMock {
     pub fn new() -> Self {
         EngineMock {
             metadata: MetadataMock::new(),
-            virtual_tables: HashMap::new(),
+            virtual_tables: RefCell::new(HashMap::new()),
         }
     }
 
     #[allow(dead_code)]
-    pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
-        self.virtual_tables.insert(id, table);
+    pub fn add_virtual_table(&self, id: usize, table: VirtualTable) {
+        self.virtual_tables.borrow_mut().insert(id, table);
     }
 }
 

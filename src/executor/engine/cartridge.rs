@@ -40,6 +40,10 @@ impl Engine for Runtime {
         self.metadata = ClusterAppConfig::new();
     }
 
+    fn is_metadata_empty(&self) -> bool {
+        self.metadata.is_empty()
+    }
+
     fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
         if self.metadata.is_empty() {
             let lua = tarantool::lua_state();
@@ -88,9 +92,6 @@ impl Engine for Runtime {
     }
 
     fn update_metadata(&mut self, schema: String, timeout: u64) -> Result<(), QueryPlannerError> {
-        if !&self.metadata.is_empty() {
-            return Ok(());
-        }
         self.metadata.load_schema(&schema)?;
         self.metadata.set_exec_waiting_timeout(timeout);
         Ok(())

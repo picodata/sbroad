@@ -72,7 +72,7 @@ pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionAr
         return ret_code;
     }
     QUERY_ENGINE.with(|e| {
-        let engine = &mut *e.borrow_mut();
+        let engine = &*e.borrow();
 
         // Closure for more concise error propagation from calls nested in the bucket calculation
         let propagate_err = || -> Result<u64, QueryPlannerError> {
@@ -117,7 +117,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
         return ret_code;
     }
     QUERY_ENGINE.with(|e| {
-        let engine = &mut *e.borrow_mut();
+        let engine = &*e.borrow();
         let mut query = match Query::new(engine, args.query.as_str()) {
             Ok(q) => q,
             Err(e) => {
@@ -162,16 +162,25 @@ fn load_metadata() -> c_int {
         }
     });
 
+    let mut is_metadata_empty = false;
+    QUERY_ENGINE.with(|e| {
+        let engine = &*e.borrow();
+        if engine.is_metadata_empty() {
+            is_metadata_empty = true;
+        }
+    });
     // Tarantool never yields here, so it is possible to hold
     // a mutable reference to the engine.
-    if let (Some(schema), Some(timeout)) = (schema, timeout) {
-        QUERY_ENGINE.with(|e| {
-            let engine = &mut *e.borrow_mut();
-            if let Err(e) = engine.update_metadata(schema, timeout) {
-                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
-            }
-            0
-        });
+    if is_metadata_empty {
+        if let (Some(schema), Some(timeout)) = (schema, timeout) {
+            QUERY_ENGINE.with(|e| {
+                let engine = &mut *e.borrow_mut();
+                if let Err(e) = engine.update_metadata(schema, timeout) {
+                    return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
+                }
+                0
+            });
+        }
     }
 
     0

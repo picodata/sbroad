@@ -62,7 +62,7 @@ where
     /// Execution plan
     exec_plan: ExecutionPlan,
     /// Execution engine
-    engine: &'a mut T,
+    engine: &'a T,
     /// Bucket map
     bucket_map: HashMap<usize, Buckets>,
 }
@@ -78,7 +78,7 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(engine: &'a mut T, sql: &str) -> Result<Self, QueryPlannerError>
+    pub fn new(engine: &'a T, sql: &str) -> Result<Self, QueryPlannerError>
     where
         T::Metadata: Metadata,
     {
