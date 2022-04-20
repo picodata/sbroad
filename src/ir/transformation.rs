@@ -66,8 +66,8 @@ impl Plan {
     }
 
     /// Transforms all expression subtrees in the plan
-    /// for selection, projection and inner join nodes
-    /// using the defined function.
+    /// for selection and inner join nodes using the
+    /// defined function.
     ///
     /// # Errors
     /// - If failed to get the plan top node.
@@ -83,10 +83,7 @@ impl Plan {
         for id in &nodes {
             let rel = self.get_relation_node(*id)?;
             let new_tree_id = match rel {
-                Relational::Projection {
-                    output: tree_id, ..
-                }
-                | Relational::Selection {
+                Relational::Selection {
                     filter: tree_id, ..
                 }
                 | Relational::InnerJoin {
