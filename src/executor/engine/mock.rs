@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
-use crate::executor::engine::Engine;
+use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
@@ -166,15 +166,15 @@ impl Engine for EngineMock {
         self.metadata.tables.is_empty()
     }
 
-    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
-        Ok(Some("".to_string()))
+    fn get_metadata(&self) -> Result<Option<LocalMetadata>, QueryPlannerError> {
+        let metadata = LocalMetadata {
+            schema: "".into(),
+            timeout: 0,
+        };
+        Ok(Some(metadata))
     }
 
-    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError> {
-        Ok(Some(0))
-    }
-
-    fn update_metadata(&mut self, _schema: String, _timeout: u64) -> Result<(), QueryPlannerError> {
+    fn update_metadata(&mut self, _metadata: LocalMetadata) -> Result<(), QueryPlannerError> {
         self.metadata = MetadataMock::new();
         Ok(())
     }

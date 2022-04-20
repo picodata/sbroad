@@ -10,7 +10,7 @@ use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::cartridge::hash::str_to_bucket_id;
-use crate::executor::engine::Engine;
+use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
@@ -44,13 +44,12 @@ impl Engine for Runtime {
         self.metadata.is_empty()
     }
 
-    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError> {
+    fn get_metadata(&self) -> Result<Option<LocalMetadata>, QueryPlannerError> {
         if self.metadata.is_empty() {
             let lua = tarantool::lua_state();
 
             let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
-
-            let res: String = match get_schema.call() {
+            let schema: String = match get_schema.call() {
                 Ok(res) => res,
                 Err(e) => {
                     say(
@@ -63,17 +62,9 @@ impl Engine for Runtime {
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
                 }
             };
-            return Ok(Some(res));
-        }
-        Ok(None)
-    }
 
-    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError> {
-        if self.metadata.is_empty() {
-            let lua = tarantool::lua_state();
-            let timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
-
-            let waiting_timeout: u64 = match timeout.call() {
+            let waiting_timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
+            let timeout: u64 = match waiting_timeout.call() {
                 Ok(res) => res,
                 Err(e) => {
                     say(
@@ -86,14 +77,16 @@ impl Engine for Runtime {
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
                 }
             };
-            return Ok(Some(waiting_timeout));
+
+            let metadata = LocalMetadata { schema, timeout };
+            return Ok(Some(metadata));
         }
         Ok(None)
     }
 
-    fn update_metadata(&mut self, schema: String, timeout: u64) -> Result<(), QueryPlannerError> {
-        self.metadata.load_schema(&schema)?;
-        self.metadata.set_exec_waiting_timeout(timeout);
+    fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError> {
+        self.metadata.load_schema(&metadata.schema)?;
+        self.metadata.set_exec_waiting_timeout(metadata.timeout);
         Ok(())
     }
 

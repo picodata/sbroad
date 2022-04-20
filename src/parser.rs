@@ -9,7 +9,7 @@ use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::load_extra_function;
-use crate::executor::engine::{cartridge, Engine};
+use crate::executor::engine::{cartridge, Engine, LocalMetadata};
 use crate::executor::Query;
 
 use self::extargs::{BucketCalcArgs, BucketCalcArgsDict};
@@ -146,17 +146,15 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
 fn load_metadata() -> c_int {
     // Tarantool can yield in the middle of a current closure,
     // so we can hold only an immutable reference to the engine.
-    let mut schema: Option<String> = None;
-    let mut timeout: Option<u64> = None;
+    let mut metadata: Option<LocalMetadata> = None;
     QUERY_ENGINE.with(|e| {
         let engine = &*e.borrow();
-        match (engine.get_schema(), engine.get_timeout()) {
-            (Ok(s), Ok(t)) => {
-                schema = s;
-                timeout = t;
+        match engine.get_metadata() {
+            Ok(meta) => {
+                metadata = meta;
                 0
             }
-            (Err(e), _) | (_, Err(e)) => {
+            Err(e) => {
                 return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
             }
         }
@@ -172,10 +170,10 @@ fn load_metadata() -> c_int {
     // Tarantool never yields here, so it is possible to hold
     // a mutable reference to the engine.
     if is_metadata_empty {
-        if let (Some(schema), Some(timeout)) = (schema, timeout) {
+        if let Some(metadata) = metadata {
             QUERY_ENGINE.with(|e| {
                 let engine = &mut *e.borrow_mut();
-                if let Err(e) = engine.update_metadata(schema, timeout) {
+                if let Err(e) = engine.update_metadata(metadata) {
                     return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string());
                 }
                 0

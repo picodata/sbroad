@@ -45,6 +45,14 @@ pub trait Metadata {
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError>;
 }
 
+/// Local storage for uploading metadata.
+pub struct LocalMetadata {
+    /// Cluster schema.
+    pub schema: String,
+    /// Query execution timeout.
+    pub timeout: u64,
+}
+
 /// An execution engine trait.
 pub trait Engine {
     type Metadata;
@@ -60,23 +68,17 @@ pub trait Engine {
     /// Check if the cache is empty.
     fn is_metadata_empty(&self) -> bool;
 
-    /// Retrieve cluster schema.
+    /// Retrieve cluster metadata.
     ///
     /// # Errors
-    /// - Failed to retrieve cluster schema.
-    fn get_schema(&self) -> Result<Option<String>, QueryPlannerError>;
-
-    /// Retrieve timeout to wait for execution completion.
-    ///
-    /// # Errors
-    /// - Failed to get timeout from the configuration.
-    fn get_timeout(&self) -> Result<Option<u64>, QueryPlannerError>;
+    /// - Internal error.
+    fn get_metadata(&self) -> Result<Option<LocalMetadata>, QueryPlannerError>;
 
     /// Update cached metadata information.
     ///
     /// # Errors
     /// - Failed to update metadata information (invalid metadata).
-    fn update_metadata(&mut self, schema: String, timeout: u64) -> Result<(), QueryPlannerError>;
+    fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError>;
 
     /// Materialize result motion node to virtual table
     ///
