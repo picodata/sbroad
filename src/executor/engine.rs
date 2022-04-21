@@ -80,7 +80,7 @@ pub struct LocalMetadata {
 pub trait Engine {
     type Metadata;
     type QueryCache;
-    type Ast;
+    type CacheTree;
 
     /// Return object of metadata storage
     fn metadata(&self) -> &Self::Metadata
@@ -111,7 +111,7 @@ pub trait Engine {
     /// - Invalid capacity (zero).
     fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError>;
 
-    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache>
+    fn query_cache(&self) -> &RefCell<Self::QueryCache>
     where
         Self: Sized;
 

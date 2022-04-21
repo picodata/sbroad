@@ -83,13 +83,13 @@ where
     pub fn new(engine: &'a E, sql: &str) -> Result<Self, QueryPlannerError>
     where
         E::Metadata: Metadata,
-        E::QueryCache: QueryCache<String, E::Ast>,
-        E::Ast: Ast,
+        E::QueryCache: QueryCache<String, E::CacheTree>,
+        E::CacheTree: Ast,
     {
         let hash = Sha256::digest(sql.as_bytes());
         let key = Base64::encode_string(&hash);
 
-        let query_cache = engine.query_cache_rc();
+        let query_cache = engine.query_cache();
         let mut ast = Ast::empty();
         if let Some(cached_ast) = query_cache.borrow_mut().get(&key)? {
             ast = cached_ast;

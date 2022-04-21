@@ -36,15 +36,15 @@ pub struct Runtime {
 /// Implements `Engine` interface for tarantool cartridge application
 impl Engine for Runtime {
     type Metadata = ClusterAppConfig;
-    type Ast = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, AbstractSyntaxTree>;
+    type CacheTree = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, Self::CacheTree>;
 
     fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
         *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
         Ok(())
     }
 
-    fn query_cache_rc(&self) -> &RefCell<Self::QueryCache> {
+    fn query_cache(&self) -> &RefCell<Self::QueryCache> {
         &self.query_cache
     }
 
