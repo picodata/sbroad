@@ -17,7 +17,7 @@ fn dnf1() {
         r#"or ("t"."a") = (3) and ("t"."c") = (4))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn dnf2() {
         r#"or ("t"."a") = (3) and ("t"."b") = (2)) or ("t"."c") = (4) and ("t"."b") = (2))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn dnf3() {
         r#"WHERE (("t"."a") = (1) and (NULL) or ("t"."b") = (2) and (NULL))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn dnf4() {
         r#"WHERE (("t"."a") = (1) and (true) or ("t"."b") = (2) and (true))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn dnf5() {
         r#"WHERE (("t"."a") = (1) and ((false)) or ("t"."b") = (2) and ((false)))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }
 
 #[test]
@@ -83,5 +83,5 @@ fn dnf6() {
         r#"WHERE (("t"."a") = (1) and ("t"."c") = (1) or ("t"."b") = (2))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &set_dnf), expected);
+    assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
 }

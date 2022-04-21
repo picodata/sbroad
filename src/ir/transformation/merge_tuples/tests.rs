@@ -15,7 +15,7 @@ fn merge_tuples1() {
         r#"WHERE ("t"."a", "t"."b") = (1, 2) and (3, "t"."a") > ("t"."c", 4)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn merge_tuples2() {
         r#"or ("t"."c", "t"."a") >= (3, 4) and (true))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn merge_tuples3() {
     let input = r#"SELECT "a" FROM "t" WHERE true"#;
     let expected = format!("{}", r#"SELECT "t"."a" as "a" FROM "t" WHERE true"#);
 
-    assert_eq!(sql_to_sql(input, &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn merge_tuples4() {
         r#"SELECT "t"."a" as "a" FROM "t""#, r#"WHERE ("t"."a", "t"."b", "t"."c") = (1, 2, 3)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }
 
 #[test]
@@ -60,5 +60,5 @@ fn merge_tuples5() {
         r#"SELECT "t"."a" as "a" FROM "t""#, r#"WHERE ("t"."c", "t"."a", "t"."b") > (3, 1, 2)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }

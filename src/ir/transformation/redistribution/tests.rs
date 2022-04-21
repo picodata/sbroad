@@ -313,7 +313,7 @@ fn union_all_in_sq() {
             WHERE "sys_op" > 1) AS "t3"
         WHERE "identification_number" = 1"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -325,7 +325,7 @@ fn inner_join_eq_for_keys() {
         INNER JOIN "t"
         ON ("t1"."identification_number", "t1"."product_code") = ("t"."a", "t"."b")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -338,7 +338,7 @@ fn join_inner_sq_eq_for_keys() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -351,7 +351,7 @@ fn join_inner_eq_non_match_keys() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", "t1"."product_code") = ("t2"."pc", "t2"."id")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -381,7 +381,7 @@ fn join_inner_sq_eq_for_keys_with_const() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", 1, "t1"."product_code") = ("t2"."id", 1, "t2"."pc")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -394,7 +394,7 @@ fn join_inner_sq_less_for_keys() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", "t1"."product_code") < ("t2"."id", "t2"."pc")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -419,7 +419,7 @@ fn join_inner_sq_eq_no_keys() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", 1) = (1, "t2"."pc")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -444,7 +444,7 @@ fn join_inner_sq_eq_no_outer_keys() {
         (SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist") AS "t2"
         ON ("t1"."identification_number", 1) = ("t2"."id", "t2"."pc")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -470,7 +470,7 @@ fn inner_join_full_policy_sq_in_filter() {
         AND ("t"."a", "t"."b") >=
         (SELECT "hash_testing"."sys_op", "hash_testing"."bucket_id" FROM "hash_testing")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -496,7 +496,7 @@ fn inner_join_local_policy_sq_in_filter() {
         AND ("t"."a", "t"."b") =
         (SELECT "hash_testing"."identification_number", "hash_testing"."product_code" FROM "hash_testing")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -512,7 +512,7 @@ fn inner_join_local_policy_sq_with_union_all_in_filter() {
         UNION ALL
         SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code" FROM "hash_testing_hist")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -528,7 +528,7 @@ fn inner_join_full_policy_sq_with_union_all_in_filter() {
         UNION ALL
         SELECT "hash_testing_hist"."product_code", "hash_testing_hist"."identification_number" FROM "hash_testing_hist")"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -559,7 +559,7 @@ fn join_inner_and_local_full_policies() {
         ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
         AND "t1"."identification_number" = "t2"."pc""#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -573,7 +573,7 @@ fn join_inner_or_local_full_policies() {
         ON ("t1"."identification_number", "t1"."product_code") = ("t2"."id", "t2"."pc")
         OR "t1"."identification_number" = "t2"."pc""#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices
@@ -614,7 +614,7 @@ fn join1() {
             ON "t3"."id" = "t8"."identification_number"
         WHERE "t3"."id" = 1 AND "t8"."identification_number" = 1"#;
 
-    let mut plan = sql_to_ir(query);
+    let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
     let motion_id = *plan
         .slices

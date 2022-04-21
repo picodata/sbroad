@@ -10,7 +10,9 @@ use tarantool::tuple::{AsTuple, FunctionArgs, FunctionCtx, Tuple};
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::load_extra_function;
 use crate::executor::engine::{cartridge, Engine, LocalMetadata};
+use crate::executor::result::Value;
 use crate::executor::Query;
+use crate::ir::value::{AsIrVal, Value as IrValue};
 
 use self::extargs::{BucketCalcArgs, BucketCalcArgsDict};
 
@@ -20,7 +22,22 @@ thread_local!(static QUERY_ENGINE: RefCell<cartridge::Runtime> = RefCell::new(ca
 
 #[derive(Serialize, Deserialize)]
 struct Args {
-    pub query: String,
+    query: String,
+    params: Vec<Value>,
+}
+
+impl Args {
+    fn get_query(&self) -> &str {
+        &self.query
+    }
+
+    fn get_params(&self) -> Result<Vec<IrValue>, QueryPlannerError> {
+        let mut values: Vec<IrValue> = Vec::new();
+        for param in &self.params {
+            values.push(param.clone().as_ir_value()?);
+        }
+        Ok(values)
+    }
 }
 
 /**
@@ -110,7 +127,18 @@ impl AsTuple for ExecQueryArgs {}
 #[no_mangle]
 pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let args: Tuple = args.into();
-    let args = args.into_struct::<Args>().unwrap();
+    let args = match args.into_struct::<Args>() {
+        Ok(args) => args,
+        Err(e) => {
+            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
+        }
+    };
+    let params = match args.get_params() {
+        Ok(params) => params,
+        Err(e) => {
+            return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
+        }
+    };
 
     let ret_code = load_metadata();
     if ret_code != 0 {
@@ -118,7 +146,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     }
     QUERY_ENGINE.with(|e| {
         let engine = &*e.borrow();
-        let mut query = match Query::new(engine, args.query.as_str()) {
+        let mut query = match Query::new(engine, args.get_query(), &params) {
             Ok(q) => q,
             Err(e) => {
                 say(
@@ -128,7 +156,6 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                     None,
                     &format!("{:?}", e),
                 );
-                // Temporary error for parsing ast error because someone query types aren't implemented
                 return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
             }
         };

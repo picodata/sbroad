@@ -112,13 +112,13 @@ target_queries.test_type_1 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
     WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1]] })
+WHERE "col1" = ?]], { 0, 0, 1} })
 
     t.assert_equals(r.metadata, {
         { name = "col1", type = "integer" },
@@ -139,14 +139,14 @@ target_queries.test_type_2 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1
-        AND "col2" = 2]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ?
+        AND "col2" = ?]], { 0, 0, 0, 1, 2} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -169,15 +169,15 @@ target_queries.test_type_3 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1
-        AND ("col2" = 2
-        AND "amount" > 2)]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ?
+        AND ("col2" = ?
+        AND "amount" > ?)]], { 0, 0, 0, 1, 2, 2} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -200,13 +200,13 @@ target_queries.test_type_4 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1 OR "col1" = 3]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ? OR "col1" = ?]], { 0, 0, 0, 1, 3} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -229,16 +229,16 @@ target_queries.test_type_5 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1
-        AND "col2" = 2
-        OR "col1" = 1
-        AND "col2" = 1]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ?
+        AND "col2" = ?
+        OR "col1" = ?
+        AND "col2" = ?]], { 0, 0, 0, 1, 2, 1, 1} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -262,15 +262,15 @@ target_queries.test_type_6 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "col1" = 1
-        OR ("col1" = 2
-        OR "col1" = 3)]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ?
+        OR ("col1" = ?
+        OR "col1" = ?)]], { 0, 0, 0, 1, 2, 3 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -293,17 +293,17 @@ target_queries.test_type_7 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE ("col1" = 1
-        OR ("col1" = 2
-        OR "col1" = 3))
-        AND ("col2" = 1
-        OR "col2" = 2)]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE ("col1" = ?
+        OR ("col1" = ?
+        OR "col1" = ?))
+        AND ("col2" = ?
+        OR "col2" = ?)]], { 0, 0, 0, 1, 2, 3, 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -327,18 +327,18 @@ target_queries.test_type_8 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE ("col1" = 1
-        OR ("col1" = 2
-        OR "col1" = 3))
-        AND (("col2" = 1
-        OR "col2" = 2)
-        AND "amount" > 2)]] })
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE ("col1" = ?
+        OR ("col1" = ?
+        OR "col1" = ?))
+        AND (("col2" = ?
+        OR "col2" = ?)
+        AND "amount" > ?)]], { 0, 0, 0, 1, 2, 3, 1, 2, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -360,23 +360,23 @@ target_queries.test_type_9 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 WHERE "col1" IN
     (SELECT "id"
     FROM
         (SELECT "id", "cola", "colb"
         FROM "cola_accounts_history"
-        WHERE "sys_from" <= 0 AND "sys_to" >= 0
+        WHERE "sys_from" <= ? AND "sys_to" >= ?
         UNION ALL
         SELECT "id", "cola", "colb"
         FROM "cola_accounts_actual"
-        WHERE "sys_from" <= 0) AS "t8"
-    WHERE "cola" = 1)]] })
+        WHERE "sys_from" <= ?) AS "t8"
+    WHERE "cola" = 1)]], { 0, 0, 0, 0, 0, 0} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -398,23 +398,23 @@ target_queries.test_type_10 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    WHERE "sys_from" <= ? AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 WHERE "col1" IN
     (SELECT "id"
     FROM
         (SELECT "id", "cola", "colb"
         FROM "cola_accounts_history"
-        WHERE "sys_from" <= 0 AND "sys_to" >= 0
+        WHERE "sys_from" <= ? AND "sys_to" >= ?
         UNION ALL
         SELECT "id", "cola", "colb"
         FROM "cola_accounts_actual"
-        WHERE "sys_from" <= 0) AS "t8"
-        WHERE "cola" = 1)
-  AND "amount" > 0]] })
+        WHERE "sys_from" <= ?) AS "t8"
+        WHERE "cola" = ?)
+  AND "amount" > ?]], { 0, 0, 0, 0, 0, 0, 1, 0} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -452,7 +452,7 @@ WHERE ROW("col1", "col2") IN
         FROM "cola_accounts_actual"
         WHERE "sys_from" <= 0) AS "t8"
         WHERE "cola" = 1)
-    AND "amount" > 0]] })
+    AND "amount" > 0]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -488,7 +488,7 @@ INNER JOIN
     FROM "cola_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND "t8"."cola" = 1]] })
+WHERE "t3"."col1" = 1 AND "t8"."cola" = 1]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -517,23 +517,23 @@ target_queries.test_type_13 = function()
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
-    WHERE "sys_from" <= 0
-            AND "sys_to" >= 0
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 INNER JOIN
     (SELECT "id", "cola", "colb"
     FROM "cola_accounts_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    WHERE "sys_from" <= ? AND "sys_to" >= ?
     UNION ALL
     SELECT "id", "cola", "colb"
     FROM "cola_accounts_actual"
-    WHERE "sys_from" <= 0) AS "t8"
+    WHERE "sys_from" <= ?) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND ("t8"."cola" = 1
-        AND "t3"."amount" > 2)]] })
+WHERE "t3"."col1" = ? AND ("t8"."cola" = ?
+        AND "t3"."amount" > ?)]], { 0, 0, 0, 0, 0, 0, 1, 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -558,22 +558,22 @@ target_queries.test_type_14 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    WHERE "sys_from" <= ? AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 INNER JOIN
     (SELECT "id", "cola", "colb"
     FROM "cola_colb_accounts_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    WHERE "sys_from" <= ? AND "sys_to" >= ?
     UNION ALL
     SELECT "id", "cola", "colb"
     FROM "cola_colb_accounts_actual"
-    WHERE "sys_from" <= 0) AS "t8"
+    WHERE "sys_from" <= ?) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND "t3"."col2" = 2
-AND ("t8"."cola" = 1 AND "t8"."colb" = 2)]] })
+WHERE "t3"."col1" = ? AND "t3"."col2" = ?
+AND ("t8"."cola" = ? AND "t8"."colb" = ?)]], { 0, 0, 0, 0, 0, 0, 1, 2, 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -615,7 +615,7 @@ INNER JOIN
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."account_id" = "t8"."id"
 WHERE "t3"."col1" = 1 AND "t3"."col2" = 2
-AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))]] })
+AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -656,7 +656,7 @@ INNER JOIN
     FROM "cola_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND "t8"."cola" = 2]] })
+WHERE "t3"."col1" = ? AND "t8"."cola" = ?]], { 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -696,7 +696,7 @@ INNER JOIN
     FROM "cola_colb_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND "t3"."col2" = 2 AND ("t8"."cola" = 1 AND "t8"."colb" = 2)]] })
+WHERE "t3"."col1" = ? AND "t3"."col2" = 2 AND ("t8"."cola" = 1 AND "t8"."colb" = ?)]], { 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -736,7 +736,7 @@ INNER JOIN
     FROM "cola_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)]] })
+WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -775,7 +775,7 @@ INNER JOIN
     FROM "cola_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."col1" = "t8"."cola"
-WHERE "t3"."col1" = 1 AND "t3"."col2" = 1]] })
+WHERE "t3"."col1" = 1 AND "t3"."col2" = 1]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -805,7 +805,7 @@ FROM
     UNION ALL
     SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 INNER JOIN
     (SELECT "id", "cola", "colb"
     FROM "cola_accounts_history"
@@ -815,7 +815,7 @@ INNER JOIN
     FROM "cola_accounts_actual"
     WHERE "sys_from" <= 0) AS "t8"
     ON "t3"."col1" = "t8"."cola"
-WHERE "t3"."col1" = 1]] })
+WHERE "t3"."col1" = 1]], { 0 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -844,23 +844,23 @@ target_queries.test_type_22 = function()
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    WHERE "sys_from" <= ? AND "sys_to" >= ?
     UNION ALL
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    WHERE "sys_from" <= ?) AS "t3"
 WHERE "account_id" IN
     (SELECT "id"
     FROM
         (SELECT "id", "cola", "colb"
         FROM "cola_accounts_history"
-        WHERE "sys_from" <= 0 AND "sys_to" >= 0
+        WHERE "sys_from" <= ? AND "sys_to" >= ?
         UNION ALL
         SELECT "id", "cola", "colb"
         FROM "cola_accounts_actual"
-        WHERE "sys_from" <= 0) AS "t8"
-        WHERE "cola" = 1)
-    AND ("col1" = 1 AND "col2" = 2)]] })
+        WHERE "sys_from" <= ?) AS "t8"
+        WHERE "cola" = ?)
+    AND ("col1" = ? AND "col2" = ?)]], { 0, 0, 0, 0, 0, 0, 1, 1, 2} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
@@ -900,7 +900,7 @@ WHERE "account_id" IN
         FROM "cola_colb_accounts_actual"
         WHERE "sys_from" <= 0) AS "t8"
         WHERE "cola" = 1 AND "colb" = 2)
-    AND ("col1" = 1 AND "col2" = 2)]] })
+    AND ("col1" = ? AND "col2" = 2)]], { 1 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {

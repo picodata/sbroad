@@ -3,6 +3,7 @@ extern crate sbroad;
 use criterion::{criterion_group, criterion_main, Criterion};
 use engine::EngineMock;
 use sbroad::executor::Query;
+use sbroad::ir::value::Value;
 
 fn query1_sql() -> String {
     let sql = r#"SELECT
@@ -223,16 +224,16 @@ fn query1_sql() -> String {
             FROM
                 "test__gibdd_db__vehicle_reg_and_res100_actual"
             WHERE
-                "sys_from" <= 332
+                "sys_from" <= ?
         ) AS "t3"
     WHERE
-        "reestrid" = 452842574"#;
+        "reestrid" = ?"#;
 
     sql.into()
 }
 
-fn query1(sql: &str, engine: &mut EngineMock) {
-    let mut query = Query::new(engine, sql).unwrap();
+fn query1(pattern: &str, params: &[Value], engine: &mut EngineMock) {
+    let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     query.bucket_discovery(top_id).unwrap();
     query.get_exec_plan().subtree_as_sql(top_id).unwrap();
@@ -241,7 +242,19 @@ fn query1(sql: &str, engine: &mut EngineMock) {
 fn bench_query1(c: &mut Criterion) {
     let mut engine = EngineMock::new();
     let sql = query1_sql();
-    c.bench_function("query1", |b| b.iter(|| query1(&sql, &mut engine)));
+    let mut sys_from: u64 = 42;
+    let mut reestrid: u64 = 666;
+    c.bench_function("query1", |b| {
+        b.iter(|| {
+            let params = vec![
+                Value::number_from_str(&sys_from.to_string()).unwrap(),
+                Value::number_from_str(&reestrid.to_string()).unwrap(),
+            ];
+            sys_from += 1;
+            reestrid += 1;
+            query1(&sql, &params, &mut engine)
+        })
+    });
 }
 
 criterion_group!(benches, bench_query1);

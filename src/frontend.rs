@@ -5,6 +5,7 @@
 
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Metadata;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 
 pub trait Ast {
@@ -28,7 +29,7 @@ pub trait Ast {
     /// # Errors
     /// - The AST doesn't represent a valid SQL query.
     /// - AST contains objects not present in the metadata.
-    fn to_ir<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
+    fn to_ir<M>(&self, metadata: &M, params: &[Value]) -> Result<Plan, QueryPlannerError>
     where
         M: Metadata;
 }

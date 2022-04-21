@@ -8,10 +8,10 @@ _G.insert_record = nil
 _G.sql_execute = nil
 
 
-local function query(q)
+local function query(query, params)
     local has_err, parser_res = pcall(
         function()
-            return box.func["sbroad.execute_query"]:call({ q })
+            return box.func["sbroad.execute_query"]:call({ query, params })
         end
     )
 

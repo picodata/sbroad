@@ -3,6 +3,7 @@ use crate::executor::engine::mock::MetadataMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
@@ -18,7 +19,7 @@ fn front_sql1() {
         r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (1)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn front_sql2() {
         r#"or ("hash_testing"."identification_number") = (2) and ("hash_testing"."product_code") = ('2'))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -60,7 +61,7 @@ fn front_sql3() {
         r#"WHERE ("t3"."identification_number") = (1)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -91,7 +92,7 @@ fn front_sql4() {
         r#"and (("t3"."product_code") = ('1') or ("t3"."product_code") = ('2'))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -107,7 +108,7 @@ fn front_sql5() {
         r#"WHERE ("hash_testing_hist"."product_code") = ('a'))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -124,7 +125,7 @@ fn front_sql6() {
         r#"WHERE ("hash_testing"."identification_number") = (5) and ("hash_testing"."product_code") = ('123')"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -141,7 +142,7 @@ fn front_sql7() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.to_ir(metadata).unwrap_err();
+    let plan_err = ast.to_ir(metadata, &[]).unwrap_err();
 
     assert_eq!(
         QueryPlannerError::CustomError(
@@ -161,7 +162,7 @@ fn front_sql8() {
         r#"FROM "hash_testing" as t WHERE (t."identification_number") = (1)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
 
 #[test]
@@ -208,5 +209,36 @@ fn front_sql9() {
         r#"WHERE ("t3"."id") = (1) and ("t8"."identification_number") = (1) and ("t8"."product_code") = ('123')"#,
     );
 
-    assert_eq!(sql_to_sql(input, &no_transform), expected);
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
+fn front_params1() {
+    let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
+        WHERE "sys_op" = ? AND "sysFrom" > ?"#;
+    let params = vec![
+        Value::number_from_str("0").unwrap(),
+        Value::number_from_str("1").unwrap(),
+    ];
+    let expected = format!(
+        "{} {}",
+        r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space""#,
+        r#"WHERE ("test_space"."sys_op") = (0) and ("test_space"."sysFrom") > (1)"#,
+    );
+
+    assert_eq!(sql_to_sql(pattern, &params, &no_transform), expected);
+}
+
+#[test]
+fn front_params2() {
+    let pattern = r#"SELECT "id" FROM "test_space"
+        WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
+    let params = vec![Value::Null, Value::string_from_str("hello")];
+    let expected = format!(
+        "{} {}",
+        r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+        r#"WHERE ("test_space"."sys_op") = (NULL) and ("test_space"."FIRST_NAME") = ('hello')"#,
+    );
+
+    assert_eq!(sql_to_sql(pattern, &params, &no_transform), expected);
 }

@@ -96,7 +96,7 @@ impl Ast for AbstractSyntaxTree {
     /// - IR plan can't be built.
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    fn to_ir<T>(&self, metadata: &T) -> Result<Plan, QueryPlannerError>
+    fn to_ir<T>(&self, metadata: &T, params: &[Value]) -> Result<Plan, QueryPlannerError>
     where
         T: Metadata,
     {
@@ -109,6 +109,7 @@ impl Ast for AbstractSyntaxTree {
         let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
+        let mut param_id: usize = 0;
 
         for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?.clone();
@@ -368,6 +369,16 @@ impl Ast for AbstractSyntaxTree {
                 Type::Number | Type::String | Type::Null | Type::True | Type::False => {
                     let val = Value::from_node(&node)?;
                     map.add(*id, plan.add_const(val));
+                }
+                Type::Parameter => {
+                    let val = params.get(param_id).ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Parameter in position {} is not found.",
+                            param_id
+                        ))
+                    })?;
+                    param_id += 1;
+                    map.add(*id, plan.add_const(val.clone()));
                 }
                 Type::Asterisk => {
                     // We can get an asterisk only in projection.

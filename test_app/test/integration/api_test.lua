@@ -61,7 +61,7 @@ end
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]] })
+    local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]], {} })
     t.assert_equals(err, "CustomError(\"Parsing error: Error { variant: ParsingError { positives: [SubQuery], negatives: [] }, location: Pos(41), line_col: Pos((1, 42)), path: None, line: \\\"SELECT * FROM \\\\\\\"testing_space\\\\\\\" INNER JOIN \\\\\\\"testing_space\\\\\\\"\\\", continued_line: None }\")")
 end
 
@@ -71,14 +71,14 @@ g.test_join_query_is_valid = function()
     local _, err = api:call("query", { [[SELECT * FROM "testing_space"
             INNER JOIN (SELECT "id" AS "inner_id", "name" AS "inner_name" FROM "testing_space") as t
             ON ("testing_space"."id", "testing_space"."name") = (t."inner_id", t."inner_name")
-        WHERE "id" = 5 and "name" = '123']] })
+        WHERE "id" = 5 and "name" = '123']], {} })
     t.assert_equals(err, nil)
 end
 
 g.test_simple_shard_key_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = 5]] })
+    local r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = ?]], { 5 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -90,7 +90,7 @@ g.test_simple_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = 1]] })
+    r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = ?]], { 1 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -109,11 +109,11 @@ g.test_simple_shard_key_union_query = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("query", { [[SELECT * FROM (
-            SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 0
+            SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < ?
             UNION ALL
-            SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
+            SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?
         ) as "t1"
-        WHERE "id" = 1 ]] })
+        WHERE "id" = ? ]], { 0, 0, 1 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -129,7 +129,7 @@ end
 g.test_complex_shard_key_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '457']] })
+    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = ? and "name" = ?]], { 1, '457'} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -141,7 +141,7 @@ g.test_complex_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '123']] })
+    r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '123']], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -160,11 +160,11 @@ g.test_complex_shard_key_union_query = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("query", { [[SELECT * FROM (
-            SELECT "id", "name", "product_units" FROM "testing_space" WHERE "product_units" < 3
+            SELECT "id", "name", "product_units" FROM "testing_space" WHERE "product_units" < ?
             UNION ALL
-            SELECT "id", "name", "product_units" FROM "testing_space_hist" WHERE "product_units" > 3
+            SELECT "id", "name", "product_units" FROM "testing_space_hist" WHERE "product_units" > ?
         ) as "t1"
-        WHERE "id" = 1 and "name" = '123' ]] })
+        WHERE "id" = ? and "name" = ? ]], { 3, 3, 1, '123' } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -184,7 +184,7 @@ g.test_simple_motion_query = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key"
-        WHERE "id" in (SELECT "id" FROM "testing_space_hist" WHERE "product_units" > 3)]] })
+        WHERE "id" in (SELECT "id" FROM "testing_space_hist" WHERE "product_units" > 3)]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -211,7 +211,7 @@ g.test_motion_query = function()
             UNION ALL
             SELECT "id", "name" FROM "testing_space_hist" WHERE "product_units" > 3
         ) as "t2"
-        WHERE "id" = 1 and "name" = '123')]] })
+        WHERE "id" = 1 and "name" = '123')]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -229,7 +229,7 @@ end
 g.test_null_col_result = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key" WHERE "id" = 10]] })
+    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key" WHERE "id" = 10]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -250,21 +250,21 @@ g.test_join_motion_query = function()
     FROM
         (SELECT "id", "name"
             FROM "space_simple_shard_key"
-            WHERE "sysOp" > 0
+            WHERE "sysOp" > ?
         UNION ALL
             SELECT "id", "name"
             FROM "space_simple_shard_key_hist"
-            WHERE "sysOp" > 0) AS "t3"
+            WHERE "sysOp" > ?) AS "t3"
     INNER JOIN
         (SELECT "id" as "id1", "product_units"
         FROM "testing_space"
-        WHERE "product_units" < 0
+        WHERE "product_units" < ?
         UNION ALL
         SELECT "id" as "id1", "product_units"
         FROM "testing_space_hist"
-        WHERE "product_units" > 0) AS "t8"
+        WHERE "product_units" > ?) AS "t8"
         ON "t3"."id" = "t8"."id1"
-    WHERE "t3"."id" = 1]] })
+    WHERE "t3"."id" = ?]], { 0, 0, 0, 0, 1} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -284,9 +284,9 @@ g.test_anonymous_cols_naming = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("query", { [[SELECT * FROM "testing_space"
-    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
-        OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
-    ]] })
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?)
+        OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?)
+    ]], { 0, 0 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -306,7 +306,7 @@ g.test_empty_motion_result = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
-    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -318,7 +318,7 @@ g.test_empty_motion_result = function()
     })
 
     r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
-    WHERE ("id", "name") in (SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+    WHERE ("id", "name") in (SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -333,7 +333,7 @@ g.test_empty_motion_result = function()
     r, err = api:call("query", { [[SELECT * FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
         OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)
-    ]] })
+    ]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {

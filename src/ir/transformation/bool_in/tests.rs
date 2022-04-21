@@ -15,7 +15,7 @@ fn bool_in1() {
         r#"WHERE ((("t"."a") = (1) or ("t"."a") = (2)) or ("t"."a") = (3))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &replace_in_operator), expected);
+    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn bool_in2() {
         r#"WHERE ((("t"."a", "t"."b") = (1, 10) or ("t"."a", "t"."b") = (2, 20)) or ("t"."a", "t"."b") = (3, 30))"#,
     );
 
-    assert_eq!(sql_to_sql(input, &replace_in_operator), expected);
+    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
 }
 
 #[test]
@@ -40,5 +40,5 @@ fn bool_in3() {
         r#"WHERE (("t"."a") = (1) or ("t"."a") = (2)) and ("t"."b") = (3)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &replace_in_operator), expected);
+    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
 }

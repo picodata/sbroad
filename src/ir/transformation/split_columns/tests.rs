@@ -17,7 +17,7 @@ fn split_columns1() {
         r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1) and (2) = ("t"."b")"#,
     );
 
-    assert_eq!(sql_to_sql(input, &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn split_columns2() {
         r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (1)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn split_columns3() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata).unwrap();
+    let mut plan = ast.to_ir(metadata, &[]).unwrap();
     let plan_err = plan.split_columns().unwrap_err();
     assert_eq!(
         format!(
@@ -58,7 +58,7 @@ fn split_columns4() {
         r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") in (1, 2)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
 }
 
 #[test]
@@ -70,5 +70,5 @@ fn split_columns5() {
         r#"and ("t"."a") > (2)"#,
     );
 
-    assert_eq!(sql_to_sql(input, &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
 }

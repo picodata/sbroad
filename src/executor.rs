@@ -32,6 +32,7 @@ use crate::executor::engine::{Metadata, QueryCache};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::frontend::Ast;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 use base64ct::{Base64, Encoding};
 use sha2::{Digest, Sha256};
@@ -80,7 +81,7 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(engine: &'a E, sql: &str) -> Result<Self, QueryPlannerError>
+    pub fn new(engine: &'a E, sql: &str, params: &[Value]) -> Result<Self, QueryPlannerError>
     where
         E::Metadata: Metadata,
         E::QueryCache: QueryCache<String, E::CacheTree>,
@@ -100,7 +101,7 @@ where
                 QueryPlannerError::CustomError("Failed to get AST from the query cache".to_string())
             })?;
         }
-        let mut plan = ast.to_ir(engine.metadata())?;
+        let mut plan = ast.to_ir(engine.metadata(), params)?;
         plan.optimize()?;
         let query = Query {
             exec_plan: ExecutionPlan::from(plan),

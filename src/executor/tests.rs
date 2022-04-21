@@ -13,7 +13,7 @@ fn shard_query() {
     let sql = r#"SELECT "FIRST_NAME" FROM "test_space" where "id" = 1"#;
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
     let bucket = query.engine.determine_bucket_id("1");
@@ -41,7 +41,7 @@ fn shard_union_query() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
     let bucket = query.engine.determine_bucket_id("1");
@@ -71,7 +71,7 @@ fn map_reduce_query() {
     let sql = r#"SELECT "product_code" FROM "hash_testing" where "identification_number" = 1 and "product_code" = '457'"#;
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let mut expected = BoxExecuteFormat::new();
     let bucket = query.engine.determine_bucket_id(&["1", "457"].join(""));
@@ -96,7 +96,7 @@ fn linker_test() {
     (SELECT "identification_number" FROM "hash_testing" where "identification_number" > 1)"#;
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let virtual_table = virtual_table_23();
     query.engine.add_virtual_table(motion_id, virtual_table);
@@ -146,7 +146,7 @@ fn union_linker_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let virtual_table = virtual_table_23();
     query.engine.add_virtual_table(motion_id, virtual_table);
@@ -225,7 +225,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     virtual_table.set_alias("\"t8\"").unwrap();
@@ -275,7 +275,7 @@ fn join_linker2_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -327,7 +327,7 @@ fn join_linker3_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -379,7 +379,7 @@ fn join_linker4_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
 
     let motion_t2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_t2 = VirtualTable::new();
@@ -444,7 +444,7 @@ fn anonymous_col_index_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql).unwrap();
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion1_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     query
         .engine

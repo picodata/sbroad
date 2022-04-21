@@ -13,7 +13,7 @@ fn one_table_projection() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -38,7 +38,7 @@ fn one_table_with_asterisk() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -69,7 +69,7 @@ fn union_all() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -96,7 +96,7 @@ fn from_sub_query() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -128,7 +128,7 @@ fn from_sub_query_with_union() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -155,7 +155,7 @@ fn inner_join() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -182,7 +182,7 @@ fn inner_join_with_sq() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -209,7 +209,7 @@ fn selection_with_sq() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata).unwrap();
+    let plan = ast.to_ir(metadata, &[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let sql = ex_plan.subtree_as_sql(top_id).unwrap();
