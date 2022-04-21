@@ -3,23 +3,25 @@ import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
 
 const client = tarantool.connect("localhost:3301", {"user": "admin", pass: "app-cluster-cookie"})
 
-let queries = Array.from(
+let ids = Array.from(
     {
         length: 1000000
     },
-    (_, id) => `SELECT *
-                FROM (
-                         SELECT "id", "gov_number"
-                         FROM "vehicle_actual"
-                         WHERE "sys_op" = 0
-                         UNION ALL
-                         SELECT "id", "gov_number"
-                         FROM "vehicle_history"
-                         WHERE "sys_op" < 1
-                     ) as "t1"
-                WHERE "id" = ${id}`
+    (_, id) => id
 )
 
+let pattern = `SELECT *
+    FROM (
+            SELECT "id", "gov_number"
+            FROM "vehicle_actual"
+            WHERE "sys_op" = 0
+            UNION ALL
+            SELECT "id", "gov_number"
+            FROM "vehicle_history"
+            WHERE "sys_op" < 1
+        ) as "t1"
+    WHERE "id" = ?`
+
 export default () => {
-    tarantool.call(client, "query", [randomItem(queries)]);
+    tarantool.call(client, "query", [pattern, [randomItem(ids)]]);
 }
