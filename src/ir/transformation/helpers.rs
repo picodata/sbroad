@@ -12,7 +12,8 @@ use crate::ir::Plan;
 pub fn sql_to_ir(query: &str, params: &[Value]) -> Plan {
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan = ast.to_ir(metadata, params).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.bind_params(params).unwrap();
     plan
 }
 

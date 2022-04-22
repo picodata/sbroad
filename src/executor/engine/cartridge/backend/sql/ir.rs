@@ -105,6 +105,11 @@ impl ExecutionPlan {
                 SyntaxData::PlanId(id) => {
                     let node = ir_plan.get_node(*id)?;
                     match node {
+                        Node::Parameter => {
+                            return Err(QueryPlannerError::CustomError(
+                                "Parameters are not supported in the generated SQL".into(),
+                            ));
+                        }
                         Node::Relational(rel) => match rel {
                             Relational::InnerJoin { .. } => sql.push_str("INNER JOIN"),
                             Relational::Projection { .. } => sql.push_str("SELECT"),

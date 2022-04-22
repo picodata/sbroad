@@ -15,7 +15,7 @@ use crate::frontend::sql::ast::{
 use crate::frontend::sql::ir::{to_name, Translation};
 use crate::frontend::Ast;
 use crate::ir::expression::Expression;
-use crate::ir::operator::Bool;
+use crate::ir::operator::{Bool, Relational};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
@@ -90,15 +90,11 @@ impl Ast for AbstractSyntaxTree {
         self.nodes.arena.is_empty()
     }
 
-    /// Transform AST to IR plan tree.
-    ///
-    /// # Errors
-    /// - IR plan can't be built.
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    fn to_ir<T>(&self, metadata: &T, params: &[Value]) -> Result<Plan, QueryPlannerError>
+    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
     where
-        T: Metadata,
+        M: Metadata,
     {
         let mut plan = Plan::new();
 
@@ -109,7 +105,6 @@ impl Ast for AbstractSyntaxTree {
         let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
-        let mut param_id: usize = 0;
 
         for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?.clone();
@@ -371,14 +366,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan.add_const(val));
                 }
                 Type::Parameter => {
-                    let val = params.get(param_id).ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Parameter in position {} is not found.",
-                            param_id
-                        ))
-                    })?;
-                    param_id += 1;
-                    map.add(*id, plan.add_const(val.clone()));
+                    map.add(*id, plan.add_param());
                 }
                 Type::Asterisk => {
                     // We can get an asterisk only in projection.
@@ -619,6 +607,126 @@ impl Ast for AbstractSyntaxTree {
         plan.replace_sq_with_references()?;
 
         Ok(plan)
+    }
+}
+
+impl Plan {
+    /// Substitute parameters to the plan.
+    ///
+    /// # Errors
+    /// - Invalid amount of parameters.
+    /// - Internal errors.
+    pub fn bind_params(&mut self, params: &[Value]) -> Result<(), QueryPlannerError> {
+        let top_id = self.get_top()?;
+        let tree = DftPost::new(&top_id, |node| self.nodes.subtree_iter(node));
+        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
+        let mut idx = 0;
+
+        // Add parameter values to the plan arena (but they are still unlinked to the tree).
+        let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
+        // We need to use rows instead of values in some cases (AST can solve
+        // this problem for non-parameterized queries, but for parameterized
+        // queries it is IR responsibility).
+        let mut row_ids: Vec<usize> = Vec::with_capacity(params.len());
+        for param in params {
+            let val_id = self.add_const(param.clone());
+            value_ids.push(val_id);
+            let row_id = self.nodes.add_row(vec![val_id], None);
+            row_ids.push(row_id);
+        }
+
+        // Gather all parameter nodes from the tree to a hash set.
+        let param_set = self.get_params();
+
+        // Closure to retrieve a corresponding value for a parameter node.
+        let get_value =
+            |param_id: &usize, pos: usize| -> Result<Option<usize>, QueryPlannerError> {
+                if !param_set.contains(param_id) {
+                    return Ok(None);
+                }
+                let val_id = value_ids.get(pos).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Parameter in position {} is not found.",
+                        pos
+                    ))
+                })?;
+                Ok(Some(*val_id))
+            };
+
+        // Closure to retrieve a corresponding row for a parameter node.
+        let get_row = |param_id: &usize, pos: usize| -> Result<Option<usize>, QueryPlannerError> {
+            if !param_set.contains(param_id) {
+                return Ok(None);
+            }
+            let row_id = row_ids.get(pos).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Parameter in position {} is not found.",
+                    pos
+                ))
+            })?;
+            Ok(Some(*row_id))
+        };
+
+        // Replace parameters in the plan.
+        for id in nodes {
+            let node = self.get_mut_node(id)?;
+            match node {
+                Node::Relational(rel) => match rel {
+                    Relational::Selection {
+                        filter: ref mut param_id,
+                        ..
+                    }
+                    | Relational::InnerJoin {
+                        condition: ref mut param_id,
+                        ..
+                    }
+                    | Relational::Projection {
+                        output: ref mut param_id,
+                        ..
+                    } => {
+                        if let Some(row_id) = get_row(param_id, idx)? {
+                            *param_id = row_id;
+                            idx += 1;
+                        }
+                    }
+                    _ => {}
+                },
+                Node::Expression(expr) => match expr {
+                    Expression::Alias {
+                        child: ref mut param_id,
+                        ..
+                    } => {
+                        if let Some(val_id) = get_value(param_id, idx)? {
+                            *param_id = val_id;
+                            idx += 1;
+                        }
+                    }
+                    Expression::Bool {
+                        ref mut left,
+                        ref mut right,
+                        ..
+                    } => {
+                        for param_id in &mut [left, right].iter_mut() {
+                            if let Some(row_id) = get_row(param_id, idx)? {
+                                **param_id = row_id;
+                                idx += 1;
+                            }
+                        }
+                    }
+                    Expression::Row { ref mut list, .. } => {
+                        for param_id in list {
+                            if let Some(val_id) = get_value(param_id, idx)? {
+                                *param_id = val_id;
+                                idx += 1;
+                            }
+                        }
+                    }
+                    Expression::Constant { .. } | Expression::Reference { .. } => {}
+                },
+                Node::Parameter => {}
+            }
+        }
+        Ok(())
     }
 }
 

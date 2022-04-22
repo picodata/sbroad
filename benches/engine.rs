@@ -11,6 +11,7 @@ use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::relation::{Column, Table, Type};
 use sbroad::ir::value::Value as IrValue;
+use sbroad::ir::Plan;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -207,13 +208,13 @@ impl MetadataMock {
 pub struct EngineMock {
     metadata: MetadataMock,
     virtual_tables: HashMap<usize, VirtualTable>,
-    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
+    query_cache: RefCell<LRUCache<String, Plan>>,
 }
 
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
-    type CacheTree = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, Self::CacheTree>;
+    type ParseTree = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, Plan>;
 
     fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
         *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
@@ -324,7 +325,7 @@ impl EngineMock {
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
         EngineMock {
             metadata: MetadataMock::new(),
             virtual_tables: HashMap::new(),

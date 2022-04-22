@@ -156,7 +156,8 @@ impl<'n> Iterator for ExpressionIterator<'n> {
             }
             Some(
                 Node::Expression(Expression::Constant { .. } | Expression::Reference { .. })
-                | Node::Relational(_),
+                | Node::Relational(_)
+                | Node::Parameter,
             )
             | None => None,
         }
@@ -236,7 +237,11 @@ impl<'n> Iterator for RelationalIterator<'n> {
                 }
                 None
             }
-            Some(Node::Relational(Relational::ScanRelation { .. }) | Node::Expression(_))
+            Some(
+                Node::Relational(Relational::ScanRelation { .. })
+                | Node::Expression(_)
+                | Node::Parameter,
+            )
             | None => None,
         }
     }
@@ -249,6 +254,7 @@ impl<'n> Iterator for SubtreeIterator<'n> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(child) = self.nodes.arena.get(*self.current) {
             return match child {
+                Node::Parameter => None,
                 Node::Expression(exp) => match exp {
                     Expression::Alias { child, .. } => {
                         let step = *self.child.borrow();

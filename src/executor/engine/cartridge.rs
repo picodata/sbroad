@@ -19,6 +19,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::value::Value as IrValue;
+use crate::ir::Plan;
 
 mod backend;
 pub mod cache;
@@ -30,14 +31,14 @@ pub struct Runtime {
     // query_cache:
     metadata: ClusterAppConfig,
     bucket_count: usize,
-    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
+    query_cache: RefCell<LRUCache<String, Plan>>,
 }
 
 /// Implements `Engine` interface for tarantool cartridge application
 impl Engine for Runtime {
     type Metadata = ClusterAppConfig;
-    type CacheTree = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, Self::CacheTree>;
+    type ParseTree = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, Plan>;
 
     fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
         *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
@@ -177,7 +178,7 @@ impl Runtime {
     /// # Errors
     /// - Failed to detect the correct amount of buckets.
     pub fn new() -> Result<Self, QueryPlannerError> {
-        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY)?;
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY)?;
         let mut result = Runtime {
             metadata: ClusterAppConfig::new(),
             bucket_count: 0,

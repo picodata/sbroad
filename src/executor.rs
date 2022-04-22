@@ -84,24 +84,23 @@ where
     pub fn new(engine: &'a E, sql: &str, params: &[Value]) -> Result<Self, QueryPlannerError>
     where
         E::Metadata: Metadata,
-        E::QueryCache: QueryCache<String, E::CacheTree>,
-        E::CacheTree: Ast,
+        E::QueryCache: QueryCache<String, Plan>,
+        E::ParseTree: Ast,
     {
         let hash = Sha256::digest(sql.as_bytes());
         let key = Base64::encode_string(&hash);
-
         let query_cache = engine.query_cache();
-        let mut ast = Ast::empty();
-        if let Some(cached_ast) = query_cache.borrow_mut().get(&key)? {
-            ast = cached_ast;
+
+        let mut plan = Plan::new();
+        if let Some(cached_ir) = query_cache.borrow_mut().get(&key)? {
+            plan = cached_ir;
         }
-        if ast.is_empty() {
-            query_cache.borrow_mut().put(key.clone(), Ast::new(sql)?)?;
-            ast = query_cache.borrow_mut().get(&key)?.ok_or_else(|| {
-                QueryPlannerError::CustomError("Failed to get AST from the query cache".to_string())
-            })?;
+        if plan.is_empty() {
+            let ast = E::ParseTree::new(sql)?;
+            plan = ast.resolve_metadata(engine.metadata())?;
+            query_cache.borrow_mut().put(key, plan.clone())?;
         }
-        let mut plan = ast.to_ir(engine.metadata(), params)?;
+        plan.bind_params(params)?;
         plan.optimize()?;
         let query = Query {
             exec_plan: ExecutionPlan::from(plan),

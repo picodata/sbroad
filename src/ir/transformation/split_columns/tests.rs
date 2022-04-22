@@ -37,7 +37,8 @@ fn split_columns3() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.to_ir(metadata, &[]).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.bind_params(&[]).unwrap();
     let plan_err = plan.split_columns().unwrap_err();
     assert_eq!(
         format!(

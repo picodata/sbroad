@@ -80,7 +80,7 @@ pub struct LocalMetadata {
 pub trait Engine {
     type Metadata;
     type QueryCache;
-    type CacheTree;
+    type ParseTree;
 
     /// Return object of metadata storage
     fn metadata(&self) -> &Self::Metadata

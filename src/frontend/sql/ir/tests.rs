@@ -142,7 +142,7 @@ fn front_sql7() {
 
     let metadata = &MetadataMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.to_ir(metadata, &[]).unwrap_err();
+    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
 
     assert_eq!(
         QueryPlannerError::CustomError(

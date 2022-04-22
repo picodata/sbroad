@@ -13,6 +13,7 @@ use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
+use crate::ir::Plan;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -148,13 +149,13 @@ impl MetadataMock {
 pub struct EngineMock {
     metadata: MetadataMock,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
-    query_cache: RefCell<LRUCache<String, AbstractSyntaxTree>>,
+    query_cache: RefCell<LRUCache<String, Plan>>,
 }
 
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
-    type CacheTree = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, Self::CacheTree>;
+    type ParseTree = AbstractSyntaxTree;
+    type QueryCache = LRUCache<String, Plan>;
 
     fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
         *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
@@ -265,7 +266,7 @@ impl EngineMock {
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        let cache: LRUCache<String, AbstractSyntaxTree> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
         EngineMock {
             metadata: MetadataMock::new(),
             virtual_tables: RefCell::new(HashMap::new()),

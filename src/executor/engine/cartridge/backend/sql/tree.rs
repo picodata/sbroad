@@ -393,6 +393,9 @@ impl<'p> SyntaxPlan<'p> {
         let ir_plan = self.plan.get_ir_plan();
 
         match ir_plan.get_node(id)? {
+            Node::Parameter => Err(QueryPlannerError::CustomError(
+                "Parameters are not supported in the backend's syntax tree".into(),
+            )),
             Node::Relational(rel) => match rel {
                 Relational::InnerJoin {
                     children,

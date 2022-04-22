@@ -1,5 +1,5 @@
 use crate::errors::QueryPlannerError;
-use crate::executor::{Ast, QueryCache};
+use crate::executor::QueryCache;
 use std::collections::{hash_map::Entry, HashMap};
 
 pub const DEFAULT_CAPACITY: usize = 50;
@@ -7,7 +7,7 @@ pub const DEFAULT_CAPACITY: usize = 50;
 #[derive(Clone, Debug)]
 struct LRUNode<Key, Value>
 where
-    Value: Ast,
+    Value: Default,
 {
     /// The value of the node.
     value: Value,
@@ -19,7 +19,7 @@ where
 
 impl<Key, Value> LRUNode<Key, Value>
 where
-    Value: Ast,
+    Value: Default,
 {
     fn new(value: Value) -> Self {
         LRUNode {
@@ -30,7 +30,7 @@ where
     }
 
     fn sentinel() -> Self {
-        LRUNode::new(Value::empty())
+        LRUNode::new(Value::default())
     }
 
     fn replace_next(&mut self, next: Option<Key>) {
@@ -45,7 +45,7 @@ where
 #[derive(Clone, Debug)]
 pub struct LRUCache<Key, Value>
 where
-    Value: Ast,
+    Value: Default,
 {
     /// The capacity of the cache.
     capacity: usize,
@@ -57,7 +57,7 @@ where
 
 impl<Key, Value> LRUCache<Key, Value>
 where
-    Value: Ast,
+    Value: Default,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn get_node_or_none(&self, key: &Option<Key>) -> Option<&LRUNode<Key, Value>> {
@@ -150,7 +150,7 @@ where
 
 impl<Key, Value> QueryCache<Key, Value> for LRUCache<Key, Value>
 where
-    Value: Ast + Clone,
+    Value: Default + Clone,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn new(capacity: usize) -> Result<Self, QueryPlannerError> {

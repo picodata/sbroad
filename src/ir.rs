@@ -2,7 +2,7 @@
 //!
 //! Contains the logical plan tree and helpers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,7 @@ pub mod value;
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
+    Parameter,
 }
 
 /// Plan nodes storage.
@@ -144,6 +145,12 @@ impl Plan {
         }
     }
 
+    /// Check if the plan arena is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.nodes.arena.is_empty()
+    }
+
     /// Get a node by its pointer (position in the node arena).
     ///
     /// # Errors
@@ -244,6 +251,29 @@ impl Plan {
         self.nodes.add_bool(left, op, right)
     }
 
+    pub fn add_param(&mut self) -> usize {
+        self.nodes.push(Node::Parameter)
+    }
+
+    // Gather all parameter nodes from the tree to a hash set.
+    #[must_use]
+    pub fn get_params(&self) -> HashSet<usize> {
+        let param_set: HashSet<usize> = self
+            .nodes
+            .arena
+            .iter()
+            .enumerate()
+            .filter_map(|(id, node)| {
+                if let Node::Parameter = node {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        param_set
+    }
+
     /// Set top node of plan
     /// # Errors
     /// - top node doesn't exist in the plan.
@@ -260,7 +290,7 @@ impl Plan {
     pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, QueryPlannerError> {
         match self.get_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) => Err(QueryPlannerError::CustomError(
+            Node::Expression(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
                 "Node isn't relational".into(),
             )),
         }
@@ -276,7 +306,7 @@ impl Plan {
     ) -> Result<&mut Relational, QueryPlannerError> {
         match self.get_mut_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) => Err(QueryPlannerError::CustomError(
+            Node::Expression(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
                 "Node isn't relational".into(),
             )),
         }
@@ -290,7 +320,7 @@ impl Plan {
     pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, QueryPlannerError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
-            Node::Relational(_) => Err(QueryPlannerError::CustomError(
+            Node::Relational(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
                 "Node isn't expression".into(),
             )),
         }
@@ -307,7 +337,7 @@ impl Plan {
     ) -> Result<&mut Expression, QueryPlannerError> {
         match self.get_mut_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
-            Node::Relational(_) => Err(QueryPlannerError::CustomError(
+            Node::Relational(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
                 "Node isn't expression".into(),
             )),
         }

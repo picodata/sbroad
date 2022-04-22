@@ -5,7 +5,6 @@
 
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Metadata;
-use crate::ir::value::Value;
 use crate::ir::Plan;
 
 pub trait Ast {
@@ -24,12 +23,11 @@ pub trait Ast {
     /// AST is empty.
     fn is_empty(&self) -> bool;
 
-    /// Builds the intermediate representation (IR) from the AST.
+    /// Build a plan from the AST with parameters as placeholders for the values.
     ///
     /// # Errors
-    /// - The AST doesn't represent a valid SQL query.
-    /// - AST contains objects not present in the metadata.
-    fn to_ir<M>(&self, metadata: &M, params: &[Value]) -> Result<Plan, QueryPlannerError>
+    /// - Failed to resolve AST nodes with cluster metadata.
+    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
     where
         M: Metadata;
 }
