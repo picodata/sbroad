@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use yaml_rust::YamlLoader;
 
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::cartridge::cache::lru::DEFAULT_CAPACITY;
 use crate::executor::Metadata;
 use crate::ir::relation::{Column, Table, Type};
 
@@ -24,6 +25,9 @@ pub struct ClusterAppConfig {
     /// Execute response waiting timeout in seconds.
     waiting_timeout: u64,
 
+    /// Query cache capacity.
+    cache_capacity: usize,
+
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
 }
@@ -40,6 +44,7 @@ impl ClusterAppConfig {
         ClusterAppConfig {
             schema: yaml::Yaml::Null,
             waiting_timeout: 360,
+            cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
         }
     }
@@ -127,6 +132,14 @@ impl ClusterAppConfig {
     pub fn set_exec_waiting_timeout(&mut self, timeout: u64) {
         if timeout > 0 {
             self.waiting_timeout = timeout;
+        }
+    }
+
+    pub fn set_exec_cache_capacity(&mut self, capacity: usize) {
+        if capacity > 0 {
+            self.cache_capacity = capacity;
+        } else {
+            self.cache_capacity = DEFAULT_CAPACITY;
         }
     }
 }

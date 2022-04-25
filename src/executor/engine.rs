@@ -74,6 +74,8 @@ pub struct LocalMetadata {
     pub schema: String,
     /// Query execution timeout.
     pub timeout: u64,
+    /// Query cache capacity.
+    pub capacity: usize,
 }
 
 /// An execution engine trait.

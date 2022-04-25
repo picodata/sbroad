@@ -244,6 +244,7 @@ impl Engine for EngineMock {
         let metadata = LocalMetadata {
             schema: "".into(),
             timeout: 0,
+            capacity: DEFAULT_CAPACITY,
         };
         Ok(Some(metadata))
     }

@@ -95,7 +95,34 @@ impl Engine for Runtime {
                 }
             };
 
-            let metadata = LocalMetadata { schema, timeout };
+            let cache_capacity: LuaFunction<_> = lua.eval("return get_cache_capacity;").unwrap();
+            let capacity: usize = match cache_capacity.call() {
+                Ok(capacity) => {
+                    let val: u64 = capacity;
+                    usize::try_from(val).map_err(|_| {
+                        QueryPlannerError::CustomError(format!(
+                            "Cache capacity is too big: {}",
+                            capacity
+                        ))
+                    })?
+                }
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting cache capacity"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+            let metadata = LocalMetadata {
+                schema,
+                timeout,
+                capacity,
+            };
             return Ok(Some(metadata));
         }
         Ok(None)
@@ -104,6 +131,7 @@ impl Engine for Runtime {
     fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError> {
         self.metadata.load_schema(&metadata.schema)?;
         self.metadata.set_exec_waiting_timeout(metadata.timeout);
+        self.metadata.set_exec_cache_capacity(metadata.capacity);
         Ok(())
     }
 
@@ -299,6 +327,16 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         end
 
         return cfg["executor_waiting_timeout"]
+    end
+
+    function get_cache_capacity()
+        local cfg = cartridge.config_get_readonly()
+
+        if cfg["executor_cache_capacity"] == nil then
+            return 50
+        end
+
+        return cfg["executor_cache_capacity"]
     end
 
     ---get_uniq_replicaset_for_buckets - gets unique set of replicaset by bucket list
