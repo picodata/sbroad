@@ -1,5 +1,4 @@
 use std::fmt;
-use std::str::FromStr;
 
 use decimal::d128;
 use serde::de::Visitor;
@@ -139,29 +138,6 @@ impl<'de> Deserialize<'de> for Value {
 }
 
 impl Eq for Value {}
-
-impl From<Value> for IrValue {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Boolean(v) => IrValue::Boolean(v),
-            // Here is absolutely stupid solution!
-            // d128 supports floating point values, and f64 conversion cannot cause errors.
-            // But in crate d128 there is no implementation of `From<f64>`, and the development
-            // of the crate is dead.
-            // We have only one way to convert f64 to d128 is a `FromStr` trait, which is also
-            // not implemented idiomatically. Realization despite the signature with a potential
-            // error, but always returns a value. For this reason, this trait does not implement
-            // a Error, since we can be sure that all checks were passed when f64 was received.
-            Value::Number(v) => IrValue::Number(
-                d128::from_str(&v.to_string()).expect("Invalid decimal float literal"),
-            ),
-            Value::Integer(v) => IrValue::Number(d128::from(v)),
-            Value::String(v) => IrValue::String(v),
-            Value::Unsigned(v) => IrValue::Number(d128::from(v)),
-            Value::Null(_) => IrValue::Null,
-        }
-    }
-}
 
 type BoxExecuteTuple = Vec<Value>;
 

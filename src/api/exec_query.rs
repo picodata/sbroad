@@ -1,0 +1,93 @@
+use std::os::raw::c_int;
+
+use serde::{de::Error, Deserialize, Deserializer, Serialize};
+use tarantool::error::TarantoolErrorCode;
+use tarantool::log::{say, SayLevel};
+use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
+
+use crate::api::helper::load_metadata;
+use crate::api::QUERY_ENGINE;
+use crate::errors::QueryPlannerError;
+use crate::executor::result::Value;
+use crate::executor::Query;
+use crate::ir::value::{AsIrVal, Value as IrValue};
+
+#[derive(Serialize)]
+/// Lua function params
+struct Args {
+    /// Target sql query
+    query: String,
+    /// Query parameters
+    params: Vec<IrValue>,
+}
+
+impl TryFrom<FunctionArgs> for Args {
+    type Error = QueryPlannerError;
+
+    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
+        Tuple::from(value)
+            .into_struct::<Args>()
+            .map_err(|e| QueryPlannerError::CustomError(format!("Parsing args error: {:?}", e)))
+    }
+}
+
+/// Custom deserializer of the input function arguments
+impl<'de> Deserialize<'de> for Args {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename = "Args")]
+        struct StructHelper(String, Vec<Value>);
+
+        let struct_helper = StructHelper::deserialize(deserializer)?;
+
+        let mut params = vec![];
+        for v in struct_helper.1 {
+            params.push(v.as_ir_value().map_err(Error::custom)?);
+        }
+        Ok(Args {
+            query: struct_helper.0,
+            params,
+        })
+    }
+}
+
+/// Execute parameterized SQL query.
+#[no_mangle]
+pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    let lua_params = match Args::try_from(args) {
+        Ok(param) => param,
+        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+    };
+
+    let ret_code = load_metadata();
+    if ret_code != 0 {
+        return ret_code;
+    }
+    QUERY_ENGINE.with(|e| {
+        let engine = &*e.borrow();
+        let mut query = match Query::new(engine, &lua_params.query, &lua_params.params) {
+            Ok(q) => q,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    None,
+                    &format!("{:?}", e),
+                );
+                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
+            }
+        };
+
+        match query.exec() {
+            Ok(q) => {
+                ctx.return_mp(&q).unwrap();
+                0
+            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+        }
+    })
+}

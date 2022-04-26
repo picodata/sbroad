@@ -75,7 +75,7 @@ local function init(opts) -- luacheck: no unused args
     box.schema.func.create('sbroad.parse_sql', { 
             if_not_exists = true, language = 'C' 
     })
-    box.schema.func.create('sbroad.invalidate_caching_schema', { 
+    box.schema.func.create('sbroad.invalidate_cached_schema', {
             if_not_exists = true, language = 'C' 
     })
     box.schema.func.create('sbroad.calculate_bucket_id', { 
@@ -108,7 +108,7 @@ end
 local function apply_config(conf, opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
-    box.func["sbroad.invalidate_caching_schema"]:call({})
+    box.func["sbroad.invalidate_cached_schema"]:call({})
     return true
 end
 
