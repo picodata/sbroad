@@ -572,6 +572,267 @@ fn anonymous_col_index_test() {
     assert_eq!(expected, result)
 }
 
+#[test]
+fn insert1_test() {
+    let sql = r#"insert into "t" ("b") select "a" from "t"
+        where "a" = 1 and "b" = 2 or "a" = 2 and "b" = 3"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "a".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
+    virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = Column::default_value();
+    let param2 = IrValue::number_from_str("1").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    let param1 = Column::default_value();
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+            Value::String(format!(
+                "{} {}",
+                r#"INSERT INTO "t" ("t"."b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (1))"#,
+            )),
+        ],
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+            Value::String(format!(
+                "{} {}",
+                r#"INSERT INTO "t" ("t"."b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (2))"#,
+            )),
+        ],
+    ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn insert2_test() {
+    let sql = r#"insert into "t" ("a", "b") select "a", "b" from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    assert_eq!(None, query.exec_plan.get_ir_plan().get_slices());
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {} {}",
+            r#"INSERT INTO "t" ("t"."a", "t"."b")"#,
+            r#"SELECT "t"."a" as "a", "t"."b" as "b" FROM "t""#,
+            r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
+        )),
+    ]]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn insert3_test() {
+    let sql = r#"insert into "t" ("b", "a") select "a", "b" from "t"
+        where "a" = 1 and "b" = 2 or "a" = 3 and "b" = 4"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "a".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_column(Column {
+        name: "b".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("3").unwrap(),
+        IrValue::number_from_str("4").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = IrValue::number_from_str("2").unwrap();
+    let param2 = IrValue::number_from_str("1").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    let param1 = IrValue::number_from_str("4").unwrap();
+    let param2 = IrValue::number_from_str("3").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+            Value::String(format!(
+                "{} {}",
+                r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (1,2))"#,
+            )),
+        ],
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+            Value::String(format!(
+                "{} {}",
+                r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (3,4))"#,
+            )),
+        ],
+    ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn insert4_test() {
+    let sql = r#"insert into "t" ("b", "a") select "b", "a" from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    assert_eq!(None, query.exec_plan.get_ir_plan().get_slices());
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {} {}",
+            r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+            r#"SELECT "t"."b" as "b", "t"."a" as "a" FROM "t""#,
+            r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
+        )),
+    ]]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn insert5_test() {
+    let sql = r#"insert into "t" ("b", "a") select 5, 6 from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "a".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_column(Column {
+        name: "b".into(),
+        r#type: Type::Integer,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("5").unwrap(),
+        IrValue::number_from_str("6").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("5").unwrap(),
+        IrValue::number_from_str("6").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
+
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = IrValue::number_from_str("6").unwrap();
+    let param2 = IrValue::number_from_str("5").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {}",
+            r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+            r#"SELECT COLUMN_3 as "a",COLUMN_4 as "b" FROM (VALUES (5,6),(5,6))"#,
+        )),
+    ]]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn insert6_test() {
+    let sql = r#"insert into "t" ("a", "b") values (1, 2), (3, 4)"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = query.exec().unwrap();
+
+    let mut expected = BoxExecuteFormat::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    let param3 = IrValue::number_from_str("3").unwrap();
+    let param4 = IrValue::number_from_str("4").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param3, &param4]);
+
+    expected.rows.extend(vec![
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("t"."a", "t"."b") VALUES (1,2)"#,
+            )),
+        ],
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("t"."a", "t"."b") VALUES (3,4)"#,
+            )),
+        ],
+    ]);
+    assert_eq!(expected, result);
+}
+
 /// Helper function to create a "test" virtual table.
 fn virtual_table_23() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();

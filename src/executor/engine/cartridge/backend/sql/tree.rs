@@ -8,6 +8,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::value::Value as IrValue;
 use crate::ir::Node;
 
 /// Payload of the syntax tree node.
@@ -31,6 +32,8 @@ pub enum SyntaxData {
     PlanId(usize),
     /// virtual table
     VTable(VirtualTable),
+    /// value (for `VALUES` data)
+    Value(IrValue),
 }
 
 /// A syntax tree node.
@@ -125,6 +128,14 @@ impl SyntaxNode {
     fn new_vtable(value: VirtualTable) -> Self {
         SyntaxNode {
             data: SyntaxData::VTable(value),
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_value(value: IrValue) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Value(value),
             left: None,
             right: Vec::new(),
         }
@@ -397,6 +408,73 @@ impl<'p> SyntaxPlan<'p> {
                 "Parameters are not supported in the backend's syntax tree".into(),
             )),
             Node::Relational(rel) => match rel {
+                Relational::Insert {
+                    columns,
+                    children,
+                    output,
+                    ..
+                } => {
+                    // Insert a list of the target columns only when
+                    // their amount differs from the amount of the columns
+                    // in the relation.
+                    let row = ir_plan.get_expression_node(*output)?;
+                    let aliases: &[usize] = if let Expression::Row { ref list, .. } = row {
+                        list
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Expected a row expression".into(),
+                        ));
+                    };
+
+                    let get_col_sn = |col_pos: &usize| -> Result<SyntaxNode, QueryPlannerError> {
+                        let alias_id = *aliases.get(*col_pos).ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Failed to get insert output column at position {}",
+                                col_pos,
+                            ))
+                        })?;
+                        let alias = ir_plan.get_expression_node(alias_id)?;
+                        if let Expression::Alias { child, .. } = alias {
+                            let col_ref = ir_plan.get_expression_node(*child)?;
+                            if let Expression::Reference { .. } = col_ref {
+                                Ok(SyntaxNode::new_pointer(*child, None, &[]))
+                            } else {
+                                Err(QueryPlannerError::CustomError(
+                                    "Expected a reference expression".into(),
+                                ))
+                            }
+                        } else {
+                            Err(QueryPlannerError::CustomError(
+                                "Expected an alias expression".into(),
+                            ))
+                        }
+                    };
+                    let mut nodes: Vec<usize> = Vec::new();
+                    if aliases.len() != columns.len() {
+                        if let Some((last, cols)) = columns.split_last() {
+                            nodes.reserve(columns.len() * 2 + 1);
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
+                            for col_pos in cols {
+                                nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                            }
+                            nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+                        }
+                    }
+
+                    if children.is_empty() {
+                        return Err(QueryPlannerError::CustomError(
+                            "Insert node has no children".into(),
+                        ));
+                    }
+                    nodes.reserve(children.len());
+                    for child_id in children {
+                        nodes.push(self.nodes.get_syntax_node_id(*child_id)?);
+                    }
+                    let sn = SyntaxNode::new_pointer(id, None, &nodes);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
                 Relational::InnerJoin {
                     children,
                     condition,
@@ -435,7 +513,7 @@ impl<'p> SyntaxPlan<'p> {
                     // `SELECT` and `FROM`.
                     let expr = ir_plan.get_expression_node(*output)?;
                     if let Expression::Row { list, .. } = expr {
-                        let mut nodes: Vec<usize> = Vec::new();
+                        let mut nodes: Vec<usize> = Vec::with_capacity(list.len());
                         if let Some((last, elements)) = list.split_last() {
                             for elem in elements {
                                 nodes.push(self.nodes.get_syntax_node_id(*elem)?);
@@ -496,15 +574,58 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::Motion { .. } => {
                     let vtable = self.plan.get_motion_vtable(id)?.clone();
-                    let mut children = Vec::from([
-                        self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                        self.nodes
-                            .push_syntax_node(SyntaxNode::new_vtable(vtable.clone())),
-                        self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                    ]);
+                    let child_id = self.plan.get_motion_child(id)?;
+                    let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
+                    let mut children: Vec<usize> = Vec::new();
+                    if let Relational::ScanSubQuery { .. } = child_rel {
+                        children = Vec::from([
+                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                            self.nodes
+                                .push_syntax_node(SyntaxNode::new_vtable(vtable.clone())),
+                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                        ]);
 
-                    if let Some(name) = &vtable.get_alias() {
-                        children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                        if let Some(name) = &vtable.get_alias() {
+                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                        }
+                    } else {
+                        children.push(self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)));
+                    }
+
+                    let sn = SyntaxNode::new_pointer(id, None, &children);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
+                Relational::Values { data, .. } => {
+                    let mut children: Vec<usize> = Vec::new();
+                    let add_tuple =
+                        |tuple: &Vec<IrValue>| -> Result<Vec<SyntaxNode>, QueryPlannerError> {
+                            let mut nodes: Vec<SyntaxNode> =
+                                Vec::with_capacity(tuple.len() * 2 - 1);
+                            nodes.push(SyntaxNode::new_open());
+                            if let Some((last_value, values)) = tuple.split_last() {
+                                for value in values {
+                                    nodes.push(SyntaxNode::new_value(value.clone()));
+                                    nodes.push(SyntaxNode::new_comma());
+                                }
+                                nodes.push(SyntaxNode::new_value(last_value.clone()));
+                            }
+                            nodes.push(SyntaxNode::new_close());
+                            Ok(nodes)
+                        };
+                    if let Some((last_tuple, tuples)) = data.split_last() {
+                        for tuple in tuples {
+                            children.reserve(tuple.len() * 2);
+                            for sn in add_tuple(tuple)? {
+                                children.push(self.nodes.push_syntax_node(sn));
+                            }
+                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                        }
+                        children.reserve(last_tuple.len() * 2 - 1);
+                        for sn in add_tuple(last_tuple)? {
+                            children.push(self.nodes.push_syntax_node(sn));
+                        }
+                    } else {
+                        return Err(QueryPlannerError::CustomError("Values has no data.".into()));
                     }
 
                     let sn = SyntaxNode::new_pointer(id, None, &children);

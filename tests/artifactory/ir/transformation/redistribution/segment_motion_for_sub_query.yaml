@@ -177,8 +177,9 @@ nodes:
             - 17
           policy:
             Segment:
-              positions:
-                - 0
+              targets:
+                - Reference:
+                    0
           output: 29
 relations:
   t1:

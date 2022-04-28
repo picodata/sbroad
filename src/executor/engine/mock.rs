@@ -12,6 +12,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
@@ -200,11 +201,18 @@ impl Engine for EngineMock {
 
     fn materialize_motion(
         &self,
-        _plan: &mut ExecutionPlan,
+        plan: &mut ExecutionPlan,
         motion_node_id: usize,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError> {
-        if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
+        let top_id = plan.get_motion_subtree_root(motion_node_id)?;
+
+        // We need to handle a special case when the output of the top node has
+        // a replicated distribution (currently it means VALUES of constants).
+        let top = plan.get_ir_plan().get_relation_node(top_id)?;
+        if let Relational::Values { .. } = top {
+            plan.vtable_from_values(top_id)
+        } else if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
             Ok(virtual_table.clone())
         } else {
             Err(QueryPlannerError::CustomError(

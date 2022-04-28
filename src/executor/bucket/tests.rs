@@ -1,6 +1,7 @@
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
+use crate::collection;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::EngineMock;
 use crate::executor::engine::Engine;
@@ -160,6 +161,40 @@ fn union_query_conjunction() {
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket2].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
+
+    assert_eq!(expected, buckets);
+}
+
+#[test]
+fn bucket1() {
+    let query = r#"INSERT INTO "t" SELECT * FROM "t" WHERE "a" = 1 and "b" = 2"#;
+
+    let engine = EngineMock::new();
+    let mut query = Query::new(&engine, query, &[]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    let param1 = Value::number_from_str("1").unwrap();
+    let param2 = Value::number_from_str("2").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    let expected = Buckets::new_filtered(collection! {bucket});
+
+    assert_eq!(expected, buckets);
+}
+
+#[test]
+fn bucket2() {
+    let query = r#"INSERT INTO "t" SELECT * FROM "t" WHERE "b" = 2"#;
+
+    let engine = EngineMock::new();
+    let mut query = Query::new(&engine, query, &[]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    let expected = Buckets::new_all();
 
     assert_eq!(expected, buckets);
 }

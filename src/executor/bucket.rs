@@ -30,6 +30,12 @@ impl Buckets {
         Buckets::All
     }
 
+    /// Get no buckets in the cluster (coordinator).
+    #[must_use]
+    pub fn new_empty() -> Self {
+        Buckets::Filtered(HashSet::with_hasher(RepeatableState))
+    }
+
     /// Get a filtered set of buckets.
     #[must_use]
     pub fn new_filtered(buckets: HashSet<u64, RepeatableState>) -> Self {
@@ -206,6 +212,9 @@ where
                 Relational::ScanRelation { output, .. } => {
                     self.bucket_map.insert(*output, Buckets::new_all());
                 }
+                Relational::Values { output, .. } => {
+                    self.bucket_map.insert(*output, Buckets::new_empty());
+                }
                 Relational::Motion { policy, output, .. } => match policy {
                     MotionPolicy::Full => {
                         self.bucket_map.insert(*output, Buckets::new_all());
@@ -227,7 +236,10 @@ where
                         ));
                     }
                 },
-                Relational::Projection {
+                Relational::Insert {
+                    children, output, ..
+                }
+                | Relational::Projection {
                     children, output, ..
                 }
                 | Relational::ScanSubQuery {

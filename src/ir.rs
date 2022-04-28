@@ -189,6 +189,14 @@ impl Plan {
         self.slices.clone()
     }
 
+    /// Get relation in the plan by its name.
+    #[must_use]
+    pub fn get_relation(&self, name: &str) -> Option<&Table> {
+        self.relations
+            .as_ref()
+            .and_then(|relations| relations.get(name))
+    }
+
     /// Construct a plan from the YAML file.
     ///
     /// # Errors
@@ -287,6 +295,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node doesn't exist in the plan
+    /// - node is not a relational type
     pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, QueryPlannerError> {
         match self.get_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
@@ -300,6 +309,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node doesn't exist in the plan
+    /// - node is not a relational type
     pub fn get_mut_relation_node(
         &mut self,
         node_id: usize,
@@ -366,6 +376,36 @@ impl Plan {
                     "Reference node has no parent".into(),
                 ));
             };
+
+            // In a case of insert we don't inspect children output tuple
+            // but rather use target relation columns.
+            if let Relational::Insert { ref relation, .. } = ref_node {
+                let rel = self
+                    .relations
+                    .as_ref()
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError("Plan contains no relations".into())
+                    })?
+                    .get(relation)
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Relation {} doesn't exist",
+                            relation
+                        ))
+                    })?;
+                let col_name = rel
+                    .columns
+                    .get(*position)
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Relation {} has no column {}",
+                            relation, position
+                        ))
+                    })?
+                    .name
+                    .as_str();
+                return Ok(col_name);
+            }
 
             if let Some(list_of_column_nodes) = ref_node.children() {
                 let child_ids = targets.clone().ok_or_else(|| {

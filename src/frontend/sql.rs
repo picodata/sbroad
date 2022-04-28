@@ -105,6 +105,7 @@ impl Ast for AbstractSyntaxTree {
         let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
+        let mut col_idx: usize = 0;
 
         for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?.clone();
@@ -584,11 +585,101 @@ impl Ast for AbstractSyntaxTree {
                     let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
                     map.add(*id, plan_union_all_id);
                 }
+                Type::Values => {
+                    // Values can have multiple row children. We should
+                    // iterate over them and extract their data.
+                    let mut data: Vec<Vec<Value>> = Vec::with_capacity(node.children.len());
+                    for ast_row_id in &node.children {
+                        let plan_row_id = map.get(*ast_row_id)?;
+                        let plan_row = plan.get_expression_node(plan_row_id)?;
+                        let plan_col_ids = if let Expression::Row { list, .. } = plan_row {
+                            list
+                        } else {
+                            return Err(QueryPlannerError::CustomError(
+                                "Values children should be of a row type.".into(),
+                            ));
+                        };
+                        let mut row_data: Vec<Value> = Vec::with_capacity(plan_col_ids.len());
+                        for plan_col_id in plan_col_ids {
+                            let plan_col = plan.get_expression_node(*plan_col_id)?;
+                            let plan_val = if let Expression::Constant { value, .. } = plan_col {
+                                value
+                            } else {
+                                return Err(QueryPlannerError::CustomError(format!(
+                                    "Row list should contain values: {:?}.",
+                                    plan_col
+                                )));
+                            };
+                            row_data.push(plan_val.clone());
+                        }
+                        data.push(row_data);
+                    }
+                    let plan_values_id = plan.add_values(data, &mut col_idx)?;
+                    map.add(*id, plan_values_id);
+                }
+                Type::Insert => {
+                    let ast_table_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Table node id is not found among insert children.".into(),
+                        )
+                    })?;
+                    let ast_table = self.nodes.get_node(*ast_table_id)?;
+                    if let Type::Table = ast_table.rule {
+                    } else {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Expected a table in insert, got {:?}.",
+                            ast_table
+                        )));
+                    }
+                    let relation: &str = ast_table.value.as_ref().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Table name was not found in the AST.".into(),
+                        )
+                    })?;
+
+                    let ast_child_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Second child is not found among insert children.".into(),
+                        )
+                    })?;
+                    let ast_child = self.nodes.get_node(*ast_child_id)?;
+                    let plan_insert_id = if let Type::TargetColumns = ast_child.rule {
+                        // insert into t (a, b, c) ...
+                        let mut col_names: Vec<&str> = Vec::with_capacity(ast_child.children.len());
+                        for col_id in &ast_child.children {
+                            let col = self.nodes.get_node(*col_id)?;
+                            if let Type::ColumnName = col.rule {
+                                col_names.push(col.value.as_ref().ok_or_else(||
+                                        QueryPlannerError::CustomError(
+                                            "Column name was not found among the AST target columns (insert).".into(),
+                                    ))?);
+                            } else {
+                                return Err(QueryPlannerError::CustomError(format!(
+                                    "Expected a column name in insert, got {:?}.",
+                                    col
+                                )));
+                            }
+                        }
+                        let ast_rel_child_id = node.children.get(2).ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Third child is not found among insert children.".into(),
+                            )
+                        })?;
+                        let plan_rel_child_id = map.get(*ast_rel_child_id)?;
+                        plan.add_insert(relation, plan_rel_child_id, &col_names)?
+                    } else {
+                        // insert into t ...
+                        let plan_child_id = map.get(*ast_child_id)?;
+                        plan.add_insert(relation, plan_child_id, &[])?
+                    };
+                    map.add(*id, plan_insert_id);
+                }
                 Type::AliasName
                 | Type::ColumnName
                 | Type::ScanName
                 | Type::Select
-                | Type::SubQueryName => {}
+                | Type::SubQueryName
+                | Type::TargetColumns => {}
                 rule => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Not implements type: {:?}",

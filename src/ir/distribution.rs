@@ -37,7 +37,8 @@ pub enum Distribution {
     /// A tuple can be located on any data node.
     /// Example: projection removes the segment key columns.
     Any,
-    /// A tuple is located on all data nodes (constants).
+    /// A tuple is located on all data nodes and on coordinator
+    /// (constants).
     Replicated,
     /// Tuple distribution is set by the distribution key.
     /// Example: tuples from the segmented table.
@@ -174,10 +175,11 @@ impl Plan {
                     // References in the leaf (relation scan) node.
                     if targets.is_some() {
                         return Err(QueryPlannerError::InvalidReference);
-                    }
-                    if let Relational::ScanRelation { relation, .. } = rel_op {
+                    } else if let Relational::ScanRelation { relation, .. } = rel_op {
                         table_set.insert(relation.clone());
                         table_pos_map.insert(*position, pos);
+                    } else if let Relational::Values { .. } = rel_op {
+                        // Nothing to do here, we'll set replicated distribution later.
                     } else {
                         return Err(QueryPlannerError::InvalidReference);
                     }
@@ -401,16 +403,21 @@ impl Plan {
         Ok(())
     }
 
-    /// Gets distribution of the row node.
+    /// Gets distribution of the output row.
     ///
     /// # Errors
-    /// - node is invalid
-    /// - node is not a row
+    /// - Node is not of a row type.
     pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, QueryPlannerError> {
-        if let Node::Expression(expr) = self.get_node(row_id)? {
-            return expr.distribution();
+        match self.get_node(row_id)? {
+            Node::Expression(expr) => expr.distribution(),
+            Node::Relational(_) => Err(QueryPlannerError::CustomError(
+                "Failed to get distribution for a relational node (try its row output tuple)."
+                    .to_string(),
+            )),
+            Node::Parameter => Err(QueryPlannerError::CustomError(
+                "Failed to get distribution for a parameter node.".to_string(),
+            )),
         }
-        Err(QueryPlannerError::InvalidNode)
     }
 
     /// Gets distribution of the row node or initializes it if not set.

@@ -9,8 +9,11 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
+use crate::ir::value::Value;
 
 use super::distribution::Key;
+
+const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types.
 #[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
@@ -46,6 +49,13 @@ pub struct Column {
     pub name: String,
     /// Column type.
     pub r#type: Type,
+}
+
+impl Column {
+    #[must_use]
+    pub fn default_value() -> Value {
+        DEFAULT_VALUE.clone()
+    }
 }
 
 /// Msgpack serializer for a column

@@ -12,7 +12,10 @@ use crate::errors::QueryPlannerError;
 
 use super::expression::Expression;
 use super::transformation::redistribution::MotionPolicy;
+use super::value::Value;
 use super::{Node, Nodes, Plan};
+use crate::collection;
+use crate::ir::distribution::Distribution;
 use traversal::Bft;
 
 /// Binary operator returning Bool expression.
@@ -83,7 +86,17 @@ impl Display for Bool {
 /// relation algebra logic.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Relational {
-    /// Inner Join
+    Insert {
+        /// Relation name.
+        relation: String,
+        /// Target column positions for data insertion from
+        /// the child's tuple.
+        columns: Vec<usize>,
+        /// Contains exactly one single element.
+        children: Vec<usize>,
+        /// The output tuple (need for `insert returning`).
+        output: usize,
+    },
     InnerJoin {
         /// Contains at least two elements: left and right node indexes
         /// from the plan node arena. Every element other than those
@@ -147,6 +160,12 @@ pub enum Relational {
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
+    Values {
+        /// Output tuple.
+        output: usize,
+        /// Data (list of rows).
+        data: Vec<Vec<Value>>,
+    },
 }
 
 #[allow(dead_code)]
@@ -196,12 +215,14 @@ impl Relational {
     pub fn output(&self) -> usize {
         match self {
             Relational::InnerJoin { output, .. }
+            | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
             | Relational::ScanRelation { output, .. }
             | Relational::ScanSubQuery { output, .. }
             | Relational::Selection { output, .. }
-            | Relational::UnionAll { output, .. } => *output,
+            | Relational::UnionAll { output, .. }
+            | Relational::Values { output, .. } => *output,
         }
     }
 
@@ -210,12 +231,13 @@ impl Relational {
     pub fn children(&self) -> Option<&[usize]> {
         match self {
             Relational::InnerJoin { children, .. }
+            | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
             | Relational::Selection { children, .. }
             | Relational::UnionAll { children, .. } => Some(children),
-            Relational::ScanRelation { .. } => None,
+            Relational::ScanRelation { .. } | Relational::Values { .. } => None,
         }
     }
 
@@ -238,6 +260,10 @@ impl Relational {
     pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), QueryPlannerError> {
         match self {
             Relational::InnerJoin {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Insert {
                 children: ref mut old,
                 ..
             }
@@ -267,6 +293,9 @@ impl Relational {
             Relational::ScanRelation { .. } => Err(QueryPlannerError::CustomError(String::from(
                 "Scan is a leaf node",
             ))),
+            Relational::Values { .. } => Err(QueryPlannerError::CustomError(String::from(
+                "Values is a leaf node",
+            ))),
         }
     }
 
@@ -280,6 +309,7 @@ impl Relational {
         position: usize,
     ) -> Result<Option<&'n str>, QueryPlannerError> {
         match self {
+            Relational::Insert { relation, .. } => Ok(Some(relation.as_str())),
             Relational::ScanRelation {
                 alias, relation, ..
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
@@ -312,7 +342,7 @@ impl Relational {
                 }
                 Ok(None)
             }
-            Relational::UnionAll { .. } => Ok(None),
+            Relational::UnionAll { .. } | Relational::Values { .. } => Ok(None),
         }
     }
 
@@ -335,6 +365,77 @@ impl Relational {
 }
 
 impl Plan {
+    /// Adds insert node.
+    ///
+    /// # Errors
+    /// - Failed to find a target relation.
+    pub fn add_insert(
+        &mut self,
+        relation: &str,
+        child: usize,
+        columns: &[&str],
+    ) -> Result<usize, QueryPlannerError> {
+        let rel_map = self.relations.as_ref().ok_or_else(|| {
+            QueryPlannerError::CustomError("Plan doesn't contain any relations".to_string())
+        })?;
+        let rel = rel_map.get(relation).ok_or_else(|| {
+            QueryPlannerError::CustomError(format!("Invalid relation: {}", relation))
+        })?;
+        let columns: Vec<usize> = if columns.is_empty() {
+            (0..rel.columns.len()).collect()
+        } else {
+            let mut names: HashMap<&str, usize, RandomState> =
+                HashMap::with_capacity_and_hasher(columns.len(), RandomState::new());
+            for (pos, col) in rel.columns.iter().enumerate() {
+                names.insert(col.name.as_ref(), pos);
+            }
+            let mut cols: Vec<usize> = Vec::with_capacity(columns.len());
+            for name in columns {
+                cols.push(*names.get(name).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!("Invalid column: {}", name))
+                })?);
+            }
+            cols
+        };
+        let child_rel = self.get_relation_node(child)?;
+        let child_output = self.get_expression_node(child_rel.output())?;
+        let child_output_list_len = if let Expression::Row { list, .. } = child_output {
+            list.len()
+        } else {
+            return Err(QueryPlannerError::CustomError(String::from(
+                "Child output is not a row.",
+            )));
+        };
+        if child_output_list_len != columns.len() {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Invalid number of values: {}. Table {} expects {} column(s).",
+                child_output_list_len,
+                relation,
+                columns.len()
+            )));
+        }
+
+        let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
+        for (pos, col) in rel.columns.iter().enumerate() {
+            let r_id = self.nodes.add_ref(None, None, pos);
+            let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
+            refs.push(col_alias_id);
+        }
+        let dist = Distribution::Segment {
+            keys: collection! { rel.key.clone() },
+        };
+        let output = self.nodes.add_row_of_aliases(refs, Some(dist))?;
+        let insert = Node::Relational(Relational::Insert {
+            relation: relation.into(),
+            columns,
+            children: vec![child],
+            output,
+        });
+        let insert_id = self.nodes.push(insert);
+        self.replace_parent_in_subtree(output, None, Some(insert_id))?;
+        Ok(insert_id)
+    }
+
     /// Adds a scan node.
     ///
     /// # Errors
@@ -579,6 +680,45 @@ impl Plan {
         let union_all_id = self.nodes.push(Node::Relational(union_all));
         self.replace_parent_in_subtree(output, None, Some(union_all_id))?;
         Ok(union_all_id)
+    }
+
+    /// Adds values node.
+    ///
+    /// # Errors
+    /// - Values data has no columns or no rows.
+    pub fn add_values(
+        &mut self,
+        data: Vec<Vec<Value>>,
+        col_idx: &mut usize,
+    ) -> Result<usize, QueryPlannerError> {
+        let output_len = if let Some(first_row) = data.first() {
+            first_row.len()
+        } else {
+            return Err(QueryPlannerError::CustomError(
+                "Values must have at least one row.".into(),
+            ));
+        };
+        if output_len == 0 {
+            return Err(QueryPlannerError::CustomError(
+                "Values must have at least one column.".into(),
+            ));
+        }
+        *col_idx += output_len * data.len() - output_len;
+        let mut list: Vec<usize> = Vec::with_capacity(output_len);
+        for pos in 0..output_len {
+            let ref_id = self.nodes.add_ref(None, None, pos);
+            *col_idx += 1;
+            let alias_id = self
+                .nodes
+                .add_alias(&format!("COLUMN_{}", *col_idx), ref_id)?;
+            list.push(alias_id);
+        }
+        let output = self.nodes.add_row(list, Some(Distribution::Replicated));
+
+        let values = Relational::Values { output, data };
+        let values_id = self.nodes.push(Node::Relational(values));
+        self.replace_parent_in_subtree(output, None, Some(values_id))?;
+        Ok(values_id)
     }
 
     /// Gets an output tuple from relational node id

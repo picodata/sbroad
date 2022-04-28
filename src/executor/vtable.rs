@@ -6,8 +6,8 @@ use std::vec;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::QueryPlannerError;
-use crate::ir::distribution::Key;
 use crate::ir::relation::Column;
+use crate::ir::transformation::redistribution::{MotionKey, Target};
 use crate::ir::value::{AsIrVal, Value};
 
 pub type VTableTuple = Vec<Value>;
@@ -27,7 +27,7 @@ pub struct VirtualTable {
     /// Unique table name (we need to generate it ourselves).
     name: Option<String>,
     /// Unique distribution keys of virtual table tuples
-    distribution_key: Option<Key>,
+    distribution_key: Option<MotionKey>,
     /// Index groups tuples by the buckets:
     /// the key is a bucket id, the value is a list of positions
     /// in the `tuples` list corresponding to the bucket.
@@ -92,15 +92,15 @@ impl VirtualTable {
         &self.columns
     }
 
-    /// Get vtable distribution key
+    /// Get vtable motion key
     #[must_use]
-    pub fn get_distribution_key(&self) -> &Option<Key> {
+    pub fn get_moton_key(&self) -> &Option<MotionKey> {
         &self.distribution_key
     }
 
-    /// Set vtable distribution key
-    pub fn set_distribution_key(&mut self, key: Key) {
-        self.distribution_key = Some(key);
+    /// Set vtable motion key
+    pub fn set_motion_key(&mut self, sharding_key: &MotionKey) {
+        self.distribution_key = Some(sharding_key.clone());
     }
 
     /// Get vtable index
@@ -121,21 +121,29 @@ impl VirtualTable {
     pub fn get_tuple_distribution(&self) -> Result<HashSet<Vec<&Value>>, QueryPlannerError> {
         let mut result: HashSet<Vec<&Value>> = HashSet::with_capacity(self.tuples.len());
 
-        let key = self.distribution_key.as_ref().ok_or_else(|| {
-            QueryPlannerError::CustomError(
-                "Failed to find a distribution key for the virtual table".to_string(),
-            )
-        })?;
         for tuple in &self.tuples {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            for pos in &key.positions {
-                let part = tuple.get(*pos).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Failed to find a distribution key column {} in the tuple {:?}.",
-                        pos, tuple
-                    ))
-                })?;
-                shard_key_tuple.push(part);
+            if let Some(k) = &self.distribution_key {
+                for target in &k.targets {
+                    match target {
+                        Target::Reference(pos) => {
+                            let part = tuple.get(*pos).ok_or_else(|| {
+                                QueryPlannerError::CustomError(format!(
+                                    "Failed to find a distribution key column {} in the tuple {:?}.",
+                                    pos, tuple
+                                ))
+                            })?;
+                            shard_key_tuple.push(part);
+                        }
+                        Target::Value(ref val) => {
+                            shard_key_tuple.push(val);
+                        }
+                    }
+                }
+            } else {
+                return Err(QueryPlannerError::CustomError(
+                    "Distribution key not found".into(),
+                ));
             }
             result.insert(shard_key_tuple);
         }

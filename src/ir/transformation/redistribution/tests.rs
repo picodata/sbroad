@@ -365,9 +365,12 @@ fn join_inner_eq_non_match_keys() {
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
             *policy,
-            MotionPolicy::Segment(Key {
-                positions: vec![0, 1]
-            })
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
         );
     } else {
         panic!("Expected a motion node");
@@ -542,9 +545,12 @@ fn inner_join_full_policy_sq_with_union_all_in_filter() {
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
             *policy,
-            MotionPolicy::Segment(Key {
-                positions: vec![0, 1]
-            })
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
         );
     } else {
         panic!("Expected a motion node");
@@ -626,7 +632,10 @@ fn join1() {
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(*policy, MotionPolicy::Segment(Key { positions: vec![0] }));
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment((Key { positions: vec![0] }).into())
+        );
     } else {
         panic!("Expected a motion node");
     }
@@ -649,4 +658,141 @@ fn join1() {
         },
         dist,
     );
+}
+
+#[test]
+fn redistribution1() {
+    let query = r#"INSERT INTO "t" SELECT "d", "c", "b", "a" FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn redistribution2() {
+    let query = r#"INSERT INTO "t" SELECT * FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn redistribution3() {
+    let query = r#"INSERT INTO "t" ("a", "b") SELECT "a", "b" FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let expected: Option<Vec<Vec<usize>>> = None;
+    assert_eq!(expected, plan.slices);
+}
+
+#[test]
+fn redistribution4() {
+    let query = r#"INSERT INTO "t" ("b", "a") SELECT "a", "b" FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![1, 0]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn redistribution5() {
+    let query = r#"INSERT INTO "t" ("c", "d") SELECT "a", "b" FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(MotionKey {
+                targets: vec![
+                    Target::Value(Column::default_value()),
+                    Target::Value(Column::default_value()),
+                ]
+            })
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
+}
+
+#[test]
+fn redistribution6() {
+    let query = r#"INSERT INTO "t" ("a", "c") SELECT "a", "b" FROM "t""#;
+
+    let mut plan = sql_to_ir(query, &[]);
+    plan.add_motions().unwrap();
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(MotionKey {
+                targets: vec![Target::Reference(0), Target::Value(Column::default_value()),]
+            })
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
 }

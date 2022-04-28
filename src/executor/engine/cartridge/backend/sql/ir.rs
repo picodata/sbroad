@@ -115,6 +115,11 @@ impl ExecutionPlan {
                             ));
                         }
                         Node::Relational(rel) => match rel {
+                            // FIXME: columns
+                            Relational::Insert { relation, .. } => {
+                                sql.push_str("INSERT INTO ");
+                                sql.push_str(relation.as_str());
+                            }
                             Relational::InnerJoin { .. } => sql.push_str("INNER JOIN"),
                             Relational::Projection { .. } => sql.push_str("SELECT"),
                             Relational::ScanRelation { relation, .. } => {
@@ -123,6 +128,7 @@ impl ExecutionPlan {
                             Relational::ScanSubQuery { .. } | Relational::Motion { .. } => {}
                             Relational::Selection { .. } => sql.push_str("WHERE"),
                             Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
+                            Relational::Values { .. } => sql.push_str("VALUES"),
                         },
                         Node::Expression(expr) => match expr {
                             Expression::Alias { .. }
@@ -198,6 +204,16 @@ impl ExecutionPlan {
                             cols(anonymous_col_idx_base),
                             values
                         ));
+                    } else if cols_count == 0 {
+                        // A special case for `INSERT .. VALUES (..)`
+                        // when a virtual table has no column names.
+                        let values = tuples
+                            .iter()
+                            .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
+                            .collect::<Vec<String>>()
+                            .join(",");
+
+                        sql.push_str(&format!("VALUES {}", values));
                     } else {
                         let values = tuples
                             .iter()
@@ -213,6 +229,9 @@ impl ExecutionPlan {
                             values
                         ));
                     }
+                }
+                SyntaxData::Value(value) => {
+                    sql.push_str(&format!("{}", value));
                 }
             }
         }

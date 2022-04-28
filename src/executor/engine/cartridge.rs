@@ -18,6 +18,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::operator::Relational;
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
 
@@ -185,10 +186,17 @@ impl Engine for Runtime {
         motion_node_id: usize,
         buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError> {
-        let top = &plan.get_motion_subtree_root(motion_node_id)?;
+        let top_id = plan.get_motion_subtree_root(motion_node_id)?;
 
-        let result = self.exec(plan, *top, buckets)?;
-        let mut vtable = result.as_virtual_table()?;
+        // We need to handle a special case when the output of the top node has
+        // a replicated distribution (currently it means VALUES of constants).
+        let top = plan.get_ir_plan().get_relation_node(top_id)?;
+        let mut vtable = if let Relational::Values { .. } = top {
+            plan.vtable_from_values(top_id)?
+        } else {
+            let result = self.exec(plan, top_id, buckets)?;
+            result.as_virtual_table()?
+        };
 
         if let Some(name) = &plan.get_motion_alias(motion_node_id)? {
             vtable.set_alias(name)?;

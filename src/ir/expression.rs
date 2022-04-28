@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
-use crate::ir::operator::Bool;
+use crate::ir::operator::{Bool, Relational};
 
 use super::distribution::Distribution;
 use super::value::Value;
@@ -619,7 +619,9 @@ impl Plan {
                 "Reference node has no parent".into(),
             ))?;
             let rel = self.get_relation_node(referred_rel_id)?;
-            if let Some(children) = rel.children() {
+            if let Relational::Insert { .. } = rel {
+                rel_nodes.insert(referred_rel_id);
+            } else if let Some(children) = rel.children() {
                 if let Some(positions) = targets {
                     for pos in positions {
                         if let Some(child) = children.get(*pos) {

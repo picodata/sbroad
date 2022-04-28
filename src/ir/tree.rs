@@ -224,6 +224,7 @@ impl<'n> Iterator for RelationalIterator<'n> {
         match self.nodes.arena.get(*self.current) {
             Some(Node::Relational(
                 Relational::InnerJoin { children, .. }
+                | Relational::Insert { children, .. }
                 | Relational::Motion { children, .. }
                 | Relational::Projection { children, .. }
                 | Relational::ScanSubQuery { children, .. }
@@ -238,7 +239,7 @@ impl<'n> Iterator for RelationalIterator<'n> {
                 None
             }
             Some(
-                Node::Relational(Relational::ScanRelation { .. })
+                Node::Relational(Relational::ScanRelation { .. } | Relational::Values { .. })
                 | Node::Expression(_)
                 | Node::Parameter,
             )
@@ -308,7 +309,8 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                         }
                     }
 
-                    Relational::Motion { children, .. }
+                    Relational::Insert { children, .. }
+                    | Relational::Motion { children, .. }
                     | Relational::ScanSubQuery { children, .. }
                     | Relational::UnionAll { children, .. } => {
                         let step = *self.child.borrow();
@@ -346,6 +348,15 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                             }
                             Ordering::Greater => None,
                         }
+                    }
+                    Relational::Values { output, .. } => {
+                        let step = *self.child.borrow();
+
+                        *self.child.borrow_mut() += 1;
+                        if step == 0 {
+                            return Some(output);
+                        }
+                        None
                     }
                     Relational::ScanRelation { .. } => None,
                 },

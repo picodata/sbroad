@@ -10,33 +10,63 @@ use crate::errors::QueryPlannerError;
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::relation::Column;
+use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
+
+/// Redistribution key targets (columns or values of the key).
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+pub enum Target {
+    /// A position of the existing column in the tuple.
+    Reference(usize),
+    /// A value that should be used as a part of the
+    /// redistribution key. We need it in a case of
+    /// `insert into t1 (b) ...` when a column `a` is
+    /// absent and should be generated from the default
+    /// value.
+    Value(Value),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+pub struct MotionKey {
+    pub targets: Vec<Target>,
+}
+
+impl MotionKey {
+    fn new() -> Self {
+        MotionKey { targets: vec![] }
+    }
+}
+
+impl From<Key> for MotionKey {
+    fn from(key: Key) -> Self {
+        MotionKey {
+            targets: key.positions.into_iter().map(Target::Reference).collect(),
+        }
+    }
+}
+
+impl From<&Key> for MotionKey {
+    fn from(key: &Key) -> Self {
+        let positions: &[usize] = &key.positions;
+        MotionKey {
+            targets: positions
+                .iter()
+                .map(|pos| Target::Reference(*pos))
+                .collect(),
+        }
+    }
+}
 
 /// Determinate what portion of data to move between data nodes in cluster.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MotionPolicy {
     /// Move all data.
     Full,
-    /// Move only a segment of data according to the distribution key.
-    Segment(Key),
+    /// Move only a segment of data according to the motion key.
+    Segment(MotionKey),
     /// No need to move data.
     Local,
-}
-
-impl MotionPolicy {
-    /// Extract `Segment` policy
-    ///
-    /// # Errors
-    /// - police is nlt `Segment`
-    pub fn get_segment_key(self) -> Result<Key, QueryPlannerError> {
-        if let MotionPolicy::Segment(k) = self {
-            return Ok(k);
-        }
-
-        Err(QueryPlannerError::CustomError(String::from(
-            "Policy is not segment",
-        )))
-    }
 }
 
 struct BoolOp {
@@ -259,7 +289,7 @@ impl Plan {
                             "Failed to get the first distribution key from the outer row.",
                         )))
                     },
-                    |key| Ok(MotionPolicy::Segment(key.clone())),
+                    |key| Ok(MotionPolicy::Segment(key.into())),
                 );
             }
         }
@@ -532,7 +562,7 @@ impl Plan {
             let (outer_keys, _) =
                 self.split_join_keys_to_inner_and_outer(join_id, &keys, row_map)?;
             if let Some(outer_key) = outer_keys.get(0) {
-                Ok(MotionPolicy::Segment(outer_key.clone()))
+                Ok(MotionPolicy::Segment(outer_key.into()))
             } else {
                 Ok(MotionPolicy::Full)
             }
@@ -574,7 +604,7 @@ impl Plan {
                 }
                 if let Some(outer_key) = first_outer_key {
                     // Choose the first of the outer keys for the segment motion policy.
-                    Ok(MotionPolicy::Segment(outer_key))
+                    Ok(MotionPolicy::Segment(outer_key.into()))
                 } else {
                     Ok(MotionPolicy::Full)
                 }
@@ -708,6 +738,101 @@ impl Plan {
         Ok(strategy)
     }
 
+    fn resolve_insert_conflicts(
+        &mut self,
+        rel_id: usize,
+    ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
+        let mut map: HashMap<usize, MotionPolicy> = HashMap::new();
+        match self.get_relation_node(rel_id)? {
+            Relational::Insert {
+                relation,
+                columns,
+                children,
+                ..
+            } => {
+                let child: usize = if let (Some(child), None) = (children.get(0), children.get(1)) {
+                    *child
+                } else {
+                    return Err(QueryPlannerError::CustomError(
+                        "Insert node doesn't have exactly a single child.".into(),
+                    ));
+                };
+                let child_rel = self.get_relation_node(child)?;
+                let child_row = self.get_expression_node(child_rel.output())?;
+                let (list, distribution) = if let Expression::Row {
+                    list, distribution, ..
+                } = child_row
+                {
+                    (list, distribution)
+                } else {
+                    return Err(QueryPlannerError::CustomError(
+                        "Insert child node has an invalid node instead of the output row".into(),
+                    ));
+                };
+                if list.len() != columns.len() {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Insert node expects {} columns instead of {}",
+                        list.len(),
+                        columns.len()
+                    )));
+                }
+                let columns_map: HashMap<usize, usize> = columns
+                    .iter()
+                    .enumerate()
+                    .map(|(pos, id)| (*id, pos))
+                    .collect::<HashMap<_, _>>();
+                let mut motion_key: MotionKey = MotionKey::new();
+                let rel = self.get_relation(relation).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!("Relation {} not found", relation))
+                })?;
+                for pos in &rel.key.positions {
+                    if let Some(child_pos) = columns_map.get(pos) {
+                        // We can use insert column's position instead of
+                        // the position in the child node as their lengths
+                        // are the same.
+                        motion_key.targets.push(Target::Reference(*child_pos));
+                    } else {
+                        // Check that the column exists on the requested position.
+                        rel.columns.get(*pos).ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Column {} not found in relation {}",
+                                pos, relation
+                            ))
+                        })?;
+                        // We need a default value for the key column.
+                        motion_key
+                            .targets
+                            .push(Target::Value(Column::default_value()));
+                    }
+                }
+                match distribution {
+                    None => {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Insert node child {} has no distribution",
+                            child
+                        )))
+                    }
+                    Some(Distribution::Segment { keys, .. }) => {
+                        for key in keys {
+                            if motion_key == key.into() {
+                                map.insert(child, MotionPolicy::Local);
+                                return Ok(map);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                map.insert(child, MotionPolicy::Segment(motion_key));
+            }
+            _ => {
+                return Err(QueryPlannerError::CustomError(
+                    "Expected insert node".into(),
+                ))
+            }
+        }
+        Ok(map)
+    }
+
     /// Add motion nodes to the plan tree.
     ///
     /// # Errors
@@ -723,7 +848,8 @@ impl Plan {
                 Relational::Projection { output, .. }
                 | Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
-                | Relational::UnionAll { output, .. } => {
+                | Relational::UnionAll { output, .. }
+                | Relational::Values { output, .. } => {
                     self.set_distribution(output)?;
                 }
                 Relational::Motion { .. } => {
@@ -744,6 +870,11 @@ impl Plan {
                     let strategy = self.resolve_join_conflicts(*id, condition)?;
                     self.create_motion_nodes(*id, &strategy)?;
                     self.set_distribution(output)?;
+                }
+                Relational::Insert { .. } => {
+                    // Insert output tuple already has relation's distribution.
+                    let strategy = self.resolve_insert_conflicts(*id)?;
+                    self.create_motion_nodes(*id, &strategy)?;
                 }
             }
         }

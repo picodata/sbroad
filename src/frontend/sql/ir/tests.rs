@@ -213,6 +213,79 @@ fn front_sql9() {
 }
 
 #[test]
+fn front_sql10() {
+    let input = r#"INSERT INTO "t" VALUES(1, 2, 3, 4)"#;
+    let expected = format!("{}", r#"INSERT INTO "t" VALUES (1, 2, 3, 4)"#,);
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
+fn front_sql11() {
+    let input = r#"INSERT INTO "t" ("a", "c") VALUES(1, 2)"#;
+    let expected = format!("{}", r#"INSERT INTO "t" ("t"."a", "t"."c") VALUES (1, 2)"#,);
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
+fn front_sql12() {
+    let query = r#"INSERT INTO "t" VALUES(1, 2)"#;
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        QueryPlannerError::CustomError(
+            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+        ),
+        plan_err
+    );
+}
+
+#[test]
+fn front_sql13() {
+    let query = r#"INSERT INTO "t" ("a") VALUES(1, 2)"#;
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        QueryPlannerError::CustomError(
+            r#"Invalid number of values: 2. Table "t" expects 1 column(s)."#.into()
+        ),
+        plan_err
+    );
+}
+
+#[test]
+fn front_sql14() {
+    let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t""#;
+    let expected = format!(
+        "{} {}",
+        r#"INSERT INTO "t" ("t"."a", "t"."c")"#,
+        r#"SELECT "t"."b" as "b", "t"."d" as "d" FROM "t""#,
+    );
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
+fn front_sql15() {
+    let query = r#"INSERT INTO "t" SELECT "b", "d" FROM "t""#;
+    let metadata = &MetadataMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        QueryPlannerError::CustomError(
+            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+        ),
+        plan_err
+    );
+}
+
+#[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;

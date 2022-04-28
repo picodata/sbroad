@@ -22,7 +22,8 @@ Query = _{ UnionAll | Select | Values | Insert }
         Condition = { Expr+ }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (SubQuery | Select) }
     SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" }
-    Insert = { ^"insert" ~ ^"into" ~ Table ~ Values }
+    Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) }
+        TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
     Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
 
 Expr = _{  Or | And | Cmp | Primary | Parentheses }

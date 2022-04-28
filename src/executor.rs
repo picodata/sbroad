@@ -34,8 +34,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
-use crate::ir::distribution::Key;
-use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use base64ct::{Base64, Encoding};
@@ -187,22 +186,29 @@ where
     pub fn reshard_vtable(
         &self,
         vtable: &mut VirtualTable,
-        sharding_key: &Key,
+        sharding_key: &MotionKey,
     ) -> Result<(), QueryPlannerError> {
-        vtable.set_distribution_key(sharding_key.clone());
+        vtable.set_motion_key(sharding_key);
 
         let mut index: HashMap<u64, Vec<usize>, RandomState> =
             HashMap::with_hasher(RandomState::new());
         for (pos, tuple) in vtable.get_tuples().iter().enumerate() {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            for pos in &sharding_key.positions {
-                let part = tuple.get(*pos).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Failed to find a distribution key column {} in the tuple {:?}.",
-                        pos, tuple
-                    ))
-                })?;
-                shard_key_tuple.push(part);
+            for target in &sharding_key.targets {
+                match target {
+                    Target::Reference(col_idx) => {
+                        let part = tuple.get(*col_idx).ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Failed to find a distribution key column {} in the tuple {:?}.",
+                                pos, tuple
+                            ))
+                        })?;
+                        shard_key_tuple.push(part);
+                    }
+                    Target::Value(ref value) => {
+                        shard_key_tuple.push(value);
+                    }
+                }
             }
             let bucket_id = self.engine.determine_bucket_id(&shard_key_tuple);
             match index.entry(bucket_id) {
