@@ -57,7 +57,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "_" | ASCII_DIGIT)+ }
+String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
     Keyword = { ^"union" | ^"where" }
     Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
         Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
