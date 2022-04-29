@@ -1,6 +1,6 @@
 # SQL Broadcaster (sbroad)
 
-Currently the library contains a query planner and an executor for the distributed SQL in a Tarantool `vshard` cluster.
+Currently the library contains a query planner and an executor for the distributed SQL in a Tarantool `cartridge` cluster.
 
 ## Getting started
 
