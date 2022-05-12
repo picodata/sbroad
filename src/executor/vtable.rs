@@ -1,3 +1,6 @@
+use ahash::RandomState;
+
+use std::collections::{HashMap, HashSet};
 use std::vec;
 
 use serde::{Deserialize, Serialize};
@@ -7,7 +10,7 @@ use crate::ir::distribution::Key;
 use crate::ir::relation::Column;
 use crate::ir::value::{AsIrVal, Value};
 
-type VTableTuple = Vec<Value>;
+pub type VTableTuple = Vec<Value>;
 type ShardingKey = Vec<Value>;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -25,6 +28,10 @@ pub struct VirtualTable {
     name: Option<String>,
     /// Unique distribution keys of virtual table tuples
     distribution_key: Option<Key>,
+    /// Index groups tuples by the buckets:
+    /// the key is a bucket id, the value is a list of positions
+    /// in the `tuples` list corresponding to the bucket.
+    index: HashMap<u64, Vec<usize>, RandomState>,
 }
 
 impl Default for VirtualTable {
@@ -41,6 +48,7 @@ impl VirtualTable {
             tuples: vec![],
             name: None,
             distribution_key: None,
+            index: HashMap::with_hasher(RandomState::new()),
         }
     }
 
@@ -74,45 +82,65 @@ impl VirtualTable {
 
     /// Get vtable tuples list
     #[must_use]
-    pub fn get_tuples(&self) -> Vec<VTableTuple> {
-        self.tuples.clone()
+    pub fn get_tuples(&self) -> &[VTableTuple] {
+        &self.tuples
     }
 
     /// Get vtable columns list
     #[must_use]
-    pub fn get_columns(&self) -> Vec<Column> {
-        self.columns.clone()
+    pub fn get_columns(&self) -> &[Column] {
+        &self.columns
     }
 
-    /// Get tuples was distributed by sharding keys
+    /// Get vtable distribution key
+    #[must_use]
+    pub fn get_distribution_key(&self) -> &Option<Key> {
+        &self.distribution_key
+    }
+
+    /// Set vtable distribution key
+    pub fn set_distribution_key(&mut self, key: Key) {
+        self.distribution_key = Some(key);
+    }
+
+    /// Get vtable index
+    #[must_use]
+    pub fn get_index(&self) -> &HashMap<u64, Vec<usize>, RandomState> {
+        &self.index
+    }
+
+    /// Set vtable index
+    pub fn set_index(&mut self, index: HashMap<u64, Vec<usize>, RandomState>) {
+        self.index = index;
+    }
+
+    /// Get virtual table tuples' values, participating in the distribution key.
     ///
     /// # Errors
-    /// - Distribution key not found
-    pub fn get_tuple_distribution(&self) -> Result<Vec<Vec<&Value>>, QueryPlannerError> {
-        let mut result = vec![];
-        for tuple in &self.tuples {
-            let mut shard_key_tuple = vec![];
-            if let Some(k) = &self.distribution_key {
-                for part in &k.positions {
-                    if let Some(p) = tuple.get(*part) {
-                        shard_key_tuple.push(p);
-                    }
-                }
+    /// - Failed to find a distribution key.
+    pub fn get_tuple_distribution(&self) -> Result<HashSet<Vec<&Value>>, QueryPlannerError> {
+        let mut result: HashSet<Vec<&Value>> = HashSet::with_capacity(self.tuples.len());
 
-                result.push(shard_key_tuple);
-            } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Distribution key not found".into(),
-                ));
+        let key = self.distribution_key.as_ref().ok_or_else(|| {
+            QueryPlannerError::CustomError(
+                "Failed to find a distribution key for the virtual table".to_string(),
+            )
+        })?;
+        for tuple in &self.tuples {
+            let mut shard_key_tuple: Vec<&Value> = Vec::new();
+            for pos in &key.positions {
+                let part = tuple.get(*pos).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Failed to find a distribution key column {} in the tuple {:?}.",
+                        pos, tuple
+                    ))
+                })?;
+                shard_key_tuple.push(part);
             }
+            result.insert(shard_key_tuple);
         }
 
         Ok(result)
-    }
-
-    /// Distribute tuples by sharding key columns
-    pub fn set_distribution(&mut self, sharding_key: &Key) {
-        self.distribution_key = Some(sharding_key.clone());
     }
 
     /// Set vtable alias name

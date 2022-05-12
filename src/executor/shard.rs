@@ -40,9 +40,7 @@ impl<'e> ExecutionPlan<'e> {
         for (_, node) in post_tree {
             if ir_plan.get_relation_node(*node)?.is_motion() {
                 let vtable = self.get_motion_vtable(*node)?;
-                for k in vtable.get_tuple_distribution().keys() {
-                    result.insert(k.clone());
-                }
+                result.extend(&vtable.get_sharding_keys()?);
             }
         }
 

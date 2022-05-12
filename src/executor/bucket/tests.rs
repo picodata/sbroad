@@ -1,9 +1,11 @@
 use pretty_assertions::assert_eq;
+use std::collections::HashSet;
 
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::EngineMock;
 use crate::executor::engine::Engine;
 use crate::executor::Query;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
 
 #[test]
@@ -24,7 +26,8 @@ fn simple_union_query() {
     let param1 = Value::number_from_str("1").unwrap();
 
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
-    let expected = Buckets::new_filtered([bucket1].into());
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1].into_iter().collect();
+    let expected = Buckets::new_filtered(bucket_set);
 
     assert_eq!(expected, buckets);
 }
@@ -50,7 +53,8 @@ fn simple_disjunction_in_union_query() {
     let param100 = Value::number_from_str("100").unwrap();
     let bucket100 = query.engine.determine_bucket_id(&[&param100]);
 
-    let expected = Buckets::new_filtered([bucket1, bucket100].into());
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket100].into_iter().collect();
+    let expected = Buckets::new_filtered(bucket_set);
 
     assert_eq!(expected, buckets);
 }
@@ -78,7 +82,8 @@ fn complex_shard_key_union_query() {
     let param222 = Value::string_from_str("222");
 
     let bucket = query.engine.determine_bucket_id(&[&param1, &param222]);
-    let expected = Buckets::new_filtered([bucket].into());
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket].into_iter().collect();
+    let expected = Buckets::new_filtered(bucket_set);
 
     assert_eq!(expected, buckets);
 }
@@ -120,17 +125,18 @@ fn union_complex_cond_query() {
     let bucket100111 = query.engine.determine_bucket_id(&[&param100, &param111]);
     let bucket1000111 = query.engine.determine_bucket_id(&[&param1000, &param111]);
 
-    let expected = Buckets::new_filtered(
-        [
-            bucket1222,
-            bucket100222,
-            bucket1000222,
-            bucket1111,
-            bucket100111,
-            bucket1000111,
-        ]
-        .into(),
-    );
+    let bucket_set: HashSet<u64, RepeatableState> = vec![
+        bucket1222,
+        bucket100222,
+        bucket1000222,
+        bucket1111,
+        bucket100111,
+        bucket1000111,
+    ]
+    .into_iter()
+    .collect();
+
+    let expected = Buckets::new_filtered(bucket_set);
 
     assert_eq!(expected, buckets);
 }
@@ -152,7 +158,8 @@ fn union_query_conjunction() {
 
     let param2 = Value::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
-    let expected = Buckets::new_filtered([bucket1, bucket2].into());
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket2].into_iter().collect();
+    let expected = Buckets::new_filtered(bucket_set);
 
     assert_eq!(expected, buckets);
 }

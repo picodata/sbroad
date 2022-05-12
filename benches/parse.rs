@@ -235,8 +235,10 @@ fn query1_sql() -> String {
 fn query1(pattern: &str, params: &[Value], engine: &mut EngineMock) {
     let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
-    query.bucket_discovery(top_id).unwrap();
-    query.get_exec_plan().subtree_as_sql(top_id).unwrap();
+    let buckets = query.bucket_discovery(top_id).unwrap();
+    let plan = query.get_exec_plan();
+    let nodes = plan.get_sql_order(top_id).unwrap();
+    plan.subtree_as_sql(&nodes, &buckets).unwrap();
 }
 
 fn bench_query1(c: &mut Criterion) {

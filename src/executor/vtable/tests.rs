@@ -1,4 +1,5 @@
 use crate::ir::relation::Type;
+use ahash::RandomState;
 
 use super::*;
 
@@ -23,6 +24,7 @@ fn virtual_table() {
         tuples: vec![vec![Value::number_from_str("1").unwrap()]],
         name: Some(String::from("test")),
         distribution_key: None,
+        index: HashMap::with_hasher(RandomState::new()),
     };
 
     assert_eq!(expected, vtable)

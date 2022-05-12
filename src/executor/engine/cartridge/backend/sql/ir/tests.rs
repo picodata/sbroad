@@ -1,5 +1,6 @@
 use pretty_assertions::assert_eq;
 
+use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -18,7 +19,8 @@ fn one_table_projection() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -44,7 +46,8 @@ fn one_table_with_asterisk() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -76,7 +79,8 @@ fn union_all() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -104,7 +108,8 @@ fn from_sub_query() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -137,7 +142,8 @@ fn from_sub_query_with_union() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -165,7 +171,8 @@ fn inner_join() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -193,7 +200,8 @@ fn inner_join_with_sq() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(
@@ -220,7 +228,8 @@ fn selection_with_sq() {
     plan.bind_params(&[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sql = ex_plan.subtree_as_sql(top_id).unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         format!(

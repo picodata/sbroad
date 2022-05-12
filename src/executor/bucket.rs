@@ -7,6 +7,7 @@ use crate::executor::engine::Engine;
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
@@ -19,7 +20,7 @@ pub enum Buckets {
     // in a cluster.
     All,
     // A filtered set of buckets.
-    Filtered(HashSet<u64>),
+    Filtered(HashSet<u64, RepeatableState>),
 }
 
 impl Buckets {
@@ -31,7 +32,7 @@ impl Buckets {
 
     /// Get a filtered set of buckets.
     #[must_use]
-    pub fn new_filtered(buckets: HashSet<u64>) -> Self {
+    pub fn new_filtered(buckets: HashSet<u64, RepeatableState>) -> Self {
         Buckets::Filtered(buckets)
     }
 
@@ -106,7 +107,8 @@ where
                     if let Some(motion_id) = ir_plan.get_motion_from_row(right_id)? {
                         let virtual_table = self.exec_plan.get_motion_vtable(motion_id)?;
                         let hashed_keys = virtual_table.get_tuple_distribution()?;
-                        let mut bucket_ids: HashSet<u64> = HashSet::new();
+                        let mut bucket_ids: HashSet<u64, RepeatableState> =
+                            HashSet::with_hasher(RepeatableState);
                         for shard_key in hashed_keys {
                             bucket_ids.insert(self.engine.determine_bucket_id(&shard_key));
                         }
@@ -138,7 +140,9 @@ where
                         }
                         if !values.is_empty() {
                             let bucket = self.engine.determine_bucket_id(&values);
-                            buckets.push(Buckets::new_filtered([bucket].into()));
+                            let bucket_set: HashSet<u64, RepeatableState> =
+                                vec![bucket].into_iter().collect();
+                            buckets.push(Buckets::new_filtered(bucket_set));
                         }
                     }
                 }
@@ -208,7 +212,8 @@ where
                     }
                     MotionPolicy::Segment(_) => {
                         let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
-                        let mut buckets: HashSet<u64> = HashSet::new();
+                        let mut buckets: HashSet<u64, RepeatableState> =
+                            HashSet::with_hasher(RepeatableState);
                         for key in virtual_table.get_tuple_distribution()? {
                             let bucket = self.engine.determine_bucket_id(&key);
                             buckets.insert(bucket);

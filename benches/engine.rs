@@ -9,7 +9,7 @@ use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{Engine, LocalMetadata, Metadata, QueryCache};
 use sbroad::executor::ir::ExecutionPlan;
-use sbroad::executor::result::{BoxExecuteFormat, Value};
+use sbroad::executor::result::BoxExecuteFormat;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::relation::{Column, Table, Type};
@@ -276,23 +276,10 @@ impl Engine for EngineMock {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let mut result = BoxExecuteFormat::new();
-        let sql = plan.subtree_as_sql(top_id)?;
+        let result = BoxExecuteFormat::new();
+        let nodes = plan.get_sql_order(top_id)?;
+        plan.subtree_as_sql(&nodes, buckets)?;
 
-        match buckets {
-            Buckets::All => {
-                result.extend(cluster_exec_query(&sql))?;
-            }
-            Buckets::Filtered(list) => {
-                for bucket in list {
-                    let temp_result = bucket_exec_query(*bucket, &sql);
-                    result.extend(temp_result)?;
-                }
-            }
-        }
-
-        // Sort results to make tests reproducible.
-        result.rows.sort_by_key(|k| k[0].to_string());
         Ok(result)
     }
 
@@ -339,25 +326,4 @@ impl EngineMock {
     pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
         self.virtual_tables.insert(id, table);
     }
-}
-
-fn bucket_exec_query(bucket: u64, query: &str) -> BoxExecuteFormat {
-    let mut result = BoxExecuteFormat::new();
-
-    result.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(query)),
-    ]);
-
-    result
-}
-
-fn cluster_exec_query(query: &str) -> BoxExecuteFormat {
-    let mut result = BoxExecuteFormat::new();
-
-    result.rows.push(vec![
-        Value::String(String::from("Execute query on all buckets")),
-        Value::String(String::from(query)),
-    ]);
-    result
 }

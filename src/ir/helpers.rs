@@ -31,3 +31,9 @@ impl BuildHasher for RepeatableState {
         DefaultHasher::new()
     }
 }
+
+impl Default for RepeatableState {
+    fn default() -> Self {
+        Self
+    }
+}

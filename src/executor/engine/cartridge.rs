@@ -1,7 +1,7 @@
 //! Tarantool cartridge engine module.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 use tarantool::log::{say, SayLevel};
@@ -17,6 +17,7 @@ use crate::executor::result::BoxExecuteFormat;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
 
@@ -25,6 +26,8 @@ use self::hash::bucket_id_by_tuple;
 mod backend;
 pub mod cache;
 pub mod hash;
+
+type GroupedBuckets = HashMap<String, Vec<u64>>;
 
 /// Tarantool cartridge metadata and topology.
 #[derive(Debug, Clone)]
@@ -144,9 +147,33 @@ impl Engine for Runtime {
         buckets: &Buckets,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let mut result = BoxExecuteFormat::new();
-        let sql = plan.subtree_as_sql(top_id)?;
+        let nodes = plan.get_sql_order(top_id)?;
 
-        result.extend(self.exec_query(&sql, buckets)?)?;
+        let mut rs_query: HashMap<String, String> = HashMap::new();
+        if let Buckets::Filtered(_) = buckets {
+            let rs_buckets = group_buckets(buckets)?;
+            rs_query.reserve(rs_buckets.len());
+
+            for (rs, bucket_ids) in &rs_buckets {
+                let bucket_set = bucket_ids
+                    .iter()
+                    .copied()
+                    .collect::<HashSet<u64, RepeatableState>>();
+                let sql = plan.subtree_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
+                rs_query.insert(rs.to_string(), sql);
+            }
+        }
+        if rs_query.is_empty() {
+            // TODO: We send the query to all the nodes even when there
+            // are no buckets in `Buckets::Filtered`. Such queries (when
+            // we should not execute anything because we can predict an
+            // empty result) can be executed on a round-robin node in
+            // future (not implemented yet).
+            let sql = plan.subtree_as_sql(&nodes, &Buckets::All)?;
+            result.extend(self.exec_on_all(&sql)?)?;
+        } else {
+            result.extend(self.exec_on_replicas(&rs_query)?)?;
+        }
 
         Ok(result)
     }
@@ -267,46 +294,113 @@ impl Runtime {
         Ok(())
     }
 
-    fn exec_query(
+    fn exec_on_replicas(
         &self,
-        query: &str,
-        buckets: &Buckets,
+        rs_query: &HashMap<String, String>,
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_sql").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_sql` not found".into())
+        let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_on_replicas` not found".into())
         })?;
 
-        let lua_buckets = match buckets {
-            Buckets::All => vec![],
-            Buckets::Filtered(list) => list.iter().copied().collect(),
-        };
-
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        let res: BoxExecuteFormat =
-            match exec_sql.call_with_args((query, lua_buckets, waiting_timeout)) {
-                Ok(v) => v,
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("exec_query"),
-                        &format!("{:?}", e),
-                    );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                }
-            };
+        say(
+            SayLevel::Error,
+            file!(),
+            line!().try_into().unwrap_or(0),
+            None,
+            &format!("rs_query: {:?}", rs_query),
+        );
+        let res: BoxExecuteFormat = match exec_sql.call_with_args((rs_query, waiting_timeout)) {
+            Ok(v) => v,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_replicas"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+            }
+        };
 
         Ok(res)
     }
+
+    fn exec_on_all(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        let lua = tarantool::lua_state();
+
+        say(
+            SayLevel::Error,
+            file!(),
+            line!().try_into().unwrap_or(0),
+            None,
+            &format!("query: {:?}", query),
+        );
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
+        })?;
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let res: BoxExecuteFormat = match exec_sql.call_with_args((query, waiting_timeout)) {
+            Ok(v) => v,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_all"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+            }
+        };
+
+        Ok(res)
+    }
+}
+
+fn group_buckets(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
+    let lua_buckets: Vec<u64> = match buckets {
+        Buckets::All => {
+            return Err(QueryPlannerError::CustomError(
+                "Grouping buckets is not supported for all buckets".into(),
+            ))
+        }
+        Buckets::Filtered(list) => list.iter().copied().collect(),
+    };
+
+    let lua = tarantool::lua_state();
+
+    let fn_group: LuaFunction<_> = lua.get("group_buckets_by_replicasets").ok_or_else(|| {
+        QueryPlannerError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
+    })?;
+
+    let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
+        Ok(v) => v,
+        Err(e) => {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                Option::from("group_buckets"),
+                &format!("{:?}", e),
+            );
+            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+        }
+    };
+
+    Ok(res)
 }
 
 /// Extra lua functions loader. It is necessary for query execution.
 ///
 /// # Errors
 /// - Failed to load lua code.
+#[allow(clippy::too_many_lines)]
 pub fn load_extra_function() -> Result<(), QueryPlannerError> {
     let lua = tarantool::lua_state();
 
@@ -340,37 +434,56 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return cfg["executor_cache_capacity"]
     end
 
-    ---get_uniq_replicaset_for_buckets - gets unique set of replicaset by bucket list
-    ---@param buckets table - list of buckets.
-    function get_uniq_replicaset_for_buckets(buckets)
-        local uniq_replicas = {}
+    function group_buckets_by_replicasets(buckets)
+        local map = {}
         for _, bucket_id in pairs(buckets) do
-            local current_replicaset = vshard.router.route(bucket_id)
-            uniq_replicas[current_replicaset.uuid] = current_replicaset
+            local rs = vshard.router.route(bucket_id).uuid
+            if map[rs] then
+                table.insert(map[rs], bucket_id)
+            else
+                map[rs] = {bucket_id}
+            end
         end
 
-        local res = {}
-        for _, r in pairs(uniq_replicas) do
-            table.insert(res, r)
-        end
-
-        return res
+        return map
     end
 
-    function execute_sql(query, buckets, waiting_timeout)
-        log.debug("Execution query: " .. query)
-        log.debug("Execution waiting timeout " .. tostring(waiting_timeout) .. "s")
+    function execute_on_replicas(tbl_rs_query, waiting_timeout)
+        local result = nil
+        local futures = {}
 
-        local replicas = nil
-
-        if next(buckets) == nil then
-            replicas = vshard.router.routeall()
-            log.debug("Execution query on all instaces")
-        else
-            replicas = get_uniq_replicaset_for_buckets(buckets)
-            log.debug("Execution query on some instaces")
+        for rs_uuid, query in pairs(tbl_rs_query) do
+            local replica = vshard.router.routeall()[rs_uuid]
+            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+            if err ~= nil then
+                error(err)
+            end
+            table.insert(futures, future) 
         end
 
+        for _, future in ipairs(futures) do
+            future:wait_result(waiting_timeout)
+            local res = future:result()
+
+            if res[1] == nil then
+                error(res[2])
+            end
+
+            if result == nil then
+                result = res[1]
+            else
+                for _, item in pairs(res[1].rows) do
+                table.insert(result.rows, item)
+                end
+            end
+        end
+
+        return result
+    end
+
+    function execute_on_all(query, waiting_timeout)
+
+        local replicas = vshard.router.routeall()
         local result = nil
         local futures = {}
 

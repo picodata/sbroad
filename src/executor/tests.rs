@@ -3,7 +3,9 @@ use pretty_assertions::assert_eq;
 use crate::executor::engine::mock::EngineMock;
 use crate::executor::result::Value;
 use crate::executor::vtable::VirtualTable;
+use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, Type};
+use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value as IrValue;
 
 use super::*;
@@ -106,8 +108,15 @@ fn linker_test() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
-    let virtual_table = virtual_table_23();
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    let mut virtual_table = virtual_table_23();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -161,8 +170,15 @@ fn union_linker_test() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
-    let virtual_table = virtual_table_23();
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    let mut virtual_table = virtual_table_23();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -247,7 +263,14 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     virtual_table.set_alias("\"t8\"").unwrap();
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -275,7 +298,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                     r#"WHERE ("test_space_hist"."sysFrom") <= (0)"#,
                     r#") as "t3""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3))"#,
+                    r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (2))"#,
                     r#") as "t8""#,
                     r#"ON ("t3"."id") = ("t8"."identification_number")"#,
                     r#"WHERE ("t3"."id", "t3"."id", "t8"."identification_number") = ("t8"."identification_number", 2, 2)"#
@@ -316,8 +339,15 @@ fn join_linker2_test() {
         IrValue::number_from_str("2").unwrap(),
     ]);
     virtual_table.set_alias("\"t2\"").unwrap();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -332,7 +362,7 @@ fn join_linker2_test() {
             "{} {} {} {}",
             r#"SELECT "t1"."id" as "id" FROM "test_space" as "t1""#,
             r#"INNER JOIN"#,
-            r#"(SELECT COLUMN_3 as "id1",COLUMN_4 as "id2" FROM (VALUES (1,1),(2,2)))"#,
+            r#"(SELECT COLUMN_1 as "id1",COLUMN_2 as "id2" FROM (VALUES (1,1)))"#,
             r#"as "t2" ON ("t1"."id") = (1)"#
         )),
     ]]);
@@ -370,8 +400,15 @@ fn join_linker3_test() {
         IrValue::number_from_str("2").unwrap(),
     ]);
     virtual_table.set_alias("\"t2\"").unwrap();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .engine
+        .add_virtual_table(motion_id, virtual_table)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -414,7 +451,15 @@ fn join_linker4_test() {
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_t2.set_alias("t2").unwrap();
-    query.engine.add_virtual_table(motion_t2_id, virtual_t2);
+    if let MotionPolicy::Segment(key) =
+        get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
+    {
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+    }
+    query
+        .engine
+        .add_virtual_table(motion_t2_id, virtual_t2)
+        .unwrap();
 
     let motion_sq_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
     let mut virtual_sq = VirtualTable::new();
@@ -424,7 +469,15 @@ fn join_linker4_test() {
     });
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
-    query.engine.add_virtual_table(motion_sq_id, virtual_sq);
+    if let MotionPolicy::Segment(key) =
+        get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
+    {
+        query.reshard_vtable(&mut virtual_sq, key).unwrap();
+    }
+    query
+        .engine
+        .add_virtual_table(motion_sq_id, virtual_sq)
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -474,13 +527,25 @@ fn anonymous_col_index_test() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
     let motion1_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_t1 = virtual_table_23();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
+    {
+        query.reshard_vtable(&mut virtual_t1, key).unwrap();
+    }
     query
         .engine
-        .add_virtual_table(motion1_id, virtual_table_23());
+        .add_virtual_table(motion1_id, virtual_table_23())
+        .unwrap();
     let motion2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
+    let mut virtual_t2 = virtual_table_23();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
+    {
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+    }
     query
         .engine
-        .add_virtual_table(motion2_id, virtual_table_23());
+        .add_virtual_table(motion2_id, virtual_table_23())
+        .unwrap();
 
     let result = query.exec().unwrap();
 
@@ -543,4 +608,13 @@ fn virtual_table_23() -> VirtualTable {
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
 
     virtual_table
+}
+
+fn get_motion_policy(plan: &Plan, motion_id: usize) -> &MotionPolicy {
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        policy
+    } else {
+        panic!("Expected a motion node");
+    }
 }

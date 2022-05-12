@@ -1,7 +1,9 @@
 use itertools::Itertools;
 
 use crate::errors::QueryPlannerError;
+use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
+use crate::executor::vtable::VTableTuple;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::Node;
@@ -52,10 +54,12 @@ impl ExecutionPlan {
     /// - plan is invalid and can't be transformed
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    pub fn subtree_as_sql(&self, node_id: usize) -> Result<String, QueryPlannerError> {
+    pub fn subtree_as_sql(
+        &self,
+        nodes: &[SyntaxData],
+        buckets: &Buckets,
+    ) -> Result<String, QueryPlannerError> {
         let mut sql = String::new();
-
-        let nodes = self.get_sql_order(node_id)?;
         let delim = " ";
 
         let need_delim_after = |id: usize| -> bool {
@@ -152,9 +156,7 @@ impl ExecutionPlan {
                     }
                 }
                 SyntaxData::VTable(vtable) => {
-                    // increase base of global counter of anonymous cols
                     let cols_count = vtable.get_columns().len();
-                    let rows_count = vtable.get_tuples().len();
 
                     let cols = |base_idx| {
                         vtable
@@ -166,10 +168,27 @@ impl ExecutionPlan {
                             .join(",")
                     };
 
-                    if rows_count == 0 {
+                    let tuples: Vec<&VTableTuple> = match buckets {
+                        Buckets::All => vtable.get_tuples().iter().collect(),
+                        Buckets::Filtered(bucket_ids) => {
+                            if vtable.get_index().is_empty() {
+                                // TODO: Implement selection push-down (join_linker3_test).
+                                vtable.get_tuples().iter().collect()
+                            } else {
+                                bucket_ids
+                                    .iter()
+                                    .filter_map(|bucket_id| vtable.get_index().get(bucket_id))
+                                    .flatten()
+                                    .filter_map(|pos| vtable.get_tuples().get(*pos))
+                                    .collect()
+                            }
+                        }
+                    };
+
+                    if tuples.is_empty() {
                         anonymous_col_idx_base += 1;
 
-                        let tuples = (0..cols_count)
+                        let values = (0..cols_count)
                             .map(|_| "null")
                             .collect::<Vec<&str>>()
                             .join(",");
@@ -177,22 +196,21 @@ impl ExecutionPlan {
                         sql.push_str(&format!(
                             "SELECT {} FROM (VALUES ({})) WHERE FALSE",
                             cols(anonymous_col_idx_base),
-                            tuples
+                            values
                         ));
                     } else {
-                        anonymous_col_idx_base += cols_count * rows_count - (cols_count - 1);
-
-                        let tuples = vtable
-                            .get_tuples()
+                        let values = tuples
                             .iter()
                             .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
                             .collect::<Vec<String>>()
                             .join(",");
 
+                        anonymous_col_idx_base += cols_count * tuples.len() - (cols_count - 1);
+
                         sql.push_str(&format!(
                             "SELECT {} FROM (VALUES {})",
                             cols(anonymous_col_idx_base),
-                            tuples
+                            values
                         ));
                     }
                 }

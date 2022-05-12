@@ -23,7 +23,8 @@
 //! 5. Repeats step 3 till we are done with motion layers.
 //! 6. Executes the final IR top subtree and returns the final result to the user.
 
-use std::collections::HashMap;
+use ahash::RandomState;
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -31,7 +32,10 @@ use crate::executor::engine::Engine;
 use crate::executor::engine::{Metadata, QueryCache};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::BoxExecuteFormat;
+use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
+use crate::ir::distribution::Key;
+use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use base64ct::{Base64, Encoding};
@@ -116,6 +120,12 @@ where
         &self.exec_plan
     }
 
+    /// Get the engine of the query.
+    #[must_use]
+    pub fn get_engine(&self) -> &E {
+        self.engine
+    }
+
     /// Execute distributed query.
     ///
     /// # Errors
@@ -134,7 +144,7 @@ where
                     let virtual_table =
                         self.engine
                             .materialize_motion(&mut self.exec_plan, motion_id, &buckets)?;
-                    self.exec_plan.add_motion_result(motion_id, virtual_table)?;
+                    self.add_motion_result(motion_id, virtual_table)?;
                 }
             }
         }
@@ -142,6 +152,71 @@ where
         let top_id = self.exec_plan.get_ir_plan().get_top()?;
         let buckets = self.bucket_discovery(top_id)?;
         self.engine.exec(&mut self.exec_plan, top_id, &buckets)
+    }
+
+    /// Add materialize motion result to translation map of virtual tables
+    ///
+    /// # Errors
+    /// - invalid motion node
+    pub fn add_motion_result(
+        &mut self,
+        motion_id: usize,
+        vtable: VirtualTable,
+    ) -> Result<(), QueryPlannerError> {
+        let mut motion_result = vtable;
+        if let MotionPolicy::Segment(shard_key) = &self.exec_plan.get_motion_policy(motion_id)? {
+            self.reshard_vtable(&mut motion_result, shard_key)?;
+        }
+
+        let need_init = self.exec_plan.get_vtables().is_none();
+        if need_init {
+            self.exec_plan.set_vtables(HashMap::new());
+        }
+
+        if let Some(vtables) = self.exec_plan.get_mut_vtables() {
+            vtables.insert(motion_id, motion_result);
+        }
+
+        Ok(())
+    }
+
+    /// Reshard virtual table.
+    ///
+    /// # Errors
+    /// - Invalid distribution key.
+    pub fn reshard_vtable(
+        &self,
+        vtable: &mut VirtualTable,
+        sharding_key: &Key,
+    ) -> Result<(), QueryPlannerError> {
+        vtable.set_distribution_key(sharding_key.clone());
+
+        let mut index: HashMap<u64, Vec<usize>, RandomState> =
+            HashMap::with_hasher(RandomState::new());
+        for (pos, tuple) in vtable.get_tuples().iter().enumerate() {
+            let mut shard_key_tuple: Vec<&Value> = Vec::new();
+            for pos in &sharding_key.positions {
+                let part = tuple.get(*pos).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Failed to find a distribution key column {} in the tuple {:?}.",
+                        pos, tuple
+                    ))
+                })?;
+                shard_key_tuple.push(part);
+            }
+            let bucket_id = self.engine.determine_bucket_id(&shard_key_tuple);
+            match index.entry(bucket_id) {
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![pos]);
+                }
+                Entry::Occupied(entry) => {
+                    entry.into_mut().push(pos);
+                }
+            }
+        }
+
+        vtable.set_index(index);
+        Ok(())
     }
 }
 

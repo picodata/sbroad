@@ -1,5 +1,6 @@
 //! IR test helpers.
 
+use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -24,5 +25,6 @@ pub fn sql_to_sql(query: &str, params: &[Value], f_transform: &dyn Fn(&mut Plan)
     f_transform(&mut plan);
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    ex_plan.subtree_as_sql(top_id).unwrap()
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap()
 }

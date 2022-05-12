@@ -33,30 +33,17 @@ impl ExecutionPlan {
         &mut self.plan
     }
 
-    /// Add materialize motion result to translation map of virtual tables
-    ///
-    /// # Errors
-    /// - invalid motion node
-    pub fn add_motion_result(
-        &mut self,
-        motion_id: usize,
-        vtable: VirtualTable,
-    ) -> Result<(), QueryPlannerError> {
-        let mut motion_result = vtable;
-        if let MotionPolicy::Segment(shard_key) = &self.get_motion_policy(motion_id)? {
-            motion_result.set_distribution(shard_key);
-        }
+    #[must_use]
+    pub fn get_vtables(&self) -> Option<&HashMap<usize, VirtualTable>> {
+        self.vtables.as_ref()
+    }
 
-        let mut virtual_tables = match &self.vtables {
-            None => HashMap::new(),
-            Some(v) => v.clone(),
-        };
+    pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<usize, VirtualTable>> {
+        self.vtables.as_mut()
+    }
 
-        virtual_tables.insert(motion_id, motion_result);
-
-        self.vtables = Some(virtual_tables);
-
-        Ok(())
+    pub fn set_vtables(&mut self, vtables: HashMap<usize, VirtualTable>) {
+        self.vtables = Some(vtables);
     }
 
     /// Get motion virtual table
