@@ -278,7 +278,7 @@ impl Engine for EngineMock {
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let result = BoxExecuteFormat::new();
         let nodes = plan.get_sql_order(top_id)?;
-        plan.subtree_as_sql(&nodes, buckets)?;
+        plan.syntax_nodes_as_sql(&nodes, buckets)?;
 
         Ok(result)
     }

@@ -219,7 +219,7 @@ impl Engine for EngineMock {
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let mut result = BoxExecuteFormat::new();
         let nodes = plan.get_sql_order(top_id)?;
-        let sql = plan.subtree_as_sql(&nodes, buckets)?;
+        let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
 
         match buckets {
             Buckets::All => {
@@ -278,13 +278,8 @@ impl EngineMock {
     }
 
     #[allow(dead_code)]
-    pub fn add_virtual_table(
-        &self,
-        id: usize,
-        table: VirtualTable,
-    ) -> Result<(), QueryPlannerError> {
+    pub fn add_virtual_table(&self, id: usize, table: VirtualTable) {
         self.virtual_tables.borrow_mut().insert(id, table);
-        Ok(())
     }
 }
 

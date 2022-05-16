@@ -54,7 +54,7 @@ impl ExecutionPlan {
     /// - plan is invalid and can't be transformed
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    pub fn subtree_as_sql(
+    pub fn syntax_nodes_as_sql(
         &self,
         nodes: &[SyntaxData],
         buckets: &Buckets,

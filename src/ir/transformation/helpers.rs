@@ -26,5 +26,5 @@ pub fn sql_to_sql(query: &str, params: &[Value], f_transform: &dyn Fn(&mut Plan)
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let nodes = ex_plan.get_sql_order(top_id).unwrap();
-    ex_plan.subtree_as_sql(&nodes, &Buckets::All).unwrap()
+    ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap()
 }

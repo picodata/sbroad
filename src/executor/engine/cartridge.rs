@@ -151,7 +151,7 @@ impl Engine for Runtime {
 
         let mut rs_query: HashMap<String, String> = HashMap::new();
         if let Buckets::Filtered(_) = buckets {
-            let rs_buckets = group_buckets(buckets)?;
+            let rs_buckets = buckets.group()?;
             rs_query.reserve(rs_buckets.len());
 
             for (rs, bucket_ids) in &rs_buckets {
@@ -159,7 +159,7 @@ impl Engine for Runtime {
                     .iter()
                     .copied()
                     .collect::<HashSet<u64, RepeatableState>>();
-                let sql = plan.subtree_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
+                let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
                 rs_query.insert(rs.to_string(), sql);
             }
         }
@@ -169,7 +169,7 @@ impl Engine for Runtime {
             // we should not execute anything because we can predict an
             // empty result) can be executed on a round-robin node in
             // future (not implemented yet).
-            let sql = plan.subtree_as_sql(&nodes, &Buckets::All)?;
+            let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
             result.extend(self.exec_on_all(&sql)?)?;
         } else {
             result.extend(self.exec_on_replicas(&rs_query)?)?;
@@ -305,13 +305,6 @@ impl Runtime {
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        say(
-            SayLevel::Error,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            &format!("rs_query: {:?}", rs_query),
-        );
         let res: BoxExecuteFormat = match exec_sql.call_with_args((rs_query, waiting_timeout)) {
             Ok(v) => v,
             Err(e) => {
@@ -331,14 +324,6 @@ impl Runtime {
 
     fn exec_on_all(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let lua = tarantool::lua_state();
-
-        say(
-            SayLevel::Error,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            &format!("query: {:?}", query),
-        );
 
         let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
             QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
@@ -363,37 +348,42 @@ impl Runtime {
     }
 }
 
-fn group_buckets(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
-    let lua_buckets: Vec<u64> = match buckets {
-        Buckets::All => {
-            return Err(QueryPlannerError::CustomError(
-                "Grouping buckets is not supported for all buckets".into(),
-            ))
-        }
-        Buckets::Filtered(list) => list.iter().copied().collect(),
-    };
+impl Buckets {
+    fn group(&self) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
+        let lua_buckets: Vec<u64> = match self {
+            Buckets::All => {
+                return Err(QueryPlannerError::CustomError(
+                    "Grouping buckets is not supported for all buckets".into(),
+                ))
+            }
+            Buckets::Filtered(list) => list.iter().copied().collect(),
+        };
 
-    let lua = tarantool::lua_state();
+        let lua = tarantool::lua_state();
 
-    let fn_group: LuaFunction<_> = lua.get("group_buckets_by_replicasets").ok_or_else(|| {
-        QueryPlannerError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
-    })?;
+        let fn_group: LuaFunction<_> =
+            lua.get("group_buckets_by_replicasets").ok_or_else(|| {
+                QueryPlannerError::LuaError(
+                    "Lua function `group_buckets_by_replicasets` not found".into(),
+                )
+            })?;
 
-    let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
-        Ok(v) => v,
-        Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("group_buckets"),
-                &format!("{:?}", e),
-            );
-            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-        }
-    };
+        let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
+            Ok(v) => v,
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("buckets group"),
+                    &format!("{:?}", e),
+                );
+                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+            }
+        };
 
-    Ok(res)
+        Ok(res)
+    }
 }
 
 /// Extra lua functions loader. It is necessary for query execution.

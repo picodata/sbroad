@@ -238,7 +238,7 @@ fn query1(pattern: &str, params: &[Value], engine: &mut EngineMock) {
     let buckets = query.bucket_discovery(top_id).unwrap();
     let plan = query.get_exec_plan();
     let nodes = plan.get_sql_order(top_id).unwrap();
-    plan.subtree_as_sql(&nodes, &buckets).unwrap();
+    plan.syntax_nodes_as_sql(&nodes, &buckets).unwrap();
 }
 
 fn bench_query1(c: &mut Criterion) {
