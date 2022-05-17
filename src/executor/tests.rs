@@ -132,7 +132,7 @@ fn linker_test() {
                 "{} {} {}",
                 r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
                 r#"FROM "test_space""#,
-                r#"WHERE ("test_space"."id") in (SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#,
+                r#"WHERE ("test_space"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (3)))"#,
             )),
         ],
         vec![
@@ -141,7 +141,7 @@ fn linker_test() {
                 "{} {} {}",
                 r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
                 r#"FROM "test_space""#,
-                r#"WHERE ("test_space"."id") in (SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#,
+                r#"WHERE ("test_space"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (2)))"#,
             )),
         ],
     ]);
@@ -200,7 +200,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (0)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#
+                    r#"WHERE ("t1"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (3)))"#
                 )
             )
         ],
@@ -219,7 +219,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (0)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#
+                    r#"WHERE ("t1"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (2)))"#
                 )
             )
         ],
@@ -475,9 +475,9 @@ fn join_linker4_test() {
                 "{} {} {} {} {}",
                 r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
                 r#"INNER JOIN"#,
-                r#"(SELECT COLUMN_2 as "r_id" FROM (VALUES (1),(2))) as t2"#,
+                r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (2))) as t2"#,
                 r#"ON (t1."id") = (t2."r_id")"#,
-                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_4 as "fn" FROM (VALUES (2),(3)))"#,
+                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (2),(3)))"#,
             )),
         ],
         vec![
@@ -486,9 +486,9 @@ fn join_linker4_test() {
                 "{} {} {} {} {}",
                 r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
                 r#"INNER JOIN"#,
-                r#"(SELECT COLUMN_2 as "r_id" FROM (VALUES (1),(2))) as t2"#,
+                r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (1))) as t2"#,
                 r#"ON (t1."id") = (t2."r_id")"#,
-                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_4 as "fn" FROM (VALUES (2),(3)))"#,
+                r#"and (t1."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (2),(3)))"#,
             )),
         ],
     ]);
@@ -545,9 +545,9 @@ fn anonymous_col_index_test() {
                 r#""test_space"."bucket_id" as "bucket_id""#,
                 r#"FROM "test_space""#,
                 r#"WHERE (("test_space"."id") in"#,
-                r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#,
+                r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (3)))"#,
                 r#"or ("test_space"."id") in"#,
-                r#"(SELECT COLUMN_4 as "identification_number" FROM (VALUES (2),(3))))"#,
+                r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (3))))"#,
             )),
         ],
         vec![
@@ -562,9 +562,9 @@ fn anonymous_col_index_test() {
                 r#""test_space"."bucket_id" as "bucket_id""#,
                 r#"FROM "test_space""#,
                 r#"WHERE (("test_space"."id") in"#,
-                r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2),(3)))"#,
+                r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (2)))"#,
                 r#"or ("test_space"."id") in"#,
-                r#"(SELECT COLUMN_4 as "identification_number" FROM (VALUES (2),(3))))"#,
+                r#"(SELECT COLUMN_2 as "identification_number" FROM (VALUES (2))))"#,
             )),
         ],
     ]);

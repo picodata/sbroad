@@ -1,6 +1,7 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
@@ -10,6 +11,7 @@ use crate::executor::result::{BoxExecuteFormat, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, Table, Type};
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
@@ -219,14 +221,16 @@ impl Engine for EngineMock {
     ) -> Result<BoxExecuteFormat, QueryPlannerError> {
         let mut result = BoxExecuteFormat::new();
         let nodes = plan.get_sql_order(top_id)?;
-        let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
 
         match buckets {
             Buckets::All => {
+                let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
                 result.extend(cluster_exec_query(&sql))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
+                    let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
+                    let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::Filtered(bucket_set))?;
                     let temp_result = bucket_exec_query(*bucket, &sql);
                     result.extend(temp_result)?;
                 }
