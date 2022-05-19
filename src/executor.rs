@@ -31,7 +31,7 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::Engine;
 use crate::executor::engine::{Metadata, QueryCache};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::BoxExecuteFormat;
+use crate::executor::result::ExecutorResults;
 use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
@@ -132,7 +132,7 @@ where
     /// - Failed to discover buckets.
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
-    pub fn exec(&mut self) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    pub fn exec(&mut self) -> Result<ExecutorResults, QueryPlannerError> {
         let slices = self.exec_plan.get_ir_plan().get_slices();
         if let Some(slices) = slices {
             for slice in slices {

@@ -139,49 +139,49 @@ impl<'de> Deserialize<'de> for Value {
 
 impl Eq for Value {}
 
-type BoxExecuteTuple = Vec<Value>;
+type ExecutorTuple = Vec<Value>;
 
 #[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
-pub struct BoxExecuteFormat {
+pub struct ProducerResults {
     pub metadata: Vec<Column>,
-    pub rows: Vec<BoxExecuteTuple>,
+    pub rows: Vec<ExecutorTuple>,
 }
 
-impl Default for BoxExecuteFormat {
+impl Default for ProducerResults {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BoxExecuteFormat {
-    /// Create empty query result set
+impl ProducerResults {
+    /// Create an empty result set for a query producing tuples.
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        BoxExecuteFormat {
+        ProducerResults {
             metadata: Vec::new(),
             rows: Vec::new(),
         }
     }
 
-    /// Merge two record sets. If current recordset is empty function sets metadata and appends result rows.
-    /// If the current recordset is not empty compare its metadata with the one from the new recordset.
+    /// Merge two record sets. If current result is empty function sets metadata and appends result rows.
+    /// If the current result is not empty compare its metadata with the one from the new result.
     /// If they differ return error.
     ///
     ///  # Errors
     ///  - metadata isn't equal.
     #[allow(dead_code)]
-    pub fn extend(&mut self, recordset: BoxExecuteFormat) -> Result<(), QueryPlannerError> {
+    pub fn extend(&mut self, result: ProducerResults) -> Result<(), QueryPlannerError> {
         if self.metadata.is_empty() {
-            self.metadata = recordset.clone().metadata;
+            self.metadata = result.clone().metadata;
         }
 
-        if self.metadata != recordset.metadata {
+        if self.metadata != result.metadata {
             return Err(QueryPlannerError::CustomError(String::from(
-                "Different metadata. BoxExecuteFormat can't be extended",
+                "Metadata mismatch. Producer results can't be extended",
             )));
         }
-        self.rows.extend(recordset.rows);
+        self.rows.extend(result.rows);
         Ok(())
     }
 
@@ -205,18 +205,103 @@ impl BoxExecuteFormat {
     }
 }
 
-/// Custom Implementation `ser::Serialize`, because if using standard `#derive[Serialize]` then each `BoxExecuteResult`
-/// record is serialized to a list. That is not the result we expect.
-impl Serialize for BoxExecuteFormat {
+#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+pub struct ConsumerResults {
+    pub row_count: u64,
+}
+
+impl Default for ConsumerResults {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConsumerResults {
+    /// Create an empty result set for a query consuming tuples.
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn new() -> Self {
+        ConsumerResults { row_count: 0 }
+    }
+
+    pub fn extend(&mut self, result: &ConsumerResults) {
+        self.row_count += result.row_count;
+    }
+}
+
+#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+pub enum ExecutorResults {
+    Consumer(ConsumerResults),
+    Producer(ProducerResults),
+}
+
+impl From<ProducerResults> for ExecutorResults {
+    fn from(value: ProducerResults) -> Self {
+        ExecutorResults::Producer(value)
+    }
+}
+
+impl From<ConsumerResults> for ExecutorResults {
+    fn from(value: ConsumerResults) -> Self {
+        ExecutorResults::Consumer(value)
+    }
+}
+
+impl ExecutorResults {
+    /// Extend current result with new one.
+    ///
+    /// # Errors
+    /// - Try to extend with different type of results (consumer and producer queries)
+    #[allow(dead_code)]
+    pub fn extend(&mut self, result: ExecutorResults) -> Result<(), QueryPlannerError> {
+        match (self, result) {
+            (ExecutorResults::Producer(pr_self), ExecutorResults::Producer(pr_result)) => {
+                pr_self.extend(pr_result)
+            }
+            (ExecutorResults::Consumer(cr_self), ExecutorResults::Consumer(cr_result)) => {
+                cr_self.extend(&cr_result);
+                Ok(())
+            }
+            _ => Err(QueryPlannerError::CustomError(
+                "Consumer and producer query results can't be extended".into(),
+            )),
+        }
+    }
+
+    /// Build a virtual table from the result set.
+    ///
+    /// # Errors
+    /// - convert to virtual table error (the results were returned
+    ///   by a consumer query)
+    #[allow(dead_code)]
+    pub fn as_virtual_table(&self) -> Result<VirtualTable, QueryPlannerError> {
+        match self {
+            ExecutorResults::Producer(pr) => pr.as_virtual_table(),
+            ExecutorResults::Consumer(_) => Err(QueryPlannerError::CustomError(
+                "Consumer query results can't be converted to virtual table".into(),
+            )),
+        }
+    }
+}
+
+impl Serialize for ExecutorResults {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(2))?;
-        map.serialize_entry("metadata", &self.metadata)?;
-        map.serialize_entry("rows", &self.rows)?;
-
-        map.end()
+        match self {
+            ExecutorResults::Consumer(c) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("row_count", &c.row_count)?;
+                map.end()
+            }
+            ExecutorResults::Producer(p) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("metadata", &p.metadata)?;
+                map.serialize_entry("rows", &p.rows)?;
+                map.end()
+            }
+        }
     }
 }
 

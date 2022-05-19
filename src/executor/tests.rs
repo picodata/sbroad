@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::engine::mock::EngineMock;
-use crate::executor::result::Value;
+use crate::executor::result::{ExecutorResults, ProducerResults, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, Type};
@@ -17,7 +17,7 @@ fn shard_query() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
@@ -27,7 +27,7 @@ fn shard_query() {
             Value::String(format!("Execute query on a bucket [{}]", bucket)),
             Value::String(String::from(r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") = (1)"#))
         ]);
-    assert_eq!(expected, query.exec().unwrap())
+    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn shard_union_query() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
@@ -68,7 +68,7 @@ fn shard_union_query() {
             )
         ]);
 
-    assert_eq!(expected, query.exec().unwrap())
+    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn map_reduce_query() {
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param457 = IrValue::string_from_str("457");
@@ -97,7 +97,7 @@ fn map_reduce_query() {
         )
     ]);
 
-    assert_eq!(expected, query.exec().unwrap())
+    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn linker_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -146,7 +146,7 @@ fn linker_test() {
         ],
     ]);
 
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn union_linker_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -225,7 +225,7 @@ fn union_linker_test() {
         ],
     ]);
 
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -265,7 +265,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -297,7 +297,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
             )
         ],
     ]);
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -339,7 +339,7 @@ fn join_linker2_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -354,7 +354,7 @@ fn join_linker2_test() {
             r#"as "t2" ON ("t1"."id") = (1)"#
         )),
     ]]);
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -397,7 +397,7 @@ fn join_linker3_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -413,7 +413,7 @@ fn join_linker3_test() {
             r#"ON ("t2"."id1") = (1)"#,
         )),
     ]]);
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn join_linker4_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -492,7 +492,7 @@ fn join_linker4_test() {
             )),
         ],
     ]);
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 // select * from "test_1" where "identification_number" in (select COLUMN_2 as "b" from (values (1), (2))) or "identification_number" in (select COLUMN_2 as "c" from (values (3), (4)));
@@ -526,7 +526,7 @@ fn anonymous_col_index_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
@@ -569,7 +569,7 @@ fn anonymous_col_index_test() {
         ],
     ]);
 
-    assert_eq!(expected, result)
+    assert_eq!(ExecutorResults::from(expected), result)
 }
 
 #[test]
@@ -594,7 +594,7 @@ fn insert1_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = Column::default_value();
     let param2 = IrValue::number_from_str("1").unwrap();
@@ -609,18 +609,18 @@ fn insert1_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("t"."b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (1))"#,
+                r#"INSERT INTO "t" ("b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (1))"#,
             )),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("t"."b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (2))"#,
+                r#"INSERT INTO "t" ("b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (2))"#,
             )),
         ],
     ]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 #[test]
@@ -635,7 +635,7 @@ fn insert2_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -645,12 +645,12 @@ fn insert2_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {} {}",
-            r#"INSERT INTO "t" ("t"."a", "t"."b")"#,
+            r#"INSERT INTO "t" ("a", "b")"#,
             r#"SELECT "t"."a" as "a", "t"."b" as "b" FROM "t""#,
             r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
         )),
     ]]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 #[test]
@@ -685,7 +685,7 @@ fn insert3_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("2").unwrap();
     let param2 = IrValue::number_from_str("1").unwrap();
@@ -700,7 +700,7 @@ fn insert3_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+                r#"INSERT INTO "t" ("b", "a")"#,
                 r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (1,2))"#,
             )),
         ],
@@ -708,12 +708,12 @@ fn insert3_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+                r#"INSERT INTO "t" ("b", "a")"#,
                 r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (3,4))"#,
             )),
         ],
     ]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 #[test]
@@ -728,7 +728,7 @@ fn insert4_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -738,12 +738,12 @@ fn insert4_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {} {}",
-            r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+            r#"INSERT INTO "t" ("b", "a")"#,
             r#"SELECT "t"."b" as "b", "t"."a" as "a" FROM "t""#,
             r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
         )),
     ]]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 #[test]
@@ -778,7 +778,7 @@ fn insert5_test() {
 
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("6").unwrap();
     let param2 = IrValue::number_from_str("5").unwrap();
@@ -788,11 +788,11 @@ fn insert5_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {}",
-            r#"INSERT INTO "t" ("t"."b", "t"."a")"#,
+            r#"INSERT INTO "t" ("b", "a")"#,
             r#"SELECT COLUMN_3 as "a",COLUMN_4 as "b" FROM (VALUES (5,6),(5,6))"#,
         )),
     ]]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 #[test]
@@ -804,7 +804,7 @@ fn insert6_test() {
     let mut query = Query::new(&engine, sql, &[]).unwrap();
     let result = query.exec().unwrap();
 
-    let mut expected = BoxExecuteFormat::new();
+    let mut expected = ProducerResults::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -817,20 +817,14 @@ fn insert6_test() {
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("t"."a", "t"."b") VALUES (1,2)"#,
-            )),
+            Value::String(format!("{}", r#"INSERT INTO "t" ("a", "b") VALUES (1,2)"#,)),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("t"."a", "t"."b") VALUES (3,4)"#,
-            )),
+            Value::String(format!("{}", r#"INSERT INTO "t" ("a", "b") VALUES (3,4)"#,)),
         ],
     ]);
-    assert_eq!(expected, result);
+    assert_eq!(ExecutorResults::from(expected), result);
 }
 
 /// Helper function to create a "test" virtual table.

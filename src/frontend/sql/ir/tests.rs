@@ -223,7 +223,7 @@ fn front_sql10() {
 #[test]
 fn front_sql11() {
     let input = r#"INSERT INTO "t" ("a", "c") VALUES(1, 2)"#;
-    let expected = format!("{}", r#"INSERT INTO "t" ("t"."a", "t"."c") VALUES (1, 2)"#,);
+    let expected = format!("{}", r#"INSERT INTO "t" ("a", "c") VALUES (1, 2)"#,);
 
     assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
 }
@@ -263,8 +263,7 @@ fn front_sql14() {
     let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t""#;
     let expected = format!(
         "{} {}",
-        r#"INSERT INTO "t" ("t"."a", "t"."c")"#,
-        r#"SELECT "t"."b" as "b", "t"."d" as "d" FROM "t""#,
+        r#"INSERT INTO "t" ("a", "c")"#, r#"SELECT "t"."b" as "b", "t"."d" as "d" FROM "t""#,
     );
 
     assert_eq!(sql_to_sql(input, &[], &no_transform), expected);

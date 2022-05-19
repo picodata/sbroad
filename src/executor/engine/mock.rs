@@ -7,7 +7,7 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::{BoxExecuteFormat, Value};
+use crate::executor::result::{ExecutorResults, ProducerResults, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -226,8 +226,8 @@ impl Engine for EngineMock {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let mut result = BoxExecuteFormat::new();
+    ) -> Result<ExecutorResults, QueryPlannerError> {
+        let mut result = ProducerResults::new();
         let nodes = plan.get_sql_order(top_id)?;
 
         match buckets {
@@ -247,7 +247,7 @@ impl Engine for EngineMock {
 
         // Sort results to make tests reproducible.
         result.rows.sort_by_key(|k| k[0].to_string());
-        Ok(result)
+        Ok(ExecutorResults::from(result))
     }
 
     fn extract_sharding_keys<'engine, 'rec>(
@@ -295,8 +295,8 @@ impl EngineMock {
     }
 }
 
-fn bucket_exec_query(bucket: u64, query: &str) -> BoxExecuteFormat {
-    let mut result = BoxExecuteFormat::new();
+fn bucket_exec_query(bucket: u64, query: &str) -> ProducerResults {
+    let mut result = ProducerResults::new();
 
     result.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -306,8 +306,8 @@ fn bucket_exec_query(bucket: u64, query: &str) -> BoxExecuteFormat {
     result
 }
 
-fn cluster_exec_query(query: &str) -> BoxExecuteFormat {
-    let mut result = BoxExecuteFormat::new();
+fn cluster_exec_query(query: &str) -> ProducerResults {
+    let mut result = ProducerResults::new();
 
     result.rows.push(vec![
         Value::String(String::from("Execute query on all buckets")),

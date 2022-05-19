@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn box_execute_result_serialize() {
-    let r = BoxExecuteFormat {
+    let r = ProducerResults {
         metadata: vec![
             Column {
                 name: "id".into(),
@@ -28,7 +28,7 @@ fn box_execute_result_serialize() {
         ]],
     };
 
-    let actual = rmp_serde::to_vec(&r).unwrap();
+    let actual = rmp_serde::to_vec(&ExecutorResults::from(r)).unwrap();
 
     // Incorrect serialize message with default msgpack serializer
     let default_serialize_msg = vec![
@@ -57,7 +57,7 @@ fn box_execute_result_serialize() {
 
 #[test]
 fn convert_to_vtable() {
-    let r = BoxExecuteFormat {
+    let r = ProducerResults {
         metadata: vec![
             Column {
                 name: "id".into(),

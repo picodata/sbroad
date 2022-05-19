@@ -13,7 +13,7 @@ use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY}
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::BoxExecuteFormat;
+use crate::executor::result::{ConsumerResults, ExecutorResults, ProducerResults};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -146,9 +146,9 @@ impl Engine for Runtime {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let mut result = BoxExecuteFormat::new();
+    ) -> Result<ExecutorResults, QueryPlannerError> {
         let nodes = plan.get_sql_order(top_id)?;
+        let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
         let mut rs_query: HashMap<String, String> = HashMap::new();
         if let Buckets::Filtered(_) = buckets {
@@ -171,12 +171,10 @@ impl Engine for Runtime {
             // empty result) can be executed on a round-robin node in
             // future (not implemented yet).
             let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
-            result.extend(self.exec_on_all(&sql)?)?;
+            self.exec_on_all(&sql, is_data_modifier)
         } else {
-            result.extend(self.exec_on_replicas(&rs_query)?)?;
+            self.exec_on_replicas(&rs_query, is_data_modifier)
         }
-
-        Ok(result)
     }
 
     /// Transform sub query results into a virtual table.
@@ -305,7 +303,8 @@ impl Runtime {
     fn exec_on_replicas(
         &self,
         rs_query: &HashMap<String, String>,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
+        is_data_modifier: bool,
+    ) -> Result<ExecutorResults, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
@@ -313,24 +312,48 @@ impl Runtime {
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        let res: BoxExecuteFormat = match exec_sql.call_with_args((rs_query, waiting_timeout)) {
-            Ok(v) => v,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_replicas"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
+        if is_data_modifier {
+            let res: ConsumerResults =
+                match exec_sql.call_with_args((rs_query, waiting_timeout, is_data_modifier)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        say(
+                            SayLevel::Error,
+                            file!(),
+                            line!().try_into().unwrap_or(0),
+                            Option::from("execute_on_replicas"),
+                            &format!("{:?}", e),
+                        );
+                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    }
+                };
 
-        Ok(res)
+            Ok(res.into())
+        } else {
+            let res: ProducerResults =
+                match exec_sql.call_with_args((rs_query, waiting_timeout, is_data_modifier)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        say(
+                            SayLevel::Error,
+                            file!(),
+                            line!().try_into().unwrap_or(0),
+                            Option::from("execute_on_replicas"),
+                            &format!("{:?}", e),
+                        );
+                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    }
+                };
+
+            Ok(res.into())
+        }
     }
 
-    fn exec_on_all(&self, query: &str) -> Result<BoxExecuteFormat, QueryPlannerError> {
+    fn exec_on_all(
+        &self,
+        query: &str,
+        is_data_modifier: bool,
+    ) -> Result<ExecutorResults, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
@@ -338,21 +361,41 @@ impl Runtime {
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        let res: BoxExecuteFormat = match exec_sql.call_with_args((query, waiting_timeout)) {
-            Ok(v) => v,
-            Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_all"),
-                    &format!("{:?}", e),
-                );
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
+        if is_data_modifier {
+            let res: ConsumerResults =
+                match exec_sql.call_with_args((query, waiting_timeout, is_data_modifier)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        say(
+                            SayLevel::Error,
+                            file!(),
+                            line!().try_into().unwrap_or(0),
+                            Option::from("execute_on_all"),
+                            &format!("{:?}", e),
+                        );
+                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    }
+                };
 
-        Ok(res)
+            Ok(res.into())
+        } else {
+            let res: ProducerResults =
+                match exec_sql.call_with_args((query, waiting_timeout, is_data_modifier)) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        say(
+                            SayLevel::Error,
+                            file!(),
+                            line!().try_into().unwrap_or(0),
+                            Option::from("execute_on_all"),
+                            &format!("{:?}", e),
+                        );
+                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    }
+                };
+
+            Ok(res.into())
+        }
     }
 }
 
@@ -446,17 +489,25 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return map
     end
 
-    function execute_on_replicas(tbl_rs_query, waiting_timeout)
+    function execute_on_replicas(tbl_rs_query, waiting_timeout, is_data_modifier)
         local result = nil
         local futures = {}
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
-            if err ~= nil then
-                error(err)
+            if is_data_modifier then
+                local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+                if err ~= nil then
+                    error(err)
+                end
+                table.insert(futures, future) 
+            else
+                local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+                if err ~= nil then
+                    error(err)
+                end
+                table.insert(futures, future) 
             end
-            table.insert(futures, future) 
         end
 
         for _, future in ipairs(futures) do
@@ -470,8 +521,12 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
             if result == nil then
                 result = res[1]
             else
-                for _, item in pairs(res[1].rows) do
-                table.insert(result.rows, item)
+                if is_data_modifier then
+                    result.row_count = result.row_count + res[1].row_count
+                else
+                    for _, item in pairs(res[1].rows) do
+                        table.insert(result.rows, item)
+                    end
                 end
             end
         end
@@ -479,18 +534,26 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return result
     end
 
-    function execute_on_all(query, waiting_timeout)
+    function execute_on_all(query, waiting_timeout, is_data_modifier)
 
         local replicas = vshard.router.routeall()
         local result = nil
         local futures = {}
 
         for _, replica in pairs(replicas) do
-             local future, err = replica:callbre("box.execute", { query }, {is_async = true})
-             if err ~= nil then
-                 error(err)
-             end
-             table.insert(futures, future)
+            if is_data_modifier then
+                local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+                if err ~= nil then
+                    error(err)
+                end
+                table.insert(futures, future) 
+            else
+                local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+                if err ~= nil then
+                    error(err)
+                end
+                table.insert(futures, future) 
+            end
         end
 
         for _, future in ipairs(futures) do
@@ -510,7 +573,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
              end
          end
 
-    return result
+        return result
     end
 "#,
     ) {

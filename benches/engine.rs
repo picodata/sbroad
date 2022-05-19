@@ -9,7 +9,7 @@ use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{Engine, LocalMetadata, Metadata, QueryCache};
 use sbroad::executor::ir::ExecutionPlan;
-use sbroad::executor::result::BoxExecuteFormat;
+use sbroad::executor::result::{ExecutorResults, ProducerResults};
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::relation::{Column, Table, Type};
@@ -275,12 +275,12 @@ impl Engine for EngineMock {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError> {
-        let result = BoxExecuteFormat::new();
+    ) -> Result<ExecutorResults, QueryPlannerError> {
+        let result = ProducerResults::new();
         let nodes = plan.get_sql_order(top_id)?;
         plan.syntax_nodes_as_sql(&nodes, buckets)?;
 
-        Ok(result)
+        Ok(ExecutorResults::from(result))
     }
 
     fn extract_sharding_keys<'engine, 'rec>(

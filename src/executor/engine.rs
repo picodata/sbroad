@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::BoxExecuteFormat;
+use crate::executor::result::ExecutorResults;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::value::Value as IrValue;
 
@@ -137,7 +137,7 @@ pub trait Engine {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<BoxExecuteFormat, QueryPlannerError>;
+    ) -> Result<ExecutorResults, QueryPlannerError>;
 
     /// Filter lua table values and return in right order
     ///

@@ -150,7 +150,11 @@ impl ExecutionPlan {
                                 let rel_node = ir_plan.get_relation_node(rel_id)?;
                                 let alias = &ir_plan.get_alias_from_reference_node(expr)?;
 
-                                if let Some(name) = rel_node.scan_name(ir_plan, *position)? {
+                                if let Relational::Insert { .. } = rel_node {
+                                    // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
+                                    // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
+                                    sql.push_str(alias);
+                                } else if let Some(name) = rel_node.scan_name(ir_plan, *position)? {
                                     sql.push_str(name);
                                     sql.push('.');
                                     sql.push_str(alias);
@@ -236,6 +240,22 @@ impl ExecutionPlan {
             }
         }
         Ok(sql)
+    }
+
+    /// Checks if the given query subtree modifies data or not.
+    ///
+    /// # Errors
+    /// - If the subtree top is not a relational node.
+    pub fn subtree_modifies_data(&self, top_id: usize) -> Result<bool, QueryPlannerError> {
+        // Tarantool doesn't support `INSERT`, `UPDATE` and `DELETE` statements
+        // with `RETURNING` clause. That is why it is enough to check if the top
+        // node is a data modification statement or not.
+        let top = self.get_ir_plan().get_relation_node(top_id)?;
+        if let Relational::Insert { .. } = top {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

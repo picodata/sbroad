@@ -1035,6 +1035,57 @@ local config = {
           "col1", "col2"
         }
       },
+      space_t1 = {
+        is_local = false,
+        temporary = false,
+        engine = "memtx",
+        format = {
+          {
+            name = "a",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "b",
+            type = "integer",
+            is_nullable = false
+          },
+          {
+            name = "bucket_id",
+            type = "unsigned",
+            is_nullable = true
+          }
+        },
+        indexes = {
+          {
+            name = "a",
+            unique = true,
+            type = "TREE",
+            parts = {
+              {
+                path = "a",
+                is_nullable = false,
+                type = "integer"
+              }
+            }
+          },
+          {
+            name = "bucket_id",
+            unique = false,
+            type = "TREE",
+            parts = {
+              {
+                path = "bucket_id",
+                is_nullable = true,
+                type = "unsigned"
+              }
+            }
+          }
+        },
+        sharding_key = {
+          "a",
+        }
+      },
     }
   }
 }
