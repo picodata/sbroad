@@ -1,5 +1,7 @@
 //! Tarantool cartridge engine module.
 
+use rand::prelude::*;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -151,7 +153,21 @@ impl Engine for Runtime {
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
         let mut rs_query: HashMap<String, String> = HashMap::new();
-        if let Buckets::Filtered(_) = buckets {
+        if let Buckets::Filtered(bucket_set) = buckets {
+            let random_bucket = self.get_random_bucket();
+            let buckets = if bucket_set.is_empty() {
+                // There are no buckets to execute the query on.
+                // At the moment we don't keep types inside our IR tree and
+                // there is no easy way to get column types in the result.
+                // So we just choose a random bucket and to execute the query on,
+                // as we are sure that any bucket returns an empty result.
+
+                // TODO: return an empty result without actual execution.
+                &random_bucket
+            } else {
+                buckets
+            };
+
             let rs_buckets = buckets.group()?;
             rs_query.reserve(rs_buckets.len());
 
@@ -163,18 +179,19 @@ impl Engine for Runtime {
                 let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
                 rs_query.insert(rs.to_string(), sql);
             }
+
+            if rs_query.is_empty() {
+                return Err(QueryPlannerError::CustomError(format!(
+                    "No no replica sets were found for the buckets {:?} to execute the query on",
+                    buckets
+                )));
+            }
+
+            return self.exec_on_replicas(&rs_query, is_data_modifier);
         }
-        if rs_query.is_empty() {
-            // TODO: We send the query to all the nodes even when there
-            // are no buckets in `Buckets::Filtered`. Such queries (when
-            // we should not execute anything because we can predict an
-            // empty result) can be executed on a round-robin node in
-            // future (not implemented yet).
-            let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
-            self.exec_on_all(&sql, is_data_modifier)
-        } else {
-            self.exec_on_replicas(&rs_query, is_data_modifier)
-        }
+
+        let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
+        self.exec_on_all(&sql, is_data_modifier)
     }
 
     /// Transform sub query results into a virtual table.
@@ -250,6 +267,13 @@ impl Runtime {
         result.set_bucket_count()?;
 
         Ok(result)
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        let mut rng = thread_rng();
+        let bucket_id: u64 = rng.gen_range(1..=self.bucket_count as u64);
+        let bucket_set: HashSet<u64, RepeatableState> = HashSet::from_iter(vec![bucket_id]);
+        Buckets::Filtered(bucket_set)
     }
 
     /// Function get summary count of bucket from vshard

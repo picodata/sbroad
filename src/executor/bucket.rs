@@ -112,12 +112,8 @@ where
                     // tuple with the same distribution as the left side.
                     if let Some(motion_id) = ir_plan.get_motion_from_row(right_id)? {
                         let virtual_table = self.exec_plan.get_motion_vtable(motion_id)?;
-                        let hashed_keys = virtual_table.get_tuple_distribution()?;
-                        let mut bucket_ids: HashSet<u64, RepeatableState> =
-                            HashSet::with_hasher(RepeatableState);
-                        for shard_key in hashed_keys {
-                            bucket_ids.insert(self.engine.determine_bucket_id(&shard_key));
-                        }
+                        let bucket_ids: HashSet<u64, RepeatableState> =
+                            virtual_table.get_index().keys().copied().collect();
                         if !bucket_ids.is_empty() {
                             buckets.push(Buckets::new_filtered(bucket_ids));
                         }
@@ -171,7 +167,7 @@ where
         for mut chain in chains {
             let mut chain_buckets = Buckets::new_all();
             let nodes = chain.get_mut_nodes();
-            // Nodes in the chain are in the top-down order (from left tot right).
+            // Nodes in the chain are in the top-down order (from left to right).
             // We need to pop back the chain to get nodes in the bottom-up order.
             while let Some(node_id) = nodes.pop_back() {
                 let node_buckets = self.get_buckets_from_expr(node_id)?;
@@ -221,12 +217,11 @@ where
                     }
                     MotionPolicy::Segment(_) => {
                         let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
-                        let mut buckets: HashSet<u64, RepeatableState> =
-                            HashSet::with_hasher(RepeatableState);
-                        for key in virtual_table.get_tuple_distribution()? {
-                            let bucket = self.engine.determine_bucket_id(&key);
-                            buckets.insert(bucket);
-                        }
+                        let buckets = virtual_table.get_index().keys().copied().collect::<HashSet<
+                            u64,
+                            RepeatableState,
+                        >>(
+                        );
                         self.bucket_map
                             .insert(*output, Buckets::new_filtered(buckets));
                     }
