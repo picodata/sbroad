@@ -417,6 +417,7 @@ impl Plan {
         }
 
         let output = self.add_row_for_output(child_id, &[])?;
+        self.set_const_dist(output)?;
         let motion = Relational::Motion {
             children: vec![child_id],
             policy: policy.clone(),

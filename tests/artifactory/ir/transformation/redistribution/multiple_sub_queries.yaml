@@ -289,7 +289,7 @@ nodes:
         Row:
           list:
             - 48
-          distribution: ~
+          distribution: Replicated
     - Relational:
         Motion:
           children:
@@ -310,7 +310,7 @@ nodes:
         Row:
           list:
             - 52
-          distribution: ~
+          distribution: Replicated
     - Relational:
         Motion:
           children:

@@ -223,7 +223,9 @@ impl Plan {
                     .get_mut(row_id)
                     .ok_or(QueryPlannerError::InvalidRow)?
                 {
-                    *distribution = Some(suggested_dist);
+                    if distribution.is_none() {
+                        *distribution = Some(suggested_dist);
+                    }
                 }
             }
             2 => {
@@ -284,7 +286,11 @@ impl Plan {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    fn set_const_dist(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
+    /// Sets row distribution to replicated.
+    ///
+    /// # Errors
+    /// - Node is not of a row type.
+    pub fn set_const_dist(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
         if let Node::Expression(Expression::Row {
             ref mut distribution,
             ..

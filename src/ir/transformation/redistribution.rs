@@ -741,9 +741,9 @@ impl Plan {
                 Relational::InnerJoin {
                     output, condition, ..
                 } => {
-                    self.set_distribution(output)?;
                     let strategy = self.resolve_join_conflicts(*id, condition)?;
                     self.create_motion_nodes(*id, &strategy)?;
+                    self.set_distribution(output)?;
                 }
             }
         }
