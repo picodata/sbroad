@@ -2,8 +2,9 @@
 //!
 //! Traits that define an execution engine interface.
 
+use ahash::RandomState;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -49,6 +50,8 @@ pub trait Metadata {
 
     fn get_exec_waiting_timeout(&self) -> u64;
 
+    fn get_system_columns(&self) -> &HashSet<String, RandomState>;
+
     #[must_use]
     fn to_name(s: &str) -> String {
         if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
@@ -69,6 +72,7 @@ pub trait Metadata {
 }
 
 /// Local storage for uploading metadata.
+#[derive(Debug)]
 pub struct LocalMetadata {
     /// Cluster schema.
     pub schema: String,
@@ -76,6 +80,8 @@ pub struct LocalMetadata {
     pub timeout: u64,
     /// Query cache capacity.
     pub capacity: usize,
+    /// System column names.
+    pub system_columns: HashSet<String, RandomState>,
 }
 
 /// An execution engine trait.

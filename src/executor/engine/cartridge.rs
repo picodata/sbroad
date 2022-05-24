@@ -2,6 +2,7 @@
 
 use rand::prelude::*;
 
+use ahash::RandomState;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -125,10 +126,29 @@ impl Engine for Runtime {
                 }
             };
 
+            let system_columns: LuaFunction<_> = lua.eval("return get_system_columns;").unwrap();
+            let columns: Vec<String> = match system_columns.call() {
+                Ok(columns) => columns,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting system columns"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
             let metadata = LocalMetadata {
                 schema,
                 timeout,
                 capacity,
+                system_columns: columns
+                    .iter()
+                    .map(|c| ClusterAppConfig::to_name(c))
+                    .collect::<HashSet<String, RandomState>>(),
             };
             return Ok(Some(metadata));
         }
@@ -136,9 +156,12 @@ impl Engine for Runtime {
     }
 
     fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError> {
-        self.metadata.load_schema(&metadata.schema)?;
         self.metadata.set_exec_waiting_timeout(metadata.timeout);
         self.metadata.set_exec_cache_capacity(metadata.capacity);
+        self.metadata
+            .set_exec_system_columns(metadata.system_columns);
+        // We should always load the schema **after** setting system columns.
+        self.metadata.load_schema(&metadata.schema)?;
         Ok(())
     }
 
@@ -497,6 +520,16 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         end
 
         return cfg["executor_cache_capacity"]
+    end
+
+    function get_system_columns()
+        local cfg = cartridge.config_get_readonly()
+
+        if cfg["executor_system_columns"] == nil then
+            return {"bucket_id"}
+        end
+
+        return cfg["executor_system_columns"]
     end
 
     function group_buckets_by_replicasets(buckets)

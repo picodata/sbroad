@@ -19,10 +19,10 @@ fn scan_rel() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
@@ -56,10 +56,10 @@ fn scan_rel_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
@@ -90,10 +90,10 @@ fn projection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
@@ -112,7 +112,7 @@ fn projection() {
 
     // Expression node instead of relational one
     assert_eq!(
-        QueryPlannerError::InvalidNode,
+        QueryPlannerError::CustomError("Node isn't relational".into()),
         plan.add_proj(1, &["a"]).unwrap_err()
     );
 
@@ -144,10 +144,10 @@ fn selection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
@@ -194,11 +194,11 @@ fn selection_serialize() {
 fn union_all() {
     let mut plan = Plan::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number, false)], &["a"]).unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Number)], &["a"]).unwrap();
+    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Number, false)], &["a"]).unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
@@ -212,8 +212,8 @@ fn union_all_col_amount_mismatch() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
         ],
         &["a"],
     )
@@ -223,7 +223,7 @@ fn union_all_col_amount_mismatch() {
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     // Check errors for children with different amount of column
-    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number)], &["b"]).unwrap();
+    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number, false)], &["b"]).unwrap();
     plan.add_rel(t2);
 
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
@@ -240,8 +240,8 @@ fn sub_query() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
         ],
         &["a"],
     )
@@ -254,7 +254,7 @@ fn sub_query() {
     // Non-relational child node
     let a = 1;
     assert_eq!(
-        QueryPlannerError::InvalidRelation,
+        QueryPlannerError::CustomError("Node isn't relational".into()),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
 
@@ -286,12 +286,12 @@ fn selection_with_sub_query() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer)], &["a"]).unwrap();
+    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Integer)], &["b"]).unwrap();
+    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Integer, false)], &["b"]).unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
@@ -331,8 +331,8 @@ fn join() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
         ],
         &["a"],
     )
@@ -343,8 +343,8 @@ fn join() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("c", Type::Boolean),
-            Column::new("d", Type::Number),
+            Column::new("c", Type::Boolean, false),
+            Column::new("d", Type::Number, false),
         ],
         &["d"],
     )
@@ -384,8 +384,8 @@ fn join_duplicate_columns() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
         ],
         &["a"],
     )
@@ -396,8 +396,8 @@ fn join_duplicate_columns() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("d", Type::Number),
+            Column::new("a", Type::Boolean, false),
+            Column::new("d", Type::Number, false),
         ],
         &["d"],
     )

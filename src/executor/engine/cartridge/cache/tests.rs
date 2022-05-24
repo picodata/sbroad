@@ -1,4 +1,5 @@
 use super::*;
+use ahash::RandomState;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -136,16 +137,19 @@ fn test_getting_table_segment() {
       - \"product_code\"";
 
     let mut s = ClusterAppConfig::new();
+    let system_columns: HashSet<String, RandomState> =
+        [String::from("\"bucket_id\"")].iter().cloned().collect();
+    s.set_exec_system_columns(system_columns);
     s.load_schema(test_schema).unwrap();
 
     let expected = Table::new_seg(
         "\"hash_testing\"",
         vec![
-            Column::new("\"identification_number\"", Type::Integer),
-            Column::new("\"product_code\"", Type::String),
-            Column::new("\"product_units\"", Type::Boolean),
-            Column::new("\"sys_op\"", Type::Number),
-            Column::new("\"bucket_id\"", Type::Unsigned),
+            Column::new("\"identification_number\"", Type::Integer, false),
+            Column::new("\"product_code\"", Type::String, false),
+            Column::new("\"product_units\"", Type::Boolean, false),
+            Column::new("\"sys_op\"", Type::Number, false),
+            Column::new("\"bucket_id\"", Type::Unsigned, true),
         ],
         &["\"identification_number\"", "\"product_code\""],
     )

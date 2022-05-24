@@ -382,18 +382,35 @@ impl Plan {
             QueryPlannerError::CustomError(format!("Invalid relation: {}", relation))
         })?;
         let columns: Vec<usize> = if columns.is_empty() {
-            (0..rel.columns.len()).collect()
+            rel.columns
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| !c.is_system())
+                .map(|(i, _)| i)
+                .collect()
         } else {
-            let mut names: HashMap<&str, usize, RandomState> =
+            let mut names: HashMap<&str, (bool, usize), RandomState> =
                 HashMap::with_capacity_and_hasher(columns.len(), RandomState::new());
-            for (pos, col) in rel.columns.iter().enumerate() {
-                names.insert(col.name.as_ref(), pos);
-            }
-            let mut cols: Vec<usize> = Vec::with_capacity(columns.len());
+            rel.columns.iter().enumerate().for_each(|(i, c)| {
+                names.insert(c.name.as_str(), (c.is_system(), i));
+            });
+            let mut cols: Vec<usize> = Vec::with_capacity(names.len());
             for name in columns {
-                cols.push(*names.get(name).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Invalid column: {}", name))
-                })?);
+                match names.get(name) {
+                    Some((false, pos)) => cols.push(*pos),
+                    Some((true, _)) => {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "System column {} cannot be inserted",
+                            name
+                        )))
+                    }
+                    None => {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Column {} does not exist",
+                            name
+                        )))
+                    }
+                }
             }
             cols
         };
@@ -517,7 +534,7 @@ impl Plan {
             return Err(QueryPlannerError::InvalidRelation);
         }
 
-        let output = self.add_row_for_output(child_id, &[])?;
+        let output = self.add_row_for_output(child_id, &[], true)?;
         self.set_const_dist(output)?;
         let motion = Relational::Motion {
             children: vec![child_id],
@@ -542,7 +559,7 @@ impl Plan {
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let output = self.add_row_for_output(child, col_names)?;
+        let output = self.add_row_for_output(child, col_names, false)?;
         let proj = Relational::Projection {
             children: vec![child],
             output,
@@ -605,7 +622,7 @@ impl Plan {
             }
         }
 
-        let output = self.add_row_for_output(first_child, &[])?;
+        let output = self.add_row_for_output(first_child, &[], true)?;
         let select = Relational::Selection {
             children: children.into(),
             filter,
@@ -637,7 +654,7 @@ impl Plan {
             None
         };
 
-        let output = self.add_row_for_output(child, &[])?;
+        let output = self.add_row_for_output(child, &[], true)?;
         let sq = Relational::ScanSubQuery {
             alias: name,
             children: vec![child],

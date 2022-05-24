@@ -10,10 +10,11 @@ fn column() {
     let a = Column {
         name: String::from("a"),
         r#type: Type::Boolean,
+        is_system: false,
     };
-    assert_eq!(a, Column::new("a", Type::Boolean));
-    assert_ne!(a, Column::new("a", Type::String));
-    assert_ne!(a, Column::new("b", Type::Boolean));
+    assert_eq!(a, Column::new("a", Type::Boolean, false));
+    assert_ne!(a, Column::new("a", Type::String, false));
+    assert_ne!(a, Column::new("b", Type::Boolean, false));
 }
 
 #[test]
@@ -21,10 +22,10 @@ fn table_seg() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
@@ -37,7 +38,7 @@ fn table_seg() {
 
 #[test]
 fn table_seg_name() {
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
     assert_eq!("t", t.name());
 }
 
@@ -47,10 +48,10 @@ fn table_seg_duplicate_columns() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean),
-                Column::new("b", Type::Number),
-                Column::new("c", Type::String),
-                Column::new("a", Type::String),
+                Column::new("a", Type::Boolean, false),
+                Column::new("b", Type::Number, false),
+                Column::new("c", Type::String, false),
+                Column::new("a", Type::String, false),
             ],
             &["b", "a"],
         )
@@ -67,10 +68,10 @@ fn table_seg_wrong_key() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean),
-                Column::new("b", Type::Number),
-                Column::new("c", Type::String),
-                Column::new("d", Type::String),
+                Column::new("a", Type::Boolean, false),
+                Column::new("b", Type::Number, false),
+                Column::new("c", Type::String, false),
+                Column::new("d", Type::String, false),
             ],
             &["a", "e"],
         )
@@ -84,12 +85,12 @@ fn table_seg_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
-            Column::new("e", Type::Integer),
-            Column::new("f", Type::Unsigned),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
+            Column::new("e", Type::Integer, false),
+            Column::new("f", Type::Unsigned, false),
         ],
         &["a", "d"],
     )
@@ -170,6 +171,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Boolean,
+        is_system: false,
     };
 
     assert_eq!(
@@ -183,6 +185,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::String,
+        is_system: false,
     };
 
     assert_eq!(
@@ -196,6 +199,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Integer,
+        is_system: false,
     };
 
     assert_eq!(
@@ -209,6 +213,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Unsigned,
+        is_system: false,
     };
 
     assert_eq!(
@@ -222,6 +227,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Number,
+        is_system: false,
     };
 
     assert_eq!(
@@ -234,19 +240,40 @@ fn column_msgpack_serialize() {
 }
 
 #[test]
+fn column_msgpack_deserialize() {
+    let c = Column {
+        name: "name".into(),
+        r#type: Type::Boolean,
+        is_system: false,
+    };
+
+    let expected_msgpack = vec![
+        0x82, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79, 0x70,
+        0x65, 0xA7, 0x62, 0x6F, 0x6F, 0x6C, 0x65, 0x61, 0x6E,
+    ];
+
+    assert_eq!(expected_msgpack, rmp_serde::to_vec(&c).unwrap());
+
+    assert_eq!(
+        rmp_serde::from_slice::<Column>(expected_msgpack.as_slice()).unwrap(),
+        c
+    );
+}
+
+#[test]
 fn table_converting() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )
     .unwrap();
 
     let s = serde_yaml::to_string(&t).unwrap();
-    Table::seg_from_yaml(&s).unwrap();
+    assert_eq!(t, Table::seg_from_yaml(&s).unwrap());
 }

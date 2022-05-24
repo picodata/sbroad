@@ -12,10 +12,10 @@ fn proj_preserve_dist_key() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean),
-            Column::new("b", Type::Number),
-            Column::new("c", Type::String),
-            Column::new("d", Type::String),
+            Column::new("a", Type::Boolean, false),
+            Column::new("b", Type::Number, false),
+            Column::new("c", Type::String, false),
+            Column::new("d", Type::String, false),
         ],
         &["b", "a"],
     )

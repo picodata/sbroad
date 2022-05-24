@@ -15,7 +15,7 @@ fn sql_order_selection() {
     // select a from t where a = 1
 
     let mut plan = Plan::new();
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean)], &["a"]).unwrap();
+    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
     plan.add_rel(t);
     let scan_id = plan.add_scan("t", None).unwrap();
 

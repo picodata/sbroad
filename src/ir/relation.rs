@@ -49,6 +49,8 @@ pub struct Column {
     pub name: String,
     /// Column type.
     pub r#type: Type,
+    /// Is system column.
+    pub is_system: bool,
 }
 
 impl Column {
@@ -102,11 +104,11 @@ impl<'de> Visitor<'de> for ColumnVisitor {
         }
 
         match column_type.as_str() {
-            "boolean" => Ok(Column::new(&column_name, Type::Boolean)),
-            "number" => Ok(Column::new(&column_name, Type::Number)),
-            "string" => Ok(Column::new(&column_name, Type::String)),
-            "integer" => Ok(Column::new(&column_name, Type::Integer)),
-            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned)),
+            "boolean" => Ok(Column::new(&column_name, Type::Boolean, false)),
+            "number" => Ok(Column::new(&column_name, Type::Number, false)),
+            "string" => Ok(Column::new(&column_name, Type::String, false)),
+            "integer" => Ok(Column::new(&column_name, Type::Integer, false)),
+            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, false)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }
@@ -124,11 +126,18 @@ impl<'de> Deserialize<'de> for Column {
 impl Column {
     /// Column constructor.
     #[must_use]
-    pub fn new(n: &str, t: Type) -> Self {
+    pub fn new(n: &str, t: Type, is_system: bool) -> Self {
         Column {
             name: n.into(),
             r#type: t,
+            is_system,
         }
+    }
+
+    /// Column is a system column.
+    #[must_use]
+    pub fn is_system(&self) -> bool {
+        self.is_system
     }
 }
 
@@ -155,10 +164,13 @@ impl Table {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the input arguments are invalid.
-    pub fn new_seg(n: &str, c: Vec<Column>, k: &[&str]) -> Result<Self, QueryPlannerError> {
+    pub fn new_seg(
+        name: &str,
+        columns: Vec<Column>,
+        keys: &[&str],
+    ) -> Result<Self, QueryPlannerError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
-        let cols = &c;
-        let no_duplicates = cols
+        let no_duplicates = &columns
             .iter()
             .enumerate()
             .all(|(pos, col)| matches!(pos_map.insert(&col.name, pos), None));
@@ -169,19 +181,17 @@ impl Table {
             ));
         }
 
-        let keys = &k;
-        let res_positions: Result<Vec<_>, _> = keys
+        let positions = keys
             .iter()
             .map(|name| match pos_map.get(*name) {
                 Some(pos) => Ok(*pos),
                 None => Err(QueryPlannerError::InvalidShardingKey),
             })
-            .collect();
-        let positions = res_positions?;
+            .collect::<Result<Vec<usize>, _>>()?;
 
         Ok(Table {
-            name: n.into(),
-            columns: c,
+            name: name.into(),
+            columns,
             key: Key::new(positions),
         })
     }
@@ -213,6 +223,17 @@ impl Table {
         }
 
         Ok(ts)
+    }
+
+    /// Get position of the system columns in the table.
+    #[must_use]
+    pub fn get_system_columns_positions(&self) -> HashSet<usize> {
+        self.columns
+            .iter()
+            .enumerate()
+            .filter(|(_, col)| col.is_system)
+            .map(|(pos, _)| pos)
+            .collect()
     }
 }
 

@@ -349,8 +349,14 @@ impl Ast for AbstractSyntaxTree {
                             ));
                         };
 
-                        let ref_list =
-                            plan.new_columns(&[*plan_rel_id], false, &[0], &[&col_name], false)?;
+                        let ref_list = plan.new_columns(
+                            &[*plan_rel_id],
+                            false,
+                            &[0],
+                            &[&col_name],
+                            false,
+                            true,
+                        )?;
                         let ref_id = *ref_list.get(0).ok_or_else(|| {
                             QueryPlannerError::CustomError("Referred column is not found.".into())
                         })?;
@@ -379,7 +385,7 @@ impl Ast for AbstractSyntaxTree {
                     }
                     if plan_rel_list.len() > 1 {
                         return Err(QueryPlannerError::CustomError(
-                            "Joins are not implemented yet.".into(),
+                            "Sub-queries in projections are not implemented yet.".into(),
                         ));
                     }
                     let plan_rel_id = *plan_rel_list.get(0).ok_or_else(|| {
@@ -387,7 +393,7 @@ impl Ast for AbstractSyntaxTree {
                             "Referred relational node is not found.".into(),
                         )
                     })?;
-                    let plan_asterisk_id = plan.add_row_for_output(plan_rel_id, &[])?;
+                    let plan_asterisk_id = plan.add_row_for_output(plan_rel_id, &[], false)?;
                     map.add(*id, plan_asterisk_id);
                 }
                 Type::Alias => {

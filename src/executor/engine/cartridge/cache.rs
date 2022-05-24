@@ -2,8 +2,8 @@
 
 extern crate yaml_rust;
 
-use std::collections::HashMap;
-
+use ahash::RandomState;
+use std::collections::{HashMap, HashSet};
 use yaml_rust::YamlLoader;
 
 use crate::errors::QueryPlannerError;
@@ -28,6 +28,9 @@ pub struct ClusterAppConfig {
     /// Query cache capacity.
     cache_capacity: usize,
 
+    /// System column names.
+    system_columns: HashSet<String, RandomState>,
+
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
 }
@@ -46,6 +49,7 @@ impl ClusterAppConfig {
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
+            system_columns: HashSet::with_hasher(RandomState::new()),
         }
     }
 
@@ -94,7 +98,13 @@ impl ClusterAppConfig {
                                 Some(t) => Type::new(t)?,
                                 None => return Err(QueryPlannerError::TypeNotImplemented),
                             };
-                            result.push(Column::new(&Self::to_name(name), t));
+                            let qualified_name = Self::to_name(name);
+                            let col = Column::new(
+                                &qualified_name,
+                                t,
+                                self.get_system_columns().contains(&qualified_name),
+                            );
+                            result.push(col);
                         }
                         result
                     }
@@ -142,6 +152,10 @@ impl ClusterAppConfig {
             self.cache_capacity = DEFAULT_CAPACITY;
         }
     }
+
+    pub fn set_exec_system_columns(&mut self, columns: HashSet<String, RandomState>) {
+        self.system_columns = columns;
+    }
 }
 
 impl Metadata for ClusterAppConfig {
@@ -160,6 +174,10 @@ impl Metadata for ClusterAppConfig {
     /// Get response waiting timeout for executor
     fn get_exec_waiting_timeout(&self) -> u64 {
         self.waiting_timeout
+    }
+
+    fn get_system_columns(&self) -> &HashSet<String, RandomState> {
+        &self.system_columns
     }
 
     /// Get sharding keys by space name

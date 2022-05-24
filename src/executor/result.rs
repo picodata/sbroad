@@ -8,7 +8,7 @@ use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::relation::Column;
+use crate::ir::relation::{Column, Type};
 use crate::ir::value::{AsIrVal, Value as IrValue};
 
 /// `Value` cointains tarantool datatypes
@@ -142,8 +142,51 @@ impl Eq for Value {}
 type ExecutorTuple = Vec<Value>;
 
 #[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+pub struct MetadataColumn {
+    name: String,
+    r#type: String,
+}
+
+impl MetadataColumn {
+    #[must_use]
+    pub fn new(name: String, r#type: String) -> Self {
+        MetadataColumn { name, r#type }
+    }
+}
+
+impl Serialize for MetadataColumn {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("type", &self.r#type)?;
+        map.end()
+    }
+}
+
+impl TryInto<Column> for &MetadataColumn {
+    type Error = QueryPlannerError;
+
+    fn try_into(self) -> Result<Column, Self::Error> {
+        match self.r#type.as_str() {
+            "boolean" => Ok(Column::new(&self.name, Type::Boolean, false)),
+            "number" => Ok(Column::new(&self.name, Type::Number, false)),
+            "string" => Ok(Column::new(&self.name, Type::String, false)),
+            "integer" => Ok(Column::new(&self.name, Type::Integer, false)),
+            "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, false)),
+            _ => Err(QueryPlannerError::CustomError(format!(
+                "unsupported column type: {}",
+                self.r#type
+            ))),
+        }
+    }
+}
+
+#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
 pub struct ProducerResults {
-    pub metadata: Vec<Column>,
+    pub metadata: Vec<MetadataColumn>,
     pub rows: Vec<ExecutorTuple>,
 }
 
@@ -194,7 +237,7 @@ impl ProducerResults {
         let mut result = VirtualTable::new();
 
         for col in &self.metadata {
-            result.add_column(col.clone());
+            result.add_column(col.try_into()?);
         }
 
         for t in &self.rows {

@@ -1,3 +1,4 @@
+use ahash::RandomState;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -25,6 +26,7 @@ pub struct MetadataMock {
     schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
+    system_columns: HashSet<String, RandomState>,
 }
 
 impl Metadata for MetadataMock {
@@ -38,6 +40,10 @@ impl Metadata for MetadataMock {
 
     fn get_exec_waiting_timeout(&self) -> u64 {
         0
+    }
+
+    fn get_system_columns(&self) -> &HashSet<String, RandomState> {
+        &self.system_columns
     }
 
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
@@ -66,11 +72,11 @@ impl MetadataMock {
         let mut tables = HashMap::new();
 
         let columns = vec![
-            Column::new("\"identification_number\"", Type::Integer),
-            Column::new("\"product_code\"", Type::String),
-            Column::new("\"product_units\"", Type::Boolean),
-            Column::new("\"sys_op\"", Type::Number),
-            Column::new("\"bucket_id\"", Type::Unsigned),
+            Column::new("\"identification_number\"", Type::Integer, false),
+            Column::new("\"product_code\"", Type::String, false),
+            Column::new("\"product_units\"", Type::Boolean, false),
+            Column::new("\"sys_op\"", Type::Number, false),
+            Column::new("\"bucket_id\"", Type::Unsigned, true),
         ];
         let sharding_key = vec!["\"identification_number\"", "\"product_code\""];
         tables.insert(
@@ -95,11 +101,11 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"id\"", Type::Number),
-            Column::new("\"sysFrom\"", Type::Number),
-            Column::new("\"FIRST_NAME\"", Type::String),
-            Column::new("\"sys_op\"", Type::Number),
-            Column::new("\"bucket_id\"", Type::Unsigned),
+            Column::new("\"id\"", Type::Number, false),
+            Column::new("\"sysFrom\"", Type::Number, false),
+            Column::new("\"FIRST_NAME\"", Type::String, false),
+            Column::new("\"sys_op\"", Type::Number, false),
+            Column::new("\"bucket_id\"", Type::Unsigned, true),
         ];
         let sharding_key = vec!["\"id\""];
 
@@ -113,7 +119,7 @@ impl MetadataMock {
             Table::new_seg("\"test_space_hist\"", columns, &sharding_key).unwrap(),
         );
 
-        let columns = vec![Column::new("\"id\"", Type::Number)];
+        let columns = vec![Column::new("\"id\"", Type::Number, false)];
         let sharding_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
@@ -121,10 +127,10 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Number),
-            Column::new("\"b\"", Type::Number),
-            Column::new("\"c\"", Type::Number),
-            Column::new("\"d\"", Type::Number),
+            Column::new("\"a\"", Type::Number, false),
+            Column::new("\"b\"", Type::Number, false),
+            Column::new("\"c\"", Type::Number, false),
+            Column::new("\"d\"", Type::Number, false),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
@@ -144,6 +150,7 @@ impl MetadataMock {
             .collect(),
             tables,
             bucket_count: 10000,
+            system_columns: collection! {"\"bucket_id\"".into()},
         }
     }
 }
@@ -190,6 +197,7 @@ impl Engine for EngineMock {
             schema: "".into(),
             timeout: 0,
             capacity: DEFAULT_CAPACITY,
+            system_columns: HashSet::with_hasher(RandomState::new()),
         };
         Ok(Some(metadata))
     }

@@ -316,10 +316,12 @@ fn join_linker2_test() {
     virtual_table.add_column(Column {
         name: "id1".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_column(Column {
         name: "id2".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -374,10 +376,12 @@ fn join_linker3_test() {
     virtual_table.add_column(Column {
         name: "id1".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_column(Column {
         name: "id2".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -432,6 +436,7 @@ fn join_linker4_test() {
     virtual_t2.add_column(Column {
         name: "r_id".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
@@ -448,6 +453,7 @@ fn join_linker4_test() {
     virtual_sq.add_column(Column {
         name: "fn".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
@@ -536,13 +542,12 @@ fn anonymous_col_index_test() {
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket3)),
             Value::String(format!(
-                "{} {}, {}, {}, {}, {} {} {} {} {} {}",
+                "{} {} {} {} {} {} {} {} {} {}",
                 "SELECT",
-                r#""test_space"."id" as "id""#,
-                r#""test_space"."sysFrom" as "sysFrom""#,
-                r#""test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                r#""test_space"."id" as "id","#,
+                r#""test_space"."sysFrom" as "sysFrom","#,
+                r#""test_space"."FIRST_NAME" as "FIRST_NAME","#,
                 r#""test_space"."sys_op" as "sys_op""#,
-                r#""test_space"."bucket_id" as "bucket_id""#,
                 r#"FROM "test_space""#,
                 r#"WHERE (("test_space"."id") in"#,
                 r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (3)))"#,
@@ -553,13 +558,12 @@ fn anonymous_col_index_test() {
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
-                "{} {}, {}, {}, {}, {} {} {} {} {} {}",
+                "{} {} {} {} {} {} {} {} {} {}",
                 "SELECT",
-                r#""test_space"."id" as "id""#,
-                r#""test_space"."sysFrom" as "sysFrom""#,
-                r#""test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                r#""test_space"."id" as "id","#,
+                r#""test_space"."sysFrom" as "sysFrom","#,
+                r#""test_space"."FIRST_NAME" as "FIRST_NAME","#,
                 r#""test_space"."sys_op" as "sys_op""#,
-                r#""test_space"."bucket_id" as "bucket_id""#,
                 r#"FROM "test_space""#,
                 r#"WHERE (("test_space"."id") in"#,
                 r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (2)))"#,
@@ -570,6 +574,52 @@ fn anonymous_col_index_test() {
     ]);
 
     assert_eq!(ExecutorResults::from(expected), result)
+}
+
+#[test]
+fn system_columns1_test() {
+    let sql = r#"SELECT * FROM "test_space" where "id" = 1"#;
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+
+    let mut expected = ProducerResults::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    expected.rows.push(vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {} {}",
+            r#"SELECT "test_space"."id" as "id", "test_space"."sysFrom" as "sysFrom","#,
+            r#""test_space"."FIRST_NAME" as "FIRST_NAME", "test_space"."sys_op" as "sys_op""#,
+            r#"FROM "test_space" WHERE ("test_space"."id") = (1)"#,
+        )),
+    ]);
+    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+}
+
+#[test]
+fn system_columns2_test() {
+    let sql = r#"SELECT *, "bucket_id" FROM "test_space" where "id" = 1"#;
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+
+    let mut expected = ProducerResults::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    expected.rows.push(vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {} {}",
+            r#"SELECT "test_space"."id" as "id", "test_space"."sysFrom" as "sysFrom","#,
+            r#""test_space"."FIRST_NAME" as "FIRST_NAME", "test_space"."sys_op" as "sys_op","#,
+            r#""test_space"."bucket_id" as "bucket_id" FROM "test_space" WHERE ("test_space"."id") = (1)"#,
+        )),
+    ]);
+    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
 }
 
 #[test]
@@ -586,6 +636,7 @@ fn insert1_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
@@ -667,10 +718,12 @@ fn insert3_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_column(Column {
         name: "b".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -760,10 +813,12 @@ fn insert5_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_column(Column {
         name: "b".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("5").unwrap(),
@@ -827,6 +882,63 @@ fn insert6_test() {
     assert_eq!(ExecutorResults::from(expected), result);
 }
 
+#[test]
+fn insert7_test() {
+    let sql = r#"insert into "hash_testing" ("sys_op", "bucket_id" ) values (1, 2)"#;
+
+    let engine = EngineMock::new();
+    let result = Query::new(&engine, sql, &[]).unwrap_err();
+
+    assert_eq!(
+        QueryPlannerError::CustomError(format!(
+            "System column {} cannot be inserted",
+            "\"bucket_id\""
+        )),
+        result
+    );
+}
+
+#[test]
+fn insert8_test() {
+    let sql = r#"insert into "hash_testing" select * from "hash_single_testing""#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column::new("identification_number", Type::Integer, false));
+    virtual_table.add_column(Column::new("product_code", Type::String, false));
+    virtual_table.add_column(Column::new("product_units", Type::Boolean, false));
+    virtual_table.add_column(Column::new("sys_op", Type::Number, false));
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::string_from_str("two"),
+        IrValue::Boolean(true),
+        IrValue::number_from_str("4").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
+    let result = query.exec().unwrap();
+
+    let mut expected = ProducerResults::new();
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param2 = IrValue::string_from_str("two");
+    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(format!(
+            "{} {}{}",
+            r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op")"#,
+            r#"SELECT COLUMN_1 as "identification_number",COLUMN_2 as "product_code",COLUMN_3 as "product_units","#,
+            r#"COLUMN_4 as "sys_op" FROM (VALUES (1,'two',true,4))"#,
+        )),
+    ]]);
+    assert_eq!(ExecutorResults::from(expected), result);
+}
+
 /// Helper function to create a "test" virtual table.
 fn virtual_table_23() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
@@ -834,6 +946,7 @@ fn virtual_table_23() -> VirtualTable {
     virtual_table.add_column(Column {
         name: "identification_number".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
 
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);

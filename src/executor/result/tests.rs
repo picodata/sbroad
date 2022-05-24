@@ -8,18 +8,9 @@ use super::*;
 fn box_execute_result_serialize() {
     let r = ProducerResults {
         metadata: vec![
-            Column {
-                name: "id".into(),
-                r#type: Type::Integer,
-            },
-            Column {
-                name: "name".into(),
-                r#type: Type::String,
-            },
-            Column {
-                name: "count".into(),
-                r#type: Type::Unsigned,
-            },
+            MetadataColumn::new("id".into(), "integer".into()),
+            MetadataColumn::new("name".into(), "string".into()),
+            MetadataColumn::new("count".into(), "unsigned".into()),
         ],
         rows: vec![vec![
             Value::Integer(1),
@@ -59,22 +50,10 @@ fn box_execute_result_serialize() {
 fn convert_to_vtable() {
     let r = ProducerResults {
         metadata: vec![
-            Column {
-                name: "id".into(),
-                r#type: Type::Integer,
-            },
-            Column {
-                name: "name".into(),
-                r#type: Type::String,
-            },
-            Column {
-                name: "count".into(),
-                r#type: Type::Unsigned,
-            },
-            Column {
-                name: "price".into(),
-                r#type: Type::Number,
-            },
+            MetadataColumn::new("id".into(), "integer".into()),
+            MetadataColumn::new("name".into(), "string".into()),
+            MetadataColumn::new("count".into(), "unsigned".into()),
+            MetadataColumn::new("price".into(), "number".into()),
         ],
         rows: vec![
             vec![
@@ -97,19 +76,23 @@ fn convert_to_vtable() {
     excepted.add_column(Column {
         name: "id".into(),
         r#type: Type::Integer,
+        is_system: false,
     });
     excepted.add_column(Column {
         name: "name".into(),
         r#type: Type::String,
+        is_system: false,
     });
     excepted.add_column(Column {
         name: "count".into(),
         r#type: Type::Unsigned,
+        is_system: false,
     });
 
     excepted.add_column(Column {
         name: "price".into(),
         r#type: Type::Number,
+        is_system: false,
     });
 
     excepted.add_values_tuple(vec![

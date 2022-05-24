@@ -53,7 +53,7 @@ fn one_table_with_asterisk() {
         format!(
             "{} {} {} {}",
             r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code","#,
-            r#""hash_testing"."product_units" as "product_units", "hash_testing"."sys_op" as "sys_op", "hash_testing"."bucket_id" as "bucket_id""#,
+            r#""hash_testing"."product_units" as "product_units", "hash_testing"."sys_op" as "sys_op""#,
             r#"FROM "hash_testing""#,
             r#"WHERE ("hash_testing"."identification_number") = (1)"#
         ),

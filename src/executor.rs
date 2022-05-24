@@ -61,6 +61,7 @@ impl Plan {
 }
 
 /// Query to execute.
+#[derive(Debug)]
 pub struct Query<'a, E>
 where
     E: Engine,

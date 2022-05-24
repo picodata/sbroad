@@ -85,12 +85,11 @@ g.test_simple_shard_key_query = function()
             {name = "id", type = "integer"},
             {name = "name", type = "string"},
             {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
         },
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = ?]], { 1 } })
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key" where "id" = ?]], { 1 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -129,7 +128,7 @@ end
 g.test_complex_shard_key_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = ? and "name" = ?]], { 1, '457'} })
+    local r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space" where "id" = ? and "name" = ?]], { 1, '457'} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -141,7 +140,7 @@ g.test_complex_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" = 1 and "name" = '123']], {} })
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space" where "id" = 1 and "name" = '123']], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -294,10 +293,9 @@ g.test_anonymous_cols_naming = function()
             {name = "id", type = "integer"},
             {name = "name", type = "string"},
             {name = "product_units", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
         },
         rows = {
-            {1, "123", 1, 360}
+            {1, "123", 1}
         },
     })
 end
@@ -330,7 +328,7 @@ g.test_empty_motion_result = function()
     })
 
 
-    r, err = api:call("query", { [[SELECT * FROM "testing_space"
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
         OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)
     ]], {} })

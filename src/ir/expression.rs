@@ -291,7 +291,8 @@ impl Nodes {
 
 impl Plan {
     /// Returns a list of columns from the child node outputs.
-    /// If the column list is empty then copies all the columns to a new tuple.
+    /// If the column list is empty then copies all the non-system columns
+    /// from the child node to a new tuple.
     ///
     /// The `is_join` option "on" builds an output tuple for the left child and
     /// appends the right child's one to it. Otherwise we build an output tuple
@@ -309,9 +310,10 @@ impl Plan {
         targets: &[usize],
         col_names: &[&str],
         need_aliases: bool,
+        need_system_columns: bool,
     ) -> Result<Vec<usize>, QueryPlannerError> {
         // We can pass two target children nodes only in case
-        // of `UnionAll` and `InnerlJoin`.
+        // of `UnionAll` and `InnerJoin`.
         // - For the `UnionAll` operator we need only the first
         // child to get correct column names for a new tuple
         // (the second child aliases would be shadowed). But each reference should point
@@ -351,21 +353,68 @@ impl Plan {
                         "Child node not found".into(),
                     ));
                 };
-
-                let child_row_list: Vec<usize> =
-                    if let Node::Relational(relational_op) = self.get_node(child_node)? {
-                        if let Node::Expression(Expression::Row { list, .. }) =
-                            self.get_node(relational_op.output())?
-                        {
-                            list.clone()
-                        } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "Child node is not a row".into(),
-                            ));
-                        }
+                let relational_op = self.get_relation_node(child_node)?;
+                let child_row_list: Vec<usize> = if let Expression::Row { list, .. } =
+                    self.get_expression_node(relational_op.output())?
+                {
+                    // We have to filter all the system columns in the projection nearest
+                    // to the relational scan. We can have two possible combinations:
+                    // 1. projection -> selection -> scan
+                    // 2. projection -> scan
+                    // As a result `relational_op` can be either a selection or a scan.
+                    if need_system_columns {
+                        list.clone()
                     } else {
-                        return Err(QueryPlannerError::InvalidRelation);
-                    };
+                        let table_name: Option<&str> = match relational_op {
+                            Relational::ScanRelation { relation, .. } => Some(relation.as_str()),
+                            Relational::Selection {
+                                children: sel_child_ids,
+                                ..
+                            } => {
+                                let sel_child_id = if let (Some(sel_child_id), None) =
+                                    (sel_child_ids.get(0), sel_child_ids.get(1))
+                                {
+                                    *sel_child_id
+                                } else {
+                                    return Err(QueryPlannerError::CustomError(format!(
+                                        "Selection node has invalid children: {:?}",
+                                        sel_child_ids
+                                    )));
+                                };
+                                let sel_child = self.get_relation_node(sel_child_id)?;
+                                match sel_child {
+                                    Relational::ScanRelation { relation, .. } => {
+                                        Some(relation.as_str())
+                                    }
+                                    _ => None,
+                                }
+                            }
+                            _ => None,
+                        };
+                        if let Some(relation) = table_name {
+                            let table = self.get_relation(relation).ok_or_else(|| {
+                                QueryPlannerError::CustomError(format!(
+                                    "Failed to find table {} in the plan",
+                                    relation
+                                ))
+                            })?;
+                            let system_columns = table.get_system_columns_positions();
+                            // Take an advantage of the fact that the output aliases
+                            // in the relation scan are in the same order as its columns.
+                            list.iter()
+                                .enumerate()
+                                .filter(|(pos, _)| !system_columns.contains(pos))
+                                .map(|(_, id)| *id)
+                                .collect()
+                        } else {
+                            list.clone()
+                        }
+                    }
+                } else {
+                    return Err(QueryPlannerError::CustomError(
+                        "Child node is not a row".into(),
+                    ));
+                };
                 result.reserve(child_row_list.len());
                 for (pos, alias_node) in child_row_list.iter().enumerate() {
                     let name: String =
@@ -419,41 +468,38 @@ impl Plan {
         for col_name in col_names {
             col_names_set.insert(col_name);
         }
-        let map: HashMap<&str, usize, RandomState> =
-            if let Node::Relational(relational_op) = self.get_node(child_node)? {
-                let output_id = relational_op.output();
-                let output = self.get_expression_node(output_id)?;
-                if let Expression::Row { list, .. } = output {
-                    let state = RandomState::new();
-                    let mut map: HashMap<&str, usize, RandomState> =
-                        HashMap::with_capacity_and_hasher(col_names.len(), state);
-                    for (pos, col_id) in list.iter().enumerate() {
-                        let alias = self.get_expression_node(*col_id)?;
-                        if let Expression::Alias { ref name, .. } = alias {
-                            if !col_names_set.contains(&name.as_str()) {
-                                continue;
-                            }
-                            if map.insert(name, pos).is_some() {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Duplicate column name {} at position {}",
-                                    name, pos
-                                )));
-                            }
-                        } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "Child node is not an alias".into(),
-                            ));
-                        }
+
+        let relational_op = self.get_relation_node(child_node)?;
+        let output_id = relational_op.output();
+        let output = self.get_expression_node(output_id)?;
+        let map: HashMap<&str, usize, RandomState> = if let Expression::Row { list, .. } = output {
+            let state = RandomState::new();
+            let mut map: HashMap<&str, usize, RandomState> =
+                HashMap::with_capacity_and_hasher(col_names.len(), state);
+            for (pos, col_id) in list.iter().enumerate() {
+                let alias = self.get_expression_node(*col_id)?;
+                if let Expression::Alias { ref name, .. } = alias {
+                    if !col_names_set.contains(&name.as_str()) {
+                        continue;
                     }
-                    map
+                    if map.insert(name, pos).is_some() {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Duplicate column name {} at position {}",
+                            name, pos
+                        )));
+                    }
                 } else {
                     return Err(QueryPlannerError::CustomError(
-                        "Relational output tuple is not a row".into(),
+                        "Child node is not an alias".into(),
                     ));
                 }
-            } else {
-                return Err(QueryPlannerError::InvalidNode);
-            };
+            }
+            map
+        } else {
+            return Err(QueryPlannerError::CustomError(
+                "Relational output tuple is not a row".into(),
+            ));
+        };
 
         let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
         let all_found = col_names.iter().all(|col| {
@@ -493,8 +539,9 @@ impl Plan {
         &mut self,
         child: usize,
         col_names: &[&str],
+        need_system_columns: bool,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[child], false, &[0], col_names, true)?;
+        let list = self.new_columns(&[child], false, &[0], col_names, true, need_system_columns)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -508,7 +555,7 @@ impl Plan {
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[left, right], false, &[0, 1], &[], true)?;
+        let list = self.new_columns(&[left, right], false, &[0, 1], &[], true, true)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -524,7 +571,7 @@ impl Plan {
         left: usize,
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[left, right], true, &[0, 1], &[], true)?;
+        let list = self.new_columns(&[left, right], true, &[0, 1], &[], true, true)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -541,7 +588,7 @@ impl Plan {
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[child], false, &[0], col_names, false)?;
+        let list = self.new_columns(&[child], false, &[0], col_names, false, true)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -559,7 +606,7 @@ impl Plan {
         children_pos: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(children, false, &[children_pos], col_names, false)?;
+        let list = self.new_columns(children, false, &[children_pos], col_names, false, true)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -577,7 +624,7 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[left, right], true, &[0], col_names, false)?;
+        let list = self.new_columns(&[left, right], true, &[0], col_names, false, true)?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -595,7 +642,7 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[left, right], true, &[1], col_names, false)?;
+        let list = self.new_columns(&[left, right], true, &[1], col_names, false, true)?;
         Ok(self.nodes.add_row(list, None))
     }
 
