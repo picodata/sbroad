@@ -618,17 +618,21 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
              local res = future:result()
 
              if res[1] == nil then
-                 error(res[2])
+                error(res[2])
              end
 
              if result == nil then
-                 result = res[1]
+                result = res[1]
              else
-                 for _, item in pairs(res[1].rows) do
-                    table.insert(result.rows, item)
-                 end
-             end
-         end
+                if is_data_modifier then
+                    result.row_count = result.row_count + res[1].row_count
+                else
+                    for _, item in pairs(res[1].rows) do
+                        table.insert(result.rows, item)
+                    end
+                end
+                    end
+                end
 
         return result
     end
