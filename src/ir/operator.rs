@@ -16,6 +16,7 @@ use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::collection;
 use crate::ir::distribution::Distribution;
+use crate::ir::relation::ColumnRole;
 use traversal::Bft;
 
 /// Binary operator returning Bool expression.
@@ -385,20 +386,20 @@ impl Plan {
             rel.columns
                 .iter()
                 .enumerate()
-                .filter(|(_, c)| !c.is_system())
+                .filter(|(_, c)| ColumnRole::User.eq(c.get_role()))
                 .map(|(i, _)| i)
                 .collect()
         } else {
-            let mut names: HashMap<&str, (bool, usize), RandomState> =
+            let mut names: HashMap<&str, (&ColumnRole, usize), RandomState> =
                 HashMap::with_capacity_and_hasher(columns.len(), RandomState::new());
             rel.columns.iter().enumerate().for_each(|(i, c)| {
-                names.insert(c.name.as_str(), (c.is_system(), i));
+                names.insert(c.name.as_str(), (c.get_role(), i));
             });
             let mut cols: Vec<usize> = Vec::with_capacity(names.len());
             for name in columns {
                 match names.get(name) {
-                    Some((false, pos)) => cols.push(*pos),
-                    Some((true, _)) => {
+                    Some((&ColumnRole::User, pos)) => cols.push(*pos),
+                    Some((&ColumnRole::Sharding, _)) => {
                         return Err(QueryPlannerError::CustomError(format!(
                             "System column {} cannot be inserted",
                             name
@@ -506,9 +507,21 @@ impl Plan {
             )));
         }
 
-        let output = self.add_row_for_join(left, right)?;
+        // If the right child is a relational scan, we need to
+        // remove a sharding column from its output with a projection
+        // node and wrap the result with a sub-query scan.
+        let right_node = self.get_relation_node(right)?;
+        let right_id = if let Relational::ScanRelation { relation, .. } = right_node {
+            let scan_name = relation.clone();
+            let proj_id = self.add_proj(right, &[])?;
+            self.add_sub_query(proj_id, Some(&scan_name))?
+        } else {
+            right
+        };
+
+        let output = self.add_row_for_join(left, right_id)?;
         let join = Relational::InnerJoin {
-            children: vec![left, right],
+            children: vec![left, right_id],
             condition,
             output,
         };

@@ -36,7 +36,12 @@ fn plan_oor_top() {
 fn get_node() {
     let mut plan = Plan::new();
 
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t = Table::new_seg(
+        "t",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t);
 
     let scan_id = plan.add_scan("t", None).unwrap();

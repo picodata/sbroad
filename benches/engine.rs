@@ -1,10 +1,8 @@
 extern crate sbroad;
 
-use ahash::RandomState;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use sbroad::collection;
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
@@ -14,7 +12,7 @@ use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::result::{ExecutorResults, ProducerResults};
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
-use sbroad::ir::relation::{Column, Table, Type};
+use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
 use sbroad::ir::value::Value as IrValue;
 use sbroad::ir::Plan;
 
@@ -24,7 +22,7 @@ pub struct MetadataMock {
     schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
-    system_columns: HashSet<String, RandomState>,
+    sharding_column: String,
 }
 
 impl Metadata for MetadataMock {
@@ -40,8 +38,8 @@ impl Metadata for MetadataMock {
         0
     }
 
-    fn get_system_columns(&self) -> &HashSet<String, RandomState> {
-        &self.system_columns
+    fn get_sharding_column(&self) -> &str {
+        self.sharding_column.as_str()
     }
 
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
@@ -70,109 +68,170 @@ impl MetadataMock {
         let mut tables = HashMap::new();
 
         let columns = vec![
-            Column::new("\"vehicleguid\"", Type::Number, false),
-            Column::new("\"reestrid\"", Type::Number, false),
-            Column::new("\"reestrstatus\"", Type::Number, false),
-            Column::new("\"vehicleregno\"", Type::Number, false),
-            Column::new("\"vehiclevin\"", Type::Number, false),
-            Column::new("\"vehiclevin2\"", Type::Number, false),
-            Column::new("\"vehiclechassisnum\"", Type::Number, false),
-            Column::new("\"vehiclereleaseyear\"", Type::Number, false),
-            Column::new("\"operationregdoctypename\"", Type::Number, false),
-            Column::new("\"operationregdoc\"", Type::Number, false),
-            Column::new("\"operationregdocissuedate\"", Type::Number, false),
-            Column::new("\"operationregdoccomments\"", Type::Number, false),
-            Column::new("\"vehicleptstypename\"", Type::Number, false),
-            Column::new("\"vehicleptsnum\"", Type::Number, false),
-            Column::new("\"vehicleptsissuedate\"", Type::Number, false),
-            Column::new("\"vehicleptsissuer\"", Type::Number, false),
-            Column::new("\"vehicleptscomments\"", Type::Number, false),
-            Column::new("\"vehiclebodycolor\"", Type::Number, false),
-            Column::new("\"vehiclebrand\"", Type::Number, false),
-            Column::new("\"vehiclemodel\"", Type::Number, false),
-            Column::new("\"vehiclebrandmodel\"", Type::Number, false),
-            Column::new("\"vehiclebodynum\"", Type::Number, false),
-            Column::new("\"vehiclecost\"", Type::Number, false),
-            Column::new("\"vehiclegasequip\"", Type::Number, false),
-            Column::new("\"vehicleproducername\"", Type::Number, false),
-            Column::new("\"vehiclegrossmass\"", Type::Number, false),
-            Column::new("\"vehiclemass\"", Type::Number, false),
-            Column::new("\"vehiclesteeringwheeltypeid\"", Type::Number, false),
-            Column::new("\"vehiclekpptype\"", Type::Number, false),
-            Column::new("\"vehicletransmissiontype\"", Type::Number, false),
-            Column::new("\"vehicletypename\"", Type::Number, false),
-            Column::new("\"vehiclecategory\"", Type::Number, false),
-            Column::new("\"vehicletypeunit\"", Type::Number, false),
-            Column::new("\"vehicleecoclass\"", Type::Number, false),
-            Column::new("\"vehiclespecfuncname\"", Type::Number, false),
-            Column::new("\"vehicleenclosedvolume\"", Type::Number, false),
-            Column::new("\"vehicleenginemodel\"", Type::Number, false),
-            Column::new("\"vehicleenginenum\"", Type::Number, false),
-            Column::new("\"vehicleenginepower\"", Type::Number, false),
-            Column::new("\"vehicleenginepowerkw\"", Type::Number, false),
-            Column::new("\"vehicleenginetype\"", Type::Number, false),
-            Column::new("\"holdrestrictiondate\"", Type::Number, false),
-            Column::new("\"approvalnum\"", Type::Number, false),
-            Column::new("\"approvaldate\"", Type::Number, false),
-            Column::new("\"approvaltype\"", Type::Number, false),
-            Column::new("\"utilizationfeename\"", Type::Number, false),
-            Column::new("\"customsdoc\"", Type::Number, false),
-            Column::new("\"customsdocdate\"", Type::Number, false),
-            Column::new("\"customsdocissue\"", Type::Number, false),
-            Column::new("\"customsdocrestriction\"", Type::Number, false),
-            Column::new("\"customscountryremovalid\"", Type::Number, false),
-            Column::new("\"customscountryremovalname\"", Type::Number, false),
-            Column::new("\"ownerorgname\"", Type::Number, false),
-            Column::new("\"ownerinn\"", Type::Number, false),
-            Column::new("\"ownerogrn\"", Type::Number, false),
-            Column::new("\"ownerkpp\"", Type::Number, false),
-            Column::new("\"ownerpersonlastname\"", Type::Number, false),
-            Column::new("\"ownerpersonfirstname\"", Type::Number, false),
-            Column::new("\"ownerpersonmiddlename\"", Type::Number, false),
-            Column::new("\"ownerpersonbirthdate\"", Type::Number, false),
-            Column::new("\"ownerbirthplace\"", Type::Number, false),
-            Column::new("\"ownerpersonogrnip\"", Type::Number, false),
-            Column::new("\"owneraddressindex\"", Type::Number, false),
-            Column::new("\"owneraddressmundistrict\"", Type::Number, false),
-            Column::new("\"owneraddresssettlement\"", Type::Number, false),
-            Column::new("\"owneraddressstreet\"", Type::Number, false),
-            Column::new("\"ownerpersoninn\"", Type::Number, false),
-            Column::new("\"ownerpersondoccode\"", Type::Number, false),
-            Column::new("\"ownerpersondocnum\"", Type::Number, false),
-            Column::new("\"ownerpersondocdate\"", Type::Number, false),
-            Column::new("\"operationname\"", Type::Number, false),
-            Column::new("\"operationdate\"", Type::Number, false),
-            Column::new("\"operationdepartmentname\"", Type::Number, false),
-            Column::new("\"operationattorney\"", Type::Number, false),
-            Column::new("\"operationlising\"", Type::Number, false),
-            Column::new("\"holdertypeid\"", Type::Number, false),
-            Column::new("\"holderpersondoccode\"", Type::Number, false),
-            Column::new("\"holderpersondocnum\"", Type::Number, false),
-            Column::new("\"holderpersondocdate\"", Type::Number, false),
-            Column::new("\"holderpersondocissuer\"", Type::Number, false),
-            Column::new("\"holderpersonlastname\"", Type::Number, false),
-            Column::new("\"holderpersonfirstname\"", Type::Number, false),
-            Column::new("\"holderpersonmiddlename\"", Type::Number, false),
-            Column::new("\"holderpersonbirthdate\"", Type::Number, false),
-            Column::new("\"holderpersonbirthregionid\"", Type::Number, false),
-            Column::new("\"holderpersonsex\"", Type::Number, false),
-            Column::new("\"holderpersonbirthplace\"", Type::Number, false),
-            Column::new("\"holderpersoninn\"", Type::Number, false),
-            Column::new("\"holderpersonsnils\"", Type::Number, false),
-            Column::new("\"holderpersonogrnip\"", Type::Number, false),
-            Column::new("\"holderaddressguid\"", Type::Number, false),
-            Column::new("\"holderaddressregionid\"", Type::Number, false),
-            Column::new("\"holderaddressregionname\"", Type::Number, false),
-            Column::new("\"holderaddressdistrict\"", Type::Number, false),
-            Column::new("\"holderaddressmundistrict\"", Type::Number, false),
-            Column::new("\"holderaddresssettlement\"", Type::Number, false),
-            Column::new("\"holderaddressstreet\"", Type::Number, false),
-            Column::new("\"holderaddressbuilding\"", Type::Number, false),
-            Column::new("\"holderaddressstructureid\"", Type::Number, false),
-            Column::new("\"holderaddressstructurename\"", Type::Number, false),
-            Column::new("\"holderaddressstructure\"", Type::Number, false),
-            Column::new("\"sys_from\"", Type::Number, false),
-            Column::new("\"sys_to\"", Type::Number, false),
+            Column::new("\"vehicleguid\"", Type::Number, ColumnRole::User),
+            Column::new("\"reestrid\"", Type::Number, ColumnRole::User),
+            Column::new("\"reestrstatus\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleregno\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclevin\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclevin2\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclechassisnum\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclereleaseyear\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"operationregdoctypename\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"operationregdoc\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"operationregdocissuedate\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new(
+                "\"operationregdoccomments\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"vehicleptstypename\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleptsnum\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleptsissuedate\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleptsissuer\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleptscomments\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclebodycolor\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclebrand\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclemodel\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclebrandmodel\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclebodynum\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclecost\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclegasequip\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleproducername\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclegrossmass\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclemass\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"vehiclesteeringwheeltypeid\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"vehiclekpptype\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"vehicletransmissiontype\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"vehicletypename\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclecategory\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicletypeunit\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleecoclass\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehiclespecfuncname\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenclosedvolume\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenginemodel\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenginenum\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenginepower\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenginepowerkw\"", Type::Number, ColumnRole::User),
+            Column::new("\"vehicleenginetype\"", Type::Number, ColumnRole::User),
+            Column::new("\"holdrestrictiondate\"", Type::Number, ColumnRole::User),
+            Column::new("\"approvalnum\"", Type::Number, ColumnRole::User),
+            Column::new("\"approvaldate\"", Type::Number, ColumnRole::User),
+            Column::new("\"approvaltype\"", Type::Number, ColumnRole::User),
+            Column::new("\"utilizationfeename\"", Type::Number, ColumnRole::User),
+            Column::new("\"customsdoc\"", Type::Number, ColumnRole::User),
+            Column::new("\"customsdocdate\"", Type::Number, ColumnRole::User),
+            Column::new("\"customsdocissue\"", Type::Number, ColumnRole::User),
+            Column::new("\"customsdocrestriction\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"customscountryremovalid\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new(
+                "\"customscountryremovalname\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"ownerorgname\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerinn\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerogrn\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerkpp\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersonlastname\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersonfirstname\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersonmiddlename\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersonbirthdate\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerbirthplace\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersonogrnip\"", Type::Number, ColumnRole::User),
+            Column::new("\"owneraddressindex\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"owneraddressmundistrict\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"owneraddresssettlement\"", Type::Number, ColumnRole::User),
+            Column::new("\"owneraddressstreet\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersoninn\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersondoccode\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersondocnum\"", Type::Number, ColumnRole::User),
+            Column::new("\"ownerpersondocdate\"", Type::Number, ColumnRole::User),
+            Column::new("\"operationname\"", Type::Number, ColumnRole::User),
+            Column::new("\"operationdate\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"operationdepartmentname\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"operationattorney\"", Type::Number, ColumnRole::User),
+            Column::new("\"operationlising\"", Type::Number, ColumnRole::User),
+            Column::new("\"holdertypeid\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersondoccode\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersondocnum\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersondocdate\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersondocissuer\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonlastname\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonfirstname\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonmiddlename\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonbirthdate\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"holderpersonbirthregionid\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"holderpersonsex\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonbirthplace\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersoninn\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonsnils\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderpersonogrnip\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderaddressguid\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderaddressregionid\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"holderaddressregionname\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"holderaddressdistrict\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"holderaddressmundistrict\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new(
+                "\"holderaddresssettlement\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"holderaddressstreet\"", Type::Number, ColumnRole::User),
+            Column::new("\"holderaddressbuilding\"", Type::Number, ColumnRole::User),
+            Column::new(
+                "\"holderaddressstructureid\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new(
+                "\"holderaddressstructurename\"",
+                Type::Number,
+                ColumnRole::User,
+            ),
+            Column::new("\"holderaddressstructure\"", Type::Number, ColumnRole::User),
+            Column::new("\"sys_from\"", Type::Number, ColumnRole::User),
+            Column::new("\"sys_to\"", Type::Number, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Number, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"reestrid\""];
         tables.insert(
@@ -207,7 +266,7 @@ impl MetadataMock {
             .collect(),
             tables,
             bucket_count: 10000,
-            system_columns: collection! { "\"bucket_id\"".into() },
+            sharding_column: "\"bucket_id\"".into(),
         }
     }
 }
@@ -254,7 +313,7 @@ impl Engine for EngineMock {
             schema: "".into(),
             timeout: 0,
             capacity: DEFAULT_CAPACITY,
-            system_columns: HashSet::with_hasher(RandomState::new()),
+            sharding_column: "".into(),
         };
         Ok(Some(metadata))
     }

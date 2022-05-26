@@ -18,7 +18,12 @@ fn segment_motion_for_sub_query() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
@@ -26,8 +31,8 @@ fn segment_motion_for_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, false),
-            Column::new("b", Type::Integer, false),
+            Column::new("a", Type::Integer, ColumnRole::User),
+            Column::new("b", Type::Integer, ColumnRole::User),
         ],
         &["a"],
     )
@@ -85,7 +90,12 @@ fn full_motion_less_for_sub_query() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
@@ -93,8 +103,8 @@ fn full_motion_less_for_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, false),
-            Column::new("b", Type::Integer, false),
+            Column::new("a", Type::Integer, ColumnRole::User),
+            Column::new("b", Type::Integer, ColumnRole::User),
         ],
         &["a"],
     )
@@ -141,8 +151,8 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Integer, false),
-            Column::new("b", Type::Integer, false),
+            Column::new("a", Type::Integer, ColumnRole::User),
+            Column::new("b", Type::Integer, ColumnRole::User),
         ],
         &["a"],
     )
@@ -151,7 +161,12 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
@@ -191,12 +206,22 @@ fn local_sub_query() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
@@ -236,7 +261,12 @@ fn multiple_sub_queries() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
@@ -244,8 +274,8 @@ fn multiple_sub_queries() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, false),
-            Column::new("b", Type::Integer, false),
+            Column::new("a", Type::Integer, ColumnRole::User),
+            Column::new("b", Type::Integer, ColumnRole::User),
         ],
         &["a"],
     )

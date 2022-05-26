@@ -4,7 +4,7 @@ use std::path::Path;
 use pretty_assertions::assert_eq;
 
 use crate::ir::operator::Bool;
-use crate::ir::relation::{Column, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
@@ -15,7 +15,12 @@ fn sql_order_selection() {
     // select a from t where a = 1
 
     let mut plan = Plan::new();
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t = Table::new_seg(
+        "t",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t);
     let scan_id = plan.add_scan("t", None).unwrap();
 

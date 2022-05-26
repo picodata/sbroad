@@ -1,6 +1,6 @@
 use pretty_assertions::{assert_eq, assert_ne};
 
-use crate::ir::relation::Type;
+use crate::ir::relation::{ColumnRole, Type};
 
 use super::*;
 
@@ -76,23 +76,23 @@ fn convert_to_vtable() {
     excepted.add_column(Column {
         name: "id".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     excepted.add_column(Column {
         name: "name".into(),
         r#type: Type::String,
-        is_system: false,
+        role: ColumnRole::User,
     });
     excepted.add_column(Column {
         name: "count".into(),
         r#type: Type::Unsigned,
-        is_system: false,
+        role: ColumnRole::User,
     });
 
     excepted.add_column(Column {
         name: "price".into(),
         r#type: Type::Number,
-        is_system: false,
+        role: ColumnRole::User,
     });
 
     excepted.add_values_tuple(vec![

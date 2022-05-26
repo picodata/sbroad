@@ -83,11 +83,21 @@ fn relational_post() {
     // Initialize plan
     let mut plan = Plan::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
@@ -132,7 +142,12 @@ fn selection_subquery_dfs_post() {
     // Initialize plan
     let mut plan = Plan::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
@@ -140,8 +155,8 @@ fn selection_subquery_dfs_post() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("b", Type::Boolean, false),
-            Column::new("c", Type::Boolean, false),
+            Column::new("b", Type::Boolean, ColumnRole::User),
+            Column::new("c", Type::Boolean, ColumnRole::User),
         ],
         &["b"],
     )
@@ -207,8 +222,8 @@ fn subtree_dfs_post() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("c", Type::Boolean, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("c", Type::Boolean, ColumnRole::User),
         ],
         &["a", "c"],
     )

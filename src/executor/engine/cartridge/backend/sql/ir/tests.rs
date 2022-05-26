@@ -178,7 +178,7 @@ fn inner_join() {
         format!(
             "{} {} {} {}",
             r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
-            r#"INNER JOIN "history""#,
+            r#"INNER JOIN (SELECT "history"."id" as "id" FROM "history") as "history""#,
             r#"ON ("hash_testing"."identification_number") = ("history"."id")"#,
             r#"WHERE ("hash_testing"."product_code") = ('a')"#,
         ),

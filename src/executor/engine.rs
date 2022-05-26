@@ -2,9 +2,8 @@
 //!
 //! Traits that define an execution engine interface.
 
-use ahash::RandomState;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -50,7 +49,7 @@ pub trait Metadata {
 
     fn get_exec_waiting_timeout(&self) -> u64;
 
-    fn get_system_columns(&self) -> &HashSet<String, RandomState>;
+    fn get_sharding_column(&self) -> &str;
 
     #[must_use]
     fn to_name(s: &str) -> String {
@@ -80,8 +79,8 @@ pub struct LocalMetadata {
     pub timeout: u64,
     /// Query cache capacity.
     pub capacity: usize,
-    /// System column names.
-    pub system_columns: HashSet<String, RandomState>,
+    /// Sharding column name.
+    pub sharding_column: String,
 }
 
 /// An execution engine trait.

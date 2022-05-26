@@ -19,10 +19,10 @@ fn scan_rel() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
@@ -56,10 +56,10 @@ fn scan_rel_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
@@ -90,10 +90,10 @@ fn projection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
@@ -144,10 +144,10 @@ fn selection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
@@ -194,11 +194,21 @@ fn selection_serialize() {
 fn union_all() {
     let mut plan = Plan::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Number, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Number, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg("t2", vec![Column::new("a", Type::Number, false)], &["a"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("a", Type::Number, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
@@ -212,8 +222,8 @@ fn union_all_col_amount_mismatch() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
         ],
         &["a"],
     )
@@ -223,7 +233,12 @@ fn union_all_col_amount_mismatch() {
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     // Check errors for children with different amount of column
-    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Number, false)], &["b"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("b", Type::Number, ColumnRole::User)],
+        &["b"],
+    )
+    .unwrap();
     plan.add_rel(t2);
 
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
@@ -240,8 +255,8 @@ fn sub_query() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
         ],
         &["a"],
     )
@@ -286,12 +301,22 @@ fn selection_with_sub_query() {
     let mut plan = Plan::new();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg("t1", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg("t2", vec![Column::new("b", Type::Integer, false)], &["b"]).unwrap();
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("b", Type::Integer, ColumnRole::User)],
+        &["b"],
+    )
+    .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
@@ -331,8 +356,9 @@ fn join() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("bucket_id", Type::Number, ColumnRole::Sharding),
         ],
         &["a"],
     )
@@ -343,8 +369,9 @@ fn join() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("c", Type::Boolean, false),
-            Column::new("d", Type::Number, false),
+            Column::new("c", Type::Boolean, ColumnRole::User),
+            Column::new("d", Type::Number, ColumnRole::User),
+            Column::new("bucket_id", Type::Number, ColumnRole::Sharding),
         ],
         &["d"],
     )
@@ -384,8 +411,9 @@ fn join_duplicate_columns() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("bucket_id", Type::Number, ColumnRole::Sharding),
         ],
         &["a"],
     )
@@ -396,8 +424,9 @@ fn join_duplicate_columns() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("d", Type::Number, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("d", Type::Number, ColumnRole::User),
+            Column::new("bucket_id", Type::Number, ColumnRole::Sharding),
         ],
         &["d"],
     )

@@ -2,14 +2,13 @@
 
 extern crate yaml_rust;
 
-use ahash::RandomState;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use yaml_rust::YamlLoader;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::cache::lru::DEFAULT_CAPACITY;
 use crate::executor::Metadata;
-use crate::ir::relation::{Column, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
 
 use self::yaml_rust::yaml;
 
@@ -28,8 +27,8 @@ pub struct ClusterAppConfig {
     /// Query cache capacity.
     cache_capacity: usize,
 
-    /// System column names.
-    system_columns: HashSet<String, RandomState>,
+    /// Sharding column names.
+    sharding_column: String,
 
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
@@ -49,7 +48,7 @@ impl ClusterAppConfig {
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
-            system_columns: HashSet::with_hasher(RandomState::new()),
+            sharding_column: String::new(),
         }
     }
 
@@ -99,11 +98,12 @@ impl ClusterAppConfig {
                                 None => return Err(QueryPlannerError::TypeNotImplemented),
                             };
                             let qualified_name = Self::to_name(name);
-                            let col = Column::new(
-                                &qualified_name,
-                                t,
-                                self.get_system_columns().contains(&qualified_name),
-                            );
+                            let role = if self.get_sharding_column().eq(&qualified_name) {
+                                ColumnRole::Sharding
+                            } else {
+                                ColumnRole::User
+                            };
+                            let col = Column::new(&qualified_name, t, role);
                             result.push(col);
                         }
                         result
@@ -153,8 +153,8 @@ impl ClusterAppConfig {
         }
     }
 
-    pub fn set_exec_system_columns(&mut self, columns: HashSet<String, RandomState>) {
-        self.system_columns = columns;
+    pub fn set_exec_sharding_column(&mut self, column: String) {
+        self.sharding_column = column;
     }
 }
 
@@ -176,8 +176,8 @@ impl Metadata for ClusterAppConfig {
         self.waiting_timeout
     }
 
-    fn get_system_columns(&self) -> &HashSet<String, RandomState> {
-        &self.system_columns
+    fn get_sharding_column(&self) -> &str {
+        self.sharding_column.as_str()
     }
 
     /// Get sharding keys by space name

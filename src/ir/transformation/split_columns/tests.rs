@@ -44,8 +44,8 @@ fn split_columns3() {
         format!(
             "{} {} {}",
             r#"Left and right rows have different number of columns:"#,
-            r#"Row { list: [10, 11, 12], distribution: None },"#,
-            r#"Row { list: [14, 15], distribution: None }"#,
+            r#"Row { list: [12, 13, 14], distribution: None },"#,
+            r#"Row { list: [16, 17], distribution: None }"#,
         ),
         format!("{}", plan_err)
     );

@@ -1,4 +1,3 @@
-use ahash::RandomState;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -14,7 +13,7 @@ use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Relational;
-use crate::ir::relation::{Column, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value as IrValue;
 use crate::ir::Plan;
 
@@ -26,7 +25,7 @@ pub struct MetadataMock {
     schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
-    system_columns: HashSet<String, RandomState>,
+    sharding_column: String,
 }
 
 impl Metadata for MetadataMock {
@@ -42,8 +41,8 @@ impl Metadata for MetadataMock {
         0
     }
 
-    fn get_system_columns(&self) -> &HashSet<String, RandomState> {
-        &self.system_columns
+    fn get_sharding_column(&self) -> &str {
+        self.sharding_column.as_str()
     }
 
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
@@ -72,11 +71,11 @@ impl MetadataMock {
         let mut tables = HashMap::new();
 
         let columns = vec![
-            Column::new("\"identification_number\"", Type::Integer, false),
-            Column::new("\"product_code\"", Type::String, false),
-            Column::new("\"product_units\"", Type::Boolean, false),
-            Column::new("\"sys_op\"", Type::Number, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, true),
+            Column::new("\"identification_number\"", Type::Integer, ColumnRole::User),
+            Column::new("\"product_code\"", Type::String, ColumnRole::User),
+            Column::new("\"product_units\"", Type::Boolean, ColumnRole::User),
+            Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key = vec!["\"identification_number\"", "\"product_code\""];
         tables.insert(
@@ -101,11 +100,11 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"id\"", Type::Number, false),
-            Column::new("\"sysFrom\"", Type::Number, false),
-            Column::new("\"FIRST_NAME\"", Type::String, false),
-            Column::new("\"sys_op\"", Type::Number, false),
-            Column::new("\"bucket_id\"", Type::Unsigned, true),
+            Column::new("\"id\"", Type::Number, ColumnRole::User),
+            Column::new("\"sysFrom\"", Type::Number, ColumnRole::User),
+            Column::new("\"FIRST_NAME\"", Type::String, ColumnRole::User),
+            Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key = vec!["\"id\""];
 
@@ -119,7 +118,10 @@ impl MetadataMock {
             Table::new_seg("\"test_space_hist\"", columns, &sharding_key).unwrap(),
         );
 
-        let columns = vec![Column::new("\"id\"", Type::Number, false)];
+        let columns = vec![
+            Column::new("\"id\"", Type::Number, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
+        ];
         let sharding_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
@@ -127,10 +129,11 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Number, false),
-            Column::new("\"b\"", Type::Number, false),
-            Column::new("\"c\"", Type::Number, false),
-            Column::new("\"d\"", Type::Number, false),
+            Column::new("\"a\"", Type::Number, ColumnRole::User),
+            Column::new("\"b\"", Type::Number, ColumnRole::User),
+            Column::new("\"c\"", Type::Number, ColumnRole::User),
+            Column::new("\"d\"", Type::Number, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Number, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
@@ -150,7 +153,7 @@ impl MetadataMock {
             .collect(),
             tables,
             bucket_count: 10000,
-            system_columns: collection! {"\"bucket_id\"".into()},
+            sharding_column: "\"bucket_id\"".into(),
         }
     }
 }
@@ -197,7 +200,7 @@ impl Engine for EngineMock {
             schema: "".into(),
             timeout: 0,
             capacity: DEFAULT_CAPACITY,
-            system_columns: HashSet::with_hasher(RandomState::new()),
+            sharding_column: "".into(),
         };
         Ok(Some(metadata))
     }

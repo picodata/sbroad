@@ -8,7 +8,7 @@ use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::relation::{Column, Type};
+use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::value::{AsIrVal, Value as IrValue};
 
 /// `Value` cointains tarantool datatypes
@@ -171,11 +171,11 @@ impl TryInto<Column> for &MetadataColumn {
 
     fn try_into(self) -> Result<Column, Self::Error> {
         match self.r#type.as_str() {
-            "boolean" => Ok(Column::new(&self.name, Type::Boolean, false)),
-            "number" => Ok(Column::new(&self.name, Type::Number, false)),
-            "string" => Ok(Column::new(&self.name, Type::String, false)),
-            "integer" => Ok(Column::new(&self.name, Type::Integer, false)),
-            "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, false)),
+            "boolean" => Ok(Column::new(&self.name, Type::Boolean, ColumnRole::User)),
+            "number" => Ok(Column::new(&self.name, Type::Number, ColumnRole::User)),
+            "string" => Ok(Column::new(&self.name, Type::String, ColumnRole::User)),
+            "integer" => Ok(Column::new(&self.name, Type::Integer, ColumnRole::User)),
+            "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, ColumnRole::User)),
             _ => Err(QueryPlannerError::CustomError(format!(
                 "unsupported column type: {}",
                 self.r#type

@@ -1,7 +1,5 @@
-use crate::ir::relation::Type;
-use ahash::RandomState;
-
 use super::*;
+use crate::ir::relation::{ColumnRole, Type};
 
 #[test]
 fn virtual_table() {
@@ -10,7 +8,7 @@ fn virtual_table() {
     vtable.add_column(Column {
         name: "name".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
 
     vtable.add_values_tuple(vec![Value::number_from_str("1").unwrap()]);
@@ -21,7 +19,7 @@ fn virtual_table() {
         columns: vec![Column {
             name: "name".into(),
             r#type: Type::Integer,
-            is_system: false,
+            role: ColumnRole::User,
         }],
         tuples: vec![vec![Value::number_from_str("1").unwrap()]],
         name: Some(String::from("test")),

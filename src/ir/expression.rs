@@ -291,7 +291,7 @@ impl Nodes {
 
 impl Plan {
     /// Returns a list of columns from the child node outputs.
-    /// If the column list is empty then copies all the non-system columns
+    /// If the column list is empty then copies all the non-sharding columns
     /// from the child node to a new tuple.
     ///
     /// The `is_join` option "on" builds an output tuple for the left child and
@@ -310,7 +310,7 @@ impl Plan {
         targets: &[usize],
         col_names: &[&str],
         need_aliases: bool,
-        need_system_columns: bool,
+        need_sharding_column: bool,
     ) -> Result<Vec<usize>, QueryPlannerError> {
         // We can pass two target children nodes only in case
         // of `UnionAll` and `InnerJoin`.
@@ -357,12 +357,12 @@ impl Plan {
                 let child_row_list: Vec<usize> = if let Expression::Row { list, .. } =
                     self.get_expression_node(relational_op.output())?
                 {
-                    // We have to filter all the system columns in the projection nearest
+                    // We have to filter the sharding column in the projection nearest
                     // to the relational scan. We can have two possible combinations:
                     // 1. projection -> selection -> scan
                     // 2. projection -> scan
                     // As a result `relational_op` can be either a selection or a scan.
-                    if need_system_columns {
+                    if need_sharding_column {
                         list.clone()
                     } else {
                         let table_name: Option<&str> = match relational_op {
@@ -398,12 +398,12 @@ impl Plan {
                                     relation
                                 ))
                             })?;
-                            let system_columns = table.get_system_columns_positions();
+                            let sharding_column_pos = table.get_sharding_column_position()?;
                             // Take an advantage of the fact that the output aliases
                             // in the relation scan are in the same order as its columns.
                             list.iter()
                                 .enumerate()
-                                .filter(|(pos, _)| !system_columns.contains(pos))
+                                .filter(|(pos, _)| sharding_column_pos.ne(pos))
                                 .map(|(_, id)| *id)
                                 .collect()
                         } else {
@@ -539,9 +539,10 @@ impl Plan {
         &mut self,
         child: usize,
         col_names: &[&str],
-        need_system_columns: bool,
+        need_sharding_column: bool,
     ) -> Result<usize, QueryPlannerError> {
-        let list = self.new_columns(&[child], false, &[0], col_names, true, need_system_columns)?;
+        let list =
+            self.new_columns(&[child], false, &[0], col_names, true, need_sharding_column)?;
         self.nodes.add_row_of_aliases(list, None)
     }
 

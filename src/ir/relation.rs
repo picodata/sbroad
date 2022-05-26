@@ -1,5 +1,6 @@
 //! Relation module.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
 
@@ -42,15 +43,24 @@ impl Type {
     }
 }
 
+/// A role of the column in the relation.
+#[derive(PartialEq, Debug, Eq, Clone)]
+pub enum ColumnRole {
+    /// General purpose column available for the user.
+    User,
+    /// Column is used for sharding (contains `bucket_id` in terms of `vshard`).
+    Sharding,
+}
+
 /// Relation column.
-#[derive(LuaRead, PartialEq, Debug, Eq, Clone)]
+#[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
     /// Column type.
     pub r#type: Type,
-    /// Is system column.
-    pub is_system: bool,
+    /// Column role.
+    pub role: ColumnRole,
 }
 
 impl Column {
@@ -104,11 +114,11 @@ impl<'de> Visitor<'de> for ColumnVisitor {
         }
 
         match column_type.as_str() {
-            "boolean" => Ok(Column::new(&column_name, Type::Boolean, false)),
-            "number" => Ok(Column::new(&column_name, Type::Number, false)),
-            "string" => Ok(Column::new(&column_name, Type::String, false)),
-            "integer" => Ok(Column::new(&column_name, Type::Integer, false)),
-            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, false)),
+            "boolean" => Ok(Column::new(&column_name, Type::Boolean, ColumnRole::User)),
+            "number" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
+            "string" => Ok(Column::new(&column_name, Type::String, ColumnRole::User)),
+            "integer" => Ok(Column::new(&column_name, Type::Integer, ColumnRole::User)),
+            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, ColumnRole::User)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }
@@ -126,18 +136,18 @@ impl<'de> Deserialize<'de> for Column {
 impl Column {
     /// Column constructor.
     #[must_use]
-    pub fn new(n: &str, t: Type, is_system: bool) -> Self {
+    pub fn new(n: &str, t: Type, role: ColumnRole) -> Self {
         Column {
             name: n.into(),
             r#type: t,
-            is_system,
+            role,
         }
     }
 
-    /// Column is a system column.
+    /// Get column role.
     #[must_use]
-    pub fn is_system(&self) -> bool {
-        self.is_system
+    pub fn get_role(&self) -> &ColumnRole {
+        &self.role
     }
 }
 
@@ -225,15 +235,25 @@ impl Table {
         Ok(ts)
     }
 
-    /// Get position of the system columns in the table.
+    /// Get position of the sharding column in the table.
     #[must_use]
-    pub fn get_system_columns_positions(&self) -> HashSet<usize> {
-        self.columns
+    pub fn get_sharding_column_position(&self) -> Result<usize, QueryPlannerError> {
+        let positions: Vec<usize> = self
+            .columns
             .iter()
             .enumerate()
-            .filter(|(_, col)| col.is_system)
+            .filter(|(_, col)| col.role == ColumnRole::Sharding)
             .map(|(pos, _)| pos)
-            .collect()
+            .collect();
+        match positions.len().cmp(&1) {
+            Ordering::Equal => Ok(positions[0]),
+            Ordering::Greater => Err(QueryPlannerError::CustomError(
+                "Table has more than one sharding column".into(),
+            )),
+            Ordering::Less => Err(QueryPlannerError::CustomError(
+                "Table has no sharding columns".into(),
+            )),
+        }
     }
 }
 

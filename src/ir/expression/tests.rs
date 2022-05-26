@@ -28,7 +28,12 @@ fn rel_nodes_from_reference_in_scan() {
     // select * from t
     let mut plan = Plan::new();
 
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t = Table::new_seg(
+        "t",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t);
     let scan_id = plan.add_scan("t", None).unwrap();
     let output = plan.get_relational_output(scan_id).unwrap();
@@ -43,7 +48,12 @@ fn rel_nodes_from_reference_in_proj() {
     // select a from t
     let mut plan = Plan::new();
 
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Integer, false)], &["a"]).unwrap();
+    let t = Table::new_seg(
+        "t",
+        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     plan.add_rel(t);
     let scan_id = plan.add_scan("t", None).unwrap();
     let proj_id = plan.add_proj(scan_id, &["a"]).unwrap();

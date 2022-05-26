@@ -4,7 +4,7 @@ use crate::executor::engine::mock::EngineMock;
 use crate::executor::result::{ExecutorResults, ProducerResults, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
-use crate::ir::relation::{Column, Type};
+use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value as IrValue;
 
@@ -316,12 +316,12 @@ fn join_linker2_test() {
     virtual_table.add_column(Column {
         name: "id1".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
         name: "id2".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -376,12 +376,12 @@ fn join_linker3_test() {
     virtual_table.add_column(Column {
         name: "id1".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
         name: "id2".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -436,7 +436,7 @@ fn join_linker4_test() {
     virtual_t2.add_column(Column {
         name: "r_id".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
@@ -453,7 +453,7 @@ fn join_linker4_test() {
     virtual_sq.add_column(Column {
         name: "fn".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
     virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
@@ -577,7 +577,7 @@ fn anonymous_col_index_test() {
 }
 
 #[test]
-fn system_columns1_test() {
+fn sharding_column1_test() {
     let sql = r#"SELECT * FROM "test_space" where "id" = 1"#;
     let engine = EngineMock::new();
 
@@ -600,7 +600,7 @@ fn system_columns1_test() {
 }
 
 #[test]
-fn system_columns2_test() {
+fn sharding_column2_test() {
     let sql = r#"SELECT *, "bucket_id" FROM "test_space" where "id" = 1"#;
     let engine = EngineMock::new();
 
@@ -636,7 +636,7 @@ fn insert1_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
@@ -718,12 +718,12 @@ fn insert3_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
         name: "b".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
@@ -813,12 +813,12 @@ fn insert5_test() {
     virtual_table.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
         name: "b".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("5").unwrap(),
@@ -908,10 +908,18 @@ fn insert8_test() {
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column::new("identification_number", Type::Integer, false));
-    virtual_table.add_column(Column::new("product_code", Type::String, false));
-    virtual_table.add_column(Column::new("product_units", Type::Boolean, false));
-    virtual_table.add_column(Column::new("sys_op", Type::Number, false));
+    virtual_table.add_column(Column::new(
+        "identification_number",
+        Type::Integer,
+        ColumnRole::User,
+    ));
+    virtual_table.add_column(Column::new("product_code", Type::String, ColumnRole::User));
+    virtual_table.add_column(Column::new(
+        "product_units",
+        Type::Boolean,
+        ColumnRole::User,
+    ));
+    virtual_table.add_column(Column::new("sys_op", Type::Number, ColumnRole::User));
     virtual_table.add_values_tuple(vec![
         IrValue::number_from_str("1").unwrap(),
         IrValue::string_from_str("two"),
@@ -946,7 +954,7 @@ fn virtual_table_23() -> VirtualTable {
     virtual_table.add_column(Column {
         name: "identification_number".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     });
 
     virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);

@@ -2,7 +2,6 @@
 
 use rand::prelude::*;
 
-use ahash::RandomState;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -126,15 +125,15 @@ impl Engine for Runtime {
                 }
             };
 
-            let system_columns: LuaFunction<_> = lua.eval("return get_system_columns;").unwrap();
-            let columns: Vec<String> = match system_columns.call() {
-                Ok(columns) => columns,
+            let sharding_column: LuaFunction<_> = lua.eval("return get_sharding_column;").unwrap();
+            let column: String = match sharding_column.call() {
+                Ok(column) => column,
                 Err(e) => {
                     say(
                         SayLevel::Error,
                         file!(),
                         line!().try_into().unwrap_or(0),
-                        Option::from("getting system columns"),
+                        Option::from("getting sharding column"),
                         &format!("{:?}", e),
                     );
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
@@ -145,10 +144,7 @@ impl Engine for Runtime {
                 schema,
                 timeout,
                 capacity,
-                system_columns: columns
-                    .iter()
-                    .map(|c| ClusterAppConfig::to_name(c))
-                    .collect::<HashSet<String, RandomState>>(),
+                sharding_column: ClusterAppConfig::to_name(column.as_str()),
             };
             return Ok(Some(metadata));
         }
@@ -159,8 +155,8 @@ impl Engine for Runtime {
         self.metadata.set_exec_waiting_timeout(metadata.timeout);
         self.metadata.set_exec_cache_capacity(metadata.capacity);
         self.metadata
-            .set_exec_system_columns(metadata.system_columns);
-        // We should always load the schema **after** setting system columns.
+            .set_exec_sharding_column(metadata.sharding_column);
+        // We should always load the schema **after** setting the sharding column.
         self.metadata.load_schema(&metadata.schema)?;
         Ok(())
     }
@@ -522,14 +518,14 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return cfg["executor_cache_capacity"]
     end
 
-    function get_system_columns()
+    function get_sharding_column()
         local cfg = cartridge.config_get_readonly()
 
-        if cfg["executor_system_columns"] == nil then
-            return {"bucket_id"}
+        if cfg["executor_sharding_column"] == nil then
+            return "bucket_id"
         end
 
-        return cfg["executor_system_columns"]
+        return cfg["executor_sharding_column"]
     end
 
     function group_buckets_by_replicasets(buckets)

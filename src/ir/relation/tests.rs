@@ -10,11 +10,11 @@ fn column() {
     let a = Column {
         name: String::from("a"),
         r#type: Type::Boolean,
-        is_system: false,
+        role: ColumnRole::User,
     };
-    assert_eq!(a, Column::new("a", Type::Boolean, false));
-    assert_ne!(a, Column::new("a", Type::String, false));
-    assert_ne!(a, Column::new("b", Type::Boolean, false));
+    assert_eq!(a, Column::new("a", Type::Boolean, ColumnRole::User));
+    assert_ne!(a, Column::new("a", Type::String, ColumnRole::User));
+    assert_ne!(a, Column::new("b", Type::Boolean, ColumnRole::User));
 }
 
 #[test]
@@ -22,10 +22,10 @@ fn table_seg() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
@@ -38,7 +38,12 @@ fn table_seg() {
 
 #[test]
 fn table_seg_name() {
-    let t = Table::new_seg("t", vec![Column::new("a", Type::Boolean, false)], &["a"]).unwrap();
+    let t = Table::new_seg(
+        "t",
+        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
     assert_eq!("t", t.name());
 }
 
@@ -48,10 +53,10 @@ fn table_seg_duplicate_columns() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean, false),
-                Column::new("b", Type::Number, false),
-                Column::new("c", Type::String, false),
-                Column::new("a", Type::String, false),
+                Column::new("a", Type::Boolean, ColumnRole::User),
+                Column::new("b", Type::Number, ColumnRole::User),
+                Column::new("c", Type::String, ColumnRole::User),
+                Column::new("a", Type::String, ColumnRole::User),
             ],
             &["b", "a"],
         )
@@ -68,10 +73,10 @@ fn table_seg_wrong_key() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean, false),
-                Column::new("b", Type::Number, false),
-                Column::new("c", Type::String, false),
-                Column::new("d", Type::String, false),
+                Column::new("a", Type::Boolean, ColumnRole::User),
+                Column::new("b", Type::Number, ColumnRole::User),
+                Column::new("c", Type::String, ColumnRole::User),
+                Column::new("d", Type::String, ColumnRole::User),
             ],
             &["a", "e"],
         )
@@ -85,12 +90,12 @@ fn table_seg_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
-            Column::new("e", Type::Integer, false),
-            Column::new("f", Type::Unsigned, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
+            Column::new("e", Type::Integer, ColumnRole::User),
+            Column::new("f", Type::Unsigned, ColumnRole::User),
         ],
         &["a", "d"],
     )
@@ -171,7 +176,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Boolean,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     assert_eq!(
@@ -185,7 +190,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::String,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     assert_eq!(
@@ -199,7 +204,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Integer,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     assert_eq!(
@@ -213,7 +218,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Unsigned,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     assert_eq!(
@@ -227,7 +232,7 @@ fn column_msgpack_serialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Number,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     assert_eq!(
@@ -244,7 +249,7 @@ fn column_msgpack_deserialize() {
     let c = Column {
         name: "name".into(),
         r#type: Type::Boolean,
-        is_system: false,
+        role: ColumnRole::User,
     };
 
     let expected_msgpack = vec![
@@ -265,10 +270,10 @@ fn table_converting() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, false),
-            Column::new("b", Type::Number, false),
-            Column::new("c", Type::String, false),
-            Column::new("d", Type::String, false),
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
     )
