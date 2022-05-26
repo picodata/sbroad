@@ -680,9 +680,30 @@ fn insert2_test() {
         where "a" = 1 and "b" = 2"#;
 
     let engine = EngineMock::new();
-
     let mut query = Query::new(&engine, sql, &[]).unwrap();
-    assert_eq!(None, query.exec_plan.get_ir_plan().get_slices());
+
+    // Though projection row has the same distribution key as
+    // the target table, we still add a motion and collect a
+    // virtual table for it on coordinator to recalculate
+    // a "bucket_id" field for "t".
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "a".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "b".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -695,10 +716,9 @@ fn insert2_test() {
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
-            "{} {} {}",
+            "{} {}",
             r#"INSERT INTO "t" ("a", "b")"#,
-            r#"SELECT "t"."a" as "a", "t"."b" as "b" FROM "t""#,
-            r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
+            r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (1,2))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);
@@ -777,7 +797,27 @@ fn insert4_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
-    assert_eq!(None, query.exec_plan.get_ir_plan().get_slices());
+
+    // Though data allows to be inserted locally still gather it on the
+    // coordinator to recalculate a "bucket_id" field for "t".
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "b".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "a".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("2").unwrap(),
+        IrValue::number_from_str("1").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
 
     let result = query.exec().unwrap();
 
@@ -790,10 +830,9 @@ fn insert4_test() {
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
-            "{} {} {}",
+            "{} {}",
             r#"INSERT INTO "t" ("b", "a")"#,
-            r#"SELECT "t"."b" as "b", "t"."a" as "a" FROM "t""#,
-            r#"WHERE ("t"."a", "t"."b") = (1, 2)"#,
+            r#"SELECT COLUMN_1 as "b",COLUMN_2 as "a" FROM (VALUES (2,1))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);

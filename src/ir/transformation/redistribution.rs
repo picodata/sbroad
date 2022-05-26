@@ -805,23 +805,20 @@ impl Plan {
                             .push(Target::Value(Column::default_value()));
                     }
                 }
-                match distribution {
-                    None => {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "Insert node child {} has no distribution",
-                            child
-                        )))
-                    }
-                    Some(Distribution::Segment { keys, .. }) => {
-                        for key in keys {
-                            if motion_key == key.into() {
-                                map.insert(child, MotionPolicy::Local);
-                                return Ok(map);
-                            }
-                        }
-                    }
-                    _ => {}
+                if distribution.is_none() {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Insert node child {} has no distribution",
+                        child
+                    )));
                 }
+
+                // At the moment we always add a segment motion policy under the
+                // insertion node, even if the the data can be transferred locally.
+                // The reason is in the sharding column (`bucket_id` field in terms
+                // of Tarantool) that should be recalculated for each row. At the
+                // moment we can perform calculations only on the coordinator node,
+                // so we need to always deliver the data to coordinator's virtual
+                // table.
                 map.insert(child, MotionPolicy::Segment(motion_key));
             }
             _ => {

@@ -236,7 +236,9 @@ impl Table {
     }
 
     /// Get position of the sharding column in the table.
-    #[must_use]
+    ///
+    /// # Errors
+    /// - Table doesn't have an exactly one sharding column.
     pub fn get_sharding_column_position(&self) -> Result<usize, QueryPlannerError> {
         let positions: Vec<usize> = self
             .columns

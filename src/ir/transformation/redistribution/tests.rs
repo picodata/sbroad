@@ -726,8 +726,30 @@ fn redistribution2() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    // Though data allows to be inserted locally still gather it on the
+    // coordinator to recalculate a "bucket_id" field for "t".
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
 }
 
 #[test]
@@ -736,8 +758,30 @@ fn redistribution3() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    // Though data allows to be inserted locally still gather it on the
+    // coordinator to recalculate a "bucket_id" field for "t".
+    let motion_id = *plan
+        .slices
+        .as_ref()
+        .unwrap()
+        .get(0)
+        .unwrap()
+        .get(0)
+        .unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::Segment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
 }
 
 #[test]
