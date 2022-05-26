@@ -69,6 +69,15 @@ pub enum MotionPolicy {
     Local,
 }
 
+/// Determine what portion of data to generate during motion.
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum DataGeneration {
+    /// Nothing to generate.
+    None,
+    /// Generate a sharding column (`bucket_id` in terms of Tarantool).
+    ShardingColumn,
+}
+
 struct BoolOp {
     left: usize,
     op: Bool,
@@ -91,6 +100,8 @@ impl BoolOp {
         }
     }
 }
+
+type Strategy = HashMap<usize, (MotionPolicy, DataGeneration)>;
 
 /// Choose a policy for the inner join child (a policy with the largest motion of data wins).
 fn join_policy_for_or(left_policy: &MotionPolicy, right_policy: &MotionPolicy) -> MotionPolicy {
@@ -300,7 +311,7 @@ impl Plan {
     fn create_motion_nodes(
         &mut self,
         rel_id: usize,
-        strategy: &HashMap<usize, MotionPolicy>,
+        strategy: &Strategy,
     ) -> Result<(), QueryPlannerError> {
         let children: Vec<usize> = if let Some(children) = self.get_relational_children(rel_id)? {
             children.to_vec()
@@ -324,11 +335,11 @@ impl Plan {
         // Add motions.
         let mut children_with_motions: Vec<usize> = Vec::new();
         for child in children {
-            if let Some(policy) = strategy.get(&child) {
+            if let Some((policy, data_gen)) = strategy.get(&child) {
                 if let MotionPolicy::Local = policy {
                     children_with_motions.push(child);
                 } else {
-                    children_with_motions.push(self.add_motion(child, policy)?);
+                    children_with_motions.push(self.add_motion(child, policy, data_gen)?);
                 }
             } else {
                 children_with_motions.push(child);
@@ -405,7 +416,7 @@ impl Plan {
         &mut self,
         rel_id: usize,
         expr_id: usize,
-    ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
+    ) -> Result<Strategy, QueryPlannerError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
@@ -413,11 +424,11 @@ impl Plan {
             self.set_distribution(bool_op.right)?;
         }
 
-        let mut strategy: HashMap<usize, MotionPolicy> = HashMap::new();
+        let mut strategy: Strategy = HashMap::new();
         for node in &nodes {
             let strategies = self.get_sq_node_strategies(rel_id, *node)?;
             for (id, policy) in strategies {
-                strategy.insert(id, policy);
+                strategy.insert(id, (policy, DataGeneration::None));
             }
         }
         Ok(strategy)
@@ -629,7 +640,7 @@ impl Plan {
         &mut self,
         rel_id: usize,
         expr_id: usize,
-    ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
+    ) -> Result<Strategy, QueryPlannerError> {
         // First, we need to set the motion policy for each boolean expression in the join condition.
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
@@ -640,10 +651,10 @@ impl Plan {
 
         // Init the strategy (motion policy map) for all the join children except the outer child.
         let join_children = self.get_join_children(rel_id)?;
-        let mut strategy: HashMap<usize, MotionPolicy> = HashMap::new();
+        let mut strategy: Strategy = HashMap::new();
         if let Some((_, children)) = join_children.split_first() {
             for child_id in children {
-                strategy.insert(*child_id, MotionPolicy::Full);
+                strategy.insert(*child_id, (MotionPolicy::Full, DataGeneration::None));
             }
         } else {
             return Err(QueryPlannerError::CustomError(
@@ -672,7 +683,7 @@ impl Plan {
             let sq_strategies = self.get_sq_node_strategies(rel_id, *node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
-                strategy.insert(id, policy);
+                strategy.insert(id, (policy, DataGeneration::None));
             }
             if sq_strategies_len > 0 {
                 continue;
@@ -734,15 +745,12 @@ impl Plan {
             };
             inner_map.insert(*node_id, new_inner_policy.clone());
         }
-        strategy.insert(inner_child, new_inner_policy);
+        strategy.insert(inner_child, (new_inner_policy, DataGeneration::None));
         Ok(strategy)
     }
 
-    fn resolve_insert_conflicts(
-        &mut self,
-        rel_id: usize,
-    ) -> Result<HashMap<usize, MotionPolicy>, QueryPlannerError> {
-        let mut map: HashMap<usize, MotionPolicy> = HashMap::new();
+    fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, QueryPlannerError> {
+        let mut map: Strategy = HashMap::new();
         match self.get_relation_node(rel_id)? {
             Relational::Insert {
                 relation,
@@ -819,7 +827,13 @@ impl Plan {
                 // moment we can perform calculations only on the coordinator node,
                 // so we need to always deliver the data to coordinator's virtual
                 // table.
-                map.insert(child, MotionPolicy::Segment(motion_key));
+                map.insert(
+                    child,
+                    (
+                        MotionPolicy::Segment(motion_key),
+                        DataGeneration::ShardingColumn,
+                    ),
+                );
             }
             _ => {
                 return Err(QueryPlannerError::CustomError(

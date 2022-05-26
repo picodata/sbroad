@@ -173,6 +173,7 @@ nodes:
           children:
             - 17
           policy: Full
+          generation: None
           output: 29
 relations:
   t2:

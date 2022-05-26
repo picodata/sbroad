@@ -180,6 +180,7 @@ nodes:
               targets:
                 - Reference:
                     0
+          generation: None
           output: 29
 relations:
   t1:

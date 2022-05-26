@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::QueryPlannerError;
 
 use super::expression::Expression;
-use super::transformation::redistribution::MotionPolicy;
+use super::transformation::redistribution::{DataGeneration, MotionPolicy};
 use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::collection;
@@ -113,7 +113,10 @@ pub enum Relational {
         /// Contains exactly one single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
+        /// Motion policy - the amount of data to be moved.
         policy: MotionPolicy,
+        /// Data generation strategy - what data to be generated.
+        generation: DataGeneration,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
@@ -541,6 +544,7 @@ impl Plan {
         &mut self,
         child_id: usize,
         policy: &MotionPolicy,
+        generation: &DataGeneration,
     ) -> Result<usize, QueryPlannerError> {
         if let Node::Relational(_) = self.get_node(child_id)? {
         } else {
@@ -552,6 +556,7 @@ impl Plan {
         let motion = Relational::Motion {
             children: vec![child_id],
             policy: policy.clone(),
+            generation: generation.clone(),
             output,
         };
         let motion_id = self.nodes.push(Node::Relational(motion));

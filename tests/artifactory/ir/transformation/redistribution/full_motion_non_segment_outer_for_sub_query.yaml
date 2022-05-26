@@ -192,6 +192,7 @@ nodes:
           children:
             - 17
           policy: Full
+          generation: None
           output: 31
 relations:
   t1:
