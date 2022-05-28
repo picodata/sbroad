@@ -414,9 +414,6 @@ impl<'p> SyntaxPlan<'p> {
                     output,
                     ..
                 } => {
-                    // Insert a list of the target columns only when
-                    // their amount differs from the amount of the columns
-                    // in the relation.
                     let row = ir_plan.get_expression_node(*output)?;
                     let aliases: &[usize] = if let Expression::Row { ref list, .. } = row {
                         list
@@ -450,18 +447,39 @@ impl<'p> SyntaxPlan<'p> {
                         }
                     };
                     let mut nodes: Vec<usize> = Vec::new();
-                    if aliases.len() != columns.len() {
-                        if let Some((last, cols)) = columns.split_last() {
-                            nodes.reserve(columns.len() * 2 + 1);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
-                            for col_pos in cols {
-                                nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                            }
-                            nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+                    // nodes.reserve((columns.len() + 1) * 2 + 1);
+                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
+                    // for col_pos in columns {
+                    //     nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
+                    //     nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                    // };
+                    // // FIXME: We should pass sharding column name from config.
+                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_column_name("\"bucket_id\"")));
+                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+
+                    if let Some((last, cols)) = columns.split_last() {
+                        nodes.reserve(columns.len() * 2 + 1);
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
+                        for col_pos in cols {
+                            nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
                         }
+                        nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
                     }
+
+                    // if aliases.len() != columns.len() {
+                    //     if let Some((last, cols)) = columns.split_last() {
+                    //         nodes.reserve(columns.len() * 2 + 1);
+                    //         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
+                    //         for col_pos in cols {
+                    //             nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
+                    //             nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                    //         }
+                    //         nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
+                    //         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+                    //     }
+                    // }
 
                     if children.is_empty() {
                         return Err(QueryPlannerError::CustomError(

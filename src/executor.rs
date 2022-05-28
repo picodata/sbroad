@@ -34,7 +34,9 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::result::ExecutorResults;
 use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
-use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
+use crate::ir::operator::Relational;
+use crate::ir::relation::{Column, ColumnRole, Type};
+use crate::ir::transformation::redistribution::{DataGeneration, MotionKey, MotionPolicy, Target};
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use base64ct::{Base64, Encoding};
@@ -161,11 +163,27 @@ where
     pub fn add_motion_result(
         &mut self,
         motion_id: usize,
-        vtable: VirtualTable,
+        mut vtable: VirtualTable,
     ) -> Result<(), QueryPlannerError> {
-        let mut motion_result = vtable;
-        if let MotionPolicy::Segment(shard_key) = &self.exec_plan.get_motion_policy(motion_id)? {
-            self.reshard_vtable(&mut motion_result, shard_key)?;
+        let (policy, generation) = if let Relational::Motion {
+            policy, generation, ..
+        } = self
+            .get_exec_plan()
+            .get_ir_plan()
+            .get_relation_node(motion_id)?
+        {
+            (policy.clone(), generation.clone())
+        } else {
+            return Err(QueryPlannerError::CustomError(
+                "Invalid motion node".to_string(),
+            ));
+        };
+        if let MotionPolicy::Segment(shard_key) = policy {
+            // At the moment we generate a new sharding column only for the motions
+            // prior the insertion node. As we support only relations with segmented
+            // data (Tarantool doesn't have relations with replicated data), we handle
+            // a case with sharding column only for a segment motion policy.
+            self.reshard_vtable(&mut vtable, &shard_key, &generation)?;
         }
 
         let need_init = self.exec_plan.get_vtables().is_none();
@@ -174,7 +192,7 @@ where
         }
 
         if let Some(vtables) = self.exec_plan.get_mut_vtables() {
-            vtables.insert(motion_id, motion_result);
+            vtables.insert(motion_id, vtable);
         }
 
         Ok(())
@@ -188,6 +206,7 @@ where
         &self,
         vtable: &mut VirtualTable,
         sharding_key: &MotionKey,
+        generation: &DataGeneration,
     ) -> Result<(), QueryPlannerError> {
         vtable.set_motion_key(sharding_key);
 
@@ -219,6 +238,25 @@ where
                 Entry::Occupied(entry) => {
                     entry.into_mut().push(pos);
                 }
+            }
+        }
+
+        // Add a new sharding column with a bucket id to the virtual table.
+        if let DataGeneration::ShardingColumn = generation {
+            for (bucket_id, ids) in &index {
+                for id in ids {
+                    vtable.get_mut_tuples()[*id].push(Value::from(*bucket_id));
+                }
+            }
+            // `VALUES` have empty column names, keep this pattern
+            // for the sharding column as well.
+            if !vtable.get_columns().is_empty() {
+                let sharding_col = Column {
+                    name: "bucket_id".to_string(),
+                    r#type: Type::Number,
+                    role: ColumnRole::Sharding,
+                };
+                vtable.get_mut_columns().push(sharding_col);
             }
         }
 

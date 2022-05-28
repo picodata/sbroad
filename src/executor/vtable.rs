@@ -86,10 +86,22 @@ impl VirtualTable {
         &self.tuples
     }
 
+    /// Get mutable vtable tuples list
+    #[must_use]
+    pub fn get_mut_tuples(&mut self) -> &mut [VTableTuple] {
+        &mut self.tuples
+    }
+
     /// Get vtable columns list
     #[must_use]
     pub fn get_columns(&self) -> &[Column] {
         &self.columns
+    }
+
+    /// Get vtable columns list
+    #[must_use]
+    pub fn get_mut_columns(&mut self) -> &mut Vec<Column> {
+        &mut self.columns
     }
 
     /// Get vtable motion key

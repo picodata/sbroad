@@ -841,6 +841,27 @@ impl Plan {
                 ))
             }
         }
+
+        // We also need to add a sharding column to the end of the insert
+        // column list.
+        let sharding_pos =
+            if let Relational::Insert { relation, .. } = self.get_relation_node(rel_id)? {
+                let rel = self.get_relation(relation).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!("Relation {} not found", relation))
+                })?;
+                rel.get_sharding_column_position()?
+            } else {
+                return Err(QueryPlannerError::CustomError(
+                    "Expected insert node".into(),
+                ));
+            };
+        if let Relational::Insert {
+            ref mut columns, ..
+        } = self.get_mut_relation_node(rel_id)?
+        {
+            columns.push(sharding_pos);
+        }
+
         Ok(map)
     }
 

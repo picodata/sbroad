@@ -5,7 +5,7 @@ use crate::executor::result::{ExecutorResults, ProducerResults, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
-use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
 use crate::ir::value::Value as IrValue;
 
 use super::*;
@@ -111,7 +111,9 @@ fn linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
+            .unwrap();
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -170,7 +172,9 @@ fn union_linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
+            .unwrap();
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -259,7 +263,9 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     virtual_table.set_alias("\"t8\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
+            .unwrap();
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -334,7 +340,9 @@ fn join_linker2_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
+            .unwrap();
     }
 
     query.engine.add_virtual_table(motion_id, virtual_table);
@@ -394,7 +402,9 @@ fn join_linker3_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
+            .unwrap();
     }
 
     query.engine.add_virtual_table(motion_id, virtual_table);
@@ -444,7 +454,9 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
+            .unwrap();
     }
     query.engine.add_virtual_table(motion_t2_id, virtual_t2);
 
@@ -460,7 +472,9 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
-        query.reshard_vtable(&mut virtual_sq, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_sq, key, &DataGeneration::None)
+            .unwrap();
     }
     query.engine.add_virtual_table(motion_sq_id, virtual_sq);
 
@@ -515,7 +529,9 @@ fn anonymous_col_index_test() {
     let mut virtual_t1 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
-        query.reshard_vtable(&mut virtual_t1, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_t1, key, &DataGeneration::None)
+            .unwrap();
     }
     query
         .engine
@@ -524,7 +540,9 @@ fn anonymous_col_index_test() {
     let mut virtual_t2 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        query
+            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
+            .unwrap();
     }
     query
         .engine
@@ -660,14 +678,16 @@ fn insert1_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (1))"#,
+                r#"INSERT INTO "t" ("b", "bucket_id")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "bucket_id" FROM (VALUES (1,2156))"#,
             )),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("b")"#, r#"SELECT COLUMN_1 as "a" FROM (VALUES (2))"#,
+                r#"INSERT INTO "t" ("b", "bucket_id")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "bucket_id" FROM (VALUES (2,3832))"#,
             )),
         ],
     ]);
@@ -717,8 +737,8 @@ fn insert2_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {}",
-            r#"INSERT INTO "t" ("a", "b")"#,
-            r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (1,2))"#,
+            r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
+            r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b",COLUMN_3 as "bucket_id" FROM (VALUES (1,2,550))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);
@@ -773,16 +793,16 @@ fn insert3_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("b", "a")"#,
-                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (1,2))"#,
+                r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b",COLUMN_3 as "bucket_id" FROM (VALUES (1,2,4427))"#,
             )),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
                 "{} {}",
-                r#"INSERT INTO "t" ("b", "a")"#,
-                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b" FROM (VALUES (3,4))"#,
+                r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
+                r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b",COLUMN_3 as "bucket_id" FROM (VALUES (3,4,7100))"#,
             )),
         ],
     ]);
@@ -831,8 +851,8 @@ fn insert4_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {}",
-            r#"INSERT INTO "t" ("b", "a")"#,
-            r#"SELECT COLUMN_1 as "b",COLUMN_2 as "a" FROM (VALUES (2,1))"#,
+            r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
+            r#"SELECT COLUMN_1 as "b",COLUMN_2 as "a",COLUMN_3 as "bucket_id" FROM (VALUES (2,1,550))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);
@@ -882,8 +902,8 @@ fn insert5_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {}",
-            r#"INSERT INTO "t" ("b", "a")"#,
-            r#"SELECT COLUMN_3 as "a",COLUMN_4 as "b" FROM (VALUES (5,6),(5,6))"#,
+            r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
+            r#"SELECT COLUMN_4 as "a",COLUMN_5 as "b",COLUMN_6 as "bucket_id" FROM (VALUES (5,6,8788),(5,6,8788))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);
@@ -911,11 +931,17 @@ fn insert6_test() {
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(format!("{}", r#"INSERT INTO "t" ("a", "b") VALUES (1,2)"#,)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (1,2,550)"#,
+            )),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(format!("{}", r#"INSERT INTO "t" ("a", "b") VALUES (3,4)"#,)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (3,4,8906)"#,
+            )),
         ],
     ]);
     assert_eq!(ExecutorResults::from(expected), result);
@@ -978,9 +1004,9 @@ fn insert8_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(format!(
             "{} {}{}",
-            r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op")"#,
+            r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op", "bucket_id")"#,
             r#"SELECT COLUMN_1 as "identification_number",COLUMN_2 as "product_code",COLUMN_3 as "product_units","#,
-            r#"COLUMN_4 as "sys_op" FROM (VALUES (1,'two',true,4))"#,
+            r#"COLUMN_4 as "sys_op",COLUMN_5 as "bucket_id" FROM (VALUES (1,'two',true,4,3016))"#,
         )),
     ]]);
     assert_eq!(ExecutorResults::from(expected), result);
