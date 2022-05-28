@@ -79,6 +79,18 @@ impl From<u64> for Value {
     }
 }
 
+impl From<i32> for Value {
+    fn from(v: i32) -> Self {
+        Value::Number(d128::from(v))
+    }
+}
+
+impl From<u32> for Value {
+    fn from(v: u32) -> Self {
+        Value::Number(d128::from(v))
+    }
+}
+
 impl Value {
     /// Constructs a number from the string.
     ///

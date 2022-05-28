@@ -346,3 +346,91 @@ g.test_empty_motion_result = function()
         },
     })
 end
+
+g.test_insert_1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    SELECT * FROM "space_simple_shard_key_hist" WHERE "id" > ?]], { 1 } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {10, box.NULL, 0, 11520},
+            {2, "ok_hist_2", 1, 22072}
+        },
+    })
+end
+
+g.test_insert_2 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    ("name", "sysOp", "id")
+    SELECT 'four', 5, 3 FROM "space_simple_shard_key_hist" WHERE "id" IN (
+        SELECT ? FROM "space_simple_shard_key" 
+    )]], { 1 } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {10, box.NULL, 0, 11520},
+            {2, "ok_hist_2", 1, 22072},
+            {3, "four", 5, 21301}
+        },
+    })
+end
+
+g.test_insert_3 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id") VALUES (?, ?), (?, ?)]], { 5, 4, 6, 5 } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {10, box.NULL, 0, 11520},
+            {2, "ok_hist_2", 1, 22072},
+            {3, "four", 5, 21301},
+            {4, box.NULL, 5, 11520},
+            {5, box.NULL, 6, 11520},
+        },
+    })
+end

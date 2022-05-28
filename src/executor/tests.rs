@@ -1012,6 +1012,44 @@ fn insert8_test() {
     assert_eq!(ExecutorResults::from(expected), result);
 }
 
+#[test]
+fn insert9_test() {
+    let sql = r#"insert into "t" ("a", "b") values (?, ?)"#;
+
+    let engine = EngineMock::new();
+
+    let mut query = Query::new(&engine, sql, &[IrValue::from(1), IrValue::from(2)]).unwrap();
+    let result = query.exec().unwrap();
+
+    let mut expected = ProducerResults::new();
+
+    let param1 = IrValue::number_from_str("1").unwrap();
+    let param2 = IrValue::number_from_str("2").unwrap();
+    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+
+    let param3 = IrValue::number_from_str("3").unwrap();
+    let param4 = IrValue::number_from_str("4").unwrap();
+    let bucket2 = query.engine.determine_bucket_id(&[&param3, &param4]);
+
+    expected.rows.extend(vec![
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (1,2,550)"#,
+            )),
+        ],
+        vec![
+            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+            Value::String(format!(
+                "{}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (3,4,8906)"#,
+            )),
+        ],
+    ]);
+    assert_eq!(ExecutorResults::from(expected), result);
+}
+
 /// Helper function to create a "test" virtual table.
 fn virtual_table_23() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
