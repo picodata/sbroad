@@ -52,7 +52,6 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
 end
 
 local function insert_record(space_name, values)
-    print('insert_record')
     local space = box.space[space_name]
 
     local placeholders = {}

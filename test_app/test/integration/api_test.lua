@@ -5,7 +5,7 @@ local g = t.group('integration_api')
 local helper = require('test.helper')
 local cluster = helper.cluster
 
-g.before_all(
+g.before_each(
     function()
         local api = cluster:server("api-1").net_box
 
@@ -29,7 +29,7 @@ g.before_all(
     end
 )
 
-g.after_all(
+g.after_each(
     function()
         local storage1 = cluster:server("storage-1-1").net_box
         storage1:call("box.execute", { [[truncate table "testing_space"]] })
@@ -40,8 +40,8 @@ g.after_all(
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "testing_space"]] })
         storage2:call("box.execute", { [[truncate table "testing_space_hist"]] })
-        storage1:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
-        storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
+        storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
+        storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
     end
 )
 
@@ -401,7 +401,6 @@ g.test_insert_2 = function()
         rows = {
             {1, "ok", 1, 3940},
             {10, box.NULL, 0, 11520},
-            {2, "ok_hist_2", 1, 22072},
             {3, "four", 5, 21301}
         },
     })
@@ -430,8 +429,6 @@ g.test_insert_3 = function()
             {1, "ok", 1, 3940},
             {5, box.NULL, 6, 6661},
             {10, box.NULL, 0, 11520},
-            {2, "ok_hist_2", 1, 22072},
-            {3, "four", 5, 21301},
             {4, box.NULL, 5, 27225},
         },
     })
