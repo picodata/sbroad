@@ -2,8 +2,7 @@
 name = "sbroad"
 version = "0.1.0"
 authors = [
-    "Denis Smirnov <sd@picodata.io>",
-    "Igor Kuznetsov <kuznetsovin@gmail.com>",
+    "Picodata"
 ]
 edition = "2021"
 
