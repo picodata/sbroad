@@ -12,7 +12,6 @@ use crate::errors::QueryPlannerError;
 
 use super::expression::Expression;
 use super::transformation::redistribution::{DataGeneration, MotionPolicy};
-use super::value::Value;
 use super::{Node, Nodes, Plan};
 use crate::collection;
 use crate::ir::distribution::Distribution;
@@ -167,8 +166,20 @@ pub enum Relational {
     Values {
         /// Output tuple.
         output: usize,
-        /// Data (list of rows).
-        data: Vec<Vec<Value>>,
+        /// Тon-empty list of value rows.
+        children: Vec<usize>,
+    },
+    ValuesRow {
+        /// Output tuple of aliases.
+        output: usize,
+        /// The data tuple.
+        data: usize,
+        /// A list of children is required for the rows containing
+        /// sub-queries. For example, the row `(1, (select a from t))`
+        /// requires `children` to keep projection node. If the row
+        /// contains only constants (i.e. `(1, 2)`), then `children`
+        /// should be empty.
+        children: Vec<usize>,
     },
 }
 
@@ -226,7 +237,8 @@ impl Relational {
             | Relational::ScanSubQuery { output, .. }
             | Relational::Selection { output, .. }
             | Relational::UnionAll { output, .. }
-            | Relational::Values { output, .. } => *output,
+            | Relational::Values { output, .. }
+            | Relational::ValuesRow { output, .. } => *output,
         }
     }
 
@@ -240,8 +252,10 @@ impl Relational {
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
             | Relational::Selection { children, .. }
-            | Relational::UnionAll { children, .. } => Some(children),
-            Relational::ScanRelation { .. } | Relational::Values { .. } => None,
+            | Relational::UnionAll { children, .. }
+            | Relational::ValuesRow { children, .. }
+            | Relational::Values { children, .. } => Some(children),
+            Relational::ScanRelation { .. } => None,
         }
     }
 
@@ -290,15 +304,20 @@ impl Relational {
             | Relational::UnionAll {
                 children: ref mut old,
                 ..
+            }
+            | Relational::Values {
+                children: ref mut old,
+                ..
+            }
+            | Relational::ValuesRow {
+                children: ref mut old,
+                ..
             } => {
                 *old = children;
                 Ok(())
             }
             Relational::ScanRelation { .. } => Err(QueryPlannerError::CustomError(String::from(
                 "Scan is a leaf node",
-            ))),
-            Relational::Values { .. } => Err(QueryPlannerError::CustomError(String::from(
-                "Values is a leaf node",
             ))),
         }
     }
@@ -346,7 +365,9 @@ impl Relational {
                 }
                 Ok(None)
             }
-            Relational::UnionAll { .. } | Relational::Values { .. } => Ok(None),
+            Relational::UnionAll { .. }
+            | Relational::Values { .. }
+            | Relational::ValuesRow { .. } => Ok(None),
         }
     }
 
@@ -717,40 +738,97 @@ impl Plan {
         Ok(union_all_id)
     }
 
+    /// Adds a values row node
+    ///
+    /// # Errors
+    /// - Row node is not of a row type
+    pub fn add_values_row(
+        &mut self,
+        row_id: usize,
+        col_idx: &mut usize,
+    ) -> Result<usize, QueryPlannerError> {
+        let row = self.get_expression_node(row_id)?;
+        let columns = if let Expression::Row { list, .. } = row {
+            list.clone()
+        } else {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Expression {} is not a row.",
+                row_id
+            )));
+        };
+        let mut aliases: Vec<usize> = Vec::with_capacity(columns.len());
+        for col_id in columns {
+            // Generate a row of aliases for the incoming row.
+            *col_idx += 1;
+            let name = format!("COLUMN_{}", col_idx);
+            let alias_id = self.nodes.add_alias(&name, col_id)?;
+            aliases.push(alias_id);
+        }
+        let output = self.nodes.add_row(aliases, None);
+
+        let values_row = Relational::ValuesRow {
+            output,
+            data: row_id,
+            children: vec![],
+        };
+        let values_row_id = self.nodes.push(Node::Relational(values_row));
+        self.replace_parent_in_subtree(row_id, None, Some(values_row_id))?;
+        Ok(values_row_id)
+    }
+
     /// Adds values node.
     ///
     /// # Errors
-    /// - Values data has no columns or no rows.
-    pub fn add_values(
-        &mut self,
-        data: Vec<Vec<Value>>,
-        col_idx: &mut usize,
-    ) -> Result<usize, QueryPlannerError> {
-        let output_len = if let Some(first_row) = data.first() {
-            first_row.len()
+    /// - No child nodes
+    /// - Child node is not relational
+    pub fn add_values(&mut self, children: Vec<usize>) -> Result<usize, QueryPlannerError> {
+        // Get the last row of the children list. We need it to
+        // get the correct anonymous column names.
+        let last_id = if let Some(last_id) = children.last() {
+            *last_id
         } else {
             return Err(QueryPlannerError::CustomError(
-                "Values must have at least one row.".into(),
+                "Values node must have at least one child.".into(),
             ));
         };
-        if output_len == 0 {
+        let child_last = self.get_relation_node(last_id)?;
+        let last_output_id = if let Relational::ValuesRow { output, .. } = child_last {
+            *output
+        } else {
             return Err(QueryPlannerError::CustomError(
-                "Values must have at least one column.".into(),
+                "Values node must have at least one child row.".into(),
             ));
-        }
-        *col_idx += output_len * data.len() - output_len;
-        let mut list: Vec<usize> = Vec::with_capacity(output_len);
-        for pos in 0..output_len {
-            let ref_id = self.nodes.add_ref(None, None, pos);
-            *col_idx += 1;
-            let alias_id = self
-                .nodes
-                .add_alias(&format!("COLUMN_{}", *col_idx), ref_id)?;
-            list.push(alias_id);
-        }
-        let output = self.nodes.add_row(list, Some(Distribution::Replicated));
+        };
+        let last_output = self.get_expression_node(last_output_id)?;
+        let names = if let Expression::Row { list, .. } = last_output {
+            let mut aliases: Vec<String> = Vec::with_capacity(list.len());
+            for alias_id in list {
+                let alias = self.get_expression_node(*alias_id)?;
+                if let Expression::Alias { name, .. } = alias {
+                    aliases.push(name.clone());
+                } else {
+                    return Err(QueryPlannerError::CustomError("Expected an alias".into()));
+                }
+            }
+            aliases
+        } else {
+            return Err(QueryPlannerError::CustomError(
+                "Values node must have at least one child row.".into(),
+            ));
+        };
 
-        let values = Relational::Values { output, data };
+        // Generate a row of aliases referencing all the children.
+        let mut aliases: Vec<usize> = Vec::with_capacity(names.len());
+        for (pos, name) in names.iter().enumerate() {
+            let ref_id =
+                self.nodes
+                    .add_ref(None, Some((0..children.len()).collect::<Vec<usize>>()), pos);
+            let alias_id = self.nodes.add_alias(name, ref_id)?;
+            aliases.push(alias_id);
+        }
+        let output = self.nodes.add_row(aliases, None);
+
+        let values = Relational::Values { output, children };
         let values_id = self.nodes.push(Node::Relational(values));
         self.replace_parent_in_subtree(output, None, Some(values_id))?;
         Ok(values_id)
@@ -783,6 +861,44 @@ impl Plan {
                 "Invalid relational node".into(),
             ))
         }
+    }
+
+    /// Synchronize values row output with the data tuple after parameter binding.
+    ///
+    /// # Errors
+    /// - Node is not values row
+    /// - Output and data tuples have different number of columns
+    /// - Output is not a row of aliases
+    pub fn update_values_row(&mut self, id: usize) -> Result<(), QueryPlannerError> {
+        let values_row = self.get_node(id)?;
+        let (output_id, data_id) =
+            if let Node::Relational(Relational::ValuesRow { output, data, .. }) = values_row {
+                (*output, *data)
+            } else {
+                return Err(QueryPlannerError::CustomError(format!(
+                    "Expected a values row: {:?}",
+                    values_row
+                )));
+            };
+        let data = self.get_expression_node(data_id)?;
+        let data_list = data.extract_row_list()?;
+        let output = self.get_expression_node(output_id)?;
+        let output_list = output.extract_row_list()?;
+        for (pos, alias_id) in output_list.iter().enumerate() {
+            let new_child_id = *data_list.get(pos).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!("Expected a child at position {}", pos))
+            })?;
+            let alias = self.get_mut_expression_node(*alias_id)?;
+            if let Expression::Alias { ref mut child, .. } = alias {
+                *child = new_child_id;
+            } else {
+                return Err(QueryPlannerError::CustomError(format!(
+                    "Expected an alias: {:?}",
+                    alias
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Sets children for relational node

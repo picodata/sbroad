@@ -125,7 +125,9 @@ impl ExecutionPlan {
                             Relational::ScanRelation { relation, .. } => {
                                 sql.push_str(relation);
                             }
-                            Relational::ScanSubQuery { .. } | Relational::Motion { .. } => {}
+                            Relational::ScanSubQuery { .. }
+                            | Relational::Motion { .. }
+                            | Relational::ValuesRow { .. } => {}
                             Relational::Selection { .. } => sql.push_str("WHERE"),
                             Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                             Relational::Values { .. } => sql.push_str("VALUES"),
@@ -233,9 +235,6 @@ impl ExecutionPlan {
                             values
                         ));
                     }
-                }
-                SyntaxData::Value(value) => {
-                    sql.push_str(&format!("{}", value));
                 }
             }
         }

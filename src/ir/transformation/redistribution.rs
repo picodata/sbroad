@@ -875,13 +875,15 @@ impl Plan {
         let nodes = self.get_relational_nodes_dfs_post()?;
         for id in &nodes {
             match self.get_relation_node(*id)?.clone() {
-                // At the moment our grammar and IR constructor
-                // don't support projection with sub queries.
+                // At the moment our grammar and IR constructors
+                // don't allow projection and values row with
+                // sub queries.
                 Relational::Projection { output, .. }
                 | Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::UnionAll { output, .. }
-                | Relational::Values { output, .. } => {
+                | Relational::Values { output, .. }
+                | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
                 }
                 Relational::Motion { .. } => {

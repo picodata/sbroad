@@ -591,36 +591,21 @@ impl Ast for AbstractSyntaxTree {
                     let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
                     map.add(*id, plan_union_all_id);
                 }
+                Type::ValuesRow => {
+                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError("Values row has no children.".into())
+                    })?;
+                    let plan_child_id = map.get(*ast_child_id)?;
+                    let values_row_id = plan.add_values_row(plan_child_id, &mut col_idx)?;
+                    map.add(*id, values_row_id);
+                }
                 Type::Values => {
-                    // Values can have multiple row children. We should
-                    // iterate over them and extract their data.
-                    let mut data: Vec<Vec<Value>> = Vec::with_capacity(node.children.len());
-                    for ast_row_id in &node.children {
-                        let plan_row_id = map.get(*ast_row_id)?;
-                        let plan_row = plan.get_expression_node(plan_row_id)?;
-                        let plan_col_ids = if let Expression::Row { list, .. } = plan_row {
-                            list
-                        } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "Values children should be of a row type.".into(),
-                            ));
-                        };
-                        let mut row_data: Vec<Value> = Vec::with_capacity(plan_col_ids.len());
-                        for plan_col_id in plan_col_ids {
-                            let plan_col = plan.get_expression_node(*plan_col_id)?;
-                            let plan_val = if let Expression::Constant { value, .. } = plan_col {
-                                value
-                            } else {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Row list should contain values: {:?}.",
-                                    plan_col
-                                )));
-                            };
-                            row_data.push(plan_val.clone());
-                        }
-                        data.push(row_data);
+                    let mut plan_children_ids: Vec<usize> = Vec::with_capacity(node.children.len());
+                    for ast_child_id in &node.children {
+                        let plan_child_id = map.get(*ast_child_id)?;
+                        plan_children_ids.push(plan_child_id);
                     }
-                    let plan_values_id = plan.add_values(data, &mut col_idx)?;
+                    let plan_values_id = plan.add_values(plan_children_ids)?;
                     map.add(*id, plan_values_id);
                 }
                 Type::Insert => {
@@ -713,6 +698,7 @@ impl Plan {
     /// # Errors
     /// - Invalid amount of parameters.
     /// - Internal errors.
+    #[allow(clippy::too_many_lines)]
     pub fn bind_params(&mut self, params: &[Value]) -> Result<(), QueryPlannerError> {
         let top_id = self.get_top()?;
         let tree = DftPost::new(&top_id, |node| self.nodes.subtree_iter(node));
@@ -823,6 +809,17 @@ impl Plan {
                 Node::Parameter => {}
             }
         }
+
+        // Update values row output.
+        let tree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
+        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
+        for id in nodes {
+            let rel = self.get_relation_node(id)?;
+            if let Relational::ValuesRow { .. } = rel {
+                self.update_values_row(id)?;
+            }
+        }
+
         Ok(())
     }
 }

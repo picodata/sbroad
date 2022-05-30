@@ -412,7 +412,7 @@ g.test_insert_3 = function()
     ("sysOp", "id") VALUES (?, ?), (?, ?)]], { 5, 4, 6, 5 } })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {row_count = 1})
+    t.assert_equals(r, {row_count = 2})
 
     r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
@@ -426,11 +426,11 @@ g.test_insert_3 = function()
         },
         rows = {
             {1, "ok", 1, 3940},
+            {5, box.NULL, 6, 6661},
             {10, box.NULL, 0, 11520},
             {2, "ok_hist_2", 1, 22072},
             {3, "four", 5, 21301},
-            {4, box.NULL, 5, 11520},
-            {5, box.NULL, 6, 11520},
+            {4, box.NULL, 5, 27225},
         },
     })
 end

@@ -8,7 +8,6 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
-use crate::ir::value::Value as IrValue;
 use crate::ir::Node;
 
 /// Payload of the syntax tree node.
@@ -32,8 +31,6 @@ pub enum SyntaxData {
     PlanId(usize),
     /// virtual table
     VTable(VirtualTable),
-    /// value (for `VALUES` data)
-    Value(IrValue),
 }
 
 /// A syntax tree node.
@@ -128,14 +125,6 @@ impl SyntaxNode {
     fn new_vtable(value: VirtualTable) -> Self {
         SyntaxNode {
             data: SyntaxData::VTable(value),
-            left: None,
-            right: Vec::new(),
-        }
-    }
-
-    fn new_value(value: IrValue) -> Self {
-        SyntaxNode {
-            data: SyntaxData::Value(value),
             left: None,
             right: Vec::new(),
         }
@@ -447,16 +436,6 @@ impl<'p> SyntaxPlan<'p> {
                         }
                     };
                     let mut nodes: Vec<usize> = Vec::new();
-                    // nodes.reserve((columns.len() + 1) * 2 + 1);
-                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
-                    // for col_pos in columns {
-                    //     nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
-                    //     nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                    // };
-                    // // FIXME: We should pass sharding column name from config.
-                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_column_name("\"bucket_id\"")));
-                    // nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-
                     if let Some((last, cols)) = columns.split_last() {
                         nodes.reserve(columns.len() * 2 + 1);
                         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
@@ -467,19 +446,6 @@ impl<'p> SyntaxPlan<'p> {
                         nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
                         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
                     }
-
-                    // if aliases.len() != columns.len() {
-                    //     if let Some((last, cols)) = columns.split_last() {
-                    //         nodes.reserve(columns.len() * 2 + 1);
-                    //         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
-                    //         for col_pos in cols {
-                    //             nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
-                    //             nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                    //         }
-                    //         nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
-                    //         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                    //     }
-                    // }
 
                     if children.is_empty() {
                         return Err(QueryPlannerError::CustomError(
@@ -613,40 +579,22 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(id, None, &children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::Values { data, .. } => {
-                    let mut children: Vec<usize> = Vec::new();
-                    let add_tuple =
-                        |tuple: &Vec<IrValue>| -> Result<Vec<SyntaxNode>, QueryPlannerError> {
-                            let mut nodes: Vec<SyntaxNode> =
-                                Vec::with_capacity(tuple.len() * 2 - 1);
-                            nodes.push(SyntaxNode::new_open());
-                            if let Some((last_value, values)) = tuple.split_last() {
-                                for value in values {
-                                    nodes.push(SyntaxNode::new_value(value.clone()));
-                                    nodes.push(SyntaxNode::new_comma());
-                                }
-                                nodes.push(SyntaxNode::new_value(last_value.clone()));
-                            }
-                            nodes.push(SyntaxNode::new_close());
-                            Ok(nodes)
-                        };
-                    if let Some((last_tuple, tuples)) = data.split_last() {
-                        for tuple in tuples {
-                            children.reserve(tuple.len() * 2);
-                            for sn in add_tuple(tuple)? {
-                                children.push(self.nodes.push_syntax_node(sn));
-                            }
-                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                Relational::ValuesRow { data, .. } => {
+                    let sn =
+                        SyntaxNode::new_pointer(id, None, &[self.nodes.get_syntax_node_id(*data)?]);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
+                Relational::Values { children, .. } => {
+                    let mut sn_children: Vec<usize> = Vec::with_capacity(children.len() * 2 - 1);
+                    if let Some((last_id, other)) = children.split_last() {
+                        for child_id in other {
+                            sn_children.push(self.nodes.get_syntax_node_id(*child_id)?);
+                            sn_children.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
                         }
-                        children.reserve(last_tuple.len() * 2 - 1);
-                        for sn in add_tuple(last_tuple)? {
-                            children.push(self.nodes.push_syntax_node(sn));
-                        }
-                    } else {
-                        return Err(QueryPlannerError::CustomError("Values has no data.".into()));
+                        sn_children.push(self.nodes.get_syntax_node_id(*last_id)?);
                     }
 
-                    let sn = SyntaxNode::new_pointer(id, None, &children);
+                    let sn = SyntaxNode::new_pointer(id, None, &sn_children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },

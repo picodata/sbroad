@@ -64,6 +64,7 @@ pub enum Type {
     UnionAll,
     Value,
     Values,
+    ValuesRow,
 }
 
 impl Type {
@@ -109,6 +110,7 @@ impl Type {
             Rule::UnionAll => Ok(Type::UnionAll),
             Rule::Value => Ok(Type::Value),
             Rule::Values => Ok(Type::Values),
+            Rule::ValuesRow => Ok(Type::ValuesRow),
             _ => Err(QueryPlannerError::InvalidAst),
         }
     }

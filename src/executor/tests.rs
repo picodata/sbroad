@@ -911,11 +911,38 @@ fn insert5_test() {
 
 #[test]
 fn insert6_test() {
-    let sql = r#"insert into "t" ("a", "b") values (1, 2), (3, 4)"#;
+    let sql = r#"insert into "t" ("a", "b") values (1, 2), (1, 2), (3, 4)"#;
 
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "COLUMN_5".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "COLUMN_6".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("3").unwrap(),
+        IrValue::number_from_str("4").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
     let result = query.exec().unwrap();
 
     let mut expected = ProducerResults::new();
@@ -932,15 +959,19 @@ fn insert6_test() {
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (1,2,550)"#,
+                "{} {} {}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
+                r#"SELECT COLUMN_4 as "COLUMN_5",COLUMN_5 as "COLUMN_6",COLUMN_6 as "bucket_id""#,
+                r#"FROM (VALUES (1,2,550),(1,2,550))"#,
             )),
         ],
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (3,4,8906)"#,
+                "{} {} {}",
+                r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
+                r#"SELECT COLUMN_1 as "COLUMN_5",COLUMN_2 as "COLUMN_6",COLUMN_3 as "bucket_id""#,
+                r#"FROM (VALUES (3,4,8906))"#,
             )),
         ],
     ]);
@@ -1019,6 +1050,25 @@ fn insert9_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[IrValue::from(1), IrValue::from(2)]).unwrap();
+    let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
+
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "COLUMN_1".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "COLUMN_2".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_values_tuple(vec![
+        IrValue::number_from_str("1").unwrap(),
+        IrValue::number_from_str("2").unwrap(),
+    ]);
+
+    query.engine.add_virtual_table(motion_id, virtual_table);
     let result = query.exec().unwrap();
 
     let mut expected = ProducerResults::new();
@@ -1027,26 +1077,15 @@ fn insert9_test() {
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
-    let param3 = IrValue::number_from_str("3").unwrap();
-    let param4 = IrValue::number_from_str("4").unwrap();
-    let bucket2 = query.engine.determine_bucket_id(&[&param3, &param4]);
-
-    expected.rows.extend(vec![
-        vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (1,2,550)"#,
-            )),
-        ],
-        vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(format!(
-                "{}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id") VALUES (3,4,8906)"#,
-            )),
-        ],
-    ]);
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
+        Value::String(format!(
+            "{} {} {}",
+            r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
+            r#"SELECT COLUMN_1 as "COLUMN_1",COLUMN_2 as "COLUMN_2",COLUMN_3 as "bucket_id""#,
+            r#"FROM (VALUES (1,2,550))"#,
+        )),
+    ]]);
     assert_eq!(ExecutorResults::from(expected), result);
 }
 

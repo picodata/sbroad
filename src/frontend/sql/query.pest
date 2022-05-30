@@ -24,7 +24,8 @@ Query = _{ UnionAll | Select | Values | Insert }
     SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
-    Values = { ^"values" ~ Row ~ ("," ~ Row)*?}
+    Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
+        ValuesRow = { Row }
 
 Expr = _{  Or | And | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }

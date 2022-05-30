@@ -107,7 +107,8 @@ impl ExecutionPlan {
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::UnionAll { .. }
-            | Relational::Values { .. } => Ok(*top_id),
+            | Relational::Values { .. }
+            | Relational::ValuesRow { .. } => Ok(*top_id),
             Relational::Motion { .. } | Relational::Insert { .. } => Err(
                 QueryPlannerError::CustomError("Invalid motion child node".to_string()),
             ),
@@ -181,31 +182,5 @@ impl ExecutionPlan {
         })?;
 
         Ok(*child_id)
-    }
-
-    /// Transform `Values` node into a virtual table.
-    ///
-    /// # Errors
-    /// - `Values` node is not valid.
-    pub fn vtable_from_values(
-        &mut self,
-        values_id: usize,
-    ) -> Result<VirtualTable, QueryPlannerError> {
-        let values = self.get_ir_plan().get_relation_node(values_id)?;
-        let data = if let Relational::Values { ref data, .. } = values {
-            data
-        } else {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Invalid values node ({}): {:?}",
-                values_id, values
-            )));
-        };
-
-        let mut vtable = VirtualTable::new();
-        for tuple in data {
-            vtable.add_values_tuple(tuple.clone());
-        }
-
-        Ok(vtable)
     }
 }

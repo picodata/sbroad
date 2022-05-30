@@ -229,7 +229,9 @@ impl<'n> Iterator for RelationalIterator<'n> {
                 | Relational::Projection { children, .. }
                 | Relational::ScanSubQuery { children, .. }
                 | Relational::Selection { children, .. }
-                | Relational::UnionAll { children, .. },
+                | Relational::UnionAll { children, .. }
+                | Relational::Values { children, .. }
+                | Relational::ValuesRow { children, .. },
             )) => {
                 let step = *self.child.borrow();
                 if step < children.len() {
@@ -239,7 +241,7 @@ impl<'n> Iterator for RelationalIterator<'n> {
                 None
             }
             Some(
-                Node::Relational(Relational::ScanRelation { .. } | Relational::Values { .. })
+                Node::Relational(Relational::ScanRelation { .. })
                 | Node::Expression(_)
                 | Node::Parameter,
             )
@@ -320,7 +322,10 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                         }
                         None
                     }
-                    Relational::Projection {
+                    Relational::Values {
+                        output, children, ..
+                    }
+                    | Relational::Projection {
                         output, children, ..
                     } => {
                         let step = *self.child.borrow();
@@ -349,12 +354,12 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                             Ordering::Greater => None,
                         }
                     }
-                    Relational::Values { output, .. } => {
+                    Relational::ValuesRow { data, .. } => {
                         let step = *self.child.borrow();
 
                         *self.child.borrow_mut() += 1;
                         if step == 0 {
-                            return Some(output);
+                            return Some(data);
                         }
                         None
                     }

@@ -208,9 +208,6 @@ where
                 Relational::ScanRelation { output, .. } => {
                     self.bucket_map.insert(*output, Buckets::new_all());
                 }
-                Relational::Values { output, .. } => {
-                    self.bucket_map.insert(*output, Buckets::new_empty());
-                }
                 Relational::Motion { policy, output, .. } => match policy {
                     MotionPolicy::Full => {
                         self.bucket_map.insert(*output, Buckets::new_all());
@@ -363,6 +360,11 @@ where
                             "Current node should have at least two children".to_string(),
                         ));
                     }
+                }
+                Relational::Values { output, .. } | Relational::ValuesRow { output, .. } => {
+                    // At the moment values rows are located on the coordinator,
+                    // so there are no buckets to execute on.
+                    self.bucket_map.insert(*output, Buckets::new_empty());
                 }
             }
         }

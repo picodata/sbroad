@@ -128,6 +128,7 @@ impl Plan {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
+    #[allow(clippy::too_many_lines)]
     pub fn set_distribution(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
         let row_expr = self.get_expression_node(row_id)?;
         let capacity = match row_expr {
@@ -199,6 +200,36 @@ impl Plan {
             }
         }
 
+        // TODO: we need to refactor the code below to be more readable.
+
+        // Handle `Values` node rows distribution.
+        if let Some(parent_id) = parent_node {
+            let parent = self.get_relation_node(parent_id)?;
+            let values_dist: Option<Distribution> = if let Relational::Values { .. } = parent {
+                let mut left_dist = Distribution::Replicated;
+                for child in &child_set {
+                    let right_dist = self.dist_from_child(*child, &child_pos_map)?;
+                    left_dist = Distribution::union(&left_dist, &right_dist);
+                }
+                Some(left_dist)
+            } else {
+                None
+            };
+            if let Some(dist) = values_dist {
+                let output = self.get_mut_expression_node(row_id)?;
+                if let Expression::Row {
+                    ref mut distribution,
+                    ..
+                } = output
+                {
+                    if distribution.is_none() {
+                        *distribution = Some(dist);
+                    }
+                }
+                return Ok(());
+            }
+        }
+
         match child_set.len() {
             0 => {
                 if table_set.is_empty() {
@@ -216,14 +247,11 @@ impl Plan {
                     .next()
                     .ok_or(QueryPlannerError::InvalidNode)?;
                 let suggested_dist = self.dist_from_child(child, &child_pos_map)?;
-                if let Node::Expression(Expression::Row {
+                let output = self.get_mut_expression_node(row_id)?;
+                if let Expression::Row {
                     ref mut distribution,
                     ..
-                }) = self
-                    .nodes
-                    .arena
-                    .get_mut(row_id)
-                    .ok_or(QueryPlannerError::InvalidRow)?
+                } = output
                 {
                     if distribution.is_none() {
                         *distribution = Some(suggested_dist);
@@ -239,6 +267,7 @@ impl Plan {
             }
             _ => return Err(QueryPlannerError::InvalidReference),
         }
+
         Ok(())
     }
 
