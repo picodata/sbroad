@@ -5,7 +5,7 @@ local g = t.group('integration_api')
 local helper = require('test.helper')
 local cluster = helper.cluster
 
-g.before_each(
+g.before_all(
     function()
         local api = cluster:server("api-1").net_box
 
@@ -19,6 +19,8 @@ g.before_each(
         t.assert_equals(r, true)
 
         r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 1, name = "ok_hist", sysOp = 3 }})
+        t.assert_equals(r, true)
+
         r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 2, name = "ok_hist_2", sysOp = 1 }})
         t.assert_equals(r, true)
 
@@ -27,7 +29,7 @@ g.before_each(
     end
 )
 
-g.after_each(
+g.after_all(
     function()
         local storage1 = cluster:server("storage-1-1").net_box
         storage1:call("box.execute", { [[truncate table "testing_space"]] })

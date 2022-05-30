@@ -52,14 +52,29 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
 end
 
 local function insert_record(space_name, values)
-    values['bucket_id'] = calculate_bucket_id(space_name, values)
-	local res = vshard.router.call(
-        values['bucket_id'],
-         "write",
-        "insert_map",
-        { space_name, values }
+    print('insert_record')
+    local space = box.space[space_name]
+
+    local placeholders = {}
+    for v in pairs(values) do
+        table.insert(placeholders, "?")
+    end
+    local placeholders_str = table.concat(placeholders, ",")
+    local query = string.format("INSERT INTO \"%s\" VALUES (%s)", space_name, placeholders_str)
+    local tuple = space:frommap(values)
+
+    print(string.format("query %s", query))
+    local has_err, res = pcall(
+        function()
+            return box.func["sbroad.execute_query"]:call({ query, tuple })
+        end
     )
-    return res
+
+    if has_err == false then
+        return res
+    end
+
+    return true
 end
 
 local function init(opts) -- luacheck: no unused args

@@ -17,79 +17,103 @@ local cluster = helper.cluster
 --     })
 -- end
 
-target_queries.before_each(
+target_queries.before_all(
         function()
             local api = cluster:server("api-1").net_box
 
-            api:call("insert_record", {
+            local r = api:call("insert_record", {
                 "col1_transactions_actual",
                 { col1 = 1, amount = 3, account_id = 1, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_transactions_actual",
                 { col1 = 3, amount = 3, account_id = 1, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_transactions_history",
                 { id = 1, col1 = 1, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_transactions_history",
                 { id = 2, col1 = 1, amount = 1, account_id = 1, sys_from = 0, sys_to = 1 }
             })
+            t.assert_equals(r, true)
 
-            api:call("insert_record", {
+            r = api:call("insert_record", {
                 "col1_col2_transactions_actual",
                 { col1 = 1, col2 = 2, amount = 3, account_id = 1, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_col2_transactions_actual",
                 { col1 = 1, col2 = 1, amount = 3, account_id = 1, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_col2_transactions_history",
                 { id = 1, col1 = 1, col2 = 2, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_col2_transactions_history",
                 { id = 2, col1 = 1, col2 = 2, amount = 1, account_id = 1, sys_from = 0, sys_to = 1 }
             })
+            t.assert_equals(r, true)
 
-            api:call("insert_record", {
+            r = api:call("insert_record", {
                 "cola_accounts_actual",
                 { id = 1, cola = 1, colb = 3, sys_from = 0 }
             })
+            t.assert_equals(r, true)
 
-            api:call("insert_record", {
+            r = api:call("insert_record", {
                 "cola_accounts_actual",
                 { id = 1, cola = 2, colb = 3, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "cola_accounts_history",
                 { id = 1, cola = 1, colb = 2, sys_from = 0, sys_to = 2 }
             })
+            t.assert_equals(r, true)
 
-            api:call("insert_record", {
+            r = api:call("insert_record", {
                 "cola_colb_accounts_actual",
                 { id = 1, cola = 1, colb = 3, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "cola_colb_accounts_history",
                 { id = 1, cola = 1, colb = 2, sys_from = 0, sys_to = 2 }
             })
+            t.assert_equals(r, true)
 
-            api:call("insert_record", {
+            r = api:call("insert_record", {
                 "col1_col2_transactions_num_actual",
                 { col1 = 1, col2 = 2, amount = 3, account_id = 1, sys_from = 0 }
             })
-            api:call("insert_record", {
+            t.assert_equals(r, true)
+
+            r = api:call("insert_record", {
                 "col1_col2_transactions_num_history",
                 { id = 1, col1 = 1, col2 = 2, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
             })
+            t.assert_equals(r, true)
         end
 )
 
-target_queries.after_each(
+target_queries.after_all(
         function()
             local storage1 = cluster:server("storage-1-1").net_box
             storage1:call("box.execute", { [[truncate table "col1_transactions_actual"]] })

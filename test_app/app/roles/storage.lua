@@ -1,20 +1,6 @@
 local log = require('log')
 
-_G.insert_map = nil
-
-local function insert_map(space_name, values)
-    local space = box.space[space_name]
-    local tuple = space:frommap(values)
-    space:put(tuple)
-
-    return true
-end
-
 local function init(opts) -- luacheck: no unused args
-    -- if opts.is_master then
-    -- end
-    _G.insert_map = insert_map
-
     return true
 end
 

@@ -24,6 +24,7 @@ pub enum Type {
     String,
     Integer,
     Unsigned,
+    Scalar,
 }
 
 impl Type {
@@ -38,6 +39,7 @@ impl Type {
             "string" => Ok(Type::String),
             "integer" => Ok(Type::Integer),
             "unsigned" => Ok(Type::Unsigned),
+            "scalar" => Ok(Type::Scalar),
             _ => Err(QueryPlannerError::TypeNotImplemented),
         }
     }
@@ -84,6 +86,7 @@ impl SerSerialize for Column {
             Type::Integer => map.serialize_entry("type", "integer")?,
             Type::Unsigned => map.serialize_entry("type", "unsigned")?,
             Type::String => map.serialize_entry("type", "string")?,
+            Type::Scalar => map.serialize_entry("type", "scalar")?,
         }
 
         map.end()

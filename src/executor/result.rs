@@ -176,6 +176,7 @@ impl TryInto<Column> for &MetadataColumn {
             "string" => Ok(Column::new(&self.name, Type::String, ColumnRole::User)),
             "integer" => Ok(Column::new(&self.name, Type::Integer, ColumnRole::User)),
             "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, ColumnRole::User)),
+            "scalar" => Ok(Column::new(&self.name, Type::Scalar, ColumnRole::User)),
             _ => Err(QueryPlannerError::CustomError(format!(
                 "unsupported column type: {}",
                 self.r#type
