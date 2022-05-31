@@ -259,6 +259,12 @@ impl Relational {
         }
     }
 
+    /// Checks if the node is an insertion.
+    #[must_use]
+    pub fn is_insert(&self) -> bool {
+        matches!(self, Relational::Insert { .. })
+    }
+
     /// Checks that the node is a motion.
     #[must_use]
     pub fn is_motion(&self) -> bool {

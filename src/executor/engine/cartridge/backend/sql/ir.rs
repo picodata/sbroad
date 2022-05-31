@@ -115,7 +115,6 @@ impl ExecutionPlan {
                             ));
                         }
                         Node::Relational(rel) => match rel {
-                            // FIXME: columns
                             Relational::Insert { relation, .. } => {
                                 sql.push_str("INSERT INTO ");
                                 sql.push_str(relation.as_str());
@@ -152,7 +151,7 @@ impl ExecutionPlan {
                                 let rel_node = ir_plan.get_relation_node(rel_id)?;
                                 let alias = &ir_plan.get_alias_from_reference_node(expr)?;
 
-                                if let Relational::Insert { .. } = rel_node {
+                                if rel_node.is_insert() {
                                     // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
                                     // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
                                     sql.push_str(alias);
@@ -210,16 +209,6 @@ impl ExecutionPlan {
                             cols(anonymous_col_idx_base),
                             values
                         ));
-                    } else if cols_count == 0 {
-                        // A special case for `INSERT .. VALUES (..)`
-                        // when a virtual table has no column names.
-                        let values = tuples
-                            .iter()
-                            .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
-                            .collect::<Vec<String>>()
-                            .join(",");
-
-                        sql.push_str(&format!("VALUES {}", values));
                     } else {
                         let values = tuples
                             .iter()
@@ -250,11 +239,7 @@ impl ExecutionPlan {
         // with `RETURNING` clause. That is why it is enough to check if the top
         // node is a data modification statement or not.
         let top = self.get_ir_plan().get_relation_node(top_id)?;
-        if let Relational::Insert { .. } = top {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(top.is_insert())
     }
 }
 
