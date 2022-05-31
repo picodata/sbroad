@@ -4,7 +4,6 @@ local cartridge = require('cartridge')
 _G.query = nil
 _G.calculate_bucket_id = nil
 _G.calculate_bucket_id_by_dict = nil
-_G.insert_record = nil
 _G.sql_execute = nil
 
 
@@ -51,38 +50,12 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
     return calc_err
 end
 
-local function insert_record(space_name, values)
-    local space = box.space[space_name]
-
-    local placeholders = {}
-    for v in pairs(values) do
-        table.insert(placeholders, "?")
-    end
-    local placeholders_str = table.concat(placeholders, ",")
-    local query = string.format("INSERT INTO \"%s\" VALUES (%s)", space_name, placeholders_str)
-    local tuple = space:frommap(values)
-
-    print(string.format("query %s", query))
-    local has_err, res = pcall(
-        function()
-            return box.func["sbroad.execute_query"]:call({ query, tuple })
-        end
-    )
-
-    if has_err == false then
-        return res
-    end
-
-    return true
-end
-
 local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
     -- end
     _G.query = query
     _G.calculate_bucket_id = calculate_bucket_id
     _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
-    _G.insert_record = insert_record
     _G.sql_execute = sql_execute
 
 

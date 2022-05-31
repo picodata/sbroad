@@ -8,7 +8,7 @@ local clock = require("clock")
 local params = { ... }
 
 if #params ~= 1 then
-    print("Не задано кол-во записей для генерации")
+    print("The amount of records to generate is required")
     os.exit(1)
 end
 
@@ -147,7 +147,7 @@ api:call("set_schema", { yaml.encode(config) })
 print("table was created")
 
 fiber.sleep(3)
-print("loading data was started")
+print("data loading started")
 
 local storage1 = nb.connect("admin:app-cluster-cookie@localhost:3302")
 local storage2 = nb.connect("admin:app-cluster-cookie@localhost:3304")
@@ -158,27 +158,19 @@ storage2:eval("return box.space.vehicle_actual:truncate();")
 storage2:eval("return box.space.vehicle_history:truncate();")
 
 for i = 1, record_count, 1 do
-    api:call("insert_record", {
-        "vehicle_actual",
-        {
-            id = i,
-            gov_number = "a777a750",
-            sys_op = 0
-        }
+    api:call("query", {
+        [[insert into "vehicle_actual" ("id", "gov_number", "sys_op") values (?, ?, ?)]],
+        {i, "a777a750", 0}
     })
 
-    api:call("insert_record", {
-        "vehicle_history",
-        {
-            id = i,
-            gov_number = "a777a750",
-            sys_op = 0
-        }
+    api:call("query", {
+        [[insert into "vehicle_history" ("id", "gov_number", "sys_op") values (?, ?, ?)]],
+        {i, "a777a750", 0}
     })
 end
 api:close()
 
-print("data was loaded")
+print("data loading finished")
 fiber.sleep(3)
 
 print(

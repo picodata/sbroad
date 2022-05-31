@@ -9,23 +9,29 @@ g.before_each(
     function()
         local api = cluster:server("api-1").net_box
 
-        local r = api:call("insert_record", { "testing_space", { id = 1, name = "123", product_units = 1 } })
-        t.assert_equals(r, true)
+        local r = api:call("query", {
+            [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?)]],
+            {1, "123", 1}
+        })
+        t.assert_equals(r, {row_count = 1})
 
-        r = api:call("insert_record", { "testing_space_hist", { id = 1, name = "123", product_units = 5 } })
-        t.assert_equals(r, true)
+        r = api:call("query", {
+            [[insert into "testing_space_hist" ("id", "name", "product_units") values (?, ?, ?)]],
+            {1, "123", 5}
+        })
+        t.assert_equals(r, {row_count = 1})
 
-        r = api:call("insert_record", { "space_simple_shard_key", { id = 1, name = "ok", sysOp = 1 } })
-        t.assert_equals(r, true)
+        r = api:call("query", {
+            [[insert into "space_simple_shard_key" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
+            {1, "ok", 1, 10, box.NULL, 0}
+        })
+        t.assert_equals(r, {row_count = 2})
 
-        r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 1, name = "ok_hist", sysOp = 3 }})
-        t.assert_equals(r, true)
-
-        r = api:call("insert_record", { "space_simple_shard_key_hist", { id = 2, name = "ok_hist_2", sysOp = 1 }})
-        t.assert_equals(r, true)
-
-        local r = api:call("insert_record", { "space_simple_shard_key", { id = 10, name = box.NULL, sysOp = 0 } })
-        t.assert_equals(r, true)
+        r = api:call("query", {
+            [[insert into "space_simple_shard_key_hist" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
+            {1, "ok_hist", 3, 2, "ok_hist_2", 1}
+        })
+        t.assert_equals(r, {row_count = 2})
     end
 )
 

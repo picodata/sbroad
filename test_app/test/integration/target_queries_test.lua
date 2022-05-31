@@ -21,95 +21,110 @@ target_queries.before_all(
         function()
             local api = cluster:server("api-1").net_box
 
-            local r = api:call("insert_record", {
-                "col1_transactions_actual",
-                { col1 = 1, amount = 3, account_id = 1, sys_from = 0 }
+            local r = api:call("query", {
+                [[insert into "col1_transactions_actual"
+                ("col1", "amount", "account_id", "sys_from")
+                values (?, ?, ?, ?), (?, ?, ?, ?)]],
+                {
+                    1, 3, 1, 0,
+                    3, 3, 1, 0
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 2})
 
-            r = api:call("insert_record", {
-                "col1_transactions_actual",
-                { col1 = 3, amount = 3, account_id = 1, sys_from = 0 }
+            r = api:call("query", {
+                [[insert into "col1_transactions_history"
+                ("id", "col1", "amount", "account_id", "sys_from", "sys_to")
+                values (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)]],
+                {
+                    1, 1, 2, 1, 0, 2,
+                    2, 1, 1, 1, 0, 1
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 2})
 
-            r = api:call("insert_record", {
-                "col1_transactions_history",
-                { id = 1, col1 = 1, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
+            r = api:call("query", {
+                [[insert into "col1_col2_transactions_actual"
+                ("col1", "col2", "amount", "account_id", "sys_from")
+                values (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)]],
+                {
+                    1, 2, 3, 1, 0,
+                    1, 1, 3, 1, 0
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 2})
 
-            r = api:call("insert_record", {
-                "col1_transactions_history",
-                { id = 2, col1 = 1, amount = 1, account_id = 1, sys_from = 0, sys_to = 1 }
+            r = api:call("query", {
+                [[insert into "col1_col2_transactions_history"
+                ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
+                values (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)]],
+                {
+                    1, 1, 2, 2, 1, 0, 2,
+                    2, 1, 2, 1, 1, 0, 1
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 2})
 
-            r = api:call("insert_record", {
-                "col1_col2_transactions_actual",
-                { col1 = 1, col2 = 2, amount = 3, account_id = 1, sys_from = 0 }
+            r = api:call("query", {
+                [[insert into "cola_accounts_actual"
+                ("id", "cola", "colb", "sys_from")
+                values (?, ?, ?, ?), (?, ?, ?, ?)]],
+                {
+                    1, 1, 3, 0,
+                    1, 2, 3, 0
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 2})
 
-            r = api:call("insert_record", {
-                "col1_col2_transactions_actual",
-                { col1 = 1, col2 = 1, amount = 3, account_id = 1, sys_from = 0 }
+            r = api:call("query", {
+                [[insert into "cola_accounts_history"
+                ("id", "cola", "colb", "sys_from", "sys_to")
+                values (?, ?, ?, ?, ?)]],
+                {
+                    1, 1, 2, 0, 2
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 1})
 
-            r = api:call("insert_record", {
-                "col1_col2_transactions_history",
-                { id = 1, col1 = 1, col2 = 2, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
+            r = api:call("query", {
+                [[insert into "cola_colb_accounts_actual"
+                ("id", "cola", "colb", "sys_from")
+                values (?, ?, ?, ?)]],
+                {
+                    1, 1, 3, 0
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 1})
 
-            r = api:call("insert_record", {
-                "col1_col2_transactions_history",
-                { id = 2, col1 = 1, col2 = 2, amount = 1, account_id = 1, sys_from = 0, sys_to = 1 }
+            r = api:call("query", {
+                [[insert into "cola_colb_accounts_history"
+                ("id", "cola", "colb", "sys_from", "sys_to")
+                values (?, ?, ?, ?, ?)]],
+                {
+                    1, 1, 2, 0, 2
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 1})
 
-            r = api:call("insert_record", {
-                "cola_accounts_actual",
-                { id = 1, cola = 1, colb = 3, sys_from = 0 }
+            r = api:call("query", {
+                [[insert into "col1_col2_transactions_num_actual"
+                ("col1", "col2", "amount", "account_id", "sys_from")
+                values (?, ?, ?, ?, ?)]],
+                {
+                   1, 2, 3, 1, 0 
+                }
             })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 1})
 
-            r = api:call("insert_record", {
-                "cola_accounts_actual",
-                { id = 1, cola = 2, colb = 3, sys_from = 0 }
+            r = api:call("query", {
+                [[insert into "col1_col2_transactions_num_history"
+                ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
+                values (?, ?, ?, ?, ?, ?, ?)]],
+                {
+                   1, 1, 2, 2, 1, 0, 2
+                }
             })
-            t.assert_equals(r, true)
-
-            r = api:call("insert_record", {
-                "cola_accounts_history",
-                { id = 1, cola = 1, colb = 2, sys_from = 0, sys_to = 2 }
-            })
-            t.assert_equals(r, true)
-
-            r = api:call("insert_record", {
-                "cola_colb_accounts_actual",
-                { id = 1, cola = 1, colb = 3, sys_from = 0 }
-            })
-            t.assert_equals(r, true)
-
-            r = api:call("insert_record", {
-                "cola_colb_accounts_history",
-                { id = 1, cola = 1, colb = 2, sys_from = 0, sys_to = 2 }
-            })
-            t.assert_equals(r, true)
-
-            r = api:call("insert_record", {
-                "col1_col2_transactions_num_actual",
-                { col1 = 1, col2 = 2, amount = 3, account_id = 1, sys_from = 0 }
-            })
-            t.assert_equals(r, true)
-
-            r = api:call("insert_record", {
-                "col1_col2_transactions_num_history",
-                { id = 1, col1 = 1, col2 = 2, amount = 2, account_id = 1, sys_from = 0, sys_to = 2 }
-            })
-            t.assert_equals(r, true)
+            t.assert_equals(r, {row_count = 1})
         end
 )
 
