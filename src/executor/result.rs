@@ -1,5 +1,6 @@
 use std::fmt;
 
+use core::fmt::Debug;
 use decimal::d128;
 use serde::de::Visitor;
 use serde::ser::{Serialize, SerializeMap, Serializer};
@@ -185,55 +186,35 @@ impl TryInto<Column> for &MetadataColumn {
     }
 }
 
+/// Results of query execution for `SELECT`.
+#[allow(clippy::module_name_repetitions)]
 #[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
-pub struct ProducerResults {
+pub struct ProducerResult {
     pub metadata: Vec<MetadataColumn>,
     pub rows: Vec<ExecutorTuple>,
 }
 
-impl Default for ProducerResults {
+impl Default for ProducerResult {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ProducerResults {
+impl ProducerResult {
     /// Create an empty result set for a query producing tuples.
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        ProducerResults {
+        ProducerResult {
             metadata: Vec::new(),
             rows: Vec::new(),
         }
-    }
-
-    /// Merge two record sets. If current result is empty function sets metadata and appends result rows.
-    /// If the current result is not empty compare its metadata with the one from the new result.
-    /// If they differ return error.
-    ///
-    ///  # Errors
-    ///  - metadata isn't equal.
-    #[allow(dead_code)]
-    pub fn extend(&mut self, result: ProducerResults) -> Result<(), QueryPlannerError> {
-        if self.metadata.is_empty() {
-            self.metadata = result.clone().metadata;
-        }
-
-        if self.metadata != result.metadata {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Metadata mismatch. Producer results can't be extended",
-            )));
-        }
-        self.rows.extend(result.rows);
-        Ok(())
     }
 
     /// Converts result to virtual table for linker
     ///
     /// # Errors
     /// - convert to virtual table error
-    #[allow(dead_code)]
     pub fn as_virtual_table(&self) -> Result<VirtualTable, QueryPlannerError> {
         let mut result = VirtualTable::new();
 
@@ -249,103 +230,48 @@ impl ProducerResults {
     }
 }
 
+impl Serialize for ProducerResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("metadata", &self.metadata)?;
+        map.serialize_entry("rows", &self.rows)?;
+        map.end()
+    }
+}
+
+/// Results of query execution for `INSERT`.
+#[allow(clippy::module_name_repetitions)]
 #[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
-pub struct ConsumerResults {
+pub struct ConsumerResult {
     pub row_count: u64,
 }
 
-impl Default for ConsumerResults {
+impl Default for ConsumerResult {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ConsumerResults {
+impl ConsumerResult {
     /// Create an empty result set for a query consuming tuples.
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        ConsumerResults { row_count: 0 }
-    }
-
-    pub fn extend(&mut self, result: &ConsumerResults) {
-        self.row_count += result.row_count;
+        ConsumerResult { row_count: 0 }
     }
 }
 
-#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
-pub enum ExecutorResults {
-    Consumer(ConsumerResults),
-    Producer(ProducerResults),
-}
-
-impl From<ProducerResults> for ExecutorResults {
-    fn from(value: ProducerResults) -> Self {
-        ExecutorResults::Producer(value)
-    }
-}
-
-impl From<ConsumerResults> for ExecutorResults {
-    fn from(value: ConsumerResults) -> Self {
-        ExecutorResults::Consumer(value)
-    }
-}
-
-impl ExecutorResults {
-    /// Extend current result with new one.
-    ///
-    /// # Errors
-    /// - Try to extend with different type of results (consumer and producer queries)
-    #[allow(dead_code)]
-    pub fn extend(&mut self, result: ExecutorResults) -> Result<(), QueryPlannerError> {
-        match (self, result) {
-            (ExecutorResults::Producer(pr_self), ExecutorResults::Producer(pr_result)) => {
-                pr_self.extend(pr_result)
-            }
-            (ExecutorResults::Consumer(cr_self), ExecutorResults::Consumer(cr_result)) => {
-                cr_self.extend(&cr_result);
-                Ok(())
-            }
-            _ => Err(QueryPlannerError::CustomError(
-                "Consumer and producer query results can't be extended".into(),
-            )),
-        }
-    }
-
-    /// Build a virtual table from the result set.
-    ///
-    /// # Errors
-    /// - convert to virtual table error (the results were returned
-    ///   by a consumer query)
-    #[allow(dead_code)]
-    pub fn as_virtual_table(&self) -> Result<VirtualTable, QueryPlannerError> {
-        match self {
-            ExecutorResults::Producer(pr) => pr.as_virtual_table(),
-            ExecutorResults::Consumer(_) => Err(QueryPlannerError::CustomError(
-                "Consumer query results can't be converted to virtual table".into(),
-            )),
-        }
-    }
-}
-
-impl Serialize for ExecutorResults {
+impl Serialize for ConsumerResult {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        match self {
-            ExecutorResults::Consumer(c) => {
-                let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("row_count", &c.row_count)?;
-                map.end()
-            }
-            ExecutorResults::Producer(p) => {
-                let mut map = serializer.serialize_map(Some(2))?;
-                map.serialize_entry("metadata", &p.metadata)?;
-                map.serialize_entry("rows", &p.rows)?;
-                map.end()
-            }
-        }
+        let mut map = serializer.serialize_map(Some(1))?;
+        map.serialize_entry("row_count", &self.row_count)?;
+        map.end()
     }
 }
 

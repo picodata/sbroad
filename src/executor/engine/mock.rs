@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -7,7 +8,7 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::{ExecutorResults, ProducerResults, Value};
+use crate::executor::result::{ProducerResult, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -165,6 +166,28 @@ pub struct EngineMock {
     query_cache: RefCell<LRUCache<String, Plan>>,
 }
 
+impl ProducerResult {
+    /// Merge two record sets. If current result is empty function sets metadata and appends result rows.
+    /// If the current result is not empty compare its metadata with the one from the new result.
+    /// If they differ return error.
+    ///
+    ///  # Errors
+    ///  - metadata isn't equal.
+    fn extend(&mut self, result: ProducerResult) -> Result<(), QueryPlannerError> {
+        if self.metadata.is_empty() {
+            self.metadata = result.clone().metadata;
+        }
+
+        if self.metadata != result.metadata {
+            return Err(QueryPlannerError::CustomError(String::from(
+                "Metadata mismatch. Producer results can't be extended",
+            )));
+        }
+        self.rows.extend(result.rows.clone());
+        Ok(())
+    }
+}
+
 impl Engine for EngineMock {
     type Metadata = MetadataMock;
     type ParseTree = AbstractSyntaxTree;
@@ -231,20 +254,20 @@ impl Engine for EngineMock {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<ExecutorResults, QueryPlannerError> {
-        let mut result = ProducerResults::new();
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let mut result = ProducerResult::new();
         let nodes = plan.get_sql_order(top_id)?;
 
         match buckets {
             Buckets::All => {
                 let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
-                result.extend(cluster_exec_query(&sql))?;
+                result.extend(exec_on_all(&sql))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
                     let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::Filtered(bucket_set))?;
-                    let temp_result = bucket_exec_query(*bucket, &sql);
+                    let temp_result = exec_on_replicas(*bucket, &sql);
                     result.extend(temp_result)?;
                 }
             }
@@ -252,7 +275,7 @@ impl Engine for EngineMock {
 
         // Sort results to make tests reproducible.
         result.rows.sort_by_key(|k| k[0].to_string());
-        Ok(ExecutorResults::from(result))
+        Ok(Box::new(result))
     }
 
     fn extract_sharding_keys<'engine, 'rec>(
@@ -300,8 +323,8 @@ impl EngineMock {
     }
 }
 
-fn bucket_exec_query(bucket: u64, query: &str) -> ProducerResults {
-    let mut result = ProducerResults::new();
+fn exec_on_replicas(bucket: u64, query: &str) -> ProducerResult {
+    let mut result = ProducerResult::new();
 
     result.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -311,12 +334,13 @@ fn bucket_exec_query(bucket: u64, query: &str) -> ProducerResults {
     result
 }
 
-fn cluster_exec_query(query: &str) -> ProducerResults {
-    let mut result = ProducerResults::new();
+fn exec_on_all(query: &str) -> ProducerResult {
+    let mut result = ProducerResult::new();
 
     result.rows.push(vec![
         Value::String(String::from("Execute query on all buckets")),
         Value::String(String::from(query)),
     ]);
+
     result
 }

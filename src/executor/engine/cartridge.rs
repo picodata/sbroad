@@ -2,6 +2,7 @@
 
 use rand::prelude::*;
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -15,7 +16,7 @@ use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY}
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::{ConsumerResults, ExecutorResults, ProducerResults};
+use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -166,7 +167,7 @@ impl Engine for Runtime {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<ExecutorResults, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let nodes = plan.get_sql_order(top_id)?;
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
@@ -221,8 +222,14 @@ impl Engine for Runtime {
     ) -> Result<VirtualTable, QueryPlannerError> {
         let top_id = plan.get_motion_subtree_root(motion_node_id)?;
         let result = self.exec(plan, top_id, buckets)?;
-        let mut vtable = result.as_virtual_table()?;
-
+        let mut vtable = if let Ok(motion_result) = result.downcast::<ProducerResult>() {
+            motion_result.as_virtual_table()?
+        } else {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Failed to downcast result of a motion node {} to a virtual table",
+                motion_node_id
+            )));
+        };
         if let Some(name) = &plan.get_motion_alias(motion_node_id)? {
             vtable.set_alias(name)?;
         }
@@ -338,7 +345,7 @@ impl Runtime {
         &self,
         rs_query: &HashMap<String, String>,
         is_data_modifier: bool,
-    ) -> Result<ExecutorResults, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
@@ -347,39 +354,41 @@ impl Runtime {
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
         if is_data_modifier {
-            let res: ConsumerResults =
-                match exec_sql.call_with_args((rs_query, waiting_timeout, is_data_modifier)) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        say(
-                            SayLevel::Error,
-                            file!(),
-                            line!().try_into().unwrap_or(0),
-                            Option::from("execute_on_replicas"),
-                            &format!("{:?}", e),
-                        );
-                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                    }
-                };
-
-            Ok(res.into())
+            match exec_sql.call_with_args::<ConsumerResult, _>((
+                rs_query,
+                waiting_timeout,
+                is_data_modifier,
+            )) {
+                Ok(v) => Ok(Box::new(v)),
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("execute_on_replicas"),
+                        &format!("{:?}", e),
+                    );
+                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                }
+            }
         } else {
-            let res: ProducerResults =
-                match exec_sql.call_with_args((rs_query, waiting_timeout, is_data_modifier)) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        say(
-                            SayLevel::Error,
-                            file!(),
-                            line!().try_into().unwrap_or(0),
-                            Option::from("execute_on_replicas"),
-                            &format!("{:?}", e),
-                        );
-                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                    }
-                };
-
-            Ok(res.into())
+            match exec_sql.call_with_args::<ProducerResult, _>((
+                rs_query,
+                waiting_timeout,
+                is_data_modifier,
+            )) {
+                Ok(v) => Ok(Box::new(v)),
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("execute_on_replicas"),
+                        &format!("{:?}", e),
+                    );
+                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                }
+            }
         }
     }
 
@@ -387,7 +396,7 @@ impl Runtime {
         &self,
         query: &str,
         is_data_modifier: bool,
-    ) -> Result<ExecutorResults, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
@@ -396,39 +405,41 @@ impl Runtime {
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
         if is_data_modifier {
-            let res: ConsumerResults =
-                match exec_sql.call_with_args((query, waiting_timeout, is_data_modifier)) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        say(
-                            SayLevel::Error,
-                            file!(),
-                            line!().try_into().unwrap_or(0),
-                            Option::from("execute_on_all"),
-                            &format!("{:?}", e),
-                        );
-                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                    }
-                };
-
-            Ok(res.into())
+            match exec_sql.call_with_args::<ConsumerResult, _>((
+                query,
+                waiting_timeout,
+                is_data_modifier,
+            )) {
+                Ok(v) => Ok(Box::new(v)),
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("execute_on_all"),
+                        &format!("{:?}", e),
+                    );
+                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                }
+            }
         } else {
-            let res: ProducerResults =
-                match exec_sql.call_with_args((query, waiting_timeout, is_data_modifier)) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        say(
-                            SayLevel::Error,
-                            file!(),
-                            line!().try_into().unwrap_or(0),
-                            Option::from("execute_on_all"),
-                            &format!("{:?}", e),
-                        );
-                        return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-                    }
-                };
-
-            Ok(res.into())
+            match exec_sql.call_with_args::<ProducerResult, _>((
+                query,
+                waiting_timeout,
+                is_data_modifier,
+            )) {
+                Ok(v) => Ok(Box::new(v)),
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("execute_on_all"),
+                        &format!("{:?}", e),
+                    );
+                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                }
+            }
         }
     }
 }

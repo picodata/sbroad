@@ -8,7 +8,7 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 use crate::api::helper::load_metadata;
 use crate::api::QUERY_ENGINE;
 use crate::errors::QueryPlannerError;
-use crate::executor::result::Value;
+use crate::executor::result::{ConsumerResult, ProducerResult, Value};
 use crate::executor::Query;
 use crate::ir::value::{AsIrVal, Value as IrValue};
 
@@ -83,9 +83,20 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
         };
 
         match query.exec() {
-            Ok(q) => {
-                ctx.return_mp(&q).unwrap();
-                0
+            Ok(result) => {
+                if let Some(producer_result) = (&*result).downcast_ref::<ProducerResult>() {
+                    ctx.return_mp(&producer_result).unwrap();
+                    0
+                } else if let Some(consumer_result) = (&*result).downcast_ref::<ConsumerResult>() {
+                    ctx.return_mp(&consumer_result).unwrap();
+                    0
+                } else {
+                    tarantool::set_error!(
+                        TarantoolErrorCode::ProcC,
+                        "{}",
+                        "Unsupported result type"
+                    )
+                }
             }
             Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
         }

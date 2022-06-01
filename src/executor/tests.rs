@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::engine::mock::EngineMock;
-use crate::executor::result::{ExecutorResults, ProducerResults, Value};
+use crate::executor::result::{ProducerResult, Value};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
@@ -16,8 +16,9 @@ fn shard_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
@@ -27,7 +28,7 @@ fn shard_query() {
             Value::String(format!("Execute query on a bucket [{}]", bucket)),
             Value::String(String::from(r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") = (1)"#))
         ]);
-    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -46,8 +47,9 @@ fn shard_union_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
@@ -68,7 +70,7 @@ fn shard_union_query() {
             )
         ]);
 
-    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -77,8 +79,9 @@ fn map_reduce_query() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param457 = IrValue::string_from_str("457");
@@ -97,7 +100,7 @@ fn map_reduce_query() {
         )
     ]);
 
-    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -117,9 +120,9 @@ fn linker_test() {
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -148,7 +151,7 @@ fn linker_test() {
         ],
     ]);
 
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -178,9 +181,9 @@ fn union_linker_test() {
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -229,7 +232,7 @@ fn union_linker_test() {
         ],
     ]);
 
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -269,9 +272,9 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     }
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
@@ -303,7 +306,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
             )
         ],
     ]);
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -347,9 +350,9 @@ fn join_linker2_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -364,7 +367,7 @@ fn join_linker2_test() {
             r#"as "t2" ON ("t1"."id") = (1)"#
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -409,9 +412,9 @@ fn join_linker3_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -427,7 +430,7 @@ fn join_linker3_test() {
             r#"ON ("t2"."id1") = (1)"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -478,9 +481,9 @@ fn join_linker4_test() {
     }
     query.engine.add_virtual_table(motion_sq_id, virtual_sq);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
@@ -512,7 +515,7 @@ fn join_linker4_test() {
             )),
         ],
     ]);
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 // select * from "test_1" where "identification_number" in (select COLUMN_2 as "b" from (values (1), (2))) or "identification_number" in (select COLUMN_2 as "c" from (values (3), (4)));
@@ -548,9 +551,9 @@ fn anonymous_col_index_test() {
         .engine
         .add_virtual_table(motion2_id, virtual_table_23());
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
     let param2 = IrValue::number_from_str("2").unwrap();
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
@@ -591,7 +594,7 @@ fn anonymous_col_index_test() {
         ],
     ]);
 
-    assert_eq!(ExecutorResults::from(expected), result)
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -600,8 +603,9 @@ fn sharding_column1_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
@@ -614,7 +618,7 @@ fn sharding_column1_test() {
             r#"FROM "test_space" WHERE ("test_space"."id") = (1)"#,
         )),
     ]);
-    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -623,8 +627,9 @@ fn sharding_column2_test() {
     let engine = EngineMock::new();
 
     let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let bucket = query.engine.determine_bucket_id(&[&param1]);
@@ -637,7 +642,7 @@ fn sharding_column2_test() {
             r#""test_space"."bucket_id" as "bucket_id" FROM "test_space" WHERE ("test_space"."id") = (1)"#,
         )),
     ]);
-    assert_eq!(ExecutorResults::from(expected), query.exec().unwrap())
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -661,9 +666,9 @@ fn insert1_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = Column::default_value();
     let param2 = IrValue::number_from_str("1").unwrap();
@@ -691,7 +696,7 @@ fn insert1_test() {
             )),
         ],
     ]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -725,9 +730,9 @@ fn insert2_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -741,7 +746,7 @@ fn insert2_test() {
             r#"SELECT COLUMN_1 as "a",COLUMN_2 as "b",COLUMN_3 as "bucket_id" FROM (VALUES (1,2,550))"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -776,9 +781,9 @@ fn insert3_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("2").unwrap();
     let param2 = IrValue::number_from_str("1").unwrap();
@@ -806,7 +811,7 @@ fn insert3_test() {
             )),
         ],
     ]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -839,9 +844,9 @@ fn insert4_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -855,7 +860,7 @@ fn insert4_test() {
             r#"SELECT COLUMN_1 as "b",COLUMN_2 as "a",COLUMN_3 as "bucket_id" FROM (VALUES (2,1,550))"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -890,9 +895,9 @@ fn insert5_test() {
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("6").unwrap();
     let param2 = IrValue::number_from_str("5").unwrap();
@@ -906,7 +911,7 @@ fn insert5_test() {
             r#"SELECT COLUMN_4 as "a",COLUMN_5 as "b",COLUMN_6 as "bucket_id" FROM (VALUES (5,6,8788),(5,6,8788))"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -943,9 +948,9 @@ fn insert6_test() {
     ]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -975,7 +980,7 @@ fn insert6_test() {
             )),
         ],
     ]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -1024,9 +1029,9 @@ fn insert8_test() {
     ]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::string_from_str("two");
     let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
@@ -1040,7 +1045,7 @@ fn insert8_test() {
             r#"COLUMN_4 as "sys_op",COLUMN_5 as "bucket_id" FROM (VALUES (1,'two',true,4,3016))"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 #[test]
@@ -1069,9 +1074,9 @@ fn insert9_test() {
     ]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = query.exec().unwrap();
+    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
-    let mut expected = ProducerResults::new();
+    let mut expected = ProducerResult::new();
 
     let param1 = IrValue::number_from_str("1").unwrap();
     let param2 = IrValue::number_from_str("2").unwrap();
@@ -1086,7 +1091,7 @@ fn insert9_test() {
             r#"FROM (VALUES (1,2,550))"#,
         )),
     ]]);
-    assert_eq!(ExecutorResults::from(expected), result);
+    assert_eq!(expected, result);
 }
 
 /// Helper function to create a "test" virtual table.
