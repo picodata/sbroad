@@ -293,7 +293,7 @@ impl Runtime {
         Buckets::Filtered(bucket_set)
     }
 
-    /// Function get summary count of bucket from vshard
+    /// Function get summary count of bucket from `vshard`
     fn set_bucket_count(&mut self) -> Result<(), QueryPlannerError> {
         let lua = tarantool::lua_state();
 
@@ -341,10 +341,9 @@ impl Runtime {
         Ok(())
     }
 
-    fn exec_on_replicas(
+    fn exec_on_replicas_producer(
         &self,
         rs_query: &HashMap<String, String>,
-        is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
@@ -353,41 +352,101 @@ impl Runtime {
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        if is_data_modifier {
-            match exec_sql.call_with_args::<ConsumerResult, _>((
-                rs_query,
-                waiting_timeout,
-                is_data_modifier,
-            )) {
-                Ok(v) => Ok(Box::new(v)),
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute_on_replicas"),
-                        &format!("{:?}", e),
-                    );
-                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
-                }
+        match exec_sql.call_with_args::<ProducerResult, _>((rs_query, waiting_timeout, false)) {
+            Ok(v) => Ok(Box::new(v)),
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_replicas_producer"),
+                    &format!("{:?}", e),
+                );
+                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
             }
+        }
+    }
+
+    fn exec_on_replicas_consumer(
+        &self,
+        rs_query: &HashMap<String, String>,
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let lua = tarantool::lua_state();
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_on_replicas` not found".into())
+        })?;
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        match exec_sql.call_with_args::<ConsumerResult, _>((rs_query, waiting_timeout, true)) {
+            Ok(v) => Ok(Box::new(v)),
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_replicas_consumer"),
+                    &format!("{:?}", e),
+                );
+                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            }
+        }
+    }
+
+    fn exec_on_replicas(
+        &self,
+        rs_query: &HashMap<String, String>,
+        is_data_modifier: bool,
+    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+        if is_data_modifier {
+            self.exec_on_replicas_consumer(rs_query)
         } else {
-            match exec_sql.call_with_args::<ProducerResult, _>((
-                rs_query,
-                waiting_timeout,
-                is_data_modifier,
-            )) {
-                Ok(v) => Ok(Box::new(v)),
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute_on_replicas"),
-                        &format!("{:?}", e),
-                    );
-                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
-                }
+            self.exec_on_replicas_producer(rs_query)
+        }
+    }
+
+    fn exec_on_all_producer(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let lua = tarantool::lua_state();
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
+        })?;
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        match exec_sql.call_with_args::<ProducerResult, _>((query, waiting_timeout, false)) {
+            Ok(v) => Ok(Box::new(v)),
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_all_producer"),
+                    &format!("{:?}", e),
+                );
+                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            }
+        }
+    }
+
+    fn exec_on_all_consumer(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let lua = tarantool::lua_state();
+
+        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
+        })?;
+
+        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        match exec_sql.call_with_args::<ConsumerResult, _>((query, waiting_timeout, true)) {
+            Ok(v) => Ok(Box::new(v)),
+            Err(e) => {
+                say(
+                    SayLevel::Error,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute_on_all_consumer"),
+                    &format!("{:?}", e),
+                );
+                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
             }
         }
     }
@@ -397,49 +456,10 @@ impl Runtime {
         query: &str,
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let lua = tarantool::lua_state();
-
-        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
-        })?;
-
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
         if is_data_modifier {
-            match exec_sql.call_with_args::<ConsumerResult, _>((
-                query,
-                waiting_timeout,
-                is_data_modifier,
-            )) {
-                Ok(v) => Ok(Box::new(v)),
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute_on_all"),
-                        &format!("{:?}", e),
-                    );
-                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
-                }
-            }
+            self.exec_on_all_consumer(query)
         } else {
-            match exec_sql.call_with_args::<ProducerResult, _>((
-                query,
-                waiting_timeout,
-                is_data_modifier,
-            )) {
-                Ok(v) => Ok(Box::new(v)),
-                Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute_on_all"),
-                        &format!("{:?}", e),
-                    );
-                    Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
-                }
-            }
+            self.exec_on_all_producer(query)
         }
     }
 }
