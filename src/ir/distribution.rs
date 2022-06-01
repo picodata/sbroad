@@ -176,13 +176,18 @@ impl Plan {
                     // References in the leaf (relation scan) node.
                     if targets.is_some() {
                         return Err(QueryPlannerError::InvalidReference);
-                    } else if let Relational::ScanRelation { relation, .. } = rel_op {
-                        table_set.insert(relation.clone());
-                        table_pos_map.insert(*position, pos);
-                    } else if let Relational::Values { .. } = rel_op {
-                        // Nothing to do here, we'll set replicated distribution later.
-                    } else {
-                        return Err(QueryPlannerError::InvalidReference);
+                    }
+                    match rel_op {
+                        Relational::ScanRelation { relation, .. } => {
+                            table_set.insert(relation.clone());
+                            table_pos_map.insert(*position, pos);
+                        }
+                        Relational::Values { .. } => {
+                            // Nothing to do here, we'll set replicated distribution later.
+                        }
+                        _ => {
+                            return Err(QueryPlannerError::InvalidReference);
+                        }
                     }
                 }
             }

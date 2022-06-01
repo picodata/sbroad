@@ -170,7 +170,7 @@ impl Plan {
                     if let Expression::Row { list, .. } = row {
                         let mut names: Vec<String> = Vec::new();
                         for col_id in list {
-                            names.push(self.get_expression_node(*col_id)?.get_alias_name()?);
+                            names.push(self.get_expression_node(*col_id)?.get_alias_name()?.into());
                         }
                         let names_str: Vec<_> = names.iter().map(String::as_str).collect();
                         // TODO: should we add current row_id to the set of the generated rows?

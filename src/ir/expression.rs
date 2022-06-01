@@ -125,9 +125,9 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't `Alias`
-    pub fn get_alias_name(&self) -> Result<String, QueryPlannerError> {
+    pub fn get_alias_name(&self) -> Result<&str, QueryPlannerError> {
         match self {
-            Expression::Alias { name, .. } => Ok(name.into()),
+            Expression::Alias { name, .. } => Ok(name.as_str()),
             _ => Err(QueryPlannerError::CustomError(
                 "Node isn't alias type".into(),
             )),
@@ -478,20 +478,15 @@ impl Plan {
                 HashMap::with_capacity_and_hasher(col_names.len(), state);
             for (pos, col_id) in list.iter().enumerate() {
                 let alias = self.get_expression_node(*col_id)?;
-                if let Expression::Alias { ref name, .. } = alias {
-                    if !col_names_set.contains(&name.as_str()) {
-                        continue;
-                    }
-                    if map.insert(name, pos).is_some() {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "Duplicate column name {} at position {}",
-                            name, pos
-                        )));
-                    }
-                } else {
-                    return Err(QueryPlannerError::CustomError(
-                        "Child node is not an alias".into(),
-                    ));
+                let name = alias.get_alias_name()?;
+                if !col_names_set.contains(name) {
+                    continue;
+                }
+                if map.insert(name, pos).is_some() {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Duplicate column name {} at position {}",
+                        name, pos
+                    )));
                 }
             }
             map
