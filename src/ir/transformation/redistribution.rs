@@ -503,7 +503,7 @@ impl Plan {
     /// # Errors
     /// - If the node is not a row node.
     fn build_row_map(&self, row_id: usize) -> Result<HashMap<usize, usize>, QueryPlannerError> {
-        let columns = self.get_expression_node(row_id)?.extract_row_list()?;
+        let columns = self.get_expression_node(row_id)?.get_row_list()?;
         let mut map: HashMap<usize, usize> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
             map.insert(pos, *col);

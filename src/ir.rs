@@ -428,7 +428,7 @@ impl Plan {
                 let column_expr_node = self.get_expression_node(column_rel_node.output())?;
 
                 let col_alias_idx = *column_expr_node
-                    .extract_row_list()?
+                    .clone_row_list()?
                     .get(*position)
                     .ok_or_else(|| {
                         QueryPlannerError::CustomError("Invalid position in row list".into())

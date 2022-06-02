@@ -348,7 +348,7 @@ impl Relational {
             | Relational::InnerJoin { .. }
             | Relational::Motion { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
-                let list = output_row.extract_row_list()?;
+                let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
                     QueryPlannerError::CustomError(String::from("Row has no such alias"))
                 })?;
@@ -887,9 +887,9 @@ impl Plan {
                 )));
             };
         let data = self.get_expression_node(data_id)?;
-        let data_list = data.extract_row_list()?;
+        let data_list = data.clone_row_list()?;
         let output = self.get_expression_node(output_id)?;
-        let output_list = output.extract_row_list()?;
+        let output_list = output.clone_row_list()?;
         for (pos, alias_id) in output_list.iter().enumerate() {
             let new_child_id = *data_list.get(pos).ok_or_else(|| {
                 QueryPlannerError::CustomError(format!("Expected a child at position {}", pos))

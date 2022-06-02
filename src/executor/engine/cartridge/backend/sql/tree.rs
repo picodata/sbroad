@@ -404,13 +404,7 @@ impl<'p> SyntaxPlan<'p> {
                     ..
                 } => {
                     let row = ir_plan.get_expression_node(*output)?;
-                    let aliases: &[usize] = if let Expression::Row { ref list, .. } = row {
-                        list
-                    } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Expected a row expression".into(),
-                        ));
-                    };
+                    let aliases: &[usize] = row.get_row_list()?;
 
                     let get_col_sn = |col_pos: &usize| -> Result<SyntaxNode, QueryPlannerError> {
                         let alias_id = *aliases.get(*col_pos).ok_or_else(|| {

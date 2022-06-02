@@ -110,13 +110,24 @@ impl Expression {
         Err(QueryPlannerError::InvalidRow)
     }
 
-    /// Gets children node id of the node.
+    /// Clone the row children list.
     ///
     /// # Errors
     /// - node isn't `Row`
-    pub fn extract_row_list(&self) -> Result<Vec<usize>, QueryPlannerError> {
+    pub fn clone_row_list(&self) -> Result<Vec<usize>, QueryPlannerError> {
         match self {
             Expression::Row { list, .. } => Ok(list.clone()),
+            _ => Err(QueryPlannerError::CustomError("Node isn't row type".into())),
+        }
+    }
+
+    /// Get a reference to the row children list.
+    ///
+    /// # Errors
+    /// - node isn't `Row`
+    pub fn get_row_list(&self) -> Result<&[usize], QueryPlannerError> {
+        match self {
+            Expression::Row { ref list, .. } => Ok(list),
             _ => Err(QueryPlannerError::CustomError("Node isn't row type".into())),
         }
     }

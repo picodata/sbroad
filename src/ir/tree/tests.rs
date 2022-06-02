@@ -244,7 +244,7 @@ fn subtree_dfs_post() {
     let row_children = plan
         .get_expression_node(row_id)
         .unwrap()
-        .extract_row_list()
+        .clone_row_list()
         .unwrap();
     let alias_id = row_children.get(0).unwrap();
     let c_ref_id =

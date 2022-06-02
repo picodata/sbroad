@@ -434,7 +434,7 @@ impl Ast for AbstractSyntaxTree {
                         // reference-to-row logic in AST code, we should unwrap it back.
                         let plan_id = if rows.get(&plan_child_id).is_some() {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
-                            *plan_inner_expr.extract_row_list()?.get(0).ok_or_else(|| {
+                            *plan_inner_expr.get_row_list()?.get(0).ok_or_else(|| {
                                 QueryPlannerError::CustomError("Row is empty.".into())
                             })?
                         } else {
