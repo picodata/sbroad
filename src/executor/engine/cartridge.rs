@@ -206,7 +206,7 @@ impl Engine for Runtime {
                 )));
             }
 
-            return self.exec_on_replicas(&rs_query, is_data_modifier);
+            return self.exec_on_some(&rs_query, is_data_modifier);
         }
 
         let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
@@ -341,25 +341,25 @@ impl Runtime {
         Ok(())
     }
 
-    fn exec_on_replicas_producer(
+    fn read_on_some(
         &self,
         rs_query: &HashMap<String, String>,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_on_replicas` not found".into())
+        let exec_sql: LuaFunction<_> = lua.get("read_on_some").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `read_on_some` not found".into())
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ProducerResult, _>((rs_query, waiting_timeout, false)) {
+        match exec_sql.call_with_args::<ProducerResult, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
                     SayLevel::Error,
                     file!(),
                     line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_replicas_producer"),
+                    Option::from("read_on_some"),
                     &format!("{:?}", e),
                 );
                 Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
@@ -367,25 +367,25 @@ impl Runtime {
         }
     }
 
-    fn exec_on_replicas_consumer(
+    fn write_on_some(
         &self,
         rs_query: &HashMap<String, String>,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_on_replicas").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_on_replicas` not found".into())
+        let exec_sql: LuaFunction<_> = lua.get("write_on_some").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `write_on_some` not found".into())
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ConsumerResult, _>((rs_query, waiting_timeout, true)) {
+        match exec_sql.call_with_args::<ConsumerResult, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
                     SayLevel::Error,
                     file!(),
                     line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_replicas_consumer"),
+                    Option::from("write_on_some"),
                     &format!("{:?}", e),
                 );
                 Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
@@ -393,34 +393,34 @@ impl Runtime {
         }
     }
 
-    fn exec_on_replicas(
+    fn exec_on_some(
         &self,
         rs_query: &HashMap<String, String>,
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         if is_data_modifier {
-            self.exec_on_replicas_consumer(rs_query)
+            self.write_on_some(rs_query)
         } else {
-            self.exec_on_replicas_producer(rs_query)
+            self.read_on_some(rs_query)
         }
     }
 
-    fn exec_on_all_producer(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn read_on_all(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
+        let exec_sql: LuaFunction<_> = lua.get("read_on_all").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `read_on_all` not found".into())
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ProducerResult, _>((query, waiting_timeout, false)) {
+        match exec_sql.call_with_args::<ProducerResult, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
                     SayLevel::Error,
                     file!(),
                     line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_all_producer"),
+                    Option::from("read_on_all"),
                     &format!("{:?}", e),
                 );
                 Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
@@ -428,22 +428,22 @@ impl Runtime {
         }
     }
 
-    fn exec_on_all_consumer(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn write_on_all(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("execute_on_all").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `execute_on_all` not found".into())
+        let exec_sql: LuaFunction<_> = lua.get("write_on_all").ok_or_else(|| {
+            QueryPlannerError::LuaError("Lua function `write_on_all` not found".into())
         })?;
 
         let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ConsumerResult, _>((query, waiting_timeout, true)) {
+        match exec_sql.call_with_args::<ConsumerResult, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
                     SayLevel::Error,
                     file!(),
                     line!().try_into().unwrap_or(0),
-                    Option::from("execute_on_all_consumer"),
+                    Option::from("write_on_all"),
                     &format!("{:?}", e),
                 );
                 Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
@@ -457,9 +457,9 @@ impl Runtime {
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         if is_data_modifier {
-            self.exec_on_all_consumer(query)
+            self.write_on_all(query)
         } else {
-            self.exec_on_all_producer(query)
+            self.read_on_all(query)
         }
     }
 }
@@ -564,25 +564,17 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return map
     end
 
-    function execute_on_replicas(tbl_rs_query, waiting_timeout, is_data_modifier)
+    function read_on_some(tbl_rs_query, waiting_timeout)
         local result = nil
         local futures = {}
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            if is_data_modifier then
-                local future, err = replica:callrw("box.execute", { query }, {is_async = true})
-                if err ~= nil then
-                    error(err)
-                end
-                table.insert(futures, future) 
-            else
-                local future, err = replica:callbre("box.execute", { query }, {is_async = true})
-                if err ~= nil then
-                    error(err)
-                end
-                table.insert(futures, future) 
+            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+            if err ~= nil then
+                error(err)
             end
+            table.insert(futures, future) 
         end
 
         for _, future in ipairs(futures) do
@@ -596,12 +588,8 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
             if result == nil then
                 result = res[1]
             else
-                if is_data_modifier then
-                    result.row_count = result.row_count + res[1].row_count
-                else
-                    for _, item in pairs(res[1].rows) do
-                        table.insert(result.rows, item)
-                    end
+                for _, item in pairs(res[1].rows) do
+                    table.insert(result.rows, item)
                 end
             end
         end
@@ -609,48 +597,99 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         return result
     end
 
-    function execute_on_all(query, waiting_timeout, is_data_modifier)
+    function write_on_some(tbl_rs_query, waiting_timeout)
+        local result = nil
+        local futures = {}
+
+        for rs_uuid, query in pairs(tbl_rs_query) do
+            local replica = vshard.router.routeall()[rs_uuid]
+            local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+            if err ~= nil then
+                error(err)
+            end
+            table.insert(futures, future) 
+        end
+
+        for _, future in ipairs(futures) do
+            future:wait_result(waiting_timeout)
+            local res = future:result()
+
+            if res[1] == nil then
+                error(res[2])
+            end
+
+            if result == nil then
+                result = res[1]
+            else
+                result.row_count = result.row_count + res[1].row_count
+            end
+        end
+
+        return result
+    end
+
+    function read_on_all(query, waiting_timeout)
 
         local replicas = vshard.router.routeall()
         local result = nil
         local futures = {}
 
         for _, replica in pairs(replicas) do
-            if is_data_modifier then
-                local future, err = replica:callrw("box.execute", { query }, {is_async = true})
-                if err ~= nil then
-                    error(err)
-                end
-                table.insert(futures, future) 
-            else
-                local future, err = replica:callbre("box.execute", { query }, {is_async = true})
-                if err ~= nil then
-                    error(err)
-                end
-                table.insert(futures, future) 
+            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+            if err ~= nil then
+                error(err)
             end
+            table.insert(futures, future)
         end
 
         for _, future in ipairs(futures) do
-             future:wait_result(waiting_timeout)
-             local res = future:result()
+            future:wait_result(waiting_timeout)
+            local res = future:result()
 
-             if res[1] == nil then
+            if res[1] == nil then
                 error(res[2])
-             end
+            end
 
-             if result == nil then
+            if result == nil then
                 result = res[1]
-             else
-                if is_data_modifier then
-                    result.row_count = result.row_count + res[1].row_count
-                else
-                    for _, item in pairs(res[1].rows) do
-                        table.insert(result.rows, item)
-                    end
+            else
+                for _, item in pairs(res[1].rows) do
+                    table.insert(result.rows, item)
                 end
-                    end
-                end
+            end
+        end
+
+        return result
+    end
+
+    function write_on_all(query, waiting_timeout)
+
+        local replicas = vshard.router.routeall()
+        local result = nil
+        local futures = {}
+
+        for _, replica in pairs(replicas) do
+            local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+            if err ~= nil then
+                error(err)
+            end
+            table.insert(futures, future) 
+        end
+
+        for _, future in ipairs(futures) do
+            future:wait_result(waiting_timeout)
+            local res = future:result()
+
+            if res[1] == nil then
+                error(res[2])
+            end
+
+            if result == nil then
+                result = res[1]
+            else
+                result.row_count = result.row_count + res[1].row_count
+            end
+        end
 
         return result
     end

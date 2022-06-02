@@ -267,7 +267,7 @@ impl Engine for EngineMock {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
                     let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::Filtered(bucket_set))?;
-                    let temp_result = exec_on_replicas(*bucket, &sql);
+                    let temp_result = exec_on_some(*bucket, &sql);
                     result.extend(temp_result)?;
                 }
             }
@@ -323,7 +323,7 @@ impl EngineMock {
     }
 }
 
-fn exec_on_replicas(bucket: u64, query: &str) -> ProducerResult {
+fn exec_on_some(bucket: u64, query: &str) -> ProducerResult {
     let mut result = ProducerResult::new();
 
     result.rows.push(vec![
