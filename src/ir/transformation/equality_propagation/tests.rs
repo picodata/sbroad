@@ -73,8 +73,8 @@ fn equality_propagation5() {
         r#"SELECT "t"."a" as "a" FROM "t""#,
         r#"WHERE ("t"."a") = (1) and ("t"."b") = (1)"#,
         r#"and ("t"."c") = (1) and ("t"."d") = (1)"#,
-        r#"and ("t"."c") = ("t"."b") and ("t"."b") = ("t"."d")"#,
-        r#"and ("t"."d") = ("t"."a")"#,
+        r#"and ("t"."c") = ("t"."b") and ("t"."b") = ("t"."a")"#,
+        r#"and ("t"."a") = ("t"."d")"#,
     );
 
     assert_eq!(sql_to_sql(input, &[], &derive_equalities), expected);

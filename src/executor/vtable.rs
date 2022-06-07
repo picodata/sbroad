@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::QueryPlannerError;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
-use crate::ir::value::{AsIrVal, Value};
+use crate::ir::value::Value;
 
 pub type VTableTuple = Vec<Value>;
 type ShardingKey = Vec<Value>;
@@ -57,65 +57,50 @@ impl VirtualTable {
         self.columns.push(col);
     }
 
-    /// Adds custom values tuple to virtual table
+    /// Adds a tuple of values to virtual table
     ///
     /// # Errors
     /// Returns IR `Value` transformation error
-    pub fn add_tuple<T>(&mut self, tuple: Vec<T>) -> Result<(), QueryPlannerError>
-    where
-        T: AsIrVal,
-    {
-        let mut t = vec![];
-
-        for el in tuple {
-            t.push(el.as_ir_value()?);
-        }
-
-        self.add_values_tuple(t);
-        Ok(())
-    }
-
-    /// Add value rows to table
-    pub fn add_values_tuple(&mut self, tuple: VTableTuple) {
+    pub fn add_tuple(&mut self, tuple: VTableTuple) {
         self.tuples.push(tuple);
     }
 
-    /// Get vtable tuples list
+    /// Gets a virtual table tuples list
     #[must_use]
     pub fn get_tuples(&self) -> &[VTableTuple] {
         &self.tuples
     }
 
-    /// Get mutable vtable tuples list
+    /// Gets a mutable virtual table tuples list
     #[must_use]
     pub fn get_mut_tuples(&mut self) -> &mut [VTableTuple] {
         &mut self.tuples
     }
 
-    /// Get vtable columns list
+    /// Gets virtual table columns list
     #[must_use]
     pub fn get_columns(&self) -> &[Column] {
         &self.columns
     }
 
-    /// Get vtable columns list
+    /// Gets virtual table columns list
     #[must_use]
     pub fn get_mut_columns(&mut self) -> &mut Vec<Column> {
         &mut self.columns
     }
 
-    /// Get vtable motion key
+    /// Gets virtual table motion key
     #[must_use]
     pub fn get_moton_key(&self) -> &Option<MotionKey> {
         &self.distribution_key
     }
 
-    /// Set vtable motion key
+    /// Sets vtablvirtual tablee motion key
     pub fn set_motion_key(&mut self, sharding_key: &MotionKey) {
         self.distribution_key = Some(sharding_key.clone());
     }
 
-    /// Get vtable index
+    /// Gets virtual table index
     #[must_use]
     pub fn get_index(&self) -> &HashMap<u64, Vec<usize>, RandomState> {
         &self.index

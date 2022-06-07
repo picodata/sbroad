@@ -23,7 +23,7 @@ fn simple_union_query() {
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
 
-    let param1 = Value::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
 
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1].into_iter().collect();
@@ -47,10 +47,10 @@ fn simple_disjunction_in_union_query() {
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
 
-    let param1 = Value::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
-    let param100 = Value::number_from_str("100").unwrap();
+    let param100 = Value::from(100_u64);
     let bucket100 = query.engine.determine_bucket_id(&[&param100]);
 
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket100].into_iter().collect();
@@ -78,8 +78,8 @@ fn complex_shard_key_union_query() {
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
 
-    let param1 = Value::number_from_str("1").unwrap();
-    let param222 = Value::string_from_str("222");
+    let param1 = Value::from(1_u64);
+    let param222 = Value::from("222");
 
     let bucket = query.engine.determine_bucket_id(&[&param1, &param222]);
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket].into_iter().collect();
@@ -111,11 +111,11 @@ fn union_complex_cond_query() {
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
 
-    let param1 = Value::number_from_str("1").unwrap();
-    let param100 = Value::number_from_str("100").unwrap();
-    let param1000 = Value::number_from_str("1000").unwrap();
-    let param222 = Value::string_from_str("222");
-    let param111 = Value::string_from_str("111");
+    let param1 = Value::from(1_u64);
+    let param100 = Value::from(100_u64);
+    let param1000 = Value::from(1000_u64);
+    let param222 = Value::from("222");
+    let param111 = Value::from("111");
 
     let bucket1222 = query.engine.determine_bucket_id(&[&param1, &param222]);
     let bucket100222 = query.engine.determine_bucket_id(&[&param100, &param222]);
@@ -153,10 +153,10 @@ fn union_query_conjunction() {
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
 
-    let param1 = Value::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
-    let param2 = Value::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket2].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);

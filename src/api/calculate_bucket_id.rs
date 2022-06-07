@@ -7,7 +7,7 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 use crate::api::QUERY_ENGINE;
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
-use crate::ir::value::Value as IrValue;
+use crate::ir::value::Value;
 
 #[derive(Serialize, Deserialize)]
 /// Lua function params
@@ -30,7 +30,7 @@ impl TryFrom<FunctionArgs> for Args {
 #[no_mangle]
 pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let bucket_str = match Args::try_from(args) {
-        Ok(param) => IrValue::string_from_str(&param.rec),
+        Ok(param) => Value::from(param.rec),
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
 

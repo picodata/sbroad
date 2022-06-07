@@ -10,11 +10,11 @@ fn expression_bft() {
     // ((c1 = c2) and (c2 = c3)) or (c4 = c5)
 
     let mut plan = Plan::new();
-    let c1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
-    let c2 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
-    let c3 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
-    let c4 = plan.nodes.add_const(Value::number_from_str("2").unwrap());
-    let c5 = plan.nodes.add_const(Value::number_from_str("3").unwrap());
+    let c1 = plan.nodes.add_const(Value::from(1_u64));
+    let c2 = plan.nodes.add_const(Value::from(1_u64));
+    let c3 = plan.nodes.add_const(Value::from(1_u64));
+    let c4 = plan.nodes.add_const(Value::from(2_u64));
+    let c5 = plan.nodes.add_const(Value::from(3_u64));
 
     let c1_eq_c2 = plan.nodes.add_bool(c1, Bool::Eq, c2).unwrap();
     let c2_eq_c3 = plan.nodes.add_bool(c2, Bool::Eq, c3).unwrap();
@@ -102,7 +102,7 @@ fn relational_post() {
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
     let a = plan.add_row_from_child(scan_t2_id, &["a"]).unwrap();
-    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let const1 = plan.add_const(Value::from(1_i64));
     let eq = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
     let selection_id = plan.add_select(&[scan_t2_id], eq).unwrap();
 
@@ -165,7 +165,7 @@ fn selection_subquery_dfs_post() {
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
     let b = plan.add_row_from_child(scan_t2_id, &["b"]).unwrap();
-    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let const1 = plan.add_const(Value::from(1_u64));
     let eq_op = plan.nodes.add_bool(b, Bool::Eq, const1).unwrap();
     let selection_t2_id = plan.add_select(&[scan_t2_id], eq_op).unwrap();
     let proj_id = plan.add_proj(selection_t2_id, &["c"]).unwrap();
@@ -232,7 +232,7 @@ fn subtree_dfs_post() {
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     let a_ref = plan.nodes.next_id();
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
-    let const1 = plan.add_const(Value::number_from_str("1").unwrap());
+    let const1 = plan.add_const(Value::from(1_i64));
     let in_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
     let selection_t1_id = plan.add_select(&[scan_t1_id], in_op).unwrap();
     let proj_id = plan.add_proj(selection_t1_id, &["c"]).unwrap();

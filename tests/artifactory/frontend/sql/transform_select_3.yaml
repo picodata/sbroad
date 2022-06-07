@@ -16,7 +16,7 @@ nodes:
       rule: Eq
       value: ~
     - children: []
-      rule: Number
+      rule: Unsigned
       value: 1
     - children:
         - 5

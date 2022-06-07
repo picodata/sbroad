@@ -1,3 +1,6 @@
+variables:
+    GIT_SUBMODULE_STRATEGY: none
+
 stages:
     - build
     - test
@@ -11,6 +14,9 @@ default:
     tags:
         - picodata
     image: registry.gitlab.com/picodata/dockers/brod-builder:0.7
+
+before_script:
+    - git submodule update --init --recursive
 
 build:
     stage: build

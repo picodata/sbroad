@@ -11,7 +11,7 @@ fn virtual_table() {
         role: ColumnRole::User,
     });
 
-    vtable.add_values_tuple(vec![Value::number_from_str("1").unwrap()]);
+    vtable.add_tuple(vec![Value::from(1_u64)]);
 
     vtable.set_alias("test").unwrap();
 
@@ -21,7 +21,7 @@ fn virtual_table() {
             r#type: Type::Integer,
             role: ColumnRole::User,
         }],
-        tuples: vec![vec![Value::number_from_str("1").unwrap()]],
+        tuples: vec![vec![Value::from(1_u64)]],
         name: Some(String::from("test")),
         distribution_key: None,
         index: HashMap::with_hasher(RandomState::new()),

@@ -1,0 +1,90 @@
+//! Double type module.
+
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::num::NonZeroI32;
+use std::str::FromStr;
+
+use crate::errors::QueryPlannerError;
+use serde::{Deserialize, Serialize};
+use tarantool::tlua;
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Double {
+    pub value: f64,
+}
+
+#[allow(clippy::derive_hash_xor_eq)]
+impl Hash for Double {
+    /// We get hash from the internal float64 bit representation.
+    /// As a side effect, `hash(NaN) == hash(NaN)` is true. We
+    /// should manually care about this case in the code.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.to_bits().hash(state);
+    }
+}
+
+impl fmt::Display for Double {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl From<f64> for Double {
+    fn from(f: f64) -> Self {
+        Double { value: f }
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+impl From<i64> for Double {
+    fn from(i: i64) -> Self {
+        Double { value: i as f64 }
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+impl From<u64> for Double {
+    fn from(u: u64) -> Self {
+        Double { value: u as f64 }
+    }
+}
+
+impl FromStr for Double {
+    type Err = QueryPlannerError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Double {
+            value: s
+                .parse::<f64>()
+                .map_err(|_| QueryPlannerError::CustomError(format!("{} is not a valid f64", s)))?,
+        })
+    }
+}
+
+impl<L> tlua::PushInto<L> for Double
+where
+    L: tlua::AsLua,
+{
+    type Err = tlua::Void;
+    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
+        Ok(tlua::push_userdata(self.value, lua, |_| {}))
+    }
+}
+impl<L> tlua::PushOneInto<L> for Double where L: tlua::AsLua {}
+impl<L> tlua::LuaRead<L> for Double
+where
+    L: tlua::AsLua,
+{
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Double, L> {
+        let val: Result<tlua::UserdataOnStack<f64, _>, _> =
+            tlua::LuaRead::lua_read_at_position(lua, index);
+        match val {
+            Ok(d) => Ok(Double { value: *d }),
+            Err(lua) => Err(lua),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

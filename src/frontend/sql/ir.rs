@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use tarantool::decimal::Decimal;
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
@@ -44,12 +46,29 @@ impl Value {
         };
 
         match s.rule {
-            Type::False => Ok(Value::Boolean(false)),
+            Type::False => Ok(false.into()),
             Type::Null => Ok(Value::Null),
-            Type::Number => Ok(Value::number_from_str(val.as_str())?),
-            Type::String => Ok(Value::string_from_str(val.as_str())),
-            Type::True => Ok(Value::Boolean(true)),
-            _ => Err(QueryPlannerError::UnsupportedIrValueType),
+            Type::Integer => Ok(val
+                .parse::<i64>()
+                .map_err(|e| QueryPlannerError::CustomError(format!("i64 parsing error {}", e)))?
+                .into()),
+            Type::Decimal => Ok(val
+                .parse::<Decimal>()
+                .map_err(|e| {
+                    QueryPlannerError::CustomError(format!("decimal parsing error {:?}", e))
+                })?
+                .into()),
+            Type::Double => Ok(val
+                .parse::<Double>()
+                .map_err(|e| QueryPlannerError::CustomError(format!("double parsing error {}", e)))?
+                .into()),
+            Type::Unsigned => Ok(val
+                .parse::<u64>()
+                .map_err(|e| QueryPlannerError::CustomError(format!("u64 parsing error {}", e)))?
+                .into()),
+            Type::String => Ok(val.into()),
+            Type::True => Ok(true.into()),
+            _ => Err(QueryPlannerError::UnsupportedValueType),
         }
     }
 }

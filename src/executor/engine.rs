@@ -10,7 +10,7 @@ use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::value::Value as IrValue;
+use crate::ir::value::Value;
 
 pub mod cartridge;
 
@@ -152,11 +152,11 @@ pub trait Engine {
     fn extract_sharding_keys<'engine, 'rec>(
         &'engine self,
         space: String,
-        args: &'rec HashMap<String, IrValue>,
-    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError>;
+        args: &'rec HashMap<String, Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value
-    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64;
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64;
 }
 
 #[cfg(test)]

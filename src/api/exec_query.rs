@@ -1,6 +1,6 @@
 use std::os::raw::c_int;
 
-use serde::{de::Error, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
@@ -8,9 +8,9 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 use crate::api::helper::load_metadata;
 use crate::api::QUERY_ENGINE;
 use crate::errors::QueryPlannerError;
-use crate::executor::result::{ConsumerResult, ProducerResult, Value};
+use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::Query;
-use crate::ir::value::{AsIrVal, Value as IrValue};
+use crate::ir::value::Value;
 
 #[derive(Serialize)]
 /// Lua function params
@@ -18,7 +18,7 @@ struct Args {
     /// Target sql query
     query: String,
     /// Query parameters
-    params: Vec<IrValue>,
+    params: Vec<Value>,
 }
 
 impl TryFrom<FunctionArgs> for Args {
@@ -43,13 +43,9 @@ impl<'de> Deserialize<'de> for Args {
 
         let struct_helper = StructHelper::deserialize(deserializer)?;
 
-        let mut params = vec![];
-        for v in struct_helper.1 {
-            params.push(v.as_ir_value().map_err(Error::custom)?);
-        }
         Ok(Args {
             query: struct_helper.0,
-            params,
+            params: struct_helper.1,
         })
     }
 }

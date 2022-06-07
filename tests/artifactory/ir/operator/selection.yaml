@@ -65,8 +65,7 @@ nodes:
           child: 10
     - Expression:
         Constant:
-          value:
-            Number: \"10\"
+          value: 10
     - Expression:
         Bool:
           left: 11

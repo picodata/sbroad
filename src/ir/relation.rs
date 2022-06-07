@@ -20,11 +20,13 @@ const DEFAULT_VALUE: Value = Value::Null;
 #[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
     Boolean,
-    Number,
-    String,
+    Decimal,
+    Double,
     Integer,
-    Unsigned,
+    Number,
     Scalar,
+    String,
+    Unsigned,
 }
 
 impl Type {
@@ -35,11 +37,13 @@ impl Type {
     pub fn new(s: &str) -> Result<Self, QueryPlannerError> {
         match s.to_string().to_lowercase().as_str() {
             "boolean" => Ok(Type::Boolean),
-            "number" => Ok(Type::Number),
-            "string" => Ok(Type::String),
+            "decimal" => Ok(Type::Decimal),
+            "double" => Ok(Type::Double),
             "integer" => Ok(Type::Integer),
-            "unsigned" => Ok(Type::Unsigned),
+            "number" => Ok(Type::Number),
             "scalar" => Ok(Type::Scalar),
+            "string" => Ok(Type::String),
+            "unsigned" => Ok(Type::Unsigned),
             _ => Err(QueryPlannerError::TypeNotImplemented),
         }
     }
@@ -82,11 +86,13 @@ impl SerSerialize for Column {
         map.serialize_entry("name", &self.name)?;
         match &self.r#type {
             Type::Boolean => map.serialize_entry("type", "boolean")?,
-            Type::Number => map.serialize_entry("type", "number")?,
+            Type::Decimal => map.serialize_entry("type", "decimal")?,
+            Type::Double => map.serialize_entry("type", "double")?,
             Type::Integer => map.serialize_entry("type", "integer")?,
-            Type::Unsigned => map.serialize_entry("type", "unsigned")?,
-            Type::String => map.serialize_entry("type", "string")?,
+            Type::Number => map.serialize_entry("type", "number")?,
             Type::Scalar => map.serialize_entry("type", "scalar")?,
+            Type::String => map.serialize_entry("type", "string")?,
+            Type::Unsigned => map.serialize_entry("type", "unsigned")?,
         }
 
         map.end()
@@ -118,9 +124,12 @@ impl<'de> Visitor<'de> for ColumnVisitor {
 
         match column_type.as_str() {
             "boolean" => Ok(Column::new(&column_name, Type::Boolean, ColumnRole::User)),
-            "number" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
-            "string" => Ok(Column::new(&column_name, Type::String, ColumnRole::User)),
+            "decimal" => Ok(Column::new(&column_name, Type::Decimal, ColumnRole::User)),
+            "double" => Ok(Column::new(&column_name, Type::Double, ColumnRole::User)),
             "integer" => Ok(Column::new(&column_name, Type::Integer, ColumnRole::User)),
+            "number" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
+            "scalar" => Ok(Column::new(&column_name, Type::Scalar, ColumnRole::User)),
+            "string" => Ok(Column::new(&column_name, Type::String, ColumnRole::User)),
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, ColumnRole::User)),
             _ => Err(Error::custom("unsupported column type")),
         }

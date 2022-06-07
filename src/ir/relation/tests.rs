@@ -23,7 +23,7 @@ fn table_seg() {
         "t",
         vec![
             Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
             Column::new("c", Type::String, ColumnRole::User),
             Column::new("d", Type::String, ColumnRole::User),
         ],
@@ -54,7 +54,7 @@ fn table_seg_duplicate_columns() {
             "t",
             vec![
                 Column::new("a", Type::Boolean, ColumnRole::User),
-                Column::new("b", Type::Number, ColumnRole::User),
+                Column::new("b", Type::Unsigned, ColumnRole::User),
                 Column::new("c", Type::String, ColumnRole::User),
                 Column::new("a", Type::String, ColumnRole::User),
             ],
@@ -74,7 +74,7 @@ fn table_seg_wrong_key() {
             "t",
             vec![
                 Column::new("a", Type::Boolean, ColumnRole::User),
-                Column::new("b", Type::Number, ColumnRole::User),
+                Column::new("b", Type::Unsigned, ColumnRole::User),
                 Column::new("c", Type::String, ColumnRole::User),
                 Column::new("d", Type::String, ColumnRole::User),
             ],
@@ -271,7 +271,7 @@ fn table_converting() {
         "t",
         vec![
             Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Number, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
             Column::new("c", Type::String, ColumnRole::User),
             Column::new("d", Type::String, ColumnRole::User),
         ],

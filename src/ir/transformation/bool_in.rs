@@ -21,12 +21,12 @@ fn call_expr_tree_replace_in(plan: &mut Plan, top_id: usize) -> Result<usize, Qu
 }
 
 fn call_from_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
-    plan.from_in(top_id)
+    plan.in_to_or(top_id)
 }
 
 impl Plan {
     /// Convert the IN operator to the chain of the OR-ed equalities.
-    fn from_in(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
+    fn in_to_or(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
         let expr = self.get_expression_node(expr_id)?;
         let (left_id, right_id) = match expr {
             Expression::Bool {

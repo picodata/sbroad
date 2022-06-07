@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::os::raw::c_int;
 
-use serde::de::Error;
 use serde::{de::Deserializer, Deserialize, Serialize};
 use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
@@ -10,16 +9,15 @@ use crate::api::helper::load_metadata;
 use crate::api::QUERY_ENGINE;
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::Engine;
-use crate::executor::result::Value;
-use crate::ir::value::{AsIrVal, Value as IrValue};
+use crate::ir::value::Value;
 
 #[derive(Debug, Default, Serialize, PartialEq)]
 /// Tuple with space name and `key:value` map of values
 struct Args {
     /// Space name as `String`
     space: String,
-    /// A key:value `HashMap` with key String and custom type IrValue
-    rec: HashMap<String, IrValue>,
+    /// A key:value `HashMap` with key String and custom type Value
+    rec: HashMap<String, Value>,
 }
 
 impl TryFrom<FunctionArgs> for Args {
@@ -44,14 +42,9 @@ impl<'de> Deserialize<'de> for Args {
 
         let struct_helper = StructHelper::deserialize(deserializer)?;
 
-        let mut rec = HashMap::new();
-        for (k, v) in struct_helper.1 {
-            rec.insert(k, v.as_ir_value().map_err(Error::custom)?);
-        }
-
         Ok(Args {
             space: struct_helper.0,
-            rec,
+            rec: struct_helper.1,
         })
     }
 }

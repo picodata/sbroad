@@ -18,12 +18,7 @@ pub fn bucket_id_by_tuple<T>(tuple: &[&T], bucket_count: usize) -> u64
 where
     T: ToHashString,
 {
-    let hash_str = tuple
-        .iter()
-        .map(|v| v.to_hash_string())
-        .collect::<Vec<String>>()
-        .join("");
-
+    let hash_str = tuple.iter().map(|v| v.to_hash_string()).collect::<String>();
     str_to_bucket_id(&hash_str, bucket_count)
 }
 

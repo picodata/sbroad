@@ -39,8 +39,7 @@ nodes:
     #6
     - Expression:
         Constant:
-          value:
-            Number: 1
+          value: 1
     #7
     - Expression:
         Row:

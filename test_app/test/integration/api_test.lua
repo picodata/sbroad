@@ -62,7 +62,7 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    _, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
+    r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
     t.assert_equals(err, "CustomError(\"The dict of args missed key/value to calculate bucket_id. Column: name\")")
 end
 
@@ -97,7 +97,7 @@ g.test_simple_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key" where "id" = ?]], { 1 } })
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key" where "id" = ?]], { 1.000 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -218,7 +218,7 @@ g.test_motion_query = function()
             UNION ALL
             SELECT "id", "name" FROM "testing_space_hist" WHERE "product_units" > 3
         ) as "t2"
-        WHERE "id" = 1 and "name" = '123')]], {} })
+        WHERE "id" = 1.00 and "name" = '123')]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {

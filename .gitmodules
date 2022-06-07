@@ -1,0 +1,3 @@
+[submodule "deps/tarantool"]
+	path = deps/tarantool
+	url = https://github.com/picodata/tarantool.git

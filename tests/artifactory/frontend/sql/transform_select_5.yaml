@@ -16,7 +16,7 @@ nodes:
       rule: Gt
       value: ~
     - children: []
-      rule: Number
+      rule: Unsigned 
       value: 0
     - children:
         - 6

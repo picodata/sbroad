@@ -21,7 +21,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::value::Value as IrValue;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 
 use self::hash::bucket_id_by_tuple;
@@ -243,12 +243,12 @@ impl Engine for Runtime {
     fn extract_sharding_keys<'engine, 'rec>(
         &'engine self,
         space: String,
-        rec: &'rec HashMap<String, IrValue>,
-    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError> {
+        rec: &'rec HashMap<String, Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
         self.metadata()
             .get_sharding_key_by_space(space.as_str())?
             .iter()
-            .try_fold(Vec::new(), |mut acc: Vec<&IrValue>, &val| {
+            .try_fold(Vec::new(), |mut acc: Vec<&Value>, &val| {
                 match rec.get(val) {
                     Some(value) => {
                         acc.push(value);
@@ -263,7 +263,7 @@ impl Engine for Runtime {
     }
 
     /// Calculate bucket for a key.
-    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64 {
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.bucket_count)
     }
 }

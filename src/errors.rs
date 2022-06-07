@@ -88,7 +88,7 @@ pub enum QueryPlannerError {
     UninitializedDistribution,
     ValueOutOfRange,
     TypeNotImplemented,
-    UnsupportedIrValueType,
+    UnsupportedValueType,
 }
 
 impl fmt::Display for QueryPlannerError {
@@ -136,7 +136,7 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::UninitializedDistribution => UNINITIALIZED_DISTRIBUTION,
             QueryPlannerError::ValueOutOfRange => VALUE_OUT_OF_RANGE_ERROR,
             QueryPlannerError::TypeNotImplemented => TYPE_NOT_IMPLEMENTED,
-            QueryPlannerError::UnsupportedIrValueType => UNSUPPORTED_TYPE_IR_VALUE,
+            QueryPlannerError::UnsupportedValueType => UNSUPPORTED_TYPE_IR_VALUE,
         };
         write!(f, "{}", p)
     }

@@ -25,7 +25,7 @@ fn sql_order_selection() {
     let scan_id = plan.add_scan("t", None).unwrap();
 
     let a_id = plan.add_row_from_child(scan_id, &["a"]).unwrap();
-    let const_1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
+    let const_1 = plan.nodes.add_const(Value::from(1_u64));
     let const_row = plan.nodes.add_row(vec![const_1], None);
     let eq_id = plan.nodes.add_bool(a_id, Bool::Eq, const_row).unwrap();
     let select_id = plan.add_select(&[scan_id], eq_id).unwrap();

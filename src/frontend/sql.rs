@@ -368,7 +368,14 @@ impl Ast for AbstractSyntaxTree {
                         ));
                     }
                 }
-                Type::Number | Type::String | Type::Null | Type::True | Type::False => {
+                Type::Integer
+                | Type::Decimal
+                | Type::Double
+                | Type::Unsigned
+                | Type::String
+                | Type::Null
+                | Type::True
+                | Type::False => {
                     let val = Value::from_node(&node)?;
                     map.add(*id, plan.add_const(val));
                 }

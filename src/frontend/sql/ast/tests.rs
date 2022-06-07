@@ -105,7 +105,7 @@ fn traversal() {
 
     let (_, num_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*num_id).unwrap();
-    assert_eq!(node.rule, Type::Number);
+    assert_eq!(node.rule, Type::Unsigned);
 
     let (_, eq_id) = dft_post.next().unwrap();
     let node = ast.nodes.get_node(*eq_id).unwrap();
@@ -149,7 +149,7 @@ fn invalid_query() {
         format!(
             "{} {} {} {}",
             r#"Parsing error: Error { variant: ParsingError { positives:"#,
-            r#"[Alias, Asterisk, Number, True, False, Null, Row, Parameter], negatives: [] },"#,
+            r#"[Alias, Asterisk, True, False, Null, Decimal, Double, Integer, Unsigned, Row, Parameter], negatives: [] },"#,
             r#"location: Pos(7), line_col: Pos((1, 8)), path: None, line: "select a frAm t","#,
             r#"continued_line: None }"#,
         ),

@@ -8,13 +8,13 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::{Engine, LocalMetadata};
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::result::{ProducerResult, Value};
+use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Metadata, QueryCache};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
-use crate::ir::value::Value as IrValue;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 
 use super::cartridge::hash::bucket_id_by_tuple;
@@ -74,7 +74,7 @@ impl MetadataMock {
             Column::new("\"identification_number\"", Type::Integer, ColumnRole::User),
             Column::new("\"product_code\"", Type::String, ColumnRole::User),
             Column::new("\"product_units\"", Type::Boolean, ColumnRole::User),
-            Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
+            Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key = vec!["\"identification_number\"", "\"product_code\""];
@@ -100,10 +100,10 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"id\"", Type::Number, ColumnRole::User),
-            Column::new("\"sysFrom\"", Type::Number, ColumnRole::User),
+            Column::new("\"id\"", Type::Unsigned, ColumnRole::User),
+            Column::new("\"sysFrom\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"FIRST_NAME\"", Type::String, ColumnRole::User),
-            Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
+            Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key = vec!["\"id\""];
@@ -119,7 +119,7 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"id\"", Type::Number, ColumnRole::User),
+            Column::new("\"id\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"id\""];
@@ -129,11 +129,11 @@ impl MetadataMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Number, ColumnRole::User),
-            Column::new("\"b\"", Type::Number, ColumnRole::User),
-            Column::new("\"c\"", Type::Number, ColumnRole::User),
-            Column::new("\"d\"", Type::Number, ColumnRole::User),
-            Column::new("\"bucket_id\"", Type::Number, ColumnRole::Sharding),
+            Column::new("\"a\"", Type::Unsigned, ColumnRole::User),
+            Column::new("\"b\"", Type::Unsigned, ColumnRole::User),
+            Column::new("\"c\"", Type::Unsigned, ColumnRole::User),
+            Column::new("\"d\"", Type::Unsigned, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
@@ -281,20 +281,20 @@ impl Engine for EngineMock {
     fn extract_sharding_keys<'engine, 'rec>(
         &'engine self,
         space: String,
-        args: &'rec HashMap<String, IrValue>,
-    ) -> Result<Vec<&'rec IrValue>, QueryPlannerError> {
+        args: &'rec HashMap<String, Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
         Ok(self
             .metadata()
             .get_sharding_key_by_space(&space)
             .unwrap()
             .iter()
-            .fold(Vec::new(), |mut acc: Vec<&IrValue>, &v| {
+            .fold(Vec::new(), |mut acc: Vec<&Value>, &v| {
                 acc.push(args.get(v).unwrap());
                 acc
             }))
     }
 
-    fn determine_bucket_id(&self, s: &[&IrValue]) -> u64 {
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.metadata.bucket_count)
     }
 }

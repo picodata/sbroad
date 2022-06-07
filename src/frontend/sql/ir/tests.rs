@@ -291,10 +291,7 @@ fn front_sql15() {
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;
-    let params = vec![
-        Value::number_from_str("0").unwrap(),
-        Value::number_from_str("1").unwrap(),
-    ];
+    let params = vec![Value::from(0_i64), Value::from(1_i64)];
     let expected = format!(
         "{} {}",
         r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space""#,
@@ -308,7 +305,7 @@ fn front_params1() {
 fn front_params2() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let params = vec![Value::Null, Value::string_from_str("hello")];
+    let params = vec![Value::Null, Value::from("hello")];
     let expected = format!(
         "{} {}",
         r#"SELECT "test_space"."id" as "id" FROM "test_space""#,

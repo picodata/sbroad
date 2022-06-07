@@ -248,10 +248,7 @@ fn bench_query1(c: &mut Criterion) {
     let mut reestrid: u64 = 666;
     c.bench_function("query1", |b| {
         b.iter(|| {
-            let params = vec![
-                Value::number_from_str(&sys_from.to_string()).unwrap(),
-                Value::number_from_str(&reestrid.to_string()).unwrap(),
-            ];
+            let params = vec![Value::from(sys_from), Value::from(reestrid)];
             sys_from += 1;
             reestrid += 1;
             query1(&sql, &params, &mut engine)

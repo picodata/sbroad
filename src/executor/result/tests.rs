@@ -1,8 +1,8 @@
 use pretty_assertions::{assert_eq, assert_ne};
-
-use crate::ir::relation::{ColumnRole, Type};
+use tarantool::decimal;
 
 use super::*;
+use crate::ir::relation::{ColumnRole, Type};
 
 #[test]
 fn box_execute_result_serialize() {
@@ -53,20 +53,20 @@ fn convert_to_vtable() {
             MetadataColumn::new("id".into(), "integer".into()),
             MetadataColumn::new("name".into(), "string".into()),
             MetadataColumn::new("count".into(), "unsigned".into()),
-            MetadataColumn::new("price".into(), "number".into()),
+            MetadataColumn::new("price".into(), "decimal".into()),
         ],
         rows: vec![
             vec![
                 Value::Integer(1),
                 Value::String("тест".into()),
                 Value::Unsigned(1),
-                Value::Number(1.5),
+                Value::Decimal(decimal!(1.5)),
             ],
             vec![
                 Value::Integer(2),
                 Value::String("тест2".into()),
                 Value::Unsigned(5),
-                Value::Number(2.0),
+                Value::Decimal(decimal!(2.0)),
             ],
         ],
     };
@@ -91,22 +91,22 @@ fn convert_to_vtable() {
 
     excepted.add_column(Column {
         name: "price".into(),
-        r#type: Type::Number,
+        r#type: Type::Decimal,
         role: ColumnRole::User,
     });
 
-    excepted.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::string_from_str("тест"),
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("1.5").unwrap(),
+    excepted.add_tuple(vec![
+        Value::from(1_i64),
+        Value::from("тест"),
+        Value::from(1_u64),
+        Value::from(decimal!(1.5)),
     ]);
 
-    excepted.add_values_tuple(vec![
-        IrValue::number_from_str("2").unwrap(),
-        IrValue::string_from_str("тест2"),
-        IrValue::number_from_str("5").unwrap(),
-        IrValue::number_from_str("2.0").unwrap(),
+    excepted.add_tuple(vec![
+        Value::from(2_i64),
+        Value::from("тест2"),
+        Value::from(5_u64),
+        Value::from(decimal!(2.0)),
     ]);
 
     assert_eq!(excepted, r.as_virtual_table().unwrap());

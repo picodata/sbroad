@@ -253,7 +253,7 @@ where
             if !vtable.get_columns().is_empty() {
                 let sharding_col = Column {
                     name: "bucket_id".to_string(),
-                    r#type: Type::Number,
+                    r#type: Type::Unsigned,
                     role: ColumnRole::Sharding,
                 };
                 vtable.get_mut_columns().push(sharding_col);

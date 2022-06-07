@@ -10,24 +10,35 @@ else
 		DEST_LIB = sbroad.dylib
 	endif
 endif
-build:
-	cargo build --release
+build: clean build_release
 
 bench_check:
-	cargo bench --no-run
+	MOCK_DEC_NUMBER=1 cargo bench --no-run
 
-integration_test_app:
-	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
+build_debug:
+	MOCK_DEC_NUMBER=0 cargo build --debug
 
-test:
-	cargo test
-
-lint:
-	cargo fmt --all -- --check
-	cargo clippy -- -Dclippy::all -Wclippy::pedantic
+build_release:
+	MOCK_DEC_NUMBER=0 cargo build --release
 
 build_test_app:
 	cd test_app && cartridge build
 	cp -rf target/release/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
-test_all: test bench_check build build_test_app integration_test_app
+clean:
+	rm -rf target/release/libsbroad.*
+
+integration_test_app:
+	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
+
+init:
+	git submodule update --init --recursive
+
+lint:
+	cargo fmt --all -- --check
+	cargo clippy -- -Dclippy::all -Wclippy::pedantic
+
+test:
+	MOCK_DEC_NUMBER=1 cargo test
+
+test_all: clean test clean bench_check build build_test_app integration_test_app

@@ -1,12 +1,12 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::engine::mock::EngineMock;
-use crate::executor::result::{ProducerResult, Value};
+use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
-use crate::ir::value::Value as IrValue;
+use crate::ir::value::Value;
 
 use super::*;
 
@@ -20,13 +20,13 @@ fn shard_query() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
         .rows
         .push(vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket)),
-            Value::String(String::from(r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") = (1)"#))
+            Value::from(format!("Execute query on a bucket [{}]", bucket)),
+            Value::from(r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") = (1)"#),
         ]);
     assert_eq!(expected, result);
 }
@@ -50,7 +50,7 @@ fn shard_union_query() {
     let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
     let mut expected = ProducerResult::new();
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected
         .rows
@@ -83,8 +83,8 @@ fn map_reduce_query() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param457 = IrValue::string_from_str("457");
+    let param1 = Value::from(1_u64);
+    let param457 = Value::from(457_u64);
 
     let bucket = query.engine.determine_bucket_id(&[&param1, &param457]);
 
@@ -124,10 +124,10 @@ fn linker_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
-    let param3 = IrValue::number_from_str("3").unwrap();
+    let param3 = Value::from(3_u64);
     let bucket3 = query.engine.determine_bucket_id(&[&param3]);
 
     expected.rows.extend(vec![
@@ -185,10 +185,10 @@ fn union_linker_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
-    let param3 = IrValue::number_from_str("3").unwrap();
+    let param3 = Value::from(3_u64);
     let bucket3 = query.engine.determine_bucket_id(&[&param3]);
 
     expected.rows.extend(vec![
@@ -276,7 +276,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
 
     let mut expected = ProducerResult::new();
 
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
@@ -332,14 +332,8 @@ fn join_linker2_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("1").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("2").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
+    virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -354,7 +348,7 @@ fn join_linker2_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
@@ -394,14 +388,8 @@ fn join_linker3_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("1").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("2").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
+    virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -416,7 +404,7 @@ fn join_linker3_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
@@ -451,8 +439,8 @@ fn join_linker4_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_t2.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
-    virtual_t2.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+    virtual_t2.add_tuple(vec![Value::from(1_u64)]);
+    virtual_t2.add_tuple(vec![Value::from(2_u64)]);
     virtual_t2.set_alias("t2").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
@@ -470,8 +458,8 @@ fn join_linker4_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_sq.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
-    virtual_sq.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
+    virtual_sq.add_tuple(vec![Value::from(2_u64)]);
+    virtual_sq.add_tuple(vec![Value::from(3_u64)]);
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
@@ -485,10 +473,10 @@ fn join_linker4_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1]);
 
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
@@ -554,10 +542,10 @@ fn anonymous_col_index_test() {
     let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
     let mut expected = ProducerResult::new();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param2]);
 
-    let param3 = IrValue::number_from_str("3").unwrap();
+    let param3 = Value::from(3_u64);
     let bucket3 = query.engine.determine_bucket_id(&[&param3]);
     expected.rows.extend(vec![
         vec![
@@ -607,7 +595,7 @@ fn sharding_column1_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -631,7 +619,7 @@ fn sharding_column2_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(1_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -661,8 +649,8 @@ fn insert1_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![IrValue::number_from_str("1").unwrap()]);
-    virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
+    virtual_table.add_tuple(vec![Value::from(1_u64)]);
+    virtual_table.add_tuple(vec![Value::from(2_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -671,11 +659,11 @@ fn insert1_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Column::default_value();
-    let param2 = IrValue::number_from_str("1").unwrap();
+    let param2 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     let param1 = Column::default_value();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param2 = Value::from(2_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![
@@ -723,10 +711,7 @@ fn insert2_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -734,8 +719,8 @@ fn insert2_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param1 = Value::from(1_u64);
+    let param2 = Value::from(2_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
@@ -770,14 +755,8 @@ fn insert3_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("3").unwrap(),
-        IrValue::number_from_str("4").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -785,12 +764,12 @@ fn insert3_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("2").unwrap();
-    let param2 = IrValue::number_from_str("1").unwrap();
+    let param1 = Value::from(2_u64);
+    let param2 = Value::from(1_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
-    let param1 = IrValue::number_from_str("4").unwrap();
-    let param2 = IrValue::number_from_str("3").unwrap();
+    let param1 = Value::from(4_u64);
+    let param2 = Value::from(3_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![
@@ -837,10 +816,7 @@ fn insert4_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("2").unwrap(),
-        IrValue::number_from_str("1").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(1_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -848,8 +824,8 @@ fn insert4_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param1 = Value::from(1_u64);
+    let param2 = Value::from(2_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
@@ -884,14 +860,8 @@ fn insert5_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("5").unwrap(),
-        IrValue::number_from_str("6").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("5").unwrap(),
-        IrValue::number_from_str("6").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
+    virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
 
@@ -899,8 +869,8 @@ fn insert5_test() {
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("6").unwrap();
-    let param2 = IrValue::number_from_str("5").unwrap();
+    let param1 = Value::from(6_u64);
+    let param2 = Value::from(5_u64);
     let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
@@ -934,30 +904,21 @@ fn insert6_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("3").unwrap(),
-        IrValue::number_from_str("4").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
     let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param1 = Value::from(1_u64);
+    let param2 = Value::from(2_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
-    let param3 = IrValue::number_from_str("3").unwrap();
-    let param4 = IrValue::number_from_str("4").unwrap();
+    let param3 = Value::from(3_u64);
+    let param4 = Value::from(4_u64);
     let bucket2 = query.engine.determine_bucket_id(&[&param3, &param4]);
 
     expected.rows.extend(vec![
@@ -1020,20 +981,20 @@ fn insert8_test() {
         Type::Boolean,
         ColumnRole::User,
     ));
-    virtual_table.add_column(Column::new("sys_op", Type::Number, ColumnRole::User));
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::string_from_str("two"),
-        IrValue::Boolean(true),
-        IrValue::number_from_str("4").unwrap(),
+    virtual_table.add_column(Column::new("sys_op", Type::Unsigned, ColumnRole::User));
+    virtual_table.add_tuple(vec![
+        Value::from(1_u64),
+        Value::from("two"),
+        Value::from(true),
+        Value::from(4_u64),
     ]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
     let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
     let mut expected = ProducerResult::new();
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param2 = IrValue::string_from_str("two");
+    let param1 = Value::from(1_u64);
+    let param2 = Value::from("two");
     let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
@@ -1054,7 +1015,7 @@ fn insert9_test() {
 
     let engine = EngineMock::new();
 
-    let mut query = Query::new(&engine, sql, &[IrValue::from(1), IrValue::from(2)]).unwrap();
+    let mut query = Query::new(&engine, sql, &[Value::from(1_u64), Value::from(2_u64)]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -1068,18 +1029,15 @@ fn insert9_test() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_table.add_values_tuple(vec![
-        IrValue::number_from_str("1").unwrap(),
-        IrValue::number_from_str("2").unwrap(),
-    ]);
+    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
 
     query.engine.add_virtual_table(motion_id, virtual_table);
     let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
 
     let mut expected = ProducerResult::new();
 
-    let param1 = IrValue::number_from_str("1").unwrap();
-    let param2 = IrValue::number_from_str("2").unwrap();
+    let param1 = Value::from(1_u64);
+    let param2 = Value::from(2_u64);
     let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
@@ -1104,8 +1062,8 @@ fn virtual_table_23() -> VirtualTable {
         role: ColumnRole::User,
     });
 
-    virtual_table.add_values_tuple(vec![IrValue::number_from_str("2").unwrap()]);
-    virtual_table.add_values_tuple(vec![IrValue::number_from_str("3").unwrap()]);
+    virtual_table.add_tuple(vec![Value::from(2_u64)]);
+    virtual_table.add_tuple(vec![Value::from(3_u64)]);
 
     virtual_table
 }

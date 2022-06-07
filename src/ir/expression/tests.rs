@@ -8,9 +8,9 @@ use crate::ir::*;
 fn row_duplicate_column_names() {
     let mut plan = Plan::new();
 
-    let c1 = plan.nodes.add_const(Value::number_from_str("1").unwrap());
+    let c1 = plan.nodes.add_const(Value::from(1_i64));
     let c1_alias_a = plan.nodes.add_alias("a", c1).unwrap();
-    let c2 = plan.nodes.add_const(Value::number_from_str("2").unwrap());
+    let c2 = plan.nodes.add_const(Value::from(2_u64));
     let c2_alias_a = plan.nodes.add_alias("a", c2).unwrap();
     assert_eq!(
         QueryPlannerError::CustomError(

@@ -61,13 +61,15 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
 
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
     Keyword = { ^"union" | ^"where" }
-    Number = @{ Int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Int)? }
-        Int = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
 
-Value = _{ Parameter | Row | True | False | Null | Number | SingleQuotedString }
+Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }
+    Decimal = @{ Integer ~ ("." ~ ASCII_DIGIT*) }
+    Double = @{ Integer ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Integer) }
+    Integer = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
+    Unsigned = @{ ASCII_DIGIT+ }
     SingleQuotedString = _{ "'" ~ String ~ "'" }
     Row = {
         ("(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
