@@ -12,6 +12,7 @@ use tarantool::tlua::LuaFunction;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::engine::cartridge::cache::ClusterAppConfig;
 use crate::executor::engine::{Engine, LocalMetadata};
@@ -26,7 +27,7 @@ use crate::ir::Plan;
 
 use self::hash::bucket_id_by_tuple;
 
-mod backend;
+pub mod backend;
 pub mod cache;
 pub mod hash;
 
@@ -171,7 +172,7 @@ impl Engine for Runtime {
         let nodes = plan.get_sql_order(top_id)?;
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
-        let mut rs_query: HashMap<String, String> = HashMap::new();
+        let mut rs_query: HashMap<String, PatternWithParams> = HashMap::new();
         if let Buckets::Filtered(bucket_set) = buckets {
             let random_bucket = self.get_random_bucket();
             let buckets = if bucket_set.is_empty() {
@@ -195,8 +196,9 @@ impl Engine for Runtime {
                     .iter()
                     .copied()
                     .collect::<HashSet<u64, RepeatableState>>();
-                let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
-                rs_query.insert(rs.to_string(), sql);
+                let pattern_with_params =
+                    plan.syntax_nodes_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
+                rs_query.insert(rs.to_string(), pattern_with_params);
             }
 
             if rs_query.is_empty() {
@@ -209,8 +211,8 @@ impl Engine for Runtime {
             return self.exec_on_some(&rs_query, is_data_modifier);
         }
 
-        let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
-        self.exec_on_all(&sql, is_data_modifier)
+        let pattern_with_params = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
+        self.exec_on_all(&pattern_with_params, is_data_modifier)
     }
 
     /// Transform sub query results into a virtual table.
@@ -343,7 +345,7 @@ impl Runtime {
 
     fn read_on_some(
         &self,
-        rs_query: &HashMap<String, String>,
+        rs_query: &HashMap<String, PatternWithParams>,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
@@ -369,7 +371,7 @@ impl Runtime {
 
     fn write_on_some(
         &self,
-        rs_query: &HashMap<String, String>,
+        rs_query: &HashMap<String, PatternWithParams>,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
@@ -395,7 +397,7 @@ impl Runtime {
 
     fn exec_on_some(
         &self,
-        rs_query: &HashMap<String, String>,
+        rs_query: &HashMap<String, PatternWithParams>,
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         if is_data_modifier {
@@ -405,7 +407,7 @@ impl Runtime {
         }
     }
 
-    fn read_on_all(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn read_on_all(&self, query: &PatternWithParams) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("read_on_all").ok_or_else(|| {
@@ -428,7 +430,7 @@ impl Runtime {
         }
     }
 
-    fn write_on_all(&self, query: &str) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn write_on_all(&self, query: &PatternWithParams) -> Result<Box<dyn Any>, QueryPlannerError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("write_on_all").ok_or_else(|| {
@@ -453,7 +455,7 @@ impl Runtime {
 
     fn exec_on_all(
         &self,
-        query: &str,
+        query: &PatternWithParams,
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         if is_data_modifier {
@@ -570,7 +572,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+            local future, err = replica:callbre("box.execute", { query['pattern'], query['params'] }, {is_async = true})
             if err ~= nil then
                 error(err)
             end
@@ -603,7 +605,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+            local future, err = replica:callrw("box.execute", { query['pattern'], query['params'] }, {is_async = true})
             if err ~= nil then
                 error(err)
             end
@@ -635,7 +637,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         local futures = {}
 
         for _, replica in pairs(replicas) do
-            local future, err = replica:callbre("box.execute", { query }, {is_async = true})
+            local future, err = replica:callbre("box.execute", { query['pattern'], query['params'] }, {is_async = true})
             if err ~= nil then
                 error(err)
             end
@@ -669,7 +671,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         local futures = {}
 
         for _, replica in pairs(replicas) do
-            local future, err = replica:callrw("box.execute", { query }, {is_async = true})
+            local future, err = replica:callrw("box.execute", { query['pattern'], query['params'] }, {is_async = true})
             if err ~= nil then
                 error(err)
             end

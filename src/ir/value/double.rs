@@ -62,6 +62,14 @@ impl FromStr for Double {
     }
 }
 
+impl<L: tlua::AsLua> tlua::Push<L> for Double {
+    type Err = tlua::Void;
+
+    fn push_to_lua(&self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
+        self.value.push_to_lua(lua)
+    }
+}
+
 impl<L> tlua::PushInto<L> for Double
 where
     L: tlua::AsLua,
@@ -71,7 +79,9 @@ where
         Ok(tlua::push_userdata(self.value, lua, |_| {}))
     }
 }
+
 impl<L> tlua::PushOneInto<L> for Double where L: tlua::AsLua {}
+
 impl<L> tlua::LuaRead<L> for Double
 where
     L: tlua::AsLua,

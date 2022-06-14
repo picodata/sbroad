@@ -63,8 +63,8 @@ impl fmt::Display for Value {
             Value::Null => write!(f, "NULL"),
             Value::Unsigned(v) => write!(f, "{}", v),
             Value::Integer(v) => write!(f, "{}", v),
-            Value::Double(v) => write!(f, "{}", v),
-            Value::Decimal(v) => write!(f, "{}", v),
+            Value::Double(v) => fmt::Display::fmt(&v, f),
+            Value::Decimal(v) => fmt::Display::fmt(v, f),
             Value::String(v) => write!(f, "'{}'", v),
         }
     }
@@ -333,6 +333,22 @@ impl From<Value> for String {
             Value::Double(v) => v.to_string(),
             Value::Unsigned(v) => v.to_string(),
             Value::String(v) => v,
+        }
+    }
+}
+
+impl<L: tlua::AsLua> tlua::Push<L> for Value {
+    type Err = tlua::Void;
+
+    fn push_to_lua(&self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
+        match self {
+            Value::Boolean(v) => v.push_to_lua(lua),
+            Value::Integer(v) => v.push_to_lua(lua),
+            Value::Decimal(v) => v.push_to_lua(lua),
+            Value::Double(v) => v.push_to_lua(lua),
+            Value::Unsigned(v) => v.push_to_lua(lua),
+            Value::String(v) => v.push_to_lua(lua),
+            Value::Null => tlua::Null.push_to_lua(lua),
         }
     }
 }

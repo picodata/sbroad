@@ -63,14 +63,14 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(r, 360)
 
     r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
-    t.assert_equals(err, "CustomError(\"The dict of args missed key/value to calculate bucket_id. Column: name\")")
+    t.assert_str_contains(tostring(err), [[dict of args missed key/value to calculate bucket_id]])
 end
 
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]], {} })
-    t.assert_equals(err, "CustomError(\"Parsing error: Error { variant: ParsingError { positives: [SubQuery], negatives: [] }, location: Pos(41), line_col: Pos((1, 42)), path: None, line: \\\"SELECT * FROM \\\\\\\"testing_space\\\\\\\" INNER JOIN \\\\\\\"testing_space\\\\\\\"\\\", continued_line: None }\")")
+    t.assert_str_contains(tostring(err), "Parsing error")
 end
 
 g.test_join_query_is_valid = function()
@@ -278,7 +278,7 @@ g.test_join_motion_query = function()
         metadata = {
             {name = "id", type = "integer"},
             {name = "name", type = "string"},
-            {name = "product_units", type = "integer"},
+            {name = "product_units", type = "any"},
         },
         rows = {
             { 1, "ok", 5 },
@@ -446,7 +446,7 @@ g.test_invalid_explain = function()
     local _, err = api:call("explain", { [[SELECT "id", "name" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
 
-    t.assert_equals(err, "Explain hasn't supported node Motion { children: [43], policy: Full, generation: None, output: 81 } yet")
+    t.assert_str_contains(tostring(err), "Explain hasn't supported node Motion")
 end
 
 g.test_valid_explain = function()

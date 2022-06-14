@@ -16,7 +16,7 @@ bench_check:
 	MOCK_DEC_NUMBER=1 cargo bench --no-run
 
 build_debug:
-	MOCK_DEC_NUMBER=0 cargo build --debug
+	MOCK_DEC_NUMBER=0 cargo build
 
 build_release:
 	MOCK_DEC_NUMBER=0 cargo build --release
@@ -27,12 +27,13 @@ build_test_app:
 
 clean:
 	rm -rf target/release/libsbroad.*
+	rm -rf target/debug/libsbroad.*
 
 integration_test_app:
 	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
 
 init:
-	git submodule update --init --recursive
+	git submodule update --init --recursive --remote
 
 lint:
 	cargo fmt --all -- --check

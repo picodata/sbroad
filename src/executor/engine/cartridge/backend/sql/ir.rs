@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use tarantool::tlua;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -6,9 +7,29 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VTableTuple;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
+use crate::ir::value::Value;
 use crate::ir::Node;
 
 use super::tree::{SyntaxData, SyntaxPlan};
+
+#[derive(Debug, PartialEq, tlua::Push)]
+pub struct PatternWithParams {
+    pub pattern: String,
+    pub params: Vec<Value>,
+}
+
+impl PatternWithParams {
+    #[must_use]
+    pub fn new(pattern: String, params: Vec<Value>) -> Self {
+        PatternWithParams { pattern, params }
+    }
+}
+
+impl From<PatternWithParams> for String {
+    fn from(p: PatternWithParams) -> Self {
+        format!("pattern: {}, parameters: {:?}", p.pattern, p.params)
+    }
+}
 
 impl ExecutionPlan {
     /// Traverse plan sub-tree (pointed by top) in the order
@@ -58,7 +79,9 @@ impl ExecutionPlan {
         &self,
         nodes: &[SyntaxData],
         buckets: &Buckets,
-    ) -> Result<String, QueryPlannerError> {
+    ) -> Result<PatternWithParams, QueryPlannerError> {
+        let mut params: Vec<Value> = Vec::new();
+
         let mut sql = String::new();
         let delim = " ";
 
@@ -166,6 +189,18 @@ impl ExecutionPlan {
                         },
                     }
                 }
+                SyntaxData::Parameter(id) => {
+                    sql.push('?');
+                    let value = ir_plan.get_expression_node(*id)?;
+                    if let Expression::Constant { value, .. } = value {
+                        params.push(value.clone());
+                    } else {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Parameter {:?} is not a constant",
+                            value
+                        )));
+                    }
+                }
                 SyntaxData::VTable(vtable) => {
                     let cols_count = vtable.get_columns().len();
 
@@ -212,7 +247,7 @@ impl ExecutionPlan {
                     } else {
                         let values = tuples
                             .iter()
-                            .map(|t| format!("({})", (t.iter().map(ToString::to_string)).join(",")))
+                            .map(|t| format!("({})", (t.iter().map(|_| "?")).join(",")))
                             .collect::<Vec<String>>()
                             .join(",");
 
@@ -223,11 +258,17 @@ impl ExecutionPlan {
                             cols(anonymous_col_idx_base),
                             values
                         ));
+
+                        for t in tuples {
+                            for v in t {
+                                params.push(v.clone());
+                            }
+                        }
                     }
                 }
             }
         }
-        Ok(sql)
+        Ok(PatternWithParams::new(sql, params))
     }
 
     /// Checks if the given query subtree modifies data or not.

@@ -1,4 +1,6 @@
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
@@ -10,11 +12,20 @@ fn set_dnf(plan: &mut Plan) {
 fn dnf1() {
     let input = r#"SELECT "a" FROM "t"
     WHERE ("a" = 1 AND "b" = 2 OR "a" = 3) AND "c" = 4"#;
-    let expected = format!(
-        "{} {} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (("t"."a") = (1) and ("t"."b") = (2) and ("t"."c") = (4)"#,
-        r#"or ("t"."a") = (3) and ("t"."c") = (4))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
+            r#"or ("t"."a") = (?) and ("t"."c") = (?))"#,
+        ),
+        vec![
+            Value::from(1_u64),
+            Value::from(2_u64),
+            Value::from(4_u64),
+            Value::from(3_u64),
+            Value::from(4_u64),
+        ],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
@@ -24,11 +35,23 @@ fn dnf1() {
 fn dnf2() {
     let input = r#"SELECT "a" FROM "t"
     WHERE ("a" = 1 OR "b" = 2) AND ("a" = 3 OR "c" = 4)"#;
-    let expected = format!(
-        "{} {} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (((("t"."a") = (3) and ("t"."a") = (1) or ("t"."c") = (4) and ("t"."a") = (1))"#,
-        r#"or ("t"."a") = (3) and ("t"."b") = (2)) or ("t"."c") = (4) and ("t"."b") = (2))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (((("t"."a") = (?) and ("t"."a") = (?) or ("t"."c") = (?) and ("t"."a") = (?))"#,
+            r#"or ("t"."a") = (?) and ("t"."b") = (?)) or ("t"."c") = (?) and ("t"."b") = (?))"#,
+        ),
+        vec![
+            Value::from(3_u64),
+            Value::from(1_u64),
+            Value::from(4_u64),
+            Value::from(1_u64),
+            Value::from(3_u64),
+            Value::from(2_u64),
+            Value::from(4_u64),
+            Value::from(2_u64),
+        ],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
@@ -38,10 +61,18 @@ fn dnf2() {
 fn dnf3() {
     let input = r#"SELECT "a" FROM "t"
     WHERE ("a" = 1 OR "b" = 2) AND NULL"#;
-    let expected = format!(
-        "{} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (("t"."a") = (1) and (NULL) or ("t"."b") = (2) and (NULL))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
+        ),
+        vec![
+            Value::from(1_u64),
+            Value::Null,
+            Value::from(2_u64),
+            Value::Null,
+        ],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
@@ -51,10 +82,18 @@ fn dnf3() {
 fn dnf4() {
     let input = r#"SELECT "a" FROM "t"
     WHERE ("a" = 1 OR "b" = 2) AND true"#;
-    let expected = format!(
-        "{} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (("t"."a") = (1) and (true) or ("t"."b") = (2) and (true))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
+        ),
+        vec![
+            Value::from(1_u64),
+            Value::Boolean(true),
+            Value::from(2_u64),
+            Value::Boolean(true),
+        ],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
@@ -64,10 +103,18 @@ fn dnf4() {
 fn dnf5() {
     let input = r#"SELECT "a" FROM "t"
     WHERE ("a" = 1 OR "b" = 2) AND ((false))"#;
-    let expected = format!(
-        "{} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (("t"."a") = (1) and ((false)) or ("t"."b") = (2) and ((false)))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (?) and ((?)) or ("t"."b") = (?) and ((?)))"#,
+        ),
+        vec![
+            Value::from(1_u64),
+            Value::Boolean(false),
+            Value::from(2_u64),
+            Value::Boolean(false),
+        ],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);
@@ -77,10 +124,13 @@ fn dnf5() {
 fn dnf6() {
     let input = r#"SELECT "a" FROM "t"
     WHERE "a" = 1 and "c" = 1 OR "b" = 2"#;
-    let expected = format!(
-        "{} {}",
-        r#"SELECT "t"."a" as "a" FROM "t""#,
-        r#"WHERE (("t"."a") = (1) and ("t"."c") = (1) or ("t"."b") = (2))"#,
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"WHERE (("t"."a") = (?) and ("t"."c") = (?) or ("t"."b") = (?))"#,
+        ),
+        vec![Value::from(1_u64), Value::from(1_u64), Value::from(2_u64)],
     );
 
     assert_eq!(sql_to_sql(input, &[], &set_dnf), expected);

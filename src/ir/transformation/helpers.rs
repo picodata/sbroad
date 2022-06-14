@@ -1,6 +1,7 @@
 //! IR test helpers.
 
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -18,9 +19,13 @@ pub fn sql_to_ir(query: &str, params: &[Value]) -> Plan {
     plan
 }
 
-/// Compiles and transforms an SQL query to a new SQL.
+/// Compiles and transforms an SQL query to a new parameterized SQL.
 #[allow(dead_code)]
-pub fn sql_to_sql(query: &str, params: &[Value], f_transform: &dyn Fn(&mut Plan)) -> String {
+pub fn sql_to_sql(
+    query: &str,
+    params: &[Value],
+    f_transform: &dyn Fn(&mut Plan),
+) -> PatternWithParams {
     let mut plan = sql_to_ir(query, params);
     f_transform(&mut plan);
     let ex_plan = ExecutionPlan::from(plan);

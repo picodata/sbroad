@@ -14,7 +14,7 @@ cache:
 default:
     tags:
         - picodata
-    image: registry.gitlab.com/picodata/picodata/sbroad/sbroad-builder:0.1.0
+    image: registry.gitlab.com/picodata/picodata/sbroad/sbroad-builder:0.2.0
 
 build:
     stage: build
@@ -36,6 +36,7 @@ test:
       - git submodule foreach --recursive git clean -xfd
       - git reset --hard
       - git submodule foreach --recursive git reset --hard
+      - git submodule sync --recursive
       - git submodule update --init --recursive
     stage: test
     script:

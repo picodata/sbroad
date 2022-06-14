@@ -261,13 +261,13 @@ impl Engine for EngineMock {
         match buckets {
             Buckets::All => {
                 let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
-                result.extend(exec_on_all(&sql))?;
+                result.extend(exec_on_all(&String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
                     let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::Filtered(bucket_set))?;
-                    let temp_result = exec_on_some(*bucket, &sql);
+                    let temp_result = exec_on_some(*bucket, &String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }
             }

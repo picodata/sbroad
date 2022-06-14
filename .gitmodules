@@ -1,3 +1,4 @@
 [submodule "deps/tarantool"]
 	path = deps/tarantool
-	url = https://github.com/picodata/tarantool.git
+	url = https://sbroad-cargo:i8h8BZWfphEKz8hsZBnz@git.picodata.io/picodata/tarantool.git
+	branch = 2.10.0-picodata

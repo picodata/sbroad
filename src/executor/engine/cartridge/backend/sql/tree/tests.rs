@@ -81,7 +81,7 @@ fn sql_order_selection() {
     assert_eq!(Some(SyntaxData::Operator("=".into())), nodes_iter.next()); // =
     assert_eq!(Some(SyntaxData::PlanId(7)), nodes_iter.next()); // row
     assert_eq!(Some(SyntaxData::OpenParenthesis), nodes_iter.next()); // (
-    assert_eq!(Some(SyntaxData::PlanId(6)), nodes_iter.next()); // const 1
+    assert_eq!(Some(SyntaxData::Parameter(6)), nodes_iter.next()); // parameter
     assert_eq!(Some(SyntaxData::CloseParenthesis), nodes_iter.next()); // )
     assert_eq!(None, nodes_iter.next());
 }

@@ -29,6 +29,8 @@ pub enum SyntaxData {
     Operator(String),
     /// plan node id
     PlanId(usize),
+    /// parameter (a wrapper over a plan constants)
+    Parameter(usize),
     /// virtual table
     VTable(VirtualTable),
 }
@@ -110,6 +112,14 @@ impl SyntaxNode {
             data: SyntaxData::PlanId(id),
             left,
             right: right.into(),
+        }
+    }
+
+    fn new_parameter(id: usize) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Parameter(id),
+            left: None,
+            right: Vec::new(),
         }
     }
 
@@ -210,19 +220,24 @@ impl SyntaxNodes {
     /// Push a new syntax node to arena
     pub fn push_syntax_node(&mut self, node: SyntaxNode) -> usize {
         let id = self.next_id();
-        if let SyntaxData::PlanId(plan_id) = node.data {
-            self.map.insert(plan_id, id);
+        match node.data {
+            SyntaxData::PlanId(plan_id) | SyntaxData::Parameter(plan_id) => {
+                self.map.insert(plan_id, id);
+            }
+            _ => {}
         }
         self.arena.push(node);
         id
     }
 
     /// Get next node id
+    #[must_use]
     pub fn next_id(&self) -> usize {
         self.arena.len()
     }
 
     /// Constructor with pre-allocated memory
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         SyntaxNodes {
             arena: Vec::with_capacity(capacity),
@@ -388,6 +403,10 @@ pub struct SyntaxPlan<'p> {
 
 #[allow(dead_code)]
 impl<'p> SyntaxPlan<'p> {
+    /// Add an IR plan node to the syntax tree.
+    ///
+    /// # Errors
+    /// - Failed to translate an IR plan node to a syntax node.
     #[allow(clippy::too_many_lines)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
         let ir_plan = self.plan.get_ir_plan();
@@ -593,7 +612,11 @@ impl<'p> SyntaxPlan<'p> {
                 }
             },
             Node::Expression(expr) => match expr {
-                Expression::Constant { .. } | Expression::Reference { .. } => {
+                Expression::Constant { .. } => {
+                    let sn = SyntaxNode::new_parameter(id);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
+                Expression::Reference { .. } => {
                     let sn = SyntaxNode::new_pointer(id, None, &[]);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -788,6 +811,12 @@ impl<'p> SyntaxPlan<'p> {
         }
     }
 
+    /// Build a new syntax tree from the execution plan.
+    ///
+    /// # Errors
+    /// - Failed to ad an IR plan to the syntax tree
+    /// - Failed to get to the top of the syntax tree
+    /// - Failed to move projection nodes under their scans
     pub fn new(plan: &'p ExecutionPlan, top: usize) -> Result<Self, QueryPlannerError> {
         let mut sp = SyntaxPlan::empty(plan);
         let ir_plan = plan.get_ir_plan();

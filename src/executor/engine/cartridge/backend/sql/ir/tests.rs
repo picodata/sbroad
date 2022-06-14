@@ -5,6 +5,9 @@ use crate::executor::engine::mock::MetadataMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
+use crate::ir::value::Value;
+
+use super::*;
 
 #[test]
 fn one_table_projection() {
@@ -23,11 +26,15 @@ fn one_table_projection() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
-            r#"FROM "hash_testing""#,
-            r#"WHERE ("hash_testing"."identification_number") = (1)"#
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {}",
+                r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
+                r#""hash_testing"."product_code" as "product_code""#,
+                r#"FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") = (?)"#,
+            ),
+            vec![Value::from(1_u64)]
         ),
         sql
     );
@@ -50,12 +57,16 @@ fn one_table_with_asterisk() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code","#,
-            r#""hash_testing"."product_units" as "product_units", "hash_testing"."sys_op" as "sys_op""#,
-            r#"FROM "hash_testing""#,
-            r#"WHERE ("hash_testing"."identification_number") = (1)"#
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {}",
+                r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
+                r#""hash_testing"."product_code" as "product_code","#,
+                r#""hash_testing"."product_units" as "product_units", "hash_testing"."sys_op" as "sys_op""#,
+                r#"FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") = (?)"#
+            ),
+            vec![Value::from(1_u64)]
         ),
         sql
     );
@@ -83,11 +94,16 @@ fn union_all() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (1)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."product_code") = ('a')"#
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") = (?)"#,
+                r#"UNION ALL"#,
+                r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist""#,
+                r#"WHERE ("hash_testing_hist"."product_code") = (?)"#
+            ),
+            vec![Value::from(1_u64), Value::from("a")],
         ),
         sql
     );
@@ -112,12 +128,15 @@ fn from_sub_query() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {}",
-            r#"SELECT t1."product_code" as "product_code" FROM"#,
-            r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
-            r#"WHERE ("hash_testing"."identification_number") = (1)) as t1"#,
-            r#"WHERE (t1."product_code") = ('a')"#
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {}",
+                r#"SELECT t1."product_code" as "product_code" FROM"#,
+                r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") = (?)) as t1"#,
+                r#"WHERE (t1."product_code") = (?)"#
+            ),
+            vec![Value::from(1_u64), Value::from("a")],
         ),
         sql
     );
@@ -146,13 +165,18 @@ fn from_sub_query_with_union() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {} {}",
-            r#"SELECT "t1"."product_code" as "product_code" FROM"#,
-            r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (1)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."product_code") = ('a')) as "t1""#,
-            r#"WHERE ("t1"."product_code") = ('a')"#,
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {} {} {}",
+                r#"SELECT "t1"."product_code" as "product_code" FROM"#,
+                r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") = (?)"#,
+                r#"UNION ALL"#,
+                r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist""#,
+                r#"WHERE ("hash_testing_hist"."product_code") = (?)) as "t1""#,
+                r#"WHERE ("t1"."product_code") = (?)"#,
+            ),
+            vec![Value::from(1_u64), Value::from("a"), Value::from("a")],
         ),
         sql
     );
@@ -175,12 +199,15 @@ fn inner_join() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {}",
-            r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
-            r#"INNER JOIN (SELECT "history"."id" as "id" FROM "history") as "history""#,
-            r#"ON ("hash_testing"."identification_number") = ("history"."id")"#,
-            r#"WHERE ("hash_testing"."product_code") = ('a')"#,
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"INNER JOIN (SELECT "history"."id" as "id" FROM "history") as "history""#,
+                r#"ON ("hash_testing"."identification_number") = ("history"."id")"#,
+                r#"WHERE ("hash_testing"."product_code") = (?)"#,
+            ),
+            vec![Value::from("a")],
         ),
         sql
     );
@@ -204,13 +231,16 @@ fn inner_join_with_sq() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {} {}",
-            r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
-            r#"INNER JOIN"#,
-            r#"(SELECT "history"."id" as "id" FROM "history" WHERE ("history"."id") = (1)) as "t""#,
-            r#"ON ("hash_testing"."identification_number") = ("t"."id")"#,
-            r#"WHERE ("hash_testing"."product_code") = ('a')"#,
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"INNER JOIN"#,
+                r#"(SELECT "history"."id" as "id" FROM "history" WHERE ("history"."id") = (?)) as "t""#,
+                r#"ON ("hash_testing"."identification_number") = ("t"."id")"#,
+                r#"WHERE ("hash_testing"."product_code") = (?)"#,
+            ),
+            vec![Value::from(1_u64), Value::from("a")],
         ),
         sql
     );
@@ -232,13 +262,16 @@ fn selection_with_sq() {
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
-        format!(
-            "{} {} {} {} {}",
-            r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
-            r#"WHERE ("hash_testing"."identification_number") in"#,
-            r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number" FROM "hash_testing_hist""#,
-            r#"WHERE ("hash_testing_hist"."product_code") = ('b'))"#,
-            r#"and ("hash_testing"."product_code") < ('a')"#,
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"WHERE ("hash_testing"."identification_number") in"#,
+                r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number" FROM "hash_testing_hist""#,
+                r#"WHERE ("hash_testing_hist"."product_code") = (?))"#,
+                r#"and ("hash_testing"."product_code") < (?)"#,
+            ),
+            vec![Value::from("b"), Value::from("a")],
         ),
         sql
     );

@@ -534,9 +534,9 @@ WHERE "t3"."col1" = 1 AND "t8"."cola" = 1]], {} })
         { name = "col1", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -579,9 +579,9 @@ WHERE "t3"."col1" = ? AND ("t8"."cola" = ?
         { name = "col1", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -620,9 +620,9 @@ AND ("t8"."cola" = ? AND "t8"."colb" = ?)]], { 0, 0, 0, 0, 0, 0, 1, 2, 1, 2 } })
         { name = "col2", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -662,9 +662,9 @@ AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))]], {} })
         { name = "col2", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -702,9 +702,9 @@ WHERE "t3"."col1" = ? AND "t8"."cola" = ?]], { 1, 2 } })
         { name = "col1", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -743,9 +743,9 @@ WHERE "t3"."col1" = ? AND "t3"."col2" = 2 AND ("t8"."cola" = 1 AND "t8"."colb" =
         { name = "col2", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -783,9 +783,9 @@ WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)]], {} })
         { name = "col2", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -822,9 +822,9 @@ WHERE "t3"."col1" = 1 AND "t3"."col2" = 1]], {} })
         { name = "col2", type = "integer" },
         { name = "account_id", type = "integer" },
         { name = "amount", type = "integer" },
-        { name = "id", type = "integer" },
-        { name = "cola", type = "integer" },
-        { name = "colb", type = "integer" },
+        { name = "id", type = "any" },
+        { name = "cola", type = "any" },
+        { name = "colb", type = "any" },
     })
 
     t.assert_items_equals(r.rows, {
