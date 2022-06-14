@@ -1,5 +1,6 @@
 variables:
     GIT_SUBMODULE_STRATEGY: none
+    DOCKER_AUTH_CONFIG: '{ "auths": { "registry.gitlab.com": { "auth": "Z2l0bGFiK2RlcGxveS10b2tlbi0xMTI1OTA3OkdTQjRNaEVMVEFSVDlfY3d4eEFu" } } }'
 
 stages:
     - build
@@ -13,10 +14,7 @@ cache:
 default:
     tags:
         - picodata
-    image: registry.gitlab.com/picodata/dockers/brod-builder:0.7
-
-before_script:
-    - git submodule update --init --recursive
+    image: registry.gitlab.com/picodata/picodata/sbroad/sbroad-builder:0.1.0
 
 build:
     stage: build
@@ -33,6 +31,12 @@ lint:
         - make lint
 
 test:
+    before_script:
+      - git clean -xfd
+      - git submodule foreach --recursive git clean -xfd
+      - git reset --hard
+      - git submodule foreach --recursive git reset --hard
+      - git submodule update --init --recursive
     stage: test
     script:
         - make test_all
