@@ -83,7 +83,7 @@ fn test_yaml_schema_parser() {
       - \"identification_number\"
       - \"product_code\"";
 
-    let mut s = ClusterAppConfig::new();
+    let mut s = RouterConfiguration::new();
     s.load_schema(test_schema).unwrap();
 
     let expected_keys = vec!["identification_number", "product_code"];
@@ -135,8 +135,8 @@ fn test_getting_table_segment() {
       - \"identification_number\"
       - \"product_code\"";
 
-    let mut s = ClusterAppConfig::new();
-    s.set_exec_sharding_column("\"bucket_id\"".into());
+    let mut s = RouterConfiguration::new();
+    s.set_sharding_column("\"bucket_id\"".into());
     s.load_schema(test_schema).unwrap();
 
     let expected = Table::new_seg(
@@ -161,8 +161,8 @@ fn test_getting_table_segment() {
 
 #[test]
 fn test_waiting_timeout() {
-    let mut s = ClusterAppConfig::new();
-    s.set_exec_waiting_timeout(200);
+    let mut s = RouterConfiguration::new();
+    s.set_waiting_timeout(200);
 
     assert_ne!(s.get_exec_waiting_timeout(), 360);
 

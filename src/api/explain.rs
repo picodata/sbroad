@@ -6,7 +6,7 @@ use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_metadata;
-use crate::api::QUERY_ENGINE;
+use crate::api::COORDINATOR_ENGINE;
 use crate::errors::QueryPlannerError;
 use crate::executor::Query;
 
@@ -39,7 +39,7 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     if ret_code != 0 {
         return ret_code;
     }
-    QUERY_ENGINE.with(|e| {
+    COORDINATOR_ENGINE.with(|e| {
         let engine = &*e.borrow();
         let query = match Query::new(engine, &lua_params.query, &[]) {
             Ok(q) => q,

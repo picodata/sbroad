@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::Engine;
+use crate::executor::engine::Coordinator;
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
@@ -70,7 +70,7 @@ impl Buckets {
 
 impl<'a, T> Query<'a, T>
 where
-    T: Engine,
+    T: Coordinator,
 {
     fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, QueryPlannerError> {
         let mut buckets: Vec<Buckets> = Vec::new();
@@ -141,7 +141,7 @@ where
                             }
                         }
                         if !values.is_empty() {
-                            let bucket = self.engine.determine_bucket_id(&values);
+                            let bucket = self.coordinator.determine_bucket_id(&values);
                             let bucket_set: HashSet<u64, RepeatableState> =
                                 vec![bucket].into_iter().collect();
                             buckets.push(Buckets::new_filtered(bucket_set));

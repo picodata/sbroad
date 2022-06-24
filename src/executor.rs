@@ -29,8 +29,8 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::Engine;
-use crate::executor::engine::{Metadata, QueryCache};
+use crate::executor::engine::Coordinator;
+use crate::executor::engine::{CoordinatorMetadata, QueryCache};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
@@ -45,6 +45,7 @@ use sha2::{Digest, Sha256};
 pub mod bucket;
 pub mod engine;
 pub mod ir;
+pub mod lru;
 pub mod result;
 pub mod vtable;
 
@@ -64,21 +65,21 @@ impl Plan {
 
 /// Query to execute.
 #[derive(Debug)]
-pub struct Query<'a, E>
+pub struct Query<'a, C>
 where
-    E: Engine,
+    C: Coordinator,
 {
     /// Execution plan
     exec_plan: ExecutionPlan,
-    /// Execution engine
-    engine: &'a E,
+    /// Coordinator runtime
+    coordinator: &'a C,
     /// Bucket map
     bucket_map: HashMap<usize, Buckets>,
 }
 
-impl<'a, E> Query<'a, E>
+impl<'a, C> Query<'a, C>
 where
-    E: Engine,
+    C: Coordinator,
 {
     /// Create a new query.
     ///
@@ -87,30 +88,30 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(engine: &'a E, sql: &str, params: &[Value]) -> Result<Self, QueryPlannerError>
+    pub fn new(coordinator: &'a C, sql: &str, params: &[Value]) -> Result<Self, QueryPlannerError>
     where
-        E::Metadata: Metadata,
-        E::QueryCache: QueryCache<String, Plan>,
-        E::ParseTree: Ast,
+        C::Metadata: CoordinatorMetadata,
+        C::QueryCache: QueryCache<String, Plan>,
+        C::ParseTree: Ast,
     {
         let hash = Sha256::digest(sql.as_bytes());
         let key = Base64::encode_string(&hash);
-        let query_cache = engine.query_cache();
+        let ir_cache = coordinator.ir_cache();
 
         let mut plan = Plan::new();
-        if let Some(cached_ir) = query_cache.borrow_mut().get(&key)? {
+        if let Some(cached_ir) = ir_cache.borrow_mut().get(&key)? {
             plan = cached_ir;
         }
         if plan.is_empty() {
-            let ast = E::ParseTree::new(sql)?;
-            plan = ast.resolve_metadata(engine.metadata())?;
-            query_cache.borrow_mut().put(key, plan.clone())?;
+            let ast = C::ParseTree::new(sql)?;
+            plan = ast.resolve_metadata(coordinator.metadata())?;
+            ir_cache.borrow_mut().put(key, plan.clone())?;
         }
         plan.bind_params(params)?;
         plan.optimize()?;
         let query = Query {
             exec_plan: ExecutionPlan::from(plan),
-            engine,
+            coordinator,
             bucket_map: HashMap::new(),
         };
         Ok(query)
@@ -122,20 +123,20 @@ where
         &self.exec_plan
     }
 
-    /// Get the engine of the query.
+    /// Get the coordinator runtime of the query.
     #[must_use]
-    pub fn get_engine(&self) -> &E {
-        self.engine
+    pub fn get_coordinator(&self) -> &C {
+        self.coordinator
     }
 
-    /// Execute distributed query.
+    /// Dispatch a distributed query from coordinator to the segments.
     ///
     /// # Errors
     /// - Failed to get a motion subtree.
     /// - Failed to discover buckets.
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
-    pub fn exec(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
+    pub fn dispatch(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
         let slices = self.exec_plan.get_ir_plan().get_slices();
         if let Some(slices) = slices {
             for slice in slices {
@@ -143,9 +144,11 @@ where
                     // TODO: make it work in parallel
                     let top_id = self.exec_plan.get_motion_subtree_root(motion_id)?;
                     let buckets = self.bucket_discovery(top_id)?;
-                    let virtual_table =
-                        self.engine
-                            .materialize_motion(&mut self.exec_plan, motion_id, &buckets)?;
+                    let virtual_table = self.coordinator.materialize_motion(
+                        &mut self.exec_plan,
+                        motion_id,
+                        &buckets,
+                    )?;
                     self.add_motion_result(motion_id, virtual_table)?;
                 }
             }
@@ -153,7 +156,8 @@ where
 
         let top_id = self.exec_plan.get_ir_plan().get_top()?;
         let buckets = self.bucket_discovery(top_id)?;
-        self.engine.exec(&mut self.exec_plan, top_id, &buckets)
+        self.coordinator
+            .dispatch(&mut self.exec_plan, top_id, &buckets)
     }
 
     /// Add materialize motion result to translation map of virtual tables
@@ -230,7 +234,7 @@ where
                     }
                 }
             }
-            let bucket_id = self.engine.determine_bucket_id(&shard_key_tuple);
+            let bucket_id = self.coordinator.determine_bucket_id(&shard_key_tuple);
             match index.entry(bucket_id) {
                 Entry::Vacant(entry) => {
                     entry.insert(vec![pos]);

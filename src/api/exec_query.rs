@@ -6,7 +6,7 @@ use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_metadata;
-use crate::api::QUERY_ENGINE;
+use crate::api::COORDINATOR_ENGINE;
 use crate::errors::QueryPlannerError;
 use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::Query;
@@ -50,9 +50,9 @@ impl<'de> Deserialize<'de> for Args {
     }
 }
 
-/// Execute parameterized SQL query.
+/// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
-pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match Args::try_from(args) {
         Ok(param) => param,
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
@@ -62,7 +62,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     if ret_code != 0 {
         return ret_code;
     }
-    QUERY_ENGINE.with(|e| {
+    COORDINATOR_ENGINE.with(|e| {
         let engine = &*e.borrow();
         let mut query = match Query::new(engine, &lua_params.query, &lua_params.params) {
             Ok(q) => q,
@@ -78,7 +78,7 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             }
         };
 
-        match query.exec() {
+        match query.dispatch() {
             Ok(result) => {
                 if let Some(producer_result) = (&*result).downcast_ref::<ProducerResult>() {
                     ctx.return_mp(&producer_result).unwrap();

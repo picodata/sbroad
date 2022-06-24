@@ -44,9 +44,9 @@ impl TryInto<Column> for &MetadataColumn {
             "double" => Ok(Column::new(&self.name, Type::Double, ColumnRole::User)),
             "integer" => Ok(Column::new(&self.name, Type::Integer, ColumnRole::User)),
             "scalar" => Ok(Column::new(&self.name, Type::Scalar, ColumnRole::User)),
-            "string" => Ok(Column::new(&self.name, Type::String, ColumnRole::User)),
-            "text" => Ok(Column::new(&self.name, Type::String, ColumnRole::User)),
-            "varchar" => Ok(Column::new(&self.name, Type::String, ColumnRole::User)),
+            "string" | "text" | "varchar" => {
+                Ok(Column::new(&self.name, Type::String, ColumnRole::User))
+            }
             "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, ColumnRole::User)),
             _ => Err(QueryPlannerError::CustomError(format!(
                 "unsupported column type: {}",

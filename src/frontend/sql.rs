@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::Metadata;
+use crate::executor::engine::CoordinatorMetadata;
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode, Type,
 };
@@ -94,7 +94,7 @@ impl Ast for AbstractSyntaxTree {
     #[allow(clippy::too_many_lines)]
     fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
     where
-        M: Metadata,
+        M: CoordinatorMetadata,
     {
         let mut plan = Plan::new();
 

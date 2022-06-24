@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
-use crate::api::QUERY_ENGINE;
+use crate::api::COORDINATOR_ENGINE;
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::Engine;
+use crate::executor::engine::Coordinator;
 use crate::ir::value::Value;
 
 #[derive(Serialize, Deserialize)]
@@ -34,7 +34,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
 
-    QUERY_ENGINE.with(|e| {
+    COORDINATOR_ENGINE.with(|e| {
         let engine = &mut *e.borrow_mut();
 
         let result = engine.determine_bucket_id(&[&bucket_str]);

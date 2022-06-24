@@ -29,7 +29,7 @@ end
 local function query(query, params)
     local has_err, parser_res = pcall(
         function()
-            return box.func["sbroad.execute_query"]:call({ query, params })
+            return box.func["sbroad.dispatch_query"]:call({ query, params })
         end
     )
 
@@ -91,7 +91,7 @@ local function init(opts) -- luacheck: no unused args
     box.schema.func.create('sbroad.calculate_bucket_id_by_dict', { 
             if_not_exists = true, language = 'C' 
     })
-    box.schema.func.create('sbroad.execute_query', { 
+    box.schema.func.create('sbroad.dispatch_query', {
             if_not_exists = true, language = 'C' 
     })
 

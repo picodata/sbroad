@@ -1,4 +1,5 @@
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::EvictFn;
 use crate::executor::QueryCache;
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -42,7 +43,6 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct LRUCache<Key, Value>
 where
     Value: Default,
@@ -53,6 +53,8 @@ where
     size: usize,
     /// `None` key is reserved for the LRU sentinel head.
     map: HashMap<Option<Key>, LRUNode<Key, Value>>,
+    // A function applied to the key before evicting it from the cache.
+    evict_fn: Option<EvictFn<Value>>,
 }
 
 impl<Key, Value> LRUCache<Key, Value>
@@ -140,8 +142,19 @@ where
         if head_prev_id.is_none() {
             return Ok(());
         }
-        self.unlink_node(&head_prev_id.clone())?;
-        if self.map.remove(&head_prev_id).is_some() {
+        self.unlink_node(&head_prev_id)?;
+        if let Some(last_key) = &head_prev_id {
+            let map = &mut self.map;
+            if let Some(evict_fn) = &self.evict_fn {
+                let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Mutable LRU node with key {:?} not found",
+                        &head_prev_id
+                    ))
+                })?;
+                evict_fn(&mut head_prev.value)?;
+            }
+            self.map.remove(&Some(last_key.clone()));
             self.size -= 1;
         }
         Ok(())
@@ -153,7 +166,7 @@ where
     Value: Default + Clone,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
-    fn new(capacity: usize) -> Result<Self, QueryPlannerError> {
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError> {
         if capacity == 0 {
             return Err(QueryPlannerError::CustomError(
                 "LRU cache capacity must be greater than zero".to_string(),
@@ -168,6 +181,7 @@ where
             capacity: capacity as usize,
             size: 0,
             map,
+            evict_fn,
         })
     }
 

@@ -4,7 +4,7 @@
 //! to build the intermediate representation (IR).
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::Metadata;
+use crate::executor::engine::CoordinatorMetadata;
 use crate::ir::Plan;
 
 pub trait Ast {
@@ -29,7 +29,7 @@ pub trait Ast {
     /// - Failed to resolve AST nodes with cluster metadata.
     fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
     where
-        M: Metadata;
+        M: CoordinatorMetadata;
 }
 
 pub mod sql;

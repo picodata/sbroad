@@ -6,10 +6,11 @@ use std::collections::HashMap;
 
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
-use sbroad::executor::engine::cartridge::cache::lru::{LRUCache, DEFAULT_CAPACITY};
+use sbroad::executor::engine::cartridge::config::RouterConfiguration;
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
-use sbroad::executor::engine::{Engine, LocalMetadata, Metadata, QueryCache};
+use sbroad::executor::engine::{Coordinator, CoordinatorMetadata, QueryCache};
 use sbroad::executor::ir::ExecutionPlan;
+use sbroad::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
@@ -26,7 +27,7 @@ pub struct MetadataMock {
     sharding_column: String,
 }
 
-impl Metadata for MetadataMock {
+impl CoordinatorMetadata for MetadataMock {
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
         let name = Self::to_name(table_name);
         match self.tables.get(&name) {
@@ -325,25 +326,34 @@ impl MetadataMock {
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone)]
-pub struct EngineMock {
+pub struct RouterRuntimeMock {
     metadata: MetadataMock,
     virtual_tables: HashMap<usize, VirtualTable>,
-    query_cache: RefCell<LRUCache<String, Plan>>,
+    ir_cache: RefCell<LRUCache<String, Plan>>,
 }
 
-impl Engine for EngineMock {
+impl std::fmt::Debug for RouterRuntimeMock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("")
+            .field(&self.metadata)
+            .field(&self.virtual_tables)
+            .finish()
+    }
+}
+
+impl Coordinator for RouterRuntimeMock {
     type Metadata = MetadataMock;
     type ParseTree = AbstractSyntaxTree;
     type QueryCache = LRUCache<String, Plan>;
+    type Configuration = RouterConfiguration;
 
-    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
-        *self.query_cache.borrow_mut() = Self::QueryCache::new(capacity)?;
+    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.ir_cache.borrow_mut() = Self::QueryCache::new(capacity, None)?;
         Ok(())
     }
 
-    fn query_cache(&self) -> &RefCell<Self::QueryCache> {
-        &self.query_cache
+    fn ir_cache(&self) -> &RefCell<Self::QueryCache> {
+        &self.ir_cache
     }
 
     fn metadata(&self) -> &Self::Metadata
@@ -361,19 +371,13 @@ impl Engine for EngineMock {
         self.metadata.tables.is_empty()
     }
 
-    fn get_metadata(&self) -> Result<Option<LocalMetadata>, QueryPlannerError> {
-        let metadata = LocalMetadata {
-            schema: "".into(),
-            timeout: 0,
-            capacity: DEFAULT_CAPACITY,
-            sharding_column: "".into(),
-        };
+    fn get_configuration(&self) -> Result<Option<RouterConfiguration>, QueryPlannerError> {
+        let metadata = RouterConfiguration::new();
         Ok(Some(metadata))
     }
 
-    fn update_metadata(&mut self, _metadata: LocalMetadata) -> Result<(), QueryPlannerError> {
+    fn update_configuration(&mut self, _metadata: RouterConfiguration) {
         self.metadata = MetadataMock::new();
-        Ok(())
     }
 
     fn materialize_motion(
@@ -391,7 +395,7 @@ impl Engine for EngineMock {
         }
     }
 
-    fn exec(
+    fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
         top_id: usize,
@@ -425,21 +429,21 @@ impl Engine for EngineMock {
     }
 }
 
-impl Default for EngineMock {
+impl Default for RouterRuntimeMock {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl EngineMock {
+impl RouterRuntimeMock {
     #[allow(dead_code)]
     #[must_use]
     pub fn new() -> Self {
-        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY).unwrap();
-        EngineMock {
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
+        RouterRuntimeMock {
             metadata: MetadataMock::new(),
             virtual_tables: HashMap::new(),
-            query_cache: RefCell::new(cache),
+            ir_cache: RefCell::new(cache),
         }
     }
 

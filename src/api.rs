@@ -1,8 +1,7 @@
+use crate::executor::engine::cartridge::router::RouterRuntime;
 use std::cell::RefCell;
 
-use crate::executor::engine::cartridge;
-
-thread_local!(static QUERY_ENGINE: RefCell<cartridge::Runtime> = RefCell::new(cartridge::Runtime::new().unwrap()));
+thread_local!(static COORDINATOR_ENGINE: RefCell<RouterRuntime> = RefCell::new(RouterRuntime::new().unwrap()));
 
 pub mod calculate_bucket_id;
 pub mod calculate_bucket_id_by_dict;

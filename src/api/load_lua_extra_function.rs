@@ -1,9 +1,8 @@
 use std::os::raw::c_int;
-
 use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
-use crate::executor::engine::cartridge::load_extra_function;
+use crate::executor::engine::cartridge::router::load_extra_function;
 
 /// Loads extra Lua code for the engine.
 #[no_mangle]

@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::mock::EngineMock;
+use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
@@ -14,15 +14,19 @@ use super::*;
 #[test]
 fn shard_query() {
     let sql = r#"SELECT "FIRST_NAME" FROM "test_space" where "id" = 1"#;
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    let bucket = coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::from(format!("Execute query on a bucket [{}]", bucket)),
         Value::from(String::from(PatternWithParams::new(
@@ -50,14 +54,18 @@ fn shard_union_query() {
         WHERE "sys_op" > 1) AS "t3"
     WHERE "id" = 1"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected
         .rows
         .push(vec![
@@ -84,17 +92,21 @@ fn shard_union_query() {
 #[test]
 fn map_reduce_query() {
     let sql = r#"SELECT "product_code" FROM "hash_testing" where "identification_number" = 1 and "product_code" = '457'"#;
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
     let param457 = Value::from("457");
 
-    let bucket = query.engine.determine_bucket_id(&[&param1, &param457]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param457]);
 
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -119,9 +131,9 @@ fn map_reduce_query() {
 fn linker_test() {
     let sql = r#"SELECT "FIRST_NAME" FROM "test_space" where "id" in
     (SELECT "identification_number" FROM "hash_testing" where "identification_number" > 1)"#;
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
@@ -130,17 +142,23 @@ fn linker_test() {
             .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
             .unwrap();
     }
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
 
     expected.rows.extend(vec![
         vec![
@@ -192,9 +210,9 @@ fn union_linker_test() {
         ) as "t2"
         WHERE "product_code" = '123')"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
@@ -203,17 +221,23 @@ fn union_linker_test() {
             .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
             .unwrap();
     }
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
 
     expected.rows.extend(vec![
         vec![
@@ -284,9 +308,9 @@ INNER JOIN
     ON "t3"."id" = "t8"."identification_number"
 WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_table = virtual_table_23();
     virtual_table.set_alias("\"t8\"").unwrap();
@@ -296,14 +320,20 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
             .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
             .unwrap();
     }
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -354,9 +384,9 @@ fn join_linker2_test() {
         select "id" as "id1", "id" as "id2" from "test_space_hist"
     ) as "t2" on "t1"."id" = 1"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -380,14 +410,20 @@ fn join_linker2_test() {
             .unwrap();
     }
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
@@ -413,9 +449,9 @@ fn join_linker3_test() {
     (SELECT "id" as "id1", "FIRST_NAME" FROM "test_space") AS "t2"
     ON "t2"."id1" = 1"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -439,14 +475,20 @@ fn join_linker3_test() {
             .unwrap();
     }
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
@@ -478,9 +520,9 @@ fn join_linker4_test() {
     on t1."id" = t2."r_id" and
     t1."FIRST_NAME" = (SELECT "FIRST_NAME" as "fn" FROM "test_space" WHERE "id" = 1)"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
 
     let motion_t2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_t2 = VirtualTable::new();
@@ -499,7 +541,9 @@ fn join_linker4_test() {
             .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
             .unwrap();
     }
-    query.engine.add_virtual_table(motion_t2_id, virtual_t2);
+    query
+        .coordinator
+        .add_virtual_table(motion_t2_id, virtual_t2);
 
     let motion_sq_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
     let mut virtual_sq = VirtualTable::new();
@@ -517,17 +561,23 @@ fn join_linker4_test() {
             .reshard_vtable(&mut virtual_sq, key, &DataGeneration::None)
             .unwrap();
     }
-    query.engine.add_virtual_table(motion_sq_id, virtual_sq);
+    query
+        .coordinator
+        .add_virtual_table(motion_sq_id, virtual_sq);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -569,9 +619,9 @@ fn anonymous_col_index_test() {
     WHERE "id" in (SELECT "identification_number" FROM "hash_testing" WHERE "product_units" < 3)
         OR "id" in (SELECT "identification_number" FROM "hash_testing" WHERE "product_units" > 5)"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion1_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
     let mut virtual_t1 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
@@ -581,7 +631,7 @@ fn anonymous_col_index_test() {
             .unwrap();
     }
     query
-        .engine
+        .coordinator
         .add_virtual_table(motion1_id, virtual_table_23());
     let motion2_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][1];
     let mut virtual_t2 = virtual_table_23();
@@ -592,17 +642,21 @@ fn anonymous_col_index_test() {
             .unwrap();
     }
     query
-        .engine
+        .coordinator
         .add_virtual_table(motion2_id, virtual_table_23());
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.engine.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
     expected.rows.extend(vec![
         vec![
             Value::String(format!("Execute query on a bucket [{}]", bucket3)),
@@ -650,15 +704,19 @@ fn anonymous_col_index_test() {
 #[test]
 fn sharding_column1_test() {
     let sql = r#"SELECT * FROM "test_space" where "id" = 1"#;
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(String::from(PatternWithParams::new(
@@ -677,15 +735,19 @@ fn sharding_column1_test() {
 #[test]
 fn sharding_column2_test() {
     let sql = r#"SELECT *, "bucket_id" FROM "test_space" where "id" = 1"#;
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
         Value::String(
@@ -709,9 +771,9 @@ fn insert1_test() {
     let sql = r#"insert into "t" ("b") select "a" from "t"
         where "a" = 1 and "b" = 2 or "a" = 2 and "b" = 3"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -723,19 +785,25 @@ fn insert1_test() {
     virtual_table.add_tuple(vec![Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Column::default_value();
     let param2 = Value::from(1_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     let param1 = Column::default_value();
     let param2 = Value::from(2_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -769,8 +837,8 @@ fn insert2_test() {
     let sql = r#"insert into "t" ("a", "b") select "a", "b" from "t"
         where "a" = 1 and "b" = 2"#;
 
-    let engine = EngineMock::new();
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
 
     // Though projection row has the same distribution key as
     // the target table, we still add a motion and collect a
@@ -790,15 +858,21 @@ fn insert2_test() {
     });
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -822,9 +896,9 @@ fn insert3_test() {
     let sql = r#"insert into "t" ("b", "a") select "a", "b" from "t"
         where "a" = 1 and "b" = 2 or "a" = 3 and "b" = 4"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -841,19 +915,25 @@ fn insert3_test() {
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(2_u64);
     let param2 = Value::from(1_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     let param1 = Value::from(4_u64);
     let param2 = Value::from(3_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![
         vec![
@@ -893,9 +973,9 @@ fn insert4_test() {
     let sql = r#"insert into "t" ("b", "a") select "b", "a" from "t"
         where "a" = 1 and "b" = 2"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
 
     // Though data allows to be inserted locally still gather it on the
     // coordinator to recalculate a "bucket_id" field for "t".
@@ -913,15 +993,21 @@ fn insert4_test() {
     });
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(1_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -945,9 +1031,9 @@ fn insert5_test() {
     let sql = r#"insert into "t" ("b", "a") select 5, 6 from "t"
         where "a" = 1 and "b" = 2"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -964,15 +1050,21 @@ fn insert5_test() {
     virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
     virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
 
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(6_u64);
     let param2 = Value::from(5_u64);
-    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -1003,9 +1095,9 @@ fn insert5_test() {
 fn insert6_test() {
     let sql = r#"insert into "t" ("a", "b") values (1, 2), (1, 2), (3, 4)"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -1023,18 +1115,24 @@ fn insert6_test() {
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     let param3 = Value::from(3_u64);
     let param4 = Value::from(4_u64);
-    let bucket2 = query.engine.determine_bucket_id(&[&param3, &param4]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param3, &param4]);
 
     expected.rows.extend(vec![
         vec![
@@ -1087,8 +1185,8 @@ fn insert6_test() {
 fn insert7_test() {
     let sql = r#"insert into "hash_testing" ("sys_op", "bucket_id" ) values (1, 2)"#;
 
-    let engine = EngineMock::new();
-    let result = Query::new(&engine, sql, &[]).unwrap_err();
+    let coordinator = RouterRuntimeMock::new();
+    let result = Query::new(&coordinator, sql, &[]).unwrap_err();
 
     assert_eq!(
         QueryPlannerError::CustomError(format!(
@@ -1103,9 +1201,9 @@ fn insert7_test() {
 fn insert8_test() {
     let sql = r#"insert into "hash_testing" select * from "hash_single_testing""#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -1128,13 +1226,19 @@ fn insert8_test() {
         Value::from(4_u64),
     ]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
     let param2 = Value::from("two");
-    let bucket = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
@@ -1164,9 +1268,10 @@ fn insert8_test() {
 fn insert9_test() {
     let sql = r#"insert into "t" ("a", "b") values (?, ?)"#;
 
-    let engine = EngineMock::new();
+    let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&engine, sql, &[Value::from(1_u64), Value::from(2_u64)]).unwrap();
+    let mut query =
+        Query::new(&coordinator, sql, &[Value::from(1_u64), Value::from(2_u64)]).unwrap();
     let motion_id = query.exec_plan.get_ir_plan().get_slices().unwrap()[0][0];
 
     let mut virtual_table = VirtualTable::new();
@@ -1182,14 +1287,20 @@ fn insert9_test() {
     });
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
 
-    query.engine.add_virtual_table(motion_id, virtual_table);
-    let result = *query.exec().unwrap().downcast::<ProducerResult>().unwrap();
+    query
+        .coordinator
+        .add_virtual_table(motion_id, virtual_table);
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
 
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket1 = query.engine.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),

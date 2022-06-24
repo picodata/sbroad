@@ -6,9 +6,9 @@ use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_metadata;
-use crate::api::QUERY_ENGINE;
+use crate::api::COORDINATOR_ENGINE;
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::Engine;
+use crate::executor::engine::Coordinator;
 use crate::ir::value::Value;
 
 #[derive(Debug, Default, Serialize, PartialEq)]
@@ -61,7 +61,7 @@ pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionAr
     if ret_code != 0 {
         return ret_code;
     }
-    QUERY_ENGINE.with(|e| {
+    COORDINATOR_ENGINE.with(|e| {
         let engine = &*e.borrow();
 
         match engine.extract_sharding_keys(params.space, &params.rec) {

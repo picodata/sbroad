@@ -1,4 +1,4 @@
-//! Metadata cache module.
+//! Cartridge configuration cache module.
 
 extern crate yaml_rust;
 
@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use yaml_rust::YamlLoader;
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::cartridge::cache::lru::DEFAULT_CAPACITY;
-use crate::executor::Metadata;
+use crate::executor::lru::DEFAULT_CAPACITY;
+use crate::executor::CoordinatorMetadata;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 
 use self::yaml_rust::yaml;
@@ -17,7 +17,7 @@ use self::yaml_rust::yaml;
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
 /// as it is managed by Tarantool's vshard module.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ClusterAppConfig {
+pub struct RouterConfiguration {
     /// Tarantool cartridge schema
     schema: yaml::Yaml,
 
@@ -34,16 +34,16 @@ pub struct ClusterAppConfig {
     tables: HashMap<String, Table>,
 }
 
-impl Default for ClusterAppConfig {
+impl Default for RouterConfiguration {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ClusterAppConfig {
+impl RouterConfiguration {
     #[must_use]
     pub fn new() -> Self {
-        ClusterAppConfig {
+        RouterConfiguration {
             schema: yaml::Yaml::Null,
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
@@ -126,7 +126,7 @@ impl ClusterAppConfig {
                     None => return Err(QueryPlannerError::SpaceFormatNotFound),
                 };
 
-                let table_name: String = ClusterAppConfig::to_name(current_space_name);
+                let table_name: String = RouterConfiguration::to_name(current_space_name);
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
                 let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
                 self.tables.insert(table_name, t);
@@ -139,13 +139,13 @@ impl ClusterAppConfig {
     }
 
     /// Setup response waiting timeout for executor
-    pub fn set_exec_waiting_timeout(&mut self, timeout: u64) {
+    pub fn set_waiting_timeout(&mut self, timeout: u64) {
         if timeout > 0 {
             self.waiting_timeout = timeout;
         }
     }
 
-    pub fn set_exec_cache_capacity(&mut self, capacity: usize) {
+    pub fn set_cache_capacity(&mut self, capacity: usize) {
         if capacity > 0 {
             self.cache_capacity = capacity;
         } else {
@@ -153,12 +153,12 @@ impl ClusterAppConfig {
         }
     }
 
-    pub fn set_exec_sharding_column(&mut self, column: String) {
+    pub fn set_sharding_column(&mut self, column: String) {
         self.sharding_column = column;
     }
 }
 
-impl Metadata for ClusterAppConfig {
+impl CoordinatorMetadata for RouterConfiguration {
     /// Get table segment form cache by table name
     ///
     /// # Errors
@@ -203,6 +203,5 @@ impl Metadata for ClusterAppConfig {
     }
 }
 
-pub mod lru;
 #[cfg(test)]
 mod tests;

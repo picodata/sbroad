@@ -1,4 +1,4 @@
-//! Engine module.
+//! Coordinator module.
 //!
 //! Traits that define an execution engine interface.
 
@@ -14,12 +14,14 @@ use crate::ir::value::Value;
 
 pub mod cartridge;
 
+pub type EvictFn<Value> = Box<dyn Fn(&mut Value) -> Result<(), QueryPlannerError>>;
+
 pub trait QueryCache<Key, Value> {
     /// Builds a new cache with the given capacity.
     ///
     /// # Errors
     /// - Capacity is not valid (zero).
-    fn new(capacity: usize) -> Result<Self, QueryPlannerError>
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError>
     where
         Self: Sized;
 
@@ -37,7 +39,7 @@ pub trait QueryCache<Key, Value> {
 }
 
 /// A metadata storage trait of the cluster.
-pub trait Metadata {
+pub trait CoordinatorMetadata {
     /// Get a table by name.
     ///
     /// # Errors
@@ -70,24 +72,12 @@ pub trait Metadata {
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError>;
 }
 
-/// Local storage for uploading metadata.
-#[derive(Debug)]
-pub struct LocalMetadata {
-    /// Cluster schema.
-    pub schema: String,
-    /// Query execution timeout.
-    pub timeout: u64,
-    /// Query cache capacity.
-    pub capacity: usize,
-    /// Sharding column name.
-    pub sharding_column: String,
-}
-
-/// An execution engine trait.
-pub trait Engine {
+/// A coordinator trait.
+pub trait Coordinator {
     type Metadata;
     type QueryCache;
     type ParseTree;
+    type Configuration;
 
     /// Return object of metadata storage
     fn metadata(&self) -> &Self::Metadata
@@ -100,25 +90,22 @@ pub trait Engine {
     /// Check if the cache is empty.
     fn is_metadata_empty(&self) -> bool;
 
-    /// Retrieve cluster metadata.
+    /// Retrieve cluster configuration.
     ///
     /// # Errors
     /// - Internal error.
-    fn get_metadata(&self) -> Result<Option<LocalMetadata>, QueryPlannerError>;
+    fn get_configuration(&self) -> Result<Option<Self::Configuration>, QueryPlannerError>;
 
-    /// Update cached metadata information.
-    ///
-    /// # Errors
-    /// - Failed to update metadata information (invalid metadata).
-    fn update_metadata(&mut self, metadata: LocalMetadata) -> Result<(), QueryPlannerError>;
+    /// Update cached configuration.
+    fn update_configuration(&mut self, metadata: Self::Configuration);
 
-    /// Flush the query cache.
+    /// Flush the coordinator's IR cache.
     ///
     /// # Errors
     /// - Invalid capacity (zero).
-    fn clear_query_cache(&self, capacity: usize) -> Result<(), QueryPlannerError>;
+    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError>;
 
-    fn query_cache(&self) -> &RefCell<Self::QueryCache>
+    fn ir_cache(&self) -> &RefCell<Self::QueryCache>
     where
         Self: Sized;
 
@@ -133,22 +120,21 @@ pub trait Engine {
         buckets: &Buckets,
     ) -> Result<VirtualTable, QueryPlannerError>;
 
-    /// Execute sql query on the all shards in cluster
+    /// Dispatch a sql query to the shards in cluster and get the results.
     ///
     /// # Errors
     /// - internal executor errors
-    fn exec(
+    fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError>;
 
-    /// Filter lua table values and return in right order
+    /// Extract a list of the sharding keys of the columns from the given space.
     ///
     /// # Errors
-    /// - args does not contains all sharding keys
-    /// - internal metadata errors
+    /// - Columns are not the part of the sharding key of the space.
     fn extract_sharding_keys<'engine, 'rec>(
         &'engine self,
         space: String,

@@ -1,7 +1,7 @@
 extern crate sbroad;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use engine::EngineMock;
+use engine::RouterRuntimeMock;
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
 
@@ -232,7 +232,7 @@ fn query1_sql() -> String {
     sql.into()
 }
 
-fn query1(pattern: &str, params: &[Value], engine: &mut EngineMock) {
+fn query1(pattern: &str, params: &[Value], engine: &mut RouterRuntimeMock) {
     let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
@@ -242,7 +242,7 @@ fn query1(pattern: &str, params: &[Value], engine: &mut EngineMock) {
 }
 
 fn bench_query1(c: &mut Criterion) {
-    let mut engine = EngineMock::new();
+    let mut engine = RouterRuntimeMock::new();
     let sql = query1_sql();
     let mut sys_from: u64 = 42;
     let mut reestrid: u64 = 666;
