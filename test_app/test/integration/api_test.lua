@@ -440,6 +440,64 @@ g.test_insert_3 = function()
     })
 end
 
+-- check cyrillic consts support
+g.test_insert_4 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (?, ?, 'кириллица'), (?, ?, 'КИРИЛЛИЦА')]], { 5, 4, 6, 5 } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {5, "КИРИЛЛИЦА", 6, 6661},
+            {10, box.NULL, 0, 11520},
+            {4, "кириллица", 5, 27225},
+        },
+    })
+end
+
+-- check cyrillic params support
+g.test_insert_5 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (?, ?, ?), (?, ?, ?)]], { 5, 4, "кириллица", 6, 5, "КИРИЛЛИЦА" } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {5, "КИРИЛЛИЦА", 6, 6661},
+            {10, box.NULL, 0, 11520},
+            {4, "кириллица", 5, 27225},
+        },
+    })
+end
+
 g.test_invalid_explain = function()
     local api = cluster:server("api-1").net_box
 

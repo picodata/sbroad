@@ -349,6 +349,24 @@ fn front_sql15() {
     );
 }
 
+// check cyrillic strings support
+#[test]
+fn front_sql16() {
+    let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing"
+        WHERE "product_code" = 'кириллица'"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
+            r#""hash_testing"."product_code" as "product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") = (?)"#,
+        ),
+        vec![Value::from("кириллица")],
+    );
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
 #[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
@@ -371,6 +389,24 @@ fn front_params2() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
     let params = vec![Value::Null, Value::from("hello")];
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
+        ),
+        params.clone(),
+    );
+
+    assert_eq!(sql_to_sql(pattern, &params, &no_transform), expected);
+}
+
+// check cyrillic params support
+#[test]
+fn front_params3() {
+    let pattern = r#"SELECT "id" FROM "test_space"
+        WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
+    let params = vec![Value::Null, Value::from("кириллица")];
     let expected = PatternWithParams::new(
         format!(
             "{} {}",

@@ -59,7 +59,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
+String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
     Keyword = { ^"union" | ^"where" }
 
 Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString }
