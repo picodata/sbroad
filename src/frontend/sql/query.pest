@@ -78,4 +78,4 @@ Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned |
     Parameter = @{ "?" }
 
 EOF = { EOI | ";" }
-WHITESPACE = _{ " " | "\t" | "\n" | "\n\r" }
+WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }
