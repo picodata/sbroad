@@ -30,8 +30,9 @@ use std::collections::{hash_map::Entry, HashMap};
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::Coordinator;
-use crate::executor::engine::{CoordinatorMetadata, QueryCache};
+use crate::executor::engine::CoordinatorMetadata;
 use crate::executor::ir::ExecutionPlan;
+use crate::executor::lru::Cache;
 use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
 use crate::ir::operator::Relational;
@@ -90,8 +91,8 @@ where
     /// - Failed to apply optimizing transformations to IR plan.
     pub fn new(coordinator: &'a C, sql: &str, params: &[Value]) -> Result<Self, QueryPlannerError>
     where
-        C::Metadata: CoordinatorMetadata,
-        C::QueryCache: QueryCache<String, Plan>,
+        C::Configuration: CoordinatorMetadata,
+        C::Cache: Cache<String, Plan>,
         C::ParseTree: Ast,
     {
         let hash = Sha256::digest(sql.as_bytes());
@@ -100,11 +101,11 @@ where
 
         let mut plan = Plan::new();
         if let Some(cached_ir) = ir_cache.borrow_mut().get(&key)? {
-            plan = cached_ir;
+            plan = cached_ir.clone();
         }
         if plan.is_empty() {
             let ast = C::ParseTree::new(sql)?;
-            plan = ast.resolve_metadata(coordinator.metadata())?;
+            plan = ast.resolve_metadata(coordinator.cached_config())?;
             ir_cache.borrow_mut().put(key, plan.clone())?;
         }
         plan.bind_params(params)?;

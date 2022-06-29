@@ -5,13 +5,12 @@ use std::collections::{HashMap, HashSet};
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::config::RouterConfiguration;
-use crate::executor::engine::Coordinator;
+use crate::executor::engine::{Configuration, Coordinator};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::executor::{CoordinatorMetadata, QueryCache};
+use crate::executor::{Cache, CoordinatorMetadata};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
@@ -22,14 +21,14 @@ use super::cartridge::hash::bucket_id_by_tuple;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub struct MetadataMock {
+pub struct RouterConfigurationMock {
     schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
     sharding_column: String,
 }
 
-impl CoordinatorMetadata for MetadataMock {
+impl CoordinatorMetadata for RouterConfigurationMock {
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
         let name = Self::to_name(table_name);
         match self.tables.get(&name) {
@@ -55,13 +54,13 @@ impl CoordinatorMetadata for MetadataMock {
     }
 }
 
-impl Default for MetadataMock {
+impl Default for RouterConfigurationMock {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MetadataMock {
+impl RouterConfigurationMock {
     /// Mock engine constructor.
     ///
     /// # Panics
@@ -142,7 +141,7 @@ impl MetadataMock {
             Table::new_seg("\"t\"", columns, sharding_key).unwrap(),
         );
 
-        MetadataMock {
+        RouterConfigurationMock {
             schema: [
                 ("EMPLOYEES".into(), vec!["ID".into()]),
                 (
@@ -161,7 +160,7 @@ impl MetadataMock {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntimeMock {
-    metadata: MetadataMock,
+    metadata: RouterConfigurationMock,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
@@ -197,43 +196,42 @@ impl ProducerResult {
     }
 }
 
-impl Coordinator for RouterRuntimeMock {
-    type Metadata = MetadataMock;
-    type ParseTree = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, Plan>;
-    type Configuration = RouterConfiguration;
+impl Configuration for RouterRuntimeMock {
+    type Configuration = RouterConfigurationMock;
 
-    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
-        *self.ir_cache.borrow_mut() = Self::QueryCache::new(capacity, None)?;
-        Ok(())
-    }
-
-    fn ir_cache(&self) -> &RefCell<Self::QueryCache> {
-        &self.ir_cache
-    }
-
-    fn metadata(&self) -> &Self::Metadata
-    where
-        Self: Sized,
-    {
+    fn cached_config(&self) -> &Self::Configuration {
         &self.metadata
     }
 
-    fn clear_metadata(&mut self) {
+    fn clear_config(&mut self) {
         self.metadata.tables.clear();
     }
 
-    fn is_metadata_empty(&self) -> bool {
+    fn is_config_empty(&self) -> bool {
         self.metadata.tables.is_empty()
     }
 
-    fn get_configuration(&self) -> Result<Option<RouterConfiguration>, QueryPlannerError> {
-        let metadata = RouterConfiguration::new();
-        Ok(Some(metadata))
+    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
+        let config = RouterConfigurationMock::new();
+        Ok(Some(config))
     }
 
-    fn update_configuration(&mut self, _metadata: RouterConfiguration) {
-        self.metadata = MetadataMock::new();
+    fn update_config(&mut self, _config: Self::Configuration) {
+        self.metadata = RouterConfigurationMock::new();
+    }
+}
+
+impl Coordinator for RouterRuntimeMock {
+    type ParseTree = AbstractSyntaxTree;
+    type Cache = LRUCache<String, Plan>;
+
+    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.ir_cache.borrow_mut() = Self::Cache::new(capacity, None)?;
+        Ok(())
+    }
+
+    fn ir_cache(&self) -> &RefCell<Self::Cache> {
+        &self.ir_cache
     }
 
     fn materialize_motion(
@@ -288,7 +286,7 @@ impl Coordinator for RouterRuntimeMock {
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
         Ok(self
-            .metadata()
+            .cached_config()
             .get_sharding_key_by_space(&space)
             .unwrap()
             .iter()
@@ -315,7 +313,7 @@ impl RouterRuntimeMock {
     pub fn new() -> Self {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
         RouterRuntimeMock {
-            metadata: MetadataMock::new(),
+            metadata: RouterConfigurationMock::new(),
             virtual_tables: RefCell::new(HashMap::new()),
             ir_cache: RefCell::new(cache),
         }

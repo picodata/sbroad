@@ -1,5 +1,7 @@
 use itertools::Itertools;
+use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::tlua;
+use tarantool::tuple::{FunctionArgs, Tuple};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -12,10 +14,43 @@ use crate::ir::Node;
 
 use super::tree::{SyntaxData, SyntaxPlan};
 
-#[derive(Debug, PartialEq, tlua::Push)]
+#[derive(Debug, PartialEq, Serialize, tlua::Push)]
 pub struct PatternWithParams {
     pub pattern: String,
     pub params: Vec<Value>,
+}
+
+impl TryFrom<FunctionArgs> for PatternWithParams {
+    type Error = QueryPlannerError;
+
+    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
+        Tuple::from(value)
+            .into_struct::<PatternWithParams>()
+            .map_err(|e| {
+                QueryPlannerError::CustomError(format!(
+                    "Parsing error (pattern with parameters): {:?}",
+                    e
+                ))
+            })
+    }
+}
+
+impl<'de> Deserialize<'de> for PatternWithParams {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename = "PatternWithParams")]
+        struct StructHelper(String, Vec<Value>);
+
+        let struct_helper = StructHelper::deserialize(deserializer)?;
+
+        Ok(PatternWithParams {
+            pattern: struct_helper.0,
+            params: struct_helper.1,
+        })
+    }
 }
 
 impl PatternWithParams {

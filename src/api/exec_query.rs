@@ -1,70 +1,32 @@
+use serde::{Deserialize, Deserializer};
 use std::os::raw::c_int;
-
-use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
-use crate::api::helper::load_metadata;
-use crate::api::COORDINATOR_ENGINE;
+use crate::api::helper::load_config;
+use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::Query;
 use crate::ir::value::Value;
 
-#[derive(Serialize)]
-/// Lua function params
-struct Args {
-    /// Target sql query
-    query: String,
-    /// Query parameters
-    params: Vec<Value>,
-}
-
-impl TryFrom<FunctionArgs> for Args {
-    type Error = QueryPlannerError;
-
-    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        Tuple::from(value)
-            .into_struct::<Args>()
-            .map_err(|e| QueryPlannerError::CustomError(format!("Parsing args error: {:?}", e)))
-    }
-}
-
-/// Custom deserializer of the input function arguments
-impl<'de> Deserialize<'de> for Args {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(rename = "Args")]
-        struct StructHelper(String, Vec<Value>);
-
-        let struct_helper = StructHelper::deserialize(deserializer)?;
-
-        Ok(Args {
-            query: struct_helper.0,
-            params: struct_helper.1,
-        })
-    }
-}
-
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
 pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
-    let lua_params = match Args::try_from(args) {
+    let lua_params = match PatternWithParams::try_from(args) {
         Ok(param) => param,
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
 
-    let ret_code = load_metadata();
+    let ret_code = load_config(&COORDINATOR_ENGINE);
     if ret_code != 0 {
         return ret_code;
     }
     COORDINATOR_ENGINE.with(|e| {
         let engine = &*e.borrow();
-        let mut query = match Query::new(engine, &lua_params.query, &lua_params.params) {
+        let mut query = match Query::new(engine, &lua_params.pattern, &lua_params.params) {
             Ok(q) => q,
             Err(e) => {
                 say(
@@ -95,6 +57,82 @@ pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int 
                 }
             }
             Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+        }
+    })
+}
+
+#[derive(Debug)]
+struct DispatchedQuery {
+    pattern: String,
+    params: Vec<Value>,
+    is_data_modifier: bool,
+}
+
+impl TryFrom<FunctionArgs> for DispatchedQuery {
+    type Error = QueryPlannerError;
+
+    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
+        Tuple::from(value)
+            .into_struct::<DispatchedQuery>()
+            .map_err(|e| {
+                QueryPlannerError::CustomError(format!("Parsing error (dispatched query): {:?}", e))
+            })
+    }
+}
+
+impl<'de> Deserialize<'de> for DispatchedQuery {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename = "DispatchedQuery")]
+        struct StructHelper(String, Vec<Value>, bool);
+
+        let struct_helper = StructHelper::deserialize(deserializer)?;
+
+        Ok(DispatchedQuery {
+            pattern: struct_helper.0,
+            params: struct_helper.1,
+            is_data_modifier: struct_helper.2,
+        })
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    let lua_params = match DispatchedQuery::try_from(args) {
+        Ok(param) => param,
+        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+    };
+
+    let ret_code = load_config(&SEGMENT_ENGINE);
+    if ret_code != 0 {
+        return ret_code;
+    }
+    SEGMENT_ENGINE.with(|e| {
+        let engine = &*e.borrow();
+        match engine.execute(
+            lua_params.pattern.as_str(),
+            &lua_params.params,
+            lua_params.is_data_modifier,
+        ) {
+            Ok(result) => {
+                if let Some(producer_result) = (&*result).downcast_ref::<ProducerResult>() {
+                    ctx.return_mp(&producer_result).unwrap();
+                    0
+                } else if let Some(consumer_result) = (&*result).downcast_ref::<ConsumerResult>() {
+                    ctx.return_mp(&consumer_result).unwrap();
+                    0
+                } else {
+                    tarantool::set_error!(
+                        TarantoolErrorCode::ProcC,
+                        "{}",
+                        "Unsupported result type"
+                    )
+                }
+            }
+            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e)),
         }
     })
 }

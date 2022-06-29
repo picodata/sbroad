@@ -1,5 +1,5 @@
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::mock::MetadataMock;
+use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_sql;
@@ -43,7 +43,7 @@ fn split_columns2() {
 fn split_columns3() {
     let query = r#"SELECT "a" FROM "t" WHERE ("a", 2, "b") = (1, "b")"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();

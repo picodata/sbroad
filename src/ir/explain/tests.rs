@@ -13,8 +13,6 @@ fn simple_query_without_cond_plan() {
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
-    println!("{}", serde_yaml::to_string(&explain_tree).unwrap());
-
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")
@@ -33,8 +31,6 @@ fn simple_query_with_cond_plan() {
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
-
-    println!("{}", serde_yaml::to_string(&explain_tree).unwrap());
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
@@ -58,8 +54,6 @@ SELECT "t2"."identification_number", "product_code" FROM "hash_testing_hist" as 
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
-
-    println!("{}", serde_yaml::to_string(&explain_tree).unwrap());
 
     let mut actual_explain = String::new();
     actual_explain.push_str(r#"union all
@@ -85,8 +79,6 @@ WHERE "id" = 1"#;
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
-
-    println!("{}", serde_yaml::to_string(&explain_tree).unwrap());
 
     let mut actual_explain = String::new();
     actual_explain.push_str(r#"projection ("t"."id" -> "id", "t"."FIRST_NAME" -> "FIRST_NAME")
@@ -125,8 +117,6 @@ WHERE "id" IN (SELECT "id"
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
-
-    println!("{}", serde_yaml::to_string(&explain_tree).unwrap());
 
     let mut actual_explain = String::new();
     actual_explain.push_str(r#"projection ("t"."id" -> "id", "t"."FIRST_NAME" -> "FIRST_NAME")

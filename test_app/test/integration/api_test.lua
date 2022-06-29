@@ -9,28 +9,32 @@ g.before_each(
     function()
         local api = cluster:server("api-1").net_box
 
-        local r = api:call("query", {
+        local r, err = api:call("query", {
             [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 1}
         })
+        t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
-        r = api:call("query", {
+        r, err = api:call("query", {
             [[insert into "testing_space_hist" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 5}
         })
+        t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
-        r = api:call("query", {
+        r, err = api:call("query", {
             [[insert into "space_simple_shard_key" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok", 1, 10, box.NULL, 0}
         })
+        t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
 
-        r = api:call("query", {
+        r, err = api:call("query", {
             [[insert into "space_simple_shard_key_hist" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok_hist", 3, 2, "ok_hist_2", 1}
         })
+        t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
     end
 )

@@ -1,6 +1,5 @@
-use super::LRUCache;
+use super::{Cache, LRUCache};
 use crate::errors::QueryPlannerError;
-use crate::executor::QueryCache;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
@@ -38,4 +37,12 @@ fn lru3() {
         QueryPlannerError::CustomError("changed one to one_old during cache eviction".to_string()),
         cache.put(2, "two".to_string()).unwrap_err()
     );
+}
+
+#[test]
+fn lru4() {
+    let mut cache: LRUCache<usize, String> = LRUCache::new(2, None).unwrap();
+    cache.put(1, "one".to_string()).unwrap();
+    cache.put(1, "two".to_string()).unwrap();
+    assert_eq!(cache.get(&1).unwrap(), Some(&"two".to_string()));
 }

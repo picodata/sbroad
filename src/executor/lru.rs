@@ -1,14 +1,38 @@
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::EvictFn;
-use crate::executor::QueryCache;
 use std::collections::{hash_map::Entry, HashMap};
+use std::fmt::Debug;
 
 pub const DEFAULT_CAPACITY: usize = 50;
 
-#[derive(Clone, Debug)]
+pub type EvictFn<Value> = Box<dyn Fn(&mut Value) -> Result<(), QueryPlannerError>>;
+
+pub trait Cache<Key, Value> {
+    /// Builds a new cache with the given capacity.
+    ///
+    /// # Errors
+    /// - Capacity is not valid (zero).
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError>
+    where
+        Self: Sized;
+
+    /// Returns a value from the cache.
+    ///
+    /// # Errors
+    /// - Internal error (should never happen).
+    fn get(&mut self, key: &Key) -> Result<Option<&Value>, QueryPlannerError>;
+
+    /// Inserts a key-value pair into the cache.
+    ///
+    /// # Errors
+    /// - Internal error (should never happen).
+    fn put(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError>;
+}
+
+#[derive(Debug)]
 struct LRUNode<Key, Value>
 where
-    Value: Default,
+    Key: Clone,
+    Value: Default + Debug,
 {
     /// The value of the node.
     value: Value,
@@ -20,7 +44,8 @@ where
 
 impl<Key, Value> LRUNode<Key, Value>
 where
-    Value: Default,
+    Key: Clone,
+    Value: Default + Debug,
 {
     fn new(value: Value) -> Self {
         LRUNode {
@@ -45,7 +70,8 @@ where
 
 pub struct LRUCache<Key, Value>
 where
-    Value: Default,
+    Key: Clone,
+    Value: Default + Debug,
 {
     /// The capacity of the cache.
     capacity: usize,
@@ -53,13 +79,13 @@ where
     size: usize,
     /// `None` key is reserved for the LRU sentinel head.
     map: HashMap<Option<Key>, LRUNode<Key, Value>>,
-    // A function applied to the key before evicting it from the cache.
+    // A function applied to the value before evicting it from the cache.
     evict_fn: Option<EvictFn<Value>>,
 }
 
 impl<Key, Value> LRUCache<Key, Value>
 where
-    Value: Default,
+    Value: Default + Debug,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn get_node_or_none(&self, key: &Option<Key>) -> Option<&LRUNode<Key, Value>> {
@@ -142,18 +168,20 @@ where
         if head_prev_id.is_none() {
             return Ok(());
         }
+
+        let map = &mut self.map;
+        if let Some(evict_fn) = &self.evict_fn {
+            let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Mutable LRU node with key {:?} not found",
+                    &head_prev_id
+                ))
+            })?;
+            evict_fn(&mut head_prev.value)?;
+        }
+
         self.unlink_node(&head_prev_id)?;
         if let Some(last_key) = &head_prev_id {
-            let map = &mut self.map;
-            if let Some(evict_fn) = &self.evict_fn {
-                let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Mutable LRU node with key {:?} not found",
-                        &head_prev_id
-                    ))
-                })?;
-                evict_fn(&mut head_prev.value)?;
-            }
             self.map.remove(&Some(last_key.clone()));
             self.size -= 1;
         }
@@ -161,9 +189,9 @@ where
     }
 }
 
-impl<Key, Value> QueryCache<Key, Value> for LRUCache<Key, Value>
+impl<Key, Value> Cache<Key, Value> for LRUCache<Key, Value>
 where
-    Value: Default + Clone,
+    Value: Default + Debug,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError> {
@@ -185,19 +213,25 @@ where
         })
     }
 
-    fn get(&mut self, key: &Key) -> Result<Option<Value>, QueryPlannerError> {
-        let value = if let Some(node) = self.get_node_or_none(&Some(key.clone())) {
-            node.value.clone()
-        } else {
+    fn get(&mut self, key: &Key) -> Result<Option<&Value>, QueryPlannerError> {
+        if self.get_node_or_none(&Some(key.clone())).is_none() {
             return Ok(None);
-        };
-
-        if self.is_first(key)? {
-            return Ok(Some(value));
         }
 
+        if self.is_first(key)? {
+            let value = &self.get_node(&Some(key.clone()))?.value;
+            return Ok(Some(value));
+        }
         self.make_first(key)?;
-        Ok(Some(value))
+
+        if let Some(node) = self.get_node_or_none(&Some(key.clone())) {
+            Ok(Some(&node.value))
+        } else {
+            Err(QueryPlannerError::CustomError(format!(
+                "Failed to retrieve a value from the LRU cache for a key {:?}",
+                key
+            )))
+        }
     }
 
     fn put(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError> {

@@ -203,5 +203,35 @@ impl CoordinatorMetadata for RouterConfiguration {
     }
 }
 
+pub struct StorageConfiguration {
+    /// Prepared statements cache capacity (on the storage).
+    pub storage_capacity: usize,
+    /// Prepared statements cache size in bytes (on the storage).
+    /// If a new statement is bigger doesn't fit into the cache,
+    /// it would not be cached but executed directly.
+    pub storage_size_bytes: usize,
+}
+
+impl Default for StorageConfiguration {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StorageConfiguration {
+    #[must_use]
+    pub fn new() -> Self {
+        StorageConfiguration {
+            storage_capacity: 0,
+            storage_size_bytes: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.storage_capacity == 0 && self.storage_size_bytes == 0
+    }
+}
+
 #[cfg(test)]
 mod tests;

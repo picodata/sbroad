@@ -1,6 +1,20 @@
 local log = require('log')
 
 local function init(opts) -- luacheck: no unused args
+
+    box.schema.func.create('sbroad.execute_query', {
+        if_not_exists = true, language = 'C'
+    })
+
+    box.schema.func.create('sbroad.invalidate_segment_cache', {
+        if_not_exists = true, language = 'C'
+    })
+    box.schema.func.create('sbroad.load_lua_storage_functions', {
+        if_not_exists = true, language = 'C'
+    })
+
+    box.func["sbroad.load_lua_storage_functions"]:call({})
+
     return true
 end
 
@@ -13,8 +27,7 @@ local function validate_config(conf_new, conf_old) -- luacheck: no unused args
 end
 
 local function apply_config(conf, opts) -- luacheck: no unused args
-    -- if opts.is_master then
-    -- end
+    box.func["sbroad.invalidate_segment_cache"]:call({})
     return true
 end
 

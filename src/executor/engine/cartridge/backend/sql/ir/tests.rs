@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::mock::MetadataMock;
+use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
@@ -15,7 +15,7 @@ fn one_table_projection() {
     FROM "hash_testing"
     WHERE "identification_number" = 1"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -46,7 +46,7 @@ fn one_table_with_asterisk() {
     FROM "hash_testing"
     WHERE "identification_number" = 1"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -83,7 +83,7 @@ fn union_all() {
     WHERE "product_code" = 'a' 
     "#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -117,7 +117,7 @@ fn from_sub_query() {
     WHERE "identification_number" = 1) as t1
     WHERE "product_code" = 'a'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -154,7 +154,7 @@ fn from_sub_query_with_union() {
     WHERE "product_code" = 'a') as "t1"
   WHERE "product_code" = 'a'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -188,7 +188,7 @@ fn inner_join() {
     on "hash_testing"."identification_number" = "history"."id"
     WHERE "product_code" = 'a'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -220,7 +220,7 @@ fn inner_join_with_sq() {
     on "hash_testing"."identification_number" = "t"."id"
     WHERE "product_code" = 'a'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();
@@ -252,7 +252,7 @@ fn selection_with_sq() {
     WHERE "identification_number" in
     (SELECT "identification_number" FROM "hash_testing_hist" WHERE "product_code" = 'b') and "product_code" < 'a'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(&[]).unwrap();

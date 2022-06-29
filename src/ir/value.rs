@@ -6,7 +6,7 @@ use std::num::NonZeroI32;
 use std::str::FromStr;
 
 use serde::ser;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua;
 
@@ -223,8 +223,8 @@ impl ToHashString for Value {
             // It is important to trim trailing zeros when converting to string.
             // Otherwise, the hash from `1.000` and `1` would be different,
             // though the values are the same.
-            // We don't use internal hash function because we count hash from
-            // the string representation for all other types.
+            // We don't use internal hash function because we calculate the hash
+            // from the string representation for all other types.
             Value::Decimal(v) => v.trim().to_string(),
             Value::Double(v) => v.to_string(),
             Value::Unsigned(v) => v.to_string(),
@@ -290,6 +290,14 @@ impl<'de> serde::de::Visitor<'de> for EncodedValue {
         } else {
             Ok(Value::from(Double::from(value)))
         }
+    }
+
+    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let decimal = Decimal::deserialize(deserializer)?;
+        Ok(Value::Decimal(decimal))
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>

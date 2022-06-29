@@ -21,7 +21,7 @@ target_queries.before_all(
         function()
             local api = cluster:server("api-1").net_box
 
-            local r = api:call("query", {
+            local r, err = api:call("query", {
                 [[insert into "col1_transactions_actual"
                 ("col1", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?), (?, ?, ?, ?)]],
@@ -30,9 +30,10 @@ target_queries.before_all(
                     3, 3, 1, 0
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "col1_transactions_history"
                 ("id", "col1", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)]],
@@ -41,9 +42,10 @@ target_queries.before_all(
                     2, 1, 1, 1, 0, 1
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "col1_col2_transactions_actual"
                 ("col1", "col2", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)]],
@@ -52,9 +54,10 @@ target_queries.before_all(
                     1, 1, 3, 1, 0
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "col1_col2_transactions_history"
                 ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)]],
@@ -63,6 +66,7 @@ target_queries.before_all(
                     2, 1, 2, 1, 1, 0, 1
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
             r = api:call("query", {
@@ -76,7 +80,7 @@ target_queries.before_all(
             })
             t.assert_equals(r, {row_count = 2})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "cola_accounts_history"
                 ("id", "cola", "colb", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?)]],
@@ -84,9 +88,10 @@ target_queries.before_all(
                     1, 1, 2, 0, 2
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "cola_colb_accounts_actual"
                 ("id", "cola", "colb", "sys_from")
                 values (?, ?, ?, ?)]],
@@ -94,9 +99,10 @@ target_queries.before_all(
                     1, 1, 3, 0
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "cola_colb_accounts_history"
                 ("id", "cola", "colb", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?)]],
@@ -104,9 +110,10 @@ target_queries.before_all(
                     1, 1, 2, 0, 2
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "col1_col2_transactions_num_actual"
                 ("col1", "col2", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?, ?)]],
@@ -114,9 +121,10 @@ target_queries.before_all(
                    1, 2, 3, 1, 0 
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r = api:call("query", {
+            r, err = api:call("query", {
                 [[insert into "col1_col2_transactions_num_history"
                 ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?, ?)]],
@@ -124,6 +132,7 @@ target_queries.before_all(
                    1, 1, 2, 2, 1, 0, 2
                 }
             })
+            t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
         end
 )

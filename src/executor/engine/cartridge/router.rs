@@ -15,12 +15,12 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
-use crate::executor::engine::Coordinator;
+use crate::executor::engine::{Configuration, Coordinator};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::vtable::VirtualTable;
-use crate::executor::{CoordinatorMetadata, QueryCache};
+use crate::executor::{Cache, CoordinatorMetadata};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
@@ -36,35 +36,23 @@ pub struct RouterRuntime {
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
 
-impl Coordinator for RouterRuntime {
-    type Metadata = RouterConfiguration;
-    type ParseTree = AbstractSyntaxTree;
-    type QueryCache = LRUCache<String, Plan>;
+impl Configuration for RouterRuntime {
     type Configuration = RouterConfiguration;
 
-    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
-        *self.ir_cache.borrow_mut() = Self::QueryCache::new(capacity, None)?;
-        Ok(())
-    }
-
-    fn ir_cache(&self) -> &RefCell<Self::QueryCache> {
-        &self.ir_cache
-    }
-
-    fn metadata(&self) -> &Self::Metadata {
+    fn cached_config(&self) -> &Self::Configuration {
         &self.metadata
     }
 
-    fn clear_metadata(&mut self) {
-        self.metadata = Self::Metadata::new();
+    fn clear_config(&mut self) {
+        self.metadata = Self::Configuration::new();
     }
 
-    fn is_metadata_empty(&self) -> bool {
+    fn is_config_empty(&self) -> bool {
         self.metadata.is_empty()
     }
 
-    fn get_configuration(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
-        if self.metadata.is_empty() {
+    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
+        if self.is_config_empty() {
             let lua = tarantool::lua_state();
 
             let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
@@ -148,8 +136,22 @@ impl Coordinator for RouterRuntime {
         Ok(None)
     }
 
-    fn update_configuration(&mut self, metadata: Self::Configuration) {
+    fn update_config(&mut self, metadata: Self::Configuration) {
         self.metadata = metadata;
+    }
+}
+
+impl Coordinator for RouterRuntime {
+    type ParseTree = AbstractSyntaxTree;
+    type Cache = LRUCache<String, Plan>;
+
+    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+        *self.ir_cache.borrow_mut() = Self::Cache::new(capacity, None)?;
+        Ok(())
+    }
+
+    fn ir_cache(&self) -> &RefCell<Self::Cache> {
+        &self.ir_cache
     }
 
     /// Execute a sub tree on the nodes
@@ -234,7 +236,7 @@ impl Coordinator for RouterRuntime {
         space: String,
         rec: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        self.metadata()
+        self.cached_config()
             .get_sharding_key_by_space(space.as_str())?
             .iter()
             .try_fold(Vec::new(), |mut acc: Vec<&Value>, &val| {
@@ -340,7 +342,7 @@ impl RouterRuntime {
             QueryPlannerError::LuaError("Lua function `read_on_some` not found".into())
         })?;
 
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
         match exec_sql.call_with_args::<ProducerResult, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
@@ -351,7 +353,10 @@ impl RouterRuntime {
                     Option::from("read_on_some"),
                     &format!("{:?}", e),
                 );
-                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                Err(QueryPlannerError::LuaError(format!(
+                    "Lua error: {:?}. Query and parameters: {:?}",
+                    e, rs_query
+                )))
             }
         }
     }
@@ -366,7 +371,7 @@ impl RouterRuntime {
             QueryPlannerError::LuaError("Lua function `write_on_some` not found".into())
         })?;
 
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
         match exec_sql.call_with_args::<ConsumerResult, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
@@ -377,7 +382,10 @@ impl RouterRuntime {
                     Option::from("write_on_some"),
                     &format!("{:?}", e),
                 );
-                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                Err(QueryPlannerError::LuaError(format!(
+                    "Lua error: {:?}. Query and parameters: {:?}",
+                    e, rs_query
+                )))
             }
         }
     }
@@ -401,7 +409,7 @@ impl RouterRuntime {
             QueryPlannerError::LuaError("Lua function `read_on_all` not found".into())
         })?;
 
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
         match exec_sql.call_with_args::<ProducerResult, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
@@ -412,7 +420,10 @@ impl RouterRuntime {
                     Option::from("read_on_all"),
                     &format!("{:?}", e),
                 );
-                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                Err(QueryPlannerError::LuaError(format!(
+                    "Lua error: {:?}. Query and parameters: {:?}",
+                    e, query
+                )))
             }
         }
     }
@@ -424,7 +435,7 @@ impl RouterRuntime {
             QueryPlannerError::LuaError("Lua function `write_on_all` not found".into())
         })?;
 
-        let waiting_timeout = &self.metadata().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
         match exec_sql.call_with_args::<ConsumerResult, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
@@ -435,7 +446,10 @@ impl RouterRuntime {
                     Option::from("write_on_all"),
                     &format!("{:?}", e),
                 );
-                Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+                Err(QueryPlannerError::LuaError(format!(
+                    "Lua error: {:?}. Query and parameters: {:?}",
+                    e, query
+                )))
             }
         }
     }
@@ -491,12 +505,12 @@ impl Buckets {
     }
 }
 
-/// Extra lua functions loader. It is necessary for query execution.
+/// Load Lua code required for the router runtime.
 ///
 /// # Errors
-/// - Failed to load lua code.
+/// - Failed to load Lua code.
 #[allow(clippy::too_many_lines)]
-pub fn load_extra_function() -> Result<(), QueryPlannerError> {
+pub fn load_router_functions() -> Result<(), QueryPlannerError> {
     let lua = tarantool::lua_state();
 
     match lua.exec(
@@ -559,26 +573,26 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            local future, err = replica:callbre("box.execute", { query['pattern'], query['params'] }, {is_async = true})
+            local future, err = replica:callbre("sbroad.execute_query", { query['pattern'], query['params'], false }, {is_async = true})
             if err ~= nil then
-                error(err)
+                error(error)
             end
             table.insert(futures, future) 
         end
 
         for _, future in ipairs(futures) do
             future:wait_result(waiting_timeout)
-            local res = future:result()
+            local res, err = future:result()
 
-            if res[1] == nil then
-                error(res[2])
+            if err ~= nil then
+                error(err)
             end
 
             if result == nil then
-                result = res[1]
+                result = res[1][1]
             else
-                for _, item in pairs(res[1].rows) do
-                    table.insert(result.rows, item)
+                for _, row in ipairs(res[1][1].rows) do
+                    table.insert(result.rows, row)
                 end
             end
         end
@@ -592,25 +606,25 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
 
         for rs_uuid, query in pairs(tbl_rs_query) do
             local replica = vshard.router.routeall()[rs_uuid]
-            local future, err = replica:callrw("box.execute", { query['pattern'], query['params'] }, {is_async = true})
+            local future, err = replica:callrw("sbroad.execute_query", { query['pattern'], query['params'], true }, {is_async = true})
             if err ~= nil then
-                error(err)
+                error(error)
             end
             table.insert(futures, future) 
         end
 
         for _, future in ipairs(futures) do
             future:wait_result(waiting_timeout)
-            local res = future:result()
+            local res, err = future:result()
 
-            if res[1] == nil then
-                error(res[2])
+            if err ~= nil then
+                error(err)
             end
 
             if result == nil then
-                result = res[1]
+                result = res[1][1]
             else
-                result.row_count = result.row_count + res[1].row_count
+                result.row_count = result.row_count + res[1][1].row_count
             end
         end
 
@@ -624,7 +638,7 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         local futures = {}
 
         for _, replica in pairs(replicas) do
-            local future, err = replica:callbre("box.execute", { query['pattern'], query['params'] }, {is_async = true})
+            local future, err = replica:callbre("sbroad.execute_query", { query['pattern'], query['params'], false }, {is_async = true})
             if err ~= nil then
                 error(err)
             end
@@ -633,17 +647,17 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
 
         for _, future in ipairs(futures) do
             future:wait_result(waiting_timeout)
-            local res = future:result()
+            local res, err = future:result()
 
-            if res[1] == nil then
-                error(res[2])
+            if res == nil then
+                error(err)
             end
 
             if result == nil then
-                result = res[1]
+                result = res[1][1]
             else
-                for _, item in pairs(res[1].rows) do
-                    table.insert(result.rows, item)
+                for _, row in ipairs(res[1][1].rows) do
+                    table.insert(result.rows, row)
                 end
             end
         end
@@ -658,29 +672,29 @@ pub fn load_extra_function() -> Result<(), QueryPlannerError> {
         local futures = {}
 
         for _, replica in pairs(replicas) do
-            local future, err = replica:callrw("box.execute", { query['pattern'], query['params'] }, {is_async = true})
+            local future, err = replica:callrw("sbroad.execute_query", { query['pattern'], query['params'], true }, {is_async = true})
             if err ~= nil then
-                error(err)
+                error(error)
             end
             table.insert(futures, future) 
         end
 
         for _, future in ipairs(futures) do
             future:wait_result(waiting_timeout)
-            local res = future:result()
+            local res, err = future:result()
 
-            if res[1] == nil then
-                error(res[2])
+            if err ~= nil then
+                error(err)
             end
 
             if result == nil then
-                result = res[1]
+                result = res[1][1]
             else
-                result.row_count = result.row_count + res[1].row_count
+                result.row_count = result.row_count + res[1][1].row_count
             end
         end
 
-        return result
+        return result[1]
     end
 "#,
     ) {

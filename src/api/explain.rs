@@ -5,7 +5,7 @@ use tarantool::error::TarantoolErrorCode;
 use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
-use crate::api::helper::load_metadata;
+use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use crate::errors::QueryPlannerError;
 use crate::executor::Query;
@@ -35,7 +35,7 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
 
-    let ret_code = load_metadata();
+    let ret_code = load_config(&COORDINATOR_ENGINE);
     if ret_code != 0 {
         return ret_code;
     }

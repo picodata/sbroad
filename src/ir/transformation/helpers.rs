@@ -2,7 +2,7 @@
 
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::mock::MetadataMock;
+use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
@@ -12,7 +12,7 @@ use crate::ir::Plan;
 /// Compiles an SQL query to IR plan.
 #[allow(dead_code)]
 pub fn sql_to_ir(query: &str, params: &[Value]) -> Plan {
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(params).unwrap();

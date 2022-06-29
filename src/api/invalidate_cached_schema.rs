@@ -1,19 +1,38 @@
+use std::cell::RefCell;
 use std::os::raw::c_int;
-
+use std::thread::LocalKey;
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
-use crate::api::COORDINATOR_ENGINE;
-use crate::executor::engine::Coordinator;
+use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
+use crate::executor::engine::Configuration;
 
-/// Lua invalidates schema cache function, then it updates schema before next query.
-/// It must be called in function `apply_config()` in lua cartridge application.
-#[no_mangle]
-pub extern "C" fn invalidate_cached_schema(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
-    COORDINATOR_ENGINE.with(|s| {
+fn clear_cached_config<Runtime>(
+    runtime: &'static LocalKey<RefCell<Runtime>>,
+    ctx: &FunctionCtx,
+    _: FunctionArgs,
+) -> c_int
+where
+    Runtime: Configuration,
+{
+    runtime.with(|s| {
         let v = &mut *s.borrow_mut();
-        v.clear_metadata();
+        v.clear_config();
     });
 
     ctx.return_mp(&true).unwrap();
     0
+}
+
+/// Flush cached configuration in the Rust memory of the coordinator runtime.
+/// This function should be invoked in the Lua cartridge application with `apply_config()`.
+#[no_mangle]
+pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    clear_cached_config(&COORDINATOR_ENGINE, &ctx, args)
+}
+
+/// Flush cached configuration in the Rust memory of the segment runtime.
+/// This function should be invoked in the Lua cartridge application with `apply_config()`.
+#[no_mangle]
+pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    clear_cached_config(&SEGMENT_ENGINE, &ctx, args)
 }

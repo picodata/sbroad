@@ -70,19 +70,14 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
 end
 
 local function init(opts) -- luacheck: no unused args
-    -- if opts.is_master then
-    -- end
     _G.query = query
     _G.explain = explain
     _G.calculate_bucket_id = calculate_bucket_id
     _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
-    _G.sql_execute = sql_execute
+    _G.sql_execute = query
 
 
-    box.schema.func.create('sbroad.parse_sql', { 
-            if_not_exists = true, language = 'C' 
-    })
-    box.schema.func.create('sbroad.invalidate_cached_schema', {
+    box.schema.func.create('sbroad.invalidate_coordinator_cache', {
             if_not_exists = true, language = 'C' 
     })
     box.schema.func.create('sbroad.calculate_bucket_id', { 
@@ -95,7 +90,7 @@ local function init(opts) -- luacheck: no unused args
             if_not_exists = true, language = 'C' 
     })
 
-    box.schema.func.create('sbroad.load_lua_extra_function', {
+    box.schema.func.create('sbroad.load_lua_router_functions', {
         if_not_exists = true, language = 'C'
     })
 
@@ -103,7 +98,7 @@ local function init(opts) -- luacheck: no unused args
             if_not_exists = true, language = 'C'
     })
 
-    box.func["sbroad.load_lua_extra_function"]:call({})
+    box.func["sbroad.load_lua_router_functions"]:call({})
 
     return true
 end
@@ -117,9 +112,7 @@ local function validate_config(conf_new, conf_old) -- luacheck: no unused args
 end
 
 local function apply_config(conf, opts) -- luacheck: no unused args
-    -- if opts.is_master then
-    -- end
-    box.func["sbroad.invalidate_cached_schema"]:call({})
+    box.func["sbroad.invalidate_coordinator_cache"]:call({})
     return true
 end
 

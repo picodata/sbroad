@@ -1,6 +1,6 @@
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::mock::MetadataMock;
+use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_sql;
@@ -173,7 +173,7 @@ fn front_sql7() {
         ON "hash_testing"."identification_number" = t."id"
         WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
 
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.resolve_metadata(metadata).unwrap_err();
 
@@ -293,7 +293,7 @@ fn front_sql11() {
 #[test]
 fn front_sql12() {
     let query = r#"INSERT INTO "t" VALUES(1, 2)"#;
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.resolve_metadata(metadata).unwrap_err();
 
@@ -308,7 +308,7 @@ fn front_sql12() {
 #[test]
 fn front_sql13() {
     let query = r#"INSERT INTO "t" ("a") VALUES(1, 2)"#;
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.resolve_metadata(metadata).unwrap_err();
 
@@ -337,7 +337,7 @@ fn front_sql14() {
 #[test]
 fn front_sql15() {
     let query = r#"INSERT INTO "t" SELECT "b", "d" FROM "t""#;
-    let metadata = &MetadataMock::new();
+    let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let plan_err = ast.resolve_metadata(metadata).unwrap_err();
 
