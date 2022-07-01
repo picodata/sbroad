@@ -1,6 +1,5 @@
 variables:
     GIT_SUBMODULE_STRATEGY: none
-    DOCKER_AUTH_CONFIG: '{ "auths": { "registry.gitlab.com": { "auth": "Z2l0bGFiK2RlcGxveS10b2tlbi0xMTI1OTA3OkdTQjRNaEVMVEFSVDlfY3d4eEFu" } } }'
 
 stages:
     - build
@@ -14,7 +13,7 @@ cache:
 default:
     tags:
         - picodata
-    image: registry.gitlab.com/picodata/picodata/sbroad/sbroad-builder:0.2.0
+    image: docker-public.binary.picodata.io/sbroad-builder:0.2.0
 
 build:
     stage: build
