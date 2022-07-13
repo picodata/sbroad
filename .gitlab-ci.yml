@@ -16,6 +16,8 @@ default:
     image: docker-public.binary.picodata.io/sbroad-builder:0.2.0
 
 build:
+    before_script:
+      - make init
     stage: build
     script:
         - make
@@ -29,16 +31,23 @@ lint:
     script:
         - make lint
 
-test:
+unit:
     before_script:
-      - git clean -xfd
-      - git submodule foreach --recursive git clean -xfd
-      - git reset --hard
-      - git submodule foreach --recursive git reset --hard
-      - git submodule sync --recursive
-      - git submodule update --init --recursive
+      - make init
     stage: test
     script:
-        - make test_all
-        - ls target/debug/
-        - ls test_app/.rocks/lib/tarantool/
+        - make test
+
+integration:
+    before_script:
+      - make init
+    stage: test
+    script:
+        - make test_integration
+
+bench:
+    before_script:
+      - make init 
+    stage: test
+    script:
+        - make bench_check
