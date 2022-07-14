@@ -37,12 +37,7 @@ fn main() {
         .unwrap();
     let tarantool = root.join("deps").join("tarantool");
     let dec_number = tarantool.join("third_party").join("decNumber");
-    let msg_puck = tarantool
-        .join("deps")
-        .join("tarantool")
-        .join("src")
-        .join("lib")
-        .join("msgpuck");
+    let msg_puck = tarantool.join("src").join("lib").join("msgpuck");
 
     // We need to configure Tarantool with cmake in order to generate all
     // required headers for the further build of the decNumber mocking
@@ -57,7 +52,14 @@ fn main() {
         .status()
         .expect("failed to run cmake");
     cc::Build::new()
-        .warnings(false)
+        .warnings(true)
+        .include(msg_puck.to_str().unwrap())
+        .file(msg_puck.join("hints.c").to_str().unwrap())
+        .define("MP_PROTO", Some("inline"))
+        .define("MP_IMPL", Some("inline"))
+        .compile("libmsgpuck.a");
+    cc::Build::new()
+        .warnings(true)
         .include(dec_number.to_str().unwrap())
         .include(msg_puck.to_str().unwrap())
         .include(tarantool.join("third_party").to_str().unwrap())
@@ -89,7 +91,7 @@ fn main() {
                 .unwrap(),
         )
         .define("DECLITEND", Some(litend))
-        // do not inline functions in msgpuck.h for a static library
+        // Never define MP_LIBRARY as we need to inline functions from msgpuck.h
         .define("MP_LIBRARY", None)
         .compile("libdecNumber.a");
 }
