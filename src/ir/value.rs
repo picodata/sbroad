@@ -6,7 +6,7 @@ use std::num::NonZeroI32;
 use std::str::FromStr;
 
 use serde::ser;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua;
 
@@ -251,83 +251,44 @@ impl Serialize for Value {
     }
 }
 
-struct EncodedValue;
-
-impl<'de> serde::de::Visitor<'de> for EncodedValue {
-    type Value = Value;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a Tarantool value")
-    }
-
-    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::Boolean(value))
-    }
-
-    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::Unsigned(value))
-    }
-
-    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::Integer(value))
-    }
-
-    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        if value.is_nan() {
-            Ok(Value::Null)
-        } else {
-            Ok(Value::from(Double::from(value)))
-        }
-    }
-
-    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let decimal = Decimal::deserialize(deserializer)?;
-        Ok(Value::Decimal(decimal))
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::String(v.to_string()))
-    }
-
-    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::String(value))
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Value::Null)
-    }
-}
-
 impl<'de> Deserialize<'de> for Value {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_any(EncodedValue)
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum EncodedValue {
+            Boolean(bool),
+            Decimal(Decimal),
+            Double(Double),
+            Unsigned(u64),
+            Integer(i64),
+            Null(()),
+            String(String),
+        }
+
+        impl From<EncodedValue> for Value {
+            fn from(v: EncodedValue) -> Self {
+                match v {
+                    EncodedValue::Boolean(v) => Value::Boolean(v),
+                    EncodedValue::Decimal(v) => Value::Decimal(v),
+                    EncodedValue::Double(v) => {
+                        if v.value.is_nan() {
+                            return Value::Null;
+                        }
+                        Value::Double(v)
+                    }
+                    EncodedValue::Integer(v) => Value::Integer(v),
+                    EncodedValue::Null(_) => Value::Null,
+                    EncodedValue::String(v) => Value::String(v),
+                    EncodedValue::Unsigned(v) => Value::Unsigned(v),
+                }
+            }
+        }
+
+        let encoded = EncodedValue::deserialize(deserializer)?;
+        Ok(encoded.into())
     }
 }
 
