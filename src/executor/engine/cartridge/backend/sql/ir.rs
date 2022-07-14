@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt::Write as _;
 use tarantool::tlua;
 use tarantool::tuple::{FunctionArgs, Tuple};
 
@@ -194,7 +195,12 @@ impl ExecutionPlan {
                             | Expression::Bool { .. }
                             | Expression::Row { .. } => {}
                             Expression::Constant { value, .. } => {
-                                sql.push_str(&format!("{}", value));
+                                write!(sql, "{}", value).map_err(|e| {
+                                    QueryPlannerError::CustomError(format!(
+                                        "Failed to write constant value to SQL: {}",
+                                        e
+                                    ))
+                                })?;
                             }
                             Expression::Reference { position, .. } => {
                                 let rel_id: usize = ir_plan
@@ -274,11 +280,13 @@ impl ExecutionPlan {
                             .collect::<Vec<&str>>()
                             .join(",");
 
-                        sql.push_str(&format!(
+                        write!(
+                            sql,
                             "SELECT {} FROM (VALUES ({})) WHERE FALSE",
                             cols(anonymous_col_idx_base),
                             values
-                        ));
+                        )
+                        .map_err(|e| QueryPlannerError::CustomError(e.to_string()))?;
                     } else {
                         let values = tuples
                             .iter()
@@ -288,11 +296,18 @@ impl ExecutionPlan {
 
                         anonymous_col_idx_base += cols_count * tuples.len() - (cols_count - 1);
 
-                        sql.push_str(&format!(
+                        write!(
+                            sql,
                             "SELECT {} FROM (VALUES {})",
                             cols(anonymous_col_idx_base),
                             values
-                        ));
+                        )
+                        .map_err(|e| {
+                            QueryPlannerError::CustomError(format!(
+                                "Failed to generate SQL for VTable: {}",
+                                e
+                            ))
+                        })?;
 
                         for t in tuples {
                             for v in t {

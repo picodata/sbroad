@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write as _};
 
 use itertools::Itertools;
 use serde::Serialize;
@@ -75,13 +75,13 @@ impl Display for Col {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
         if let Some(tbl) = &self.scan {
-            s.push_str(&format!("{}.", tbl));
+            write!(s, "{}.", tbl)?;
         }
 
         s.push_str(&self.col);
 
         if let Some(a) = &self.alias {
-            s.push_str(&format!(" -> {}", a));
+            write!(s, " -> {}", a)?;
         }
 
         write!(f, "{}", s)
@@ -121,7 +121,7 @@ impl Display for Projection {
             .collect::<Vec<String>>()
             .join(", ");
 
-        s.push_str(&format!("({})", cols));
+        write!(s, "({})", cols)?;
         write!(f, "{}", s)
     }
 }
@@ -149,7 +149,7 @@ impl Display for Scan {
         s.push_str(&self.table);
 
         if let Some(a) = &self.alias {
-            s.push_str(&format!(" -> {}", a));
+            write!(s, " -> {}", a)?;
         }
 
         write!(f, "{}", s)
@@ -352,7 +352,7 @@ impl Display for SubQuery {
         let mut s = String::from("scan");
 
         if let Some(a) = &self.alias {
-            s.push_str(&format!(" {}", a));
+            write!(s, " {}", a)?;
         }
         write!(f, "{}", s)
     }
@@ -400,7 +400,7 @@ impl Display for ExplainTreePart {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = String::new();
         if let Some(c) = &self.current {
-            s.push_str(&format!("{}\n", &c.to_string()));
+            writeln!(s, "{}", &c.to_string())?;
         }
 
         let ident = (0..=self.level).map(|_| "    ").collect::<String>();
@@ -447,7 +447,7 @@ impl Display for FullExplain {
         let mut s = self.main_query.to_string();
 
         for k in self.subqueries.keys().sorted() {
-            s.push_str(&format!("subquery ${}:\n", k));
+            writeln!(s, "subquery ${}:", k)?;
             s.push_str(&self.subqueries[k].to_string());
         }
         write!(f, "{}", s)
