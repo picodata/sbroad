@@ -1,9 +1,16 @@
-import {newTarantoolClient, openVinFile, query} from 'k6/x/dtm';
+import tarantool from "k6/x/tarantool";
+import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
 
-const client = newTarantoolClient("admin:app-cluster-cookie@localhost:3301");
+const client = tarantool.connect("localhost:3301", {"user": "admin", pass: "app-cluster-cookie"})
 
-export function stressQuery() {
-    return `SELECT *
+let ids = Array.from(
+    {
+        length: 1000000
+    },
+    (_, id) => id
+)
+
+const pattern = `SELECT *
     FROM (SELECT "vehicleguid", "reestrid", "reestrstatus", "vehicleregno", "vehiclevin", "vehiclevin2", "vehiclechassisnum", "vehiclereleaseyear", "operationregdoctypename", "operationregdoc", "operationregdocissuedate", "operationregdoccomments", "vehicleptstypename", "vehicleptsnum", "vehicleptsissuedate", "vehicleptsissuer", "vehicleptscomments", "vehiclebodycolor", "vehiclebrand", "vehiclemodel", "vehiclebrandmodel", "vehiclebodynum", "vehiclecost", "vehiclegasequip", "vehicleproducername", "vehiclegrossmass", "vehiclemass", "vehiclesteeringwheeltypeid", "vehiclekpptype", "vehicletransmissiontype", "vehicletypename", "vehiclecategory", "vehicletypeunit", "vehicleecoclass", "vehiclespecfuncname", "vehicleenclosedvolume", "vehicleenginemodel", "vehicleenginenum", "vehicleenginepower", "vehicleenginepowerkw", "vehicleenginetype", "holdrestrictiondate", "approvalnum", "approvaldate", "approvaltype", "utilizationfeename", "customsdoc", "customsdocdate", "customsdocissue", "customsdocrestriction", "customscountryremovalid", "customscountryremovalname", "ownerorgname", "ownerinn", "ownerogrn", "ownerkpp", "ownerpersonlastname", "ownerpersonfirstname", "ownerpersonmiddlename", "ownerpersonbirthdate", "ownerbirthplace", "ownerpersonogrnip", "owneraddressindex", "owneraddressmundistrict", "owneraddresssettlement", "owneraddressstreet", "ownerpersoninn", "ownerpersondoccode", "ownerpersondocnum", "ownerpersondocdate", "operationname", "operationdate", "operationdepartmentname", "operationattorney", "operationlising", "holdertypeid", "holderpersondoccode", "holderpersondocnum", "holderpersondocdate", "holderpersondocissuer", "holderpersonlastname", "holderpersonfirstname", "holderpersonmiddlename", "holderpersonbirthdate", "holderpersonbirthregionid", "holderpersonsex", "holderpersonbirthplace", "holderpersoninn", "holderpersonsnils", "holderpersonogrnip", "holderaddressguid", "holderaddressregionid", "holderaddressregionname", "holderaddressdistrict", "holderaddressmundistrict", "holderaddresssettlement", "holderaddressstreet", "holderaddressbuilding", "holderaddressstructureid", "holderaddressstructurename", "holderaddressstructure"
     FROM "vehicle_history"
     WHERE "sys_from" <= 332 AND "sys_to" >= 332
@@ -11,9 +18,8 @@ export function stressQuery() {
     SELECT "vehicleguid", "reestrid", "reestrstatus", "vehicleregno", "vehiclevin", "vehiclevin2", "vehiclechassisnum", "vehiclereleaseyear", "operationregdoctypename", "operationregdoc", "operationregdocissuedate", "operationregdoccomments", "vehicleptstypename", "vehicleptsnum", "vehicleptsissuedate", "vehicleptsissuer", "vehicleptscomments", "vehiclebodycolor", "vehiclebrand", "vehiclemodel", "vehiclebrandmodel", "vehiclebodynum", "vehiclecost", "vehiclegasequip", "vehicleproducername", "vehiclegrossmass", "vehiclemass", "vehiclesteeringwheeltypeid", "vehiclekpptype", "vehicletransmissiontype", "vehicletypename", "vehiclecategory", "vehicletypeunit", "vehicleecoclass", "vehiclespecfuncname", "vehicleenclosedvolume", "vehicleenginemodel", "vehicleenginenum", "vehicleenginepower", "vehicleenginepowerkw", "vehicleenginetype", "holdrestrictiondate", "approvalnum", "approvaldate", "approvaltype", "utilizationfeename", "customsdoc", "customsdocdate", "customsdocissue", "customsdocrestriction", "customscountryremovalid", "customscountryremovalname", "ownerorgname", "ownerinn", "ownerogrn", "ownerkpp", "ownerpersonlastname", "ownerpersonfirstname", "ownerpersonmiddlename", "ownerpersonbirthdate", "ownerbirthplace", "ownerpersonogrnip", "owneraddressindex", "owneraddressmundistrict", "owneraddresssettlement", "owneraddressstreet", "ownerpersoninn", "ownerpersondoccode", "ownerpersondocnum", "ownerpersondocdate", "operationname", "operationdate", "operationdepartmentname", "operationattorney", "operationlising", "holdertypeid", "holderpersondoccode", "holderpersondocnum", "holderpersondocdate", "holderpersondocissuer", "holderpersonlastname", "holderpersonfirstname", "holderpersonmiddlename", "holderpersonbirthdate", "holderpersonbirthregionid", "holderpersonsex", "holderpersonbirthplace", "holderpersoninn", "holderpersonsnils", "holderpersonogrnip", "holderaddressguid", "holderaddressregionid", "holderaddressregionname", "holderaddressdistrict", "holderaddressmundistrict", "holderaddresssettlement", "holderaddressstreet", "holderaddressbuilding", "holderaddressstructureid", "holderaddressstructurename", "holderaddressstructure"
     FROM "vehicle_actual"
     WHERE "sys_from" <= 332) AS "t3"
-    WHERE "reestrid" = 452842574`
-}
+    WHERE "reestrid" = ?`
 
 export default () => {
-    query(client, stressQuery())
+    tarantool.call(client, "query", [pattern, [randomItem(ids)]]);
 }
