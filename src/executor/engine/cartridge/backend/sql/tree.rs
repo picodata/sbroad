@@ -1,3 +1,4 @@
+use ahash::RandomState;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -145,7 +146,7 @@ impl SyntaxNode {
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct SyntaxNodes {
     pub(crate) arena: Vec<SyntaxNode>,
-    map: HashMap<usize, usize>,
+    map: HashMap<usize, usize, RandomState>,
 }
 
 impl SyntaxNodes {
@@ -241,7 +242,7 @@ impl SyntaxNodes {
     pub fn with_capacity(capacity: usize) -> Self {
         SyntaxNodes {
             arena: Vec::with_capacity(capacity),
-            map: HashMap::with_capacity(capacity),
+            map: HashMap::with_capacity_and_hasher(capacity, RandomState::new()),
         }
     }
 }

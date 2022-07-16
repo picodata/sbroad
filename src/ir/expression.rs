@@ -662,9 +662,7 @@ impl Plan {
     pub fn get_relational_from_reference_node(
         &self,
         ref_id: usize,
-    ) -> Result<HashSet<usize>, QueryPlannerError> {
-        let mut rel_nodes: HashSet<usize> = HashSet::new();
-
+    ) -> Result<HashSet<usize, RandomState>, QueryPlannerError> {
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
@@ -674,8 +672,13 @@ impl Plan {
             ))?;
             let rel = self.get_relation_node(referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
+                let mut rel_nodes: HashSet<usize, RandomState> =
+                    HashSet::with_capacity_and_hasher(1, RandomState::new());
                 rel_nodes.insert(referred_rel_id);
+                return Ok(rel_nodes);
             } else if let Some(children) = rel.children() {
+                let mut rel_nodes: HashSet<usize, RandomState> =
+                    HashSet::with_capacity_and_hasher(children.len(), RandomState::new());
                 if let Some(positions) = targets {
                     for pos in positions {
                         if let Some(child) = children.get(*pos) {
@@ -683,8 +686,8 @@ impl Plan {
                         }
                     }
                 }
+                return Ok(rel_nodes);
             }
-            return Ok(rel_nodes);
         }
         Err(QueryPlannerError::InvalidReference)
     }

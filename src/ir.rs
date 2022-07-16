@@ -427,12 +427,13 @@ impl Plan {
                 let column_rel_node = self.get_relation_node(*col_idx_in_rel)?;
                 let column_expr_node = self.get_expression_node(column_rel_node.output())?;
 
-                let col_alias_idx = *column_expr_node
-                    .clone_row_list()?
-                    .get(*position)
-                    .ok_or_else(|| {
-                        QueryPlannerError::CustomError("Invalid position in row list".into())
-                    })?;
+                let col_alias_idx =
+                    *column_expr_node
+                        .get_row_list()?
+                        .get(*position)
+                        .ok_or_else(|| {
+                            QueryPlannerError::CustomError("Invalid position in row list".into())
+                        })?;
 
                 let col_alias_node = self.get_expression_node(col_alias_idx)?;
                 match col_alias_node {

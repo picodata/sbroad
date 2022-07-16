@@ -1,5 +1,6 @@
 //! Tuple distribution module.
 
+use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -140,9 +141,11 @@ impl Plan {
             }
         };
         let mut child_set: HashSet<usize> = HashSet::with_capacity(capacity);
-        let mut child_pos_map: HashMap<(usize, usize), usize> = HashMap::with_capacity(capacity);
+        let mut child_pos_map: HashMap<(usize, usize), usize, RandomState> =
+            HashMap::with_capacity_and_hasher(capacity, RandomState::new());
         let mut table_set: HashSet<String> = HashSet::new();
-        let mut table_pos_map: HashMap<usize, usize> = HashMap::default();
+        let mut table_pos_map: HashMap<usize, usize, RandomState> =
+            HashMap::with_hasher(RandomState::new());
         let mut parent_node: Option<usize> = None;
 
         let mut populate_maps = |pos: usize, expr_id: usize| -> Result<(), QueryPlannerError> {
@@ -281,7 +284,7 @@ impl Plan {
     fn dist_from_child(
         &self,
         child_rel_node: usize,
-        child_pos_map: &HashMap<(usize, usize), usize>,
+        child_pos_map: &HashMap<(usize, usize), usize, RandomState>,
     ) -> Result<Distribution, QueryPlannerError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
             if let Node::Expression(Expression::Row {
@@ -342,7 +345,7 @@ impl Plan {
     fn set_scan_dist(
         &mut self,
         table_set: &HashSet<String>,
-        table_pos_map: &HashMap<usize, usize>,
+        table_pos_map: &HashMap<usize, usize, RandomState>,
         row_node: usize,
     ) -> Result<(), QueryPlannerError> {
         if table_set.len() != 1 {
@@ -387,7 +390,7 @@ impl Plan {
     fn set_two_children_node_dist(
         &mut self,
         child_set: &HashSet<usize>,
-        child_pos_map: &HashMap<(usize, usize), usize>,
+        child_pos_map: &HashMap<(usize, usize), usize, RandomState>,
         parent_id: usize,
         row_id: usize,
     ) -> Result<(), QueryPlannerError> {
