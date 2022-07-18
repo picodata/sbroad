@@ -418,3 +418,22 @@ fn front_params3() {
 
     assert_eq!(sql_to_sql(pattern, &params, &no_transform), expected);
 }
+
+// check symbols in values (grammar)
+#[test]
+fn front_params4() {
+    let pattern = r#"SELECT "id" FROM "test_space"
+        WHERE "FIRST_NAME" = '''±!@#$%^&*()_+=-\/><";:,.`~'"#;
+
+    let params = vec![Value::from(r#"''±!@#$%^&*()_+=-\/><";:,.`~"#)];
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+            r#"WHERE ("test_space"."FIRST_NAME") = (?)"#,
+        ),
+        params,
+    );
+
+    assert_eq!(sql_to_sql(pattern, &vec![], &no_transform), expected);
+}

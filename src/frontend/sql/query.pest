@@ -13,7 +13,7 @@ Query = _{ UnionAll | Select | Values | Insert }
                 Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
                     ColumnName = @{ Name }
                     ScanName = @{ Name }
-                    Name = @{ String | ("\"" ~ String ~ "\"") }
+                    Name = @{ NameString | ("\"" ~ NameString ~ "\"") }
                 Asterisk = @{ "*" }
         Selection = { Expr+ }
         Scan = { (SubQuery | Table) ~ (^"as" ~ ScanName)? }
@@ -59,8 +59,20 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
-    Keyword = { ^"union" | ^"where" }
+
+NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
+String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")+ }
+Keyword = { ^"union" | ^"where" }
+Character = _{ ASCII_ALPHANUMERIC | 'А' .. 'Я' | 'а' .. 'я' | Other | Punctuation | SYMBOL }
+Punctuation = _{
+    CONNECTOR_PUNCTUATION
+    | DASH_PUNCTUATION
+    | OPEN_PUNCTUATION
+    | CLOSE_PUNCTUATION
+    | INITIAL_PUNCTUATION
+    | "." | "?" | "!" | ":" | ";" | ","
+}
+Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" }
 
 Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString }
     True = @{ ^"true" }
