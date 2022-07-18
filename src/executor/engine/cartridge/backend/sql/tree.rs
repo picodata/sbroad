@@ -33,7 +33,7 @@ pub enum SyntaxData {
     /// parameter (a wrapper over a plan constants)
     Parameter(usize),
     /// virtual table
-    VTable(VirtualTable),
+    VTable(Box<VirtualTable>),
 }
 
 /// A syntax tree node.
@@ -133,7 +133,7 @@ impl SyntaxNode {
         }
     }
 
-    fn new_vtable(value: VirtualTable) -> Self {
+    fn new_vtable(value: Box<VirtualTable>) -> Self {
         SyntaxNode {
             data: SyntaxData::VTable(value),
             left: None,
@@ -572,6 +572,7 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::Motion { .. } => {
                     let vtable = self.plan.get_motion_vtable(id)?.clone();
+                    let vtable_alias = &vtable.get_alias();
                     let child_id = self.plan.get_motion_child(id)?;
                     let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
                     let mut children: Vec<usize> = Vec::new();
@@ -579,15 +580,18 @@ impl<'p> SyntaxPlan<'p> {
                         children = Vec::from([
                             self.nodes.push_syntax_node(SyntaxNode::new_open()),
                             self.nodes
-                                .push_syntax_node(SyntaxNode::new_vtable(vtable.clone())),
+                                .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
                             self.nodes.push_syntax_node(SyntaxNode::new_close()),
                         ]);
 
-                        if let Some(name) = &vtable.get_alias() {
+                        if let Some(name) = vtable_alias {
                             children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
                         }
                     } else {
-                        children.push(self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)));
+                        children.push(
+                            self.nodes
+                                .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
+                        );
                     }
 
                     let sn = SyntaxNode::new_pointer(id, None, &children);
@@ -643,7 +647,8 @@ impl<'p> SyntaxPlan<'p> {
                                 None,
                                 &[
                                     self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                    self.nodes.push_syntax_node(SyntaxNode::new_vtable(vtable)),
+                                    self.nodes
+                                        .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
                                     self.nodes.push_syntax_node(SyntaxNode::new_close()),
                                 ],
                             );
