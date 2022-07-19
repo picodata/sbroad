@@ -722,6 +722,7 @@ impl Plan {
                 let rel = self.get_relation_node(referred_rel_id)?;
                 if let Some(children) = rel.children() {
                     if let Some(positions) = targets {
+                        rel_nodes.reserve(positions.len());
                         for pos in positions {
                             if let Some(child) = children.get(*pos) {
                                 rel_nodes.insert(*child);

@@ -131,19 +131,28 @@ impl<'n> Iterator for ExpressionIterator<'n> {
                 None
             }
             Some(Node::Expression(Expression::Row { list, .. })) => {
-                let mut is_leaf = true;
-                for col in list {
-                    if let Some(Node::Expression(
-                        Expression::Reference { .. } | Expression::Constant { .. },
-                    )) = self.nodes.arena.get(*col)
-                    {
-                    } else {
-                        is_leaf = false;
-                        break;
+                let child_step = *self.child.borrow();
+                let mut is_leaf = false;
+
+                // Check on the first step, if the row contains only leaf nodes.
+                if child_step == 0 {
+                    is_leaf = true;
+                    for col in list {
+                        if !matches!(
+                            self.nodes.arena.get(*col),
+                            Some(Node::Expression(
+                                Expression::Reference { .. } | Expression::Constant { .. }
+                            ))
+                        ) {
+                            is_leaf = false;
+                            break;
+                        }
                     }
                 }
+
+                // If the row contains only leaf nodes (or we don't want to go deeper
+                // into the row tree for some reasons), skip traversal.
                 if !is_leaf || !self.make_row_leaf {
-                    let child_step = *self.child.borrow();
                     match list.get(child_step) {
                         None => return None,
                         Some(child) => {
@@ -152,6 +161,7 @@ impl<'n> Iterator for ExpressionIterator<'n> {
                         }
                     }
                 }
+
                 None
             }
             Some(
