@@ -108,11 +108,11 @@ impl SyntaxNode {
         }
     }
 
-    fn new_pointer(id: usize, left: Option<usize>, right: &[usize]) -> Self {
+    fn new_pointer(id: usize, left: Option<usize>, right: Vec<usize>) -> Self {
         SyntaxNode {
             data: SyntaxData::PlanId(id),
             left,
-            right: right.into(),
+            right,
         }
     }
 
@@ -170,7 +170,7 @@ impl SyntaxNodes {
             if let Some(name) = alias {
                 children.push(self.push_syntax_node(SyntaxNode::new_alias(name)));
             }
-            let sn = SyntaxNode::new_pointer(id, None, &children);
+            let sn = SyntaxNode::new_pointer(id, None, children);
             Ok(self.push_syntax_node(sn))
         } else {
             Err(QueryPlannerError::CustomError(
@@ -437,7 +437,7 @@ impl<'p> SyntaxPlan<'p> {
                         if let Expression::Alias { child, .. } = alias {
                             let col_ref = ir_plan.get_expression_node(*child)?;
                             if let Expression::Reference { .. } = col_ref {
-                                Ok(SyntaxNode::new_pointer(*child, None, &[]))
+                                Ok(SyntaxNode::new_pointer(*child, None, vec![]))
                             } else {
                                 Err(QueryPlannerError::CustomError(
                                     "Expected a reference expression".into(),
@@ -470,7 +470,7 @@ impl<'p> SyntaxPlan<'p> {
                     for child_id in children {
                         nodes.push(self.nodes.get_syntax_node_id(*child_id)?);
                     }
-                    let sn = SyntaxNode::new_pointer(id, None, &nodes);
+                    let sn = SyntaxNode::new_pointer(id, None, nodes);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::InnerJoin {
@@ -492,7 +492,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(left_id)?),
-                        &[
+                        vec![
                             self.nodes.get_syntax_node_id(right_id)?,
                             self.nodes.push_syntax_node(SyntaxNode::new_condition()),
                             self.nodes.get_syntax_node_id(*condition)?,
@@ -522,7 +522,7 @@ impl<'p> SyntaxPlan<'p> {
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 Some(self.nodes.get_syntax_node_id(left_id)?),
-                                &nodes,
+                                nodes,
                             );
                             return Ok(self.nodes.push_syntax_node(sn));
                         }
@@ -539,7 +539,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(left_id)?),
-                        &[self.nodes.get_syntax_node_id(*filter)?],
+                        vec![self.nodes.get_syntax_node_id(*filter)?],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -557,7 +557,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(left_id)?),
-                        &[self.nodes.get_syntax_node_id(right_id)?],
+                        vec![self.nodes.get_syntax_node_id(right_id)?],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -567,7 +567,7 @@ impl<'p> SyntaxPlan<'p> {
                     } else {
                         Vec::new()
                     };
-                    let sn = SyntaxNode::new_pointer(id, None, &children);
+                    let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Motion { .. } => {
@@ -594,12 +594,15 @@ impl<'p> SyntaxPlan<'p> {
                         );
                     }
 
-                    let sn = SyntaxNode::new_pointer(id, None, &children);
+                    let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::ValuesRow { data, .. } => {
-                    let sn =
-                        SyntaxNode::new_pointer(id, None, &[self.nodes.get_syntax_node_id(*data)?]);
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        None,
+                        vec![self.nodes.get_syntax_node_id(*data)?],
+                    );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Values { children, .. } => {
@@ -612,7 +615,7 @@ impl<'p> SyntaxPlan<'p> {
                         sn_children.push(self.nodes.get_syntax_node_id(*last_id)?);
                     }
 
-                    let sn = SyntaxNode::new_pointer(id, None, &sn_children);
+                    let sn = SyntaxNode::new_pointer(id, None, sn_children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },
@@ -622,14 +625,14 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Reference { .. } => {
-                    let sn = SyntaxNode::new_pointer(id, None, &[]);
+                    let sn = SyntaxNode::new_pointer(id, None, vec![]);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Alias { child, name, .. } => {
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(*child)?),
-                        &[self.nodes.push_syntax_node(SyntaxNode::new_alias(name))],
+                        vec![self.nodes.push_syntax_node(SyntaxNode::new_alias(name))],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -645,7 +648,7 @@ impl<'p> SyntaxPlan<'p> {
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 None,
-                                &[
+                                vec![
                                     self.nodes.push_syntax_node(SyntaxNode::new_open()),
                                     self.nodes
                                         .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
@@ -674,7 +677,7 @@ impl<'p> SyntaxPlan<'p> {
                         }
                         nodes.push(self.nodes.get_syntax_node_id(*last)?);
                         nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                        let sn = SyntaxNode::new_pointer(id, None, &nodes);
+                        let sn = SyntaxNode::new_pointer(id, None, nodes);
                         return Ok(self.nodes.push_syntax_node(sn));
                     }
                     Err(QueryPlannerError::InvalidRow)
@@ -686,7 +689,7 @@ impl<'p> SyntaxPlan<'p> {
                         SyntaxNode::new_pointer(
                             id,
                             Some(self.nodes.push_syntax_node(SyntaxNode::new_open())),
-                            &[
+                            vec![
                                 self.nodes.get_syntax_node_id(*left)?,
                                 self.nodes
                                     .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
@@ -698,7 +701,7 @@ impl<'p> SyntaxPlan<'p> {
                         SyntaxNode::new_pointer(
                             id,
                             Some(self.nodes.get_syntax_node_id(*left)?),
-                            &[
+                            vec![
                                 self.nodes
                                     .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
                                 self.nodes.get_syntax_node_id(*right)?,
