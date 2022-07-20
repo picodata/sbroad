@@ -17,7 +17,7 @@ fn split_columns1() {
     let expected = PatternWithParams::new(
         format!(
             "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (?) and (?) = ("t"."b")"#,
+            r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and (?) = ("t"."b")"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
@@ -29,10 +29,7 @@ fn split_columns1() {
 fn split_columns2() {
     let input = r#"SELECT "a" FROM "t" WHERE "a" = 1"#;
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (?)"#,
-        ),
+        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?)"#,),
         vec![Value::from(1_u64)],
     );
 
@@ -63,10 +60,7 @@ fn split_columns3() {
 fn split_columns4() {
     let input = r#"SELECT "a" FROM "t" WHERE "a" in (1, 2)"#;
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") in (?, ?)"#,
-        ),
+        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") in (?, ?)"#,),
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
@@ -79,7 +73,7 @@ fn split_columns5() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") < (?) and (?) < ("t"."b")"#,
+            r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") < (?) and (?) < ("t"."b")"#,
             r#"and ("t"."a") > (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(2_u64)],

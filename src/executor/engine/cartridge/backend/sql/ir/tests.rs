@@ -29,8 +29,8 @@ fn one_table_projection() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
-                r#""hash_testing"."product_code" as "product_code""#,
+                r#"SELECT "hash_testing"."identification_number","#,
+                r#""hash_testing"."product_code""#,
                 r#"FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") = (?)"#,
             ),
@@ -60,9 +60,9 @@ fn one_table_with_asterisk() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {}",
-                r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
-                r#""hash_testing"."product_code" as "product_code","#,
-                r#""hash_testing"."product_units" as "product_units", "hash_testing"."sys_op" as "sys_op""#,
+                r#"SELECT "hash_testing"."identification_number","#,
+                r#""hash_testing"."product_code","#,
+                r#""hash_testing"."product_units", "hash_testing"."sys_op""#,
                 r#"FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") = (?)"#
             ),
@@ -97,10 +97,10 @@ fn union_all() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"SELECT "hash_testing"."product_code" FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") = (?)"#,
                 r#"UNION ALL"#,
-                r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist""#,
+                r#"SELECT "hash_testing_hist"."product_code" FROM "hash_testing_hist""#,
                 r#"WHERE ("hash_testing_hist"."product_code") = (?)"#
             ),
             vec![Value::from(1_u64), Value::from("a")],
@@ -131,8 +131,8 @@ fn from_sub_query() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT t1."product_code" as "product_code" FROM"#,
-                r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"SELECT t1."product_code" FROM"#,
+                r#"(SELECT "hash_testing"."product_code" FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") = (?)) as t1"#,
                 r#"WHERE (t1."product_code") = (?)"#
             ),
@@ -168,11 +168,11 @@ fn from_sub_query_with_union() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {}",
-                r#"SELECT "t1"."product_code" as "product_code" FROM"#,
-                r#"(SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"SELECT "t1"."product_code" FROM"#,
+                r#"(SELECT "hash_testing"."product_code" FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") = (?)"#,
                 r#"UNION ALL"#,
-                r#"SELECT "hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist""#,
+                r#"SELECT "hash_testing_hist"."product_code" FROM "hash_testing_hist""#,
                 r#"WHERE ("hash_testing_hist"."product_code") = (?)) as "t1""#,
                 r#"WHERE ("t1"."product_code") = (?)"#,
             ),
@@ -202,12 +202,12 @@ fn inner_join() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code""#,
-                r#"FROM (SELECT "hash_testing"."identification_number" as "identification_number","#,
-                r#""hash_testing"."product_code" as "product_code","#,
-                r#""hash_testing"."product_units" as "product_units","#,
-                r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
-                r#"INNER JOIN (SELECT "history"."id" as "id" FROM "history") as "history""#,
+                r#"SELECT "hash_testing"."product_code""#,
+                r#"FROM (SELECT "hash_testing"."identification_number","#,
+                r#""hash_testing"."product_code","#,
+                r#""hash_testing"."product_units","#,
+                r#""hash_testing"."sys_op" FROM "hash_testing") as "hash_testing""#,
+                r#"INNER JOIN (SELECT "history"."id" FROM "history") as "history""#,
                 r#"ON ("hash_testing"."identification_number") = ("history"."id")"#,
                 r#"WHERE ("hash_testing"."product_code") = (?)"#,
             ),
@@ -238,13 +238,13 @@ fn inner_join_with_sq() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code" FROM (SELECT"#,
-                r#""hash_testing"."identification_number" as "identification_number","#,
-                r#""hash_testing"."product_code" as "product_code","#,
-                r#""hash_testing"."product_units" as "product_units","#,
-                r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
+                r#"SELECT "hash_testing"."product_code" FROM (SELECT"#,
+                r#""hash_testing"."identification_number","#,
+                r#""hash_testing"."product_code","#,
+                r#""hash_testing"."product_units","#,
+                r#""hash_testing"."sys_op" FROM "hash_testing") as "hash_testing""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "history"."id" as "id" FROM "history" WHERE ("history"."id") = (?)) as "t""#,
+                r#"(SELECT "history"."id" FROM "history" WHERE ("history"."id") = (?)) as "t""#,
                 r#"ON ("hash_testing"."identification_number") = ("t"."id")"#,
                 r#"WHERE ("hash_testing"."product_code") = (?)"#,
             ),
@@ -273,9 +273,9 @@ fn selection_with_sq() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                r#"SELECT "hash_testing"."product_code" FROM "hash_testing""#,
                 r#"WHERE ("hash_testing"."identification_number") in"#,
-                r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number" FROM "hash_testing_hist""#,
+                r#"(SELECT "hash_testing_hist"."identification_number" FROM "hash_testing_hist""#,
                 r#"WHERE ("hash_testing_hist"."product_code") = (?))"#,
                 r#"and ("hash_testing"."product_code") < (?)"#,
             ),

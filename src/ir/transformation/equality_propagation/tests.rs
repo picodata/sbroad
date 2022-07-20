@@ -16,7 +16,7 @@ fn equality_propagation1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
             r#"and ("t"."c") = ("t"."a") or ("t"."d") = (?))"#,
         ),
@@ -39,7 +39,7 @@ fn equality_propagation2() {
     let expected = PatternWithParams::new(
         format!(
             "{}",
-            r#"SELECT "t"."a" as "a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
+            r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
         ),
         vec![Value::Null, Value::Null],
     );
@@ -55,7 +55,7 @@ fn equality_propagation3() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."a") = (?)"#,
         ),
         vec![Value::from(1_u64), Value::Null, Value::Null],
@@ -72,7 +72,7 @@ fn equality_propagation4() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."a") = (?)"#,
             r#"and ("t"."b") = (?) and ("t"."b") = ("t"."a")"#,
         ),
@@ -95,7 +95,7 @@ fn equality_propagation5() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
             r#"and ("t"."c") = (?) and ("t"."d") = (?)"#,
             r#"and ("t"."c") = ("t"."b") and ("t"."b") = ("t"."a")"#,

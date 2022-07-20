@@ -14,7 +14,7 @@ fn bool_in1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ((("t"."a") = (?) or ("t"."a") = (?)) or ("t"."a") = (?))"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
@@ -30,7 +30,7 @@ fn bool_in2() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ((("t"."a", "t"."b") = (?, ?) or ("t"."a", "t"."b") = (?, ?)) or ("t"."a", "t"."b") = (?, ?))"#,
         ),
         vec![
@@ -52,7 +52,7 @@ fn bool_in3() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) or ("t"."a") = (?)) and ("t"."b") = (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],

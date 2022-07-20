@@ -32,7 +32,7 @@ fn shard_query() {
         Value::from(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
-                r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space""#,
+                r#"SELECT "test_space"."FIRST_NAME" FROM "test_space""#,
                 r#"WHERE ("test_space"."id") = (?)"#
             ),
             vec![param1],
@@ -66,25 +66,22 @@ fn shard_union_query() {
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
     let bucket = query.coordinator.determine_bucket_id(&[&param1]);
-    expected
-        .rows
-        .push(vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket)),
-            Value::String(
-                String::from(
-                    PatternWithParams::new(
-                        format!(
-                            "{} {}{} {} {}{} {}",
-                            r#"SELECT "t3"."id" as "id""#,
-                            r#"FROM ("#,
-                            r#"SELECT "test_space"."id" as "id" FROM "test_space" WHERE ("test_space"."sys_op") = (?)"#,
-                            r#"UNION ALL"#,
-                            r#"SELECT "test_space"."id" as "id" FROM "test_space" WHERE ("test_space"."sys_op") > (?)"#,
-                            r#") as "t3""#,
-                            r#"WHERE ("t3"."id") = (?)"#,
-                        ), vec![Value::from(1_u64), Value::from(1_u64), Value::from(1_u64)]),
-                ))
-        ]);
+    expected.rows.push(vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket)),
+        Value::String(String::from(PatternWithParams::new(
+            format!(
+                "{} {}{} {} {}{} {}",
+                r#"SELECT "t3"."id""#,
+                r#"FROM ("#,
+                r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sys_op") = (?)"#,
+                r#"UNION ALL"#,
+                r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sys_op") > (?)"#,
+                r#") as "t3""#,
+                r#"WHERE ("t3"."id") = (?)"#,
+            ),
+            vec![Value::from(1_u64), Value::from(1_u64), Value::from(1_u64)],
+        ))),
+    ]);
 
     assert_eq!(expected, result);
 }
@@ -115,7 +112,7 @@ fn map_reduce_query() {
                 PatternWithParams::new(
                     format!(
                         "{} {} {}",
-                        r#"SELECT "hash_testing"."product_code" as "product_code""#,
+                        r#"SELECT "hash_testing"."product_code""#,
                         r#"FROM "hash_testing""#,
                         r#"WHERE ("hash_testing"."identification_number", "hash_testing"."product_code") = (?, ?)"#,
                     ), vec![param1, param457],
@@ -168,7 +165,7 @@ fn linker_test() {
                     PatternWithParams::new(
                         format!(
                         "{} {} {}",
-                        r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                        r#"SELECT "test_space"."FIRST_NAME""#,
                         r#"FROM "test_space""#,
                         r#"WHERE ("test_space"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (?)))"#,
                         ), vec![param3],
@@ -183,7 +180,7 @@ fn linker_test() {
                     PatternWithParams::new(
                         format!(
                         "{} {} {}",
-                        r#"SELECT "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                        r#"SELECT "test_space"."FIRST_NAME""#,
                         r#"FROM "test_space""#,
                         r#"WHERE ("test_space"."id") in (SELECT COLUMN_1 as "identification_number" FROM (VALUES (?)))"#,
                         ), vec![param2],
@@ -246,13 +243,13 @@ fn union_linker_test() {
                 String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
-                    r#"SELECT "t1"."id" as "id", "t1"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "t1"."id", "t1"."FIRST_NAME""#,
                     r#"FROM ("#,
-                    r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."sys_op") < (?)"#,
                     r#"UNION ALL"#,
-                    r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
@@ -266,13 +263,13 @@ fn union_linker_test() {
                 String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
-                    r#"SELECT "t1"."id" as "id", "t1"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "t1"."id", "t1"."FIRST_NAME""#,
                     r#"FROM ("#,
-                    r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."sys_op") < (?)"#,
                     r#"UNION ALL"#,
-                    r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
+                    r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
@@ -343,15 +340,15 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                     PatternWithParams::new(
                         format!(
                             "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
-                            r#"SELECT "t3"."id" as "id""#,
-                            r#""t3"."FIRST_NAME" as "FIRST_NAME""#,
-                            r#""t8"."identification_number" as "identification_number""#,
+                            r#"SELECT "t3"."id""#,
+                            r#""t3"."FIRST_NAME""#,
+                            r#""t8"."identification_number""#,
                             r#"FROM ("#,
-                            r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+                            r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
                             r#"FROM "test_space""#,
                             r#"WHERE ("test_space"."sysFrom") >= (?) and ("test_space"."sys_op") < (?)"#,
                             r#"UNION ALL"#,
-                            r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
+                            r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
                             r#"FROM "test_space_hist""#,
                             r#"WHERE ("test_space_hist"."sysFrom") <= (?)"#,
                             r#") as "t3""#,
@@ -429,10 +426,9 @@ fn join_linker2_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
         Value::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {} {} {} {} {}",
-                r#"SELECT "t1"."id" as "id" FROM (SELECT"#,
-                r#""t1"."id" as "id", "t1"."sysFrom" as "sysFrom","#,
-                r#""t1"."FIRST_NAME" as "FIRST_NAME", "t1"."sys_op" as "sys_op""#,
+                "{} {} {} {} {} {}",
+                r#"SELECT "t1"."id" FROM (SELECT"#,
+                r#""t1"."id", "t1"."sysFrom", "t1"."FIRST_NAME", "t1"."sys_op""#,
                 r#"FROM "test_space" as "t1") as "t1""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT COLUMN_1 as "id1",COLUMN_2 as "id2" FROM (VALUES (?,?)))"#,
@@ -498,8 +494,8 @@ fn join_linker3_test() {
         Value::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {} {}",
-                r#"SELECT "t2"."id1" as "id1" FROM"#,
-                r#"(SELECT "test_space"."id" as "id" FROM "test_space") as "t1""#,
+                r#"SELECT "t2"."id1" FROM"#,
+                r#"(SELECT "test_space"."id" FROM "test_space") as "t1""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT COLUMN_3 as "id1",COLUMN_4 as "id2" FROM (VALUES (?,?),(?,?))) as "t2""#,
                 r#"ON ("t2"."id1") = (?)"#,
@@ -587,10 +583,9 @@ fn join_linker4_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {} {} {} {}",
-                    r#"SELECT t1."id" as "id" FROM (SELECT"#,
-                    r#"t1."id" as "id", t1."sysFrom" as "sysFrom","#,
-                    r#"t1."FIRST_NAME" as "FIRST_NAME", t1."sys_op" as "sys_op""#,
+                    "{} {} {} {} {} {} {}",
+                    r#"SELECT t1."id" FROM (SELECT"#,
+                    r#"t1."id", t1."sysFrom", t1."FIRST_NAME", t1."sys_op""#,
                     r#"FROM "test_space" as t1) as t1"#,
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
@@ -604,10 +599,9 @@ fn join_linker4_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {} {} {} {}",
-                    r#"SELECT t1."id" as "id" FROM (SELECT"#,
-                    r#"t1."id" as "id", t1."sysFrom" as "sysFrom","#,
-                    r#"t1."FIRST_NAME" as "FIRST_NAME", t1."sys_op" as "sys_op""#,
+                    "{} {} {} {} {} {} {}",
+                    r#"SELECT t1."id" FROM (SELECT"#,
+                    r#"t1."id", t1."sysFrom", t1."FIRST_NAME", t1."sys_op""#,
                     r#"FROM "test_space" as t1) as t1"#,
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
@@ -673,10 +667,10 @@ fn anonymous_col_index_test() {
                 format!(
                     "{} {} {} {} {} {} {} {} {} {}",
                     "SELECT",
-                    r#""test_space"."id" as "id","#,
-                    r#""test_space"."sysFrom" as "sysFrom","#,
-                    r#""test_space"."FIRST_NAME" as "FIRST_NAME","#,
-                    r#""test_space"."sys_op" as "sys_op""#,
+                    r#""test_space"."id","#,
+                    r#""test_space"."sysFrom","#,
+                    r#""test_space"."FIRST_NAME","#,
+                    r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE (("test_space"."id") in"#,
                     r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (?)))"#,
@@ -692,10 +686,10 @@ fn anonymous_col_index_test() {
                 format!(
                     "{} {} {} {} {} {} {} {} {} {}",
                     "SELECT",
-                    r#""test_space"."id" as "id","#,
-                    r#""test_space"."sysFrom" as "sysFrom","#,
-                    r#""test_space"."FIRST_NAME" as "FIRST_NAME","#,
-                    r#""test_space"."sys_op" as "sys_op""#,
+                    r#""test_space"."id","#,
+                    r#""test_space"."sysFrom","#,
+                    r#""test_space"."FIRST_NAME","#,
+                    r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE (("test_space"."id") in"#,
                     r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (?)))"#,
@@ -731,8 +725,8 @@ fn sharding_column1_test() {
         Value::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT "test_space"."id" as "id", "test_space"."sysFrom" as "sysFrom","#,
-                r#""test_space"."FIRST_NAME" as "FIRST_NAME", "test_space"."sys_op" as "sys_op""#,
+                r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
+                r#""test_space"."FIRST_NAME", "test_space"."sys_op""#,
                 r#"FROM "test_space" WHERE ("test_space"."id") = (?)"#,
             ),
             vec![Value::from(1_u64)],
@@ -759,18 +753,15 @@ fn sharding_column2_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
         Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
-            String::from(
-                PatternWithParams::new(
-                    format!(
-                    "{} {} {}",
-                    r#"SELECT "test_space"."id" as "id", "test_space"."sysFrom" as "sysFrom","#,
-                    r#""test_space"."FIRST_NAME" as "FIRST_NAME", "test_space"."sys_op" as "sys_op","#,
-                    r#""test_space"."bucket_id" as "bucket_id" FROM "test_space" WHERE ("test_space"."id") = (?)"#,
-                    ), vec![Value::from(1_u64)],
-                )
-            )
-        ),
+        Value::String(String::from(PatternWithParams::new(
+            format!(
+                "{} {} {}",
+                r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
+                r#""test_space"."FIRST_NAME", "test_space"."sys_op","#,
+                r#""test_space"."bucket_id" FROM "test_space" WHERE ("test_space"."id") = (?)"#,
+            ),
+            vec![Value::from(1_u64)],
+        ))),
     ]);
     assert_eq!(expected, result);
 }
@@ -793,9 +784,8 @@ fn bucket1_test() {
         Value::String(format!("Execute query on all buckets")),
         Value::String(String::from(PatternWithParams::new(
             format!(
-                "{} {}",
-                r#"SELECT "t1"."a" as "a", "t1"."b" as "b","#,
-                r#""t1"."bucket_id" as "bucket_id" FROM "t1""#,
+                "{}",
+                r#"SELECT "t1"."a", "t1"."b", "t1"."bucket_id" FROM "t1""#,
             ),
             vec![],
         ))),

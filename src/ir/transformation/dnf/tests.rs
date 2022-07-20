@@ -15,7 +15,7 @@ fn dnf1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
             r#"or ("t"."a") = (?) and ("t"."c") = (?))"#,
         ),
@@ -38,7 +38,7 @@ fn dnf2() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (((("t"."a") = (?) and ("t"."a") = (?) or ("t"."c") = (?) and ("t"."a") = (?))"#,
             r#"or ("t"."a") = (?) and ("t"."b") = (?)) or ("t"."c") = (?) and ("t"."b") = (?))"#,
         ),
@@ -64,7 +64,7 @@ fn dnf3() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
         ),
         vec![
@@ -85,7 +85,7 @@ fn dnf4() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
         ),
         vec![
@@ -106,7 +106,7 @@ fn dnf5() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and ((?)) or ("t"."b") = (?) and ((?)))"#,
         ),
         vec![
@@ -127,7 +127,7 @@ fn dnf6() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and ("t"."c") = (?) or ("t"."b") = (?))"#,
         ),
         vec![Value::from(1_u64), Value::from(1_u64), Value::from(2_u64)],

@@ -137,8 +137,8 @@ g.test_simple_shard_key_union_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
+            {name = "t1.id", type = "integer"},
+            {name = "t1.name", type = "string"},
         },
         rows = {
             { 1, "ok_hist" },
@@ -188,9 +188,9 @@ g.test_complex_shard_key_union_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "product_units", type = "integer"}
+            {name = "t1.id", type = "integer"},
+            {name = "t1.name", type = "string"},
+            {name = "t1.product_units", type = "integer"}
         },
         rows = {
             { 1, "123", 1 },
@@ -236,8 +236,8 @@ g.test_motion_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
+            {name = "t1.id", type = "integer"},
+            {name = "t1.name", type = "string"},
         },
         rows = {
             { 1, "ok" },
@@ -289,9 +289,9 @@ g.test_join_motion_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "product_units", type = "any"},
+            {name = "t3.id", type = "integer"},
+            {name = "t3.name", type = "string"},
+            {name = "t8.product_units", type = "any"},
         },
         rows = {
             { 1, "ok", 5 },
@@ -585,10 +585,10 @@ g.test_bucket_id_in_join = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "id", type = "integer"},                                                                                                                                                                    
-            {name = "name", type = "string"},                                                             
-            {name = "sysOp", type = "integer"},
-            {name = "a", type = "any"},
+            {name = "t1.id", type = "integer"},                                                                                                                                                                    
+            {name = "t1.name", type = "string"},                                                             
+            {name = "t1.sysOp", type = "integer"},
+            {name = "t2.a", type = "any"},
         },
         rows = {},
     })

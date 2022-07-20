@@ -17,8 +17,8 @@ fn front_sql1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
-            r#""hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing"."identification_number","#,
+            r#""hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (?)"#,
         ),
         vec![Value::from(1_u64)],
@@ -36,7 +36,7 @@ fn front_sql2() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE (("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
             r#"or ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?))"#,
         ),
@@ -66,11 +66,11 @@ fn front_sql3() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {} {} {}",
-            r#"SELECT "t3"."identification_number" as "identification_number", "t3"."product_code" as "product_code" FROM"#,
-            r#"(SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "t3"."identification_number", "t3"."product_code" FROM"#,
+            r#"(SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (?)"#,
             r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."identification_number" as "identification_number", "hash_testing_hist"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code""#,
             r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)) as "t3""#,
             r#"WHERE ("t3"."identification_number") = (?)"#,
         ),
@@ -99,11 +99,11 @@ fn front_sql4() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {} {} {} {}",
-            r#"SELECT "t3"."identification_number" as "identification_number", "t3"."product_code" as "product_code" FROM"#,
-            r#"(SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "t3"."identification_number", "t3"."product_code" FROM"#,
+            r#"(SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (?)"#,
             r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."identification_number" as "identification_number", "hash_testing_hist"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code""#,
             r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)) as "t3""#,
             r#"WHERE (("t3"."identification_number") = (?) or (("t3"."identification_number") = (?) or ("t3"."identification_number") = (?)))"#,
             r#"and (("t3"."product_code") = (?) or ("t3"."product_code") = (?))"#,
@@ -130,9 +130,9 @@ fn front_sql5() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number", "hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") in"#,
-            r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number" FROM "hash_testing_hist""#,
+            r#"(SELECT "hash_testing_hist"."identification_number" FROM "hash_testing_hist""#,
             r#"WHERE ("hash_testing_hist"."product_code") = (?))"#,
         ),
         vec![Value::from("a")],
@@ -150,12 +150,12 @@ fn front_sql6() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {} {} {} {}",
-            r#"SELECT t."id" as "id", "hash_testing"."product_units" as "product_units""#,
-            r#"FROM (SELECT "hash_testing"."identification_number" as "identification_number","#,
-            r#""hash_testing"."product_code" as "product_code","#,
-            r#""hash_testing"."product_units" as "product_units","#,
-            r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
-            r#"INNER JOIN (SELECT "test_space"."id" as "id" FROM "test_space") as t"#,
+            r#"SELECT t."id", "hash_testing"."product_units""#,
+            r#"FROM (SELECT "hash_testing"."identification_number","#,
+            r#""hash_testing"."product_code","#,
+            r#""hash_testing"."product_units","#,
+            r#""hash_testing"."sys_op" FROM "hash_testing") as "hash_testing""#,
+            r#"INNER JOIN (SELECT "test_space"."id" FROM "test_space") as t"#,
             r#"ON ("hash_testing"."identification_number") = (t."id")"#,
             r#"WHERE ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
         ),
@@ -196,7 +196,7 @@ fn front_sql8() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT t."identification_number" as "identification_number", t."product_code" as "product_code""#,
+            r#"SELECT t."identification_number", t."product_code""#,
             r#"FROM "hash_testing" as t WHERE (t."identification_number") = (?)"#,
         ),
         vec![Value::from(1_u64)],
@@ -230,21 +230,21 @@ fn front_sql9() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-            r#"SELECT "t3"."id" as "id", "t3"."FIRST_NAME" as "FIRST_NAME","#,
-            r#""t8"."identification_number" as "identification_number","#,
-            r#""t8"."product_code" as "product_code" FROM"#,
-            r#"(SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
+            r#"SELECT "t3"."id", "t3"."FIRST_NAME","#,
+            r#""t8"."identification_number","#,
+            r#""t8"."product_code" FROM"#,
+            r#"(SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
             r#"FROM "test_space" WHERE ("test_space"."sys_op") < (?) and ("test_space"."sysFrom") >= (?)"#,
             r#"UNION ALL"#,
-            r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
+            r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
             r#"FROM "test_space_hist" WHERE ("test_space_hist"."sysFrom") <= (?))"#,
             r#"as "t3""#,
             r#"INNER JOIN"#,
-            r#"(SELECT "hash_testing_hist"."identification_number" as "identification_number","#,
-            r#""hash_testing_hist"."product_code" as "product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)"#,
+            r#"(SELECT "hash_testing_hist"."identification_number","#,
+            r#""hash_testing_hist"."product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)"#,
             r#"UNION ALL"#,
-            r#"SELECT "hash_single_testing_hist"."identification_number" as "identification_number","#,
-            r#""hash_single_testing_hist"."product_code" as "product_code" FROM "hash_single_testing_hist""#,
+            r#"SELECT "hash_single_testing_hist"."identification_number","#,
+            r#""hash_single_testing_hist"."product_code" FROM "hash_single_testing_hist""#,
             r#"WHERE ("hash_single_testing_hist"."sys_op") <= (?))"#,
             r#"as "t8" ON ("t3"."id") = ("t8"."identification_number")"#,
             r#"WHERE ("t3"."id") = (?) and ("t8"."identification_number") = (?) and ("t8"."product_code") = (?)"#,
@@ -330,7 +330,7 @@ fn front_sql14() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"INSERT INTO "t" ("a", "c")"#, r#"SELECT "t"."b" as "b", "t"."d" as "d" FROM "t""#,
+            r#"INSERT INTO "t" ("a", "c")"#, r#"SELECT "t"."b", "t"."d" FROM "t""#,
         ),
         vec![],
     );
@@ -361,8 +361,8 @@ fn front_sql16() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number" as "identification_number","#,
-            r#""hash_testing"."product_code" as "product_code""#,
+            r#"SELECT "hash_testing"."identification_number","#,
+            r#""hash_testing"."product_code""#,
             r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") = (?)"#,
         ),
         vec![Value::from("кириллица")],
@@ -379,7 +379,7 @@ fn front_params1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME" FROM "test_space""#,
+            r#"SELECT "test_space"."id", "test_space"."FIRST_NAME" FROM "test_space""#,
             r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."sysFrom") > (?)"#,
         ),
         params.clone(),
@@ -396,7 +396,7 @@ fn front_params2() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+            r#"SELECT "test_space"."id" FROM "test_space""#,
             r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
         ),
         params.clone(),
@@ -414,7 +414,7 @@ fn front_params3() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+            r#"SELECT "test_space"."id" FROM "test_space""#,
             r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
         ),
         params.clone(),
@@ -433,7 +433,7 @@ fn front_params4() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "test_space"."id" as "id" FROM "test_space""#,
+            r#"SELECT "test_space"."id" FROM "test_space""#,
             r#"WHERE ("test_space"."FIRST_NAME") = (?)"#,
         ),
         params,

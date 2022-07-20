@@ -629,6 +629,19 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Alias { child, name, .. } => {
+                    // Do not generate an alias in SQL when a column has exactly the same name.
+                    let child_expr = ir_plan.get_expression_node(*child)?;
+                    if let Expression::Reference { .. } = child_expr {
+                        let alias = &ir_plan.get_alias_from_reference_node(child_expr)?;
+                        if alias == name {
+                            let sn = SyntaxNode::new_pointer(
+                                id,
+                                None,
+                                vec![self.nodes.get_syntax_node_id(*child)?],
+                            );
+                            return Ok(self.nodes.push_syntax_node(sn));
+                        }
+                    }
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(*child)?),

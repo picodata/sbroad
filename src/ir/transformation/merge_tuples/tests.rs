@@ -14,7 +14,7 @@ fn merge_tuples1() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a", "t"."b") = (?, ?) and (?) < ("t"."a") and ("t"."c") < (?)"#,
         ),
         vec![
@@ -36,7 +36,7 @@ fn merge_tuples2() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a", "t"."b") = (?, ?) and (?)"#,
             r#"or (?) <= ("t"."a") and ("t"."c") >= (?) and (?))"#,
         ),
@@ -57,7 +57,7 @@ fn merge_tuples2() {
 fn merge_tuples3() {
     let input = r#"SELECT "a" FROM "t" WHERE true"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "t"."a" as "a" FROM "t" WHERE ?"#),
+        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ?"#),
         vec![Value::Boolean(true)],
     );
 
@@ -70,7 +70,7 @@ fn merge_tuples4() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#, r#"WHERE ("t"."a", "t"."b", "t"."c") = (?, ?, ?)"#,
+            r#"SELECT "t"."a" FROM "t""#, r#"WHERE ("t"."a", "t"."b", "t"."c") = (?, ?, ?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
@@ -84,7 +84,7 @@ fn merge_tuples5() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT "t"."a" as "a" FROM "t""#,
+            r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a", "t"."b") > (?, ?) and (?) < ("t"."c")"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],

@@ -13,7 +13,7 @@ cache:
 default:
     tags:
         - picodata
-    image: docker-public.binary.picodata.io/picodata/picodata/sbroad/sbroad-builder:0.3.0
+    image: docker-public.binary.picodata.io/picodata/picodata/sbroad/sbroad-builder:0.4.0
 build:
     before_script:
       - make init
