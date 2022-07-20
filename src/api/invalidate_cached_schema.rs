@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::os::raw::c_int;
 use std::thread::LocalKey;
+use tarantool::error::TarantoolErrorCode;
+use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
@@ -15,8 +17,22 @@ where
     Runtime: Configuration,
 {
     runtime.with(|s| {
-        let v = &mut *s.borrow_mut();
-        v.clear_config();
+        if let Ok(mut runtime) = s.try_borrow_mut() {
+            runtime.clear_config();
+        } else {
+            say(
+                SayLevel::Error,
+                file!(),
+                line!().try_into().unwrap_or(0),
+                None,
+                &format!("{:?}", "Failed to borrow runtime: already in use"),
+            );
+            tarantool::set_error!(
+                TarantoolErrorCode::ProcC,
+                "{}",
+                format!("{:?}", "Failed to borrow runtime: already in use")
+            );
+        }
     });
 
     ctx.return_mp(&true).unwrap();
