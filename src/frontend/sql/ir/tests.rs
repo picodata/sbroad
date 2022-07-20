@@ -423,9 +423,9 @@ fn front_params3() {
 #[test]
 fn front_params4() {
     let pattern = r#"SELECT "id" FROM "test_space"
-        WHERE "FIRST_NAME" = '''±!@#$%^&*()_+=-\/><";:,.`~'"#;
+        WHERE "FIRST_NAME" = '''± !@#$%^&*()_+=-\/><";:,.`~'"#;
 
-    let params = vec![Value::from(r#"''±!@#$%^&*()_+=-\/><";:,.`~"#)];
+    let params = vec![Value::from(r#"''± !@#$%^&*()_+=-\/><";:,.`~"#)];
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
