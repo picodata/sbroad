@@ -4,8 +4,6 @@ use crate::executor::engine::Configuration;
 use crate::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::ir::value::Value;
-use base64ct::{Base64, Encoding};
-use sha2::{Digest, Sha256};
 use std::any::Any;
 use std::cell::RefCell;
 use tarantool::log::{say, SayLevel};
@@ -50,7 +48,7 @@ impl std::fmt::Debug for PreparedStmt {
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
     metadata: StorageConfiguration,
-    cache: RefCell<LRUCache<String, PreparedStmt>>,
+    cache: RefCell<LRUCache<u32, PreparedStmt>>,
 }
 
 impl Configuration for StorageRuntime {
@@ -128,7 +126,7 @@ impl StorageRuntime {
     /// # Errors
     /// - Failed to initialize the LRU cache.
     pub fn new() -> Result<Self, QueryPlannerError> {
-        let cache: LRUCache<String, PreparedStmt> =
+        let cache: LRUCache<u32, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
             metadata: StorageConfiguration::new(),
@@ -150,62 +148,51 @@ impl StorageRuntime {
         params: &[Value],
         is_data_modifier: bool,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let hash = Sha256::digest(pattern.as_bytes());
-        let key = Base64::encode_string(&hash);
-
-        // The statement is not prepared yet.
-        if self.cache.borrow_mut().get(&key)?.is_none() {
-            match prepare(pattern) {
-                Ok(stmt) => {
-                    // Put the prepared statement into the cache.
-                    let stmt_id = stmt.id()?;
-                    say(
-                        SayLevel::Debug,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute"),
-                        &format!("Created prepared statement {}", stmt_id),
-                    );
-                    self.cache.borrow_mut().put(key.clone(), stmt)?;
-                }
-                Err(e) => {
-                    // Possibly the statement is correct, but doesn't fit into
-                    // Tarantool's prepared statements cache (`sql_cache_size`).
-                    // So we try to execute it bypassing the cache.
-                    say(
-                        SayLevel::Debug,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("execute"),
-                        &format!("Failed to prepare the statement: {}, error: {}", pattern, e),
-                    );
-                    if is_data_modifier {
-                        return write_unprepared(pattern, params);
-                    }
-                    return read_unprepared(pattern, params);
-                }
+        // Find a statement in the Tarantool's cache or prepare it
+        // (i.e. compile and put into the cache).
+        let stmt_id = match prepare(pattern) {
+            Ok(stmt) => {
+                let stmt_id = stmt.id()?;
+                say(
+                    SayLevel::Debug,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute"),
+                    &format!("Created prepared statement {}", stmt_id),
+                );
+                self.cache.borrow_mut().put(stmt_id, stmt)?;
+                stmt_id
             }
-        }
-
-        // The statement is already prepared.
-        let stmt_id = if let Some(stmt) = self.cache.borrow_mut().get(&key)? {
-            stmt.id()?
-        } else {
-            return Err(QueryPlannerError::CustomError(
-                "Failed to get a prepared statement from the cache".to_string(),
-            ));
+            Err(e) => {
+                // Possibly the statement is correct, but doesn't fit into
+                // Tarantool's prepared statements cache (`sql_cache_size`).
+                // So we try to execute it bypassing the cache.
+                say(
+                    SayLevel::Warn,
+                    file!(),
+                    line!().try_into().unwrap_or(0),
+                    Option::from("execute"),
+                    &format!("Failed to prepare the statement: {}, error: {}", pattern, e),
+                );
+                if is_data_modifier {
+                    return write_unprepared(pattern, params);
+                }
+                return read_unprepared(pattern, params);
+            }
         };
+
+        // The statement was found in the cache, so we can execute it.
         say(
             SayLevel::Debug,
             file!(),
             line!().try_into().unwrap_or(0),
             Option::from("execute"),
-            &format!("Retrieved prepared statement {} from the cash", stmt_id),
+            &format!("Execute prepared statement {}", stmt_id),
         );
         if is_data_modifier {
-            return write_prepared(stmt_id, params);
+            return write_prepared(stmt_id, pattern, params);
         }
-        read_prepared(stmt_id, params)
+        read_prepared(stmt_id, pattern, params)
     }
 }
 
@@ -259,14 +246,18 @@ fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
     }
 }
 
-fn read_prepared(stmt_id: u32, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn read_prepared(
+    stmt_id: u32,
+    stmt: &str,
+    params: &[Value],
+) -> Result<Box<dyn Any>, QueryPlannerError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("read")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<ProducerResult, _>((stmt_id, params)) {
+    match exec_sql.call_with_args::<ProducerResult, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -288,7 +279,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
         .get("read")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<ProducerResult, _>((stmt, params)) {
+    match exec_sql.call_with_args::<ProducerResult, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -303,14 +294,18 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
     }
 }
 
-fn write_prepared(stmt_id: u32, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn write_prepared(
+    stmt_id: u32,
+    stmt: &str,
+    params: &[Value],
+) -> Result<Box<dyn Any>, QueryPlannerError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("write")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<ConsumerResult, _>((stmt_id, params)) {
+    match exec_sql.call_with_args::<ConsumerResult, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -332,7 +327,7 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
         .get("write")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<ConsumerResult, _>((stmt, params)) {
+    match exec_sql.call_with_args::<ConsumerResult, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -394,10 +389,16 @@ pub fn load_storage_functions() -> Result<(), QueryPlannerError> {
         box.unprepare(stmt_id)
     end
 
-    function read(stmt, params)
-        local res, err = box.execute(stmt, params)
+    function read(stmt_id, stmt, params)
+        local res, err = box.execute(stmt_id, params)
         if err ~= nil then
-            error(err)
+        -- The statement can be evicted from the cache,
+        -- while we were yielding in Lua. So we execute
+        -- it without the cache.
+            res, err = box.execute(stmt, params)
+            if err ~= nil then
+                error(err)
+            end
         end
 
         local result = {}
@@ -414,10 +415,16 @@ pub fn load_storage_functions() -> Result<(), QueryPlannerError> {
         return result
     end
 
-    function write(stmt, params)
-        local res, err = box.execute(stmt, params)
+    function write(stmt_id, stmt, params)
+        local res, err = box.execute(stmt_id, params)
         if err ~= nil then
-            error(err)
+            -- The statement can be evicted from the cache,
+            -- while we were yielding in Lua. So we execute
+            -- it without the cache.
+            res, err = box.execute(stmt, params)
+            if err ~= nil then
+                error(err)
+            end
         end
 
         return res
