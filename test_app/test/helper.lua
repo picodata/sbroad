@@ -51,6 +51,55 @@ local config = {
   ["storage_cache_size_bytes"] = 204800,
   ["schema"] = {
     spaces = {
+      t = {
+        format = {
+            {
+                name = "id",
+                type = "integer",
+                is_nullable = false,
+            },
+            {
+                name = "a",
+                type = "number",
+                is_nullable = false,
+            },
+            {
+                name = "bucket_id",
+                type = "unsigned",
+                is_nullable = true,
+            },
+        },
+        temporary = false,
+        engine = "memtx",
+        indexes = {
+            {
+                unique = true,
+                parts = {
+                    {
+                        path = "id",
+                        type = "integer",
+                        is_nullable = false,
+                    },
+                },
+                type = "TREE",
+                name = "id",
+            },
+            {
+                unique = false,
+                parts = {
+                    {
+                        path = "bucket_id",
+                        type = "unsigned",
+                        is_nullable = true,
+                    },
+                },
+                type = "TREE",
+                name = "bucket_id",
+            },
+        },
+        is_local = false,
+        sharding_key = { "id" },
+      },
       testing_space = {
         is_local = false,
         temporary = false,

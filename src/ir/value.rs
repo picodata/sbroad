@@ -218,7 +218,7 @@ impl Value {
 impl ToHashString for Value {
     fn to_hash_string(&self) -> String {
         match self {
-            Value::Boolean(v) => v.to_string(),
+            Value::Unsigned(v) => v.to_string(),
             Value::Integer(v) => v.to_string(),
             // It is important to trim trailing zeros when converting to string.
             // Otherwise, the hash from `1.000` and `1` would be different,
@@ -227,7 +227,7 @@ impl ToHashString for Value {
             // from the string representation for all other types.
             Value::Decimal(v) => v.trim().to_string(),
             Value::Double(v) => v.to_string(),
-            Value::Unsigned(v) => v.to_string(),
+            Value::Boolean(v) => v.to_string(),
             Value::String(v) => v.to_string(),
             Value::Null => "NULL".to_string(),
         }
@@ -240,12 +240,12 @@ impl Serialize for Value {
         S: ser::Serializer,
     {
         match &self {
-            Value::Boolean(v) => serializer.serialize_bool(*v),
+            Value::Unsigned(v) => serializer.serialize_u64(*v),
+            Value::Integer(v) => serializer.serialize_i64(*v),
             Value::Decimal(v) => v.serialize(serializer),
             Value::Double(Double { value }) => serializer.serialize_f64(*value),
-            Value::Integer(v) => serializer.serialize_i64(*v),
+            Value::Boolean(v) => serializer.serialize_bool(*v),
             Value::String(v) => serializer.serialize_str(v),
-            Value::Unsigned(v) => serializer.serialize_u64(*v),
             Value::Null => serializer.serialize_none(),
         }
     }
@@ -259,19 +259,21 @@ impl<'de> Deserialize<'de> for Value {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum EncodedValue {
-            Boolean(bool),
-            Decimal(Decimal),
-            Double(Double),
             Unsigned(u64),
             Integer(i64),
-            Null(()),
+            Decimal(Decimal),
+            Double(Double),
+            Float(f64),
+            Boolean(bool),
             String(String),
+            Null(()),
         }
 
         impl From<EncodedValue> for Value {
             fn from(v: EncodedValue) -> Self {
                 match v {
-                    EncodedValue::Boolean(v) => Value::Boolean(v),
+                    EncodedValue::Unsigned(v) => Value::Unsigned(v),
+                    EncodedValue::Integer(v) => Value::Integer(v),
                     EncodedValue::Decimal(v) => Value::Decimal(v),
                     EncodedValue::Double(v) => {
                         if v.value.is_nan() {
@@ -279,10 +281,15 @@ impl<'de> Deserialize<'de> for Value {
                         }
                         Value::Double(v)
                     }
-                    EncodedValue::Integer(v) => Value::Integer(v),
-                    EncodedValue::Null(_) => Value::Null,
+                    EncodedValue::Float(v) => {
+                        if v.is_nan() {
+                            return Value::Null;
+                        }
+                        Value::Double(Double::from(v))
+                    }
+                    EncodedValue::Boolean(v) => Value::Boolean(v),
                     EncodedValue::String(v) => Value::String(v),
-                    EncodedValue::Unsigned(v) => Value::Unsigned(v),
+                    EncodedValue::Null(_) => Value::Null,
                 }
             }
         }
@@ -295,13 +302,13 @@ impl<'de> Deserialize<'de> for Value {
 impl From<Value> for String {
     fn from(v: Value) -> Self {
         match v {
-            Value::Boolean(v) => v.to_string(),
-            Value::Null => "NULL".to_string(),
+            Value::Unsigned(v) => v.to_string(),
             Value::Integer(v) => v.to_string(),
             Value::Decimal(v) => v.to_string(),
             Value::Double(v) => v.to_string(),
-            Value::Unsigned(v) => v.to_string(),
+            Value::Boolean(v) => v.to_string(),
             Value::String(v) => v,
+            Value::Null => "NULL".to_string(),
         }
     }
 }
@@ -311,11 +318,11 @@ impl<L: tlua::AsLua> tlua::Push<L> for Value {
 
     fn push_to_lua(&self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
         match self {
-            Value::Boolean(v) => v.push_to_lua(lua),
+            Value::Unsigned(v) => v.push_to_lua(lua),
             Value::Integer(v) => v.push_to_lua(lua),
             Value::Decimal(v) => v.push_to_lua(lua),
             Value::Double(v) => v.push_to_lua(lua),
-            Value::Unsigned(v) => v.push_to_lua(lua),
+            Value::Boolean(v) => v.push_to_lua(lua),
             Value::String(v) => v.push_to_lua(lua),
             Value::Null => tlua::Null.push_to_lua(lua),
         }
@@ -329,11 +336,11 @@ where
     type Err = tlua::Void;
     fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
         match self {
-            Value::Boolean(v) => v.push_into_lua(lua),
+            Value::Unsigned(v) => v.push_into_lua(lua),
             Value::Integer(v) => v.push_into_lua(lua),
             Value::Decimal(v) => v.push_into_lua(lua),
             Value::Double(v) => v.push_into_lua(lua),
-            Value::Unsigned(v) => v.push_into_lua(lua),
+            Value::Boolean(v) => v.push_into_lua(lua),
             Value::String(v) => v.push_into_lua(lua),
             Value::Null => tlua::Null.push_into_lua(lua),
         }
@@ -347,20 +354,35 @@ where
     L: tlua::AsLua,
 {
     fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Value, L> {
-        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
-            Ok(v) => return Ok(Self::Decimal(v)),
-            Err(lua) => lua,
-        };
-        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
-            Ok(v) => return Ok(Self::Double(v)),
-            Err(lua) => lua,
-        };
+        match f64::lua_read_at_position(&lua, index) {
+            // At the moment Tarantool module can't distinguish between
+            // double and integer/unsigned. So we use machine epsilon to
+            // do it manually.
+            Ok(v) if v.fract().abs() >= std::f64::EPSILON => {
+                return Ok(Value::Double(Double::from(v)));
+            }
+            _ => {}
+        }
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Unsigned(v)),
             Err(lua) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Integer(v)),
+            Err(lua) => lua,
+        };
+        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
+            Ok(v) => {
+                let value: Decimal = v;
+                return Ok(Self::Decimal(value));
+            }
+            Err(lua) => lua,
+        };
+        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
+            Ok(v) => {
+                let value: Double = v;
+                return Ok(Self::Double(value));
+            }
             Err(lua) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
@@ -371,7 +393,6 @@ where
             Ok(v) => return Ok(Self::String(v)),
             Err(lua) => lua,
         };
-
         let lua = match tlua::Null::lua_read_at_position(lua, index) {
             Ok(_) => return Ok(Self::Null),
             Err(lua) => lua,

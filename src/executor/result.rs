@@ -43,7 +43,7 @@ impl TryInto<Column> for &MetadataColumn {
             "decimal" => Ok(Column::new(&self.name, Type::Decimal, ColumnRole::User)),
             "double" => Ok(Column::new(&self.name, Type::Double, ColumnRole::User)),
             "integer" => Ok(Column::new(&self.name, Type::Integer, ColumnRole::User)),
-            "number" => Ok(Column::new(&self.name, Type::Number, ColumnRole::User)),
+            "number" | "numeric" => Ok(Column::new(&self.name, Type::Number, ColumnRole::User)),
             "scalar" => Ok(Column::new(&self.name, Type::Scalar, ColumnRole::User)),
             "string" | "text" | "varchar" => {
                 Ok(Column::new(&self.name, Type::String, ColumnRole::User))

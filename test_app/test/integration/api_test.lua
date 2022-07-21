@@ -36,6 +36,13 @@ g.before_each(
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
+
+        r, err = api:call("query", {
+            [[insert into "t" ("id", "a") values (?, ?), (?, ?)]],
+            {1, 4.2, 2, require('decimal').new(6.66)}
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
     end
 )
 
@@ -46,12 +53,14 @@ g.after_each(
         storage1:call("box.execute", { [[truncate table "testing_space_hist"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
+        storage1:call("box.execute", { [[truncate table "t"]] })
 
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "testing_space"]] })
         storage2:call("box.execute", { [[truncate table "testing_space_hist"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
+        storage2:call("box.execute", { [[truncate table "t"]] })
     end
 )
 
@@ -526,6 +535,25 @@ g.test_insert_6 = function()
             {1, "ok", 1, 3940},
             {10, box.NULL, 0, 11520},
             { -9223372036854775808, "bigint", 7, 10139 }
+        },
+    })
+end
+
+g.test_decimal_double = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "t"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "a", type = "number"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, 4.2, 3940},
+            {2, 6.66, 22072},
         },
     })
 end

@@ -127,9 +127,11 @@ impl<'de> Visitor<'de> for ColumnVisitor {
             "decimal" => Ok(Column::new(&column_name, Type::Decimal, ColumnRole::User)),
             "double" => Ok(Column::new(&column_name, Type::Double, ColumnRole::User)),
             "integer" => Ok(Column::new(&column_name, Type::Integer, ColumnRole::User)),
-            "number" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
+            "number" | "numeric" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
             "scalar" => Ok(Column::new(&column_name, Type::Scalar, ColumnRole::User)),
-            "string" => Ok(Column::new(&column_name, Type::String, ColumnRole::User)),
+            "string" | "text" | "varchar" => {
+                Ok(Column::new(&column_name, Type::String, ColumnRole::User))
+            }
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, ColumnRole::User)),
             _ => Err(Error::custom("unsupported column type")),
         }
