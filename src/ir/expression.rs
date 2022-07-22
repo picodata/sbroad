@@ -365,7 +365,7 @@ impl Plan {
                     ));
                 };
                 let relational_op = self.get_relation_node(child_node)?;
-                let child_row_list: Vec<usize> = if let Expression::Row { list, .. } =
+                let child_row_list: Vec<(usize, usize)> = if let Expression::Row { list, .. } =
                     self.get_expression_node(relational_op.output())?
                 {
                     // We have to filter the sharding column in the projection nearest
@@ -374,7 +374,10 @@ impl Plan {
                     // 2. projection -> scan
                     // As a result `relational_op` can be either a selection or a scan.
                     if need_sharding_column {
-                        list.clone()
+                        list.iter()
+                            .enumerate()
+                            .map(|(pos, id)| (pos, *id))
+                            .collect()
                     } else {
                         let table_name: Option<&str> = match relational_op {
                             Relational::ScanRelation { relation, .. } => Some(relation.as_str()),
@@ -415,10 +418,13 @@ impl Plan {
                             list.iter()
                                 .enumerate()
                                 .filter(|(pos, _)| sharding_column_pos.ne(pos))
-                                .map(|(_, id)| *id)
+                                .map(|(pos, id)| (pos, *id))
                                 .collect()
                         } else {
-                            list.clone()
+                            list.iter()
+                                .enumerate()
+                                .map(|(pos, id)| (pos, *id))
+                                .collect()
                         }
                     }
                 } else {
@@ -427,10 +433,10 @@ impl Plan {
                     ));
                 };
                 result.reserve(child_row_list.len());
-                for (pos, alias_node) in child_row_list.iter().enumerate() {
+                for (pos, alias_node) in child_row_list {
                     let name: String =
                         if let Node::Expression(Expression::Alias { ref name, .. }) =
-                            self.get_node(*alias_node)?
+                            self.get_node(alias_node)?
                         {
                             String::from(name)
                         } else {

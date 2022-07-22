@@ -141,6 +141,17 @@ impl RouterConfigurationMock {
             Table::new_seg("\"t\"", columns, sharding_key).unwrap(),
         );
 
+        let columns = vec![
+            Column::new("\"a\"", Type::String, ColumnRole::User),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
+            Column::new("\"b\"", Type::Integer, ColumnRole::User),
+        ];
+        let sharding_key: &[&str] = &["\"a\"", "\"b\""];
+        tables.insert(
+            "\"t1\"".to_string(),
+            Table::new_seg("\"t1\"", columns, sharding_key).unwrap(),
+        );
+
         RouterConfigurationMock {
             schema: [
                 ("EMPLOYEES".into(), vec!["ID".into()]),

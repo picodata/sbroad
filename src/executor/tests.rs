@@ -767,6 +767,34 @@ fn sharding_column2_test() {
 }
 
 #[test]
+fn bucket1_test() {
+    let sql = r#"SELECT *, "bucket_id" FROM "t1""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+
+    expected.rows.push(vec![
+        Value::String(format!("Execute query on all buckets")),
+        Value::String(String::from(PatternWithParams::new(
+            format!(
+                "{} {}",
+                r#"SELECT "t1"."a" as "a", "t1"."b" as "b","#,
+                r#""t1"."bucket_id" as "bucket_id" FROM "t1""#,
+            ),
+            vec![],
+        ))),
+    ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
 fn insert1_test() {
     let sql = r#"insert into "t" ("b") select "a" from "t"
         where "a" = 1 and "b" = 2 or "a" = 2 and "b" = 3"#;
