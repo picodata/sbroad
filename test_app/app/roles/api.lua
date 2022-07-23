@@ -37,7 +37,7 @@ local function query(query, params)
         return nil, parser_res
     end
 
-    return parser_res
+    return parser_res[1]
 end
 
 local function calculate_bucket_id(space_name, values)

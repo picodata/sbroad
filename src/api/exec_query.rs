@@ -8,7 +8,6 @@ use crate::api::helper::load_config;
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::executor::Query;
 use crate::ir::value::Value;
 
@@ -42,11 +41,8 @@ pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int 
 
         match query.dispatch() {
             Ok(result) => {
-                if let Some(producer_result) = (&*result).downcast_ref::<ProducerResult>() {
-                    ctx.return_mp(&producer_result).unwrap();
-                    0
-                } else if let Some(consumer_result) = (&*result).downcast_ref::<ConsumerResult>() {
-                    ctx.return_mp(&consumer_result).unwrap();
+                if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
+                    ctx.return_tuple(tuple).unwrap();
                     0
                 } else {
                     tarantool::set_error!(
@@ -118,11 +114,8 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
             lua_params.is_data_modifier,
         ) {
             Ok(result) => {
-                if let Some(producer_result) = (&*result).downcast_ref::<ProducerResult>() {
-                    ctx.return_mp(&producer_result).unwrap();
-                    0
-                } else if let Some(consumer_result) = (&*result).downcast_ref::<ConsumerResult>() {
-                    ctx.return_mp(&consumer_result).unwrap();
+                if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
+                    ctx.return_tuple(tuple).unwrap();
                     0
                 } else {
                     tarantool::set_error!(

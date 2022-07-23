@@ -2,12 +2,12 @@ use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::config::StorageConfiguration;
 use crate::executor::engine::Configuration;
 use crate::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
-use crate::executor::result::{ConsumerResult, ProducerResult};
 use crate::ir::value::Value;
 use std::any::Any;
 use std::cell::RefCell;
 use tarantool::log::{say, SayLevel};
 use tarantool::tlua::LuaFunction;
+use tarantool::tuple::Tuple;
 
 pub const DEFAULT_SIZE_BYTES: usize = 10 * 1024 * 1024;
 
@@ -257,7 +257,7 @@ fn read_prepared(
         .get("read")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<ProducerResult, _>((stmt_id, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -279,7 +279,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
         .get("read")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<ProducerResult, _>((0, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -305,7 +305,7 @@ fn write_prepared(
         .get("write")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<ConsumerResult, _>((stmt_id, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -327,7 +327,7 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
         .get("write")
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<ConsumerResult, _>((0, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             say(
@@ -412,7 +412,7 @@ pub fn load_storage_functions() -> Result<(), QueryPlannerError> {
             table.insert(result.rows, tuple)
         end
 
-        return result
+        return box.tuple.new{result}
     end
 
     function write(stmt_id, stmt, params)
@@ -427,7 +427,7 @@ pub fn load_storage_functions() -> Result<(), QueryPlannerError> {
             end
         end
 
-        return res
+        return box.tuple.new{res}
     end
 "#,
     ) {

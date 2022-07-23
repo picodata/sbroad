@@ -532,9 +532,9 @@ g.test_insert_6 = function()
             {name = "bucket_id", type = "unsigned"},
         },
         rows = {
+            { -9223372036854775808LL, "bigint", 7, 2274 },
             {1, "ok", 1, 3940},
-            {10, box.NULL, 0, 11520},
-            { -9223372036854775808, "bigint", 7, 10139 }
+            {10, box.NULL, 0, 11520}
         },
     })
 end

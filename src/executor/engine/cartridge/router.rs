@@ -9,6 +9,7 @@ use std::convert::TryInto;
 
 use tarantool::log::{say, SayLevel};
 use tarantool::tlua::LuaFunction;
+use tarantool::tuple::Tuple;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -18,7 +19,7 @@ use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use crate::executor::engine::{Configuration, Coordinator};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
-use crate::executor::result::{ConsumerResult, ProducerResult};
+use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Cache, CoordinatorMetadata};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -216,13 +217,21 @@ impl Coordinator for RouterRuntime {
     ) -> Result<VirtualTable, QueryPlannerError> {
         let top_id = plan.get_motion_subtree_root(motion_node_id)?;
         let result = self.dispatch(plan, top_id, buckets)?;
-        let mut vtable = if let Ok(motion_result) = result.downcast::<ProducerResult>() {
-            motion_result.as_virtual_table()?
+        let mut vtable = if let Ok(tuple) = result.downcast::<Tuple>() {
+            let data = tuple.into_struct::<Vec<ProducerResult>>().map_err(|e| {
+                QueryPlannerError::CustomError(format!("Motion node {}. {}", motion_node_id, e))
+            })?;
+            data.get(0)
+                .ok_or_else(|| {
+                    QueryPlannerError::CustomError(
+                        "Failed to retrieve producer result from the tuple".into(),
+                    )
+                })?
+                .as_virtual_table()?
         } else {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Failed to downcast result of a motion node {} to a virtual table",
-                motion_node_id
-            )));
+            return Err(QueryPlannerError::CustomError(
+                "The result of the motion is not a tuple".to_string(),
+            ));
         };
         if let Some(name) = &plan.get_motion_alias(motion_node_id)? {
             vtable.set_alias(name)?;
@@ -343,7 +352,7 @@ impl RouterRuntime {
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ProducerResult, _>((rs_query, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
@@ -372,7 +381,7 @@ impl RouterRuntime {
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ConsumerResult, _>((rs_query, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
@@ -410,7 +419,7 @@ impl RouterRuntime {
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ProducerResult, _>((query, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
@@ -436,7 +445,7 @@ impl RouterRuntime {
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<ConsumerResult, _>((query, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 say(
@@ -589,15 +598,15 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             end
 
             if result == nil then
-                result = res[1][1]
+                result = res[1][1][1]
             else
-                for _, row in ipairs(res[1][1].rows) do
+                for _, row in ipairs(res[1][1][1].rows) do
                     table.insert(result.rows, row)
                 end
             end
         end
 
-        return result
+        return box.tuple.new{result}
     end
 
     function write_on_some(tbl_rs_query, waiting_timeout)
@@ -622,13 +631,13 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             end
 
             if result == nil then
-                result = res[1][1]
+                result = res[1][1][1]
             else
-                result.row_count = result.row_count + res[1][1].row_count
+                result.row_count = result.row_count + res[1][1][1].row_count
             end
         end
 
-        return result
+        return box.tuple.new{result}
     end
 
     function read_on_all(query, waiting_timeout)
@@ -654,15 +663,15 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             end
 
             if result == nil then
-                result = res[1][1]
+                result = res[1][1][1]
             else
-                for _, row in ipairs(res[1][1].rows) do
+                for _, row in ipairs(res[1][1][1].rows) do
                     table.insert(result.rows, row)
                 end
             end
         end
 
-        return result
+        return box.tuple.new{result}
     end
 
     function write_on_all(query, waiting_timeout)
@@ -688,13 +697,13 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             end
 
             if result == nil then
-                result = res[1][1]
+                result = res[1][1][1]
             else
-                result.row_count = result.row_count + res[1][1].row_count
+                result.row_count = result.row_count + res[1][1][1].row_count
             end
         end
 
-        return result[1]
+        return box.tuple.new{result}
     end
 "#,
     ) {

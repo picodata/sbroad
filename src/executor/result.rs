@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
+use serde::Deserialize;
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::QueryPlannerError;
@@ -9,7 +10,7 @@ use crate::ir::value::Value;
 
 type ExecutorTuple = Vec<Value>;
 
-#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+#[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct MetadataColumn {
     name: String,
     r#type: String,
@@ -59,7 +60,7 @@ impl TryInto<Column> for &MetadataColumn {
 
 /// Results of query execution for `SELECT`.
 #[allow(clippy::module_name_repetitions)]
-#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+#[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct ProducerResult {
     pub metadata: Vec<MetadataColumn>,
     pub rows: Vec<ExecutorTuple>,
