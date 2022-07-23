@@ -354,14 +354,16 @@ where
     L: tlua::AsLua,
 {
     fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Value, L> {
-        match f64::lua_read_at_position(&lua, index) {
-            // At the moment Tarantool module can't distinguish between
-            // double and integer/unsigned. So we use machine epsilon to
-            // do it manually.
-            Ok(v) if v.fract().abs() >= std::f64::EPSILON => {
+        // At the moment Tarantool module can't distinguish between
+        // double and integer/unsigned. So we have to do it manually.
+        if let Ok(v) = f64::lua_read_at_position(&lua, index) {
+            if v.is_subnormal()
+                || v.is_nan()
+                || v.is_infinite()
+                || v.is_finite() && v.fract().abs() >= std::f64::EPSILON
+            {
                 return Ok(Value::Double(Double::from(v)));
             }
-            _ => {}
         }
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Unsigned(v)),
