@@ -349,7 +349,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                             r#"FROM ("#,
                             r#"SELECT "test_space"."id" as "id", "test_space"."FIRST_NAME" as "FIRST_NAME""#,
                             r#"FROM "test_space""#,
-                            r#"WHERE (?) > ("test_space"."sys_op") and ("test_space"."sysFrom") >= (?)"#,
+                            r#"WHERE ("test_space"."sysFrom") >= (?) and ("test_space"."sys_op") < (?)"#,
                             r#"UNION ALL"#,
                             r#"SELECT "test_space_hist"."id" as "id", "test_space_hist"."FIRST_NAME" as "FIRST_NAME""#,
                             r#"FROM "test_space_hist""#,

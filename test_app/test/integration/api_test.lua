@@ -558,6 +558,21 @@ g.test_decimal_double = function()
     })
 end
 
+g.test_compare = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[SELECT * FROM "t" where "id" < 2 and "a" > 5]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "a", type = "number"},
+        },
+        rows = {},
+    })
+end
+
 g.test_invalid_explain = function()
     local api = cluster:server("api-1").net_box
 

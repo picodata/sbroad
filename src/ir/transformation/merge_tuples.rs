@@ -1,4 +1,4 @@
-//! Merge tuples in a disjunction of boolean expressions
+//! Merge tuples in a disjunction of equality expressions
 //! into a single tuple.
 //!
 //! Example:
@@ -36,10 +36,10 @@ fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, QueryPlannerErr
 /// "AND" chain grouped by the operator type.
 #[derive(Debug)]
 pub struct Chain {
-    // Left and right sides of the boolean expression
+    // Left and right sides of the equality (and non-equality) expressions
     // grouped by the operator.
     grouped: HashMap<Bool, (Vec<usize>, Vec<usize>)>,
-    // Non-boolean expressions in the AND chain (true, false, null).
+    // Other boolean expressions in the AND chain (true, false, null, Lt, GtEq, etc).
     other: Vec<usize>,
 }
 
@@ -62,67 +62,65 @@ impl Chain {
     pub fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), QueryPlannerError> {
         let bool_expr = plan.get_expression_node(expr_id)?;
         if let Expression::Bool { left, op, right } = bool_expr {
-            let (left_id, right_id, group_op) = match *op {
-                Bool::And | Bool::Or => {
-                    // We expect only AND/OR expressions.
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "AND/OR expressions are not supported: {:?}",
-                        bool_expr
-                    )));
-                }
-                Bool::Eq | Bool::NotEq => {
-                    // Try to put expressions with references to the left side.
+            if let Bool::And | Bool::Or = op {
+                // We don't expect nested AND/OR expressions in DNF.
+                return Err(QueryPlannerError::CustomError(format!(
+                    "AND/OR expressions are not supported: {:?}",
+                    bool_expr
+                )));
+            }
+
+            // Merge expression into tuples only for equality (and non-equality) operators.
+            if let Bool::Eq | Bool::NotEq = op {
+                // Try to put expressions with references to the left side.
+                let (left_id, right_id, group_op) =
                     match (plan.is_ref(*left)?, plan.is_ref(*right)?) {
                         (false, true) => (*right, *left, op.clone()),
                         _ => (*left, *right, op.clone()),
+                    };
+
+                // If boolean expression contains a reference to an additional
+                //  sub-query, it should be added to the "other" list.
+                let left_sq = plan.get_sub_query_from_row_node(left_id)?;
+                let right_sq = plan.get_sub_query_from_row_node(right_id)?;
+                for sq_id in [left_sq, right_sq].iter().flatten() {
+                    if plan.is_additional_child(*sq_id)? {
+                        self.other.push(expr_id);
+                        return Ok(());
                     }
                 }
-                Bool::Gt | Bool::GtEq | Bool::In => (*left, *right, op.clone()),
-                // Invert operator to unite expressions with Gt and GtEq.
-                Bool::Lt => (*right, *left, Bool::Gt),
-                Bool::LtEq => (*right, *left, Bool::GtEq),
-            };
 
-            // If boolean expression contains a reference to an additional
-            //  sub-query, it should be added to the "other" list.
-            let left_sq = plan.get_sub_query_from_row_node(left_id)?;
-            let right_sq = plan.get_sub_query_from_row_node(right_id)?;
-            for sq_id in [left_sq, right_sq].iter().flatten() {
-                if plan.is_additional_child(*sq_id)? {
-                    self.other.push(expr_id);
-                    return Ok(());
+                match self.grouped.entry(group_op) {
+                    Entry::Occupied(mut entry) => {
+                        let (left, right) = entry.get_mut();
+                        let new_left_id = plan.expr_clone(left_id)?;
+                        let new_right_id = plan.expr_clone(right_id)?;
+                        plan.get_columns_or_self(new_left_id)?
+                            .iter()
+                            .for_each(|id| {
+                                left.push(*id);
+                            });
+                        plan.get_columns_or_self(new_right_id)?
+                            .iter()
+                            .for_each(|id| {
+                                right.push(*id);
+                            });
+                    }
+                    Entry::Vacant(entry) => {
+                        let new_left_id = plan.expr_clone(left_id)?;
+                        let new_right_id = plan.expr_clone(right_id)?;
+                        entry.insert((
+                            plan.get_columns_or_self(new_left_id)?,
+                            plan.get_columns_or_self(new_right_id)?,
+                        ));
+                    }
                 }
+                return Ok(());
             }
-
-            match self.grouped.entry(group_op) {
-                Entry::Occupied(mut entry) => {
-                    let (left, right) = entry.get_mut();
-                    let new_left_id = plan.expr_clone(left_id)?;
-                    let new_right_id = plan.expr_clone(right_id)?;
-                    plan.get_columns_or_self(new_left_id)?
-                        .iter()
-                        .for_each(|id| {
-                            left.push(*id);
-                        });
-                    plan.get_columns_or_self(new_right_id)?
-                        .iter()
-                        .for_each(|id| {
-                            right.push(*id);
-                        });
-                }
-                Entry::Vacant(entry) => {
-                    let new_left_id = plan.expr_clone(left_id)?;
-                    let new_right_id = plan.expr_clone(right_id)?;
-                    entry.insert((
-                        plan.get_columns_or_self(new_left_id)?,
-                        plan.get_columns_or_self(new_right_id)?,
-                    ));
-                }
-            }
-        } else {
-            let new_expr_id = plan.expr_clone(expr_id)?;
-            self.other.push(new_expr_id);
         }
+
+        let new_expr_id = plan.expr_clone(expr_id)?;
+        self.other.push(new_expr_id);
         Ok(())
     }
 
@@ -142,16 +140,7 @@ impl Chain {
         // To make serialization non-flaky, we extract operators
         // in a deterministic order.
         let mut grouped_top_id: Option<usize> = None;
-        // No need for "And" and "Or" operators.
-        let ordered_ops = &[
-            Bool::Eq,
-            Bool::Gt,
-            Bool::GtEq,
-            Bool::In,
-            Bool::Lt,
-            Bool::LtEq,
-            Bool::NotEq,
-        ];
+        let ordered_ops = &[Bool::Eq, Bool::NotEq];
         for op in ordered_ops {
             if let Some((left, right)) = self.grouped.get(op) {
                 let left_row_id = plan.nodes.add_row(left.clone(), None);
