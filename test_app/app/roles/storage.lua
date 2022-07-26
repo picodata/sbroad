@@ -1,6 +1,14 @@
 local log = require('log')
+local ddl = require('ddl')
+
+_G.get_current_schema = nil
+
+local function get_current_schema()
+    return ddl.get_schema()
+end
 
 local function init(opts) -- luacheck: no unused args
+    _G.get_current_schema = get_current_schema
 
     box.schema.func.create('sbroad.execute_query', {
         if_not_exists = true, language = 'C'

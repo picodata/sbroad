@@ -1138,6 +1138,158 @@ local config = {
           "a",
         }
       },
+      broken_hot = {
+        format = {
+          {
+            is_nullable = false,
+            name = "id",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "reqId",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "name",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "department",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "manager",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "salary",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "sysOp",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "bucket_id",
+            type = "unsigned"
+          }
+        },
+        temporary = false,
+        engine = "memtx",
+        is_local = false,
+        sharding_key = {
+          "id"
+        },
+        indexes = {
+          {
+            unique = true,
+            parts = {
+              {
+                path = "id",
+                type = "number",
+                is_nullable = false
+              }
+            },
+            type = "TREE",
+            name = "id"
+          },
+          {
+            unique = false,
+            parts = {
+              {
+                path = "bucket_id",
+                type = "unsigned",
+                is_nullable = false
+              }
+            },
+            type = "TREE",
+            name = "bucket_id"
+          }
+        }
+      },
+      BROKEN = {
+        format = {
+          {
+            is_nullable = false,
+            name = "id",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "reqId",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "name",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "department",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "manager",
+            type = "string"
+          },
+          {
+            is_nullable = false,
+            name = "salary",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "sysOp",
+            type = "number"
+          },
+          {
+            is_nullable = false,
+            name = "bucket_id",
+            type = "unsigned"
+          }
+        },
+        temporary = false,
+        engine = "memtx",
+        is_local = false,
+        indexes = {
+          {
+            unique = true,
+            parts = {
+              {
+                path = "id",
+                type = "number",
+                is_nullable = false
+              }
+            },
+            type = "TREE",
+            name = "id"
+          },
+          {
+            unique = false,
+            parts = {
+              {
+                path = "bucket_id",
+                type = "unsigned",
+                is_nullable = false
+              }
+            },
+            type = "TREE",
+            name = "bucket_id"
+          }
+        },
+        sharding_key = {
+          "id"
+        }
+      }
     }
   }
 }

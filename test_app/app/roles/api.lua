@@ -1,12 +1,13 @@
 local vshard = require('vshard')
 local cartridge = require('cartridge')
+local yaml = require("yaml")
 
 _G.query = nil
 _G.explain = nil
 _G.calculate_bucket_id = nil
 _G.calculate_bucket_id_by_dict = nil
 _G.sql_execute = nil
-
+_G.set_schema = nil
 
 local function explain(query)
     local has_err, res = pcall(
@@ -18,7 +19,7 @@ local function explain(query)
     if has_err == false then
         return nil, res
     end
-    
+
     local res_lines = {}
     for line in res:gmatch("[^\r\n]+") do
         table.insert(res_lines, line)
@@ -69,25 +70,40 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
     return calc_err
 end
 
+local function set_schema(new_schema)
+    checks('table|string')
+
+    local schema_str = new_schema
+    if type(new_schema) == 'table' then
+        schema_str = yaml.encode(new_schema)
+    end
+    local _, err = cartridge.set_schema(schema_str)
+    if err ~= nil then
+        return err
+    end
+
+    return nil
+end
+
 local function init(opts) -- luacheck: no unused args
     _G.query = query
     _G.explain = explain
     _G.calculate_bucket_id = calculate_bucket_id
     _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
     _G.sql_execute = query
-
+    _G.set_schema = set_schema
 
     box.schema.func.create('sbroad.invalidate_coordinator_cache', {
-            if_not_exists = true, language = 'C' 
+            if_not_exists = true, language = 'C'
     })
-    box.schema.func.create('sbroad.calculate_bucket_id', { 
-            if_not_exists = true, language = 'C' 
+    box.schema.func.create('sbroad.calculate_bucket_id', {
+            if_not_exists = true, language = 'C'
     })
-    box.schema.func.create('sbroad.calculate_bucket_id_by_dict', { 
-            if_not_exists = true, language = 'C' 
+    box.schema.func.create('sbroad.calculate_bucket_id_by_dict', {
+            if_not_exists = true, language = 'C'
     })
     box.schema.func.create('sbroad.dispatch_query', {
-            if_not_exists = true, language = 'C' 
+            if_not_exists = true, language = 'C'
     })
 
     box.schema.func.create('sbroad.load_lua_router_functions', {
