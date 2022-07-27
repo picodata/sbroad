@@ -108,7 +108,7 @@ impl RouterConfiguration {
                         }
                         result
                     }
-                    None => return Err(QueryPlannerError::SpaceFormatNotFound),
+                    None => continue,
                 };
 
                 let keys: Vec<String> = match params["sharding_key"].as_vec() {
@@ -117,13 +117,13 @@ impl RouterConfiguration {
                         for k in keys {
                             let key: &str = match k.as_str() {
                                 Some(k) => k,
-                                None => return Err(QueryPlannerError::InvalidColumnName),
+                                None => continue,
                             };
                             result.push(Self::to_name(key));
                         }
                         result
                     }
-                    None => return Err(QueryPlannerError::SpaceFormatNotFound),
+                    None => continue,
                 };
 
                 let table_name: String = RouterConfiguration::to_name(current_space_name);
@@ -167,7 +167,10 @@ impl CoordinatorMetadata for RouterConfiguration {
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
         match self.tables.get(table_name) {
             Some(v) => Ok(v.clone()),
-            None => Err(QueryPlannerError::SpaceNotFound),
+            None => Err(QueryPlannerError::CustomError(format!(
+                "Space {} not found",
+                table_name
+            ))),
         }
     }
 

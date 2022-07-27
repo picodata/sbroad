@@ -31,7 +31,10 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         let name = Self::to_name(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
-            None => Err(QueryPlannerError::SpaceNotFound),
+            None => Err(QueryPlannerError::CustomError(format!(
+                "Space {} not found",
+                table_name
+            ))),
         }
     }
 

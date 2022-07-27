@@ -21,21 +21,13 @@ where
         }
     });
 
-    let mut is_empty = false;
-    (*runtime).with(|engine| {
-        if engine.borrow().is_config_empty() {
-            is_empty = true;
-        }
-    });
     // Tarantool never yields here, so it is possible to hold
     // a mutable reference to the engine.
-    if is_empty {
-        if let Some(config) = config {
-            (*runtime).with(|engine| {
-                engine.borrow_mut().update_config(config);
-                0
-            });
-        }
+    if let Some(config) = config {
+        (*runtime).with(|engine| {
+            engine.borrow_mut().update_config(config);
+            0
+        });
     }
 
     0

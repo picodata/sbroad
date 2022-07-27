@@ -154,7 +154,7 @@ fn test_getting_table_segment() {
 
     assert_eq!(
         s.get_table_segment("invalid_table").unwrap_err(),
-        QueryPlannerError::SpaceNotFound
+        QueryPlannerError::CustomError("Space invalid_table not found".into())
     );
     assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected)
 }

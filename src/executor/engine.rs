@@ -63,6 +63,9 @@ pub trait Configuration: Sized {
 
     /// Retrieve cluster configuration from the Lua memory.
     ///
+    /// If the configuration is already cached, return None,
+    /// otherwise return Some(config).
+    ///
     /// # Errors
     /// - Internal error.
     fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError>;
