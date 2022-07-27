@@ -201,8 +201,12 @@ fn inner_join() {
     assert_eq!(
         PatternWithParams::new(
             format!(
-                "{} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                "{} {} {} {} {} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code""#,
+                r#"FROM (SELECT "hash_testing"."identification_number" as "identification_number","#,
+                r#""hash_testing"."product_code" as "product_code","#,
+                r#""hash_testing"."product_units" as "product_units","#,
+                r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
                 r#"INNER JOIN (SELECT "history"."id" as "id" FROM "history") as "history""#,
                 r#"ON ("hash_testing"."identification_number") = ("history"."id")"#,
                 r#"WHERE ("hash_testing"."product_code") = (?)"#,
@@ -233,8 +237,12 @@ fn inner_join_with_sq() {
     assert_eq!(
         PatternWithParams::new(
             format!(
-                "{} {} {} {} {}",
-                r#"SELECT "hash_testing"."product_code" as "product_code" FROM "hash_testing""#,
+                "{} {} {} {} {} {} {} {} {}",
+                r#"SELECT "hash_testing"."product_code" as "product_code" FROM (SELECT"#,
+                r#""hash_testing"."identification_number" as "identification_number","#,
+                r#""hash_testing"."product_code" as "product_code","#,
+                r#""hash_testing"."product_units" as "product_units","#,
+                r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT "history"."id" as "id" FROM "history" WHERE ("history"."id") = (?)) as "t""#,
                 r#"ON ("hash_testing"."identification_number") = ("t"."id")"#,

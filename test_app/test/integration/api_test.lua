@@ -573,6 +573,27 @@ g.test_compare = function()
     })
 end
 
+g.test_bucket_id_in_join = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", {
+        [[SELECT * FROM "space_simple_shard_key" as "t1" JOIN (SELECT "a" FROM "t") as "t2"
+        ON "t1"."id" = "t2"."a"]],
+        {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},                                                                                                                                                                    
+            {name = "name", type = "string"},                                                             
+            {name = "sysOp", type = "integer"},
+            {name = "a", type = "any"},
+        },
+        rows = {},
+    })
+end
+
 g.test_invalid_explain = function()
     local api = cluster:server("api-1").net_box
 

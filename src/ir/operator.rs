@@ -537,29 +537,45 @@ impl Plan {
             )));
         }
 
-        // If the right child is a relational scan, we need to
-        // remove a sharding column from its output with a projection
-        // node and wrap the result with a sub-query scan.
-        let right_node = self.get_relation_node(right)?;
-        let right_id = if let Relational::ScanRelation { relation, .. } = right_node {
-            let scan_name = relation.clone();
-            let proj_id = self.add_proj(right, &[])?;
-            self.add_sub_query(proj_id, Some(&scan_name))?
-        } else {
-            right
-        };
+        // For any child in a relational scan, we need to
+        // remove a sharding column from its output with a
+        // projection node and wrap the result with a sub-query
+        // scan.
+        let mut children: Vec<usize> = Vec::with_capacity(2);
+        for child in &[left, right] {
+            let child_node = self.get_relation_node(*child)?;
+            let chid_id = if let Relational::ScanRelation {
+                relation, alias, ..
+            } = child_node
+            {
+                let scan_name = if let Some(alias_name) = alias {
+                    alias_name.clone()
+                } else {
+                    relation.clone()
+                };
+                let proj_id = self.add_proj(*child, &[])?;
+                self.add_sub_query(proj_id, Some(&scan_name))?
+            } else {
+                *child
+            };
+            children.push(chid_id);
+        }
+        if let (Some(left_id), Some(right_id)) = (children.get(0), children.get(1)) {
+            let output = self.add_row_for_join(*left_id, *right_id)?;
+            let join = Relational::InnerJoin {
+                children: vec![*left_id, *right_id],
+                condition,
+                output,
+            };
 
-        let output = self.add_row_for_join(left, right_id)?;
-        let join = Relational::InnerJoin {
-            children: vec![left, right_id],
-            condition,
-            output,
-        };
-
-        let join_id = self.nodes.push(Node::Relational(join));
-        self.replace_parent_in_subtree(condition, None, Some(join_id))?;
-        self.replace_parent_in_subtree(output, None, Some(join_id))?;
-        Ok(join_id)
+            let join_id = self.nodes.push(Node::Relational(join));
+            self.replace_parent_in_subtree(condition, None, Some(join_id))?;
+            self.replace_parent_in_subtree(output, None, Some(join_id))?;
+            return Ok(join_id);
+        }
+        Err(QueryPlannerError::CustomError(
+            "Invalid children for join".to_string(),
+        ))
     }
 
     /// Adds motion node.

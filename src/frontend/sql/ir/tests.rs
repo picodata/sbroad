@@ -149,9 +149,13 @@ fn front_sql6() {
         WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
     let expected = PatternWithParams::new(
         format!(
-            "{} {} {} {}",
+            "{} {} {} {} {} {} {} {}",
             r#"SELECT t."id" as "id", "hash_testing"."product_units" as "product_units""#,
-            r#"FROM "hash_testing" INNER JOIN (SELECT "test_space"."id" as "id" FROM "test_space") as t"#,
+            r#"FROM (SELECT "hash_testing"."identification_number" as "identification_number","#,
+            r#""hash_testing"."product_code" as "product_code","#,
+            r#""hash_testing"."product_units" as "product_units","#,
+            r#""hash_testing"."sys_op" as "sys_op" FROM "hash_testing") as "hash_testing""#,
+            r#"INNER JOIN (SELECT "test_space"."id" as "id" FROM "test_space") as t"#,
             r#"ON ("hash_testing"."identification_number") = (t."id")"#,
             r#"WHERE ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
         ),

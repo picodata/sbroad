@@ -429,8 +429,11 @@ fn join_linker2_test() {
         Value::String(format!("Execute query on a bucket [{}]", bucket1)),
         Value::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {} {}",
-                r#"SELECT "t1"."id" as "id" FROM "test_space" as "t1""#,
+                "{} {} {} {} {} {} {}",
+                r#"SELECT "t1"."id" as "id" FROM (SELECT"#,
+                r#""t1"."id" as "id", "t1"."sysFrom" as "sysFrom","#,
+                r#""t1"."FIRST_NAME" as "FIRST_NAME", "t1"."sys_op" as "sys_op""#,
+                r#"FROM "test_space" as "t1") as "t1""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT COLUMN_1 as "id1",COLUMN_2 as "id2" FROM (VALUES (?,?)))"#,
                 r#"as "t2" ON ("t1"."id") = (?)"#
@@ -584,8 +587,11 @@ fn join_linker4_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket2)),
             Value::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {}",
-                    r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
+                    "{} {} {} {} {} {} {} {}",
+                    r#"SELECT t1."id" as "id" FROM (SELECT"#,
+                    r#"t1."id" as "id", t1."sysFrom" as "sysFrom","#,
+                    r#"t1."FIRST_NAME" as "FIRST_NAME", t1."sys_op" as "sys_op""#,
+                    r#"FROM "test_space" as t1) as t1"#,
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
                     r#"ON (t1."id") = (t2."r_id")"#,
@@ -598,8 +604,11 @@ fn join_linker4_test() {
             Value::String(format!("Execute query on a bucket [{}]", bucket1)),
             Value::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {} {}",
-                    r#"SELECT t1."id" as "id" FROM "test_space" as t1"#,
+                    "{} {} {} {} {} {} {} {}",
+                    r#"SELECT t1."id" as "id" FROM (SELECT"#,
+                    r#"t1."id" as "id", t1."sysFrom" as "sysFrom","#,
+                    r#"t1."FIRST_NAME" as "FIRST_NAME", t1."sys_op" as "sys_op""#,
+                    r#"FROM "test_space" as t1) as t1"#,
                     r#"INNER JOIN"#,
                     r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
                     r#"ON (t1."id") = (t2."r_id")"#,
