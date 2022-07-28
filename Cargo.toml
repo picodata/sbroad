@@ -38,3 +38,6 @@ crate-type = ["cdylib", "rlib"]
 [[bench]]
 name = "parse"
 harness = false
+
+[features]
+mock = []

@@ -13,19 +13,19 @@ endif
 
 bench:
 	make clean
-	MOCK_DEC_NUMBER=1 cargo bench
+	cargo bench --features mock
 
 bench_check:
 	make clean
-	MOCK_DEC_NUMBER=1 cargo bench --no-run
+	cargo bench --no-run --features mock
 
 build:
 	make clean
-	MOCK_DEC_NUMBER=0 cargo build --release
+	cargo build --release
 
 build_debug:
 	make clean
-	MOCK_DEC_NUMBER=0 cargo build
+	cargo build
 
 build_integration:
 	make build
@@ -60,7 +60,7 @@ run_integration:
 
 test:
 	make clean
-	MOCK_DEC_NUMBER=1 cargo test
+	MOCK_DEC_NUMBER=1 cargo test --features mock
 
 test_integration:
 	make build_integration

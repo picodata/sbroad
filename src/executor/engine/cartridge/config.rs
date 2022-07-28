@@ -12,6 +12,9 @@ use crate::ir::relation::{Column, ColumnRole, Table, Type};
 
 use self::yaml_rust::yaml;
 
+#[cfg(not(feature = "mock"))]
+use tarantool::log::{say, SayLevel};
+
 /// Cluster metadata information
 ///
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
@@ -108,7 +111,19 @@ impl RouterConfiguration {
                         }
                         result
                     }
-                    None => continue,
+                    None => {
+                        #[cfg(not(feature = "mock"))]
+                        {
+                            say(
+                                SayLevel::Warn,
+                                file!(),
+                                line!().try_into().unwrap_or(0),
+                                Option::from("configuration parsing"),
+                                &format!("Skip space {}: fields not found.", current_space_name),
+                            );
+                        }
+                        continue;
+                    }
                 };
 
                 let keys: Vec<String> = match params["sharding_key"].as_vec() {
@@ -117,13 +132,40 @@ impl RouterConfiguration {
                         for k in keys {
                             let key: &str = match k.as_str() {
                                 Some(k) => k,
-                                None => continue,
+                                None => {
+                                    #[cfg(not(feature = "mock"))]
+                                    {
+                                        say(
+                                            SayLevel::Warn,
+                                            file!(),
+                                            line!().try_into().unwrap_or(0),
+                                            Option::from("configuration parsing"),
+                                            &format!(
+                                                "Skip space {}: failed to convert key {:?} to string.",
+                                                current_space_name, k
+                                            ),
+                                        );
+                                    }
+                                    continue;
+                                }
                             };
                             result.push(Self::to_name(key));
                         }
                         result
                     }
-                    None => continue,
+                    None => {
+                        #[cfg(not(feature = "mock"))]
+                        {
+                            say(
+                                SayLevel::Warn,
+                                file!(),
+                                line!().try_into().unwrap_or(0),
+                                Option::from("configuration parsing"),
+                                &format!("Skip space {}: keys not found.", current_space_name),
+                            );
+                        }
+                        continue;
+                    }
                 };
 
                 let table_name: String = RouterConfiguration::to_name(current_space_name);
