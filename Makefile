@@ -10,6 +10,7 @@ else
 		DEST_LIB = sbroad.dylib
 	endif
 endif
+TARGET_PATH := $(shell pwd)/target
 
 bench:
 	make clean
@@ -42,6 +43,8 @@ clean:
 	rm -rf target/debug/build/sbroad-* 
 	rm -rf target/debug/deps/sbroad-* 
 	rm -rf target/debug/incremental/sbroad-* 
+	rm -rf target/libdecNumber.so
+	rm -rf target/libmsgpuck.so
 
 init:
 	git clean -xfd
@@ -60,7 +63,8 @@ run_integration:
 
 test:
 	make clean
-	MOCK_DEC_NUMBER=1 cargo test --features mock
+	cargo test --no-run --features mock -vv
+	LD_PRELOAD=$(TARGET_PATH)/libdecNumber.so LD_LIBRARY_PATH=$(TARGET_PATH) cargo test --features mock -vv
 
 test_integration:
 	make build_integration
