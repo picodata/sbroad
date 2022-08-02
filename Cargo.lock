@@ -944,7 +944,7 @@ dependencies = [
 [[package]]
 name = "tarantool"
 version = "0.6.3"
-source = "git+https://cargo:hVkdxmfLJRpHGFs3-9xx@git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
 dependencies = [
  "base64",
  "bitflags",
@@ -976,7 +976,7 @@ dependencies = [
 [[package]]
 name = "tarantool-proc"
 version = "0.1.1"
-source = "git+https://cargo:hVkdxmfLJRpHGFs3-9xx@git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
 dependencies = [
  "proc-macro2 1.0.42",
  "quote 1.0.20",
@@ -1025,7 +1025,7 @@ dependencies = [
 [[package]]
 name = "tlua"
 version = "0.6.3"
-source = "git+https://cargo:hVkdxmfLJRpHGFs3-9xx@git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
 dependencies = [
  "libc",
  "serde",
@@ -1035,7 +1035,7 @@ dependencies = [
 [[package]]
 name = "tlua-derive"
 version = "0.1.1"
-source = "git+https://cargo:hVkdxmfLJRpHGFs3-9xx@git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#20e33c762d9cfd35748d2de9e9062ddbff356d92"
 dependencies = [
  "proc-macro2 1.0.42",
  "quote 1.0.20",
