@@ -3,14 +3,32 @@
 Currently the library contains a query planner and an executor for the distributed SQL in a Tarantool `cartridge` cluster.
 
 ## Getting started
+ 
+First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools installed and available in your environment. 
 
-First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools installed and available in your environment. Then run:
+An example of the `sbroad` integration with Tarantool can be found in the `test_app` folder.
+
+### Install as lua module
+
+```bash
+tarantoolctl rocks --only-server https://download.picodata.io/luarocks/ install sbroad <version>
+```
+
+For a [Cartridge](https://github.com/tarantool/cartridge) application add the command above into `cartridge.pre-build` file and [sbroad roles](#cartridge-roles) into your role's dependencies (for example see [test_app](test_app/)) 
+
+### Build from source
+
 ```bash
 git clone https://gitlab.com/picodata/picodata/sbroad.git
 cd sbroad
 make test_all
 ```
-An example of the `sbroad` integration with Tarantool can be found in the `test_app` folder.
+
+## Cartridge roles
+
+`cartridge.roles.sbroad-storage` role initializes functions that accept a local SQL query from the router for execution. Depends on the `vshard-storage` role.
+
+`cartridge.roles.sbroad-router` role initializes functions that transform a distributed SQL into a sequence on local SQL queries and dispatch them to the storage. Depends on the `vshard-router` role.
 
 ## Architecture
 

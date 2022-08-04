@@ -35,7 +35,7 @@ g.test_insert_after_index = function()
 
     -- check that at the start sbroad can select from broken_hot
     local r, err = api:call(
-        "query",
+        "sbroad.execute",
         { [[SELECT * FROM "broken_hot" ]], {} }
     )
     t.assert_equals(err, nil)
@@ -155,8 +155,8 @@ g.test_insert_after_index = function()
     t.assert_equals(schema_broken_hot_before, c.schema["spaces"]["broken_hot"])
 
     -- check that sbroad can select from broken_hot still
-    local r, err = api:call(
-        "query",
+    r, err = api:call(
+        "sbroad.execute",
         { [[SELECT * FROM "broken_hot" ]], {} }
     )
     t.assert_equals(err, nil)
@@ -174,7 +174,7 @@ g.test_insert_after_index = function()
     })
 
     for i = 1, 4, 1 do
-        local r, err = api:call("query", {
+        r, err = api:call("sbroad.execute", {
             [[INSERT INTO "broken_hot" VALUES(?,?,?,?,?,?,?);]],
             {
                 i, 1, "123", "123", "123", 100, 0
@@ -184,8 +184,8 @@ g.test_insert_after_index = function()
         t.assert_equals(r, {row_count = 1})
     end
 
-    local r, err = api:call(
-        "query",
+    r, err = api:call(
+        "sbroad.execute",
         { [[SELECT * FROM "broken_hot" ]], {} }
     )
     t.assert_equals(err, nil)

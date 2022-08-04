@@ -1236,7 +1236,10 @@ local config = {
     }
 }
 
-res, err = api:call("set_schema", { yaml.encode(config) })
+local _, err = api:call("set_schema", { yaml.encode(config) })
+if err ~= nil then
+    print(err)
+end
 print("table was created")
 
 fiber.sleep(3)
@@ -1372,8 +1375,8 @@ insert into "%s" (
 )]]
 
 for i = 1, record_count, 1 do
-    local pattern_vehicle_actual = string.format(pattern, "vehicle_actual") 
-    local res, err = api:call("query", {
+    local pattern_vehicle_actual = string.format(pattern, "vehicle_actual")
+    _, err = api:call("query", {
         pattern_vehicle_actual, {
             i, i,
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",
@@ -1393,7 +1396,7 @@ for i = 1, record_count, 1 do
     end
 
     local pattern_vehicle_history = string.format(pattern, "vehicle_history")
-    local res, err = api:call("query", {
+    _, err = api:call("query", {
         pattern_vehicle_history, {
             i, i,
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",

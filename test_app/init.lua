@@ -4,6 +4,7 @@ require('strict').on()
 
 -- configure path so that you can run application
 -- from outside the root directory
+-- luacheck: ignore package
 if package.setsearchroot ~= nil then
     package.setsearchroot()
 else

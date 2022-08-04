@@ -1,5 +1,4 @@
 local t = require('luatest')
-local fiber = require('fiber')
 local g = t.group('integration_api')
 
 local helper = require('test.helper')
@@ -9,35 +8,35 @@ g.before_each(
     function()
         local api = cluster:server("api-1").net_box
 
-        local r, err = api:call("query", {
+        local r, err = api:call("sbroad.execute", {
             [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 1}
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
-        r, err = api:call("query", {
+        r, err = api:call("sbroad.execute", {
             [[insert into "testing_space_hist" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 5}
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
-        r, err = api:call("query", {
+        r, err = api:call("sbroad.execute", {
             [[insert into "space_simple_shard_key" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok", 1, 10, box.NULL, 0}
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
 
-        r, err = api:call("query", {
+        r, err = api:call("sbroad.execute", {
             [[insert into "space_simple_shard_key_hist" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok_hist", 3, 2, "ok_hist_2", 1}
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
 
-        r, err = api:call("query", {
+        r, err = api:call("sbroad.execute", {
             [[insert into "t" ("id", "a") values (?, ?), (?, ?)]],
             {1, 4.2, 2, require('decimal').new(6.66)}
         })
@@ -67,73 +66,101 @@ g.after_each(
 g.test_bucket_id_calculation = function()
     local api = cluster:server("api-1").net_box
 
-    -- calculate bucket id for space which bucket_id field is the last
-    local r, err = api:call("sharding_func", { { 1, "123" } })
+    local r, err = api:call("sbroad.calculate_bucket_id", { { 1, "123" } })
+    t.assert_equals(r, nil)
+    t.assert_str_contains(tostring(err), "space_name is required")
+
+    r, err = api:call("sbroad.calculate_bucket_id", { "1123" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("sharding_func", { "1123" })
+    r, err = api:call(
+        "sbroad.calculate_bucket_id",
+        {
+            { id = 1, name = "123", product_units = 1 },
+            "testing_space"
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id", {{ id = 1, name = "123", product_units = 1 }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { box.tuple.new{ 1, "123", 1 }, "testing_space" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id", { box.tuple.new{ 1, "123", 1 }, "testing_space" })
-    t.assert_equals(err, nil)
-    t.assert_equals(r, 360)
-
-    r, err = api:call("calculate_bucket_id", { { 1, "123", 1 }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { 1, "123", 1 }, "testing_space" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
      -- calculate bucket id for space which bucket_id field is located in the middle of format
-    local r, err = api:call("calculate_bucket_id", {{ id = 1, name = "123", product_units = 1 }, "testing_space_bucket_in_the_middle" })
+    r, err = api:call(
+        "sbroad.calculate_bucket_id",
+        {
+            { id = 1, name = "123", product_units = 1 },
+            "testing_space_bucket_in_the_middle"
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id", { box.tuple.new{ 1, "123", 1 }, "testing_space_bucket_in_the_middle" })
+    r, err = api:call(
+        "sbroad.calculate_bucket_id",
+        {
+            box.tuple.new{ 1, "123", 1 },
+            "testing_space_bucket_in_the_middle"
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id", { { 1, "123", 1 }, "testing_space_bucket_in_the_middle" })
+    r, err = api:call(
+        "sbroad.calculate_bucket_id",
+        {
+            { 1, "123", 1 },
+            "testing_space_bucket_in_the_middle"
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
     -- incorrect input
-    r, err = api:call("calculate_bucket_id", { { 1 }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { 1 }, "testing_space" })
+    t.assert_equals(r, nil)
     t.assert_str_contains(tostring(err), [[expected to have 3 filed(s), got 1]])
 
     -- Test with a "bucket_id" field in the tuple.
-    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, box.NULL }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { 1, "123", 1, box.NULL }, "testing_space" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, 1, 1 }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { 1, "123", 1, 1, 1 }, "testing_space" })
+    t.assert_equals(r, nil)
     t.assert_str_contains(tostring(err), [[expected to have 3 filed(s), got 5]])
 
-    r, err = api:call("calculate_bucket_id", { { id = 1 }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { id = 1 }, "testing_space" })
+    t.assert_equals(r, nil)
     t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])
 
-    r, err = api:call("calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
+    r, err = api:call("sbroad.calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
+    t.assert_equals(r, nil)
     t.assert_str_contains(
         tostring(err),
         [[expected string, tuple with a space name, or map with a space name as an argument]]
     )
+
 end
 
 g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("query", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]], {} })
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]], {} })
     t.assert_str_contains(tostring(err), "Parsing error")
 end
 
 g.test_not_eq = function()
     local api = cluster:server("api-1").net_box
     -- id=1 already in space
-    local r, err = api:call("query", {
+    local r, err = api:call("sbroad.execute", {
         [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?), (?, ?, ?)]],
         {2, "123", 2, 3, "123", 3}
     })
@@ -141,7 +168,13 @@ g.test_not_eq = function()
     t.assert_equals(r, {row_count = 2})
 
 
-    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" <> 1]], { } })
+    r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT * FROM "testing_space" where "id" <> 1]],
+            {}
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -153,7 +186,13 @@ g.test_not_eq = function()
     })
 
 
-    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" <> 1 and "product_units" <> 3]], { } })
+    r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT * FROM "testing_space" where "id" <> 1 and "product_units" <> 3]],
+            {}
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -168,7 +207,7 @@ end
 g.test_join_query_is_valid = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("query", { [[SELECT * FROM "testing_space"
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space"
             INNER JOIN (SELECT "id" AS "inner_id", "name" AS "inner_name" FROM "testing_space") as t
             ON ("testing_space"."id", "testing_space"."name") = (t."inner_id", t."inner_name")
         WHERE "id" = 5 and "name" = '123']], {} })
@@ -178,7 +217,7 @@ end
 g.test_simple_shard_key_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "space_simple_shard_key" where "id" = ?]], { 5 } })
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM "space_simple_shard_key" where "id" = ?]], { 5 } })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -189,7 +228,13 @@ g.test_simple_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key" where "id" = ?]], { 1.000 } })
+    r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT *, "bucket_id" FROM "space_simple_shard_key" where "id" = ?]],
+            { 1.000 }
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -207,7 +252,7 @@ end
 g.test_simple_shard_key_union_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM (
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM (
             SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < ?
             UNION ALL
             SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?
@@ -228,7 +273,13 @@ end
 g.test_complex_shard_key_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space" where "id" = ? and "name" = ?]], { 1, '457'} })
+    local r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT *, "bucket_id" FROM "testing_space" where "id" = ? and "name" = ?]],
+            { 1, '457'}
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -240,7 +291,13 @@ g.test_complex_shard_key_query = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space" where "id" = 1 and "name" = '123']], {} })
+    r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT *, "bucket_id" FROM "testing_space" where "id" = 1 and "name" = '123']],
+            {}
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -258,7 +315,7 @@ end
 g.test_complex_shard_key_union_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM (
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM (
             SELECT "id", "name", "product_units" FROM "testing_space" WHERE "product_units" < ?
             UNION ALL
             SELECT "id", "name", "product_units" FROM "testing_space_hist" WHERE "product_units" > ?
@@ -282,7 +339,7 @@ end
 g.test_simple_motion_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[SELECT "id", "name" FROM "space_simple_shard_key"
         WHERE "id" in (SELECT "id" FROM "testing_space_hist" WHERE "product_units" > 3)]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -300,7 +357,7 @@ end
 g.test_motion_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM (
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM (
             SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" > 0
             UNION ALL
             SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
@@ -328,7 +385,13 @@ end
 g.test_null_col_result = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT "id", "name" FROM "space_simple_shard_key" WHERE "id" = 10]], {} })
+    local r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT "id", "name" FROM "space_simple_shard_key" WHERE "id" = 10]],
+            {}
+        }
+    )
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
@@ -344,7 +407,7 @@ end
 g.test_join_motion_query = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query",
+    local r, err = api:call("sbroad.execute",
     { [[SELECT "t3"."id", "t3"."name", "t8"."product_units"
     FROM
         (SELECT "id", "name"
@@ -382,7 +445,7 @@ end
 g.test_anonymous_cols_naming = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "testing_space"
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?)
         OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > ?)
     ]], { 0, 0 } })
@@ -403,7 +466,7 @@ end
 g.test_empty_motion_result = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
+    local r, err = api:call("sbroad.execute", { [[SELECT "id", "name" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]], {} })
 
     t.assert_equals(err, nil)
@@ -415,7 +478,7 @@ g.test_empty_motion_result = function()
         rows = {},
     })
 
-    r, err = api:call("query", { [[SELECT "id", "name" FROM "testing_space"
+    r, err = api:call("sbroad.execute", { [[SELECT "id", "name" FROM "testing_space"
     WHERE ("id", "name") in (SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]], {} })
 
     t.assert_equals(err, nil)
@@ -428,7 +491,7 @@ g.test_empty_motion_result = function()
     })
 
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "testing_space"
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0)
         OR "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)
     ]], {} })
@@ -450,13 +513,13 @@ end
 g.test_insert_1 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     SELECT * FROM "space_simple_shard_key_hist" WHERE "id" > ?]], { 1 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 1})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -477,7 +540,7 @@ end
 g.test_insert_2 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("name", "sysOp", "id")
     SELECT 'four', 5, 3 FROM "space_simple_shard_key_hist" WHERE "id" IN (
         SELECT ? FROM "space_simple_shard_key"
@@ -486,7 +549,7 @@ g.test_insert_2 = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 1})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -507,13 +570,13 @@ end
 g.test_insert_3 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("sysOp", "id") VALUES (?, ?), (?, ?)]], { 5, 4, 6, 5 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 2})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -536,13 +599,13 @@ end
 g.test_insert_4 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("sysOp", "id", "name") VALUES (?, ?, 'кириллица'), (?, ?, 'КИРИЛЛИЦА')]], { 5, 4, 6, 5 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 2})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -565,13 +628,13 @@ end
 g.test_insert_5 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("sysOp", "id", "name") VALUES (?, ?, ?), (?, ?, ?)]], { 5, 4, "кириллица", 6, 5, "КИРИЛЛИЦА" } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 2})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -594,13 +657,13 @@ end
 g.test_insert_6 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("sysOp", "id", "name") VALUES (?, ?, ?)]], { 7, -9223372036854775808, "bigint" } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 1})
 
-    r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -621,7 +684,7 @@ end
 g.test_decimal_double = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *, "bucket_id" FROM "t"]], {} })
+    local r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "t"]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -640,7 +703,7 @@ end
 g.test_compare = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT * FROM "t" where "id" < 2 and "a" > 5]], {} })
+    local r, err = api:call("sbroad.execute", { [[SELECT * FROM "t" where "id" < 2 and "a" > 5]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
@@ -655,7 +718,7 @@ end
 g.test_bucket_id_in_join = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", {
+    local r, err = api:call("sbroad.execute", {
         [[SELECT * FROM "space_simple_shard_key" as "t1" JOIN (SELECT "a" FROM "t") as "t2"
         ON "t1"."id" = "t2"."a"]],
         {}
@@ -676,7 +739,7 @@ end
 g.test_invalid_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("explain", { [[SELECT "id", "name" FROM "testing_space"
+    local _, err = api:call("sbroad.explain", { [[SELECT "id", "name" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
 
     t.assert_str_contains(tostring(err), "Explain hasn't supported node Motion")
@@ -685,7 +748,7 @@ end
 g.test_valid_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("explain", { [[SELECT * FROM (
+    local r, err = api:call("sbroad.explain", { [[SELECT * FROM (
             SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 0
             UNION ALL
             SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
@@ -695,6 +758,7 @@ g.test_valid_explain = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
+        -- luacheck: max line length 210
         {
             "projection (\"t1\".\"id\" -> \"id\", \"t1\".\"name\" -> \"name\")",
             "    selection ROW(\"t1\".\"id\") = ROW(1)",
@@ -713,7 +777,7 @@ end
 g.test_except = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", {
+    local r, err = api:call("sbroad.execute", {
         [[insert into "t" ("id", "a") values (?, ?), (?, ?), (?, ?)]],
         {
             3, 777,
@@ -724,7 +788,7 @@ g.test_except = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 3})
 
-    r, err = api:call("query", { [[
+    r, err = api:call("sbroad.execute", { [[
         SELECT "a" FROM "t" where "id" <= 3
         EXCEPT
         SELECT "a" FROM "t" where "id" > 3
@@ -745,7 +809,7 @@ end
 g.test_is_null = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[
+    local r, err = api:call("sbroad.execute", { [[
         SELECT "id" FROM "space_simple_shard_key" WHERE "name" IS NULL
     ]], {} })
 
@@ -763,7 +827,7 @@ end
 g.test_between1 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[
+    local r, err = api:call("sbroad.execute", { [[
         SELECT "id" FROM "space_simple_shard_key" WHERE
         (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "id" = 2) BETWEEN 1 AND 2
     ]], {} })
@@ -783,7 +847,7 @@ end
 g.test_between2 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[
+    local r, err = api:call("sbroad.execute", { [[
         SELECT "id" FROM "space_simple_shard_key" WHERE
         "id" BETWEEN 1 AND 2
     ]], {} })

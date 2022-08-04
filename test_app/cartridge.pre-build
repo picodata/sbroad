@@ -6,3 +6,5 @@
 
 # For example:
 # tarantoolctl rocks make --chdir ./third_party/my-custom-rock-module
+
+tarantoolctl rocks make --chdir ..

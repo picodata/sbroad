@@ -4,6 +4,7 @@ variables:
 stages:
     - build
     - test
+    - deploy
 
 cache:
     key: ${CI_COMMIT_REF_SLUG}
@@ -42,3 +43,22 @@ bench:
     stage: test
     script:
         - make bench_check
+
+deploy-luarocks:
+    stage: deploy
+    tags:
+        - shell
+    only:
+        - web
+        - tags
+    before_script:
+        - eval $(ssh-agent -s)
+        - echo "$DEPLOY_PROD_SSH_KEY" | base64 -d | ssh-add -
+    script:
+        - echo "Build release $CI_COMMIT_TAG"
+        - tarantoolctl rocks new_version --tag "$CI_COMMIT_TAG"
+        - tarantoolctl rocks install sbroad-"$CI_COMMIT_TAG"-1.rockspec
+        - tarantoolctl rocks pack sbroad-"$CI_COMMIT_TAG-1".rockspec
+        - echo "Deploying luarocks..."
+        - scp -o stricthostkeychecking=no sbroad*rock luarocks@94.26.239.246:/data/nginx/www/packrepo/luarocks
+        - ssh -o stricthostkeychecking=no luarocks@94.26.239.246 "luarocks-admin make_manifest /data/nginx/www/packrepo/luarocks"

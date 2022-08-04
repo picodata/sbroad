@@ -3,11 +3,9 @@ all: build
 OS := $(shell uname -s)
 ifeq ($(OS), Linux)
 	SRC_LIB = libsbroad.so
-	DEST_LIB = sbroad.so
 else
 	ifeq ($(OS), Darwin)
 		SRC_LIB = libsbroad.dylib
-		DEST_LIB = sbroad.dylib
 	endif
 endif
 
@@ -28,10 +26,7 @@ build_debug:
 	cargo build
 
 build_integration:
-	make build
 	cd test_app && cartridge build
-	mkdir -p test_app/.rocks/lib/tarantool
-	cp -rf target/release/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
 clean:
 	rm -rf target/release/build/sbroad-* 
@@ -41,9 +36,17 @@ clean:
 	rm -rf target/debug/deps/sbroad-* 
 	rm -rf target/debug/incremental/sbroad-* 
 
+install_release:
+	mkdir -p $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf target/release/$(SRC_LIB) $(LIBDIR)
+	cp -Rf src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf cartridge $(LUADIR)
+
 lint:
+	./deps.sh
 	cargo fmt --all -- --check
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
+	./.rocks/bin/luacheck .
 
 run_integration:
 	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/

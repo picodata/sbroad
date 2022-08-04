@@ -10,4 +10,3 @@ pub mod exec_query;
 pub mod explain;
 mod helper;
 pub mod invalidate_cached_schema;
-pub mod load_lua_extra_function;

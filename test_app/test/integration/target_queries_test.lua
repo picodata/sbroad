@@ -4,24 +4,11 @@ local target_queries = t.group('target_queries')
 local helper = require('test.helper')
 local cluster = helper.cluster
 
--- datamart_query_types.test_query_type_ = function()
---     local api = cluster:server("api-1").net_box
-
---     local r, err = api:call("query", { [[
---     ]] })
-
---     t.assert_equals(err, nil)
---     t.assert_equals(r, {
---         metadata = {},
---         rows = {},
---     })
--- end
-
 target_queries.before_all(
         function()
             local api = cluster:server("api-1").net_box
 
-            local r, err = api:call("query", {
+            local r, err = api:call("sbroad.execute", {
                 [[insert into "col1_transactions_actual"
                 ("col1", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?), (?, ?, ?, ?)]],
@@ -33,7 +20,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "col1_transactions_history"
                 ("id", "col1", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)]],
@@ -45,7 +32,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "col1_col2_transactions_actual"
                 ("col1", "col2", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)]],
@@ -57,7 +44,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "col1_col2_transactions_history"
                 ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)]],
@@ -69,7 +56,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
 
-            r = api:call("query", {
+            r = api:call("sbroad.execute", {
                 [[insert into "cola_accounts_actual"
                 ("id", "cola", "colb", "sys_from")
                 values (?, ?, ?, ?), (?, ?, ?, ?)]],
@@ -80,7 +67,7 @@ target_queries.before_all(
             })
             t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "cola_accounts_history"
                 ("id", "cola", "colb", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?)]],
@@ -91,7 +78,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "cola_colb_accounts_actual"
                 ("id", "cola", "colb", "sys_from")
                 values (?, ?, ?, ?)]],
@@ -102,7 +89,7 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "cola_colb_accounts_history"
                 ("id", "cola", "colb", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?)]],
@@ -113,18 +100,18 @@ target_queries.before_all(
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "col1_col2_transactions_num_actual"
                 ("col1", "col2", "amount", "account_id", "sys_from")
                 values (?, ?, ?, ?, ?)]],
                 {
-                   1, 2, 3, 1, 0 
+                   1, 2, 3, 1, 0
                 }
             })
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("query", {
+            r, err = api:call("sbroad.execute", {
                 [[insert into "col1_col2_transactions_num_history"
                 ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
                 values (?, ?, ?, ?, ?, ?, ?)]],
@@ -156,7 +143,7 @@ target_queries.after_all(
 target_queries.test_type_1 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -167,7 +154,7 @@ FROM
     FROM "col1_transactions_actual"
     WHERE "sys_from" <= 0) AS "t3"
 WHERE "col1" = ?]], { 0, 0, 1} })
-
+    t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
         { name = "t3.col1", type = "integer" },
         { name = "t3.account_id", type = "integer" },
@@ -183,7 +170,7 @@ end
 target_queries.test_type_2 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -213,7 +200,7 @@ end
 target_queries.test_type_3 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -244,7 +231,7 @@ end
 target_queries.test_type_4 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -273,7 +260,7 @@ end
 target_queries.test_type_5 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -306,7 +293,7 @@ end
 target_queries.test_type_6 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -337,7 +324,7 @@ end
 target_queries.test_type_7 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -371,7 +358,7 @@ end
 target_queries.test_type_8 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -404,7 +391,7 @@ end
 target_queries.test_type_9 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -442,7 +429,7 @@ end
 target_queries.test_type_10 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -480,7 +467,7 @@ end
 target_queries.test_type_11 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -517,7 +504,7 @@ end
 target_queries.test_type_12 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -561,7 +548,7 @@ end
 target_queries.test_type_13 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -602,7 +589,7 @@ end
 target_queries.test_type_14 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -644,7 +631,7 @@ end
 target_queries.test_type_15 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -686,7 +673,7 @@ end
 target_queries.test_type_17 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -726,7 +713,7 @@ end
 target_queries.test_type_18 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_num_history"
@@ -766,7 +753,7 @@ end
 target_queries.test_type_19 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -805,7 +792,7 @@ end
 target_queries.test_type_20 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -845,7 +832,7 @@ end
 target_queries.test_type_21 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "account_id", "amount"
     FROM "col1_transactions_history"
@@ -888,7 +875,7 @@ end
 target_queries.test_type_22 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"
@@ -928,7 +915,7 @@ end
 target_queries.test_type_23 = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("query", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[SELECT *
 FROM
     (SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_history"

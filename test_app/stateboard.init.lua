@@ -2,6 +2,7 @@
 
 require('strict').on()
 
+-- luacheck: ignore package
 if package.setsearchroot ~= nil then
     package.setsearchroot()
 else
