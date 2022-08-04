@@ -621,12 +621,12 @@ g.test_valid_explain = function()
             "    selection ROW(\"t1\".\"id\") = ROW(1)",
             "        scan \"t1\"",
             "            union all",
-            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
-            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
-            "                        scan \"space_simple_shard_key_hist\"",
             "                projection (\"space_simple_shard_key\".\"id\" -> \"id\", \"space_simple_shard_key\".\"name\" -> \"name\")",
             "                    selection ROW(\"space_simple_shard_key\".\"sysOp\") < ROW(0)",
             "                        scan \"space_simple_shard_key\"",
+            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
+            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
+            "                        scan \"space_simple_shard_key_hist\"",
         }
     )
 end

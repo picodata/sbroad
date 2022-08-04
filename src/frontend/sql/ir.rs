@@ -6,6 +6,7 @@ use traversal::DftPost;
 use crate::errors::QueryPlannerError;
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
@@ -124,8 +125,10 @@ impl SubQuery {
 }
 
 impl Plan {
-    fn gather_sq_for_replacement(&self) -> Result<HashSet<SubQuery>, QueryPlannerError> {
-        let mut set: HashSet<SubQuery> = HashSet::new();
+    fn gather_sq_for_replacement(
+        &self,
+    ) -> Result<HashSet<SubQuery, RepeatableState>, QueryPlannerError> {
+        let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
         let top = self.get_top()?;
         let rel_post = DftPost::new(&top, |node| self.nodes.rel_iter(node));
         // Traverse expression trees of the selection and join nodes.

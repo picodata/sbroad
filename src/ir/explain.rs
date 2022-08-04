@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write as _};
 
-use itertools::Itertools;
 use serde::Serialize;
 use traversal::DftPost;
 
@@ -226,7 +225,7 @@ impl Row {
                 }
                 Expression::Bool { .. } | Expression::Row { .. } | Expression::Alias { .. } => {
                     return Err(QueryPlannerError::CustomError(format!(
-                        "Expression node [{:?}] hasn't supported in selection expalin node yet",
+                        "Expression node [{:?}] is not supported for selection's explain node yet",
                         current_node
                     )));
                 }
@@ -237,25 +236,26 @@ impl Row {
                         .next()
                         .ok_or_else(|| {
                             QueryPlannerError::CustomError(
-                                "Reference doesn't have child relation node.".into(),
+                                "Reference doesn't have a child relation node.".into(),
                             )
                         })?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
 
-                    // if reletation node (as rule is subquery) doesn't have alias name it means
-                    // that this node is part of where cause
+                    // If relation node doesn't have alias name it means
+                    // that this node is a sub-query and acts as a part of
+                    // the WHERE cause.
                     if rel_node.scan_name(plan, *position)?.is_some() {
                         let col = Col::new(plan, *child)?;
                         row.add_col(RowVal::Column(col));
                     } else {
-                        let sq_num = ref_map.get(&rel_id).ok_or_else(|| {
+                        let sq_offset = ref_map.get(&rel_id).ok_or_else(|| {
                             QueryPlannerError::CustomError(
-                                "Relation subquery number not found in the map".into(),
+                                "The sub-query was not found in the map".into(),
                             )
                         })?;
 
-                        row.add_col(RowVal::SqRef(Ref::new(*sq_num)));
+                        row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                     }
                 }
             }
@@ -312,7 +312,7 @@ impl Selection {
             | Expression::Constant { .. }
             | Expression::Alias { .. } => {
                 return Err(QueryPlannerError::CustomError(
-                    "Unsupport expr in selection explain node".into(),
+                    "Unsupported expression in selection's explain node".into(),
                 ));
             }
         };
@@ -441,16 +441,16 @@ struct FullExplain {
     /// Main sql subtree
     main_query: ExplainTreePart,
     /// Related part of query which describe as `WHERE` cause subqueries
-    subqueries: HashMap<usize, ExplainTreePart>,
+    subqueries: Vec<ExplainTreePart>,
 }
 
 impl Display for FullExplain {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = self.main_query.to_string();
 
-        for k in self.subqueries.keys().sorted() {
-            writeln!(s, "subquery ${}:", k)?;
-            s.push_str(&self.subqueries[k].to_string());
+        for (pos, sq) in self.subqueries.iter().enumerate() {
+            writeln!(s, "subquery ${}:", pos)?;
+            s.push_str(&sq.to_string());
         }
         write!(f, "{}", s)
     }
@@ -458,26 +458,35 @@ impl Display for FullExplain {
 
 impl FullExplain {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_lines)]
     pub fn new(ir: &Plan, top_id: usize) -> Result<Self, QueryPlannerError> {
-        let mut buffer: Vec<ExplainTreePart> = Vec::with_capacity(100);
-
-        let mut prev_level = 0;
+        let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
         let mut result = FullExplain::default();
 
         let dft_post = DftPost::new(&top_id, |node| ir.nodes.rel_iter(node));
         for (level, id) in dft_post {
             let mut current_node = ExplainTreePart::with_level(level);
-
             let node = ir.get_relation_node(*id)?;
             current_node.current = match &node {
                 Relational::Except { .. } => {
-                    if let Some(n) = buffer.pop() {
-                        current_node.children.push(n);
+                    if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
+                        current_node.children.push(left);
+                        current_node.children.push(right);
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Exception node must have exactly two children".into(),
+                        ));
                     }
-
                     Some(ExplainNode::Except)
                 }
                 Relational::Projection { output, .. } => {
+                    // TODO: change this logic when we'll enable sub-queries in projection
+                    let child = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Projection node must have exactly one child".into(),
+                        )
+                    })?;
+                    current_node.children.push(child);
                     let p = Projection::new(ir, *output)?;
                     Some(ExplainNode::Projection(p))
                 }
@@ -493,50 +502,54 @@ impl FullExplain {
                 Relational::Selection {
                     children, filter, ..
                 } => {
-                    let mut sq_ref_map = HashMap::new();
-
-                    if children.len() > 1 {
-                        let mut sq_set = children.get(0..).unwrap().to_vec();
-                        sq_set.sort_unstable();
-
-                        let mut sq_count = children.len() - 1;
-                        let actual_refs_offset = result.subqueries.len();
-                        while sq_count > 0 {
-                            if let Some(p) = buffer.pop() {
-                                let sq_id = match children.get(sq_count) {
-                                    Some(v) => *v,
-                                    None => continue,
-                                };
-
-                                let ref_num = match sq_set.iter().position(|&r| r == sq_id) {
-                                    Some(v) => v,
-                                    None => continue,
-                                };
-
-                                sq_ref_map.insert(sq_id, ref_num);
-                                result.subqueries.insert(actual_refs_offset + ref_num, p);
-                            }
-
-                            sq_count -= 1;
+                    let mut sq_ref_map: HashMap<usize, usize> =
+                        HashMap::with_capacity(children.len() - 1);
+                    if let Some((_, other)) = children.split_first() {
+                        for sq_id in other.iter().rev() {
+                            let sq_node = stack.pop().ok_or_else(|| {
+                                QueryPlannerError::CustomError(
+                                    "Selection node failed to get a sub-query.".into(),
+                                )
+                            })?;
+                            result.subqueries.push(sq_node);
+                            let offset = result.subqueries.len() - 1;
+                            sq_ref_map.insert(*sq_id, offset);
                         }
+                        let child = stack.pop().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Selection node must have exactly one child".into(),
+                            )
+                        })?;
+                        current_node.children.push(child);
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Selection node doesn't have any children".into(),
+                        ));
                     }
-
                     let s = Selection::new(ir, *filter, &sq_ref_map)?;
                     Some(ExplainNode::Selection(s))
                 }
                 Relational::UnionAll { .. } => {
-                    if let Some(n) = buffer.pop() {
-                        current_node.children.push(n);
+                    if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
+                        current_node.children.push(left);
+                        current_node.children.push(right);
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Union all node must have exactly two children".into(),
+                        ));
                     }
-
                     Some(ExplainNode::UnionAll)
                 }
                 Relational::ScanSubQuery { alias, .. } => {
+                    let child = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "ScanSubQuery node must have exactly one child".into(),
+                        )
+                    })?;
+                    current_node.children.push(child);
                     let s = SubQuery::new(alias.as_ref().map(ToString::to_string));
-
                     Some(ExplainNode::SubQuery(s))
                 }
-
                 Relational::InnerJoin { .. }
                 | Relational::Motion { .. }
                 | Relational::Insert { .. }
@@ -548,22 +561,11 @@ impl FullExplain {
                     )))
                 }
             };
-
-            if level < prev_level {
-                if let Some(n) = buffer.pop() {
-                    current_node.children.push(n);
-                }
-            }
-
-            buffer.push(current_node);
-
-            prev_level = level;
+            stack.push(current_node);
         }
-
-        result.main_query = buffer
+        result.main_query = stack
             .pop()
             .ok_or_else(|| QueryPlannerError::CustomError("Invalid explain top node.".into()))?;
-
         Ok(result)
     }
 }

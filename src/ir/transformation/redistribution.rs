@@ -897,15 +897,15 @@ impl Plan {
                             {
                                 // Distribution key sets have common keys, no need for the data motion.
                                 if right_keys
-                                    .intersection(&left_keys)
+                                    .intersection(left_keys)
                                     .into_iter()
-                                    .nth(0)
+                                    .next()
                                     .is_some()
                                 {
                                     return Ok(map);
                                 }
                             }
-                            let key = left_keys.iter().nth(0).ok_or_else(|| QueryPlannerError::CustomError(
+                            let key = left_keys.iter().next().ok_or_else(|| QueryPlannerError::CustomError(
                                 "Left child's segment distribution is invalid: no keys found in the set".into()
                             ))?;
                             map.insert(
@@ -917,18 +917,15 @@ impl Plan {
                             map.insert(*right, (MotionPolicy::Full, DataGeneration::None));
                         }
                     }
-                    Ok(map)
-                } else {
-                    return Err(QueryPlannerError::CustomError(
-                        "Except node doesn't have exactly two children.".into(),
-                    ));
+                    return Ok(map);
                 }
-            }
-            _ => {
-                return Err(QueryPlannerError::CustomError(
-                    "Expected except node".into(),
+                Err(QueryPlannerError::CustomError(
+                    "Except node doesn't have exactly two children.".into(),
                 ))
             }
+            _ => Err(QueryPlannerError::CustomError(
+                "Expected except node".into(),
+            )),
         }
     }
 

@@ -9,6 +9,7 @@ struct Location {
     msg_puck: PathBuf,
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     #[cfg(feature = "mock")]
     {

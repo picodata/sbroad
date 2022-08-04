@@ -1,5 +1,6 @@
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
+use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::*;
 use pretty_assertions::assert_eq;
 
@@ -11,14 +12,7 @@ fn except1() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .get(0)
-        .unwrap()
-        .get(0)
-        .unwrap();
+    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -47,14 +41,7 @@ fn except3() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .get(0)
-        .unwrap()
-        .get(0)
-        .unwrap();
+    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -83,14 +70,7 @@ fn except4() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .get(0)
-        .unwrap()
-        .get(0)
-        .unwrap();
+    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -119,14 +99,7 @@ fn except5() {
 
     let mut plan = sql_to_ir(query, &[]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .get(0)
-        .unwrap()
-        .get(0)
-        .unwrap();
+    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -141,13 +114,6 @@ fn except5() {
     } else {
         panic!("Expected a motion node");
     }
-    let no_other_motions = plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .get(0)
-        .unwrap()
-        .get(1)
-        .is_none();
+    let no_other_motions = get_motion_id(&plan, 0, 1).is_none();
     assert_eq!(no_other_motions, true);
 }

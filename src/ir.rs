@@ -52,6 +52,24 @@ pub struct Nodes {
 }
 
 impl Nodes {
+    /// Get the amount of relational nodes in the plan.
+    #[must_use]
+    pub fn relation_node_amount(&self) -> usize {
+        self.arena
+            .iter()
+            .filter(|node| matches!(node, Node::Relational(_)))
+            .count()
+    }
+
+    /// Get the amount of expression nodes in the plan.
+    #[must_use]
+    pub fn expression_node_amount(&self) -> usize {
+        self.arena
+            .iter()
+            .filter(|node| matches!(node, Node::Expression(_)))
+            .count()
+    }
+
     /// Add new node to arena.
     ///
     /// Inserts a new node to the arena and returns its position,
