@@ -630,3 +630,35 @@ g.test_valid_explain = function()
         }
     )
 end
+
+g.test_except = function()
+    local api = cluster:server("api-1").net_box
+
+    r, err = api:call("query", {
+        [[insert into "t" ("id", "a") values (?, ?), (?, ?), (?, ?)]],
+        {
+            3, 777,
+            1000001, require('decimal').new(6.66),
+            1000002, require('decimal').new(6.66)
+        }
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 3})
+
+    local r, err = api:call("query", { [[
+        SELECT "a" FROM "t" where "id" <= 3
+        EXCEPT
+        SELECT "a" FROM "t" where "id" > 3
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "a", type = "number"},
+        },
+        rows = {
+            {4.2},
+            {777}
+        },
+    })
+end

@@ -865,6 +865,73 @@ impl Plan {
         Ok(map)
     }
 
+    fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, QueryPlannerError> {
+        let mut map: Strategy = HashMap::new();
+        match self.get_relation_node(rel_id)? {
+            Relational::Except { children, .. } => {
+                if let (Some(left), Some(right), None) =
+                    (children.get(0), children.get(1), children.get(2))
+                {
+                    let left_output_id = self.get_relation_node(*left)?.output();
+                    let right_output_id = self.get_relation_node(*right)?.output();
+                    let left_output_row =
+                        self.get_expression_node(left_output_id)?.get_row_list()?;
+                    let right_output_row =
+                        self.get_expression_node(right_output_id)?.get_row_list()?;
+                    if left_output_row.len() != right_output_row.len() {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Except node children have different row lengths: left {}, right {}",
+                            left_output_row.len(),
+                            right_output_row.len()
+                        )));
+                    }
+                    let left_dist = self.get_distribution(left_output_id)?;
+                    let right_dist = self.get_distribution(right_output_id)?;
+                    match left_dist {
+                        Distribution::Segment {
+                            keys: left_keys, ..
+                        } => {
+                            if let Distribution::Segment {
+                                keys: right_keys, ..
+                            } = right_dist
+                            {
+                                // Distribution key sets have common keys, no need for the data motion.
+                                if right_keys
+                                    .intersection(&left_keys)
+                                    .into_iter()
+                                    .nth(0)
+                                    .is_some()
+                                {
+                                    return Ok(map);
+                                }
+                            }
+                            let key = left_keys.iter().nth(0).ok_or_else(|| QueryPlannerError::CustomError(
+                                "Left child's segment distribution is invalid: no keys found in the set".into()
+                            ))?;
+                            map.insert(
+                                *right,
+                                (MotionPolicy::Segment(key.into()), DataGeneration::None),
+                            );
+                        }
+                        _ => {
+                            map.insert(*right, (MotionPolicy::Full, DataGeneration::None));
+                        }
+                    }
+                    Ok(map)
+                } else {
+                    return Err(QueryPlannerError::CustomError(
+                        "Except node doesn't have exactly two children.".into(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(QueryPlannerError::CustomError(
+                    "Expected except node".into(),
+                ))
+            }
+        }
+    }
+
     /// Add motion nodes to the plan tree.
     ///
     /// # Errors
@@ -909,6 +976,11 @@ impl Plan {
                     // Insert output tuple already has relation's distribution.
                     let strategy = self.resolve_insert_conflicts(*id)?;
                     self.create_motion_nodes(*id, &strategy)?;
+                }
+                Relational::Except { output, .. } => {
+                    let strategy = self.resolve_except_conflicts(*id)?;
+                    self.create_motion_nodes(*id, &strategy)?;
+                    self.set_distribution(output)?;
                 }
             }
         }

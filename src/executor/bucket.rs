@@ -255,6 +255,32 @@ where
                         .clone();
                     self.bucket_map.insert(*output, child_buckets);
                 }
+                Relational::Except {
+                    children, output, ..
+                } => {
+                    if let (Some(first_id), Some(_), None) =
+                        (children.first(), children.get(1), children.get(2))
+                    {
+                        // We are only interested in the first child (the left one).
+                        // The rows from the second child would be transferred to the
+                        // first child by the motion or already located in the first
+                        // child's bucket. So we don't need to worry about the second
+                        // child's buckets here.
+                        let first_rel =
+                            self.exec_plan.get_ir_plan().get_relation_node(*first_id)?;
+                        let first_buckets = self.bucket_map.get(&first_rel.output()).ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Failed to retrieve buckets of the first except child from the bucket map."
+                                    .to_string(),
+                            )
+                        })?;
+                        self.bucket_map.insert(*output, first_buckets.clone());
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Current node should have exactly two children".to_string(),
+                        ));
+                    }
+                }
                 Relational::UnionAll {
                     children, output, ..
                 } => {

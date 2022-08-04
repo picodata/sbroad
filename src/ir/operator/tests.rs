@@ -243,7 +243,10 @@ fn union_all_col_amount_mismatch() {
 
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     assert_eq!(
-        QueryPlannerError::NotEqualRows,
+        QueryPlannerError::CustomError(
+            "Children tuples have mismatching amount of columns in union all node: left 1, right 2"
+                .into()
+        ),
         plan.add_union_all(scan_t2_id, scan_t1_id).unwrap_err()
     );
 }

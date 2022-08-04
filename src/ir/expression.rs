@@ -563,7 +563,7 @@ impl Plan {
     /// # Errors
     /// Returns `QueryPlannerError`:
     /// - children are inconsistent relational nodes
-    pub fn add_row_for_union(
+    pub fn add_row_for_union_except(
         &mut self,
         left: usize,
         right: usize,

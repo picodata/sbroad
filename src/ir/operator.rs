@@ -86,6 +86,13 @@ impl Display for Bool {
 /// relation algebra logic.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Relational {
+    Except {
+        /// Contains exactly two elements: left and right node indexes
+        /// from the plan node arena.
+        children: Vec<usize>,
+        /// Outputs tuple node index in the plan node arena.
+        output: usize,
+    },
     Insert {
         /// Relation name.
         relation: String,
@@ -229,7 +236,8 @@ impl Relational {
     #[must_use]
     pub fn output(&self) -> usize {
         match self {
-            Relational::InnerJoin { output, .. }
+            Relational::Except { output, .. }
+            | Relational::InnerJoin { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
@@ -246,7 +254,8 @@ impl Relational {
     #[must_use]
     pub fn children(&self) -> Option<&[usize]> {
         match self {
-            Relational::InnerJoin { children, .. }
+            Relational::Except { children, .. }
+            | Relational::InnerJoin { children, .. }
             | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
@@ -283,7 +292,11 @@ impl Relational {
     /// - try to set children for the scan node (it is always a leaf node)
     pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), QueryPlannerError> {
         match self {
-            Relational::InnerJoin {
+            Relational::Except {
+                children: ref mut old,
+                ..
+            }
+            | Relational::InnerJoin {
                 children: ref mut old,
                 ..
             }
@@ -371,7 +384,8 @@ impl Relational {
                 }
                 Ok(None)
             }
-            Relational::UnionAll { .. }
+            Relational::Except { .. }
+            | Relational::UnionAll { .. }
             | Relational::Values { .. }
             | Relational::ValuesRow { .. } => Ok(None),
         }
@@ -396,6 +410,41 @@ impl Relational {
 }
 
 impl Plan {
+    /// Adds except node.
+    ///
+    /// # Errors
+    /// - children nodes are not relational
+    /// - children tuples are invalid
+    /// - children tuples have mismatching structure
+    pub fn add_except(&mut self, left: usize, right: usize) -> Result<usize, QueryPlannerError> {
+        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
+            let child_output = plan.get_relation_node(child)?.output();
+            Ok(plan
+                .get_expression_node(child_output)?
+                .get_row_list()?
+                .len())
+        };
+
+        let left_row_len = child_row_len(left, self)?;
+        let right_row_len = child_row_len(right, self)?;
+        if left_row_len != right_row_len {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Children tuples have mismatching amount of columns in except node: left {}, right {}",
+                left_row_len, right_row_len
+            )));
+        }
+
+        let output = self.add_row_for_union_except(left, right)?;
+        let except = Relational::Except {
+            children: vec![left, right],
+            output,
+        };
+
+        let except_id = self.nodes.push(Node::Relational(except));
+        self.replace_parent_in_subtree(output, None, Some(except_id))?;
+        Ok(except_id)
+    }
+
     /// Adds insert node.
     ///
     /// # Errors
@@ -735,21 +784,23 @@ impl Plan {
     /// - children tuples have mismatching structure
     pub fn add_union_all(&mut self, left: usize, right: usize) -> Result<usize, QueryPlannerError> {
         let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
-            if let Node::Relational(relational_op) = plan.get_node(child)? {
-                match plan.get_node(relational_op.output())? {
-                    Node::Expression(Expression::Row { ref list, .. }) => Ok(list.len()),
-                    _ => Err(QueryPlannerError::InvalidRow),
-                }
-            } else {
-                Err(QueryPlannerError::InvalidRow)
-            }
+            let child_output = plan.get_relation_node(child)?.output();
+            Ok(plan
+                .get_expression_node(child_output)?
+                .get_row_list()?
+                .len())
         };
 
-        if child_row_len(left, self) != child_row_len(right, self) {
-            return Err(QueryPlannerError::NotEqualRows);
+        let left_row_len = child_row_len(left, self)?;
+        let right_row_len = child_row_len(right, self)?;
+        if left_row_len != right_row_len {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Children tuples have mismatching amount of columns in union all node: left {}, right {}",
+                left_row_len, right_row_len
+            )));
         }
 
-        let output = self.add_row_for_union(left, right)?;
+        let output = self.add_row_for_union_except(left, right)?;
         let union_all = Relational::UnionAll {
             children: vec![left, right],
             output,

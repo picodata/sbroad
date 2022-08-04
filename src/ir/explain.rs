@@ -361,6 +361,7 @@ impl Display for SubQuery {
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
+    Except,
     Projection(Projection),
     Scan(Scan),
     Selection(Selection),
@@ -371,6 +372,7 @@ enum ExplainNode {
 impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ExplainNode::Except => "except".to_string(),
             ExplainNode::Projection(e) => e.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
             ExplainNode::Selection(s) => format!("selection {}", s),
@@ -468,6 +470,13 @@ impl FullExplain {
 
             let node = ir.get_relation_node(*id)?;
             current_node.current = match &node {
+                Relational::Except { .. } => {
+                    if let Some(n) = buffer.pop() {
+                        current_node.children.push(n);
+                    }
+
+                    Some(ExplainNode::Except)
+                }
                 Relational::Projection { output, .. } => {
                     let p = Projection::new(ir, *output)?;
                     Some(ExplainNode::Projection(p))

@@ -582,6 +582,22 @@ impl Ast for AbstractSyntaxTree {
                     let projection_id = plan.add_proj_internal(plan_child_id, &columns)?;
                     map.add(*id, projection_id);
                 }
+                Type::Except => {
+                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Left node id is not found among except children.".into(),
+                        )
+                    })?;
+                    let plan_left_id = map.get(*ast_left_id)?;
+                    let ast_right_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Right node id is not found among except children.".into(),
+                        )
+                    })?;
+                    let plan_right_id = map.get(*ast_right_id)?;
+                    let plan_except_id = plan.add_except(plan_left_id, plan_right_id)?;
+                    map.add(*id, plan_except_id);
+                }
                 Type::UnionAll => {
                     let ast_left_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(

@@ -171,3 +171,26 @@ fn union_query_conjunction() {
 
     assert_eq!(expected, buckets);
 }
+
+#[test]
+fn simple_except_query() {
+    let query = r#"SELECT * FROM (
+    SELECT * FROM "test_space" WHERE "sysFrom" > 0
+    EXCEPT
+    SELECT * FROM "test_space_hist" WHERE "sysFrom" < 0
+    ) as "t3"
+    WHERE "id" = 1"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, &[]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    let param1 = Value::from(1_u64);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1].into_iter().collect();
+    let expected = Buckets::new_filtered(bucket_set);
+
+    assert_eq!(expected, buckets);
+}

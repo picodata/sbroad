@@ -233,7 +233,8 @@ impl<'n> Iterator for RelationalIterator<'n> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.nodes.arena.get(*self.current) {
             Some(Node::Relational(
-                Relational::InnerJoin { children, .. }
+                Relational::Except { children, .. }
+                | Relational::InnerJoin { children, .. }
                 | Relational::Insert { children, .. }
                 | Relational::Motion { children, .. }
                 | Relational::Projection { children, .. }
@@ -321,7 +322,8 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                         }
                     }
 
-                    Relational::Insert { children, .. }
+                    Relational::Except { children, .. }
+                    | Relational::Insert { children, .. }
                     | Relational::Motion { children, .. }
                     | Relational::ScanSubQuery { children, .. }
                     | Relational::UnionAll { children, .. } => {

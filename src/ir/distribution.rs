@@ -50,32 +50,31 @@ pub enum Distribution {
 }
 
 impl Distribution {
-    /// Calculate a new distribution for the `UnionAll` output tuple.
-    fn union(left: &Distribution, right: &Distribution) -> Distribution {
-        match left {
-            Distribution::Any => Distribution::Any,
-            Distribution::Replicated => right.clone(),
-            Distribution::Segment {
-                keys: ref keys_left,
-                ..
-            } => match right {
-                Distribution::Any => Distribution::Any,
-                Distribution::Replicated => left.clone(),
+    /// Calculate a new distribution for the `Except` and `UnionAll` output tuple.
+    fn union_except(left: &Distribution, right: &Distribution) -> Distribution {
+        match (left, right) {
+            (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
+            (Distribution::Replicated, _) | (_, Distribution::Replicated) => {
+                Distribution::Replicated
+            }
+            (
                 Distribution::Segment {
-                    keys: ref keys_right,
-                    ..
-                } => {
-                    let mut keys: HashSet<Key> = HashSet::new();
-                    for key in keys_left.intersection(keys_right) {
-                        keys.insert(Key::new(key.positions.clone()));
-                    }
-                    if keys.is_empty() {
-                        Distribution::Any
-                    } else {
-                        Distribution::Segment { keys }
-                    }
+                    keys: keys_left, ..
+                },
+                Distribution::Segment {
+                    keys: keys_right, ..
+                },
+            ) => {
+                let mut keys: HashSet<Key> = HashSet::new();
+                for key in keys_left.intersection(keys_right) {
+                    keys.insert(Key::new(key.positions.clone()));
                 }
-            },
+                if keys.is_empty() {
+                    Distribution::Any
+                } else {
+                    Distribution::Segment { keys }
+                }
+            }
         }
     }
 
@@ -217,7 +216,7 @@ impl Plan {
                 let mut left_dist = Distribution::Replicated;
                 for child in &child_set {
                     let right_dist = self.dist_from_child(*child, &child_pos_map)?;
-                    left_dist = Distribution::union(&left_dist, &right_dist);
+                    left_dist = Distribution::union_except(&left_dist, &right_dist);
                 }
                 Some(left_dist)
             } else {
@@ -416,11 +415,13 @@ impl Plan {
 
         let parent = self.get_relation_node(parent_id)?;
         let new_dist = match parent {
-            Relational::UnionAll { .. } => Distribution::union(&left_dist, &right_dist),
+            Relational::Except { .. } | Relational::UnionAll { .. } => {
+                Distribution::union_except(&left_dist, &right_dist)
+            }
             Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist),
             _ => {
                 return Err(QueryPlannerError::CustomError(
-                    "Invalid row: expected UnionAll or InnerJoin".to_string(),
+                    "Invalid row: expected Except, UnionAll or InnerJoin".to_string(),
                 ))
             }
         };

@@ -870,3 +870,6 @@ fn redistribution6() {
         panic!("Expected a motion node");
     }
 }
+
+#[cfg(test)]
+mod except;

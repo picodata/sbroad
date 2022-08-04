@@ -157,7 +157,7 @@
 1. Subclause 7.13, “query expression”: With support for UNION [ ALL ]: **yes**
 
 ### E071-03. EXCEPT DISTINCT table operator.
-1. Subclause 7.13, “query expression”: With support for EXCEPT [ DISTINCT ]: **no**
+1. Subclause 7.13, “query expression”: With support for EXCEPT [ DISTINCT ]: **yes**
 
 ### E071-04. Columns combined via table operators need not have exactly the same data type.
 1. Subclause 7.13, “query expression”: Columns combined via UNION and EXCEPT need not have exactly the same data type: **yes**

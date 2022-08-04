@@ -284,3 +284,40 @@ fn selection_with_sq() {
         sql
     );
 }
+
+#[test]
+fn except() {
+    let query = r#"SELECT "id"
+    FROM "test_space"
+    WHERE "sysFrom" = 1
+    EXCEPT DISTINCT
+    SELECT "id"
+    FROM "test_space"
+    WHERE "FIRST_NAME" = 'a' 
+    "#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.bind_params(&[]).unwrap();
+    let ex_plan = ExecutionPlan::from(plan);
+
+    let top_id = ex_plan.get_ir_plan().get_top().unwrap();
+    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+
+    assert_eq!(
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {} {}",
+                r#"SELECT "test_space"."id" FROM "test_space""#,
+                r#"WHERE ("test_space"."sysFrom") = (?)"#,
+                r#"EXCEPT"#,
+                r#"SELECT "test_space"."id" FROM "test_space""#,
+                r#"WHERE ("test_space"."FIRST_NAME") = (?)"#
+            ),
+            vec![Value::from(1_u64), Value::from("a")],
+        ),
+        sql
+    );
+}

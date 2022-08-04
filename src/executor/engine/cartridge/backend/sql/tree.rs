@@ -543,15 +543,15 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::UnionAll { children, .. } => {
+                Relational::Except { children, .. } | Relational::UnionAll { children, .. } => {
                     let left_id = *children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(
-                            "Union all doesn't have a left child.".into(),
+                            "Union/except doesn't have a left child.".into(),
                         )
                     })?;
                     let right_id = *children.get(1).ok_or_else(|| {
                         QueryPlannerError::CustomError(
-                            "Union all doesn't have a right child.".into(),
+                            "Union/except doesn't have a right child.".into(),
                         )
                     })?;
                     let sn = SyntaxNode::new_pointer(

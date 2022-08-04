@@ -102,7 +102,8 @@ impl ExecutionPlan {
         let rel = self.get_ir_plan().get_relation_node(*top_id)?;
         match rel {
             Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
-            Relational::InnerJoin { .. }
+            Relational::Except { .. }
+            | Relational::InnerJoin { .. }
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }

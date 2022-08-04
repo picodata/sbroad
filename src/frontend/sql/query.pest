@@ -1,6 +1,6 @@
 Command = _{ SOI ~ Query ~ EOF }
 
-Query = _{ UnionAll | Select | Values | Insert }
+Query = _{ Except | UnionAll | Select | Values | Insert }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
@@ -21,7 +21,8 @@ Query = _{ UnionAll | Select | Values | Insert }
         InnerJoin = { Scan }
         Condition = { Expr+ }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (SubQuery | Select) }
-    SubQuery = { "(" ~ (UnionAll | Select | Values) ~ ")" }
+    Except = { (SubQuery | Select) ~ ((^"except" ~ ^"distinct") | ^"except") ~ (SubQuery | Select) }
+    SubQuery = { "(" ~ (Except | UnionAll | Select | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
@@ -62,7 +63,7 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
 
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")+ }
-Keyword = { ^"union" | ^"where" }
+Keyword = { ^"except" | ^"union" | ^"where" }
 Character = _{ ASCII_ALPHANUMERIC | 'А' .. 'Я' | 'а' .. 'я' | Other | Punctuation | SYMBOL }
 Punctuation = _{
     CONNECTOR_PUNCTUATION
