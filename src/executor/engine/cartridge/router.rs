@@ -264,6 +264,29 @@ impl Coordinator for RouterRuntime {
             })
     }
 
+    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
+        &'engine self,
+        space: String,
+        rec: &'rec Vec<Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+        match self
+            .cached_config()
+            .get_sharding_key_fields_by_space(space.as_str()) {
+                Ok(vec) => {
+                    let mut vec_values = Vec::new();
+                    vec
+                        .into_iter()
+                        .for_each(|index| {
+                            vec_values.push(&rec[index])
+                        }
+                    );
+                    Ok(vec_values)
+
+                },
+                Err(e) => Err(e)
+        }
+    }
+
     /// Calculate bucket for a key.
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.bucket_count)
@@ -588,7 +611,7 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             if err ~= nil then
                 error(error)
             end
-            table.insert(futures, future) 
+            table.insert(futures, future)
         end
 
         for _, future in ipairs(futures) do
@@ -621,7 +644,7 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             if err ~= nil then
                 error(error)
             end
-            table.insert(futures, future) 
+            table.insert(futures, future)
         end
 
         for _, future in ipairs(futures) do
@@ -687,7 +710,7 @@ pub fn load_router_functions() -> Result<(), QueryPlannerError> {
             if err ~= nil then
                 error(error)
             end
-            table.insert(futures, future) 
+            table.insert(futures, future)
         end
 
         for _, future in ipairs(futures) do

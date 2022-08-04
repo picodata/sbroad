@@ -246,6 +246,46 @@ impl CoordinatorMetadata for RouterConfiguration {
             space
         )))
     }
+
+    fn get_sharding_key_fields_by_space(&self, space: &str) -> Result<Vec<usize>, QueryPlannerError> {
+        match self.get_table_segment(&Self::to_name(space)) {
+            Ok(space_format) => {
+                match self.get_sharding_key_by_space(space) {
+                    Ok(sharding_keys) => {
+                        let mut fields: Vec<usize> = Vec::new();
+
+                        sharding_keys
+                            .iter()
+                            .for_each(|shard_field_name| {
+                                match space_format
+                                    .columns
+                                    .iter()
+                                    .position(|r| {
+                                        r.name == shard_field_name.to_string() }
+                                    ) {
+                                    Some(index) => { fields.push(index); },
+                                    None => {}
+                                };
+                            }
+                        );
+
+                        if fields.len() == 0 {
+                            Err(QueryPlannerError::CustomError(format!(
+                                "Space {} schema is invalid",
+                                space
+                            )))
+                        } else {
+                            return Ok(fields)
+                        }
+                    },
+                    Err(e) => Err(e)
+                    }
+            },
+            Err(e) =>  Err(e)
+        }
+    }
+
+
 }
 
 pub struct StorageConfiguration {

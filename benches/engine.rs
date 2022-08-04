@@ -425,6 +425,25 @@ impl Coordinator for RouterRuntimeMock {
             }))
     }
 
+    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
+        &'engine self,
+        space: String,
+        rec: &'rec Vec<Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+        match self
+            .cached_config()
+            .get_sharding_key_fields_by_space(space.as_str())
+        {
+            Ok(vec) => {
+                let mut vec_values = Vec::new();
+                vec.into_iter()
+                    .for_each(|index| vec_values.push(&rec[index]));
+                Ok(vec_values)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.metadata.bucket_count)
     }

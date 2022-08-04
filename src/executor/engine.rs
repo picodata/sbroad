@@ -46,6 +46,7 @@ pub trait CoordinatorMetadata {
     /// - Metadata does not contains space
     /// - Metadata contains incorrect sharding keys format
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError>;
+    fn get_sharding_key_fields_by_space(&self, space: &str) -> Result<Vec<usize>, QueryPlannerError>;
 }
 
 /// Cluster configuration.
@@ -119,6 +120,12 @@ pub trait Coordinator: Configuration {
         &'engine self,
         space: String,
         args: &'rec HashMap<String, Value>,
+    ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
+
+    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
+        &'engine self,
+        space: String,
+        args: &'rec Vec<Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value

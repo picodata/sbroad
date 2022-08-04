@@ -75,6 +75,10 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
+    r, err = api:call("calculate_bucket_id_by_tuple", { "testing_space", box.tuple.new{ 1, "123", 1 } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
     r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
     t.assert_str_contains(tostring(err), [[dict of args missed key/value to calculate bucket_id]])
 end
@@ -401,7 +405,7 @@ g.test_insert_2 = function()
     local r, err = api:call("query", { [[INSERT INTO "space_simple_shard_key"
     ("name", "sysOp", "id")
     SELECT 'four', 5, 3 FROM "space_simple_shard_key_hist" WHERE "id" IN (
-        SELECT ? FROM "space_simple_shard_key" 
+        SELECT ? FROM "space_simple_shard_key"
     )]], { 1 } })
 
     t.assert_equals(err, nil)
@@ -585,8 +589,8 @@ g.test_bucket_id_in_join = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t1.id", type = "integer"},                                                                                                                                                                    
-            {name = "t1.name", type = "string"},                                                             
+            {name = "t1.id", type = "integer"},
+            {name = "t1.name", type = "string"},
             {name = "t1.sysOp", type = "integer"},
             {name = "t2.a", type = "any"},
         },

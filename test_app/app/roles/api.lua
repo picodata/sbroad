@@ -6,6 +6,7 @@ _G.query = nil
 _G.explain = nil
 _G.calculate_bucket_id = nil
 _G.calculate_bucket_id_by_dict = nil
+_G.calculate_bucket_id_by_tuple = nil
 _G.sql_execute = nil
 _G.set_schema = nil
 
@@ -70,6 +71,22 @@ local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no u
     return calc_err
 end
 
+local function calculate_bucket_id_by_tuple(space_name, tuple_values) -- luacheck: no unused args
+    checks('string', 'table')
+
+    local has_err, calc_err = pcall(
+        function()
+            return box.func["sbroad.calculate_bucket_id_by_tuple"]:call({ space_name, tuple_values })
+        end
+    )
+
+    if has_err == false then
+        return nil, calc_err
+    end
+
+    return calc_err
+end
+
 local function set_schema(new_schema)
     checks('table|string')
 
@@ -90,6 +107,7 @@ local function init(opts) -- luacheck: no unused args
     _G.explain = explain
     _G.calculate_bucket_id = calculate_bucket_id
     _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
+    _G.calculate_bucket_id_by_tuple = calculate_bucket_id_by_tuple
     _G.sql_execute = query
     _G.set_schema = set_schema
 
@@ -102,6 +120,11 @@ local function init(opts) -- luacheck: no unused args
     box.schema.func.create('sbroad.calculate_bucket_id_by_dict', {
             if_not_exists = true, language = 'C'
     })
+
+    box.schema.func.create('sbroad.calculate_bucket_id_by_tuple', {
+        if_not_exists = true, language = 'C'
+    })
+
     box.schema.func.create('sbroad.dispatch_query', {
             if_not_exists = true, language = 'C'
     })
