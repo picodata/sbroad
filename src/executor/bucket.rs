@@ -273,8 +273,8 @@ where
                                 "Failed to retrieve buckets of the first except child from the bucket map."
                                     .to_string(),
                             )
-                        })?;
-                        self.bucket_map.insert(*output, first_buckets.clone());
+                        })?.clone();
+                        self.bucket_map.insert(*output, first_buckets);
                     } else {
                         return Err(QueryPlannerError::CustomError(
                             "Current node should have exactly two children".to_string(),
