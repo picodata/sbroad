@@ -40,13 +40,19 @@ pub trait CoordinatorMetadata {
         }
     }
 
-    /// Provides an `Vec<&str>` with sharding keys or an error
+    /// Provides vector of the sharding key column names or an error
     ///
     /// # Errors
-    /// - Metadata does not contains space
+    /// - Metadata does not contain space
     /// - Metadata contains incorrect sharding keys format
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError>;
-    fn get_sharding_key_fields_by_space(&self, space: &str) -> Result<Vec<usize>, QueryPlannerError>;
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError>;
+
+    /// Provides vector of the sharding key column positions in a tuple or an error
+    ///
+    /// # Errors
+    /// - Metadata does not contain space
+    fn get_sharding_positions_by_space(&self, space: &str)
+        -> Result<Vec<usize>, QueryPlannerError>;
 }
 
 /// Cluster configuration.
@@ -112,20 +118,24 @@ pub trait Coordinator: Configuration {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError>;
 
-    /// Extract a list of the sharding keys of the columns from the given space.
+    /// Extract a list of the sharding keys from a map for the given space.
     ///
     /// # Errors
-    /// - Columns are not the part of the sharding key of the space.
-    fn extract_sharding_keys<'engine, 'rec>(
+    /// - Columns are not present in the sharding key of the space.
+    fn extract_sharding_keys_from_map<'engine, 'rec>(
         &'engine self,
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
 
+    /// Extract a list of the sharding key values from a tuple for the given space.
+    ///
+    /// # Errors
+    /// - Internal error in the table (should never happen, but we recheck).
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
         &'engine self,
         space: String,
-        args: &'rec Vec<Value>,
+        args: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
 
     /// Determine shard for query execution by sharding key value

@@ -271,6 +271,34 @@ impl Table {
             )),
         }
     }
+
+    /// Get a vector of the sharding column names.
+    ///
+    /// # Errors
+    /// - Table internal inconsistency.
+    pub fn get_sharding_column_names(&self) -> Result<Vec<String>, QueryPlannerError> {
+        let mut names: Vec<String> = Vec::with_capacity(self.key.positions.len());
+        for pos in &self.key.positions {
+            names.push(
+                self.columns
+                    .get(*pos)
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Table {} has no distribution column at position {}",
+                            self.name, *pos
+                        ))
+                    })?
+                    .name
+                    .clone(),
+            );
+        }
+        Ok(names)
+    }
+
+    #[must_use]
+    pub fn get_sharding_positions(&self) -> &[usize] {
+        &self.key.positions
+    }
 }
 
 #[cfg(test)]

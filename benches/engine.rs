@@ -20,7 +20,6 @@ use sbroad::ir::Plan;
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct RouterConfigurationMock {
-    schema: HashMap<String, Vec<String>>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
     sharding_column: String,
@@ -46,12 +45,17 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         self.sharding_column.as_str()
     }
 
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
-        Ok(self
-            .schema
-            .get(space)
-            .map(|v| v.iter().map(String::as_str).collect::<Vec<&str>>())
-            .unwrap())
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        table.get_sharding_column_names()
+    }
+
+    fn get_sharding_positions_by_space(
+        &self,
+        space: &str,
+    ) -> Result<Vec<usize>, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        Ok(table.get_sharding_positions().to_vec())
     }
 }
 
@@ -311,15 +315,6 @@ impl RouterConfigurationMock {
         );
 
         RouterConfigurationMock {
-            schema: [
-                ("EMPLOYEES".into(), vec!["ID".into()]),
-                (
-                    "hash_testing".into(),
-                    vec!["identification_number".into(), "product_code".into()],
-                ),
-            ]
-            .into_iter()
-            .collect(),
             tables,
             bucket_count: 10000,
             sharding_column: "\"bucket_id\"".into(),
@@ -409,7 +404,7 @@ impl Coordinator for RouterRuntimeMock {
         Ok(Box::new(result))
     }
 
-    fn extract_sharding_keys<'engine, 'rec>(
+    fn extract_sharding_keys_from_map<'engine, 'rec>(
         &'engine self,
         space: String,
         args: &'rec HashMap<String, Value>,
@@ -419,7 +414,7 @@ impl Coordinator for RouterRuntimeMock {
             .get_sharding_key_by_space(&space)
             .unwrap()
             .iter()
-            .fold(Vec::new(), |mut acc: Vec<&Value>, &v| {
+            .fold(Vec::new(), |mut acc: Vec<&Value>, v| {
                 acc.push(args.get(v).unwrap());
                 acc
             }))
@@ -428,11 +423,11 @@ impl Coordinator for RouterRuntimeMock {
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
         &'engine self,
         space: String,
-        rec: &'rec Vec<Value>,
+        rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
         match self
             .cached_config()
-            .get_sharding_key_fields_by_space(space.as_str())
+            .get_sharding_positions_by_space(space.as_str())
         {
             Ok(vec) => {
                 let mut vec_values = Vec::new();

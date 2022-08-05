@@ -3,14 +3,12 @@
 extern crate yaml_rust;
 
 use std::collections::HashMap;
-use yaml_rust::YamlLoader;
+use yaml_rust::{Yaml, YamlLoader};
 
 use crate::errors::QueryPlannerError;
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::executor::CoordinatorMetadata;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
-
-use self::yaml_rust::yaml;
 
 #[cfg(not(feature = "mock"))]
 use tarantool::log::{say, SayLevel};
@@ -21,9 +19,6 @@ use tarantool::log::{say, SayLevel};
 /// as it is managed by Tarantool's vshard module.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouterConfiguration {
-    /// Tarantool cartridge schema
-    schema: yaml::Yaml,
-
     /// Execute response waiting timeout in seconds.
     waiting_timeout: u64,
 
@@ -47,7 +42,6 @@ impl RouterConfiguration {
     #[must_use]
     pub fn new() -> Self {
         RouterConfiguration {
-            schema: yaml::Yaml::Null,
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
@@ -55,15 +49,14 @@ impl RouterConfiguration {
         }
     }
 
-    /// Load yaml cartridge schema to cache
+    /// Parse and load yaml cartridge schema to cache
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when process was terminated.
     pub fn load_schema(&mut self, s: &str) -> Result<(), QueryPlannerError> {
         if let Ok(docs) = YamlLoader::load_from_str(s) {
-            if let Some(doc) = docs.get(0) {
-                self.schema = doc.clone();
-                self.init_table_segments()?;
+            if let Some(schema) = docs.get(0) {
+                self.init_table_segments(schema)?;
                 return Ok(());
             }
         }
@@ -72,16 +65,16 @@ impl RouterConfiguration {
     }
 
     pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
-        self.schema.is_null()
+        self.tables.is_empty()
     }
 
     /// Transform space information from schema to table segments
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when schema contains errors.
-    fn init_table_segments(&mut self) -> Result<(), QueryPlannerError> {
+    fn init_table_segments(&mut self, schema: &Yaml) -> Result<(), QueryPlannerError> {
         self.tables.clear();
-        let spaces = match self.schema["spaces"].as_hash() {
+        let spaces = match schema["spaces"].as_hash() {
             Some(v) => v,
             None => return Err(QueryPlannerError::InvalidSchemaSpaces),
         };
@@ -225,67 +218,19 @@ impl CoordinatorMetadata for RouterConfiguration {
         self.sharding_column.as_str()
     }
 
-    /// Get sharding keys by space name
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<&str>, QueryPlannerError> {
-        if let Some(vec) = self.schema["spaces"][space]["sharding_key"].as_vec() {
-            return vec
-                .iter()
-                .try_fold(Vec::new(), |mut acc: Vec<&str>, str| match str.as_str() {
-                    Some(val) => {
-                        acc.push(val);
-                        Ok(acc)
-                    }
-                    _ => Err(QueryPlannerError::CustomError(format!(
-                        "Schema {} contains incorrect sharding keys format",
-                        space
-                    ))),
-                });
-        }
-        Err(QueryPlannerError::CustomError(format!(
-            "Failed to get space {} or sharding key",
-            space
-        )))
+    /// Get sharding key's column names by a space name
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        table.get_sharding_column_names()
     }
 
-    fn get_sharding_key_fields_by_space(&self, space: &str) -> Result<Vec<usize>, QueryPlannerError> {
-        match self.get_table_segment(&Self::to_name(space)) {
-            Ok(space_format) => {
-                match self.get_sharding_key_by_space(space) {
-                    Ok(sharding_keys) => {
-                        let mut fields: Vec<usize> = Vec::new();
-
-                        sharding_keys
-                            .iter()
-                            .for_each(|shard_field_name| {
-                                match space_format
-                                    .columns
-                                    .iter()
-                                    .position(|r| {
-                                        r.name == shard_field_name.to_string() }
-                                    ) {
-                                    Some(index) => { fields.push(index); },
-                                    None => {}
-                                };
-                            }
-                        );
-
-                        if fields.len() == 0 {
-                            Err(QueryPlannerError::CustomError(format!(
-                                "Space {} schema is invalid",
-                                space
-                            )))
-                        } else {
-                            return Ok(fields)
-                        }
-                    },
-                    Err(e) => Err(e)
-                    }
-            },
-            Err(e) =>  Err(e)
-        }
+    fn get_sharding_positions_by_space(
+        &self,
+        space: &str,
+    ) -> Result<Vec<usize>, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        Ok(table.get_sharding_positions().to_vec())
     }
-
-
 }
 
 pub struct StorageConfiguration {

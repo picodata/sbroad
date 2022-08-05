@@ -242,7 +242,7 @@ impl Coordinator for RouterRuntime {
         Ok(vtable)
     }
 
-    fn extract_sharding_keys<'engine, 'rec>(
+    fn extract_sharding_keys_from_map<'engine, 'rec>(
         &'engine self,
         space: String,
         rec: &'rec HashMap<String, Value>,
@@ -250,40 +250,35 @@ impl Coordinator for RouterRuntime {
         self.cached_config()
             .get_sharding_key_by_space(space.as_str())?
             .iter()
-            .try_fold(Vec::new(), |mut acc: Vec<&Value>, &val| {
-                match rec.get(val) {
-                    Some(value) => {
-                        acc.push(value);
-                        Ok(acc)
-                    }
-                    None => Err(QueryPlannerError::CustomError(format!(
-                        "The dict of args missed key/value to calculate bucket_id. Column: {}",
-                        val
-                    ))),
+            .try_fold(Vec::new(), |mut acc: Vec<&Value>, val| match rec.get(val) {
+                Some(value) => {
+                    acc.push(value);
+                    Ok(acc)
                 }
+                None => Err(QueryPlannerError::CustomError(format!(
+                    "The dict of args missed key/value to calculate bucket_id. Column: {}",
+                    val
+                ))),
             })
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
         &'engine self,
         space: String,
-        rec: &'rec Vec<Value>,
+        rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
         match self
             .cached_config()
-            .get_sharding_key_fields_by_space(space.as_str()) {
-                Ok(vec) => {
-                    let mut vec_values = Vec::new();
-                    vec
-                        .into_iter()
-                        .for_each(|index| {
-                            vec_values.push(&rec[index])
-                        }
-                    );
-                    Ok(vec_values)
-
-                },
-                Err(e) => Err(e)
+            .get_sharding_positions_by_space(space.as_str())
+        {
+            Ok(tuple) => {
+                let mut vec_values = Vec::new();
+                tuple
+                    .into_iter()
+                    .for_each(|index| vec_values.push(&rec[index]));
+                Ok(vec_values)
+            }
+            Err(e) => Err(e),
         }
     }
 

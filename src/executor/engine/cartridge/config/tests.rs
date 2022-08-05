@@ -86,9 +86,7 @@ fn test_yaml_schema_parser() {
     let mut s = RouterConfiguration::new();
     s.load_schema(test_schema).unwrap();
 
-    let expected_keys = vec!["identification_number", "product_code"];
-
-    // FIXME: do we need "to_name()" here?
+    let expected_keys = vec!["\"identification_number\"", "\"product_code\""];
     let actual_keys = s.get_sharding_key_by_space("hash_testing").unwrap();
     assert_eq!(actual_keys, expected_keys)
 }
