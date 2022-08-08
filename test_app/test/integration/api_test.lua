@@ -67,19 +67,33 @@ g.after_each(
 g.test_bucket_id_calculation = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("calculate_bucket_id", { "testing_space", { id = 1, name = "123", product_units = 1 } })
+    local r, err = api:call("sharding_func", { { 1, "123" } })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1, name = "123", product_units = 1 } })
+    r, err = api:call("sharding_func", { "1123" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id_by_tuple", { "testing_space", box.tuple.new{ 1, "123", 1 } })
+    r, err = api:call("calculate_bucket_id", {{ id = 1, name = "123", product_units = 1 }, "testing_space" })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
-    r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
+    r, err = api:call("calculate_bucket_id", { box.tuple.new{ 1, "123", 1 }, "testing_space" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id", { { 1, "123", 1 }, "testing_space" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id", { { 1 }, "testing_space" })
+    t.assert_str_contains(tostring(err), [[Expected tuple len 3, got 1]])
+
+    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, 1 }, "testing_space" })
+    t.assert_str_contains(tostring(err), [[Expected tuple len 3, got 4]])
+
+    r, err = api:call("calculate_bucket_id", { { id = 1 }, "testing_space" })
     t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])
 end
 

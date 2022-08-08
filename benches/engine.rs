@@ -26,6 +26,13 @@ pub struct RouterConfigurationMock {
 }
 
 impl CoordinatorMetadata for RouterConfigurationMock {
+    /// Get Table by its name that contains:
+    /// * list of the columns,
+    /// * distribution key of the output tuples (column positions),
+    /// * table name.
+    ///
+    /// # Errors
+    /// - Failed to get table by name from the metadata.
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
         let name = Self::to_name(table_name);
         match self.tables.get(&name) {
@@ -56,6 +63,11 @@ impl CoordinatorMetadata for RouterConfigurationMock {
     ) -> Result<Vec<usize>, QueryPlannerError> {
         let table = self.get_table_segment(&Self::to_name(space))?;
         Ok(table.get_sharding_positions().to_vec())
+    }
+
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        Ok(table.columns.len())
     }
 }
 
@@ -425,6 +437,22 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+        match self
+            .cached_config()
+            .get_fields_amount_by_space(space.as_str())
+        {
+            Ok(fields_amount) => {
+                if fields_amount != rec.len() + 1 {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Expected tuple len {}, got {}",
+                        fields_amount - 1,
+                        rec.len()
+                    )));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+
         match self
             .cached_config()
             .get_sharding_positions_by_space(space.as_str())

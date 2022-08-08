@@ -59,6 +59,11 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         let table = self.get_table_segment(&Self::to_name(space))?;
         Ok(table.get_sharding_positions().to_vec())
     }
+
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
+        let table = self.get_table_segment(&Self::to_name(space))?;
+        Ok(table.columns.len())
+    }
 }
 
 impl Default for RouterConfigurationMock {

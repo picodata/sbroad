@@ -279,9 +279,21 @@ impl Coordinator for RouterRuntime {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+        let fields_amount = self
+            .cached_config()
+            .get_fields_amount_by_space(space.as_str())?;
+        if fields_amount != rec.len() + 1 {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Expected tuple len {}, got {}",
+                fields_amount - 1,
+                rec.len()
+            )));
+        }
+
         let sharding_positions = self
             .cached_config()
             .get_sharding_positions_by_space(space.as_str())?;
+
         let mut tuple = Vec::with_capacity(sharding_positions.len());
         for position in &sharding_positions {
             let value = rec.get(*position).ok_or_else(|| {

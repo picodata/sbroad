@@ -4,9 +4,8 @@ local yaml = require("yaml")
 
 _G.query = nil
 _G.explain = nil
+_G.sharding_func = nil
 _G.calculate_bucket_id = nil
-_G.calculate_bucket_id_by_dict = nil
-_G.calculate_bucket_id_by_tuple = nil
 _G.sql_execute = nil
 _G.set_schema = nil
 
@@ -42,41 +41,23 @@ local function query(query, params)
     return parser_res[1]
 end
 
-local function calculate_bucket_id(space_name, values)
-    checks('string', 'table')
-    local shard_key = cartridge.config_get_deepcopy().schema.spaces[space_name].sharding_key
-
-    local shard_val = ''
-    for _, key in ipairs(shard_key) do
-        shard_val = shard_val .. tostring(values[key])
+local function sharding_func(shard_val)
+    if type(shard_val) ~= 'table' then
+        return box.func["sbroad.calculate_bucket_id"]:call({ tostring(shard_val) })
     end
 
-    local bucket_id = box.func["sbroad.calculate_bucket_id"]:call({ shard_val })
-    return bucket_id
-end
-
-local function calculate_bucket_id_by_dict(space_name, values) -- luacheck: no unused args
-    checks('string', 'table')
-
-    local has_err, calc_err = pcall(
-        function()
-            return box.func["sbroad.calculate_bucket_id_by_dict"]:call({ space_name, values })
-        end
-    )
-
-    if has_err == false then
-        return nil, calc_err
+    local string_value = ''
+    for _, v in ipairs(shard_val) do
+        string_value = string_value .. tostring(v)
     end
 
-    return calc_err
+    return box.func["sbroad.calculate_bucket_id"]:call({ string_value })
 end
 
-local function calculate_bucket_id_by_tuple(space_name, tuple_values) -- luacheck: no unused args
-    checks('string', 'table')
-
+local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
     local has_err, calc_err = pcall(
         function()
-            return box.func["sbroad.calculate_bucket_id_by_tuple"]:call({ space_name, tuple_values })
+            return box.func["sbroad.calculate_bucket_id"]:call({ values, space_name })
         end
     )
 
@@ -105,9 +86,8 @@ end
 local function init(opts) -- luacheck: no unused args
     _G.query = query
     _G.explain = explain
+    _G.sharding_func = sharding_func
     _G.calculate_bucket_id = calculate_bucket_id
-    _G.calculate_bucket_id_by_dict = calculate_bucket_id_by_dict
-    _G.calculate_bucket_id_by_tuple = calculate_bucket_id_by_tuple
     _G.sql_execute = query
     _G.set_schema = set_schema
 
@@ -115,13 +95,6 @@ local function init(opts) -- luacheck: no unused args
             if_not_exists = true, language = 'C'
     })
     box.schema.func.create('sbroad.calculate_bucket_id', {
-            if_not_exists = true, language = 'C'
-    })
-    box.schema.func.create('sbroad.calculate_bucket_id_by_dict', {
-            if_not_exists = true, language = 'C'
-    })
-
-    box.schema.func.create('sbroad.calculate_bucket_id_by_tuple', {
         if_not_exists = true, language = 'C'
     })
 

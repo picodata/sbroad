@@ -16,7 +16,10 @@ pub mod cartridge;
 
 /// A metadata storage trait of the cluster.
 pub trait CoordinatorMetadata {
-    /// Get a table by name.
+    /// Get a table by name that contains:
+    /// * list of the columns,
+    /// * distribution key of the output tuples (column positions),
+    /// * table name.
     ///
     /// # Errors
     /// - Failed to get table by name from the metadata.
@@ -53,6 +56,12 @@ pub trait CoordinatorMetadata {
     /// - Metadata does not contain space
     fn get_sharding_positions_by_space(&self, space: &str)
         -> Result<Vec<usize>, QueryPlannerError>;
+
+    /// Provides amlount of table columns
+    ///
+    /// # Errors
+    /// - Metadata does not contain space
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError>;
 }
 
 /// Cluster configuration.
