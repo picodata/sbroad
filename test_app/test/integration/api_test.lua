@@ -80,7 +80,7 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(r, 360)
 
     r, err = api:call("calculate_bucket_id_by_dict", { "testing_space", { id = 1 }})
-    t.assert_str_contains(tostring(err), [[dict of args missed key/value to calculate bucket_id]])
+    t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])
 end
 
 g.test_incorrect_query = function()

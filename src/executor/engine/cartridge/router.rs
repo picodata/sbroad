@@ -245,21 +245,33 @@ impl Coordinator for RouterRuntime {
     fn extract_sharding_keys_from_map<'engine, 'rec>(
         &'engine self,
         space: String,
-        rec: &'rec HashMap<String, Value>,
+        map: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        self.cached_config()
-            .get_sharding_key_by_space(space.as_str())?
+        let sharding_key = self
+            .cached_config()
+            .get_sharding_key_by_space(space.as_str())?;
+        let quoted_map = map
             .iter()
-            .try_fold(Vec::new(), |mut acc: Vec<&Value>, val| match rec.get(val) {
-                Some(value) => {
-                    acc.push(value);
-                    Ok(acc)
-                }
-                None => Err(QueryPlannerError::CustomError(format!(
-                    "The dict of args missed key/value to calculate bucket_id. Column: {}",
-                    val
-                ))),
-            })
+            .map(|(k, _)| (RouterConfiguration::to_name(k), k.as_str()))
+            .collect::<HashMap<String, &str>>();
+        let mut tuple = Vec::with_capacity(sharding_key.len());
+        for quoted_column in &sharding_key {
+            if let Some(column) = quoted_map.get(quoted_column) {
+                let value = map.get(*column).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Missing sharding key column {:?} in the map {:?}",
+                        column, map
+                    ))
+                })?;
+                tuple.push(value);
+            } else {
+                return Err(QueryPlannerError::CustomError(format!(
+                    "Missing quoted sharding key column {:?} in the quoted map {:?}. Original map: {:?}",
+                    quoted_column, quoted_map, map
+                )));
+            }
+        }
+        Ok(tuple)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -267,19 +279,20 @@ impl Coordinator for RouterRuntime {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        match self
+        let sharding_positions = self
             .cached_config()
-            .get_sharding_positions_by_space(space.as_str())
-        {
-            Ok(tuple) => {
-                let mut vec_values = Vec::new();
-                tuple
-                    .into_iter()
-                    .for_each(|index| vec_values.push(&rec[index]));
-                Ok(vec_values)
-            }
-            Err(e) => Err(e),
+            .get_sharding_positions_by_space(space.as_str())?;
+        let mut tuple = Vec::with_capacity(sharding_positions.len());
+        for position in &sharding_positions {
+            let value = rec.get(*position).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Missing sharding key position {:?} in the tuple {:?}",
+                    position, rec
+                ))
+            })?;
+            tuple.push(value);
         }
+        Ok(tuple)
     }
 
     /// Calculate bucket for a key.
