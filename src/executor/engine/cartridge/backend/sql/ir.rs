@@ -26,7 +26,7 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
         Tuple::from(value)
-            .into_struct::<PatternWithParams>()
+            .decode::<PatternWithParams>()
             .map_err(|e| {
                 QueryPlannerError::CustomError(format!(
                     "Parsing error (pattern with parameters): {:?}",

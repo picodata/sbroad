@@ -218,7 +218,7 @@ impl Coordinator for RouterRuntime {
         let top_id = plan.get_motion_subtree_root(motion_node_id)?;
         let result = self.dispatch(plan, top_id, buckets)?;
         let mut vtable = if let Ok(tuple) = result.downcast::<Tuple>() {
-            let data = tuple.into_struct::<Vec<ProducerResult>>().map_err(|e| {
+            let data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
                 QueryPlannerError::CustomError(format!("Motion node {}. {}", motion_node_id, e))
             })?;
             data.get(0)

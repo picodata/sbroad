@@ -68,11 +68,9 @@ impl TryFrom<FunctionArgs> for DispatchedQuery {
     type Error = QueryPlannerError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        Tuple::from(value)
-            .into_struct::<DispatchedQuery>()
-            .map_err(|e| {
-                QueryPlannerError::CustomError(format!("Parsing error (dispatched query): {:?}", e))
-            })
+        Tuple::from(value).decode::<DispatchedQuery>().map_err(|e| {
+            QueryPlannerError::CustomError(format!("Parsing error (dispatched query): {:?}", e))
+        })
     }
 }
 

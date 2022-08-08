@@ -22,7 +22,7 @@ impl TryFrom<FunctionArgs> for Args {
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
         Tuple::from(value)
-            .into_struct::<Args>()
+            .decode::<Args>()
             .map_err(|e| QueryPlannerError::CustomError(format!("Parsing args error: {:?}", e)))
     }
 }

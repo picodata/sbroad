@@ -10,7 +10,6 @@ else
 		DEST_LIB = sbroad.dylib
 	endif
 endif
-TARGET_PATH := $(shell pwd)/target
 
 bench:
 	make clean
@@ -35,24 +34,12 @@ build_integration:
 	cp -rf target/release/$(SRC_LIB) test_app/.rocks/lib/tarantool/$(DEST_LIB)
 
 clean:
-	rm -rf target/release/libsbroad.*
 	rm -rf target/release/build/sbroad-* 
 	rm -rf target/release/deps/sbroad-* 
 	rm -rf target/release/incremental/sbroad-* 
-	rm -rf target/debug/libsbroad.*
 	rm -rf target/debug/build/sbroad-* 
 	rm -rf target/debug/deps/sbroad-* 
 	rm -rf target/debug/incremental/sbroad-* 
-	rm -rf target/libdecNumber.so
-	rm -rf target/libmsgpuck.so
-
-init:
-	git clean -xfd
-	git submodule foreach --recursive git clean -xfd
-	git reset --hard
-	git submodule foreach --recursive git reset --hard
-	git submodule sync --recursive
-	git submodule update --init --recursive
 
 lint:
 	cargo fmt --all -- --check
@@ -63,8 +50,7 @@ run_integration:
 
 test:
 	make clean
-	cargo test --no-run --features mock -vv
-	LD_PRELOAD=$(TARGET_PATH)/libdecNumber.so LD_LIBRARY_PATH=$(TARGET_PATH) cargo test --features mock -vv
+	cargo test --features mock -vv
 
 test_integration:
 	make build_integration

@@ -15,8 +15,6 @@ default:
         - picodata
     image: docker-public.binary.picodata.io/picodata/picodata/sbroad/sbroad-builder:0.4.1
 build:
-    before_script:
-      - make init
     stage: build
     script:
         - make
@@ -31,22 +29,16 @@ lint:
         - make lint
 
 unit:
-    before_script:
-      - make init
     stage: test
     script:
         - make test
 
 integration:
-    before_script:
-      - make init
     stage: test
     script:
         - make test_integration
 
 bench:
-    before_script:
-      - make init 
     stage: test
     script:
         - make bench_check
