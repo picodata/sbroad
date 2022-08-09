@@ -634,7 +634,7 @@ end
 g.test_except = function()
     local api = cluster:server("api-1").net_box
 
-    r, err = api:call("query", {
+    local r, err = api:call("query", {
         [[insert into "t" ("id", "a") values (?, ?), (?, ?), (?, ?)]],
         {
             3, 777,
@@ -645,7 +645,7 @@ g.test_except = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 3})
 
-    local r, err = api:call("query", { [[
+    r, err = api:call("query", { [[
         SELECT "a" FROM "t" where "id" <= 3
         EXCEPT
         SELECT "a" FROM "t" where "id" > 3
