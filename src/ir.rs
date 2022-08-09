@@ -264,7 +264,7 @@ impl Plan {
         self.nodes.add_const(v)
     }
 
-    /// Add condition note to the plan.
+    /// Add condition node to the plan.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the condition node can't append'.
@@ -275,6 +275,18 @@ impl Plan {
         right: usize,
     ) -> Result<usize, QueryPlannerError> {
         self.nodes.add_bool(left, op, right)
+    }
+
+    /// Add unary operator node to the plan.
+    ///
+    /// # Errors
+    /// - Child node is invalid
+    pub fn add_unary(
+        &mut self,
+        op: operator::Unary,
+        child: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.nodes.add_unary_bool(op, child)
     }
 
     pub fn add_param(&mut self) -> usize {

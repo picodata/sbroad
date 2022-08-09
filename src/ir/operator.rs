@@ -80,6 +80,39 @@ impl Display for Bool {
     }
 }
 
+/// Unary operator returning Bool expression.
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+pub enum Unary {
+    /// `is null`
+    IsNull,
+}
+
+impl Unary {
+    /// Creates `Unary` from the operator string.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the operator is invalid.
+    pub fn from(s: &str) -> Result<Self, QueryPlannerError> {
+        match s.to_lowercase().as_str() {
+            "is null" => Ok(Unary::IsNull),
+            _ => Err(QueryPlannerError::CustomError(format!(
+                "Invalid unary operator: {}",
+                s
+            ))),
+        }
+    }
+}
+
+impl Display for Unary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let op = match &self {
+            Unary::IsNull => "is null",
+        };
+
+        write!(f, "{}", op)
+    }
+}
+
 /// Relational algebra operator returning a new tuple.
 ///
 /// Transforms input tuple(s) into the output one using the

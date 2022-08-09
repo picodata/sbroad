@@ -723,6 +723,16 @@ impl<'p> SyntaxPlan<'p> {
                     };
                     Ok(self.nodes.push_syntax_node(sn))
                 }
+                Expression::Unary { child, op, .. } => {
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        Some(self.nodes.get_syntax_node_id(*child)?),
+                        vec![self
+                            .nodes
+                            .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op)))],
+                    );
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
             },
         }
     }

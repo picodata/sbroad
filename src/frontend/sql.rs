@@ -15,7 +15,7 @@ use crate::frontend::sql::ast::{
 use crate::frontend::sql::ir::{to_name, Translation};
 use crate::frontend::Ast;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
@@ -489,6 +489,27 @@ impl Ast for AbstractSyntaxTree {
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(*id, cond_id);
                 }
+                Type::IsNull => {
+                    let mut to_row = |plan_id| -> Result<usize, QueryPlannerError> {
+                        if let Node::Expression(
+                            Expression::Reference { .. } | Expression::Constant { .. },
+                        ) = plan.get_node(plan_id)?
+                        {
+                            let row_id = plan.nodes.add_row(vec![plan_id], None);
+                            rows.insert(row_id);
+                            Ok(row_id)
+                        } else {
+                            Ok(plan_id)
+                        }
+                    };
+                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!("{:?} has no children.", &node.rule))
+                    })?;
+                    let plan_child_id = to_row(map.get(*ast_child_id)?)?;
+                    let op = Unary::from_node_type(&node.rule)?;
+                    let unary_id = plan.add_unary(op, plan_child_id)?;
+                    map.add(*id, unary_id);
+                }
                 Type::Condition => {
                     let ast_child_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError("Condition has no children.".into())
@@ -799,6 +820,10 @@ impl Plan {
                 },
                 Node::Expression(expr) => match expr {
                     Expression::Alias {
+                        child: ref mut param_id,
+                        ..
+                    }
+                    | Expression::Unary {
                         child: ref mut param_id,
                         ..
                     } => {

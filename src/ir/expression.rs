@@ -90,6 +90,13 @@ pub enum Expression {
         /// of the last "add Motion" transformation.
         distribution: Option<Distribution>,
     },
+    /// Unary expression returning boolean result.
+    Unary {
+        /// Unary operator.
+        op: operator::Unary,
+        /// Child expression node index in the plan node arena.
+        child: usize,
+    },
 }
 
 #[allow(dead_code)]
@@ -297,6 +304,21 @@ impl Nodes {
             }
         }
         Ok(self.add_row(list, distribution))
+    }
+
+    /// Adds unary boolean node.
+    ///
+    /// # Errors
+    /// - child node is invalid
+    pub fn add_unary_bool(
+        &mut self,
+        op: operator::Unary,
+        child: usize,
+    ) -> Result<usize, QueryPlannerError> {
+        self.arena.get(child).ok_or_else(|| {
+            QueryPlannerError::CustomError(format!("Invalid node in the plan arena:{}", child))
+        })?;
+        Ok(self.push(Node::Expression(Expression::Unary { op, child })))
     }
 }
 
@@ -779,6 +801,7 @@ impl Plan {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Bool { .. }
+            | Expression::Unary { .. }
             | Expression::Constant {
                 value: Value::Boolean(_) | Value::Null,
                 ..
@@ -905,6 +928,15 @@ impl Plan {
                         new_list.push(new_column_id);
                     }
                     self.nodes.add_row(new_list, distribution.clone())
+                }
+                Expression::Unary { op, child } => {
+                    let new_child_id = *map.get(&child).ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!(
+                            "Child of unary node {} wasn't found in the clone map",
+                            id
+                        ))
+                    })?;
+                    self.nodes.add_unary_bool(op.clone(), new_child_id)?
                 }
             };
             map.insert(id, new_id);

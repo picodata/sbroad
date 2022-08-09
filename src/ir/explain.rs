@@ -9,7 +9,7 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::Plan;
 
-use super::operator::Bool;
+use super::operator::{Bool, Unary};
 use super::value::Value;
 
 #[derive(Debug, Serialize, Default)]
@@ -37,7 +37,10 @@ impl Col {
                 Expression::Alias { name, .. } => {
                     column.alias = Some(name.to_string());
                 }
-                Expression::Bool { .. } | Expression::Row { .. } | Expression::Constant { .. } => {
+                Expression::Bool { .. }
+                | Expression::Row { .. }
+                | Expression::Constant { .. }
+                | Expression::Unary { .. } => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Expression node [{:?}] is not supported for explain yet",
                         current_node
@@ -223,7 +226,10 @@ impl Row {
                 Expression::Constant { value, .. } => {
                     row.add_col(RowVal::Const(value.clone()));
                 }
-                Expression::Bool { .. } | Expression::Row { .. } | Expression::Alias { .. } => {
+                Expression::Bool { .. }
+                | Expression::Row { .. }
+                | Expression::Alias { .. }
+                | Expression::Unary { .. } => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Expression node [{:?}] is not supported for selection's explain node yet",
                         current_node
@@ -287,6 +293,10 @@ enum Selection {
         op: Bool,
         right: Box<Selection>,
     },
+    UnaryOp {
+        op: Unary,
+        child: Box<Selection>,
+    },
 }
 
 impl Selection {
@@ -315,6 +325,10 @@ impl Selection {
                     "Unsupported expression in selection's explain node".into(),
                 ));
             }
+            Expression::Unary { op, child } => Selection::UnaryOp {
+                op: op.clone(),
+                child: Box::new(Selection::new(plan, *child, ref_map)?),
+            },
         };
 
         Ok(result)
@@ -328,6 +342,9 @@ impl Display for Selection {
             Selection::BinaryOp { left, op, right } => {
                 format!("{} {} {}", left, op, right)
             }
+            Selection::UnaryOp { op, child } => match op {
+                Unary::IsNull => format!("{} {}", child, op),
+            },
         };
 
         write!(f, "{}", s)

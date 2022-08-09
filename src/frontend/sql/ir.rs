@@ -7,13 +7,13 @@ use crate::errors::QueryPlannerError;
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
 impl Bool {
-    /// Create `Bool` from ast node type.
+    /// Creates `Bool` from ast node type.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the operator is invalid.
@@ -34,8 +34,25 @@ impl Bool {
     }
 }
 
+impl Unary {
+    /// Creates `Unary` from ast node type.
+    ///
+    /// # Errors
+    /// Returns `QueryPlannerError` when the operator is invalid.
+    #[allow(dead_code)]
+    pub(super) fn from_node_type(s: &Type) -> Result<Self, QueryPlannerError> {
+        match s {
+            Type::IsNull => Ok(Unary::IsNull),
+            _ => Err(QueryPlannerError::CustomError(format!(
+                "Invalid unary operator: {:?}",
+                s
+            ))),
+        }
+    }
+}
+
 impl Value {
-    /// Create `Value` from ast node type and text.
+    /// Creates `Value` from ast node type and text.
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when the operator is invalid.

@@ -194,7 +194,8 @@ impl ExecutionPlan {
                         Node::Expression(expr) => match expr {
                             Expression::Alias { .. }
                             | Expression::Bool { .. }
-                            | Expression::Row { .. } => {}
+                            | Expression::Row { .. }
+                            | Expression::Unary { .. } => {}
                             Expression::Constant { value, .. } => {
                                 write!(sql, "{}", value).map_err(|e| {
                                     QueryPlannerError::CustomError(format!(

@@ -662,3 +662,21 @@ g.test_except = function()
         },
     })
 end
+
+g.test_is_null = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE "name" IS NULL
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {10}
+        },
+    })
+end

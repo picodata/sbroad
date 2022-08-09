@@ -28,7 +28,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
         ValuesRow = { Row }
 
-Expr = _{  Or | And | Cmp | Primary | Parentheses }
+Expr = _{  Or | And | Unary | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
     Primary = _{ SubQuery | Value | Reference }
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
@@ -53,8 +53,10 @@ Expr = _{  Or | And | Cmp | Primary | Parentheses }
     NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
         NotEqLeft = _{ LtEqRight }
         NotEqRight = _{ NotEq | NotEqLeft }
+    Unary = _{ IsNull }
+        IsNull = { Primary ~ ^"is" ~ ^"null" } 
     And = { AndLeft ~ ^"and" ~ AndRight }
-        AndLeft = _{ Cmp | Primary | Parentheses }
+        AndLeft = _{ Unary | Cmp | Primary | Parentheses }
         AndRight = _{ And | AndLeft }
     Or = { OrLeft ~ ^"or" ~ OrRight }
         OrLeft = _{ AndRight }
