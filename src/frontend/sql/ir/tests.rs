@@ -388,6 +388,23 @@ fn front_sql17() {
 }
 
 #[test]
+fn front_sql18() {
+    let input = r#"SELECT "product_code" FROM "hash_testing"
+        WHERE "product_code" BETWEEN 1 AND 2"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {}",
+            r#"SELECT "hash_testing"."product_code""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") >= (?)"#,
+            r#"and ("hash_testing"."product_code") <= (?)"#,
+        ),
+        vec![Value::from(1_u64), Value::from(2_u64)],
+    );
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;

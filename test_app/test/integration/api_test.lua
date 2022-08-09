@@ -680,3 +680,42 @@ g.test_is_null = function()
         },
     })
 end
+
+g.test_between1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE
+        (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "id" = 2) BETWEEN 1 AND 2
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1},
+            {10}
+        },
+    })
+end
+
+g.test_between2 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("query", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE
+        "id" BETWEEN 1 AND 2
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
+end

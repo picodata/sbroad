@@ -28,9 +28,11 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
         ValuesRow = { Row }
 
-Expr = _{  Or | And | Unary | Cmp | Primary | Parentheses }
+Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
     Primary = _{ SubQuery | Value | Reference }
+    Unary = _{ IsNull }
+        IsNull = { Primary ~ ^"is" ~ ^"null" } 
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
     Eq = { EqLeft ~ "=" ~ EqRight }
         EqLeft = _{ Primary }
@@ -53,10 +55,12 @@ Expr = _{  Or | And | Unary | Cmp | Primary | Parentheses }
     NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
         NotEqLeft = _{ LtEqRight }
         NotEqRight = _{ NotEq | NotEqLeft }
-    Unary = _{ IsNull }
-        IsNull = { Primary ~ ^"is" ~ ^"null" } 
+    Between = { BetweenLeft ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
+        BetweenLeft = _{ Primary }
+        BetweenCenter = _{ Primary }
+        BetweenRight = _{ Primary }
     And = { AndLeft ~ ^"and" ~ AndRight }
-        AndLeft = _{ Unary | Cmp | Primary | Parentheses }
+        AndLeft = _{ Unary | Between | Cmp | Primary | Parentheses }
         AndRight = _{ And | AndLeft }
     Or = { OrLeft ~ ^"or" ~ OrRight }
         OrLeft = _{ AndRight }

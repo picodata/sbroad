@@ -872,10 +872,13 @@ fn redistribution6() {
 }
 
 /// Helper function to extract a motion id from a plan.
-fn get_motion_id(plan: &Plan, slice_id: usize, motion_idx: usize) -> Option<&usize> {
+pub fn get_motion_id(plan: &Plan, slice_id: usize, motion_idx: usize) -> Option<&usize> {
     let slice = plan.slices.as_ref().unwrap().get(slice_id).unwrap();
     slice.get(motion_idx)
 }
+
+#[cfg(test)]
+mod between;
 
 #[cfg(test)]
 mod except;

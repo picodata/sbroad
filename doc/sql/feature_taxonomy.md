@@ -113,7 +113,7 @@
 1.  Subclause 8.2, “comparison predicate”: For supported data types, without support for table subquery: **yes**
 
 ### E061-02. BETWEEN predicate.
-1. Subclause 8.3, “between predicate”: **no**
+1. Subclause 8.3, “between predicate”: **yes**
 
 ### E061-03. IN predicate with list of values.
 1. Subclause 8.4, “in predicate”: Without support for table subquery: **yes**

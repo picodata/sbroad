@@ -461,54 +461,56 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Lt
                 | Type::LtEq
                 | Type::NotEq => {
-                    let mut to_row = |plan_id| -> Result<usize, QueryPlannerError> {
-                        if let Node::Expression(
-                            Expression::Reference { .. } | Expression::Constant { .. },
-                        ) = plan.get_node(plan_id)?
-                        {
-                            let row_id = plan.nodes.add_row(vec![plan_id], None);
-                            rows.insert(row_id);
-                            Ok(row_id)
-                        } else {
-                            Ok(plan_id)
-                        }
-                    };
                     let ast_left_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among comparison children.".into(),
                         )
                     })?;
-                    let plan_left_id = to_row(map.get(*ast_left_id)?)?;
+                    let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Right node id is not found among comparison children.".into(),
                         )
                     })?;
-                    let plan_right_id = to_row(map.get(*ast_right_id)?)?;
+                    let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let op = Bool::from_node_type(&node.rule)?;
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(*id, cond_id);
                 }
                 Type::IsNull => {
-                    let mut to_row = |plan_id| -> Result<usize, QueryPlannerError> {
-                        if let Node::Expression(
-                            Expression::Reference { .. } | Expression::Constant { .. },
-                        ) = plan.get_node(plan_id)?
-                        {
-                            let row_id = plan.nodes.add_row(vec![plan_id], None);
-                            rows.insert(row_id);
-                            Ok(row_id)
-                        } else {
-                            Ok(plan_id)
-                        }
-                    };
                     let ast_child_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!("{:?} has no children.", &node.rule))
                     })?;
-                    let plan_child_id = to_row(map.get(*ast_child_id)?)?;
+                    let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
                     let unary_id = plan.add_unary(op, plan_child_id)?;
                     map.add(*id, unary_id);
+                }
+                Type::Between => {
+                    // left BETWEEN center AND right
+                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Left node id is not found among between children.".into(),
+                        )
+                    })?;
+                    let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
+                    let ast_center_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Center node id is not found among between children.".into(),
+                        )
+                    })?;
+                    let plan_center_id = plan.as_row(map.get(*ast_center_id)?, &mut rows)?;
+                    let ast_right_id = node.children.get(2).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Right node id is not found among between children.".into(),
+                        )
+                    })?;
+                    let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
+
+                    let greater_eq_id = plan.add_cond(plan_left_id, Bool::GtEq, plan_center_id)?;
+                    let less_eq_id = plan.add_cond(plan_left_id, Bool::LtEq, plan_right_id)?;
+                    let and_id = plan.add_cond(greater_eq_id, Bool::And, less_eq_id)?;
+                    map.add(*id, and_id);
                 }
                 Type::Condition => {
                     let ast_child_id = node.children.get(0).ok_or_else(|| {
@@ -869,6 +871,23 @@ impl Plan {
         }
 
         Ok(())
+    }
+
+    /// Wrap references and constants in the plan into rows.
+    fn as_row(
+        &mut self,
+        expr_id: usize,
+        rows: &mut HashSet<usize>,
+    ) -> Result<usize, QueryPlannerError> {
+        if let Node::Expression(Expression::Reference { .. } | Expression::Constant { .. }) =
+            self.get_node(expr_id)?
+        {
+            let row_id = self.nodes.add_row(vec![expr_id], None);
+            rows.insert(row_id);
+            Ok(row_id)
+        } else {
+            Ok(expr_id)
+        }
     }
 }
 

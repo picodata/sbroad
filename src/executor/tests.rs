@@ -1368,3 +1368,6 @@ fn get_motion_policy(plan: &Plan, motion_id: usize) -> &MotionPolicy {
         panic!("Expected a motion node");
     }
 }
+
+#[cfg(test)]
+mod between;
