@@ -460,7 +460,8 @@ impl Ast for AbstractSyntaxTree {
                 | Type::GtEq
                 | Type::Lt
                 | Type::LtEq
-                | Type::NotEq => {
+                | Type::NotEq
+                | Type::NotIn => {
                     let ast_left_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among comparison children.".into(),

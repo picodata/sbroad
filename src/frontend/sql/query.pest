@@ -33,28 +33,31 @@ Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Primary = _{ SubQuery | Value | Reference }
     Unary = _{ IsNull }
         IsNull = { Primary ~ ^"is" ~ ^"null" } 
-    Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq }
+    Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq | NotIn }
     Eq = { EqLeft ~ "=" ~ EqRight }
         EqLeft = _{ Primary }
         EqRight = _{ Eq | EqLeft }
     In = { InLeft ~ ^"in" ~ InRight }
-        InLeft = _{ EqRight }
+        InLeft = _{ Primary }
         InRight = _{ In | InLeft }
     Gt = { GtLeft ~ ">" ~ GtRight }
-        GtLeft = _{ InRight }
+        GtLeft = _{ Primary }
         GtRight = _{ Gt | GtLeft }
     GtEq = { GtEqLeft ~ ">=" ~ GtEqRight }
-        GtEqLeft = _{ GtRight }
+        GtEqLeft = _{ Primary }
         GtEqRight = _{ GtEq | GtEqLeft }
     Lt = { LtLeft ~ "<" ~ LtRight }
-        LtLeft = _{ GtEqRight }
+        LtLeft = _{ Primary }
         LtRight = _{ Lt | LtLeft }
     LtEq = { LtEqLeft ~ "<=" ~ LtEqRight }
-        LtEqLeft = _{ LtRight }
+        LtEqLeft = _{ Primary }
         LtEqRight = _{ LtEq | LtEqLeft }
     NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
-        NotEqLeft = _{ LtEqRight }
+        NotEqLeft = _{ Primary }
         NotEqRight = _{ NotEq | NotEqLeft }
+    NotIn = { NotInLeft ~ ^"not" ~ ^"in" ~ NotInRight }
+        NotInLeft = _{ Primary }
+        NotInRight = _{ NotIn | NotInLeft }
     Between = { BetweenLeft ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
         BetweenLeft = _{ Primary }
         BetweenCenter = _{ Primary }

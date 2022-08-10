@@ -37,6 +37,8 @@ pub enum Bool {
     LtEq,
     /// `!=`
     NotEq,
+    /// `not in`
+    NotIn,
     /// `||`
     Or,
 }
@@ -57,6 +59,7 @@ impl Bool {
             "<" => Ok(Bool::Lt),
             "<=" => Ok(Bool::LtEq),
             "!=" | "<>" => Ok(Bool::NotEq),
+            "not in" => Ok(Bool::NotIn),
             _ => Err(QueryPlannerError::InvalidBool),
         }
     }
@@ -74,6 +77,7 @@ impl Display for Bool {
             Bool::Lt => "<",
             Bool::LtEq => "<=",
             Bool::NotEq => "<>",
+            Bool::NotIn => "not in",
         };
 
         write!(f, "{}", op)

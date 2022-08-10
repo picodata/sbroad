@@ -29,6 +29,7 @@ impl Bool {
             Type::Lt => Ok(Bool::Lt),
             Type::LtEq => Ok(Bool::LtEq),
             Type::NotEq => Ok(Bool::NotEq),
+            Type::NotIn => Ok(Bool::NotIn),
             _ => Err(QueryPlannerError::InvalidBool),
         }
     }

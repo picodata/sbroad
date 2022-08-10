@@ -718,9 +718,12 @@ impl Plan {
                         Bool::Eq | Bool::In => {
                             self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
                         }
-                        Bool::NotEq | Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq => {
-                            MotionPolicy::Full
-                        }
+                        Bool::NotEq
+                        | Bool::NotIn
+                        | Bool::Gt
+                        | Bool::GtEq
+                        | Bool::Lt
+                        | Bool::LtEq => MotionPolicy::Full,
                         Bool::And | Bool::Or => {
                             // "a and 1" or "a or 1" expressions make no sense.
                             return Err(QueryPlannerError::CustomError(
