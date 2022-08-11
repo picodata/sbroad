@@ -67,6 +67,7 @@ g.after_each(
 g.test_bucket_id_calculation = function()
     local api = cluster:server("api-1").net_box
 
+    -- calculate bucket id for space which bucket_id field is the last
     local r, err = api:call("sharding_func", { { 1, "123" } })
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
@@ -87,6 +88,20 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, 360)
 
+     -- calculate bucket id for space which bucket_id field is located in the middle of format
+    local r, err = api:call("calculate_bucket_id", {{ id = 1, name = "123", product_units = 1 }, "testing_space_bucket_in_the_middle" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id", { box.tuple.new{ 1, "123", 1 }, "testing_space_bucket_in_the_middle" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id", { { 1, "123", 1 }, "testing_space_bucket_in_the_middle" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    -- incorrect input
     r, err = api:call("calculate_bucket_id", { { 1 }, "testing_space" })
     t.assert_str_contains(tostring(err), [[Expected tuple len 3, got 1]])
 
@@ -95,6 +110,12 @@ g.test_bucket_id_calculation = function()
 
     r, err = api:call("calculate_bucket_id", { { id = 1 }, "testing_space" })
     t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])
+
+    r, err = api:call("calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
+    t.assert_str_contains(
+        tostring(err),
+        [[expected string, tuple with a space name, or map with a space name as an argument]]
+    )
 end
 
 g.test_incorrect_query = function()
