@@ -147,7 +147,9 @@ impl Coordinator for RouterRuntime {
     type Cache = LRUCache<String, Plan>;
 
     fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
-        *self.ir_cache.borrow_mut() = Self::Cache::new(capacity, None)?;
+        *self.ir_cache.try_borrow_mut().map_err(|e| {
+            QueryPlannerError::CustomError(format!("Failed to clear the cache: {:?}", e))
+        })? = Self::Cache::new(capacity, None)?;
         Ok(())
     }
 

@@ -23,9 +23,18 @@ pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int 
     if ret_code != 0 {
         return ret_code;
     }
-    COORDINATOR_ENGINE.with(|e| {
-        let engine = &*e.borrow();
-        let mut query = match Query::new(engine, &lua_params.pattern, &lua_params.params) {
+    COORDINATOR_ENGINE.with(|engine| {
+        let runtime = match engine.try_borrow() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return tarantool::set_error!(
+                    TarantoolErrorCode::ProcC,
+                    "Failed to borrow the runtime while dispatching the query: {}",
+                    e.to_string()
+                );
+            }
+        };
+        let mut query = match Query::new(&*runtime, &lua_params.pattern, &lua_params.params) {
             Ok(q) => q,
             Err(e) => {
                 say(
@@ -104,9 +113,18 @@ pub extern "C" fn execute_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     if ret_code != 0 {
         return ret_code;
     }
-    SEGMENT_ENGINE.with(|e| {
-        let engine = &*e.borrow();
-        match engine.execute(
+    SEGMENT_ENGINE.with(|engine| {
+        let runtime = match engine.try_borrow() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return tarantool::set_error!(
+                    TarantoolErrorCode::ProcC,
+                    "Failed to borrow the runtime while executing the query: {}",
+                    e.to_string()
+                );
+            }
+        };
+        match runtime.execute(
             lua_params.pattern.as_str(),
             &lua_params.params,
             lua_params.is_data_modifier,

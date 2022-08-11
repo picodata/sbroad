@@ -61,12 +61,19 @@ pub extern "C" fn calculate_bucket_id_by_dict(ctx: FunctionCtx, args: FunctionAr
     if ret_code != 0 {
         return ret_code;
     }
-    COORDINATOR_ENGINE.with(|e| {
-        let engine = &*e.borrow();
+    COORDINATOR_ENGINE.with(|engine| {
+        let runtime = match engine.try_borrow() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return tarantool::set_error!(TarantoolErrorCode::ProcC,
+                    "Failed to borrow the runtime while calculating a bucket id by dictionary: {:?}",
+                    e.to_string());
+            }
+        };
 
-        match engine.extract_sharding_keys(params.space, &params.rec) {
+        match runtime.extract_sharding_keys(params.space, &params.rec) {
             Ok(tuple) => {
-                let bucket_id = engine.determine_bucket_id(&tuple);
+                let bucket_id = runtime.determine_bucket_id(&tuple);
                 ctx.return_mp(&bucket_id).unwrap();
                 0
             }

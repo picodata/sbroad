@@ -100,13 +100,16 @@ where
         let ir_cache = coordinator.ir_cache();
 
         let mut plan = Plan::new();
-        if let Some(cached_ir) = ir_cache.borrow_mut().get(&key)? {
-            plan = cached_ir.clone();
+        let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
+            QueryPlannerError::CustomError(format!("Failed to create a new query: {:?}", e))
+        })?;
+        if let Some(cached_plan) = cache.get(&key)? {
+            plan = cached_plan.clone();
         }
         if plan.is_empty() {
             let ast = C::ParseTree::new(sql)?;
             plan = ast.resolve_metadata(coordinator.cached_config())?;
-            ir_cache.borrow_mut().put(key, plan.clone())?;
+            cache.put(key, plan.clone())?;
         }
         plan.bind_params(params)?;
         plan.optimize()?;

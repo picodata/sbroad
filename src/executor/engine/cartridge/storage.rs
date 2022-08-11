@@ -160,7 +160,15 @@ impl StorageRuntime {
                     Option::from("execute"),
                     &format!("Created prepared statement {}", stmt_id),
                 );
-                self.cache.borrow_mut().put(stmt_id, stmt)?;
+                self.cache
+                    .try_borrow_mut()
+                    .map_err(|e| {
+                        QueryPlannerError::CustomError(format!(
+                            "Failed to put prepared statement {:?} into the cache: {:?}",
+                            stmt, e
+                        ))
+                    })?
+                    .put(stmt_id, stmt)?;
                 stmt_id
             }
             Err(e) => {

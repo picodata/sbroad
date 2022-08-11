@@ -34,11 +34,18 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
 
-    COORDINATOR_ENGINE.with(|e| {
-        let engine = &mut *e.borrow_mut();
-
-        let result = engine.determine_bucket_id(&[&bucket_str]);
-
+    COORDINATOR_ENGINE.with(|engine| {
+        let runtime = match engine.try_borrow() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return tarantool::set_error!(
+                    TarantoolErrorCode::ProcC,
+                    "Failed to borrow the runtime while calculating a bucket id: {:?}",
+                    e
+                )
+            }
+        };
+        let result = runtime.determine_bucket_id(&[&bucket_str]);
         ctx.return_mp(&result).unwrap();
         0
     })

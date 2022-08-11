@@ -39,9 +39,18 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     if ret_code != 0 {
         return ret_code;
     }
-    COORDINATOR_ENGINE.with(|e| {
-        let engine = &*e.borrow();
-        let query = match Query::new(engine, &lua_params.query, &[]) {
+    COORDINATOR_ENGINE.with(|engine| {
+        let runtime = match engine.try_borrow() {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return tarantool::set_error!(
+                    TarantoolErrorCode::ProcC,
+                    "Failed to borrow runtime while explaining the query: {}",
+                    e.to_string()
+                );
+            }
+        };
+        let query = match Query::new(&*runtime, &lua_params.query, &[]) {
             Ok(q) => q,
             Err(e) => {
                 say(
