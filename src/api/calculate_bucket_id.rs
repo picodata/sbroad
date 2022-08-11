@@ -96,7 +96,8 @@ impl TryFrom<FunctionArgs> for Args {
         }
 
         return Err(QueryPlannerError::CustomError(format!(
-            "Parsing args {:?} error, expected string, tuple or map",
+            "Parsing args {:?} error, \
+            expected string, tuple with a space name, or map with a space name as an argument",
             &value
         )));
     }
