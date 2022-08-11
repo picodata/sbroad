@@ -99,7 +99,7 @@ pub trait Coordinator: Configuration {
     ///
     /// # Errors
     /// - Invalid capacity (zero).
-    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError>;
+    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError>;
 
     fn ir_cache(&self) -> &RefCell<Self::Cache>
     where

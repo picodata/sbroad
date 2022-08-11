@@ -239,8 +239,8 @@ impl Coordinator for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
 
-    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
-        *self.ir_cache.borrow_mut() = Self::Cache::new(capacity, None)?;
+    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError> {
+        *self.ir_cache.borrow_mut() = Self::Cache::new(DEFAULT_CAPACITY, None)?;
         Ok(())
     }
 

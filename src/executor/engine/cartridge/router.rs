@@ -146,10 +146,10 @@ impl Coordinator for RouterRuntime {
     type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
 
-    fn clear_ir_cache(&self, capacity: usize) -> Result<(), QueryPlannerError> {
+    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError> {
         *self.ir_cache.try_borrow_mut().map_err(|e| {
             QueryPlannerError::CustomError(format!("Failed to clear the cache: {:?}", e))
-        })? = Self::Cache::new(capacity, None)?;
+        })? = Self::Cache::new(DEFAULT_CAPACITY, None)?;
         Ok(())
     }
 
