@@ -1,5 +1,6 @@
 //! Resolve distribution conflicts and insert motion nodes to IR.
 
+use ahash::RandomState;
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -197,9 +198,9 @@ impl Plan {
     /// - There are more than one sub-query
     pub fn get_sub_query_among_rel_nodes(
         &self,
-        rel_nodes: &HashSet<usize>,
+        rel_nodes: &HashSet<usize, RandomState>,
     ) -> Result<Option<usize>, QueryPlannerError> {
-        let mut sq_set: HashSet<usize> = HashSet::new();
+        let mut sq_set: HashSet<usize, RandomState> = HashSet::with_hasher(RandomState::new());
         for rel_id in rel_nodes {
             if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(*rel_id)? {
                 sq_set.insert(*rel_id);
@@ -240,7 +241,7 @@ impl Plan {
     /// - There are more than one motion node
     pub fn get_motion_among_rel_nodes(
         &self,
-        rel_nodes: &HashSet<usize>,
+        rel_nodes: &HashSet<usize, RandomState>,
     ) -> Result<Option<usize>, QueryPlannerError> {
         let mut motion_set: HashSet<usize> = HashSet::new();
 

@@ -438,7 +438,7 @@ impl Plan {
             }
 
             if let Some(list_of_column_nodes) = ref_node.children() {
-                let child_ids = targets.clone().ok_or_else(|| {
+                let child_ids = targets.as_ref().ok_or_else(|| {
                     QueryPlannerError::CustomError("Node refs to scan node, not alias".into())
                 })?;
                 let column_index_in_list = child_ids.get(0).ok_or_else(|| {

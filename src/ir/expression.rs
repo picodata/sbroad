@@ -729,8 +729,8 @@ impl Plan {
     pub fn get_relational_from_row_nodes(
         &self,
         row_id: usize,
-    ) -> Result<HashSet<usize>, QueryPlannerError> {
-        let mut rel_nodes: HashSet<usize> = HashSet::new();
+    ) -> Result<HashSet<usize, RandomState>, QueryPlannerError> {
+        let mut rel_nodes: HashSet<usize, RandomState> = HashSet::with_hasher(RandomState::new());
 
         let row = self.get_expression_node(row_id)?;
         if let Expression::Row { .. } = row {

@@ -6,6 +6,7 @@ use crate::ir::operator::Relational;
 use crate::ir::relation::*;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
+use ahash::RandomState;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -52,7 +53,8 @@ fn segment_motion_for_sub_query() {
     let select_id = plan.add_select(&children[..], eq_id).unwrap();
     plan.set_top(select_id).unwrap();
 
-    let mut expected_rel_set: HashSet<usize> = HashSet::new();
+    let mut expected_rel_set: HashSet<usize, RandomState> =
+        HashSet::with_hasher(RandomState::new());
     expected_rel_set.insert(sq_id);
     assert_eq!(
         expected_rel_set,
