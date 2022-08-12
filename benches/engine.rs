@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
-use sbroad::executor::engine::{Configuration, Coordinator, CoordinatorMetadata};
+use sbroad::executor::engine::{
+    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
+    CoordinatorMetadata,
+};
 use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::result::ProducerResult;
@@ -53,7 +56,7 @@ impl CoordinatorMetadata for RouterConfigurationMock {
     }
 
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         table.get_sharding_column_names()
     }
 
@@ -61,12 +64,12 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         &self,
         space: &str,
     ) -> Result<Vec<usize>, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         Ok(table.get_sharding_positions().to_vec())
     }
 
     fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         Ok(table.columns.len())
     }
 }
@@ -421,15 +424,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        Ok(self
-            .cached_config()
-            .get_sharding_key_by_space(&space)
-            .unwrap()
-            .iter()
-            .fold(Vec::new(), |mut acc: Vec<&Value>, v| {
-                acc.push(args.get(v).unwrap());
-                acc
-            }))
+        sharding_keys_from_map(self.cached_config(), &space, args)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -437,34 +432,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        match self
-            .cached_config()
-            .get_fields_amount_by_space(space.as_str())
-        {
-            Ok(fields_amount) => {
-                if fields_amount != rec.len() + 1 {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Expected tuple len {}, got {}",
-                        fields_amount - 1,
-                        rec.len()
-                    )));
-                }
-            }
-            Err(e) => return Err(e),
-        }
-
-        match self
-            .cached_config()
-            .get_sharding_positions_by_space(space.as_str())
-        {
-            Ok(vec) => {
-                let mut vec_values = Vec::new();
-                vec.into_iter()
-                    .for_each(|index| vec_values.push(&rec[index]));
-                Ok(vec_values)
-            }
-            Err(e) => Err(e),
-        }
+        sharding_keys_from_tuple(self.cached_config(), &space, rec)
     }
 
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {

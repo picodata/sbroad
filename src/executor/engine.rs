@@ -4,6 +4,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use crate::errors::QueryPlannerError;
@@ -34,13 +35,7 @@ pub trait CoordinatorMetadata {
 
     #[must_use]
     fn to_name(s: &str) -> String {
-        if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-            s.to_string()
-        } else if s.to_uppercase() == s {
-            s.to_lowercase()
-        } else {
-            format!("\"{}\"", s)
-        }
+        to_name(s)
     }
 
     /// Provides vector of the sharding key column names or an error
@@ -149,6 +144,116 @@ pub trait Coordinator: Configuration {
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &[&Value]) -> u64;
+}
+
+/// A common function for all engines to calculate the sharding key value from a tuple.
+///
+/// # Errors
+/// - The space was not found in the metadata.
+/// - The sharding keys are not present in the space.
+pub fn sharding_keys_from_tuple<'rec>(
+    conf: &impl CoordinatorMetadata,
+    space: &str,
+    tuple: &'rec [Value],
+) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    let sharding_positions = conf.get_sharding_positions_by_space(space)?;
+    let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());
+    let table_col_amount = conf.get_fields_amount_by_space(space)?;
+    if table_col_amount == tuple.len() {
+        // The tuple contains a "bucket_id" column.
+        for position in &sharding_positions {
+            let value = tuple.get(*position).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Missing sharding key position {:?} in the tuple {:?}",
+                    position, tuple
+                ))
+            })?;
+            sharding_tuple.push(value);
+        }
+        Ok(sharding_tuple)
+    } else if table_col_amount == tuple.len() + 1 {
+        // The tuple doesn't contain the "bucket_id" column.
+        let table = conf.get_table_segment(space)?;
+        let bucket_position = table.get_bucket_id_position()?;
+
+        // If the "bucket_id" splits the sharding key, we need to shift the sharding
+        // key positions of the right part by one.
+        // For example, we have a table with columns a, bucket_id, b, and the sharding
+        // key is (a, b). Then the sharding key positions are (0, 2).
+        // If someone gives us a tuple (42, 666) we should tread is as (42, null, 666).
+        for position in &sharding_positions {
+            let corrected_pos = match position.cmp(&bucket_position) {
+                Ordering::Less => *position,
+                Ordering::Equal => {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        r#"The tuple {:?} contains a "bucket_id" position {} in a sharding key {:?}"#,
+                        tuple, position, sharding_positions
+                    )))
+                }
+                Ordering::Greater => *position - 1,
+            };
+            let value = tuple.get(corrected_pos).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Missing sharding key position {:?} in the tuple {:?}",
+                    corrected_pos, tuple
+                ))
+            })?;
+            sharding_tuple.push(value);
+        }
+        Ok(sharding_tuple)
+    } else {
+        Err(QueryPlannerError::CustomError(format!(
+            "The tuple {:?} was expected to have {} filed(s), got {}.",
+            tuple,
+            table_col_amount - 1,
+            tuple.len()
+        )))
+    }
+}
+
+/// A common function for all engines to calculate the sharding key value from a map.
+///
+/// # Errors
+/// - The space was not found in the metadata.
+/// - The sharding keys are not present in the space.
+pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
+    conf: &impl CoordinatorMetadata,
+    space: &str,
+    map: &'rec HashMap<String, Value, S>,
+) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    let sharding_key = conf.get_sharding_key_by_space(space)?;
+    let quoted_map = map
+        .iter()
+        .map(|(k, _)| (to_name(k), k.as_str()))
+        .collect::<HashMap<String, &str>>();
+    let mut tuple = Vec::with_capacity(sharding_key.len());
+    for quoted_column in &sharding_key {
+        if let Some(column) = quoted_map.get(quoted_column) {
+            let value = map.get(*column).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!(
+                    "Missing sharding key column {:?} in the map {:?}",
+                    column, map
+                ))
+            })?;
+            tuple.push(value);
+        } else {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Missing quoted sharding key column {:?} in the quoted map {:?}. Original map: {:?}",
+                quoted_column, quoted_map, map
+            )));
+        }
+    }
+    Ok(tuple)
+}
+
+fn to_name(s: &str) -> String {
+    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
+        s.to_string()
+    } else if s.to_uppercase() == s {
+        s.to_lowercase()
+    } else {
+        format!("\"{}\"", s)
+    }
 }
 
 #[cfg(test)]

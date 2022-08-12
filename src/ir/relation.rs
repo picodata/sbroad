@@ -249,11 +249,11 @@ impl Table {
         Ok(ts)
     }
 
-    /// Get position of the sharding column in the table.
+    /// Get position of the `bucket_id` system column in the table.
     ///
     /// # Errors
-    /// - Table doesn't have an exactly one sharding column.
-    pub fn get_sharding_column_position(&self) -> Result<usize, QueryPlannerError> {
+    /// - Table doesn't have an exactly one `bucket_id` column.
+    pub fn get_bucket_id_position(&self) -> Result<usize, QueryPlannerError> {
         let positions: Vec<usize> = self
             .columns
             .iter()
@@ -264,10 +264,10 @@ impl Table {
         match positions.len().cmp(&1) {
             Ordering::Equal => Ok(positions[0]),
             Ordering::Greater => Err(QueryPlannerError::CustomError(
-                "Table has more than one sharding column".into(),
+                "Table has more than one bucket_id column".into(),
             )),
             Ordering::Less => Err(QueryPlannerError::CustomError(
-                "Table has no sharding columns".into(),
+                "Table has no bucket_id columns".into(),
             )),
         }
     }

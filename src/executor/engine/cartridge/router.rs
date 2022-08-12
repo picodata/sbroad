@@ -16,7 +16,9 @@ use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
-use crate::executor::engine::{Configuration, Coordinator};
+use crate::executor::engine::{
+    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
+};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::ProducerResult;
@@ -247,31 +249,7 @@ impl Coordinator for RouterRuntime {
         space: String,
         map: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        let sharding_key = self
-            .cached_config()
-            .get_sharding_key_by_space(space.as_str())?;
-        let quoted_map = map
-            .iter()
-            .map(|(k, _)| (RouterConfiguration::to_name(k), k.as_str()))
-            .collect::<HashMap<String, &str>>();
-        let mut tuple = Vec::with_capacity(sharding_key.len());
-        for quoted_column in &sharding_key {
-            if let Some(column) = quoted_map.get(quoted_column) {
-                let value = map.get(*column).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Missing sharding key column {:?} in the map {:?}",
-                        column, map
-                    ))
-                })?;
-                tuple.push(value);
-            } else {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Missing quoted sharding key column {:?} in the quoted map {:?}. Original map: {:?}",
-                    quoted_column, quoted_map, map
-                )));
-            }
-        }
-        Ok(tuple)
+        sharding_keys_from_map(&self.metadata, &space, map)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -279,32 +257,7 @@ impl Coordinator for RouterRuntime {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        let fields_amount = self
-            .cached_config()
-            .get_fields_amount_by_space(space.as_str())?;
-        if fields_amount != rec.len() + 1 {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Expected tuple len {}, got {}",
-                fields_amount - 1,
-                rec.len()
-            )));
-        }
-
-        let sharding_positions = self
-            .cached_config()
-            .get_sharding_positions_by_space(space.as_str())?;
-
-        let mut tuple = Vec::with_capacity(sharding_positions.len());
-        for position in &sharding_positions {
-            let value = rec.get(*position).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Missing sharding key position {:?} in the tuple {:?}",
-                    position, rec
-                ))
-            })?;
-            tuple.push(value);
-        }
-        Ok(tuple)
+        sharding_keys_from_tuple(self.cached_config(), &space, rec)
     }
 
     /// Calculate bucket for a key.

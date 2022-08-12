@@ -103,10 +103,15 @@ g.test_bucket_id_calculation = function()
 
     -- incorrect input
     r, err = api:call("calculate_bucket_id", { { 1 }, "testing_space" })
-    t.assert_str_contains(tostring(err), [[Expected tuple len 3, got 1]])
+    t.assert_str_contains(tostring(err), [[expected to have 3 filed(s), got 1]])
 
-    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, 1 }, "testing_space" })
-    t.assert_str_contains(tostring(err), [[Expected tuple len 3, got 4]])
+    -- Test with a "bucket_id" field in the tuple.
+    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, box.NULL }, "testing_space" })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, 360)
+
+    r, err = api:call("calculate_bucket_id", { { 1, "123", 1, 1, 1 }, "testing_space" })
+    t.assert_str_contains(tostring(err), [[expected to have 3 filed(s), got 5]])
 
     r, err = api:call("calculate_bucket_id", { { id = 1 }, "testing_space" })
     t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])

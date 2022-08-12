@@ -434,7 +434,7 @@ impl Plan {
                                     relation
                                 ))
                             })?;
-                            let sharding_column_pos = table.get_sharding_column_position()?;
+                            let sharding_column_pos = table.get_bucket_id_position()?;
                             // Take an advantage of the fact that the output aliases
                             // in the relation scan are in the same order as its columns.
                             list.iter()

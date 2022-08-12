@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::{Configuration, Coordinator};
+use crate::executor::engine::{
+    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
+};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::ProducerResult;
@@ -299,15 +301,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        Ok(self
-            .cached_config()
-            .get_sharding_key_by_space(&space)
-            .unwrap()
-            .iter()
-            .fold(Vec::new(), |mut acc: Vec<&Value>, v| {
-                acc.push(args.get(v).unwrap());
-                acc
-            }))
+        sharding_keys_from_map(&self.metadata, &space, args)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -315,18 +309,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-        match self
-            .cached_config()
-            .get_sharding_positions_by_space(space.as_str())
-        {
-            Ok(vec) => {
-                let mut vec_values = Vec::new();
-                vec.into_iter()
-                    .for_each(|index| vec_values.push(&rec[index]));
-                Ok(vec_values)
-            }
-            Err(e) => Err(e),
-        }
+        sharding_keys_from_tuple(self.cached_config(), &space, rec)
     }
 
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {

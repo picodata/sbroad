@@ -853,7 +853,7 @@ impl Plan {
                 let rel = self.get_relation(relation).ok_or_else(|| {
                     QueryPlannerError::CustomError(format!("Relation {} not found", relation))
                 })?;
-                rel.get_sharding_column_position()?
+                rel.get_bucket_id_position()?
             } else {
                 return Err(QueryPlannerError::CustomError(
                     "Expected insert node".into(),
