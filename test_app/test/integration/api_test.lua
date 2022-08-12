@@ -130,6 +130,41 @@ g.test_incorrect_query = function()
     t.assert_str_contains(tostring(err), "Parsing error")
 end
 
+g.test_not_eq = function()
+    local api = cluster:server("api-1").net_box
+    -- id=1 already in space
+    local r, err = api:call("query", {
+        [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?), (?, ?, ?)]],
+        {2, "123", 2, 3, "123", 3}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+
+    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" <> 1]], { } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {{2, "123", 2}, {3, "123", 3}},
+    })
+
+
+    local r, err = api:call("query", { [[SELECT * FROM "testing_space" where "id" <> 1 and "product_units" <> 3]], { } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {{2, "123", 2}},
+    })
+end
+
 g.test_join_query_is_valid = function()
     local api = cluster:server("api-1").net_box
 
