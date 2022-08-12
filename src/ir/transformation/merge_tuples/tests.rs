@@ -92,3 +92,17 @@ fn merge_tuples5() {
 
     assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
 }
+
+#[test]
+fn merge_tuples6() {
+    let input = r#"SELECT "a" FROM "t" WHERE "a" <> 1 and "b" <> 2"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" FROM "t""#, r#"WHERE ("t"."b") <> (?) and ("t"."a") <> (?)"#,
+        ),
+        vec![Value::from(2_u64), Value::from(1_u64)],
+    );
+
+    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+}

@@ -70,8 +70,8 @@ impl Chain {
                 )));
             }
 
-            // Merge expression into tuples only for equality (and non-equality) operators.
-            if let Bool::Eq | Bool::NotEq = op {
+            // Merge expression into tuples only for equality operators.
+            if let Bool::Eq = op {
                 // Try to put expressions with references to the left side.
                 let (left_id, right_id, group_op) =
                     match (plan.is_ref(*left)?, plan.is_ref(*right)?) {
