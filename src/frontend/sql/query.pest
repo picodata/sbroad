@@ -31,8 +31,9 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
 Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
     Primary = _{ SubQuery | Value | Reference }
-    Unary = _{ IsNull }
-        IsNull = { Primary ~ ^"is" ~ ^"null" } 
+    Unary = _{ IsNull | IsNotNull}
+        IsNull = { Primary ~ ^"is" ~ ^"null" }
+        IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq | NotIn }
     Eq = { EqLeft ~ "=" ~ EqRight }
         EqLeft = _{ Primary }

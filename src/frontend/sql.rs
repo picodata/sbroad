@@ -478,7 +478,7 @@ impl Ast for AbstractSyntaxTree {
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(*id, cond_id);
                 }
-                Type::IsNull => {
+                Type::IsNull | Type::IsNotNull => {
                     let ast_child_id = node.children.get(0).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!("{:?} has no children.", &node.rule))
                     })?;

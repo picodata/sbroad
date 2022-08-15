@@ -44,6 +44,7 @@ impl Unary {
     pub(super) fn from_node_type(s: &Type) -> Result<Self, QueryPlannerError> {
         match s {
             Type::IsNull => Ok(Unary::IsNull),
+            Type::IsNotNull => Ok(Unary::IsNotNull),
             _ => Err(QueryPlannerError::CustomError(format!(
                 "Invalid unary operator: {:?}",
                 s

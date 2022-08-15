@@ -8,6 +8,8 @@ g.before_each(
     function()
         local api = cluster:server("api-1").net_box
 
+        -- "testing_space" contains:
+        -- [1, "123", 1]
         local r, err = api:call("sbroad.execute", {
             [[insert into "testing_space" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 1}
@@ -15,6 +17,8 @@ g.before_each(
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
+        -- "testing_space_hist" contains:
+        -- [1, "123", 5]
         r, err = api:call("sbroad.execute", {
             [[insert into "testing_space_hist" ("id", "name", "product_units") values (?, ?, ?)]],
             {1, "123", 5}
@@ -22,6 +26,9 @@ g.before_each(
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 1})
 
+        -- "space_simple_shard_key" contains:
+        -- [1, "ok", 1]
+        -- [10, NULL, 0]
         r, err = api:call("sbroad.execute", {
             [[insert into "space_simple_shard_key" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok", 1, 10, box.NULL, 0}
@@ -29,6 +36,9 @@ g.before_each(
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
 
+        -- "space_simple_shard_key_hist" contains:
+        -- [1, "ok_hist", 3]
+        -- [2, "ok_hist_2", 1]
         r, err = api:call("sbroad.execute", {
             [[insert into "space_simple_shard_key_hist" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
             {1, "ok_hist", 3, 2, "ok_hist_2", 1}
@@ -36,6 +46,9 @@ g.before_each(
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
 
+        -- "t" contains:
+        -- [1, 4.2]
+        -- [2, decimal(6.66)]
         r, err = api:call("sbroad.execute", {
             [[insert into "t" ("id", "a") values (?, ?), (?, ?)]],
             {1, 4.2, 2, require('decimal').new(6.66)}
@@ -820,6 +833,41 @@ g.test_is_null = function()
         },
         rows = {
             {10}
+        },
+    })
+end
+
+g.test_is_not_null_1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE "name" IS NOT NULL and "id" = 10
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+        },
+    })
+end
+
+g.test_is_not_null_2 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE "name" IS NOT NULL
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}
         },
     })
 end

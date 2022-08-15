@@ -89,6 +89,8 @@ impl Display for Bool {
 pub enum Unary {
     /// `is null`
     IsNull,
+    /// `is not null`
+    IsNotNull,
 }
 
 impl Unary {
@@ -99,6 +101,7 @@ impl Unary {
     pub fn from(s: &str) -> Result<Self, QueryPlannerError> {
         match s.to_lowercase().as_str() {
             "is null" => Ok(Unary::IsNull),
+            "is not null" => Ok(Unary::IsNotNull),
             _ => Err(QueryPlannerError::CustomError(format!(
                 "Invalid unary operator: {}",
                 s
@@ -111,6 +114,7 @@ impl Display for Unary {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let op = match &self {
             Unary::IsNull => "is null",
+            Unary::IsNotNull => "is not null",
         };
 
         write!(f, "{}", op)

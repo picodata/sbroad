@@ -405,6 +405,22 @@ fn front_sql18() {
 }
 
 #[test]
+fn front_sql19() {
+    let input = r#"SELECT "identification_number" FROM "hash_testing"
+        WHERE "product_code" IS NOT NULL"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "hash_testing"."identification_number""#,
+            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") is not null"#,
+        ),
+        vec![],
+    );
+
+    assert_eq!(sql_to_sql(input, &[], &no_transform), expected);
+}
+
+#[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;

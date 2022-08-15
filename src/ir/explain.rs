@@ -344,6 +344,7 @@ impl Display for Selection {
             }
             Selection::UnaryOp { op, child } => match op {
                 Unary::IsNull => format!("{} {}", child, op),
+                Unary::IsNotNull => format!("{} {}", child, op),
             },
         };
 
