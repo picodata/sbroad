@@ -8,11 +8,11 @@ use std::collections::{HashMap, HashSet};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
-use crate::executor::engine::CoordinatorMetadata;
+use crate::executor::engine::{normalize_name_from_sql, CoordinatorMetadata};
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode, Type,
 };
-use crate::frontend::sql::ir::{to_name, Translation};
+use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational, Unary};
@@ -118,12 +118,14 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
-                    if let Some(ast_scan_name_id) = node.children.get(1) {
-                        let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
-                        if let Type::ScanName = ast_scan_name.rule {
+                    if let Some(ast_scan_id) = node.children.get(1) {
+                        let ast_scan = self.nodes.get_node(*ast_scan_id)?;
+                        if let Type::ScanName = ast_scan.rule {
+                            let ast_scan_name =
+                                ast_scan.value.as_deref().map(normalize_name_from_sql);
                             // Update scan name in the plan.
                             let scan = plan.get_mut_relation_node(plan_child_id)?;
-                            scan.set_scan_name(ast_scan_name.value.as_ref().map(|s| to_name(s)))?;
+                            scan.set_scan_name(ast_scan_name)?;
                         } else {
                             return Err(QueryPlannerError::CustomError(
                                 "Expected scan name AST node.".into(),
@@ -136,7 +138,7 @@ impl Ast for AbstractSyntaxTree {
                         let table = node_val.as_str();
                         let t = metadata.get_table_segment(table)?;
                         plan.add_rel(t);
-                        let scan_id = plan.add_scan(table, None)?;
+                        let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
                         map.add(*id, scan_id);
                     } else {
                         return Err(QueryPlannerError::CustomError(
@@ -161,7 +163,7 @@ impl Ast for AbstractSyntaxTree {
                                 ast_alias.rule
                             )));
                         }
-                        ast_alias.value.as_deref().map(to_name)
+                        ast_alias.value.as_deref().map(normalize_name_from_sql)
                     } else {
                         None
                     };
@@ -179,7 +181,8 @@ impl Ast for AbstractSyntaxTree {
                     let get_column_name = |ast_id: usize| -> Result<String, QueryPlannerError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
                         if let Type::ColumnName = ast_col_name.rule {
-                            let name: Option<String> = ast_col_name.value.as_deref().map(to_name);
+                            let name: Option<String> =
+                                ast_col_name.value.as_deref().map(normalize_name_from_sql);
                             Ok(name.ok_or_else(|| {
                                 QueryPlannerError::CustomError("Empty AST column name".into())
                             })?)
@@ -212,20 +215,20 @@ impl Ast for AbstractSyntaxTree {
                     if let (Some(plan_left_id), Some(plan_right_id)) =
                         (plan_rel_list.get(0), plan_rel_list.get(1))
                     {
-                        if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
+                        if let (Some(ast_scan_id), Some(ast_col_name_id)) =
                             (node.children.get(0), node.children.get(1))
                         {
-                            let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
-                            if let Type::ScanName = ast_scan_name.rule {
+                            let ast_scan = self.nodes.get_node(*ast_scan_id)?;
+                            if let Type::ScanName = ast_scan.rule {
                                 // Get the column name and its positions in the output tuples.
                                 let col_name = get_column_name(*ast_col_name_id)?;
                                 let left_name = get_scan_name(&col_name, *plan_left_id)?;
                                 let right_name = get_scan_name(&col_name, *plan_right_id)?;
                                 // Check that the AST scan name matches to the children scan names in the plan join node.
-                                let scan_name: Option<String> =
-                                    ast_scan_name.value.as_deref().map(to_name);
+                                let ast_scan_name: Option<String> =
+                                    ast_scan.value.as_deref().map(normalize_name_from_sql);
                                 // Determine the referred side of the join (left or right).
-                                if left_name == scan_name {
+                                if left_name == ast_scan_name {
                                     let left_col_map = plan
                                         .get_relation_node(*plan_left_id)?
                                         .output_alias_position_map(&plan.nodes)?;
@@ -243,7 +246,7 @@ impl Ast for AbstractSyntaxTree {
                                             col_name, left_name
                                         )));
                                     }
-                                } else if right_name == scan_name {
+                                } else if right_name == ast_scan_name {
                                     let right_col_map = plan
                                         .get_relation_node(*plan_right_id)?
                                         .output_alias_position_map(&plan.nodes)?;
@@ -315,21 +318,27 @@ impl Ast for AbstractSyntaxTree {
                     } else if let (Some(plan_rel_id), None) =
                         (plan_rel_list.get(0), plan_rel_list.get(1))
                     {
-                        let col_name: String = if let (
-                            Some(ast_scan_name_id),
-                            Some(ast_col_name_id),
-                        ) = (node.children.get(0), node.children.get(1))
+                        let col_name: String = if let (Some(ast_scan_id), Some(ast_col_id)) =
+                            (node.children.get(0), node.children.get(1))
                         {
                             // Get column name.
-                            let col_name = get_column_name(*ast_col_name_id)?;
+                            let col_name = get_column_name(*ast_col_id)?;
                             // Check that scan name in the reference matches to the one in scan node.
-                            let ast_scan_name = self.nodes.get_node(*ast_scan_name_id)?;
-                            if let Type::ScanName = ast_scan_name.rule {
+                            let ast_scan = self.nodes.get_node(*ast_scan_id)?;
+                            if let Type::ScanName = ast_scan.rule {
+                                let ast_scan_name = Some(normalize_name_from_sql(
+                                    ast_scan.value.as_ref().ok_or_else(|| {
+                                        QueryPlannerError::CustomError(
+                                            "Expected AST node to have a non-empty scan name."
+                                                .into(),
+                                        )
+                                    })?,
+                                ));
                                 let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
-                                if plan_scan_name != ast_scan_name.value {
+                                if plan_scan_name != ast_scan_name {
                                     return Err(QueryPlannerError::CustomError(
                                             format!("Scan name for the column {:?} doesn't match: expected {:?}, found {:?}",
-                                            get_column_name(*ast_col_name_id), plan_scan_name, ast_scan_name.value
+                                            get_column_name(*ast_col_id), plan_scan_name, ast_scan_name
                                         )));
                                 }
                             } else {
@@ -338,11 +347,11 @@ impl Ast for AbstractSyntaxTree {
                                 ));
                             };
                             col_name
-                        } else if let (Some(ast_col_name_id), None) =
+                        } else if let (Some(ast_col_id), None) =
                             (node.children.get(0), node.children.get(1))
                         {
                             // Get the column name.
-                            get_column_name(*ast_col_name_id)?
+                            get_column_name(*ast_col_id)?
                         } else {
                             return Err(QueryPlannerError::CustomError(
                                 "No child node found in the AST reference.".into(),
@@ -423,7 +432,9 @@ impl Ast for AbstractSyntaxTree {
                         .ok_or_else(|| {
                             QueryPlannerError::CustomError("Alias name is not found.".into())
                         })?;
-                    let plan_alias_id = plan.nodes.add_alias(&to_name(name), plan_ref_id)?;
+                    let plan_alias_id = plan
+                        .nodes
+                        .add_alias(&normalize_name_from_sql(name), plan_ref_id)?;
                     map.add(*id, plan_alias_id);
                 }
                 Type::Column => {
@@ -893,5 +904,5 @@ impl Plan {
 }
 
 pub mod ast;
-mod ir;
+pub mod ir;
 pub mod tree;

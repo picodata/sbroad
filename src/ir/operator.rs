@@ -606,7 +606,10 @@ impl Plan {
                 return Ok(scan_id);
             }
         }
-        Err(QueryPlannerError::InvalidRelation)
+        Err(QueryPlannerError::CustomError(format!(
+            "Failed to find relation {} among the plan relations",
+            table
+        )))
     }
 
     /// Adds inner join node.

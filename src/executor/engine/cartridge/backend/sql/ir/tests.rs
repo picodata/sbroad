@@ -131,10 +131,10 @@ fn from_sub_query() {
         PatternWithParams::new(
             format!(
                 "{} {} {} {}",
-                r#"SELECT t1."product_code" FROM"#,
+                r#"SELECT "T1"."product_code" FROM"#,
                 r#"(SELECT "hash_testing"."product_code" FROM "hash_testing""#,
-                r#"WHERE ("hash_testing"."identification_number") = (?)) as t1"#,
-                r#"WHERE (t1."product_code") = (?)"#
+                r#"WHERE ("hash_testing"."identification_number") = (?)) as "T1""#,
+                r#"WHERE ("T1"."product_code") = (?)"#
             ),
             vec![Value::from(1_u64), Value::from("a")],
         ),

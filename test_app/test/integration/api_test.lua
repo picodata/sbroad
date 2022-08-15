@@ -910,3 +910,51 @@ g.test_between2 = function()
         },
     })
 end
+
+g.test_uppercase1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM broken
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "number"},
+        },
+        rows = {},
+    })
+end
+
+g.test_uppercase2 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM BROKEN
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "number"},
+        },
+        rows = {},
+    })
+end
+
+g.test_uppercase3 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "BROKEN"
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "number"},
+        },
+        rows = {},
+    })
+end

@@ -17,7 +17,8 @@ use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use crate::executor::engine::{
-    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
+    normalize_name_from_schema, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
+    Coordinator,
 };
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
@@ -130,7 +131,7 @@ impl Configuration for RouterRuntime {
             let mut metadata = RouterConfiguration::new();
             metadata.set_waiting_timeout(timeout);
             metadata.set_cache_capacity(router_capacity);
-            metadata.set_sharding_column(RouterConfiguration::to_name(column.as_str()));
+            metadata.set_sharding_column(normalize_name_from_schema(column.as_str()));
             // We should always load the schema **after** setting the sharding column.
             metadata.load_schema(&schema)?;
 

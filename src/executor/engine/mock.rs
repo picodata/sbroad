@@ -6,7 +6,8 @@ use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
-    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
+    normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
+    Coordinator,
 };
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
@@ -31,7 +32,7 @@ pub struct RouterConfigurationMock {
 
 impl CoordinatorMetadata for RouterConfigurationMock {
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
-        let name = Self::to_name(table_name);
+        let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::CustomError(format!(
@@ -50,7 +51,7 @@ impl CoordinatorMetadata for RouterConfigurationMock {
     }
 
     fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         table.get_sharding_column_names()
     }
 
@@ -58,12 +59,12 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         &self,
         space: &str,
     ) -> Result<Vec<usize>, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         Ok(table.get_sharding_positions().to_vec())
     }
 
     fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
-        let table = self.get_table_segment(&Self::to_name(space))?;
+        let table = self.get_table_segment(space)?;
         Ok(table.columns.len())
     }
 }

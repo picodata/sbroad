@@ -150,13 +150,13 @@ fn front_sql6() {
     let expected = PatternWithParams::new(
         format!(
             "{} {} {} {} {} {} {} {}",
-            r#"SELECT t."id", "hash_testing"."product_units""#,
+            r#"SELECT "T"."id", "hash_testing"."product_units""#,
             r#"FROM (SELECT "hash_testing"."identification_number","#,
             r#""hash_testing"."product_code","#,
             r#""hash_testing"."product_units","#,
             r#""hash_testing"."sys_op" FROM "hash_testing") as "hash_testing""#,
-            r#"INNER JOIN (SELECT "test_space"."id" FROM "test_space") as t"#,
-            r#"ON ("hash_testing"."identification_number") = (t."id")"#,
+            r#"INNER JOIN (SELECT "test_space"."id" FROM "test_space") as "T""#,
+            r#"ON ("hash_testing"."identification_number") = ("T"."id")"#,
             r#"WHERE ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
         ),
         vec![Value::from(5_u64), Value::from("123")],
@@ -196,8 +196,8 @@ fn front_sql8() {
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
-            r#"SELECT t."identification_number", t."product_code""#,
-            r#"FROM "hash_testing" as t WHERE (t."identification_number") = (?)"#,
+            r#"SELECT "T"."identification_number", "T"."product_code""#,
+            r#"FROM "hash_testing" as "T" WHERE ("T"."identification_number") = (?)"#,
         ),
         vec![Value::from(1_u64)],
     );

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
 use crate::errors::QueryPlannerError;
+use crate::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::executor::CoordinatorMetadata;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
@@ -72,6 +73,7 @@ impl RouterConfiguration {
     ///
     /// # Errors
     /// Returns `QueryPlannerError` when schema contains errors.
+    #[allow(clippy::too_many_lines)]
     fn init_table_segments(&mut self, schema: &Yaml) -> Result<(), QueryPlannerError> {
         self.tables.clear();
         let spaces = match schema["spaces"].as_hash() {
@@ -93,7 +95,20 @@ impl RouterConfiguration {
                                 Some(t) => Type::new(t)?,
                                 None => return Err(QueryPlannerError::TypeNotImplemented),
                             };
-                            let qualified_name = Self::to_name(name);
+                            let qualified_name = normalize_name_from_schema(name);
+                            #[cfg(not(feature = "mock"))]
+                            {
+                                say(
+                                    SayLevel::Debug,
+                                    file!(),
+                                    line!().try_into().unwrap_or(0),
+                                    Option::from("configuration parsing"),
+                                    &format!(
+                                        "Column's original name: {}, qualified name {}",
+                                        name, qualified_name
+                                    ),
+                                );
+                            }
                             let role = if self.get_sharding_column().eq(&qualified_name) {
                                 ColumnRole::Sharding
                             } else {
@@ -142,7 +157,7 @@ impl RouterConfiguration {
                                     continue;
                                 }
                             };
-                            result.push(Self::to_name(key));
+                            result.push(normalize_name_from_schema(key));
                         }
                         result
                     }
@@ -161,7 +176,20 @@ impl RouterConfiguration {
                     }
                 };
 
-                let table_name: String = RouterConfiguration::to_name(current_space_name);
+                let table_name: String = normalize_name_from_schema(current_space_name);
+                #[cfg(not(feature = "mock"))]
+                {
+                    say(
+                        SayLevel::Debug,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("configuration parsing"),
+                        &format!(
+                            "Table's original name: {}, qualified name {}",
+                            current_space_name, table_name
+                        ),
+                    );
+                }
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
                 let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
                 self.tables.insert(table_name, t);
@@ -200,12 +228,12 @@ impl CoordinatorMetadata for RouterConfiguration {
     /// Returns `QueryPlannerError` when table was not found.
     #[allow(dead_code)]
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
-        let name = Self::to_name(table_name);
+        let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::CustomError(format!(
                 "Space {} not found",
-                table_name
+                name
             ))),
         }
     }

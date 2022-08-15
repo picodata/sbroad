@@ -118,13 +118,6 @@ impl Translation {
     }
 }
 
-pub(super) fn to_name(s: &str) -> String {
-    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return s.to_string();
-    }
-    s.to_lowercase()
-}
-
 #[derive(Hash, PartialEq, Debug)]
 struct SubQuery {
     relational: usize,

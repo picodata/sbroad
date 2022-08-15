@@ -532,7 +532,7 @@ fn join_linker4_test() {
     });
     virtual_t2.add_tuple(vec![Value::from(1_u64)]);
     virtual_t2.add_tuple(vec![Value::from(2_u64)]);
-    virtual_t2.set_alias("t2").unwrap();
+    virtual_t2.set_alias("\"T2\"").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
@@ -584,13 +584,13 @@ fn join_linker4_test() {
             Value::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {}",
-                    r#"SELECT t1."id" FROM (SELECT"#,
-                    r#"t1."id", t1."sysFrom", t1."FIRST_NAME", t1."sys_op""#,
-                    r#"FROM "test_space" as t1) as t1"#,
+                    r#"SELECT "T1"."id" FROM (SELECT"#,
+                    r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
+                    r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
-                    r#"ON (t1."id") = (t2."r_id")"#,
-                    r#"and (t1."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (?),(?)))"#,
+                    r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as "T2""#,
+                    r#"ON ("T1"."id") = ("T2"."r_id")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (?),(?)))"#,
                 ),
                 vec![Value::from(2_u64), Value::from(2_u64), Value::from(3_u64)],
             ))),
@@ -600,13 +600,13 @@ fn join_linker4_test() {
             Value::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {}",
-                    r#"SELECT t1."id" FROM (SELECT"#,
-                    r#"t1."id", t1."sysFrom", t1."FIRST_NAME", t1."sys_op""#,
-                    r#"FROM "test_space" as t1) as t1"#,
+                    r#"SELECT "T1"."id" FROM (SELECT"#,
+                    r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
+                    r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as t2"#,
-                    r#"ON (t1."id") = (t2."r_id")"#,
-                    r#"and (t1."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (?),(?)))"#,
+                    r#"(SELECT COLUMN_1 as "r_id" FROM (VALUES (?))) as "T2""#,
+                    r#"ON ("T1"."id") = ("T2"."r_id")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT COLUMN_3 as "fn" FROM (VALUES (?),(?)))"#,
                 ),
                 vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
             ))),

@@ -33,11 +33,6 @@ pub trait CoordinatorMetadata {
 
     fn get_sharding_column(&self) -> &str;
 
-    #[must_use]
-    fn to_name(s: &str) -> String {
-        to_name(s)
-    }
-
     /// Provides vector of the sharding key column names or an error
     ///
     /// # Errors
@@ -156,9 +151,10 @@ pub fn sharding_keys_from_tuple<'rec>(
     space: &str,
     tuple: &'rec [Value],
 ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-    let sharding_positions = conf.get_sharding_positions_by_space(space)?;
+    let quoted_space = normalize_name_from_schema(space);
+    let sharding_positions = conf.get_sharding_positions_by_space(&quoted_space)?;
     let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());
-    let table_col_amount = conf.get_fields_amount_by_space(space)?;
+    let table_col_amount = conf.get_fields_amount_by_space(&quoted_space)?;
     if table_col_amount == tuple.len() {
         // The tuple contains a "bucket_id" column.
         for position in &sharding_positions {
@@ -173,7 +169,7 @@ pub fn sharding_keys_from_tuple<'rec>(
         Ok(sharding_tuple)
     } else if table_col_amount == tuple.len() + 1 {
         // The tuple doesn't contain the "bucket_id" column.
-        let table = conf.get_table_segment(space)?;
+        let table = conf.get_table_segment(&quoted_space)?;
         let bucket_position = table.get_bucket_id_position()?;
 
         // If the "bucket_id" splits the sharding key, we need to shift the sharding
@@ -221,10 +217,11 @@ pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
     space: &str,
     map: &'rec HashMap<String, Value, S>,
 ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
-    let sharding_key = conf.get_sharding_key_by_space(space)?;
+    let quoted_space = normalize_name_from_schema(space);
+    let sharding_key = conf.get_sharding_key_by_space(&quoted_space)?;
     let quoted_map = map
         .iter()
-        .map(|(k, _)| (to_name(k), k.as_str()))
+        .map(|(k, _)| (normalize_name_from_schema(k), k.as_str()))
         .collect::<HashMap<String, &str>>();
     let mut tuple = Vec::with_capacity(sharding_key.len());
     for quoted_column in &sharding_key {
@@ -246,14 +243,17 @@ pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
     Ok(tuple)
 }
 
-fn to_name(s: &str) -> String {
+#[must_use]
+pub fn normalize_name_from_schema(s: &str) -> String {
+    format!("\"{}\"", s)
+}
+
+#[must_use]
+pub fn normalize_name_from_sql(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        s.to_string()
-    } else if s.to_uppercase() == s {
-        s.to_lowercase()
-    } else {
-        format!("\"{}\"", s)
+        return s.to_string();
     }
+    format!("\"{}\"", s.to_uppercase())
 }
 
 #[cfg(test)]

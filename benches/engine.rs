@@ -8,8 +8,8 @@ use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{
-    sharding_keys_from_map, sharding_keys_from_tuple, Configuration, Coordinator,
-    CoordinatorMetadata,
+    normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
+    Coordinator, CoordinatorMetadata,
 };
 use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
@@ -37,7 +37,7 @@ impl CoordinatorMetadata for RouterConfigurationMock {
     /// # Errors
     /// - Failed to get table by name from the metadata.
     fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
-        let name = Self::to_name(table_name);
+        let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::CustomError(format!(
