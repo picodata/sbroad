@@ -694,6 +694,34 @@ g.test_insert_6 = function()
     })
 end
 
+-- check empty string
+g.test_insert_7 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (8, 8, '')]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "bucket_id", type = "unsigned"},
+        },
+        rows = {
+            {1, "ok", 1, 3940},
+            {8, "", 8, 12104},
+            {10, box.NULL, 0, 11520}
+        },
+    })
+end
+
 g.test_decimal_double = function()
     local api = cluster:server("api-1").net_box
 

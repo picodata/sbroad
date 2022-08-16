@@ -72,7 +72,7 @@ Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
 
 
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
-String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")+ }
+String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
 Keyword = { ^"except" | ^"union" | ^"where" }
 Character = _{ ASCII_ALPHANUMERIC | 'А' .. 'Я' | 'а' .. 'я' | Other | Punctuation | SYMBOL }
 Punctuation = _{
