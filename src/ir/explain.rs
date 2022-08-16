@@ -343,8 +343,7 @@ impl Display for Selection {
                 format!("{} {} {}", left, op, right)
             }
             Selection::UnaryOp { op, child } => match op {
-                Unary::IsNull => format!("{} {}", child, op),
-                Unary::IsNotNull => format!("{} {}", child, op),
+                Unary::IsNull | Unary::IsNotNull => format!("{} {}", child, op),
             },
         };
 
