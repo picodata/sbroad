@@ -884,3 +884,6 @@ mod between;
 
 #[cfg(test)]
 mod except;
+
+#[cfg(test)]
+mod not_in;

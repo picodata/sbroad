@@ -280,7 +280,7 @@ impl Plan {
     ) -> Result<MotionPolicy, QueryPlannerError> {
         let outer_dist = self.get_distribution(outer_id)?;
         let inner_dist = self.get_distribution(inner_id)?;
-        if Bool::Eq == *op || Bool::In == *op {
+        if Bool::Eq == *op || Bool::In == *op || Bool::NotEq == *op || Bool::NotIn == *op {
             if let Distribution::Segment {
                 keys: ref keys_outer,
             } = outer_dist
@@ -716,15 +716,10 @@ impl Plan {
                 }
                 (Expression::Row { .. }, Expression::Row { .. }) => {
                     match bool_op.op {
-                        Bool::Eq | Bool::In => {
+                        Bool::Eq | Bool::In | Bool::NotEq | Bool::NotIn => {
                             self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
                         }
-                        Bool::NotEq
-                        | Bool::NotIn
-                        | Bool::Gt
-                        | Bool::GtEq
-                        | Bool::Lt
-                        | Bool::LtEq => MotionPolicy::Full,
+                        Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq => MotionPolicy::Full,
                         Bool::And | Bool::Or => {
                             // "a and 1" or "a or 1" expressions make no sense.
                             return Err(QueryPlannerError::CustomError(
