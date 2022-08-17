@@ -1,6 +1,8 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
+use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -22,7 +24,8 @@ fn one_table_projection() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -53,7 +56,8 @@ fn one_table_with_asterisk() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -90,7 +94,8 @@ fn union_all() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -124,7 +129,8 @@ fn from_sub_query() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -161,7 +167,8 @@ fn from_sub_query_with_union() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -195,7 +202,8 @@ fn inner_join() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -231,7 +239,8 @@ fn inner_join_with_sq() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -266,7 +275,8 @@ fn selection_with_sq() {
     plan.bind_params(&[]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
@@ -303,7 +313,8 @@ fn except() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let nodes = ex_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(

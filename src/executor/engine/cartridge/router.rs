@@ -13,7 +13,8 @@ use tarantool::tuple::Tuple;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
+use crate::executor::engine::cartridge::backend::sql::ir::{get_sql_order, PatternWithParams};
+use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use crate::executor::engine::{
@@ -167,7 +168,8 @@ impl Coordinator for RouterRuntime {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let nodes = plan.get_sql_order(top_id)?;
+        let mut sp = SyntaxPlan::new(plan, top_id)?;
+        let nodes = get_sql_order(&mut sp)?;
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
         let mut rs_query: HashMap<String, PatternWithParams> = HashMap::new();

@@ -5,6 +5,8 @@ use std::collections::{HashMap, HashSet};
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
+use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator,
@@ -275,7 +277,8 @@ impl Coordinator for RouterRuntimeMock {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let mut result = ProducerResult::new();
-        let nodes = plan.get_sql_order(top_id)?;
+        let mut sp = SyntaxPlan::new(plan, top_id)?;
+        let nodes = get_sql_order(&mut sp)?;
 
         match buckets {
             Buckets::All => {

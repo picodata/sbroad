@@ -236,7 +236,7 @@ impl Plan {
     pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, QueryPlannerError> {
         if let Node::Relational(rel) = self.get_node(node)? {
             if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
-                let mut cols: Vec<usize> = Vec::new();
+                let mut cols: Vec<usize> = Vec::with_capacity(list.len());
                 for alias in list {
                     if let Node::Expression(Expression::Alias { child, .. }) =
                         self.get_node(*alias)?
@@ -458,14 +458,14 @@ impl Plan {
                 let column_expr_node = self.get_expression_node(column_rel_node.output())?;
 
                 let col_alias_idx =
-                    *column_expr_node
+                    column_expr_node
                         .get_row_list()?
                         .get(*position)
                         .ok_or_else(|| {
                             QueryPlannerError::CustomError("Invalid position in row list".into())
                         })?;
 
-                let col_alias_node = self.get_expression_node(col_alias_idx)?;
+                let col_alias_node = self.get_expression_node(*col_alias_idx)?;
                 match col_alias_node {
                     Expression::Alias { name, .. } => return Ok(name),
                     _ => return Err(QueryPlannerError::CustomError("Expected alias node".into())),

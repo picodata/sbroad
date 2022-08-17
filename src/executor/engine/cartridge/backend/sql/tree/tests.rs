@@ -3,6 +3,8 @@ use std::path::Path;
 
 use pretty_assertions::assert_eq;
 
+use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
+use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
@@ -64,23 +66,24 @@ fn sql_order_selection() {
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // get nodes in the sql-convenient order
-    let nodes = exec_plan.get_sql_order(top_id).unwrap();
+    let mut sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
+    let nodes = get_sql_order(&mut sp).unwrap();
     let mut nodes_iter = nodes.into_iter();
-    assert_eq!(Some(SyntaxData::PlanId(16)), nodes_iter.next()); // projection
-    assert_eq!(Some(SyntaxData::PlanId(14)), nodes_iter.next()); // alias
-    assert_eq!(Some(SyntaxData::PlanId(13)), nodes_iter.next()); // ref
-    assert_eq!(Some(SyntaxData::From), nodes_iter.next()); // from
-    assert_eq!(Some(SyntaxData::PlanId(3)), nodes_iter.next()); // scan
-    assert_eq!(Some(SyntaxData::PlanId(12)), nodes_iter.next()); // selection
-    assert_eq!(Some(SyntaxData::PlanId(5)), nodes_iter.next()); // row
-    assert_eq!(Some(SyntaxData::OpenParenthesis), nodes_iter.next()); // (
-    assert_eq!(Some(SyntaxData::PlanId(4)), nodes_iter.next()); // ref a
-    assert_eq!(Some(SyntaxData::CloseParenthesis), nodes_iter.next()); // )
-    assert_eq!(Some(SyntaxData::PlanId(8)), nodes_iter.next()); // bool
-    assert_eq!(Some(SyntaxData::Operator("=".into())), nodes_iter.next()); // =
-    assert_eq!(Some(SyntaxData::PlanId(7)), nodes_iter.next()); // row
-    assert_eq!(Some(SyntaxData::OpenParenthesis), nodes_iter.next()); // (
-    assert_eq!(Some(SyntaxData::Parameter(6)), nodes_iter.next()); // parameter
-    assert_eq!(Some(SyntaxData::CloseParenthesis), nodes_iter.next()); // )
+    assert_eq!(Some(&SyntaxData::PlanId(16)), nodes_iter.next()); // projection
+    assert_eq!(Some(&SyntaxData::PlanId(14)), nodes_iter.next()); // alias
+    assert_eq!(Some(&SyntaxData::PlanId(13)), nodes_iter.next()); // ref
+    assert_eq!(Some(&SyntaxData::From), nodes_iter.next()); // from
+    assert_eq!(Some(&SyntaxData::PlanId(3)), nodes_iter.next()); // scan
+    assert_eq!(Some(&SyntaxData::PlanId(12)), nodes_iter.next()); // selection
+    assert_eq!(Some(&SyntaxData::PlanId(5)), nodes_iter.next()); // row
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next()); // (
+    assert_eq!(Some(&SyntaxData::PlanId(4)), nodes_iter.next()); // ref a
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next()); // )
+    assert_eq!(Some(&SyntaxData::PlanId(8)), nodes_iter.next()); // bool
+    assert_eq!(Some(&SyntaxData::Operator("=".into())), nodes_iter.next()); // =
+    assert_eq!(Some(&SyntaxData::PlanId(7)), nodes_iter.next()); // row
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next()); // (
+    assert_eq!(Some(&SyntaxData::Parameter(6)), nodes_iter.next()); // parameter
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next()); // )
     assert_eq!(None, nodes_iter.next());
 }

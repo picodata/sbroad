@@ -68,43 +68,6 @@ impl From<PatternWithParams> for String {
 }
 
 impl ExecutionPlan {
-    /// Traverse plan sub-tree (pointed by top) in the order
-    /// convenient for SQL serialization.
-    ///
-    /// # Panics
-    /// - the amount of nodes exceeds `isize::MAX / usize` bytes
-    ///
-    /// # Errors
-    /// - top node is invalid
-    /// - plan is invalid
-    #[allow(dead_code)]
-    pub fn get_sql_order(&self, top: usize) -> Result<Vec<SyntaxData>, QueryPlannerError> {
-        let mut sp = SyntaxPlan::new(self, top)?;
-        // Result with plan node ids.
-        let mut result: Vec<SyntaxData> = Vec::with_capacity(sp.nodes.arena.len());
-        // Stack to keep syntax node data.
-        let mut stack: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());
-
-        // Make a destructive in-order traversal over the syntax plan
-        // nodes (left and right pointers for any wrapped node become
-        // None or removed). It seems to be the fastest traversal
-        // approach in Rust (`take()` and `pop()`).
-        stack.push(sp.get_top()?);
-        while let Some(id) = stack.last() {
-            let sn = sp.nodes.get_mut_syntax_node(*id)?;
-            if let Some(left_id) = sn.left.take() {
-                stack.push(left_id);
-            } else if let Some(id) = stack.pop() {
-                let sn_next = sp.nodes.get_mut_syntax_node(id)?;
-                result.push(sn_next.data.clone());
-                while let Some(right_id) = sn_next.right.pop() {
-                    stack.push(right_id);
-                }
-            }
-        }
-        Ok(result)
-    }
-
     /// Transform plan sub-tree (pointed by top) to sql string
     ///
     /// # Errors
@@ -113,7 +76,7 @@ impl ExecutionPlan {
     #[allow(clippy::too_many_lines)]
     pub fn syntax_nodes_as_sql(
         &self,
-        nodes: &[SyntaxData],
+        nodes: &[&SyntaxData],
         buckets: &Buckets,
     ) -> Result<PatternWithParams, QueryPlannerError> {
         let mut params: Vec<Value> = Vec::new();
@@ -334,6 +297,49 @@ impl ExecutionPlan {
         let top = self.get_ir_plan().get_relation_node(top_id)?;
         Ok(top.is_insert())
     }
+}
+
+/// Traverse plan sub-tree (pointed by top) in the order
+/// convenient for SQL serialization.
+///
+/// # Panics
+/// - the amount of nodes exceeds `isize::MAX / usize` bytes
+///
+/// # Errors
+/// - top node is invalid
+/// - plan is invalid
+pub fn get_sql_order<'sp>(
+    sp: &'sp mut SyntaxPlan,
+) -> Result<Vec<&'sp SyntaxData>, QueryPlannerError> {
+    // Result with plan node ids.
+    let mut positions: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());
+    // Stack to keep syntax node data.
+    let mut stack: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());
+
+    // Make a destructive in-order traversal over the syntax plan
+    // nodes (left and right pointers for any wrapped node become
+    // None or removed). It seems to be the fastest traversal
+    // approach in Rust (`take()` and `pop()`).
+    stack.push(sp.get_top()?);
+    while let Some(id) = stack.last() {
+        let sn = sp.nodes.get_mut_syntax_node(*id)?;
+        if let Some(left_id) = sn.left.take() {
+            stack.push(left_id);
+        } else if let Some(id) = stack.pop() {
+            positions.push(id);
+            let sn_next = sp.nodes.get_mut_syntax_node(id)?;
+            while let Some(right_id) = sn_next.right.pop() {
+                stack.push(right_id);
+            }
+        }
+    }
+
+    let mut result: Vec<&SyntaxData> = Vec::with_capacity(positions.len());
+    for id in positions {
+        result.push(&sp.nodes.get_syntax_node(id)?.data);
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
