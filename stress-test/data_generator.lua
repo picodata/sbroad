@@ -158,12 +158,12 @@ storage2:eval("return box.space.vehicle_actual:truncate();")
 storage2:eval("return box.space.vehicle_history:truncate();")
 
 for i = 1, record_count, 1 do
-    api:call("query", {
+    api:call("sbroad.execute", {
         [[insert into "vehicle_actual" ("id", "gov_number", "sys_op") values (?, ?, ?)]],
         {i, "a777a750", 0}
     })
 
-    api:call("query", {
+    api:call("sbroad.execute", {
         [[insert into "vehicle_history" ("id", "gov_number", "sys_op") values (?, ?, ?)]],
         {i, "a777a750", 0}
     })

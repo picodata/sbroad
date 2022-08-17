@@ -23,5 +23,5 @@ let pattern = `SELECT *
     WHERE "id" = ?`
 
 export default () => {
-    tarantool.call(client, "query", [pattern, [randomItem(ids)]]);
+    tarantool.call(client, "sbroad.execute", [pattern, [randomItem(ids)]]);
 }

@@ -1376,7 +1376,7 @@ insert into "%s" (
 
 for i = 1, record_count, 1 do
     local pattern_vehicle_actual = string.format(pattern, "vehicle_actual")
-    _, err = api:call("query", {
+    _, err = api:call("sbroad.execute", {
         pattern_vehicle_actual, {
             i, i,
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",
@@ -1396,7 +1396,7 @@ for i = 1, record_count, 1 do
     end
 
     local pattern_vehicle_history = string.format(pattern, "vehicle_history")
-    _, err = api:call("query", {
+    _, err = api:call("sbroad.execute", {
         pattern_vehicle_history, {
             i, i,
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",

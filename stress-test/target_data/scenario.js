@@ -37,5 +37,5 @@ const pattern = `SELECT *
     WHERE "reestrid" = ?`
 
 export default () => {
-    tarantool.call(get_client(), "query", [pattern, [randomItem(ids)]]);
+    tarantool.call(get_client(), "sbroad.execute", [pattern, [randomItem(ids)]]);
 }
