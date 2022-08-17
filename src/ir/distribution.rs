@@ -147,57 +147,60 @@ impl Plan {
             HashMap::with_hasher(RandomState::new());
         let mut parent_node: Option<usize> = None;
 
-        let mut populate_maps = |pos: usize, expr_id: usize| -> Result<(), QueryPlannerError> {
-            let expr = self.get_expression_node(expr_id)?;
-            if let Expression::Reference {
-                targets,
-                position,
-                parent,
-                ..
-            } = expr
-            {
-                parent_node = *parent;
-                let parent_id = parent.ok_or(QueryPlannerError::CustomError(
-                    "Parent node is not set".to_string(),
-                ))?;
-                let rel_op = self.get_relation_node(parent_id)?;
+        if let Node::Expression(Expression::Row { list, .. }) = self.get_node(row_id)? {
+            // Gather information about children nodes that are referred to by the row references.
+            table_set.reserve(list.len());
+            table_pos_map.reserve(list.len());
 
-                if let Some(children) = rel_op.children() {
-                    // References in the branch node.
-                    let child_pos_list: &Vec<usize> = targets
-                        .as_ref()
-                        .ok_or(QueryPlannerError::InvalidReference)?;
-                    for target in child_pos_list {
-                        let child_node: usize = *children
-                            .get(*target)
-                            .ok_or(QueryPlannerError::ValueOutOfRange)?;
-                        child_set.insert(child_node);
-                        child_pos_map.insert((child_node, *position), pos);
-                    }
-                } else {
-                    // References in the leaf (relation scan) node.
-                    if targets.is_some() {
-                        return Err(QueryPlannerError::InvalidReference);
-                    }
-                    match rel_op {
-                        Relational::ScanRelation { relation, .. } => {
-                            table_set.insert(relation.clone());
-                            table_pos_map.insert(*position, pos);
+            let mut populate_maps = |pos: usize, expr_id: usize| -> Result<(), QueryPlannerError> {
+                let expr = self.get_expression_node(expr_id)?;
+                if let Expression::Reference {
+                    targets,
+                    position,
+                    parent,
+                    ..
+                } = expr
+                {
+                    parent_node = *parent;
+                    let parent_id = parent.ok_or(QueryPlannerError::CustomError(
+                        "Parent node is not set".to_string(),
+                    ))?;
+                    let rel_op = self.get_relation_node(parent_id)?;
+
+                    if let Some(children) = rel_op.children() {
+                        // References in the branch node.
+                        let child_pos_list: &Vec<usize> = targets
+                            .as_ref()
+                            .ok_or(QueryPlannerError::InvalidReference)?;
+                        for target in child_pos_list {
+                            let child_node: &usize = children
+                                .get(*target)
+                                .ok_or(QueryPlannerError::ValueOutOfRange)?;
+                            child_set.insert(*child_node);
+                            child_pos_map.insert((*child_node, *position), pos);
                         }
-                        Relational::Values { .. } => {
-                            // Nothing to do here, we'll set replicated distribution later.
-                        }
-                        _ => {
+                    } else {
+                        // References in the leaf (relation scan) node.
+                        if targets.is_some() {
                             return Err(QueryPlannerError::InvalidReference);
+                        }
+                        match rel_op {
+                            Relational::ScanRelation { relation, .. } => {
+                                table_set.insert(relation.clone());
+                                table_pos_map.insert(*position, pos);
+                            }
+                            Relational::Values { .. } => {
+                                // Nothing to do here, we'll set replicated distribution later.
+                            }
+                            _ => {
+                                return Err(QueryPlannerError::InvalidReference);
+                            }
                         }
                     }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
 
-        if let Node::Expression(Expression::Row { list, .. }) = self.get_node(row_id)? {
-            // Gather information about children nodes that are referred to by the row references.
             for (pos, id) in list.iter().enumerate() {
                 if let Node::Expression(Expression::Alias { child, .. }) = self.get_node(*id)? {
                     populate_maps(pos, *child)?;
