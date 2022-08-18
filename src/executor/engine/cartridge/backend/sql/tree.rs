@@ -1,5 +1,6 @@
 use ahash::RandomState;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
@@ -12,7 +13,7 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::Node;
 
 /// Payload of the syntax tree node.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub enum SyntaxData {
     /// "as alias_name"
     Alias(String),
@@ -33,11 +34,11 @@ pub enum SyntaxData {
     /// parameter (a wrapper over a plan constants)
     Parameter(usize),
     /// virtual table
-    VTable(Box<VirtualTable>),
+    VTable(Rc<VirtualTable>),
 }
 
 /// A syntax tree node.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct SyntaxNode {
     /// Payload
     pub(crate) data: SyntaxData,
@@ -133,7 +134,7 @@ impl SyntaxNode {
         }
     }
 
-    fn new_vtable(value: Box<VirtualTable>) -> Self {
+    fn new_vtable(value: Rc<VirtualTable>) -> Self {
         SyntaxNode {
             data: SyntaxData::VTable(value),
             left: None,
@@ -143,7 +144,7 @@ impl SyntaxNode {
 }
 
 /// Storage for the syntax nodes.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SyntaxNodes {
     pub(crate) arena: Vec<SyntaxNode>,
     map: HashMap<usize, usize, RandomState>,
@@ -573,7 +574,7 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Motion { .. } => {
-                    let vtable = self.plan.get_motion_vtable(id)?.clone();
+                    let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);
                     let child_id = self.plan.get_motion_child(id)?;
                     let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
@@ -582,7 +583,7 @@ impl<'p> SyntaxPlan<'p> {
                         children = Vec::from([
                             self.nodes.push_syntax_node(SyntaxNode::new_open()),
                             self.nodes
-                                .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
+                                .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
                             self.nodes.push_syntax_node(SyntaxNode::new_close()),
                         ]);
 
@@ -592,7 +593,7 @@ impl<'p> SyntaxPlan<'p> {
                     } else {
                         children.push(
                             self.nodes
-                                .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
+                                .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
                         );
                     }
 
@@ -660,7 +661,7 @@ impl<'p> SyntaxPlan<'p> {
 
                     if let Some(motion_id) = ir_plan.get_motion_among_rel_nodes(&rel_ids)? {
                         // Replace motion node to virtual table node
-                        let vtable = self.plan.get_motion_vtable(motion_id)?.clone();
+                        let vtable = self.plan.get_motion_vtable(motion_id)?;
                         if vtable.get_alias().is_none() {
                             let sn = SyntaxNode::new_pointer(
                                 id,
@@ -668,7 +669,9 @@ impl<'p> SyntaxPlan<'p> {
                                 vec![
                                     self.nodes.push_syntax_node(SyntaxNode::new_open()),
                                     self.nodes
-                                        .push_syntax_node(SyntaxNode::new_vtable(Box::new(vtable))),
+                                        .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(
+                                            &vtable,
+                                        ))),
                                     self.nodes.push_syntax_node(SyntaxNode::new_close()),
                                 ],
                             );

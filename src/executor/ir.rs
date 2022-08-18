@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::errors::QueryPlannerError;
 use crate::errors::QueryPlannerError::CustomError;
@@ -10,7 +11,7 @@ use crate::ir::Plan;
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     plan: Plan,
-    vtables: Option<HashMap<usize, VirtualTable>>,
+    vtables: Option<HashMap<usize, Rc<VirtualTable>>>,
 }
 
 impl From<Plan> for ExecutionPlan {
@@ -34,15 +35,15 @@ impl ExecutionPlan {
     }
 
     #[must_use]
-    pub fn get_vtables(&self) -> Option<&HashMap<usize, VirtualTable>> {
+    pub fn get_vtables(&self) -> Option<&HashMap<usize, Rc<VirtualTable>>> {
         self.vtables.as_ref()
     }
 
-    pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<usize, VirtualTable>> {
+    pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<usize, Rc<VirtualTable>>> {
         self.vtables.as_mut()
     }
 
-    pub fn set_vtables(&mut self, vtables: HashMap<usize, VirtualTable>) {
+    pub fn set_vtables(&mut self, vtables: HashMap<usize, Rc<VirtualTable>>) {
         self.vtables = Some(vtables);
     }
 
@@ -50,10 +51,13 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - Failed to find a virtual table for the motion node.
-    pub fn get_motion_vtable(&self, motion_id: usize) -> Result<&VirtualTable, QueryPlannerError> {
+    pub fn get_motion_vtable(
+        &self,
+        motion_id: usize,
+    ) -> Result<Rc<VirtualTable>, QueryPlannerError> {
         if let Some(vtable) = &self.vtables {
             if let Some(result) = vtable.get(&motion_id) {
-                return Ok(result);
+                return Ok(Rc::clone(result));
             }
         }
 

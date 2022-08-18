@@ -26,6 +26,7 @@
 use ahash::RandomState;
 use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
+use std::rc::Rc;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
@@ -200,7 +201,7 @@ where
         }
 
         if let Some(vtables) = self.exec_plan.get_mut_vtables() {
-            vtables.insert(motion_id, vtable);
+            vtables.insert(motion_id, Rc::new(vtable));
         }
 
         Ok(())
