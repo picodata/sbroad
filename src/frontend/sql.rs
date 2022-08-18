@@ -3,6 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
+use ahash::RandomState;
 use pest::Parser;
 use std::collections::{HashMap, HashSet};
 use traversal::DftPost;
@@ -764,53 +765,106 @@ impl Plan {
         let mut idx = 0;
 
         // Add parameter values to the plan arena (but they are still unlinked to the tree).
-        let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
+        let value_ids: Vec<usize> = params
+            .iter()
+            .map(|param| self.add_const(param.clone()))
+            .collect();
+
         // We need to use rows instead of values in some cases (AST can solve
         // this problem for non-parameterized queries, but for parameterized
         // queries it is IR responsibility).
-        let mut row_ids: Vec<usize> = Vec::with_capacity(params.len());
-        for param in params {
-            let val_id = self.add_const(param.clone());
-            value_ids.push(val_id);
-            let row_id = self.nodes.add_row(vec![val_id], None);
-            row_ids.push(row_id);
-        }
+        let mut row_ids: HashMap<usize, usize, RandomState> =
+            HashMap::with_hasher(RandomState::new());
 
         // Gather all parameter nodes from the tree to a hash set.
         let param_set = self.get_params();
 
         // Closure to retrieve a corresponding value for a parameter node.
-        let get_value =
-            |param_id: &usize, pos: usize| -> Result<Option<usize>, QueryPlannerError> {
-                if !param_set.contains(param_id) {
-                    return Ok(None);
-                }
-                let val_id = value_ids.get(pos).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Parameter in position {} is not found.",
-                        pos
-                    ))
-                })?;
-                Ok(Some(*val_id))
-            };
-
-        // Closure to retrieve a corresponding row for a parameter node.
-        let get_row = |param_id: &usize, pos: usize| -> Result<Option<usize>, QueryPlannerError> {
-            if !param_set.contains(param_id) {
-                return Ok(None);
-            }
-            let row_id = row_ids.get(pos).ok_or_else(|| {
+        let get_value = |pos: usize| -> Result<usize, QueryPlannerError> {
+            let val_id = value_ids.get(pos).ok_or_else(|| {
                 QueryPlannerError::CustomError(format!(
                     "Parameter in position {} is not found.",
                     pos
                 ))
             })?;
-            Ok(Some(*row_id))
+            Ok(*val_id)
+        };
+
+        // Populate rows.
+        for id in &nodes {
+            let node = self.get_node(*id)?;
+            match node {
+                Node::Relational(rel) => match rel {
+                    Relational::Selection {
+                        filter: ref param_id,
+                        ..
+                    }
+                    | Relational::InnerJoin {
+                        condition: ref param_id,
+                        ..
+                    }
+                    | Relational::Projection {
+                        output: ref param_id,
+                        ..
+                    } => {
+                        if param_set.contains(param_id) {
+                            let val_id = get_value(idx)?;
+                            row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
+                            idx += 1;
+                        }
+                    }
+                    _ => {}
+                },
+                Node::Expression(expr) => match expr {
+                    Expression::Alias {
+                        child: ref param_id,
+                        ..
+                    }
+                    | Expression::Unary {
+                        child: ref param_id,
+                        ..
+                    } => {
+                        if param_set.contains(param_id) {
+                            idx += 1;
+                        }
+                    }
+                    Expression::Bool {
+                        ref left,
+                        ref right,
+                        ..
+                    } => {
+                        for param_id in &[*left, *right] {
+                            if param_set.contains(param_id) {
+                                let val_id = get_value(idx)?;
+                                row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
+                                idx += 1;
+                            }
+                        }
+                    }
+                    Expression::Row { ref list, .. } => {
+                        for param_id in list {
+                            if param_set.contains(param_id) {
+                                idx += 1;
+                            }
+                        }
+                    }
+                    Expression::Constant { .. } | Expression::Reference { .. } => {}
+                },
+                Node::Parameter => {}
+            }
+        }
+
+        let get_row = |idx: usize| -> Result<usize, QueryPlannerError> {
+            let row_id = row_ids.get(&idx).ok_or_else(|| {
+                QueryPlannerError::CustomError(format!("Row in position {} is not found.", idx))
+            })?;
+            Ok(*row_id)
         };
 
         // Replace parameters in the plan.
-        for id in nodes {
-            let node = self.get_mut_node(id)?;
+        idx = 0;
+        for id in &nodes {
+            let node = self.get_mut_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
                     Relational::Selection {
@@ -825,7 +879,8 @@ impl Plan {
                         output: ref mut param_id,
                         ..
                     } => {
-                        if let Some(row_id) = get_row(param_id, idx)? {
+                        if param_set.contains(param_id) {
+                            let row_id = get_row(idx)?;
                             *param_id = row_id;
                             idx += 1;
                         }
@@ -841,7 +896,8 @@ impl Plan {
                         child: ref mut param_id,
                         ..
                     } => {
-                        if let Some(val_id) = get_value(param_id, idx)? {
+                        if param_set.contains(param_id) {
+                            let val_id = get_value(idx)?;
                             *param_id = val_id;
                             idx += 1;
                         }
@@ -852,7 +908,8 @@ impl Plan {
                         ..
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
-                            if let Some(row_id) = get_row(param_id, idx)? {
+                            if param_set.contains(param_id) {
+                                let row_id = get_row(idx)?;
                                 **param_id = row_id;
                                 idx += 1;
                             }
@@ -860,7 +917,8 @@ impl Plan {
                     }
                     Expression::Row { ref mut list, .. } => {
                         for param_id in list {
-                            if let Some(val_id) = get_value(param_id, idx)? {
+                            if param_set.contains(param_id) {
+                                let val_id = get_value(idx)?;
                                 *param_id = val_id;
                                 idx += 1;
                             }
@@ -873,11 +931,8 @@ impl Plan {
         }
 
         // Update values row output.
-        let tree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
-        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
         for id in nodes {
-            let rel = self.get_relation_node(id)?;
-            if let Relational::ValuesRow { .. } = rel {
+            if let Ok(Relational::ValuesRow { .. }) = self.get_relation_node(id) {
                 self.update_values_row(id)?;
             }
         }
