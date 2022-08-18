@@ -512,7 +512,7 @@ impl<'p> SyntaxPlan<'p> {
                     // `SELECT` and `FROM`.
                     let expr = ir_plan.get_expression_node(*output)?;
                     if let Expression::Row { list, .. } = expr {
-                        let mut nodes: Vec<usize> = Vec::with_capacity(list.len());
+                        let mut nodes: Vec<usize> = Vec::with_capacity(list.len() * 2);
                         if let Some((last, elements)) = list.split_last() {
                             for elem in elements {
                                 nodes.push(self.nodes.get_syntax_node_id(*elem)?);
@@ -609,7 +609,7 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Values { children, .. } => {
-                    let mut sn_children: Vec<usize> = Vec::with_capacity(children.len() * 2 - 1);
+                    let mut sn_children: Vec<usize> = Vec::with_capacity(children.len() * 2);
                     if let Some((last_id, other)) = children.split_last() {
                         for child_id in other {
                             sn_children.push(self.nodes.get_syntax_node_id(*child_id)?);
@@ -691,6 +691,7 @@ impl<'p> SyntaxPlan<'p> {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
                     if let Some((last, elements)) = list.split_last() {
+                        nodes.reserve(list.len() * 2);
                         for elem in elements {
                             nodes.push(self.nodes.get_syntax_node_id(*elem)?);
                             nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
