@@ -82,12 +82,12 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - node is not valid
-    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<String>, QueryPlannerError> {
+    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<&String>, QueryPlannerError> {
         let sq_id = &self.get_motion_child(node_id)?;
         if let Relational::ScanSubQuery { alias, .. } =
             self.get_ir_plan().get_relation_node(*sq_id)?
         {
-            return Ok(alias.clone());
+            return Ok(alias.as_ref());
         }
 
         Ok(None)
