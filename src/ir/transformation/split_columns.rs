@@ -83,15 +83,15 @@ impl Plan {
                 .map(|(l, r)| (*l, *r))
                 .collect::<Vec<_>>();
             if let Some((first, other)) = pairs.split_first() {
-                let left_col_id = self.expr_clone(first.0)?;
-                let right_col_id = self.expr_clone(first.1)?;
+                let left_col_id = first.0;
+                let right_col_id = first.1;
                 let left_row_id = self.nodes.add_row(vec![left_col_id], None);
                 let right_row_id = self.nodes.add_row(vec![right_col_id], None);
                 let mut top_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;
 
                 for (left_col_id, right_col_id) in other {
-                    let left_col_id = self.expr_clone(*left_col_id)?;
-                    let right_col_id = self.expr_clone(*right_col_id)?;
+                    let left_col_id = *left_col_id;
+                    let right_col_id = *right_col_id;
                     let left_row_id = self.nodes.add_row(vec![left_col_id], None);
                     let right_row_id = self.nodes.add_row(vec![right_col_id], None);
                     let new_top_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;

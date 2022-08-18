@@ -52,7 +52,7 @@ impl Plan {
 
         let right_columns = self.get_expression_node(right_id)?.clone_row_list()?;
         if let Some((first_id, other)) = right_columns.split_first() {
-            let new_left_id = self.expr_clone(left_id)?;
+            let new_left_id = left_id;
 
             let first_expr = self.get_expression_node(*first_id)?;
             let mut top_id = if first_expr.is_row() {
