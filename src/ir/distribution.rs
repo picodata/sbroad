@@ -131,17 +131,10 @@ impl Plan {
     #[allow(clippy::too_many_lines)]
     pub fn set_distribution(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
         let row_expr = self.get_expression_node(row_id)?;
-        let capacity = match row_expr {
-            Expression::Row { list, .. } => list.len(),
-            _ => {
-                return Err(QueryPlannerError::CustomError(
-                    "Expected Row expression".to_string(),
-                ))
-            }
-        };
+        let capacity = row_expr.get_row_list()?.len();
         let mut child_set: HashSet<usize> = HashSet::with_capacity(capacity);
         let mut child_pos_map: HashMap<(usize, usize), usize, RandomState> =
-            HashMap::with_capacity_and_hasher(capacity, RandomState::new());
+            HashMap::with_hasher(RandomState::new());
         let mut table_set: HashSet<String> = HashSet::new();
         let mut table_pos_map: HashMap<usize, usize, RandomState> =
             HashMap::with_hasher(RandomState::new());
@@ -172,6 +165,7 @@ impl Plan {
                         let child_pos_list: &Vec<usize> = targets
                             .as_ref()
                             .ok_or(QueryPlannerError::InvalidReference)?;
+                        child_pos_map.reserve(child_pos_list.len());
                         for target in child_pos_list {
                             let child_node: &usize = children
                                 .get(*target)
