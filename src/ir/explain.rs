@@ -47,15 +47,7 @@ impl Col {
                     )));
                 }
                 Expression::Reference { position, .. } => {
-                    let rel_id: usize = plan
-                        .get_relational_from_reference_node(*id)?
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Reference doesn't have child relation node".into(),
-                            )
-                        })?;
+                    let rel_id: usize = plan.get_relational_from_reference_node(*id)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
                     let alias = plan.get_alias_from_reference_node(current_node)?;
@@ -236,15 +228,7 @@ impl Row {
                     )));
                 }
                 Expression::Reference { position, .. } => {
-                    let rel_id: usize = plan
-                        .get_relational_from_reference_node(*child)?
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Reference doesn't have a child relation node.".into(),
-                            )
-                        })?;
+                    let rel_id: usize = plan.get_relational_from_reference_node(*child)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
 

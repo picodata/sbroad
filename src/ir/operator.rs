@@ -410,12 +410,8 @@ impl Relational {
                 if let Expression::Alias { child, .. } = col_node {
                     let child_node = plan.get_expression_node(*child)?;
                     if let Expression::Reference { position: pos, .. } = child_node {
-                        let rel_ids = plan.get_relational_from_reference_node(*child)?;
-                        let rel_node = plan.get_relation_node(
-                            rel_ids.into_iter().next().ok_or_else(|| {
-                                QueryPlannerError::CustomError(String::from("No relational node"))
-                            })?,
-                        )?;
+                        let rel_id = plan.get_relational_from_reference_node(*child)?;
+                        let rel_node = plan.get_relation_node(rel_id)?;
                         return rel_node.scan_name(plan, *pos);
                     }
                 } else {

@@ -682,7 +682,6 @@ impl Plan {
     }
 
     /// A list of relational nodes that makes up the reference.
-    /// For references in the scan node
     ///
     /// # Errors
     /// - reference is invalid
@@ -690,7 +689,7 @@ impl Plan {
     pub fn get_relational_from_reference_node(
         &self,
         ref_id: usize,
-    ) -> Result<HashSet<usize, RandomState>, QueryPlannerError> {
+    ) -> Result<usize, QueryPlannerError> {
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
@@ -700,20 +699,30 @@ impl Plan {
             ))?;
             let rel = self.get_relation_node(referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
-                let mut rel_nodes: HashSet<usize, RandomState> =
-                    HashSet::with_capacity_and_hasher(1, RandomState::new());
-                rel_nodes.insert(referred_rel_id);
-                return Ok(rel_nodes);
+                return Ok(referred_rel_id);
             } else if let Some(children) = rel.children() {
-                if let Some(positions) = targets {
-                    let mut rel_nodes: HashSet<usize, RandomState> =
-                        HashSet::with_capacity_and_hasher(positions.len(), RandomState::new());
-                    for pos in positions {
-                        if let Some(child) = children.get(*pos) {
-                            rel_nodes.insert(*child);
-                        }
+                match targets {
+                    None => {
+                        return Err(QueryPlannerError::CustomError(
+                            "Reference node has no targets".into(),
+                        ))
                     }
-                    return Ok(rel_nodes);
+                    Some(positions) => match (positions.get(0), positions.get(1)) {
+                        (Some(first), None) => {
+                            let child_id = *children.get(*first).ok_or_else(|| {
+                                QueryPlannerError::CustomError(
+                                    "Relational node has no child at first position".into(),
+                                )
+                            })?;
+                            return Ok(child_id);
+                        }
+                        _ => {
+                            return Err(QueryPlannerError::CustomError(
+                                "Reference expected to point exactly a single relational node"
+                                    .into(),
+                            ))
+                        }
+                    },
                 }
             }
         }
