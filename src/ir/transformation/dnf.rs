@@ -125,18 +125,16 @@ impl Chain {
         self.nodes.pop_front()
     }
 
-    /// Convert a chain to a new expression tree
-    /// (all trivalent expressions are cloned to the new nodes in arena).
+    /// Convert a chain to a new expression tree (reuse trivalent expressions).
     fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
         let mut top_id: Option<usize> = None;
         while let Some(expr_id) = self.pop_front() {
             match top_id {
                 None => {
-                    let new_expr_id = plan.expr_clone(expr_id)?;
-                    top_id = Some(new_expr_id);
+                    top_id = Some(expr_id);
                 }
                 Some(left_id) => {
-                    let right_id = plan.expr_clone(expr_id)?;
+                    let right_id = expr_id;
                     top_id = Some(plan.concat_and(left_id, right_id)?);
                 }
             }
