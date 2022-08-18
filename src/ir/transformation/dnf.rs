@@ -89,6 +89,14 @@ impl Chain {
         }
     }
 
+    fn reserve(&mut self, additional: usize) {
+        self.nodes.reserve(additional);
+    }
+
+    fn length(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Append a new node to the chain. Keep AND and OR nodes in the back,
     /// while other nodes in the front of the chain double-ended queue.
     fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), QueryPlannerError> {
@@ -196,6 +204,7 @@ impl Plan {
                     }
                     Bool::Or => {
                         let mut new_chain = chain.clone();
+                        new_chain.reserve(capacity - new_chain.length());
                         new_chain.push(*right, self)?;
                         stack.push(new_chain);
                         chain.push(*left, self)?;
