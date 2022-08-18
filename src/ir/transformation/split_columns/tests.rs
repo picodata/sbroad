@@ -22,7 +22,7 @@ fn split_columns1() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &split_columns), expected);
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn split_columns2() {
         vec![Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &split_columns), expected);
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn split_columns3() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&[]).unwrap();
+    plan.bind_params(&mut vec![]).unwrap();
     let plan_err = plan.split_columns().unwrap_err();
     assert_eq!(
         format!(
@@ -64,7 +64,7 @@ fn split_columns4() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &split_columns), expected);
 }
 
 #[test]
@@ -79,5 +79,5 @@ fn split_columns5() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &split_columns), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &split_columns), expected);
 }

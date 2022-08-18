@@ -25,7 +25,7 @@ fn merge_tuples1() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn merge_tuples2() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn merge_tuples3() {
         vec![Value::Boolean(true)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn merge_tuples4() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn merge_tuples5() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }
 
 #[test]
@@ -104,5 +104,5 @@ fn merge_tuples6() {
         vec![Value::from(2_u64), Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &merge_tuples), expected);
+    assert_eq!(sql_to_sql(input, &mut vec![], &merge_tuples), expected);
 }

@@ -23,7 +23,7 @@ fn between1_test() {
 
     // Initialize the query.
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &mut vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
 
     // Validate the motion type.
@@ -81,7 +81,7 @@ fn between2_test() {
 
     // Initialize the query.
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &mut vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
 
     // Validate the motion type.

@@ -10,7 +10,7 @@ fn except1() {
         EXCEPT DISTINCT
         SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist""#;
 
-    let mut plan = sql_to_ir(query, &[]);
+    let mut plan = sql_to_ir(query, &mut vec![]);
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
@@ -27,7 +27,7 @@ fn except2() {
         EXCEPT DISTINCT
         SELECT "identification_number" as "id", "product_code" as "pc" FROM "hash_testing_hist" AS "t""#;
 
-    let mut plan = sql_to_ir(query, &[]);
+    let mut plan = sql_to_ir(query, &mut vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -39,7 +39,7 @@ fn except3() {
         EXCEPT
         SELECT 1, 2 FROM "hash_testing_hist""#;
 
-    let mut plan = sql_to_ir(query, &[]);
+    let mut plan = sql_to_ir(query, &mut vec![]);
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
@@ -68,7 +68,7 @@ fn except4() {
             SELECT 1, 2 FROM "hash_testing_hist"
         ) as t"#;
 
-    let mut plan = sql_to_ir(query, &[]);
+    let mut plan = sql_to_ir(query, &mut vec![]);
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
@@ -97,7 +97,7 @@ fn except5() {
             SELECT 1, 2 FROM "hash_testing_hist"
         ) as t"#;
 
-    let mut plan = sql_to_ir(query, &[]);
+    let mut plan = sql_to_ir(query, &mut vec![]);
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();

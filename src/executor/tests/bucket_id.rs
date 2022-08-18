@@ -12,7 +12,7 @@ fn bucket1_test() {
     let sql = r#"SELECT *, "bucket_id" FROM "t1""#;
     let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &mut vec![]).unwrap();
     let result = *query
         .dispatch()
         .unwrap()
@@ -40,7 +40,7 @@ fn bucket2_test() {
         WHERE "a" = 1 AND "b" = 2"#;
     let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&coordinator, sql, &[]).unwrap();
+    let mut query = Query::new(&coordinator, sql, &mut vec![]).unwrap();
     let result = *query
         .dispatch()
         .unwrap()

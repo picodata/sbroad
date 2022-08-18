@@ -20,7 +20,10 @@ fn bool_in1() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
+    assert_eq!(
+        sql_to_sql(input, &mut vec![], &replace_in_operator),
+        expected
+    );
 }
 
 #[test]
@@ -43,7 +46,10 @@ fn bool_in2() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
+    assert_eq!(
+        sql_to_sql(input, &mut vec![], &replace_in_operator),
+        expected
+    );
 }
 
 #[test]
@@ -58,5 +64,8 @@ fn bool_in3() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &[], &replace_in_operator), expected);
+    assert_eq!(
+        sql_to_sql(input, &mut vec![], &replace_in_operator),
+        expected
+    );
 }

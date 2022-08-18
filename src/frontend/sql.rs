@@ -758,17 +758,22 @@ impl Plan {
     /// - Invalid amount of parameters.
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
-    pub fn bind_params(&mut self, params: &[Value]) -> Result<(), QueryPlannerError> {
+    pub fn bind_params(&mut self, params: &mut Vec<Value>) -> Result<(), QueryPlannerError> {
+        // Nothing to do here.
+        if params.is_empty() {
+            return Ok(());
+        }
+
         let top_id = self.get_top()?;
         let tree = DftPost::new(&top_id, |node| self.nodes.subtree_iter(node));
         let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
-        let mut idx = 0;
 
-        // Add parameter values to the plan arena (but they are still unlinked to the tree).
-        let value_ids: Vec<usize> = params
-            .iter()
-            .map(|param| self.add_const(param.clone()))
-            .collect();
+        // Transform parameters to values. The result values are stored in the
+        // opposite to parameters order.
+        let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
+        while let Some(param) = params.pop() {
+            value_ids.push(self.add_const(param));
+        }
 
         // We need to use rows instead of values in some cases (AST can solve
         // this problem for non-parameterized queries, but for parameterized
@@ -791,6 +796,7 @@ impl Plan {
         };
 
         // Populate rows.
+        let mut idx = value_ids.len();
         for id in &nodes {
             let node = self.get_node(*id)?;
             match node {
@@ -808,9 +814,9 @@ impl Plan {
                         ..
                     } => {
                         if param_set.contains(param_id) {
+                            idx -= 1;
                             let val_id = get_value(idx)?;
                             row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
-                            idx += 1;
                         }
                     }
                     _ => {}
@@ -825,7 +831,7 @@ impl Plan {
                         ..
                     } => {
                         if param_set.contains(param_id) {
-                            idx += 1;
+                            idx -= 1;
                         }
                     }
                     Expression::Bool {
@@ -835,16 +841,16 @@ impl Plan {
                     } => {
                         for param_id in &[*left, *right] {
                             if param_set.contains(param_id) {
+                                idx -= 1;
                                 let val_id = get_value(idx)?;
                                 row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
-                                idx += 1;
                             }
                         }
                     }
                     Expression::Row { ref list, .. } => {
                         for param_id in list {
                             if param_set.contains(param_id) {
-                                idx += 1;
+                                idx -= 1;
                             }
                         }
                     }
@@ -862,7 +868,7 @@ impl Plan {
         };
 
         // Replace parameters in the plan.
-        idx = 0;
+        idx = value_ids.len();
         for id in &nodes {
             let node = self.get_mut_node(*id)?;
             match node {
@@ -880,9 +886,9 @@ impl Plan {
                         ..
                     } => {
                         if param_set.contains(param_id) {
+                            idx -= 1;
                             let row_id = get_row(idx)?;
                             *param_id = row_id;
-                            idx += 1;
                         }
                     }
                     _ => {}
@@ -897,9 +903,9 @@ impl Plan {
                         ..
                     } => {
                         if param_set.contains(param_id) {
+                            idx -= 1;
                             let val_id = get_value(idx)?;
                             *param_id = val_id;
-                            idx += 1;
                         }
                     }
                     Expression::Bool {
@@ -909,18 +915,18 @@ impl Plan {
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
                             if param_set.contains(param_id) {
+                                idx -= 1;
                                 let row_id = get_row(idx)?;
                                 **param_id = row_id;
-                                idx += 1;
                             }
                         }
                     }
                     Expression::Row { ref mut list, .. } => {
                         for param_id in list {
                             if param_set.contains(param_id) {
+                                idx -= 1;
                                 let val_id = get_value(idx)?;
                                 *param_id = val_id;
-                                idx += 1;
                             }
                         }
                     }
