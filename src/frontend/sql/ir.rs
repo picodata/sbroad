@@ -60,8 +60,8 @@ impl Value {
     /// Returns `QueryPlannerError` when the operator is invalid.
     #[allow(dead_code)]
     pub(super) fn from_node(s: &ParseNode) -> Result<Self, QueryPlannerError> {
-        let val = match s.clone().value {
-            Some(v) => v,
+        let val = match &s.value {
+            Some(v) => v.clone(),
             None => "".into(),
         };
 

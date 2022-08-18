@@ -165,8 +165,8 @@ impl VirtualTable {
 
     /// Get vtable alias name
     #[must_use]
-    pub fn get_alias(&self) -> Option<String> {
-        self.name.clone()
+    pub fn get_alias(&self) -> Option<&String> {
+        self.name.as_ref()
     }
 }
 

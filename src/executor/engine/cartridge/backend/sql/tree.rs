@@ -52,9 +52,9 @@ pub struct SyntaxNode {
 }
 
 impl SyntaxNode {
-    fn new_alias(name: &str) -> Self {
+    fn new_alias(name: String) -> Self {
         SyntaxNode {
-            data: SyntaxData::Alias(name.into()),
+            data: SyntaxData::Alias(name),
             left: None,
             right: Vec::new(),
         }
@@ -168,7 +168,7 @@ impl SyntaxNodes {
                 self.push_syntax_node(SyntaxNode::new_close()),
             ];
             if let Some(name) = alias {
-                children.push(self.push_syntax_node(SyntaxNode::new_alias(name)));
+                children.push(self.push_syntax_node(SyntaxNode::new_alias(name.clone())));
             }
             let sn = SyntaxNode::new_pointer(id, None, children);
             Ok(self.push_syntax_node(sn))
@@ -563,7 +563,9 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::ScanRelation { alias, .. } => {
                     let children: Vec<usize> = if let Some(name) = alias {
-                        vec![self.nodes.push_syntax_node(SyntaxNode::new_alias(name))]
+                        vec![self
+                            .nodes
+                            .push_syntax_node(SyntaxNode::new_alias(name.clone()))]
                     } else {
                         Vec::new()
                     };
@@ -572,7 +574,7 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::Motion { .. } => {
                     let vtable = self.plan.get_motion_vtable(id)?.clone();
-                    let vtable_alias = &vtable.get_alias();
+                    let vtable_alias = vtable.get_alias().map(String::from);
                     let child_id = self.plan.get_motion_child(id)?;
                     let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
                     let mut children: Vec<usize> = Vec::new();
@@ -645,7 +647,9 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(*child)?),
-                        vec![self.nodes.push_syntax_node(SyntaxNode::new_alias(name))],
+                        vec![self
+                            .nodes
+                            .push_syntax_node(SyntaxNode::new_alias(name.clone()))],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }

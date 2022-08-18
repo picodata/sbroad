@@ -62,7 +62,7 @@ impl<'e> ExecutionPlan<'e> {
         dist_keys.extend(motion_shard_keys);
 
         let filter_nodes = self.get_bool_eq_with_rows(node_id);
-        let ir_plan = &mut self.get_ir_plan().clone();
+        let ir_plan = &mut self.get_ir_plan();
 
         for filter_id in filter_nodes {
             let node = ir_plan.get_expression_node(filter_id)?;
@@ -81,7 +81,7 @@ impl<'e> ExecutionPlan<'e> {
                 }
                 let right_expr = ir_plan.get_expression_node(right_id)?;
                 let right_columns = if let Expression::Row { list, .. } = right_expr {
-                    list.clone()
+                    list
                 } else {
                     // We should never get here.
                     continue;
@@ -97,7 +97,7 @@ impl<'e> ExecutionPlan<'e> {
                 // Gather right constants corresponding to the left keys.
                 if let Distribution::Segment { keys } = left_dist {
                     for key in keys {
-                        let positions: Vec<usize> = key.positions.clone();
+                        let positions: Vec<usize> = key.positions;
                         // FIXME: we don't support complex distribution keys (ignore them).
                         if positions.len() > 1 {
                             return Ok(None);

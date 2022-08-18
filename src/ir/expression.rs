@@ -896,19 +896,19 @@ impl Plan {
         let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
         let mut map: HashMap<usize, usize> = HashMap::with_capacity(nodes.len());
         for id in nodes {
-            let expr = self.get_expression_node(id)?.clone();
+            let expr = self.get_expression_node(id)?;
             let new_id = match expr {
                 Expression::Alias { .. }
                 | Expression::Constant { .. }
-                | Expression::Reference { .. } => self.nodes.push(Node::Expression(expr)),
+                | Expression::Reference { .. } => self.nodes.push(Node::Expression(expr.clone())),
                 Expression::Bool { left, op, right } => {
-                    let new_left_id = *map.get(&left).ok_or_else(|| {
+                    let new_left_id = *map.get(left).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!(
                             "Left child of bool node {} wasn't found in the clone map",
                             id
                         ))
                     })?;
-                    let new_right_id = *map.get(&right).ok_or_else(|| {
+                    let new_right_id = *map.get(right).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!(
                             "Right child of bool node {} wasn't found in the clone map",
                             id
@@ -919,7 +919,7 @@ impl Plan {
                 Expression::Row { list, distribution } => {
                     let mut new_list: Vec<usize> = Vec::with_capacity(list.len());
                     for column_id in list {
-                        let new_column_id = *map.get(&column_id).ok_or_else(|| {
+                        let new_column_id = *map.get(column_id).ok_or_else(|| {
                             QueryPlannerError::CustomError(format!(
                                 "Row column node {} wasn't found in the clone map",
                                 id
@@ -930,7 +930,7 @@ impl Plan {
                     self.nodes.add_row(new_list, distribution.clone())
                 }
                 Expression::Unary { op, child } => {
-                    let new_child_id = *map.get(&child).ok_or_else(|| {
+                    let new_child_id = *map.get(child).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!(
                             "Child of unary node {} wasn't found in the clone map",
                             id

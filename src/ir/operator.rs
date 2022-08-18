@@ -865,14 +865,7 @@ impl Plan {
         col_idx: &mut usize,
     ) -> Result<usize, QueryPlannerError> {
         let row = self.get_expression_node(row_id)?;
-        let columns = if let Expression::Row { list, .. } = row {
-            list.clone()
-        } else {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Expression {} is not a row.",
-                row_id
-            )));
-        };
+        let columns = row.clone_row_list()?;
         let mut aliases: Vec<usize> = Vec::with_capacity(columns.len());
         for col_id in columns {
             // Generate a row of aliases for the incoming row.

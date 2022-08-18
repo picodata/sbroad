@@ -564,8 +564,8 @@ impl Plan {
         left_row_id: usize,
         right_row_id: usize,
     ) -> Result<MotionPolicy, QueryPlannerError> {
-        let left_dist = self.get_distribution(left_row_id)?.clone();
-        let right_dist = self.get_distribution(right_row_id)?.clone();
+        let left_dist = self.get_distribution(left_row_id)?;
+        let right_dist = self.get_distribution(right_row_id)?;
 
         let get_policy_for_one_side_segment = |row_map: &HashMap<usize, usize>,
                                                keys_set: &HashSet<Key>|
@@ -605,7 +605,7 @@ impl Plan {
                 for (outer_keys, inner_keys) in pairs {
                     for outer_key in outer_keys {
                         if first_outer_key.is_none() {
-                            first_outer_key = Some(outer_key.clone());
+                            first_outer_key = Some(outer_key);
                         }
                         for inner_key in inner_keys {
                             if outer_key == inner_key {
@@ -623,11 +623,11 @@ impl Plan {
             }
             (Distribution::Segment { keys: keys_set }, _) => {
                 let row_map = self.build_row_map(left_row_id)?;
-                get_policy_for_one_side_segment(&row_map, &keys_set)
+                get_policy_for_one_side_segment(&row_map, keys_set)
             }
             (_, Distribution::Segment { keys: keys_set }) => {
                 let row_map = self.build_row_map(right_row_id)?;
-                get_policy_for_one_side_segment(&row_map, &keys_set)
+                get_policy_for_one_side_segment(&row_map, keys_set)
             }
             _ => Ok(MotionPolicy::Full),
         }
