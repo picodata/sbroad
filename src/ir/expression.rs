@@ -705,16 +705,16 @@ impl Plan {
                 rel_nodes.insert(referred_rel_id);
                 return Ok(rel_nodes);
             } else if let Some(children) = rel.children() {
-                let mut rel_nodes: HashSet<usize, RandomState> =
-                    HashSet::with_capacity_and_hasher(children.len(), RandomState::new());
                 if let Some(positions) = targets {
+                    let mut rel_nodes: HashSet<usize, RandomState> =
+                        HashSet::with_capacity_and_hasher(positions.len(), RandomState::new());
                     for pos in positions {
                         if let Some(child) = children.get(*pos) {
                             rel_nodes.insert(*child);
                         }
                     }
+                    return Ok(rel_nodes);
                 }
-                return Ok(rel_nodes);
             }
         }
         Err(QueryPlannerError::InvalidReference)
