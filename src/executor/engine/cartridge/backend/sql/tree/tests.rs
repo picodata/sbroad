@@ -3,8 +3,7 @@ use std::path::Path;
 
 use pretty_assertions::assert_eq;
 
-use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
-use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
@@ -66,8 +65,9 @@ fn sql_order_selection() {
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // get nodes in the sql-convenient order
-    let mut sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
+    let sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
     let mut nodes_iter = nodes.into_iter();
     assert_eq!(Some(&SyntaxData::PlanId(16)), nodes_iter.next()); // projection
     assert_eq!(Some(&SyntaxData::PlanId(14)), nodes_iter.next()); // alias

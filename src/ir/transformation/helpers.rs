@@ -1,8 +1,8 @@
 //! IR test helpers.
 
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::{get_sql_order, PatternWithParams};
-use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
+use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -31,7 +31,8 @@ pub fn sql_to_sql(
     f_transform(&mut plan);
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap()
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    ex_plan.to_sql(&nodes, &Buckets::All).unwrap()
 }

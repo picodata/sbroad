@@ -1,8 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
-use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
@@ -24,9 +23,10 @@ fn one_table_projection() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -56,9 +56,10 @@ fn one_table_with_asterisk() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -94,9 +95,10 @@ fn union_all() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -129,9 +131,10 @@ fn from_sub_query() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -167,9 +170,10 @@ fn from_sub_query_with_union() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -202,9 +206,10 @@ fn inner_join() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -239,9 +244,10 @@ fn inner_join_with_sq() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -275,9 +281,10 @@ fn selection_with_sq() {
     plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(
@@ -313,9 +320,10 @@ fn except() {
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    let sql = ex_plan.syntax_nodes_as_sql(&nodes, &Buckets::All).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
 
     assert_eq!(
         PatternWithParams::new(

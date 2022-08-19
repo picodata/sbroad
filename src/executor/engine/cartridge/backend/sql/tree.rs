@@ -1,5 +1,6 @@
 use ahash::RandomState;
 use std::collections::HashMap;
+use std::mem::take;
 use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
@@ -950,6 +951,66 @@ impl<'p> SyntaxPlan<'p> {
         }
 
         Ok(())
+    }
+}
+
+pub struct OrderedSyntaxNodes {
+    arena: Vec<SyntaxNode>,
+    positions: Vec<usize>,
+}
+
+impl OrderedSyntaxNodes {
+    /// Constructs a vector of the syntax node pointers in an order, suitable for building
+    /// an SQL query (in-order traversal).
+    ///
+    /// # Errors
+    /// - internal error (positions point to invalid nodes in the arena)
+    pub fn to_syntax_data(&self) -> Result<Vec<&SyntaxData>, QueryPlannerError> {
+        let mut result: Vec<&SyntaxData> = Vec::with_capacity(self.positions.len());
+        for id in &self.positions {
+            result.push(
+                &self
+                    .arena
+                    .get(*id)
+                    .ok_or_else(|| {
+                        QueryPlannerError::CustomError(format!("Invalid syntax node id: {}", id))
+                    })?
+                    .data,
+            );
+        }
+        Ok(result)
+    }
+}
+
+impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
+    type Error = QueryPlannerError;
+
+    fn try_from(mut sp: SyntaxPlan) -> Result<Self, Self::Error> {
+        // Result with plan node ids.
+        let mut positions: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());
+        // Stack to keep syntax node data.
+        let mut stack: Vec<usize> = Vec::with_capacity(sp.nodes.arena.len());
+
+        // Make a destructive in-order traversal over the syntax plan
+        // nodes (left and right pointers for any wrapped node become
+        // None or removed). It seems to be the fastest traversal
+        // approach in Rust (`take()` and `pop()`).
+        stack.push(sp.get_top()?);
+        while let Some(id) = stack.last() {
+            let sn = sp.nodes.get_mut_syntax_node(*id)?;
+            if let Some(left_id) = sn.left.take() {
+                stack.push(left_id);
+            } else if let Some(id) = stack.pop() {
+                positions.push(id);
+                let sn_next = sp.nodes.get_mut_syntax_node(id)?;
+                while let Some(right_id) = sn_next.right.pop() {
+                    stack.push(right_id);
+                }
+            }
+        }
+
+        let arena: Vec<SyntaxNode> = take(&mut sp.nodes.arena);
+        Ok(Self { arena, positions })
     }
 }
 

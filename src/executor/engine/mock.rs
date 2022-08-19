@@ -5,8 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::get_sql_order;
-use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator,
@@ -277,18 +276,19 @@ impl Coordinator for RouterRuntimeMock {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let mut result = ProducerResult::new();
-        let mut sp = SyntaxPlan::new(plan, top_id)?;
-        let nodes = get_sql_order(&mut sp)?;
+        let sp = SyntaxPlan::new(plan, top_id)?;
+        let ordered = OrderedSyntaxNodes::try_from(sp)?;
+        let nodes = ordered.to_syntax_data()?;
 
         match buckets {
             Buckets::All => {
-                let sql = plan.syntax_nodes_as_sql(&nodes, buckets)?;
+                let sql = plan.to_sql(&nodes, buckets)?;
                 result.extend(exec_on_all(&String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
-                    let sql = plan.syntax_nodes_as_sql(&nodes, &Buckets::Filtered(bucket_set))?;
+                    let sql = plan.to_sql(&nodes, &Buckets::Filtered(bucket_set))?;
                     let temp_result = exec_on_some(*bucket, &String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }

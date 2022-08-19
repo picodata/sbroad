@@ -2,8 +2,7 @@ extern crate sbroad;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use engine::RouterRuntimeMock;
-use sbroad::executor::engine::cartridge::backend::sql::ir::get_sql_order;
-use sbroad::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use sbroad::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
 
@@ -239,9 +238,10 @@ fn query1(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
     let plan = query.get_exec_plan();
-    let mut sp = SyntaxPlan::new(plan, top_id).unwrap();
-    let nodes = get_sql_order(&mut sp).unwrap();
-    plan.syntax_nodes_as_sql(&nodes, &buckets).unwrap();
+    let sp = SyntaxPlan::new(plan, top_id).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    plan.to_sql(&nodes, &buckets).unwrap();
 }
 
 fn bench_query1(c: &mut Criterion) {

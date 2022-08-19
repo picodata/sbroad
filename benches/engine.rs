@@ -6,8 +6,7 @@ use std::collections::HashMap;
 
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
-use sbroad::executor::engine::cartridge::backend::sql::ir::get_sql_order;
-use sbroad::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use sbroad::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
@@ -415,9 +414,10 @@ impl Coordinator for RouterRuntimeMock {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let result = ProducerResult::new();
-        let mut sp = SyntaxPlan::new(plan, top_id)?;
-        let nodes = get_sql_order(&mut sp)?;
-        plan.syntax_nodes_as_sql(&nodes, buckets)?;
+        let sp = SyntaxPlan::new(plan, top_id)?;
+        let ordered = OrderedSyntaxNodes::try_from(sp)?;
+        let nodes = ordered.to_syntax_data()?;
+        plan.to_sql(&nodes, buckets)?;
 
         Ok(Box::new(result))
     }

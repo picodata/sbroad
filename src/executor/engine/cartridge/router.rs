@@ -13,8 +13,8 @@ use tarantool::tuple::Tuple;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::{get_sql_order, PatternWithParams};
-use crate::executor::engine::cartridge::backend::sql::tree::SyntaxPlan;
+use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
+use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
 use crate::executor::engine::{
@@ -168,8 +168,9 @@ impl Coordinator for RouterRuntime {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let mut sp = SyntaxPlan::new(plan, top_id)?;
-        let nodes = get_sql_order(&mut sp)?;
+        let sp = SyntaxPlan::new(plan, top_id)?;
+        let ordered = OrderedSyntaxNodes::try_from(sp)?;
+        let nodes = ordered.to_syntax_data()?;
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;
 
         let mut rs_query: HashMap<String, PatternWithParams> = HashMap::new();
@@ -197,7 +198,7 @@ impl Coordinator for RouterRuntime {
                     .copied()
                     .collect::<HashSet<u64, RepeatableState>>();
                 let pattern_with_params =
-                    plan.syntax_nodes_as_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
+                    plan.to_sql(&nodes, &Buckets::new_filtered(bucket_set))?;
                 rs_query.insert(rs.to_string(), pattern_with_params);
             }
 
@@ -211,7 +212,7 @@ impl Coordinator for RouterRuntime {
             return self.exec_on_some(&rs_query, is_data_modifier);
         }
 
-        let pattern_with_params = plan.syntax_nodes_as_sql(&nodes, &Buckets::All)?;
+        let pattern_with_params = plan.to_sql(&nodes, &Buckets::All)?;
         self.exec_on_all(&pattern_with_params, is_data_modifier)
     }
 
