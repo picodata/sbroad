@@ -12,7 +12,7 @@ use crate::ir::Plan;
 
 /// Compiles an SQL query to IR plan.
 #[allow(dead_code)]
-pub fn sql_to_ir(query: &str, params: &mut Vec<Value>) -> Plan {
+pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
@@ -24,7 +24,7 @@ pub fn sql_to_ir(query: &str, params: &mut Vec<Value>) -> Plan {
 #[allow(dead_code)]
 pub fn sql_to_sql(
     query: &str,
-    params: &mut Vec<Value>,
+    params: Vec<Value>,
     f_transform: &dyn Fn(&mut Plan),
 ) -> PatternWithParams {
     let mut plan = sql_to_ir(query, params);

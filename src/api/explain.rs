@@ -50,7 +50,7 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                 );
             }
         };
-        let query = match Query::new(&*runtime, &lua_params.query, &mut vec![]) {
+        let query = match Query::new(&*runtime, &lua_params.query, vec![]) {
             Ok(q) => q,
             Err(e) => {
                 say(

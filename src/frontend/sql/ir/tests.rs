@@ -24,7 +24,7 @@ fn front_sql1() {
         vec![Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn front_sql2() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn front_sql3() {
         vec![Value::from(1_u64), Value::from(1_u64), Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn front_sql4() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn front_sql5() {
         vec![Value::from("a")],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn front_sql6() {
         vec![Value::from(5_u64), Value::from("123")],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn front_sql8() {
         vec![Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn front_sql9() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn front_sql10() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn front_sql11() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn front_sql14() {
         vec![],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -368,7 +368,7 @@ fn front_sql16() {
         vec![Value::from("кириллица")],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn front_sql17() {
         vec![],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -401,7 +401,7 @@ fn front_sql18() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
@@ -417,14 +417,14 @@ fn front_sql19() {
         vec![],
     );
 
-    assert_eq!(sql_to_sql(input, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
 #[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;
-    let mut params = vec![Value::from(0_i64), Value::from(1_i64)];
+    let params = vec![Value::from(0_i64), Value::from(1_i64)];
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
@@ -434,14 +434,14 @@ fn front_params1() {
         params.clone(),
     );
 
-    assert_eq!(sql_to_sql(pattern, &mut params, &no_transform), expected);
+    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
 }
 
 #[test]
 fn front_params2() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let mut params = vec![Value::Null, Value::from("hello")];
+    let params = vec![Value::Null, Value::from("hello")];
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
@@ -451,7 +451,7 @@ fn front_params2() {
         params.clone(),
     );
 
-    assert_eq!(sql_to_sql(pattern, &mut params, &no_transform), expected);
+    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
 }
 
 // check cyrillic params support
@@ -459,7 +459,7 @@ fn front_params2() {
 fn front_params3() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let mut params = vec![Value::Null, Value::from("кириллица")];
+    let params = vec![Value::Null, Value::from("кириллица")];
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
@@ -469,7 +469,7 @@ fn front_params3() {
         params.clone(),
     );
 
-    assert_eq!(sql_to_sql(pattern, &mut params, &no_transform), expected);
+    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
 }
 
 // check symbols in values (grammar)
@@ -488,5 +488,5 @@ fn front_params4() {
         params,
     );
 
-    assert_eq!(sql_to_sql(pattern, &mut vec![], &no_transform), expected);
+    assert_eq!(sql_to_sql(pattern, vec![], &no_transform), expected);
 }

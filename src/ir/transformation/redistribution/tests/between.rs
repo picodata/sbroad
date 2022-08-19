@@ -10,7 +10,7 @@ fn between1() {
         WHERE (SELECT "identification_number" FROM "hash_testing_hist" AS "h"
             WHERE "identification_number" = 2) BETWEEN 1 AND 2"#;
 
-    let mut plan = sql_to_ir(query, &mut vec![]);
+    let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let motion_gt_eq_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_gt_eq_id).unwrap();
@@ -35,7 +35,7 @@ fn between2() {
     let query = r#"SELECT "identification_number" FROM "hash_testing" AS "t"
         WHERE "identification_number" BETWEEN 1 AND 2"#;
 
-    let mut plan = sql_to_ir(query, &mut vec![]);
+    let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);
@@ -48,7 +48,7 @@ fn between3() {
             SELECT "identification_number" FROM "hash_testing_hist"
             WHERE "identification_number" = 3)"#;
 
-    let mut plan = sql_to_ir(query, &mut vec![]);
+    let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
@@ -66,7 +66,7 @@ fn between4() {
     let query = r#"SELECT "identification_number" FROM "hash_testing" AS "t"
         WHERE 1 BETWEEN "identification_number" AND 2"#;
 
-    let mut plan = sql_to_ir(query, &mut vec![]);
+    let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
     assert_eq!(expected, plan.slices);

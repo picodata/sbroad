@@ -758,7 +758,7 @@ impl Plan {
     /// - Invalid amount of parameters.
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
-    pub fn bind_params(&mut self, params: &mut Vec<Value>) -> Result<(), QueryPlannerError> {
+    pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), QueryPlannerError> {
         // Nothing to do here.
         if params.is_empty() {
             return Ok(());

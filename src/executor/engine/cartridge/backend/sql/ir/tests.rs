@@ -20,7 +20,7 @@ fn one_table_projection() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -52,7 +52,7 @@ fn one_table_with_asterisk() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -90,7 +90,7 @@ fn union_all() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -125,7 +125,7 @@ fn from_sub_query() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -163,7 +163,7 @@ fn from_sub_query_with_union() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -198,7 +198,7 @@ fn inner_join() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -235,7 +235,7 @@ fn inner_join_with_sq() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
@@ -272,7 +272,7 @@ fn selection_with_sq() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
     let mut sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
@@ -309,7 +309,7 @@ fn except() {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(&mut vec![]).unwrap();
+    plan.bind_params(vec![]).unwrap();
     let ex_plan = ExecutionPlan::from(plan);
 
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();

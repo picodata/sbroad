@@ -14,7 +14,7 @@ use crate::ir::value::Value;
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
 pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
-    let mut lua_params = match PatternWithParams::try_from(args) {
+    let lua_params = match PatternWithParams::try_from(args) {
         Ok(param) => param,
         Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
     };
@@ -34,7 +34,7 @@ pub extern "C" fn dispatch_query(ctx: FunctionCtx, args: FunctionArgs) -> c_int 
                 );
             }
         };
-        let mut query = match Query::new(&*runtime, &lua_params.pattern, &mut lua_params.params) {
+        let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params) {
             Ok(q) => q,
             Err(e) => {
                 say(

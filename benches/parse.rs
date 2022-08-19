@@ -234,7 +234,7 @@ fn query1_sql() -> String {
     sql.into()
 }
 
-fn query1(pattern: &str, params: &mut Vec<Value>, engine: &mut RouterRuntimeMock) {
+fn query1(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
@@ -251,10 +251,10 @@ fn bench_query1(c: &mut Criterion) {
     let mut reestrid: u64 = 666;
     c.bench_function("query1", |b| {
         b.iter(|| {
-            let mut params = vec![Value::from(sys_from), Value::from(reestrid)];
+            let params = vec![Value::from(sys_from), Value::from(reestrid)];
             sys_from += 1;
             reestrid += 1;
-            query1(&sql, &mut params, &mut engine)
+            query1(&sql, params, &mut engine)
         })
     });
 }

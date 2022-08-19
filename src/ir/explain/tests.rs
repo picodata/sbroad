@@ -8,7 +8,7 @@ fn simple_query_without_cond_plan() {
     let query =
         r#"SELECT "t"."identification_number" as "c1", "product_code" FROM "hash_testing" as "t""#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
@@ -27,7 +27,7 @@ fn simple_query_without_cond_plan() {
 fn simple_query_with_cond_plan() {
     let query = r#"SELECT "t"."identification_number" as "c1", "product_code" FROM "hash_testing" as "t" WHERE "t"."identification_number" = 1 AND "t"."product_code" = '222'"#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
@@ -49,7 +49,7 @@ fn union_query_plan() {
         UNION ALL
         SELECT "t2"."identification_number", "product_code" FROM "hash_testing_hist" as "t2""#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
@@ -74,7 +74,7 @@ SELECT "id", "FIRST_NAME" FROM "test_space_hist" WHERE "sys_op" < 0
 ) as "t"
 WHERE "id" = 1"#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
@@ -112,7 +112,7 @@ WHERE "id" IN (SELECT "id"
   AND "FIRST_NAME" IN (SELECT "FIRST_NAME" FROM "test_space" WHERE "id" = 5)
 "#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
 
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
@@ -156,7 +156,7 @@ fn explain_except1() {
         EXCEPT DISTINCT
         SELECT "identification_number" FROM "hash_testing_hist""#;
 
-    let plan = sql_to_ir(query, &mut vec![]);
+    let plan = sql_to_ir(query, vec![]);
     let top = &plan.get_top().unwrap();
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 

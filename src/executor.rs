@@ -90,11 +90,7 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    pub fn new(
-        coordinator: &'a C,
-        sql: &str,
-        params: &mut Vec<Value>,
-    ) -> Result<Self, QueryPlannerError>
+    pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, QueryPlannerError>
     where
         C::Configuration: CoordinatorMetadata,
         C::Cache: Cache<String, Plan>,

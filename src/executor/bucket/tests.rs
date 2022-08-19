@@ -18,7 +18,7 @@ fn simple_union_query() {
     WHERE "id" = 1"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -42,7 +42,7 @@ fn simple_disjunction_in_union_query() {
     WHERE ("id" = 1) OR ("id" = 100)"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -73,7 +73,7 @@ fn complex_shard_key_union_query() {
     WHERE "identification_number" = 1 AND "product_code" = '222'"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -106,7 +106,7 @@ fn union_complex_cond_query() {
         OR "product_code" = '111')"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -156,7 +156,7 @@ fn union_query_conjunction() {
     SELECT * FROM "test_space_hist" WHERE "id" = 2"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
@@ -182,7 +182,7 @@ fn simple_except_query() {
     WHERE "id" = 1"#;
 
     let coordinator = RouterRuntimeMock::new();
-    let mut query = Query::new(&coordinator, query, &mut vec![]).unwrap();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
     let plan = query.exec_plan.get_ir_plan();
     let top = plan.get_top().unwrap();
     let buckets = query.bucket_discovery(top).unwrap();
