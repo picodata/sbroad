@@ -19,6 +19,9 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
+use crate::otm::child_span;
+
+use sbroad_proc::otm_child_span;
 
 impl Ast for AbstractSyntaxTree {
     /// Build an empty AST.
@@ -35,6 +38,7 @@ impl Ast for AbstractSyntaxTree {
     ///
     /// # Errors
     /// - Failed to parse an SQL query.
+    #[otm_child_span("ast.parse")]
     fn new(query: &str) -> Result<Self, QueryPlannerError> {
         let mut ast = AbstractSyntaxTree::empty();
 
@@ -93,11 +97,12 @@ impl Ast for AbstractSyntaxTree {
 
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
+    #[otm_child_span("ast.resolve")]
     fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
     where
         M: CoordinatorMetadata,
     {
-        let mut plan = Plan::new();
+        let mut plan = Plan::default();
 
         let top = match self.top {
             Some(t) => t,
@@ -758,6 +763,7 @@ impl Plan {
     /// - Invalid amount of parameters.
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
+    #[otm_child_span("plan.bind")]
     pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), QueryPlannerError> {
         // Nothing to do here.
         if params.is_empty() {

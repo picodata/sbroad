@@ -7,7 +7,7 @@ use std::path::Path;
 
 #[test]
 fn proj_preserve_dist_key() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",

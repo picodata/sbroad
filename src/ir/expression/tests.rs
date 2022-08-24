@@ -6,7 +6,7 @@ use crate::ir::*;
 
 #[test]
 fn row_duplicate_column_names() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let c1 = plan.nodes.add_const(Value::from(1_i64));
     let c1_alias_a = plan.nodes.add_alias("a", c1).unwrap();
@@ -26,7 +26,7 @@ fn row_duplicate_column_names() {
 fn rel_nodes_from_reference_in_scan() {
     // t(a int) [a]
     // select * from t
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -46,7 +46,7 @@ fn rel_nodes_from_reference_in_scan() {
 fn rel_nodes_from_reference_in_proj() {
     // t(a int) [a]
     // select a from t
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",

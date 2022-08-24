@@ -11,6 +11,8 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 /// Buckets are used to determine which nodes to send the query to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,6 +195,7 @@ where
     /// - Failed to find a virtual table.
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
+    #[otm_child_span("query.bucket.discovery")]
     pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, QueryPlannerError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let rel_tree = DftPost::new(&top_id, |node| ir_plan.nodes.rel_iter(node));

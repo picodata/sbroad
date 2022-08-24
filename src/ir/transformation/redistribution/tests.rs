@@ -16,7 +16,7 @@ fn segment_motion_for_sub_query() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
     // select * from t1 where a = (select b from t2)
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(
@@ -89,7 +89,7 @@ fn full_motion_less_for_sub_query() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
     // select * from t1 where a < (select b from t2)
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(
@@ -147,7 +147,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
     // t1(a int, b int) key [a]
     // t2(a int) key [a]
     // select * from t1 where b = (select a from t2)
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(
@@ -205,7 +205,7 @@ fn local_sub_query() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
     // select * from t1 where a = (select a from t2)
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(
@@ -260,7 +260,7 @@ fn multiple_sub_queries() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
     // select * from t1 where a < (select a from t2) or a = (select b from t2)
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(

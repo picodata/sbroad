@@ -34,7 +34,7 @@ fn plan_oor_top() {
 
 #[test]
 fn get_node() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -57,7 +57,7 @@ fn get_node() {
 
 #[test]
 fn get_node_oor() {
-    let plan = Plan::new();
+    let plan = Plan::default();
     assert_eq!(
         QueryPlannerError::ValueOutOfRange,
         plan.get_node(42).unwrap_err()

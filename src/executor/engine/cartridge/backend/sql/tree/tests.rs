@@ -15,7 +15,7 @@ use super::*;
 fn sql_order_selection() {
     // select a from t where a = 1
 
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let t = Table::new_seg(
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],

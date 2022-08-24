@@ -16,6 +16,8 @@ use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 fn call_expr_tree_split_columns(
     plan: &mut Plan,
@@ -108,6 +110,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
+    #[otm_child_span("plan.transformation.split_columns")]
     pub fn split_columns(&mut self) -> Result<(), QueryPlannerError> {
         self.transform_expr_trees(&call_expr_tree_split_columns)
     }

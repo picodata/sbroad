@@ -15,6 +15,8 @@ use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use traversal::Bft;
 
@@ -368,6 +370,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
+    #[otm_child_span("plan.transformation.merge_tuples")]
     pub fn merge_tuples(&mut self) -> Result<(), QueryPlannerError> {
         self.transform_expr_trees(&call_expr_tree_merge_tuples)
     }

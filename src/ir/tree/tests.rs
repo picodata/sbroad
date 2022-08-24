@@ -9,7 +9,7 @@ use traversal::{Bft, DftPost, DftPre};
 fn expression_bft() {
     // ((c1 = c2) and (c2 = c3)) or (c4 = c5)
 
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let c1 = plan.nodes.add_const(Value::from(1_u64));
     let c2 = plan.nodes.add_const(Value::from(1_u64));
     let c3 = plan.nodes.add_const(Value::from(1_u64));
@@ -44,7 +44,7 @@ fn expression_bft() {
 fn and_chain_pre() {
     // (((b1 or b2) and b3) and b4) and (b5 = (b6 = b7))
 
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let b1 = plan.nodes.add_const(Value::Boolean(true));
     let b2 = plan.nodes.add_const(Value::Boolean(true));
     let b3 = plan.nodes.add_const(Value::Boolean(true));
@@ -81,7 +81,7 @@ fn relational_post() {
     // output: scan t1, scan t2, selection, union all
 
     // Initialize plan
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",
@@ -140,7 +140,7 @@ fn selection_subquery_dfs_post() {
     //         - (c)
 
     // Initialize plan
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",
@@ -218,7 +218,7 @@ fn subtree_dfs_post() {
     //              - (1)
 
     // Initialize plan
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",

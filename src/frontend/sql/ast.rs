@@ -257,11 +257,17 @@ impl<'n> StackParseNode<'n> {
 }
 
 /// AST is a tree build on the top of the parse nodes arena.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AbstractSyntaxTree {
     pub(in crate::frontend::sql) nodes: ParseNodes,
     pub(in crate::frontend::sql) top: Option<usize>,
     pub(super) map: HashMap<usize, Vec<usize>>,
+}
+
+impl PartialEq for AbstractSyntaxTree {
+    fn eq(&self, other: &Self) -> bool {
+        self.nodes == other.nodes && self.top == other.top && self.map == other.map
+    }
 }
 
 #[allow(dead_code)]

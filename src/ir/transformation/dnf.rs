@@ -74,6 +74,8 @@ use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::{Node, Plan};
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 use std::collections::VecDeque;
 
 /// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
@@ -251,6 +253,7 @@ impl Plan {
     /// - If the plan does not contain the top.
     /// - If the plan doesn't contain relational operators where expected.
     /// - If failed to convert an expression tree to a CNF.
+    #[otm_child_span("plan.transformation.set_dnf")]
     pub fn set_dnf(&mut self) -> Result<(), QueryPlannerError> {
         self.transform_expr_trees(&call_expr_tree_to_dnf)
     }

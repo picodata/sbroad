@@ -14,7 +14,7 @@ use super::*;
 
 #[test]
 fn scan_rel() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -51,7 +51,7 @@ fn scan_rel() {
 
 #[test]
 fn scan_rel_serialized() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -85,7 +85,7 @@ fn scan_rel_serialized() {
 
 #[test]
 fn projection() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -139,7 +139,7 @@ fn projection_serialize() {
 fn selection() {
     // select * from t where (a, b) = (1, 10)
 
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -192,7 +192,7 @@ fn selection_serialize() {
 
 #[test]
 fn union_all() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",
@@ -217,7 +217,7 @@ fn union_all() {
 
 #[test]
 fn union_all_col_amount_mismatch() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",
@@ -253,7 +253,7 @@ fn union_all_col_amount_mismatch() {
 
 #[test]
 fn sub_query() {
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t = Table::new_seg(
         "t",
@@ -301,7 +301,7 @@ fn selection_with_sub_query() {
     // t2(b int) key [b]
     // select * from t1 where a = (select b from t2)
 
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
     let t1 = Table::new_seg(
@@ -354,7 +354,7 @@ fn join() {
     //
     // Treat a = d as (a) = (d),
     // i.e. (a), (d) - tuples containing a single column.
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",
@@ -409,7 +409,7 @@ fn join_serialize() {
 fn join_duplicate_columns() {
     // t1(a, b), t2(a, d)
     // select * from t1 join t2 on t1.a = t2.d
-    let mut plan = Plan::new();
+    let mut plan = Plan::default();
 
     let t1 = Table::new_seg(
         "t1",

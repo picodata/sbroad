@@ -1,8 +1,11 @@
 use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::config::StorageConfiguration;
+use crate::executor::engine::cartridge::update_tracing;
 use crate::executor::engine::Configuration;
 use crate::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use crate::ir::value::Value;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 use std::any::Any;
 use std::cell::RefCell;
 use tarantool::log::{say, SayLevel};
@@ -109,6 +112,7 @@ impl Configuration for StorageRuntime {
             let mut metadata = StorageConfiguration::new();
             metadata.storage_capacity = storage_capacity;
             metadata.storage_size_bytes = storage_size_bytes;
+            update_tracing()?;
 
             return Ok(Some(metadata));
         }
@@ -204,6 +208,7 @@ impl StorageRuntime {
     }
 }
 
+#[otm_child_span("tarantool.statement.prepare")]
 fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
     let lua = tarantool::lua_state();
 
@@ -232,6 +237,7 @@ fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
     }
 }
 
+#[otm_child_span("tarantool.statement.unprepare")]
 fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
     let lua = tarantool::lua_state();
 
@@ -254,6 +260,7 @@ fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
     }
 }
 
+#[otm_child_span("tarantool.statement.prepared.read")]
 fn read_prepared(
     stmt_id: u32,
     stmt: &str,
@@ -266,7 +273,7 @@ fn read_prepared(
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
-        Ok(v) => Ok(Box::new(v)),
+        Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             say(
                 SayLevel::Error,
@@ -280,6 +287,7 @@ fn read_prepared(
     }
 }
 
+#[otm_child_span("tarantool.statement.unprepared.read")]
 fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
     let lua = tarantool::lua_state();
 
@@ -288,7 +296,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
-        Ok(v) => Ok(Box::new(v)),
+        Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             say(
                 SayLevel::Error,
@@ -302,6 +310,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
     }
 }
 
+#[otm_child_span("tarantool.statement.prepared.write")]
 fn write_prepared(
     stmt_id: u32,
     stmt: &str,
@@ -314,7 +323,7 @@ fn write_prepared(
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
-        Ok(v) => Ok(Box::new(v)),
+        Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             say(
                 SayLevel::Error,
@@ -328,6 +337,7 @@ fn write_prepared(
     }
 }
 
+#[otm_child_span("tarantool.statement.unprepared.write")]
 fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
     let lua = tarantool::lua_state();
 
@@ -336,7 +346,7 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
         .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
-        Ok(v) => Ok(Box::new(v)),
+        Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             say(
                 SayLevel::Error,

@@ -41,7 +41,9 @@ use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionKey, MotionPolicy, Target};
 use crate::ir::value::Value;
 use crate::ir::Plan;
+use crate::otm::child_span;
 use base64ct::{Base64, Encoding};
+use sbroad_proc::otm_child_span;
 use sha2::{Digest, Sha256};
 
 pub mod bucket;
@@ -57,7 +59,6 @@ impl Plan {
         self.replace_in_operator()?;
         self.split_columns()?;
         self.set_dnf()?;
-        // TODO: make it a plan method and rename to "derive_equalities()".
         self.derive_equalities()?;
         self.merge_tuples()?;
         self.add_motions()?;
@@ -90,6 +91,7 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
+    #[otm_child_span("query.new")]
     pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, QueryPlannerError>
     where
         C::Configuration: CoordinatorMetadata,
@@ -141,6 +143,7 @@ where
     /// - Failed to discover buckets.
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
+    #[otm_child_span("query.dispatch")]
     pub fn dispatch(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
         let slices = self.exec_plan.get_ir_plan().clone_slices();
         if let Some(slices) = slices {
@@ -169,6 +172,7 @@ where
     ///
     /// # Errors
     /// - invalid motion node
+    #[otm_child_span("query.motion.add")]
     pub fn add_motion_result(
         &mut self,
         motion_id: usize,

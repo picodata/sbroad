@@ -96,7 +96,9 @@ use crate::ir::operator::Bool;
 use crate::ir::transformation::merge_tuples::Chain;
 use crate::ir::value::{Trivalent, Value};
 use crate::ir::Plan;
+use crate::otm::child_span;
 use itertools::Itertools;
+use sbroad_proc::otm_child_span;
 use std::collections::{HashMap, HashSet};
 
 /// A copy of the `Expression::Reference` with traits for the `HashSet`.
@@ -492,6 +494,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
+    #[otm_child_span("plan.transformation.derive_equalities")]
     pub fn derive_equalities(&mut self) -> Result<(), QueryPlannerError> {
         self.transform_expr_trees(&call_expr_tree_derive_equalities)
     }

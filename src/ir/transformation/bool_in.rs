@@ -14,6 +14,8 @@ use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
 fn call_expr_tree_replace_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
@@ -82,6 +84,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
+    #[otm_child_span("plan.transformation.replace_in_operator")]
     pub fn replace_in_operator(&mut self) -> Result<(), QueryPlannerError> {
         self.transform_expr_trees(&call_expr_tree_replace_in)
     }

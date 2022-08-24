@@ -17,6 +17,7 @@ use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::cartridge::config::RouterConfiguration;
 use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
+use crate::executor::engine::cartridge::update_tracing;
 use crate::executor::engine::{
     normalize_name_from_schema, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator,
@@ -30,6 +31,8 @@ use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
 use crate::ir::Plan;
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 type GroupedBuckets = HashMap<String, Vec<u64>>;
 
@@ -135,6 +138,7 @@ impl Configuration for RouterRuntime {
             metadata.set_sharding_column(normalize_name_from_schema(column.as_str()));
             // We should always load the schema **after** setting the sharding column.
             metadata.load_schema(&schema)?;
+            update_tracing()?;
 
             return Ok(Some(metadata));
         }
@@ -162,6 +166,7 @@ impl Coordinator for RouterRuntime {
     }
 
     /// Execute a sub tree on the nodes
+    #[otm_child_span("query.dispatch.cartridge")]
     fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
@@ -217,6 +222,7 @@ impl Coordinator for RouterRuntime {
     }
 
     /// Transform sub query results into a virtual table.
+    #[otm_child_span("query.motion.materialize")]
     fn materialize_motion(
         &self,
         plan: &mut ExecutionPlan,
@@ -288,6 +294,7 @@ impl RouterRuntime {
         Ok(result)
     }
 
+    #[otm_child_span("buckets.random")]
     fn get_random_bucket(&self) -> Buckets {
         let mut rng = thread_rng();
         let bucket_id: u64 = rng.gen_range(1..=self.bucket_count as u64);
@@ -401,6 +408,7 @@ impl RouterRuntime {
         }
     }
 
+    #[otm_child_span("query.dispatch.cartridge.some")]
     fn exec_on_some(
         &self,
         rs_query: &HashMap<String, PatternWithParams>,
@@ -465,6 +473,7 @@ impl RouterRuntime {
         }
     }
 
+    #[otm_child_span("query.dispatch.all")]
     fn exec_on_all(
         &self,
         query: &PatternWithParams,
@@ -479,6 +488,7 @@ impl RouterRuntime {
 }
 
 impl Buckets {
+    #[otm_child_span("buckets.group")]
     fn group(&self) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
         let lua_buckets: Vec<u64> = match self {
             Buckets::All => {

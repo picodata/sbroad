@@ -15,6 +15,8 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Column;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 /// Redistribution key targets (columns or values of the key).
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
@@ -947,6 +949,7 @@ impl Plan {
     /// - failed to get relational nodes (plan is invalid?)
     /// - failed to resolve distribution conflicts
     /// - failed to set distribution
+    #[otm_child_span("plan.transformation.add_motions")]
     pub fn add_motions(&mut self) -> Result<(), QueryPlannerError> {
         let nodes = self.get_relational_nodes_dfs_post()?;
         for id in &nodes {
