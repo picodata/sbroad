@@ -863,7 +863,7 @@ impl<'p> SyntaxPlan<'p> {
         let ir_plan = plan.get_ir_plan();
 
         // Wrap plan's nodes and preserve their ids.
-        let dft_post = DftPost::new(&top, |node| ir_plan.nodes.subtree_iter(node));
+        let dft_post = DftPost::new(&top, |node| ir_plan.subtree_iter(node));
         for (_, id) in dft_post {
             // it works only for post-order traversal
             let sn_id = sp.add_plan_node(*id)?;

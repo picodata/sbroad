@@ -15,7 +15,7 @@ impl<'e> ExecutionPlan<'e> {
         let mut nodes: Vec<usize> = Vec::new();
         let ir_plan = self.get_ir_plan();
 
-        let post_tree = DftPost::new(&top_node_id, |node| ir_plan.nodes.subtree_iter(node));
+        let post_tree = DftPost::new(&top_node_id, |node| ir_plan.subtree_iter(node));
         for (_, node_id) in post_tree {
             if ir_plan.is_bool_eq_with_rows(*node_id) {
                 nodes.push(*node_id);

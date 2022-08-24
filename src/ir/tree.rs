@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use super::expression::Expression;
 use super::operator::{Bool, Relational};
-use super::{Node, Nodes};
+use super::{Node, Nodes, Plan};
 
 /// Relational node's child iterator.
 ///
@@ -31,10 +31,10 @@ pub struct ExpressionIterator<'n> {
 
 /// Expression and relational nodes iterator.
 #[derive(Debug)]
-pub struct SubtreeIterator<'n> {
-    current: &'n usize,
+pub struct SubtreeIterator<'p> {
+    current: &'p usize,
     child: RefCell<usize>,
-    nodes: &'n Nodes,
+    plan: &'p Plan,
 }
 
 /// Children iterator for "and"-ed equivalent expressions.
@@ -95,13 +95,15 @@ impl<'n> Nodes {
             nodes: self,
         }
     }
+}
 
+impl<'p> Plan {
     #[must_use]
-    pub fn subtree_iter(&'n self, current: &'n usize) -> SubtreeIterator<'n> {
+    pub fn subtree_iter(&'p self, current: &'p usize) -> SubtreeIterator<'p> {
         SubtreeIterator {
             current,
             child: RefCell::new(0),
-            nodes: self,
+            plan: self,
         }
     }
 }
@@ -263,12 +265,12 @@ impl<'n> Iterator for RelationalIterator<'n> {
     }
 }
 
-impl<'n> Iterator for SubtreeIterator<'n> {
-    type Item = &'n usize;
+impl<'p> Iterator for SubtreeIterator<'p> {
+    type Item = &'p usize;
 
     #[allow(clippy::too_many_lines)]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(child) = self.nodes.arena.get(*self.current) {
+        if let Some(child) = self.plan.nodes.arena.get(*self.current) {
             return match child {
                 Node::Parameter => None,
                 Node::Expression(exp) => match exp {
@@ -301,7 +303,48 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                             }
                         };
                     }
-                    Expression::Constant { .. } | Expression::Reference { .. } => None,
+                    Expression::Constant { .. } => None,
+                    Expression::Reference { .. } => {
+                        let step = *self.child.borrow();
+                        if step == 0 {
+                            *self.child.borrow_mut() += 1;
+
+                            // At first we need to detect the place where the reference is used:
+                            // for selection filter or a join condition, we need to check whether
+                            // the reference points to an **additional** sub-query and then traverse
+                            // into it. Otherwise, stop traversal.
+                            let parent_id = match exp.get_parent() {
+                                Ok(parent_id) => parent_id,
+                                Err(_) => return None,
+                            };
+                            if let Ok(rel_id) =
+                                self.plan.get_relational_from_reference_node(*self.current)
+                            {
+                                match self.plan.get_relation_node(*rel_id) {
+                                    Ok(rel_node) if rel_node.is_subquery() => {
+                                        // Check if the sub-query is an additional one.
+                                        let parent = self.plan.get_relation_node(parent_id);
+                                        let mut is_additional = false;
+                                        if let Ok(Relational::Selection { children, .. }) = parent {
+                                            if children.iter().skip(1).any(|&c| c == *rel_id) {
+                                                is_additional = true;
+                                            }
+                                        }
+                                        if let Ok(Relational::InnerJoin { children, .. }) = parent {
+                                            if children.iter().skip(2).any(|&c| c == *rel_id) {
+                                                is_additional = true;
+                                            }
+                                        }
+                                        if is_additional {
+                                            return Some(rel_id);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        None
+                    }
                 },
 
                 Node::Relational(r) => match r {
@@ -313,7 +356,7 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                         let step = *self.child.borrow();
 
                         *self.child.borrow_mut() += 1;
-                        match step.cmp(&children.len()) {
+                        match step.cmp(&2) {
                             Ordering::Less => {
                                 return children.get(step);
                             }
@@ -358,7 +401,7 @@ impl<'n> Iterator for SubtreeIterator<'n> {
                         let step = *self.child.borrow();
 
                         *self.child.borrow_mut() += 1;
-                        match step.cmp(&children.len()) {
+                        match step.cmp(&1) {
                             Ordering::Less => {
                                 return children.get(step);
                             }

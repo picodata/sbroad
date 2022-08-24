@@ -169,7 +169,7 @@ impl ExecutionPlan {
                             }
                             Expression::Reference { position, .. } => {
                                 let rel_id: usize =
-                                    ir_plan.get_relational_from_reference_node(*id)?;
+                                    *ir_plan.get_relational_from_reference_node(*id)?;
                                 let rel_node = ir_plan.get_relation_node(rel_id)?;
                                 let alias = &ir_plan.get_alias_from_reference_node(expr)?;
 

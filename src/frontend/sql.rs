@@ -765,7 +765,7 @@ impl Plan {
         }
 
         let top_id = self.get_top()?;
-        let tree = DftPost::new(&top_id, |node| self.nodes.subtree_iter(node));
+        let tree = DftPost::new(&top_id, |node| self.subtree_iter(node));
         let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
 
         // Transform parameters to values. The result values are stored in the

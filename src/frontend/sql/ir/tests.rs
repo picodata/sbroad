@@ -8,7 +8,7 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
-fn no_transform(_plan: &mut Plan) {}
+pub(super) fn no_transform(_plan: &mut Plan) {}
 
 #[test]
 fn front_sql1() {
@@ -420,73 +420,5 @@ fn front_sql19() {
     assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
 }
 
-#[test]
-fn front_params1() {
-    let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
-        WHERE "sys_op" = ? AND "sysFrom" > ?"#;
-    let params = vec![Value::from(0_i64), Value::from(1_i64)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id", "test_space"."FIRST_NAME" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."sysFrom") > (?)"#,
-        ),
-        params.clone(),
-    );
-
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
-}
-
-#[test]
-fn front_params2() {
-    let pattern = r#"SELECT "id" FROM "test_space"
-        WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let params = vec![Value::Null, Value::from("hello")];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params.clone(),
-    );
-
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
-}
-
-// check cyrillic params support
-#[test]
-fn front_params3() {
-    let pattern = r#"SELECT "id" FROM "test_space"
-        WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let params = vec![Value::Null, Value::from("кириллица")];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params.clone(),
-    );
-
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
-}
-
-// check symbols in values (grammar)
-#[test]
-fn front_params4() {
-    let pattern = r#"SELECT "id" FROM "test_space"
-        WHERE "FIRST_NAME" = '''± !@#$%^&*()_+=-\/><";:,.`~'"#;
-
-    let params = vec![Value::from(r#"''± !@#$%^&*()_+=-\/><";:,.`~"#)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params,
-    );
-
-    assert_eq!(sql_to_sql(pattern, vec![], &no_transform), expected);
-}
+#[cfg(test)]
+mod params;

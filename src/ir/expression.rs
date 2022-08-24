@@ -189,6 +189,21 @@ impl Expression {
         ))
     }
 
+    /// Gets relational node id containing the reference.
+    ///
+    /// # Errors
+    /// - node isn't reference type
+    /// - reference doesn't have a parent
+    pub fn get_parent(&self) -> Result<usize, QueryPlannerError> {
+        if let Expression::Reference { parent, .. } = self {
+            return parent
+                .ok_or_else(|| QueryPlannerError::CustomError("Reference has no parent".into()));
+        }
+        Err(QueryPlannerError::CustomError(
+            "Node isn't reference type".into(),
+        ))
+    }
+
     /// The node is a row expression.
     #[must_use]
     pub fn is_row(&self) -> bool {
@@ -681,25 +696,24 @@ impl Plan {
         Ok(self.nodes.add_row(list, None))
     }
 
-    /// A list of relational nodes that makes up the reference.
+    /// A relational node pointed by the reference.
     ///
     /// # Errors
     /// - reference is invalid
-    /// - `relational_map` is not initialized
     pub fn get_relational_from_reference_node(
         &self,
         ref_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<&usize, QueryPlannerError> {
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
         {
-            let referred_rel_id = parent.ok_or(QueryPlannerError::CustomError(
-                "Reference node has no parent".into(),
-            ))?;
-            let rel = self.get_relation_node(referred_rel_id)?;
+            let referred_rel_id = parent.as_ref().ok_or_else(|| {
+                QueryPlannerError::CustomError("Reference node has no parent".into())
+            });
+            let rel = self.get_relation_node(*referred_rel_id.clone()?)?;
             if let Relational::Insert { .. } = rel {
-                return Ok(referred_rel_id);
+                return referred_rel_id;
             } else if let Some(children) = rel.children() {
                 match targets {
                     None => {
@@ -709,7 +723,7 @@ impl Plan {
                     }
                     Some(positions) => match (positions.get(0), positions.get(1)) {
                         (Some(first), None) => {
-                            let child_id = *children.get(*first).ok_or_else(|| {
+                            let child_id = children.get(*first).ok_or_else(|| {
                                 QueryPlannerError::CustomError(
                                     "Relational node has no child at first position".into(),
                                 )
