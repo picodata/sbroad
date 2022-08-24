@@ -7,6 +7,9 @@ use traversal::DftPost;
 use crate::errors::QueryPlannerError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
+use crate::ir::transformation::redistribution::{
+    DataGeneration, MotionPolicy as IrMotionPolicy, Target as IrTarget,
+};
 use crate::ir::Plan;
 
 use super::operator::{Bool, Unary};
@@ -360,6 +363,78 @@ impl Display for SubQuery {
 }
 
 #[derive(Debug, Serialize)]
+struct Motion {
+    policy: MotionPolicy,
+    generation: DataGeneration,
+}
+
+impl Motion {
+    fn new(policy: MotionPolicy, generation: DataGeneration) -> Self {
+        Motion { policy, generation }
+    }
+}
+
+impl Display for Motion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "motion [policy: {}, generation: {}]",
+            &self.policy, &self.generation
+        )
+    }
+}
+
+#[derive(Debug, Serialize)]
+enum MotionPolicy {
+    Full,
+    Segment(MotionKey),
+    Local,
+}
+
+impl Display for MotionPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            MotionPolicy::Full => write!(f, "full"),
+            MotionPolicy::Segment(mk) => write!(f, "segment({})", mk),
+            MotionPolicy::Local => write!(f, "local"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MotionKey {
+    pub targets: Vec<Target>,
+}
+
+impl Display for MotionKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let targets = &self
+            .targets
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        write!(f, "[{}]", targets)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub enum Target {
+    Reference(String),
+    Value(Value),
+}
+
+impl Display for Target {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Target::Reference(s) => write!(f, "ref({})", s),
+            Target::Value(v) => write!(f, "value({})", v),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
     Except,
@@ -368,6 +443,7 @@ enum ExplainNode {
     Selection(Selection),
     UnionAll,
     SubQuery(SubQuery),
+    Motion(Motion),
 }
 
 impl Display for ExplainNode {
@@ -379,6 +455,7 @@ impl Display for ExplainNode {
             ExplainNode::Selection(s) => format!("selection {}", s),
             ExplainNode::UnionAll => "union all".to_string(),
             ExplainNode::SubQuery(s) => s.to_string(),
+            ExplainNode::Motion(m) => m.to_string(),
         };
 
         write!(f, "{}", s)
@@ -551,8 +628,61 @@ impl FullExplain {
                     let s = SubQuery::new(alias.as_ref().map(ToString::to_string));
                     Some(ExplainNode::SubQuery(s))
                 }
+                Relational::Motion {
+                    children,
+                    policy,
+                    generation,
+                    ..
+                } => {
+                    let child = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Motion node must have exactly one child".into(),
+                        )
+                    })?;
+                    current_node.children.push(child);
+
+                    let p = match policy {
+                        IrMotionPolicy::Segment(s) => {
+                            let child_id = children.first().ok_or_else(|| {
+                                QueryPlannerError::CustomError(
+                                    "Current node should have exactly one child".to_string(),
+                                )
+                            })?;
+
+                            let child_output_id = ir.get_relation_node(*child_id)?.output();
+                            let col_list =
+                                ir.get_expression_node(child_output_id)?.get_row_list()?;
+
+                            let targets = (&s.targets)
+                                .iter()
+                                .map(|r| match r {
+                                    IrTarget::Reference(pos) => {
+                                        let col_id = *col_list.get(*pos).ok_or_else(|| {
+                                            QueryPlannerError::CustomError(String::from(
+                                                "Invalid position in list",
+                                            ))
+                                        })?;
+                                        let col_name = ir
+                                            .get_expression_node(col_id)?
+                                            .get_alias_name()?
+                                            .to_string();
+
+                                        Ok(Target::Reference(col_name))
+                                    }
+                                    IrTarget::Value(v) => Ok(Target::Value(v.clone())),
+                                })
+                                .collect::<Result<Vec<Target>, _>>()?;
+
+                            MotionPolicy::Segment(MotionKey { targets })
+                        }
+                        IrMotionPolicy::Full => MotionPolicy::Full,
+                        IrMotionPolicy::Local => MotionPolicy::Local,
+                    };
+                    let m = Motion::new(p, generation.clone());
+
+                    Some(ExplainNode::Motion(m))
+                }
                 Relational::InnerJoin { .. }
-                | Relational::Motion { .. }
                 | Relational::Insert { .. }
                 | Relational::Values { .. }
                 | Relational::ValuesRow { .. } => {

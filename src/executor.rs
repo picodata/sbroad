@@ -53,7 +53,7 @@ pub mod vtable;
 
 impl Plan {
     /// Apply optimization rules to the plan.
-    fn optimize(&mut self) -> Result<(), QueryPlannerError> {
+    pub(crate) fn optimize(&mut self) -> Result<(), QueryPlannerError> {
         self.replace_in_operator()?;
         self.split_columns()?;
         self.set_dnf()?;

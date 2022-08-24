@@ -10,6 +10,14 @@ use crate::frontend::Ast;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
+/// Compiles an SQL query to optimized IR plan.
+#[allow(dead_code)]
+pub fn sql_to_optimized_ir(query: &str, params: Vec<Value>) -> Plan {
+    let mut plan = sql_to_ir(query, params);
+    plan.optimize().unwrap();
+    plan
+}
+
 /// Compiles an SQL query to IR plan.
 #[allow(dead_code)]
 pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {

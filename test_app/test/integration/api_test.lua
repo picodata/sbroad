@@ -777,13 +777,26 @@ g.test_bucket_id_in_join = function()
     })
 end
 
-g.test_invalid_explain = function()
+g.test_motion_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local _, err = api:call("sbroad.explain", { [[SELECT "id", "name" FROM "testing_space"
+    local r, err = api:call("sbroad.explain", { [[SELECT "id", "name" FROM "testing_space"
     WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
-
-    t.assert_str_contains(tostring(err), "Explain hasn't supported node Motion")
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        {
+            "projection (\"testing_space\".\"id\" -> \"id\", \"testing_space\".\"name\" -> \"name\")",
+            "    selection ROW(\"testing_space\".\"id\") in ROW($0)",
+            "        scan \"testing_space\"",
+            "subquery $0:",
+            "motion [policy: full, generation: none]",
+            "            scan",
+            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\")",
+            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") < ROW(0)",
+            "                        scan \"space_simple_shard_key_hist\"",
+        }
+    )
 end
 
 g.test_valid_explain = function()

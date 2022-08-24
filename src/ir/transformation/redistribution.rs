@@ -3,6 +3,7 @@
 use ahash::RandomState;
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 use traversal::{Bft, DftPost};
@@ -77,6 +78,17 @@ pub enum DataGeneration {
     None,
     /// Generate a sharding column (`bucket_id` in terms of Tarantool).
     ShardingColumn,
+}
+
+impl Display for DataGeneration {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        let op = match &self {
+            DataGeneration::None => "none",
+            DataGeneration::ShardingColumn => "sharding_column",
+        };
+
+        write!(f, "{}", op)
+    }
 }
 
 struct BoolOp {
