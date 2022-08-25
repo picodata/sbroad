@@ -142,7 +142,7 @@ where
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
     pub fn dispatch(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let slices = self.exec_plan.get_ir_plan().get_slices();
+        let slices = self.exec_plan.get_ir_plan().clone_slices();
         if let Some(slices) = slices {
             for slice in slices {
                 for motion_id in slice {

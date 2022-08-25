@@ -201,9 +201,9 @@ impl Plan {
         self.top.ok_or(QueryPlannerError::InvalidPlan)
     }
 
-    /// Get plan slices.
+    /// Clone plan slices.
     #[must_use]
-    pub fn get_slices(&self) -> Option<Vec<Vec<usize>>> {
+    pub fn clone_slices(&self) -> Option<Vec<Vec<usize>>> {
         self.slices.clone()
     }
 

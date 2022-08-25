@@ -24,7 +24,7 @@ fn not_eq1_test() {
     let plan = query.exec_plan.get_ir_plan();
 
     // Validate the motion type.
-    assert_eq!(true, plan.get_slices().is_none());
+    assert_eq!(true, plan.clone_slices().is_none());
 
     // Execute the query.
     let result = *query
