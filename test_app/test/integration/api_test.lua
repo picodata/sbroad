@@ -799,6 +799,43 @@ g.test_motion_explain = function()
     )
 end
 
+g.test_join_explain = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.explain", { [[SELECT *
+FROM
+    (SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 1
+     UNION ALL
+     SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0) AS "t3"
+INNER JOIN
+    (SELECT "id" as "tid"  FROM "testing_space" where "id" <> 1) AS "t8"
+    ON "t3"."id" = "t8"."tid"
+WHERE "t3"."name" = '123']] })
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 210
+        {
+            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"name\" -> \"name\", \"t8\".\"tid\" -> \"tid\")",
+            "    selection ROW(\"t3\".\"name\") = ROW('123')",
+            "        join on ROW(\"t3\".\"id\") = ROW(\"t8\".\"tid\")",
+            "            scan \"t3\"",
+            "                union all",
+            "                    projection (\"space_simple_shard_key\".\"id\" -> \"id\", \"space_simple_shard_key\".\"name\" -> \"name\")",
+            "                        selection ROW(\"space_simple_shard_key\".\"sysOp\") < ROW(1)",
+            "                            scan \"space_simple_shard_key\"",
+            "                    projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
+            "                        selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
+            "                            scan \"space_simple_shard_key_hist\"",
+            "            motion [policy: segment([ref(\"tid\")]), generation: none]",
+            "                scan \"t8\"",
+            "                    projection (\"testing_space\".\"id\" -> \"tid\")",
+            "                        selection ROW(\"testing_space\".\"id\") <> ROW(1)",
+            "                            scan \"testing_space\"",
+        }
+    )
+end
+
 g.test_valid_explain = function()
     local api = cluster:server("api-1").net_box
 

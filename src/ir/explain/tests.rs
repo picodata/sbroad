@@ -221,3 +221,64 @@ motion [policy: segment([ref("identification_number")]), generation: none]
 
     assert_eq!(actual_explain, explain_tree.to_string())
 }
+
+#[test]
+fn motion_join_plan() {
+    let query = r#"SELECT "t1"."FIRST_NAME"
+FROM (SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "id" = 3) as "t1"
+    JOIN (SELECT "identification_number", "product_code" FROM "hash_testing") as "t2" ON "t1"."id"="t2"."identification_number"
+WHERE "t2"."product_code" = '123'"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME" -> "FIRST_NAME")
+    selection ROW("t2"."product_code") = ROW('123')
+        join on ROW("t1"."id") = ROW("t2"."identification_number")
+            scan "t1"
+                projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+                    selection ROW("test_space"."id") = ROW(3)
+                        scan "test_space"
+            motion [policy: segment([ref("identification_number")]), generation: none]
+                scan "t2"
+                    projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                        scan "hash_testing"
+"#);
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}
+
+#[test]
+fn sq_join_plan() {
+    let query = r#"SELECT "t1"."FIRST_NAME"
+FROM (SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "id" = 3) as "t1"
+    JOIN "hash_testing" ON "t1"."id"=(SELECT "identification_number" FROM "hash_testing")"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME" -> "FIRST_NAME")
+    join on ROW("t1"."id") = ROW($0)
+        scan "t1"
+            projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+                selection ROW("test_space"."id") = ROW(3)
+                    scan "test_space"
+        motion [policy: full, generation: none]
+            scan "hash_testing"
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
+                    scan "hash_testing"
+subquery $0:
+motion [policy: segment([ref("identification_number")]), generation: none]
+            scan
+                projection ("hash_testing"."identification_number" -> "identification_number")
+                    scan "hash_testing"
+"#);
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}

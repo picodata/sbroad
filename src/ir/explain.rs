@@ -420,7 +420,7 @@ impl Display for MotionKey {
 }
 
 #[derive(Debug, Serialize)]
-pub enum Target {
+enum Target {
     Reference(String),
     Value(Value),
 }
@@ -435,9 +435,21 @@ impl Display for Target {
 }
 
 #[derive(Debug, Serialize)]
+struct InnerJoin {
+    condition: Selection,
+}
+
+impl Display for InnerJoin {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "join on {}", self.condition)
+    }
+}
+
+#[derive(Debug, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
     Except,
+    InnerJoin(InnerJoin),
     Projection(Projection),
     Scan(Scan),
     Selection(Selection),
@@ -450,6 +462,7 @@ impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
             ExplainNode::Except => "except".to_string(),
+            ExplainNode::InnerJoin(i) => i.to_string(),
             ExplainNode::Projection(e) => e.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
             ExplainNode::Selection(s) => format!("selection {}", s),
@@ -682,8 +695,44 @@ impl FullExplain {
 
                     Some(ExplainNode::Motion(m))
                 }
-                Relational::InnerJoin { .. }
-                | Relational::Insert { .. }
+                Relational::InnerJoin {
+                    children,
+                    condition,
+                    ..
+                } => {
+                    if children.len() < 2 {
+                        return Err(QueryPlannerError::CustomError(
+                            "Join must have at least two children".into(),
+                        ));
+                    }
+                    let (_, subquery_ids) = children.split_at(2);
+                    let mut sq_ref_map: HashMap<usize, usize> =
+                        HashMap::with_capacity(children.len() - 2);
+
+                    for sq_id in subquery_ids.iter().rev() {
+                        let sq_node = stack.pop().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Join node failed to get a sub-query.".into(),
+                            )
+                        })?;
+                        result.subqueries.push(sq_node);
+                        let offset = result.subqueries.len() - 1;
+                        sq_ref_map.insert(*sq_id, offset);
+                    }
+
+                    if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
+                        current_node.children.push(left);
+                        current_node.children.push(right);
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Join node must have exactly two children".into(),
+                        ));
+                    }
+
+                    let condition = Selection::new(ir, *condition, &sq_ref_map)?;
+                    Some(ExplainNode::InnerJoin(InnerJoin { condition }))
+                }
+                Relational::Insert { .. }
                 | Relational::Values { .. }
                 | Relational::ValuesRow { .. } => {
                     return Err(QueryPlannerError::CustomError(format!(
