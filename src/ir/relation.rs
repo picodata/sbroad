@@ -168,7 +168,7 @@ impl Column {
 /// Table is a tuple storage in the cluster.
 ///
 /// Tables are tuple storages in the cluster.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Table {
     /// List of the columns.
     pub columns: Vec<Column>,

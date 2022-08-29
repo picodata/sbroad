@@ -61,7 +61,7 @@ impl From<&Key> for MotionKey {
 }
 
 /// Determinate what portion of data to move between data nodes in cluster.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionPolicy {
     /// Move all data.
     Full,
@@ -72,7 +72,7 @@ pub enum MotionPolicy {
 }
 
 /// Determine what portion of data to generate during motion.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DataGeneration {
     /// Nothing to generate.
     None,
@@ -541,7 +541,7 @@ impl Plan {
         let mut inner_keys: Vec<Key> = Vec::new();
 
         let children = self.get_join_children(join_id)?;
-        let outer_child = *children.get(0).ok_or_else(|| {
+        let outer_child = *children.first().ok_or_else(|| {
             QueryPlannerError::CustomError("Join node doesn't have an outer child.".into())
         })?;
         let inner_child = *children.get(1).ok_or_else(|| {
@@ -769,7 +769,8 @@ impl Plan {
                 children,
                 ..
             } => {
-                let child: usize = if let (Some(child), None) = (children.get(0), children.get(1)) {
+                let child: usize = if let (Some(child), None) = (children.first(), children.get(1))
+                {
                     *child
                 } else {
                     return Err(QueryPlannerError::CustomError(
@@ -881,7 +882,7 @@ impl Plan {
         match self.get_relation_node(rel_id)? {
             Relational::Except { children, .. } => {
                 if let (Some(left), Some(right), None) =
-                    (children.get(0), children.get(1), children.get(2))
+                    (children.first(), children.get(1), children.get(2))
                 {
                     let left_output_id = self.get_relation_node(*left)?.output();
                     let right_output_id = self.get_relation_node(*right)?.output();

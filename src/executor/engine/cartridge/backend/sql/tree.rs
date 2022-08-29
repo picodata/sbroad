@@ -14,7 +14,7 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::Node;
 
 /// Payload of the syntax tree node.
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub enum SyntaxData {
     /// "as alias_name"
     Alias(String),
@@ -39,7 +39,7 @@ pub enum SyntaxData {
 }
 
 /// A syntax tree node.
-#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub struct SyntaxNode {
     /// Payload
     pub(crate) data: SyntaxData,
@@ -145,7 +145,7 @@ impl SyntaxNode {
 }
 
 /// Storage for the syntax nodes.
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SyntaxNodes {
     pub(crate) arena: Vec<SyntaxNode>,
     map: HashMap<usize, usize, RandomState>,
@@ -161,7 +161,7 @@ impl SyntaxNodes {
             children, alias, ..
         } = rel
         {
-            let right_id = *children.get(0).ok_or_else(|| {
+            let right_id = *children.first().ok_or_else(|| {
                 QueryPlannerError::CustomError("Sub-query has no children.".into())
             })?;
             let mut children: Vec<usize> = vec![
@@ -480,7 +480,7 @@ impl<'p> SyntaxPlan<'p> {
                     condition,
                     ..
                 } => {
-                    let left_id = *children.get(0).ok_or_else(|| {
+                    let left_id = *children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Inner join doesn't have a left child.".into(),
                         )
@@ -505,7 +505,7 @@ impl<'p> SyntaxPlan<'p> {
                 Relational::Projection {
                     children, output, ..
                 } => {
-                    let left_id = *children.get(0).ok_or_else(|| {
+                    let left_id = *children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Projection has no children.".into())
                     })?;
                     // We don't need the row node itself, only its children.
@@ -535,7 +535,7 @@ impl<'p> SyntaxPlan<'p> {
                 Relational::Selection {
                     children, filter, ..
                 } => {
-                    let left_id = *children.get(0).ok_or_else(|| {
+                    let left_id = *children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Selection has no children.".into())
                     })?;
                     let sn = SyntaxNode::new_pointer(
@@ -546,7 +546,7 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Except { children, .. } | Relational::UnionAll { children, .. } => {
-                    let left_id = *children.get(0).ok_or_else(|| {
+                    let left_id = *children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Union/except doesn't have a left child.".into(),
                         )

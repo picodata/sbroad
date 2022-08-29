@@ -12,7 +12,7 @@ use crate::api::COORDINATOR_ENGINE;
 use crate::executor::engine::Coordinator;
 use crate::ir::value::Value;
 
-#[derive(Debug, Default, Serialize, PartialEq)]
+#[derive(Debug, Default, Serialize, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values
 pub struct ArgsMap {
     /// A key:value `HashMap` with key String and custom type Value
@@ -40,7 +40,7 @@ impl<'de> Deserialize<'de> for ArgsMap {
     }
 }
 
-#[derive(Debug, Default, Serialize, PartialEq, Clone)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 /// Tuple with space name and vec of values
 pub struct ArgsTuple {
     /// Vec of custom type Value
@@ -95,11 +95,11 @@ impl TryFrom<FunctionArgs> for Args {
             return Ok(Self::Map(args));
         }
 
-        return Err(QueryPlannerError::CustomError(format!(
+        Err(QueryPlannerError::CustomError(format!(
             "Parsing args {:?} error, \
             expected string, tuple with a space name, or map with a space name as an argument",
             &value
-        )));
+        )))
     }
 }
 

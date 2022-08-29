@@ -34,7 +34,7 @@ pub mod value;
 ///
 /// Enum was chosen as we don't want to mess with dynamic
 /// dispatching and its performance penalties.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
@@ -42,7 +42,7 @@ pub enum Node {
 }
 
 /// Plan nodes storage.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Nodes {
     /// We don't want to mess with the borrow checker and RefCell/Rc,
     /// so all nodes are stored in the single arena ("nodes" array).
@@ -88,7 +88,7 @@ impl Nodes {
 }
 
 /// Logical plan tree structure.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Plan {
     /// Append only arena for the plan nodes.
     pub(crate) nodes: Nodes,
@@ -441,7 +441,7 @@ impl Plan {
                 let child_ids = targets.as_ref().ok_or_else(|| {
                     QueryPlannerError::CustomError("Node refs to scan node, not alias".into())
                 })?;
-                let column_index_in_list = child_ids.get(0).ok_or_else(|| {
+                let column_index_in_list = child_ids.first().ok_or_else(|| {
                     QueryPlannerError::CustomError("Invalid child index in target".into())
                 })?;
                 let col_idx_in_rel =

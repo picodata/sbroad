@@ -149,7 +149,7 @@ impl ExecutionPlan {
             )));
         }
 
-        let child_id = children.get(0).ok_or_else(|| {
+        let child_id = children.first().ok_or_else(|| {
             QueryPlannerError::CustomError("Failed to get the first motion child".to_string())
         })?;
 
@@ -182,7 +182,7 @@ impl ExecutionPlan {
             )));
         }
 
-        let child_id = children.get(0).ok_or_else(|| {
+        let child_id = children.first().ok_or_else(|| {
             QueryPlannerError::CustomError("Could not find subquery child".to_string())
         })?;
 

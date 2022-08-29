@@ -258,6 +258,7 @@ impl Plan {
     /// # Errors
     /// - Failed to build an expression subtree for some chain.
     /// - The plan is invalid (some bugs).
+    #[allow(clippy::type_complexity)]
     pub fn expr_tree_modify_and_chains(
         &mut self,
         expr_id: usize,

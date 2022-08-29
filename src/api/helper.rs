@@ -28,11 +28,11 @@ where
                 0
             }
             Err(e) => {
-                return tarantool::set_error!(
+                tarantool::set_error!(
                     TarantoolErrorCode::ProcC,
                     "Failed to get configuration: {}",
                     e.to_string()
-                );
+                )
             }
         }
     });

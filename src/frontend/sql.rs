@@ -112,7 +112,7 @@ impl Ast for AbstractSyntaxTree {
             let node = self.nodes.get_node(*id)?;
             match &node.rule {
                 Type::Scan => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Could not find child id in scan node".to_string(),
                         )
@@ -148,7 +148,7 @@ impl Ast for AbstractSyntaxTree {
                     }
                 }
                 Type::SubQuery => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Child node id is not found among sub-query children.".into(),
                         )
@@ -214,10 +214,10 @@ impl Ast for AbstractSyntaxTree {
 
                     // Reference to the join node.
                     if let (Some(plan_left_id), Some(plan_right_id)) =
-                        (plan_rel_list.get(0), plan_rel_list.get(1))
+                        (plan_rel_list.first(), plan_rel_list.get(1))
                     {
                         if let (Some(ast_scan_id), Some(ast_col_name_id)) =
-                            (node.children.get(0), node.children.get(1))
+                            (node.children.first(), node.children.get(1))
                         {
                             let ast_scan = self.nodes.get_node(*ast_scan_id)?;
                             if let Type::ScanName = ast_scan.rule {
@@ -277,7 +277,7 @@ impl Ast for AbstractSyntaxTree {
                                 ));
                             }
                         } else if let (Some(ast_col_name_id), None) =
-                            (node.children.get(0), node.children.get(1))
+                            (node.children.first(), node.children.get(1))
                         {
                             // Determine the referred side of the join (left or right).
                             let col_name = get_column_name(*ast_col_name_id)?;
@@ -317,10 +317,10 @@ impl Ast for AbstractSyntaxTree {
 
                     // Reference to a single child node.
                     } else if let (Some(plan_rel_id), None) =
-                        (plan_rel_list.get(0), plan_rel_list.get(1))
+                        (plan_rel_list.first(), plan_rel_list.get(1))
                     {
                         let col_name: String = if let (Some(ast_scan_id), Some(ast_col_id)) =
-                            (node.children.get(0), node.children.get(1))
+                            (node.children.first(), node.children.get(1))
                         {
                             // Get column name.
                             let col_name = get_column_name(*ast_col_id)?;
@@ -349,7 +349,7 @@ impl Ast for AbstractSyntaxTree {
                             };
                             col_name
                         } else if let (Some(ast_col_id), None) =
-                            (node.children.get(0), node.children.get(1))
+                            (node.children.first(), node.children.get(1))
                         {
                             // Get the column name.
                             get_column_name(*ast_col_id)?
@@ -367,7 +367,7 @@ impl Ast for AbstractSyntaxTree {
                             false,
                             true,
                         )?;
-                        let ref_id = *ref_list.get(0).ok_or_else(|| {
+                        let ref_id = *ref_list.first().ok_or_else(|| {
                             QueryPlannerError::CustomError("Referred column is not found.".into())
                         })?;
                         map.add(*id, ref_id);
@@ -405,7 +405,7 @@ impl Ast for AbstractSyntaxTree {
                             "Sub-queries in projections are not implemented yet.".into(),
                         ));
                     }
-                    let plan_rel_id = *plan_rel_list.get(0).ok_or_else(|| {
+                    let plan_rel_id = *plan_rel_list.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Referred relational node is not found.".into(),
                         )
@@ -414,7 +414,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_asterisk_id);
                 }
                 Type::Alias => {
-                    let ast_ref_id = node.children.get(0).ok_or_else(|| {
+                    let ast_ref_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Reference node id is not found among alias children.".into(),
                         )
@@ -439,7 +439,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_alias_id);
                 }
                 Type::Column => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Column has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
@@ -453,7 +453,7 @@ impl Ast for AbstractSyntaxTree {
                         // reference-to-row logic in AST code, we should unwrap it back.
                         let plan_id = if rows.get(&plan_child_id).is_some() {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
-                            *plan_inner_expr.get_row_list()?.get(0).ok_or_else(|| {
+                            *plan_inner_expr.get_row_list()?.first().ok_or_else(|| {
                                 QueryPlannerError::CustomError("Row is empty.".into())
                             })?
                         } else {
@@ -474,7 +474,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::LtEq
                 | Type::NotEq
                 | Type::NotIn => {
-                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among comparison children.".into(),
                         )
@@ -491,7 +491,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, cond_id);
                 }
                 Type::IsNull | Type::IsNotNull => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(format!("{:?} has no children.", &node.rule))
                     })?;
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
@@ -501,7 +501,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Between => {
                     // left BETWEEN center AND right
-                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among between children.".into(),
                         )
@@ -526,14 +526,14 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, and_id);
                 }
                 Type::Condition => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Condition has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
                 }
                 Type::InnerJoin => {
-                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among join children.".into(),
                         )
@@ -555,7 +555,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_join_id);
                 }
                 Type::Selection => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Child node id is not found among selection children.".into(),
                         )
@@ -571,7 +571,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_selection_id);
                 }
                 Type::Projection => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Child node id is not found among projection children.".into(),
                         )
@@ -583,7 +583,7 @@ impl Ast for AbstractSyntaxTree {
                         match ast_column.rule {
                             Type::Column => {
                                 let ast_alias_id =
-                                    *ast_column.children.get(0).ok_or_else(|| {
+                                    *ast_column.children.first().ok_or_else(|| {
                                         QueryPlannerError::CustomError(
                                             "Alias node id is not found among column children."
                                                 .into(),
@@ -619,7 +619,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, projection_id);
                 }
                 Type::Except => {
-                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among except children.".into(),
                         )
@@ -635,7 +635,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_except_id);
                 }
                 Type::UnionAll => {
-                    let ast_left_id = node.children.get(0).ok_or_else(|| {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Left node id is not found among union all children.".into(),
                         )
@@ -651,7 +651,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_union_all_id);
                 }
                 Type::ValuesRow => {
-                    let ast_child_id = node.children.get(0).ok_or_else(|| {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Values row has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
@@ -668,7 +668,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(*id, plan_values_id);
                 }
                 Type::Insert => {
-                    let ast_table_id = node.children.get(0).ok_or_else(|| {
+                    let ast_table_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "Table node id is not found among insert children.".into(),
                         )

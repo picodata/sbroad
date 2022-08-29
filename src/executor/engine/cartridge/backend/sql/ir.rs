@@ -15,7 +15,7 @@ use crate::ir::Node;
 
 use super::tree::SyntaxData;
 
-#[derive(Debug, PartialEq, Serialize, tlua::Push)]
+#[derive(Debug, PartialEq, Eq, Serialize, tlua::Push)]
 pub struct PatternWithParams {
     pub pattern: String,
     pub params: Vec<Value>,

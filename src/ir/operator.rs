@@ -125,7 +125,7 @@ impl Display for Unary {
 ///
 /// Transforms input tuple(s) into the output one using the
 /// relation algebra logic.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Relational {
     Except {
         /// Contains exactly two elements: left and right node indexes
@@ -649,7 +649,7 @@ impl Plan {
             };
             children.push(chid_id);
         }
-        if let (Some(left_id), Some(right_id)) = (children.get(0), children.get(1)) {
+        if let (Some(left_id), Some(right_id)) = (children.first(), children.get(1)) {
             let output = self.add_row_for_join(*left_id, *right_id)?;
             let join = Relational::InnerJoin {
                 children: vec![*left_id, *right_id],
@@ -1073,10 +1073,10 @@ impl Plan {
         };
         match self.get_relation_node(rel_id)? {
             Relational::Selection { .. } | Relational::Projection { .. } => {
-                Ok(children.get(0) != Some(&sq_id))
+                Ok(children.first() != Some(&sq_id))
             }
             Relational::InnerJoin { .. } => {
-                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
+                Ok(children.first() != Some(&sq_id) && children.get(1) != Some(&sq_id))
             }
             _ => Ok(false),
         }

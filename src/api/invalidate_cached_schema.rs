@@ -23,11 +23,11 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
             0
         }
         Err(e) => {
-            return tarantool::set_error!(
+            tarantool::set_error!(
                 TarantoolErrorCode::ProcC,
                 "Failed to borrow the runtime while clearing cached configuration on router: {}",
                 e.to_string()
-            );
+            )
         }
     })
 }
@@ -43,11 +43,11 @@ pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) ->
             0
         }
         Err(e) => {
-            return tarantool::set_error!(
+            tarantool::set_error!(
                 TarantoolErrorCode::ProcC,
                 "Failed to borrow the runtime while clearing cached configuration on a storage: {}",
                 e.to_string()
-            );
+            )
         }
     })
 }

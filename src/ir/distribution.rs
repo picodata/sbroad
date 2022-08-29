@@ -33,7 +33,7 @@ impl Key {
 }
 
 /// Tuple distribution in the cluster.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Distribution {
     /// A tuple can be located on any data node.
     /// Example: projection removes the segment key columns.

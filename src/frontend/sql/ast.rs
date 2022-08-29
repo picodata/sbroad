@@ -22,7 +22,7 @@ pub(super) struct ParseTree;
 /// A list of current rules from the actual grammar.
 /// When new tokens are added to the grammar they
 /// should be also added in the current list.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Type {
     Alias,
     AliasName,
@@ -133,7 +133,7 @@ impl Type {
 }
 
 /// Parse node is a wrapper over the pest pair.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ParseNode {
     pub(in crate::frontend::sql) children: Vec<usize>,
     pub(in crate::frontend::sql) rule: Type,
@@ -153,7 +153,7 @@ impl ParseNode {
 
 /// A storage arena of the parse nodes
 /// (a node position in the arena vector acts like a reference).
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ParseNodes {
     pub(crate) arena: Vec<ParseNode>,
 }
@@ -257,7 +257,7 @@ impl<'n> StackParseNode<'n> {
 }
 
 /// AST is a tree build on the top of the parse nodes arena.
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct AbstractSyntaxTree {
     pub(in crate::frontend::sql) nodes: ParseNodes,
     pub(in crate::frontend::sql) top: Option<usize>,
@@ -336,7 +336,7 @@ impl AbstractSyntaxTree {
                 )
             })?;
             let child = self.nodes.get_node(child_id)?;
-            let mut node_id = *child.children.get(0).ok_or_else(|| {
+            let mut node_id = *child.children.first().ok_or_else(|| {
                 QueryPlannerError::CustomError(
                     "Selection node doesn't contain any children.".into(),
                 )
@@ -348,7 +348,7 @@ impl AbstractSyntaxTree {
         let top_id = self.get_top()?;
         if selects.contains(&top_id) {
             let top = self.nodes.get_node(top_id)?;
-            let child_id = *top.children.get(0).ok_or_else(|| {
+            let child_id = *top.children.first().ok_or_else(|| {
                 QueryPlannerError::CustomError(
                     "Selection node doesn't contain any children.".into(),
                 )
@@ -376,7 +376,7 @@ impl AbstractSyntaxTree {
         }
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.get(0).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
         let proj = self
             .nodes
             .arena
@@ -432,7 +432,7 @@ impl AbstractSyntaxTree {
         selection.children.insert(0, scan_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.get(0).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
         let proj = self
             .nodes
             .arena
@@ -498,7 +498,7 @@ impl AbstractSyntaxTree {
         join.children.insert(0, scan_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.get(0).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
         let proj = self
             .nodes
             .arena
@@ -578,7 +578,7 @@ impl AbstractSyntaxTree {
         selection.children.insert(0, join_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.get(0).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
         let proj = self
             .nodes
             .arena
@@ -614,7 +614,7 @@ impl AbstractSyntaxTree {
                 for child_id in &node.children {
                     let child = self.nodes.get_node(*child_id)?;
                     if let Type::Column = child.rule {
-                        let col_child_id = *child.children.get(0).ok_or_else(|| {
+                        let col_child_id = *child.children.first().ok_or_else(|| {
                             QueryPlannerError::CustomError(
                                 "Column doesn't have any children".into(),
                             )
@@ -626,11 +626,11 @@ impl AbstractSyntaxTree {
                             }
                             Type::Reference => {
                                 let col_name_id: usize = if let (Some(_), Some(col_name_id)) =
-                                    (col_child.children.get(0), col_child.children.get(1))
+                                    (col_child.children.first(), col_child.children.get(1))
                                 {
                                     *col_name_id
                                 } else if let (Some(col_name_id), None) =
-                                    (col_child.children.get(0), col_child.children.get(1))
+                                    (col_child.children.first(), col_child.children.get(1))
                                 {
                                     *col_name_id
                                 } else {
@@ -666,7 +666,7 @@ impl AbstractSyntaxTree {
                     "Parsed node is not a column.".into(),
                 ));
             }
-            let child_id = *node.children.get(0).ok_or_else(|| {
+            let child_id = *node.children.first().ok_or_else(|| {
                 QueryPlannerError::CustomError("Column doesn't have any children".into())
             })?;
             let child = self.nodes.get_node(child_id)?;
@@ -701,7 +701,7 @@ impl AbstractSyntaxTree {
             let rel_node = self.nodes.get_node(*node_id)?;
             match rel_node.rule {
                 Type::Projection => {
-                    let rel_id = rel_node.children.get(0).ok_or_else(|| {
+                    let rel_id = rel_node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "AST projection doesn't have any children.".into(),
                         )
@@ -719,7 +719,7 @@ impl AbstractSyntaxTree {
                     }
                 }
                 Type::Selection => {
-                    let rel_id = rel_node.children.get(0).ok_or_else(|| {
+                    let rel_id = rel_node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "AST selection doesn't have any children.".into(),
                         )
@@ -740,7 +740,7 @@ impl AbstractSyntaxTree {
                     }
                 }
                 Type::InnerJoin => {
-                    let left_id = rel_node.children.get(0).ok_or_else(|| {
+                    let left_id = rel_node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
                             "AST inner join doesn't have a left child.".into(),
                         )

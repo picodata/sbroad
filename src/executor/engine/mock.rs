@@ -209,7 +209,7 @@ impl ProducerResult {
                 "Metadata mismatch. Producer results can't be extended",
             )));
         }
-        self.rows.extend(result.rows.clone());
+        self.rows.extend(result.rows);
         Ok(())
     }
 }

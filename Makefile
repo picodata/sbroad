@@ -8,6 +8,7 @@ else
 		SRC_LIB = libsbroad.dylib
 	endif
 endif
+IMAGE_NAME = docker-public.binary.picodata.io/sbroad-builder:0.5.0
 
 bench:
 	make clean
@@ -60,3 +61,7 @@ test_integration:
 	make run_integration
 
 test_all: test bench_check test_integration
+
+update_ci_image:
+	docker build -f ci/Dockerfile -t $(IMAGE_NAME) .
+	docker push $(IMAGE_NAME)

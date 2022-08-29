@@ -18,7 +18,7 @@ struct ShardingRecord(ShardingKey, usize);
 
 /// Result tuple storage, created by the executor. All tuples
 /// have a distribution key.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct VirtualTable {
     /// List of the columns.
     columns: Vec<Column>,

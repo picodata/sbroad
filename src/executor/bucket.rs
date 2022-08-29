@@ -13,7 +13,7 @@ use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 
 /// Buckets are used to determine which nodes to send the query to.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Buckets {
     // We don't want to keep thousands of buckets in memory
     // so we use a special enum to represent all the buckets

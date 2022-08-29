@@ -30,7 +30,7 @@ use super::{operator, Node, Nodes, Plan};
 /// and should not be changed. It ensures that we always know the
 /// name of any column in the tuple and therefore simplifies AST
 /// deserialization.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Expression {
     /// Expression name.
     ///
@@ -423,7 +423,7 @@ impl Plan {
                                 ..
                             } => {
                                 let sel_child_id = if let (Some(sel_child_id), None) =
-                                    (sel_child_ids.get(0), sel_child_ids.get(1))
+                                    (sel_child_ids.first(), sel_child_ids.get(1))
                                 {
                                     *sel_child_id
                                 } else {
@@ -504,7 +504,7 @@ impl Plan {
         }
 
         result.reserve(col_names.len());
-        let target_child: usize = if let Some(target) = targets.get(0) {
+        let target_child: usize = if let Some(target) = targets.first() {
             *target
         } else {
             return Err(QueryPlannerError::CustomError("Target is empty".into()));
@@ -721,7 +721,7 @@ impl Plan {
                             "Reference node has no targets".into(),
                         ))
                     }
-                    Some(positions) => match (positions.get(0), positions.get(1)) {
+                    Some(positions) => match (positions.first(), positions.get(1)) {
                         (Some(first), None) => {
                             let child_id = children.get(*first).ok_or_else(|| {
                                 QueryPlannerError::CustomError(

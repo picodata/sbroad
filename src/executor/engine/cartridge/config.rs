@@ -18,7 +18,7 @@ use tarantool::log::{say, SayLevel};
 ///
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
 /// as it is managed by Tarantool's vshard module.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RouterConfiguration {
     /// Execute response waiting timeout in seconds.
     waiting_timeout: u64,

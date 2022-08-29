@@ -44,7 +44,7 @@ const UNSUPPORTED_TYPE_IR_VALUE: &str = "unsupported type ir value";
 const VALUE_OUT_OF_RANGE_ERROR: &str = "value out of range";
 const TYPE_NOT_IMPLEMENTED: &str = "type is not implemented";
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum QueryPlannerError {
     BucketIdError,
     CustomError(String),

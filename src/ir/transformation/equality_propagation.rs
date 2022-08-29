@@ -477,7 +477,7 @@ impl Plan {
                 Ok(EqClassExpr::EqClassRef(EqClassRef::from_ref(expr)?))
             }
             Expression::Row { list, .. } => {
-                if let (Some(col_id), None) = (list.get(0), list.get(1)) {
+                if let (Some(col_id), None) = (list.first(), list.get(1)) {
                     self.try_to_eq_class_expr(*col_id)
                 } else {
                     // We don't support more than a single column in a row.

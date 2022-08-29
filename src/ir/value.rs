@@ -15,7 +15,7 @@ use crate::ir::value::double::Double;
 
 /// SQL uses three-valued logic. We need to implement
 /// it to compare values with each other.
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Trivalent {
     False,
     True,
@@ -148,7 +148,7 @@ impl Value {
     /// The result uses three-valued logic.
     #[must_use]
     pub fn eq(&self, other: &Value) -> Trivalent {
-        match &*self {
+        match self {
             Value::Boolean(s) => match other {
                 Value::Boolean(o) => (s == o).into(),
                 Value::Null => Trivalent::Unknown,
