@@ -214,7 +214,7 @@ pub enum Relational {
     Values {
         /// Output tuple.
         output: usize,
-        /// Тon-empty list of value rows.
+        /// Non-empty list of value rows.
         children: Vec<usize>,
     },
     ValuesRow {
