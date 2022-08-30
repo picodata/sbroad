@@ -282,3 +282,23 @@ motion [policy: segment([ref("identification_number")]), generation: none]
 
     assert_eq!(actual_explain, explain_tree.to_string())
 }
+
+#[test]
+fn unary_condition_plan() {
+    let query = r#"SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "id" IS NULL and "FIRST_NAME" IS NOT NULL"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+    selection ROW("test_space"."FIRST_NAME") is not null and ROW("test_space"."id") is null
+        scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}
