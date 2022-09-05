@@ -302,3 +302,90 @@ fn unary_condition_plan() {
 
     assert_eq!(actual_explain, explain_tree.to_string())
 }
+
+#[test]
+fn insert_plan() {
+    let query = r#"INSERT INTO "test_space" ("id", "FIRST_NAME") VALUES (1, '123')"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"insert "test_space"
+    motion [policy: segment([ref(COLUMN_1)]), generation: sharding_column]
+        values
+            value row (data=ROW(1, '123'))
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}
+
+#[test]
+fn multiply_insert_plan() {
+    let query = r#"INSERT INTO "test_space" ("id", "FIRST_NAME") VALUES (1, '123'), (2, '456'), (3, '789')"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"insert "test_space"
+    motion [policy: segment([ref(COLUMN_5)]), generation: sharding_column]
+        values
+            value row (data=ROW(1, '123'))
+            value row (data=ROW(2, '456'))
+            value row (data=ROW(3, '789'))
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}
+
+#[test]
+fn insert_select_plan() {
+    let query = r#"INSERT INTO "test_space" ("id", "FIRST_NAME")
+SELECT "identification_number", "product_code" FROM "hash_testing""#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"insert "test_space"
+    motion [policy: segment([ref("identification_number")]), generation: sharding_column]
+        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+            scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}
+
+#[test]
+fn select_value_plan() {
+    let query = r#"select * from (values (1))"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection (COLUMN_1 -> COLUMN_1)
+    scan
+        values
+            value row (data=ROW(1))
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string())
+}

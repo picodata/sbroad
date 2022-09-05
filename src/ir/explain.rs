@@ -450,6 +450,9 @@ impl Display for InnerJoin {
 enum ExplainNode {
     Except,
     InnerJoin(InnerJoin),
+    ValueRow(Row),
+    Value,
+    Insert(String),
     Projection(Projection),
     Scan(Scan),
     Selection(Selection),
@@ -463,6 +466,9 @@ impl Display for ExplainNode {
         let s = match &self {
             ExplainNode::Except => "except".to_string(),
             ExplainNode::InnerJoin(i) => i.to_string(),
+            ExplainNode::ValueRow(r) => format!("value row (data={})", r),
+            ExplainNode::Value => "values".to_string(),
+            ExplainNode::Insert(s) => format!("insert {}", s),
             ExplainNode::Projection(e) => e.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
             ExplainNode::Selection(s) => format!("selection {}", s),
@@ -732,13 +738,52 @@ impl FullExplain {
                     let condition = Selection::new(ir, *condition, &sq_ref_map)?;
                     Some(ExplainNode::InnerJoin(InnerJoin { condition }))
                 }
-                Relational::Insert { .. }
-                | Relational::Values { .. }
-                | Relational::ValuesRow { .. } => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Explain hasn't supported node {:?} yet",
-                        node
-                    )))
+                Relational::ValuesRow { data, children, .. } => {
+                    let mut sq_ref_map: HashMap<usize, usize> =
+                        HashMap::with_capacity(children.len());
+
+                    for sq_id in children.iter().rev() {
+                        let sq_node = stack.pop().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Insert node failed to get a sub-query.".into(),
+                            )
+                        })?;
+
+                        result.subqueries.push(sq_node);
+                        let offset = result.subqueries.len() - 1;
+                        sq_ref_map.insert(*sq_id, offset);
+                    }
+
+                    let values = ir.get_expression_node(*data)?.get_row_list()?;
+                    let row = Row::from_ir_nodes(ir, values, &sq_ref_map)?;
+
+                    Some(ExplainNode::ValueRow(row))
+                }
+                Relational::Values { children, .. } => {
+                    let mut amount_values = children.len();
+
+                    while amount_values > 0 {
+                        let value_row = stack.pop().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Insert node failed to get a value row.".into(),
+                            )
+                        })?;
+
+                        current_node.children.insert(0, value_row);
+                        amount_values -= 1;
+                    }
+                    Some(ExplainNode::Value)
+                }
+                Relational::Insert { relation, .. } => {
+                    let values = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Insert node failed to get a value row.".into(),
+                        )
+                    })?;
+
+                    current_node.children.push(values);
+
+                    Some(ExplainNode::Insert(relation.into()))
                 }
             };
             stack.push(current_node);
