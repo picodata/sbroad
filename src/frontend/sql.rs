@@ -42,7 +42,7 @@ impl Ast for AbstractSyntaxTree {
             Ok(p) => p,
             Err(e) => {
                 return Err(QueryPlannerError::CustomError(format!(
-                    "Parsing error: {:?}",
+                    "Parsing error: {}",
                     e
                 )))
             }

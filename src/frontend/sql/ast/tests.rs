@@ -147,11 +147,12 @@ fn invalid_query() {
     let ast = AbstractSyntaxTree::new(query).unwrap_err();
     assert_eq!(
         format!(
-            "{} {} {} {}",
-            r#"Parsing error: Error { variant: ParsingError { positives:"#,
-            r#"[Alias, Asterisk, True, False, Null, Decimal, Double, Integer, Unsigned, Row, Parameter], negatives: [] },"#,
-            r#"location: Pos(7), line_col: Pos((1, 8)), path: None, line: "select a frAm t","#,
-            r#"continued_line: None }"#,
+            r#"Parsing error:  --> 1:8
+  |
+1 | select a frAm t
+  |        ^---
+  |
+  = expected Alias, Asterisk, True, False, Null, Decimal, Double, Integer, Unsigned, Row, or Parameter"#,
         ),
         format!("{}", ast),
     );
