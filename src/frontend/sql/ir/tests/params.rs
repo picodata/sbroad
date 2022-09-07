@@ -1,6 +1,4 @@
-use super::*;
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::value::Value;
 use pretty_assertions::assert_eq;
 
@@ -8,34 +6,33 @@ use pretty_assertions::assert_eq;
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;
-    let params = vec![Value::from(0_i64), Value::from(1_i64)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id", "test_space"."FIRST_NAME" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."sysFrom") > (?)"#,
-        ),
-        params.clone(),
+    let plan = sql_to_optimized_ir(pattern, vec![Value::from(0_i64), Value::from(1_i64)]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+    selection ROW("test_space"."sys_op") = ROW(0) and ROW("test_space"."sysFrom") > ROW(1)
+        scan "test_space"
+"#,
     );
 
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_params2() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let params = vec![Value::Null, Value::from("hello")];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params.clone(),
+
+    let plan = sql_to_optimized_ir(pattern, vec![Value::Null, Value::from("hello")]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("test_space"."sys_op", "test_space"."FIRST_NAME") = ROW(NULL, 'hello')
+        scan "test_space"
+"#,
     );
 
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 // check cyrillic params support
@@ -43,36 +40,38 @@ fn front_params2() {
 fn front_params3() {
     let pattern = r#"SELECT "id" FROM "test_space"
         WHERE "sys_op" = ? AND "FIRST_NAME" = ?"#;
-    let params = vec![Value::Null, Value::from("кириллица")];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."sys_op") = (?) and ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params.clone(),
+
+    let plan = sql_to_optimized_ir(pattern, vec![Value::Null, Value::from("кириллица")]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("test_space"."sys_op", "test_space"."FIRST_NAME") = ROW(NULL, 'кириллица')
+        scan "test_space"
+"#,
     );
 
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 // check symbols in values (grammar)
 #[test]
 fn front_params4() {
     let pattern = r#"SELECT "id" FROM "test_space"
-        WHERE "FIRST_NAME" = '''± !@#$%^&*()_+=-\/><";:,.`~'"#;
+        WHERE "FIRST_NAME" = ?"#;
 
-    let params = vec![Value::from(r#"''± !@#$%^&*()_+=-\/><";:,.`~"#)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE ("test_space"."FIRST_NAME") = (?)"#,
-        ),
-        params,
+    let plan = sql_to_optimized_ir(
+        pattern,
+        vec![Value::from(r#"''± !@#$%^&*()_+=-\/><";:,.`~"#)],
     );
 
-    assert_eq!(sql_to_sql(pattern, vec![], &no_transform), expected);
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("test_space"."FIRST_NAME") = ROW('''± !@#$%^&*()_+=-\/><";:,.`~')
+        scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 // check parameter binding order, when selection has sub-queries
@@ -85,18 +84,23 @@ fn front_params5() {
             WHERE "sys_op" = ?
         )
     "#;
-    let params = vec![Value::from(0_i64), Value::from(1_i64)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE (("test_space"."sys_op") = (?) or ("test_space"."id") in"#,
-            r#"(SELECT "test_space_hist"."sysFrom" FROM "test_space_hist" WHERE ("test_space_hist"."sys_op") = (?)))"#,
-        ),
-        params.clone(),
+
+    let plan = sql_to_optimized_ir(pattern, vec![Value::from(0_i64), Value::from(1_i64)]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") in ROW($0)
+        scan "test_space"
+subquery $0:
+motion [policy: segment([ref("sysFrom")]), generation: none]
+            scan
+                projection ("test_space_hist"."sysFrom" -> "sysFrom")
+                    selection ROW("test_space_hist"."sys_op") = ROW(1)
+                        scan "test_space_hist"
+"#,
     );
 
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -111,18 +115,27 @@ fn front_params6() {
             WHERE "sys_op" = ?
         )
     "#;
-    let params = vec![Value::from(0_i64), Value::from(1_i64), Value::from(2_i64)];
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {} {}",
-            r#"SELECT "test_space"."id" FROM "test_space""#,
-            r#"WHERE (("test_space"."sys_op") = (?) or ("test_space"."id") not in"#,
-            r#"(SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sys_op") = (?)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "test_space"."id" FROM "test_space" WHERE ("test_space"."sys_op") = (?)))"#,
-        ),
-        params.clone(),
+
+    let plan = sql_to_optimized_ir(
+        pattern,
+        vec![Value::from(0_i64), Value::from(1_i64), Value::from(2_i64)],
     );
 
-    assert_eq!(sql_to_sql(pattern, params, &no_transform), expected);
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") not in ROW($0)
+        scan "test_space"
+subquery $0:
+scan
+            union all
+                projection ("test_space"."id" -> "id")
+                    selection ROW("test_space"."sys_op") = ROW(1)
+                        scan "test_space"
+                projection ("test_space"."id" -> "id")
+                    selection ROW("test_space"."sys_op") = ROW(2)
+                        scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }

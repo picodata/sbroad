@@ -1,30 +1,21 @@
-use crate::errors::QueryPlannerError;
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::mock::RouterConfigurationMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
-use crate::frontend::Ast;
-use crate::ir::transformation::helpers::sql_to_sql;
-use crate::ir::value::Value;
-use crate::ir::Plan;
+use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use pretty_assertions::assert_eq;
-
-pub(super) fn no_transform(_plan: &mut Plan) {}
 
 #[test]
 fn front_sql1() {
     let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing"
         WHERE "identification_number" = 1"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number","#,
-            r#""hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") = (?)"#,
-        ),
-        vec![Value::from(1_u64)],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+    selection ROW("hash_testing"."identification_number") = ROW(1)
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -33,22 +24,16 @@ fn front_sql2() {
         FROM "hash_testing"
         WHERE "identification_number" = 1 AND "product_code" = '1'
         OR "identification_number" = 2 AND "product_code" = '2'"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE (("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
-            r#"or ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?))"#,
-        ),
-        vec![
-            Value::from(1_u64),
-            Value::from("1"),
-            Value::from(2_u64),
-            Value::from("2"),
-        ],
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+    selection ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(1, '1') or ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(2, '2')
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -63,21 +48,23 @@ fn front_sql3() {
             FROM "hash_testing_hist"
             WHERE "sys_op" > 1) AS "t3"
         WHERE "identification_number" = 1"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {} {} {} {}",
-            r#"SELECT "t3"."identification_number", "t3"."product_code" FROM"#,
-            r#"(SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (?)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code""#,
-            r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)) as "t3""#,
-            r#"WHERE ("t3"."identification_number") = (?)"#,
-        ),
-        vec![Value::from(1_u64), Value::from(1_u64), Value::from(1_u64)],
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t3"."identification_number" -> "identification_number", "t3"."product_code" -> "product_code")
+    selection ROW("t3"."identification_number") = ROW(1)
+        scan "t3"
+            union all
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                    selection ROW("hash_testing"."sys_op") = ROW(1)
+                        scan "hash_testing"
+                projection ("hash_testing_hist"."identification_number" -> "identification_number", "hash_testing_hist"."product_code" -> "product_code")
+                    selection ROW("hash_testing_hist"."sys_op") > ROW(1)
+                        scan "hash_testing_hist"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -96,30 +83,23 @@ fn front_sql4() {
             OR "identification_number" = 3))
             AND ("product_code" = '1'
             OR "product_code" = '2')"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {} {} {} {} {}",
-            r#"SELECT "t3"."identification_number", "t3"."product_code" FROM"#,
-            r#"(SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."sys_op") = (?)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "hash_testing_hist"."identification_number", "hash_testing_hist"."product_code""#,
-            r#"FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)) as "t3""#,
-            r#"WHERE (("t3"."identification_number") = (?) or (("t3"."identification_number") = (?) or ("t3"."identification_number") = (?)))"#,
-            r#"and (("t3"."product_code") = (?) or ("t3"."product_code") = (?))"#,
-        ),
-        vec![
-            Value::from(1_u64),
-            Value::from(1_u64),
-            Value::from(1_u64),
-            Value::from(2_u64),
-            Value::from(3_u64),
-            Value::from("1"),
-            Value::from("2"),
-        ],
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t3"."identification_number" -> "identification_number", "t3"."product_code" -> "product_code")
+    selection ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 1) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 1) or ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 2) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 2) or ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 3) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 3)
+        scan "t3"
+            union all
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                    selection ROW("hash_testing"."sys_op") = ROW(1)
+                        scan "hash_testing"
+                projection ("hash_testing_hist"."identification_number" -> "identification_number", "hash_testing_hist"."product_code" -> "product_code")
+                    selection ROW("hash_testing_hist"."sys_op") > ROW(1)
+                        scan "hash_testing_hist"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -127,18 +107,23 @@ fn front_sql5() {
     let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing"
         WHERE "identification_number" in (
         SELECT "identification_number" FROM "hash_testing_hist" WHERE "product_code" = 'a')"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {}",
-            r#"SELECT "hash_testing"."identification_number", "hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."identification_number") in"#,
-            r#"(SELECT "hash_testing_hist"."identification_number" FROM "hash_testing_hist""#,
-            r#"WHERE ("hash_testing_hist"."product_code") = (?))"#,
-        ),
-        vec![Value::from("a")],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+    selection ROW("hash_testing"."identification_number") in ROW($0)
+        scan "hash_testing"
+subquery $0:
+motion [policy: full, generation: none]
+            scan
+                projection ("hash_testing_hist"."identification_number" -> "identification_number")
+                    selection ROW("hash_testing_hist"."product_code") = ROW('a')
+                        scan "hash_testing_hist"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -147,62 +132,41 @@ fn front_sql6() {
         INNER JOIN (SELECT "id" FROM "test_space") as t
         ON "hash_testing"."identification_number" = t."id"
         WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {} {} {} {} {}",
-            r#"SELECT "T"."id", "hash_testing"."product_units""#,
-            r#"FROM (SELECT "hash_testing"."identification_number","#,
-            r#""hash_testing"."product_code","#,
-            r#""hash_testing"."product_units","#,
-            r#""hash_testing"."sys_op" FROM "hash_testing") as "hash_testing""#,
-            r#"INNER JOIN (SELECT "test_space"."id" FROM "test_space") as "T""#,
-            r#"ON ("hash_testing"."identification_number") = ("T"."id")"#,
-            r#"WHERE ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
-        ),
-        vec![Value::from(5_u64), Value::from("123")],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T"."id" -> "id", "hash_testing"."product_units" -> "product_units")
+    selection ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(5, '123')
+        join on ROW("hash_testing"."identification_number") = ROW("T"."id")
+            scan "hash_testing"
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
+                    scan "hash_testing"
+            motion [policy: full, generation: none]
+                scan "T"
+                    projection ("test_space"."id" -> "id")
+                        scan "test_space"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
-}
-
-#[test]
-fn front_sql7() {
-    // Tables "test_space" and "hash_testing" have the same columns "sys_op" and "bucket_id",
-    // that cause a "duplicate column" error in the output tuple of the INNER JOIN node.
-    // The error is handled by renaming the columns within a sub-query (inner_join test).
-    //
-    // TODO: improve reference resolution to avoid this error.
-    let query = r#"SELECT "id", "product_units" FROM "hash_testing"
-        INNER JOIN "test_space" as t
-        ON "hash_testing"."identification_number" = t."id"
-        WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
-
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
-
-    assert_eq!(
-        QueryPlannerError::CustomError(
-            "Row can't be added because `\"sys_op\"` already has an alias".into()
-        ),
-        plan_err
-    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql8() {
     let input = r#"SELECT t."identification_number", "product_code" FROM "hash_testing" as t
         WHERE t."identification_number" = 1"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "T"."identification_number", "T"."product_code""#,
-            r#"FROM "hash_testing" as "T" WHERE ("T"."identification_number") = (?)"#,
-        ),
-        vec![Value::from(1_u64)],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T"."identification_number" -> "identification_number", "T"."product_code" -> "product_code")
+    selection ROW("T"."identification_number") = ROW(1)
+        scan "hash_testing" -> "T"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
@@ -227,130 +191,85 @@ fn front_sql9() {
             WHERE "sys_op" <= 0) AS "t8"
             ON "t3"."id" = "t8"."identification_number"
         WHERE "id" = 1 AND "t8"."identification_number" = 1 AND "product_code" = '123'"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
-            r#"SELECT "t3"."id", "t3"."FIRST_NAME","#,
-            r#""t8"."identification_number","#,
-            r#""t8"."product_code" FROM"#,
-            r#"(SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
-            r#"FROM "test_space" WHERE ("test_space"."sys_op") < (?) and ("test_space"."sysFrom") >= (?)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
-            r#"FROM "test_space_hist" WHERE ("test_space_hist"."sysFrom") <= (?))"#,
-            r#"as "t3""#,
-            r#"INNER JOIN"#,
-            r#"(SELECT "hash_testing_hist"."identification_number","#,
-            r#""hash_testing_hist"."product_code" FROM "hash_testing_hist" WHERE ("hash_testing_hist"."sys_op") > (?)"#,
-            r#"UNION ALL"#,
-            r#"SELECT "hash_single_testing_hist"."identification_number","#,
-            r#""hash_single_testing_hist"."product_code" FROM "hash_single_testing_hist""#,
-            r#"WHERE ("hash_single_testing_hist"."sys_op") <= (?))"#,
-            r#"as "t8" ON ("t3"."id") = ("t8"."identification_number")"#,
-            r#"WHERE ("t3"."id") = (?) and ("t8"."identification_number") = (?) and ("t8"."product_code") = (?)"#,
-        ),
-        vec![
-            Value::from(0_u64),
-            Value::from(0_u64),
-            Value::from(0_u64),
-            Value::from(0_u64),
-            Value::from(0_u64),
-            Value::from(1_u64),
-            Value::from(1_u64),
-            Value::from("123"),
-        ],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t3"."id" -> "id", "t3"."FIRST_NAME" -> "FIRST_NAME", "t8"."identification_number" -> "identification_number", "t8"."product_code" -> "product_code")
+    selection ROW("t3"."id", "t8"."product_code", "t3"."id", "t8"."identification_number") = ROW("t8"."identification_number", '123', 1, 1)
+        join on ROW("t3"."id") = ROW("t8"."identification_number")
+            scan "t3"
+                union all
+                    projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+                        selection ROW("test_space"."sysFrom") >= ROW(0) and ROW("test_space"."sys_op") < ROW(0)
+                            scan "test_space"
+                    projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
+                        selection ROW("test_space_hist"."sysFrom") <= ROW(0)
+                            scan "test_space_hist"
+            motion [policy: segment([ref("identification_number")]), generation: none]
+                scan "t8"
+                    union all
+                        projection ("hash_testing_hist"."identification_number" -> "identification_number", "hash_testing_hist"."product_code" -> "product_code")
+                            selection ROW("hash_testing_hist"."sys_op") > ROW(0)
+                                scan "hash_testing_hist"
+                        projection ("hash_single_testing_hist"."identification_number" -> "identification_number", "hash_single_testing_hist"."product_code" -> "product_code")
+                            selection ROW("hash_single_testing_hist"."sys_op") <= ROW(0)
+                                scan "hash_single_testing_hist"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql10() {
     let input = r#"INSERT INTO "t" VALUES(1, 2, 3, 4)"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"INSERT INTO "t" ("a", "b", "c", "d") VALUES (?, ?, ?, ?)"#,
-        ),
-        vec![
-            Value::from(1_u64),
-            Value::from(2_u64),
-            Value::from(3_u64),
-            Value::from(4_u64),
-        ],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t"
+    motion [policy: segment([ref(COLUMN_1), ref(COLUMN_2)]), generation: sharding_column]
+        values
+            value row (data=ROW(1, 2, 3, 4))
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql11() {
     let input = r#"INSERT INTO "t" ("a", "c") VALUES(1, 2)"#;
-    let expected = PatternWithParams::new(
-        format!("{}", r#"INSERT INTO "t" ("a", "c") VALUES (?, ?)"#,),
-        vec![Value::from(1_u64), Value::from(2_u64)],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t"
+    motion [policy: segment([ref(COLUMN_1), value(NULL)]), generation: sharding_column]
+        values
+            value row (data=ROW(1, 2))
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
-}
-
-#[test]
-fn front_sql12() {
-    let query = r#"INSERT INTO "t" VALUES(1, 2)"#;
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
-
-    assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
-        ),
-        plan_err
-    );
-}
-
-#[test]
-fn front_sql13() {
-    let query = r#"INSERT INTO "t" ("a") VALUES(1, 2)"#;
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
-
-    assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 1 column(s)."#.into()
-        ),
-        plan_err
-    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql14() {
     let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t""#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"INSERT INTO "t" ("a", "c")"#, r#"SELECT "t"."b", "t"."d" FROM "t""#,
-        ),
-        vec![],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t"
+    motion [policy: segment([ref("b"), value(NULL)]), generation: sharding_column]
+        projection ("t"."b" -> "b", "t"."d" -> "d")
+            scan "t"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
-}
-
-#[test]
-fn front_sql15() {
-    let query = r#"INSERT INTO "t" SELECT "b", "d" FROM "t""#;
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let plan_err = ast.resolve_metadata(metadata).unwrap_err();
-
-    assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
-        ),
-        plan_err
-    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 // check cyrillic strings support
@@ -358,66 +277,68 @@ fn front_sql15() {
 fn front_sql16() {
     let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing"
         WHERE "product_code" = 'кириллица'"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."identification_number","#,
-            r#""hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") = (?)"#,
-        ),
-        vec![Value::from("кириллица")],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+    selection ROW("hash_testing"."product_code") = ROW('кириллица')
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql17() {
     let input = r#"SELECT "identification_number" FROM "hash_testing"
         WHERE "product_code" IS NULL"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "hash_testing"."identification_number""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") is null"#,
-        ),
-        vec![],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number")
+    selection ROW("hash_testing"."product_code") is null
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql18() {
     let input = r#"SELECT "product_code" FROM "hash_testing"
         WHERE "product_code" BETWEEN 1 AND 2"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {} {}",
-            r#"SELECT "hash_testing"."product_code""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") >= (?)"#,
-            r#"and ("hash_testing"."product_code") <= (?)"#,
-        ),
-        vec![Value::from(1_u64), Value::from(2_u64)],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."product_code" -> "product_code")
+    selection ROW("hash_testing"."product_code") <= ROW(2) and ROW("hash_testing"."product_code") >= ROW(1)
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[test]
 fn front_sql19() {
     let input = r#"SELECT "identification_number" FROM "hash_testing"
         WHERE "product_code" IS NOT NULL"#;
-    let expected = PatternWithParams::new(
-        format!(
-            "{} {}",
-            r#"SELECT "hash_testing"."identification_number""#,
-            r#"FROM "hash_testing" WHERE ("hash_testing"."product_code") is not null"#,
-        ),
-        vec![],
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number")
+    selection ROW("hash_testing"."product_code") is not null
+        scan "hash_testing"
+"#,
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &no_transform), expected);
+    assert_eq!(expected_explain, plan.as_explain().unwrap())
 }
 
 #[cfg(test)]
