@@ -1,7 +1,7 @@
 
 variables:
     GIT_SUBMODULE_STRATEGY: none
-    SBROAD_DEV_IMAGE: docker-public.binary.picodata.io/sbroad-builder:0.5.0
+    SBROAD_DEV_IMAGE: docker-public.binary.picodata.io/sbroad-builder:0.6.0
 
 stages:
     - build

@@ -8,7 +8,7 @@ else
 		SRC_LIB = libsbroad.dylib
 	endif
 endif
-IMAGE_NAME = docker-public.binary.picodata.io/sbroad-builder:0.5.0
+IMAGE_NAME = docker-public.binary.picodata.io/sbroad-builder:0.6.0
 
 bench:
 	make clean
@@ -44,9 +44,10 @@ install_release:
 	cp -Rf cartridge $(LUADIR)
 
 lint:
-	./deps.sh
 	cargo fmt --all -- --check
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
+	cargo audit -f audit.toml
+	./deps.sh
 	./.rocks/bin/luacheck .
 
 run_integration:

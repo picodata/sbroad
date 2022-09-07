@@ -17,6 +17,7 @@ RUN yum -y remove git git-*; \
     make && make install; cd ..; rm -rf  gcc*; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=1.63.0 -y --profile default; \
     rustup component add rustfmt; \
+    cargo install cargo-audit; \
     wget https://cmake.org/files/v3.17/cmake-3.17.3.tar.gz; \
     tar zxvf cmake-3.17.3.tar.gz; cd cmake-3.17.3; ./configure; make; make install; \
     cd ..; rm -rf cmake*
