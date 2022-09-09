@@ -14,15 +14,14 @@ use opentelemetry::sdk::propagation::{TextMapCompositePropagator, TraceContextPr
 static SERVICE_NAME: &str = "sbroad";
 
 /// Update the opentelemetry global trace provider and tracer.
-/// Use `OTEL_EXPORTER_JAEGER_AGENT_HOST` and `OTEL_EXPORTER_JAEGER_AGENT_PORT`
-/// environment variables to configure the Jaeger agent's endpoint.
 ///
 /// # Errors
 /// - failed to build OTM global trace provider
-pub fn update_tracing() -> Result<(), QueryPlannerError> {
+pub fn update_tracing(host: &str, port: u16) -> Result<(), QueryPlannerError> {
     let propagator = TextMapCompositePropagator::new(vec![Box::new(TraceContextPropagator::new())]);
     set_text_map_propagator(propagator);
     let provider = opentelemetry_jaeger::new_pipeline()
+        .with_agent_endpoint(&format!("{}:{}", host, port))
         .with_service_name(SERVICE_NAME)
         .build_simple()
         .map_err(|e| {

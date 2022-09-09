@@ -59,6 +59,7 @@ impl Configuration for RouterRuntime {
         self.metadata.is_empty()
     }
 
+    #[allow(clippy::too_many_lines)]
     fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
         if self.is_config_empty() {
             let lua = tarantool::lua_state();
@@ -72,6 +73,38 @@ impl Configuration for RouterRuntime {
                         file!(),
                         line!().try_into().unwrap_or(0),
                         Option::from("getting schema"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+            let jaeger_agent_host: LuaFunction<_> =
+                lua.eval("return get_jaeger_agent_host;").unwrap();
+            let jaeger_host: String = match jaeger_agent_host.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting jaeger agent host"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+            let jaeger_agent_port: LuaFunction<_> =
+                lua.eval("return get_jaeger_agent_port;").unwrap();
+            let jaeger_port: u16 = match jaeger_agent_port.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting jaeger agent port"),
                         &format!("{:?}", e),
                     );
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
@@ -133,12 +166,17 @@ impl Configuration for RouterRuntime {
             };
 
             let mut metadata = RouterConfiguration::new();
+            metadata.set_jaeger_agent_host(jaeger_host);
+            metadata.set_jaeger_agent_port(jaeger_port);
             metadata.set_waiting_timeout(timeout);
             metadata.set_cache_capacity(router_capacity);
             metadata.set_sharding_column(normalize_name_from_schema(column.as_str()));
             // We should always load the schema **after** setting the sharding column.
             metadata.load_schema(&schema)?;
-            update_tracing()?;
+            update_tracing(
+                metadata.get_jaeger_agent_host(),
+                metadata.get_jaeger_agent_port(),
+            )?;
 
             return Ok(Some(metadata));
         }

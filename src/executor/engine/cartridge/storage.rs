@@ -109,10 +109,44 @@ impl Configuration for StorageRuntime {
             let storage_size_bytes = usize::try_from(cache_size_bytes)
                 .map_err(|e| QueryPlannerError::CustomError(format!("{}", e)))?;
 
+            let jaeger_agent_host: LuaFunction<_> =
+                lua.eval("return get_jaeger_agent_host;").unwrap();
+            let jaeger_host: String = match jaeger_agent_host.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting jaeger agent host"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
+            let jaeger_agent_port: LuaFunction<_> =
+                lua.eval("return get_jaeger_agent_port;").unwrap();
+            let jaeger_port: u16 = match jaeger_agent_port.call() {
+                Ok(res) => res,
+                Err(e) => {
+                    say(
+                        SayLevel::Error,
+                        file!(),
+                        line!().try_into().unwrap_or(0),
+                        Option::from("getting jaeger agent port"),
+                        &format!("{:?}", e),
+                    );
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                }
+            };
+
             let mut metadata = StorageConfiguration::new();
             metadata.storage_capacity = storage_capacity;
             metadata.storage_size_bytes = storage_size_bytes;
-            update_tracing()?;
+            metadata.jaeger_agent_host = jaeger_host;
+            metadata.jaeger_agent_port = jaeger_port;
+            update_tracing(&metadata.jaeger_agent_host, metadata.jaeger_agent_port)?;
 
             return Ok(Some(metadata));
         }
