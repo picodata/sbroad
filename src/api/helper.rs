@@ -1,8 +1,8 @@
 use crate::executor::engine::Configuration;
+use crate::log::tarantool_error;
 use std::cell::RefCell;
 use std::os::raw::c_int;
 use std::thread::LocalKey;
-use tarantool::error::TarantoolErrorCode;
 
 pub fn load_config<Runtime>(engine: &'static LocalKey<RefCell<Runtime>>) -> c_int
 where
@@ -15,11 +15,10 @@ where
         let runtime = match engine.try_borrow() {
             Ok(runtime) => runtime,
             Err(e) => {
-                return tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
+                return tarantool_error(&format!(
                     "Failed to borrow the runtime while loading configuration: {}",
-                    e.to_string()
-                );
+                    e
+                ));
             }
         };
         match runtime.get_config() {
@@ -27,13 +26,7 @@ where
                 config = conf;
                 0
             }
-            Err(e) => {
-                tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
-                    "Failed to get configuration: {}",
-                    e.to_string()
-                )
-            }
+            Err(e) => tarantool_error(&format!("Failed to get configuration: {}", e)),
         }
     });
 
@@ -44,11 +37,10 @@ where
             let mut runtime = match runtime.try_borrow_mut() {
                 Ok(runtime) => runtime,
                 Err(e) => {
-                    return tarantool::set_error!(
-                        TarantoolErrorCode::ProcC,
+                    return tarantool_error(&format!(
                         "Failed to borrow the runtime while updating configuration: {}",
-                        e.to_string()
-                    );
+                        e
+                    ));
                 }
             };
             runtime.update_config(config);

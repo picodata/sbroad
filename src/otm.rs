@@ -1,5 +1,7 @@
 //! Opentelemetry module
 
+use crate::debug;
+
 use ahash::AHashMap;
 use opentelemetry::global::{get_text_map_propagator, tracer, BoxedTracer};
 use opentelemetry::propagation::{Extractor, Injector};
@@ -141,16 +143,22 @@ where
             old_ti.context(),
         );
         let ti = TraceInfo::new(old_ti.tracer().clone(), ctx, id);
-        debug(&format!(
-            "fiber {}, child span {}: insert new trace info {:?}",
-            fid, name, ti
-        ));
+        debug!(
+            Option::from("child span"),
+            &format!(
+                "fiber {}, child span {}: insert new trace info {:?}",
+                fid, name, ti
+            ),
+        );
         TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, ti));
         let result = f();
-        debug(&format!(
-            "fiber {}, child span {}: restore old trace info {:?}",
-            fid, name, old_ti
-        ));
+        debug!(
+            Option::from("child span"),
+            &format!(
+                "fiber {}, child span {}: restore old trace info {:?}",
+                fid, name, old_ti
+            ),
+        );
         TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, old_ti));
         return result;
     }
@@ -194,16 +202,19 @@ where
         );
         let ti = TraceInfo::new(tracer, ctx, id.to_string());
 
-        debug(&format!(
-            "fiber {}, query span {}: insert trace info {:?}",
-            fid, name, ti
-        ));
+        debug!(
+            Option::from("query span"),
+            &format!(
+                "fiber {}, query span {}: insert trace info {:?}",
+                fid, name, ti
+            ),
+        );
         TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, ti));
         let result = f();
-        debug(&format!(
-            "fiber {}, query span {}: remove trace info",
-            fid, name
-        ));
+        debug!(
+            Option::from("query span"),
+            &format!("fiber {}, query span {}: remove trace info", fid, name),
+        );
         TRACE_MANAGER.with(|tm| tm.borrow_mut().remove(fid));
         return result;
     }
@@ -243,7 +254,10 @@ pub fn inject_context(carrier: &mut dyn Injector) {
         TRACE_MANAGER.with(|tm| {
             tm.borrow().get(fid).map_or_else(
                 || {
-                    debug(&format!("fiber {}, no trace information found", fid));
+                    debug!(
+                        Option::from("context injection"),
+                        &format!("fiber {}, no trace information found", fid),
+                    );
                 },
                 |ti| {
                     get_text_map_propagator(|propagator| {
@@ -284,29 +298,18 @@ pub fn extract_params<S: ::std::hash::BuildHasher>(
     };
     let id = if let Some(id) = id { id } else { new_id() };
     let ctx = if let Some(mut carrier) = context {
-        debug(&format!("Serialized OTM span context: {:?}", carrier));
+        debug!(
+            Option::from("parameters extraction"),
+            &format!("Serialized OTM span context: {:?}", carrier),
+        );
         let ctx = extract_context(&mut carrier);
-        debug(&format!("Deserialized OTM span context: {:?}", ctx.span()));
+        debug!(
+            Option::from("parameters extraction"),
+            &format!("Deserialized OTM span context: {:?}", ctx.span()),
+        );
         ctx
     } else {
         Context::new()
     };
     (id, ctx, tracer)
-}
-
-#[inline]
-#[allow(unused_variables)]
-fn debug(message: &str) {
-    #[cfg(not(feature = "mock"))]
-    {
-        use tarantool::log::{say, SayLevel};
-
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
-            message,
-        );
-    }
 }

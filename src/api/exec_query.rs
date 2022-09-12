@@ -1,8 +1,6 @@
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::os::raw::c_int;
-use tarantool::error::TarantoolErrorCode;
-use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_config;
@@ -11,14 +9,16 @@ use crate::errors::QueryPlannerError;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
 use crate::executor::Query;
 use crate::ir::value::Value;
+use crate::log::tarantool_error;
 use crate::otm::{child_span, extract_params, query_span};
+use crate::{debug, error};
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
 pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match PatternWithParams::try_from(args) {
         Ok(params) => params,
-        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+        Err(e) => return tarantool_error(&e.to_string()),
     };
 
     // We initialize the global tracer on every configuration update.
@@ -35,28 +35,17 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
             let runtime = match engine.try_borrow() {
                 Ok(runtime) => runtime,
                 Err(e) => {
-                    return tarantool::set_error!(
-                        TarantoolErrorCode::ProcC,
+                    return tarantool_error(&format!(
                         "Failed to borrow the runtime while dispatching the query: {}",
-                        e.to_string()
-                    );
+                        e
+                    ));
                 }
             };
             let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params) {
                 Ok(q) => q,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        None,
-                        &format!("{:?}", e),
-                    );
-                    return tarantool::set_error!(
-                        TarantoolErrorCode::ProcC,
-                        "{}",
-                        format!("{:?}", e)
-                    );
+                    error!(Option::from("query dispatch"), &format!("{:?}", e));
+                    return tarantool_error(&e.to_string());
                 }
             };
 
@@ -66,14 +55,10 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                         f_ctx.return_tuple(tuple).unwrap();
                         0
                     } else {
-                        tarantool::set_error!(
-                            TarantoolErrorCode::ProcC,
-                            "{}",
-                            "Unsupported result type"
-                        )
+                        tarantool_error("Unsupported result type")
                     }
                 }),
-                Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+                Err(e) => tarantool_error(&e.to_string()),
             }
         })
     })
@@ -92,11 +77,8 @@ impl TryFrom<FunctionArgs> for ExecuteQueryParams {
     type Error = QueryPlannerError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
+        debug!(
+            Option::from("argument parsing"),
             &format!("Execute query parameters: {:?}", value),
         );
         Tuple::from(value)
@@ -138,7 +120,7 @@ impl<'de> Deserialize<'de> for ExecuteQueryParams {
 pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match ExecuteQueryParams::try_from(args) {
         Ok(param) => param,
-        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+        Err(e) => return tarantool_error(&e.to_string()),
     };
 
     let ret_code = load_config(&SEGMENT_ENGINE);
@@ -158,11 +140,10 @@ pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int
                 let runtime = match engine.try_borrow() {
                     Ok(runtime) => runtime,
                     Err(e) => {
-                        return tarantool::set_error!(
-                            TarantoolErrorCode::ProcC,
+                        return tarantool_error(&format!(
                             "Failed to borrow the runtime while executing the query: {}",
-                            e.to_string()
-                        );
+                            e
+                        ));
                     }
                 };
                 match runtime.execute(
@@ -175,16 +156,10 @@ pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int
                             f_ctx.return_tuple(tuple).unwrap();
                             0
                         } else {
-                            tarantool::set_error!(
-                                TarantoolErrorCode::ProcC,
-                                "{}",
-                                "Unsupported result type"
-                            )
+                            tarantool_error("Unsupported result type")
                         }
                     }
-                    Err(e) => {
-                        tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e))
-                    }
+                    Err(e) => tarantool_error(&e.to_string()),
                 }
             })
         },

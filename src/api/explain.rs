@@ -1,14 +1,14 @@
 use std::os::raw::c_int;
 
 use serde::{Deserialize, Serialize};
-use tarantool::error::TarantoolErrorCode;
-use tarantool::log::{say, SayLevel};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
+use crate::error;
 use crate::errors::QueryPlannerError;
 use crate::executor::Query;
+use crate::log::tarantool_error;
 
 #[derive(Serialize, Deserialize)]
 /// Lua function params
@@ -32,7 +32,7 @@ impl TryFrom<FunctionArgs> for Args {
 pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match Args::try_from(args) {
         Ok(param) => param,
-        Err(e) => return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+        Err(e) => return tarantool_error(&e.to_string()),
     };
 
     let ret_code = load_config(&COORDINATOR_ENGINE);
@@ -43,24 +43,17 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
         let runtime = match engine.try_borrow() {
             Ok(runtime) => runtime,
             Err(e) => {
-                return tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
+                return tarantool_error(&format!(
                     "Failed to borrow runtime while explaining the query: {}",
-                    e.to_string()
-                );
+                    e
+                ));
             }
         };
         let query = match Query::new(&*runtime, &lua_params.query, vec![]) {
             Ok(q) => q,
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    None,
-                    &format!("{:?}", e),
-                );
-                return tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", format!("{:?}", e));
+                error!(Option::from("explain"), &format!("{:?}", e));
+                return tarantool_error(&e.to_string());
             }
         };
 
@@ -69,7 +62,7 @@ pub extern "C" fn explain(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                 ctx.return_mp(&q).unwrap();
                 0
             }
-            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{}", e.to_string()),
+            Err(e) => tarantool_error(&e.to_string()),
         }
     })
 }

@@ -5,10 +5,10 @@ use crate::executor::engine::Configuration;
 use crate::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use crate::ir::value::Value;
 use crate::otm::child_span;
+use crate::{debug, error, warn};
 use sbroad_proc::otm_child_span;
 use std::any::Any;
 use std::cell::RefCell;
-use tarantool::log::{say, SayLevel};
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
@@ -78,10 +78,7 @@ impl Configuration for StorageRuntime {
             let capacity: u64 = match storage_cache_capacity.call() {
                 Ok(capacity) => capacity,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting storage cache capacity"),
                         &format!("{:?}", e),
                     );
@@ -96,10 +93,7 @@ impl Configuration for StorageRuntime {
             let cache_size_bytes = match storage_cache_size_bytes.call::<u64>() {
                 Ok(size_bytes) => size_bytes,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting storage cache size bytes"),
                         &format!("{:?}", e),
                     );
@@ -114,10 +108,7 @@ impl Configuration for StorageRuntime {
             let jaeger_host: String = match jaeger_agent_host.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting jaeger agent host"),
                         &format!("{:?}", e),
                     );
@@ -130,10 +121,7 @@ impl Configuration for StorageRuntime {
             let jaeger_port: u16 = match jaeger_agent_port.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting jaeger agent port"),
                         &format!("{:?}", e),
                     );
@@ -180,6 +168,7 @@ impl StorageRuntime {
     /// - Failed to prepare the statement (invalid SQL or lack of memory in `sql_cache_size`).
     /// - Failed to put or get a prepared statement from the cache.
     /// - Failed to execute the prepared statement.
+    #[allow(unused_variables)]
     pub fn execute(
         &self,
         pattern: &str,
@@ -191,10 +180,7 @@ impl StorageRuntime {
         let stmt_id = match prepare(pattern) {
             Ok(stmt) => {
                 let stmt_id = stmt.id()?;
-                say(
-                    SayLevel::Debug,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
+                debug!(
                     Option::from("execute"),
                     &format!("Created prepared statement {}", stmt_id),
                 );
@@ -213,10 +199,7 @@ impl StorageRuntime {
                 // Possibly the statement is correct, but doesn't fit into
                 // Tarantool's prepared statements cache (`sql_cache_size`).
                 // So we try to execute it bypassing the cache.
-                say(
-                    SayLevel::Warn,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
+                warn!(
                     Option::from("execute"),
                     &format!("Failed to prepare the statement: {}, error: {}", pattern, e),
                 );
@@ -228,10 +211,7 @@ impl StorageRuntime {
         };
 
         // The statement was found in the cache, so we can execute it.
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
+        debug!(
             Option::from("execute"),
             &format!("Execute prepared statement {}", stmt_id),
         );
@@ -259,13 +239,7 @@ fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
             Ok(PreparedStmt(Some(stmt)))
         }
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("prepare"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("prepare"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }
@@ -282,13 +256,7 @@ fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
     match unprepare_stmt.call_with_args::<(), _>(stmt.id()?) {
         Ok(_) => Ok(()),
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("unprepare"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("unprepare"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }
@@ -309,13 +277,7 @@ fn read_prepared(
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("read_prepared"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("read_prepared"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }
@@ -332,13 +294,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("read_unprepared"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("read_unprepared"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }
@@ -359,13 +315,7 @@ fn write_prepared(
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("write_prepared"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("write_prepared"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }
@@ -382,13 +332,7 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            say(
-                SayLevel::Error,
-                file!(),
-                line!().try_into().unwrap_or(0),
-                Option::from("write_unprepared"),
-                &format!("{:?}", e),
-            );
+            error!(Option::from("write_unprepared"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
     }

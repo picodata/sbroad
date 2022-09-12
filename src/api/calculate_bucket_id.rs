@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::os::raw::c_int;
 
 use crate::errors::QueryPlannerError;
-use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use serde::{de::Deserializer, Deserialize, Serialize};
@@ -11,6 +10,7 @@ use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use crate::executor::engine::Coordinator;
 use crate::ir::value::Value;
+use crate::log::tarantool_error;
 
 #[derive(Debug, Default, Serialize, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values
@@ -114,11 +114,10 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
         let runtime = match engine.try_borrow() {
             Ok(runtime) => runtime,
             Err(e) => {
-                return tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
+                return tarantool_error(&format!(
                     "Failed to borrow the runtime while calculating a bucket id: {:?}",
-                    e
-                )
+                    e,
+                ));
             }
         };
 
@@ -155,7 +154,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
                 ctx.return_mp(&bucket_id).unwrap();
                 0
             }
-            Err(e) => tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", e),
+            Err(e) => tarantool_error(&format!("{:?}", e)),
         }
     })
 }

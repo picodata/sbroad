@@ -10,4 +10,5 @@ pub mod errors;
 pub mod executor;
 pub mod frontend;
 pub mod ir;
+pub mod log;
 pub mod otm;

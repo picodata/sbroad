@@ -1,9 +1,9 @@
 use std::os::raw::c_int;
-use tarantool::error::TarantoolErrorCode;
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
 use crate::executor::engine::{Configuration, Coordinator};
+use crate::log::tarantool_error;
 
 /// Flush cached configuration in the Rust memory of the coordinator runtime.
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
@@ -13,22 +13,18 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
         Ok(mut runtime) => {
             runtime.clear_config();
             if let Err(e) = runtime.clear_ir_cache() {
-                return tarantool::set_error!(
-                    TarantoolErrorCode::ProcC,
+                return tarantool_error(&format!(
                     "Failed to clear the IR cache on router: {:?}",
                     e
-                );
+                ));
             }
             ctx.return_mp(&true).unwrap();
             0
         }
-        Err(e) => {
-            tarantool::set_error!(
-                TarantoolErrorCode::ProcC,
-                "Failed to borrow the runtime while clearing cached configuration on router: {}",
-                e.to_string()
-            )
-        }
+        Err(e) => tarantool_error(&format!(
+            "Failed to borrow the runtime while clearing cached configuration on router: {}",
+            e
+        )),
     })
 }
 
@@ -42,12 +38,9 @@ pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) ->
             ctx.return_mp(&true).unwrap();
             0
         }
-        Err(e) => {
-            tarantool::set_error!(
-                TarantoolErrorCode::ProcC,
-                "Failed to borrow the runtime while clearing cached configuration on a storage: {}",
-                e.to_string()
-            )
-        }
+        Err(e) => tarantool_error(&format!(
+            "Failed to borrow the runtime while clearing cached configuration on a storage: {}",
+            e
+        )),
     })
 }

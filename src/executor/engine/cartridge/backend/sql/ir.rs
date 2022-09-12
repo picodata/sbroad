@@ -2,10 +2,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use tarantool::log::{say, SayLevel};
 use tarantool::tlua;
 use tarantool::tuple::{FunctionArgs, Tuple};
 
+use crate::debug;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
@@ -36,11 +36,8 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
     type Error = QueryPlannerError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        say(
-            SayLevel::Debug,
-            file!(),
-            line!().try_into().unwrap_or(0),
-            None,
+        debug!(
+            Option::from("argument parsing"),
             &format!("Query parameters: {:?}", value),
         );
         Tuple::from(value)

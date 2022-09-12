@@ -7,10 +7,10 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
-use tarantool::log::{say, SayLevel};
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
+use crate::error;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
@@ -68,13 +68,7 @@ impl Configuration for RouterRuntime {
             let schema: String = match get_schema.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("getting schema"),
-                        &format!("{:?}", e),
-                    );
+                    error!(Option::from("getting schema"), &format!("{:?}", e));
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
                 }
             };
@@ -84,10 +78,7 @@ impl Configuration for RouterRuntime {
             let jaeger_host: String = match jaeger_agent_host.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting jaeger agent host"),
                         &format!("{:?}", e),
                     );
@@ -100,10 +91,7 @@ impl Configuration for RouterRuntime {
             let jaeger_port: u16 = match jaeger_agent_port.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting jaeger agent port"),
                         &format!("{:?}", e),
                     );
@@ -115,13 +103,7 @@ impl Configuration for RouterRuntime {
             let timeout: u64 = match waiting_timeout.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("getting waiting timeout"),
-                        &format!("{:?}", e),
-                    );
+                    error!(Option::from("getting waiting timeout"), &format!("{:?}", e));
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
                 }
             };
@@ -139,10 +121,7 @@ impl Configuration for RouterRuntime {
                     })?
                 }
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
+                    error!(
                         Option::from("getting router cache capacity"),
                         &format!("{:?}", e),
                     );
@@ -154,13 +133,7 @@ impl Configuration for RouterRuntime {
             let column: String = match sharding_column.call() {
                 Ok(column) => column,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("getting sharding column"),
-                        &format!("{:?}", e),
-                    );
+                    error!(Option::from("getting sharding column"), &format!("{:?}", e));
                     return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
                 }
             };
@@ -348,13 +321,7 @@ impl RouterRuntime {
             match lua.eval("return require('vshard').router.bucket_count") {
                 Ok(v) => v,
                 Err(e) => {
-                    say(
-                        SayLevel::Error,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("set_bucket_count"),
-                        &format!("{:?}", e),
-                    );
+                    error!(Option::from("set_bucket_count"), &format!("{:?}", e));
                     return Err(QueryPlannerError::LuaError(format!(
                         "Failed lua function load: {}",
                         e
@@ -365,13 +332,7 @@ impl RouterRuntime {
         let bucket_count: u64 = match bucket_count_fn.call() {
             Ok(r) => r,
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("set_bucket_count"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("set_bucket_count"), &format!("{:?}", e));
                 return Err(QueryPlannerError::LuaError(e.to_string()));
             }
         };
@@ -402,13 +363,7 @@ impl RouterRuntime {
         match exec_sql.call_with_args::<Tuple, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("read_on_some"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("read_on_some"), &format!("{:?}", e));
                 Err(QueryPlannerError::LuaError(format!(
                     "Lua error: {:?}. Query and parameters: {:?}",
                     e, rs_query
@@ -431,13 +386,7 @@ impl RouterRuntime {
         match exec_sql.call_with_args::<Tuple, _>((rs_query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("write_on_some"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("write_on_some"), &format!("{:?}", e));
                 Err(QueryPlannerError::LuaError(format!(
                     "Lua error: {:?}. Query and parameters: {:?}",
                     e, rs_query
@@ -470,13 +419,7 @@ impl RouterRuntime {
         match exec_sql.call_with_args::<Tuple, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("read_on_all"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("read_on_all"), &format!("{:?}", e));
                 Err(QueryPlannerError::LuaError(format!(
                     "Lua error: {:?}. Query and parameters: {:?}",
                     e, query
@@ -496,13 +439,7 @@ impl RouterRuntime {
         match exec_sql.call_with_args::<Tuple, _>((query, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("write_on_all"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("write_on_all"), &format!("{:?}", e));
                 Err(QueryPlannerError::LuaError(format!(
                     "Lua error: {:?}. Query and parameters: {:?}",
                     e, query
@@ -549,13 +486,7 @@ impl Buckets {
         let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
             Ok(v) => v,
             Err(e) => {
-                say(
-                    SayLevel::Error,
-                    file!(),
-                    line!().try_into().unwrap_or(0),
-                    Option::from("buckets group"),
-                    &format!("{:?}", e),
-                );
+                error!(Option::from("buckets group"), &format!("{:?}", e));
                 return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
             }
         };

@@ -10,9 +10,7 @@ use crate::executor::engine::{normalize_name_from_schema, normalize_name_from_sq
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::executor::CoordinatorMetadata;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
-
-#[cfg(not(feature = "mock"))]
-use tarantool::log::{say, SayLevel};
+use crate::{debug, warn};
 
 /// Cluster metadata information
 ///
@@ -104,19 +102,13 @@ impl RouterConfiguration {
                                 None => return Err(QueryPlannerError::TypeNotImplemented),
                             };
                             let qualified_name = normalize_name_from_schema(name);
-                            #[cfg(not(feature = "mock"))]
-                            {
-                                say(
-                                    SayLevel::Debug,
-                                    file!(),
-                                    line!().try_into().unwrap_or(0),
-                                    Option::from("configuration parsing"),
-                                    &format!(
-                                        "Column's original name: {}, qualified name {}",
-                                        name, qualified_name
-                                    ),
-                                );
-                            }
+                            debug!(
+                                Option::from("configuration parsing"),
+                                &format!(
+                                    "Column's original name: {}, qualified name {}",
+                                    name, qualified_name
+                                ),
+                            );
                             let role = if self.get_sharding_column().eq(&qualified_name) {
                                 ColumnRole::Sharding
                             } else {
@@ -128,16 +120,10 @@ impl RouterConfiguration {
                         result
                     }
                     None => {
-                        #[cfg(not(feature = "mock"))]
-                        {
-                            say(
-                                SayLevel::Warn,
-                                file!(),
-                                line!().try_into().unwrap_or(0),
-                                Option::from("configuration parsing"),
-                                &format!("Skip space {}: fields not found.", current_space_name),
-                            );
-                        }
+                        warn!(
+                            Option::from("configuration parsing"),
+                            &format!("Skip space {}: fields not found.", current_space_name),
+                        );
                         continue;
                     }
                 };
@@ -149,19 +135,13 @@ impl RouterConfiguration {
                             let key: &str = match k.as_str() {
                                 Some(k) => k,
                                 None => {
-                                    #[cfg(not(feature = "mock"))]
-                                    {
-                                        say(
-                                            SayLevel::Warn,
-                                            file!(),
-                                            line!().try_into().unwrap_or(0),
-                                            Option::from("configuration parsing"),
-                                            &format!(
-                                                "Skip space {}: failed to convert key {:?} to string.",
-                                                current_space_name, k
-                                            ),
-                                        );
-                                    }
+                                    warn!(
+                                        Option::from("configuration parsing"),
+                                        &format!(
+                                            "Skip space {}: failed to convert key {:?} to string.",
+                                            current_space_name, k
+                                        ),
+                                    );
                                     continue;
                                 }
                             };
@@ -170,34 +150,22 @@ impl RouterConfiguration {
                         result
                     }
                     None => {
-                        #[cfg(not(feature = "mock"))]
-                        {
-                            say(
-                                SayLevel::Warn,
-                                file!(),
-                                line!().try_into().unwrap_or(0),
-                                Option::from("configuration parsing"),
-                                &format!("Skip space {}: keys not found.", current_space_name),
-                            );
-                        }
+                        warn!(
+                            Option::from("configuration parsing"),
+                            &format!("Skip space {}: keys not found.", current_space_name),
+                        );
                         continue;
                     }
                 };
 
                 let table_name: String = normalize_name_from_schema(current_space_name);
-                #[cfg(not(feature = "mock"))]
-                {
-                    say(
-                        SayLevel::Debug,
-                        file!(),
-                        line!().try_into().unwrap_or(0),
-                        Option::from("configuration parsing"),
-                        &format!(
-                            "Table's original name: {}, qualified name {}",
-                            current_space_name, table_name
-                        ),
-                    );
-                }
+                debug!(
+                    Option::from("configuration parsing"),
+                    &format!(
+                        "Table's original name: {}, qualified name {}",
+                        current_space_name, table_name
+                    ),
+                );
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
                 let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
                 self.tables.insert(table_name, t);
