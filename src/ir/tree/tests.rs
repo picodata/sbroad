@@ -1,7 +1,7 @@
-use crate::ir::operator::*;
-use crate::ir::relation::*;
-use crate::ir::value::*;
-use crate::ir::*;
+use crate::ir::operator::Bool;
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::value::Value;
+use crate::ir::{Expression, Plan};
 use pretty_assertions::assert_eq;
 use traversal::{Bft, DftPost, DftPre};
 
@@ -41,6 +41,7 @@ fn expression_bft() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn and_chain_pre() {
     // (((b1 or b2) and b3) and b4) and (b5 = (b6 = b7))
 
@@ -247,7 +248,7 @@ fn subtree_dfs_post() {
         .unwrap()
         .clone_row_list()
         .unwrap();
-    let alias_id = row_children.get(0).unwrap();
+    let alias_id = row_children.first().unwrap();
     let c_ref_id =
         if let Expression::Alias { child, .. } = plan.get_expression_node(*alias_id).unwrap() {
             child

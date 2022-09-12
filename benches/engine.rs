@@ -451,6 +451,7 @@ impl Default for RouterRuntimeMock {
 
 impl RouterRuntimeMock {
     #[allow(dead_code)]
+    #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn new() -> Self {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();

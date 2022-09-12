@@ -15,10 +15,7 @@ fn split_columns(plan: &mut Plan) {
 fn split_columns1() {
     let input = r#"SELECT "a" FROM "t" WHERE ("a", 2) = (1, "b")"#;
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and (?) = ("t"."b")"#,
-        ),
+        r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and (?) = ("t"."b")"#.to_string(),
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
@@ -29,7 +26,7 @@ fn split_columns1() {
 fn split_columns2() {
     let input = r#"SELECT "a" FROM "t" WHERE "a" = 1"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?)"#,),
+        r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?)"#.to_string(),
         vec![Value::from(1_u64)],
     );
 
@@ -60,7 +57,7 @@ fn split_columns3() {
 fn split_columns4() {
     let input = r#"SELECT "a" FROM "t" WHERE "a" in (1, 2)"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") in (?, ?)"#,),
+        r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") in (?, ?)"#.to_string(),
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 

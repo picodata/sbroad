@@ -1,7 +1,7 @@
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
-use crate::ir::transformation::redistribution::*;
+use crate::ir::transformation::redistribution::{Key, MotionPolicy};
 use pretty_assertions::assert_eq;
 
 #[test]

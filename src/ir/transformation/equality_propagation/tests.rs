@@ -37,10 +37,7 @@ fn equality_propagation2() {
     WHERE "a" = NULL AND "b" = NULL"#;
 
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
-        ),
+        r#"SELECT "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)"#.to_string(),
         vec![Value::Null, Value::Null],
     );
 

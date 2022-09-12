@@ -6,6 +6,7 @@ use sbroad::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
 
+#[allow(clippy::too_many_lines)]
 fn query1_sql() -> String {
     let sql = r#"SELECT
     *
@@ -254,8 +255,8 @@ fn bench_query1(c: &mut Criterion) {
             let params = vec![Value::from(sys_from), Value::from(reestrid)];
             sys_from += 1;
             reestrid += 1;
-            query1(&sql, params, &mut engine)
-        })
+            query1(&sql, params, &mut engine);
+        });
     });
 }
 

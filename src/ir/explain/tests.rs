@@ -20,7 +20,7 @@ fn simple_query_without_cond_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn simple_query_with_cond_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn union_query_plan() {
         r#"    projection ("t2"."identification_number" -> "identification_number", "t2"."product_code" -> "product_code")"#,
         r#"        scan "hash_testing_hist" -> "t2""#,
     );
-    assert_eq!(expected, explain_tree.to_string())
+    assert_eq!(expected, explain_tree.to_string());
 }
 
 #[test]
@@ -92,7 +92,7 @@ WHERE "id" = 1"#;
                         scan "test_space_hist"
 "#);
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -141,7 +141,7 @@ scan
                                     scan "test_space_hist"
 "#);
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn explain_except1() {
         r#"        projection ("hash_testing_hist"."identification_number" -> "identification_number")"#,
         r#"            scan "hash_testing_hist""#,
     );
-    assert_eq!(expected, explain_tree.to_string())
+    assert_eq!(expected, explain_tree.to_string());
 }
 
 #[test]
@@ -219,7 +219,7 @@ motion [policy: segment([ref("identification_number")]), generation: none]
                         scan "hash_testing"
 "#);
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -248,7 +248,7 @@ WHERE "t2"."product_code" = '123'"#;
                         scan "hash_testing"
 "#);
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -280,7 +280,7 @@ motion [policy: segment([ref("identification_number")]), generation: none]
                     scan "hash_testing"
 "#);
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -300,7 +300,7 @@ fn unary_condition_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn insert_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -344,7 +344,7 @@ fn multiply_insert_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -366,7 +366,7 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }
 
 #[test]
@@ -387,5 +387,5 @@ fn select_value_plan() {
 "#,
     );
 
-    assert_eq!(actual_explain, explain_tree.to_string())
+    assert_eq!(actual_explain, explain_tree.to_string());
 }

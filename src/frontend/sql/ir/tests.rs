@@ -15,7 +15,7 @@ fn front_sql1() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn front_sql2() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn front_sql3() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn front_sql4() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -123,7 +123,7 @@ motion [policy: full, generation: none]
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn front_sql6() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn front_sql8() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn front_sql9() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn front_sql10() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -252,7 +252,7 @@ fn front_sql11() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn front_sql14() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 // check cyrillic strings support
@@ -287,7 +287,7 @@ fn front_sql16() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn front_sql17() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn front_sql18() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -338,7 +338,7 @@ fn front_sql19() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[cfg(test)]

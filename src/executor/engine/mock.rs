@@ -283,13 +283,13 @@ impl Coordinator for RouterRuntimeMock {
         match buckets {
             Buckets::All => {
                 let sql = plan.to_sql(&nodes, buckets)?;
-                result.extend(exec_on_all(&String::from(sql).as_str()))?;
+                result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
                     let sql = plan.to_sql(&nodes, &Buckets::Filtered(bucket_set))?;
-                    let temp_result = exec_on_some(*bucket, &String::from(sql).as_str());
+                    let temp_result = exec_on_some(*bucket, String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }
             }
@@ -329,6 +329,7 @@ impl Default for RouterRuntimeMock {
 
 impl RouterRuntimeMock {
     #[allow(dead_code)]
+    #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn new() -> Self {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();

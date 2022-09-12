@@ -11,7 +11,11 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 
 /// Compiles an SQL query to optimized IR plan.
-#[allow(dead_code)]
+///
+/// # Panics
+///   if query is not correct
+#[must_use]
+#[allow(clippy::missing_panics_doc)]
 pub fn sql_to_optimized_ir(query: &str, params: Vec<Value>) -> Plan {
     let mut plan = sql_to_ir(query, params);
     plan.optimize().unwrap();
@@ -19,7 +23,10 @@ pub fn sql_to_optimized_ir(query: &str, params: Vec<Value>) -> Plan {
 }
 
 /// Compiles an SQL query to IR plan.
-#[allow(dead_code)]
+///
+/// # Panics
+///   if query is not correct
+#[must_use]
 pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
@@ -29,6 +36,9 @@ pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
 }
 
 /// Compiles and transforms an SQL query to a new parameterized SQL.
+///
+/// # Panics
+///   if query is not correct
 #[allow(dead_code)]
 pub fn sql_to_sql(
     query: &str,

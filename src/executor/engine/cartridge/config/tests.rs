@@ -88,7 +88,7 @@ fn test_yaml_schema_parser() {
 
     let expected_keys = vec!["\"identification_number\"", "\"product_code\""];
     let actual_keys = s.get_sharding_key_by_space("\"hash_testing\"").unwrap();
-    assert_eq!(actual_keys, expected_keys)
+    assert_eq!(actual_keys, expected_keys);
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn test_getting_table_segment() {
         s.get_table_segment("invalid_table").unwrap_err(),
         QueryPlannerError::CustomError(r#"Space "INVALID_TABLE" not found"#.into())
     );
-    assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected)
+    assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected);
 }
 
 #[test]

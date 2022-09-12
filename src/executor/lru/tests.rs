@@ -26,10 +26,10 @@ fn lru3() {
     let evict_fn = Box::new(|value: &mut String| {
         let value_old = value.clone();
         value.push_str("_old");
-        return Err(QueryPlannerError::CustomError(format!(
+        Err(QueryPlannerError::CustomError(format!(
             "changed {} to {} during cache eviction",
             value_old, value
-        )));
+        )))
     });
     let mut cache: LRUCache<usize, String> = LRUCache::new(1, Some(evict_fn)).unwrap();
     cache.put(1, "one".to_string()).unwrap();

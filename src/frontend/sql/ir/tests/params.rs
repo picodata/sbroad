@@ -15,7 +15,7 @@ fn front_params1() {
 "#,
     );
 
-    assert_eq!(expected_explain, plan.as_explain().unwrap())
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]

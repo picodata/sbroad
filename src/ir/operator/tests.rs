@@ -5,10 +5,10 @@ use pretty_assertions::assert_eq;
 
 use crate::collection;
 use crate::errors::QueryPlannerError;
-use crate::ir::distribution::*;
-use crate::ir::relation::*;
-use crate::ir::value::*;
-use crate::ir::*;
+use crate::ir::distribution::{Distribution, Key};
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::value::Value;
+use crate::ir::{Node, Plan};
 
 use super::*;
 
@@ -296,6 +296,7 @@ fn sub_query_serialize() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn selection_with_sub_query() {
     // t1(a int) key [a]
     // t2(b int) key [b]

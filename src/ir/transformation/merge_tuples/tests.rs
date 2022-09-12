@@ -57,7 +57,7 @@ fn merge_tuples2() {
 fn merge_tuples3() {
     let input = r#"SELECT "a" FROM "t" WHERE true"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "t"."a" FROM "t" WHERE ?"#),
+        r#"SELECT "t"."a" FROM "t" WHERE ?"#.to_string(),
         vec![Value::Boolean(true)],
     );
 

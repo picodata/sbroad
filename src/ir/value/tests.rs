@@ -25,7 +25,7 @@ fn decimal() {
     );
     assert_eq!(
         Value::Decimal(Decimal::from_str("9223372036854775807").unwrap()),
-        Value::from(Decimal::from(9223372036854775807_u64))
+        Value::from(Decimal::from(9_223_372_036_854_775_807_u64))
     );
     assert_ne!(
         Value::Decimal(decimal!(1)),
@@ -34,19 +34,20 @@ fn decimal() {
 }
 
 #[test]
+#[allow(clippy::excessive_precision)]
 fn double() {
     assert_eq!(
         Value::Double(0.0_f64.into()),
         Value::from(Double::from(0.0000_f64))
     );
     assert_eq!(
-        Value::Double(0.9999999999999997e-308_f64.into()),
+        Value::Double(0.999_999_999_999_999_7e-308_f64.into()),
         Value::from(Double::from(1e-308_f64))
     );
     assert_eq!(Value::from(f64::NAN), Value::Null);
     assert_ne!(
-        Value::Double(Double::from(0.9999999999999996e-308_f64)),
-        Value::from(Double::from(0.9999999999999997e-308_f64))
+        Value::Double(Double::from(0.999_999_999_999_999_6e-308_f64)),
+        Value::from(Double::from(0.999_999_999_999_999_7e-308_f64))
     );
 }
 
@@ -54,16 +55,16 @@ fn double() {
 fn integer() {
     assert_eq!(Value::Integer(0), Value::from(0_i64));
     assert_eq!(
-        Value::Integer(9223372036854775807_i64),
-        Value::from(9223372036854775807_i64)
+        Value::Integer(9_223_372_036_854_775_807_i64),
+        Value::from(9_223_372_036_854_775_807_i64)
     );
     assert_eq!(
-        Value::Integer(-9223372036854775807_i64),
-        Value::from(-9223372036854775807_i64)
+        Value::Integer(-9_223_372_036_854_775_807_i64),
+        Value::from(-9_223_372_036_854_775_807_i64)
     );
     assert_ne!(
-        Value::Integer(9223372036854775807_i64),
-        Value::from(-9223372036854775807_i64)
+        Value::Integer(9_223_372_036_854_775_807_i64),
+        Value::from(-9_223_372_036_854_775_807_i64)
     );
 }
 
@@ -86,12 +87,13 @@ fn unsigned() {
     assert_eq!(Value::Unsigned(0), Value::from(0_u64));
     assert_eq!(
         Value::Unsigned(u64::MAX),
-        Value::from(18446744073709551615_u64)
+        Value::from(18_446_744_073_709_551_615_u64)
     );
     assert_ne!(Value::Unsigned(0_u64), Value::from(1_u64));
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn equivalence() {
     // Boolean
     assert_eq!(

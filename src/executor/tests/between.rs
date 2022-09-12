@@ -27,7 +27,7 @@ fn between1_test() {
     let plan = query.exec_plan.get_ir_plan();
 
     // Validate the motion type.
-    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
+    let motion_id = *get_motion_id(plan, 0, 0).unwrap();
     assert_eq!(&MotionPolicy::Full, get_motion_policy(plan, motion_id));
 
     // Mock a virtual table.
@@ -52,7 +52,7 @@ fn between1_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on all buckets")),
+        Value::String("Execute query on all buckets".to_string()),
         Value::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
@@ -118,7 +118,7 @@ fn between2_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on all buckets")),
+        Value::String("Execute query on all buckets".to_string()),
         Value::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",

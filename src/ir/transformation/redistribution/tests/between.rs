@@ -1,10 +1,11 @@
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
-use crate::ir::transformation::redistribution::*;
+use crate::ir::transformation::redistribution::MotionPolicy;
 use pretty_assertions::assert_eq;
 
 #[test]
+#[allow(clippy::similar_names)]
 fn between1() {
     let query = r#"SELECT "identification_number" FROM "hash_testing" AS "t"
         WHERE (SELECT "identification_number" FROM "hash_testing_hist" AS "h"

@@ -27,5 +27,5 @@ fn virtual_table() {
         index: HashMap::with_hasher(RandomState::new()),
     };
 
-    assert_eq!(expected, vtable)
+    assert_eq!(expected, vtable);
 }

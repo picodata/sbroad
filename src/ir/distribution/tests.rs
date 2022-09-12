@@ -1,6 +1,6 @@
 use super::*;
-use crate::ir::relation::*;
-use crate::ir::*;
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;

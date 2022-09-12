@@ -22,12 +22,9 @@ fn bucket1_test() {
     let mut expected = ProducerResult::new();
 
     expected.rows.push(vec![
-        Value::String(format!("Execute query on all buckets")),
+        Value::String("Execute query on all buckets".to_string()),
         Value::String(String::from(PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "t1"."a", "t1"."b", "t1"."bucket_id" FROM "t1""#,
-            ),
+            r#"SELECT "t1"."a", "t1"."b", "t1"."bucket_id" FROM "t1""#.to_string(),
             vec![],
         ))),
     ]);

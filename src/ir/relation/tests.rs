@@ -241,7 +241,7 @@ fn column_msgpack_serialize() {
             0x70, 0x65, 0xA6, 0x6E, 0x75, 0x6D, 0x62, 0x65, 0x72,
         ],
         rmp_serde::to_vec(&c).unwrap()
-    )
+    );
 }
 
 #[test]

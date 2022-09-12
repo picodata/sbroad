@@ -1,8 +1,8 @@
 use pretty_assertions::assert_eq;
 
-use crate::ir::relation::*;
-use crate::ir::value::*;
-use crate::ir::*;
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::value::Value;
+use crate::ir::{Plan, QueryPlannerError};
 
 #[test]
 fn row_duplicate_column_names() {

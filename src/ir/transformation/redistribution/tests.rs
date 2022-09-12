@@ -1,9 +1,9 @@
 use super::*;
 use crate::collection;
 use crate::errors::QueryPlannerError;
-use crate::ir::distribution::*;
+use crate::ir::distribution::{Distribution, Key};
 use crate::ir::operator::Relational;
-use crate::ir::relation::*;
+use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
 use ahash::RandomState;
@@ -12,6 +12,7 @@ use std::fs;
 use std::path::Path;
 
 #[test]
+#[allow(clippy::similar_names)]
 fn segment_motion_for_sub_query() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
@@ -143,6 +144,7 @@ fn full_motion_less_for_sub_query() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn full_motion_non_segment_outer_for_sub_query() {
     // t1(a int, b int) key [a]
     // t2(a int) key [a]
@@ -201,6 +203,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn local_sub_query() {
     // t1(a int) key [a]
     // t2(a int, b int) key [a]
@@ -389,9 +392,9 @@ fn join_inner_eq_non_match_keys() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -435,9 +438,9 @@ fn join_inner_sq_less_for_keys() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -460,9 +463,9 @@ fn join_inner_sq_eq_no_keys() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -485,9 +488,9 @@ fn join_inner_sq_eq_no_outer_keys() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -511,9 +514,9 @@ fn inner_join_full_policy_sq_in_filter() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -569,9 +572,9 @@ fn inner_join_full_policy_sq_with_union_all_in_filter() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -617,9 +620,9 @@ fn join_inner_or_local_full_policies() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -658,9 +661,9 @@ fn join1() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -702,9 +705,9 @@ fn redistribution1() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -734,9 +737,9 @@ fn redistribution2() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -766,9 +769,9 @@ fn redistribution3() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -796,9 +799,9 @@ fn redistribution4() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -826,9 +829,9 @@ fn redistribution5() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -856,9 +859,9 @@ fn redistribution6() {
         .slices
         .as_ref()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap()
-        .get(0)
+        .first()
         .unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
@@ -874,6 +877,10 @@ fn redistribution6() {
 }
 
 /// Helper function to extract a motion id from a plan.
+///
+/// # Panics
+///   Motion node does not found
+#[must_use]
 pub fn get_motion_id(plan: &Plan, slice_id: usize, motion_idx: usize) -> Option<&usize> {
     let slice = plan.slices.as_ref().unwrap().get(slice_id).unwrap();
     slice.get(motion_idx)

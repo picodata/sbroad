@@ -9,6 +9,7 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
 
 #[test]
+#[allow(clippy::similar_names)]
 fn simple_union_query() {
     let query = r#"SELECT * FROM (
     SELECT * FROM "test_space" WHERE "sysFrom" > 0
@@ -33,6 +34,7 @@ fn simple_union_query() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn simple_disjunction_in_union_query() {
     let query = r#"SELECT * FROM (
     SELECT * FROM "test_space" WHERE "sysFrom" > 0
@@ -89,6 +91,7 @@ fn complex_shard_key_union_query() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn union_complex_cond_query() {
     let query = r#"SELECT *
     FROM
@@ -150,6 +153,7 @@ fn union_complex_cond_query() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn union_query_conjunction() {
     let query = r#"SELECT * FROM "test_space" WHERE "id" = 1
     UNION ALL
@@ -173,6 +177,7 @@ fn union_query_conjunction() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn simple_except_query() {
     let query = r#"SELECT * FROM (
     SELECT * FROM "test_space" WHERE "sysFrom" > 0
