@@ -117,6 +117,12 @@ pub trait Coordinator: Configuration {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError>;
 
+    /// Setup output format of query explain
+    ///
+    /// # Errors
+    /// - internal executor errors
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError>;
+
     /// Extract a list of the sharding keys from a map for the given space.
     ///
     /// # Errors

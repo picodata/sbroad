@@ -98,3 +98,4 @@ relations:
     name: t
 slices: ~
 top: 15
+is_explain: false

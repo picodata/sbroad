@@ -729,6 +729,14 @@ impl Ast for AbstractSyntaxTree {
                     };
                     map.add(*id, plan_insert_id);
                 }
+                Type::Explain => {
+                    plan.mark_as_explain();
+
+                    let ast_child_id = node.children.first().ok_or_else(|| {
+                        QueryPlannerError::CustomError("Explain has no children.".into())
+                    })?;
+                    map.add(0, map.get(*ast_child_id)?);
+                }
                 Type::AliasName
                 | Type::ColumnName
                 | Type::ScanName

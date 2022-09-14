@@ -34,3 +34,4 @@ relations:
     name: t
 slices: ~
 top: 42
+is_explain: false

@@ -107,6 +107,9 @@ pub struct Plan {
     /// We build the plan tree in a bottom-up manner, so the top would
     /// be added last. The plan without a top should be treated as invalid.
     top: Option<usize>,
+    /// The flag is enabled if user wants to get a query plan only.
+    /// In this case we don't need to execute query
+    is_explain: bool,
 }
 
 impl Default for Plan {
@@ -160,6 +163,7 @@ impl Plan {
             relations: None,
             slices: None,
             top: None,
+            is_explain: false,
         }
     }
 
@@ -310,6 +314,17 @@ impl Plan {
             })
             .collect();
         param_set
+    }
+
+    /// Marks plan as query explain
+    pub fn mark_as_explain(&mut self) {
+        self.is_explain = true;
+    }
+
+    /// Checks that plan is explain query
+    #[must_use]
+    pub fn is_expain(&self) -> bool {
+        self.is_explain
     }
 
     /// Set top node of plan

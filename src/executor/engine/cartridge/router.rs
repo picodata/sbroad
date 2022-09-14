@@ -232,6 +232,18 @@ impl Coordinator for RouterRuntime {
         self.exec_on_all(&pattern_with_params, is_data_modifier)
     }
 
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let e = explain.lines().collect::<Vec<&str>>();
+
+        match Tuple::new(&vec![e]) {
+            Ok(t) => Ok(Box::new(t)),
+            Err(e) => Err(QueryPlannerError::CustomError(format!(
+                "Tuple creation error: {}",
+                e
+            ))),
+        }
+    }
+
     /// Transform sub query results into a virtual table.
     #[otm_child_span("query.motion.materialize")]
     fn materialize_motion(

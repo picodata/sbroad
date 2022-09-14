@@ -170,3 +170,4 @@ relations:
     name: t1
 slices: ~
 top: 28
+is_explain: false

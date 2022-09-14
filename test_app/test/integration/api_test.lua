@@ -780,8 +780,8 @@ end
 g.test_motion_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("sbroad.explain", { [[SELECT "id", "name" FROM "testing_space"
-    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]] })
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN SELECT "id", "name" FROM "testing_space"
+    WHERE "id" in (SELECT "id" FROM "space_simple_shard_key_hist" WHERE "sysOp" < 0)]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
@@ -802,7 +802,7 @@ end
 g.test_join_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("sbroad.explain", { [[SELECT *
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN SELECT *
 FROM
     (SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 1
      UNION ALL
@@ -810,7 +810,7 @@ FROM
 INNER JOIN
     (SELECT "id" as "tid"  FROM "testing_space" where "id" <> 1) AS "t8"
     ON "t3"."id" = "t8"."tid"
-WHERE "t3"."name" = '123']] })
+WHERE "t3"."name" = '123']], {} })
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
@@ -839,12 +839,12 @@ end
 g.test_valid_explain = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("sbroad.explain", { [[SELECT * FROM (
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN SELECT * FROM (
             SELECT "id", "name" FROM "space_simple_shard_key" WHERE "sysOp" < 0
             UNION ALL
             SELECT "id", "name" FROM "space_simple_shard_key_hist" WHERE "sysOp" > 0
         ) as "t1"
-        WHERE "id" = 1 ]] })
+        WHERE "id" = 1]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(

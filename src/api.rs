@@ -7,6 +7,5 @@ thread_local!(static SEGMENT_ENGINE: RefCell<StorageRuntime> = RefCell::new(Stor
 
 pub mod calculate_bucket_id;
 pub mod exec_query;
-pub mod explain;
 mod helper;
 pub mod invalidate_cached_schema;

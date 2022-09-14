@@ -72,6 +72,8 @@ pub struct Query<'a, C>
 where
     C: Coordinator,
 {
+    /// Explain flag
+    is_explain: bool,
     /// Execution plan
     exec_plan: ExecutionPlan,
     /// Coordinator runtime
@@ -117,6 +119,7 @@ where
         plan.bind_params(params)?;
         plan.optimize()?;
         let query = Query {
+            is_explain: plan.is_expain(),
             exec_plan: ExecutionPlan::from(plan),
             coordinator,
             bucket_map: HashMap::new(),
@@ -145,6 +148,10 @@ where
     /// - Failed to get plan top.
     #[otm_child_span("query.dispatch")]
     pub fn dispatch(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
+        if self.is_explain() {
+            return self.coordinator.explain_format(self.to_explain()?);
+        }
+
         let slices = self.exec_plan.get_ir_plan().clone_slices();
         if let Some(slices) = slices {
             for slice in slices {
@@ -281,8 +288,13 @@ where
     ///
     /// # Errors
     /// - Failed to build explain
-    pub fn explain(&self) -> Result<String, QueryPlannerError> {
+    pub fn to_explain(&self) -> Result<String, QueryPlannerError> {
         self.exec_plan.get_ir_plan().as_explain()
+    }
+
+    /// Checks that query is explain and have not to be executed
+    fn is_explain(&self) -> bool {
+        self.is_explain
     }
 }
 

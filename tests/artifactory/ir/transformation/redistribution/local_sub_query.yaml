@@ -174,3 +174,4 @@ relations:
     name: t2
 slices: ~
 top: 24
+is_explain: false

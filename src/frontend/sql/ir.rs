@@ -111,9 +111,10 @@ impl Translation {
 
     pub(super) fn get(&self, old: usize) -> Result<usize, QueryPlannerError> {
         self.map.get(&old).copied().ok_or_else(|| {
-            QueryPlannerError::CustomError(
-                "Could not find parse node in translation map".to_string(),
-            )
+            QueryPlannerError::CustomError(format!(
+                "Could not find parse node [{}] in translation map",
+                old
+            ))
         })
     }
 }

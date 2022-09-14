@@ -300,6 +300,10 @@ impl Coordinator for RouterRuntimeMock {
         Ok(Box::new(result))
     }
 
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError> {
+        Ok(Box::new(explain))
+    }
+
     fn extract_sharding_keys_from_map<'engine, 'rec>(
         &'engine self,
         space: String,

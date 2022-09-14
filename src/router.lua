@@ -217,11 +217,6 @@ local function init()
         'libsbroad.dispatch_query',
         { if_not_exists = true, language = 'C' }
     )
-
-    box.schema.func.create(
-        'libsbroad.explain',
-        { if_not_exists = true, language = 'C' }
-    )
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
@@ -252,26 +247,6 @@ local function calculate_bucket_id(values, space_name) -- luacheck: no unused ar
     return result
 end
 
-
-local function explain(query)
-    local has_err, res = pcall(
-        function()
-            return box.func["libsbroad.explain"]:call({ query })
-        end
-    )
-
-    if has_err == false then
-        return nil, res
-    end
-
-    local res_lines = {}
-    for line in res:gmatch("[^\r\n]+") do
-        table.insert(res_lines, line)
-    end
-
-    return res_lines, nil
-end
-
 local function invalidate_cache ()
     box.func["libsbroad.invalidate_coordinator_cache"]:call({})
 end
@@ -295,7 +270,6 @@ local function execute(query, params)
 end
 
 return {
-    explain = explain,
     init=init,
     invalidate_cache = invalidate_cache,
     execute = execute,
