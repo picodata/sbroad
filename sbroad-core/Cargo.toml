@@ -1,0 +1,45 @@
+[package]
+name = "sbroad"
+version = "0.1.0"
+authors = [
+    "Picodata"
+]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ahash = "0.7"
+base64ct = { version = "1.5", features = ["alloc"] }
+hash32 = "0.2"
+itertools = "0.10"
+lazy_static = "1.4"
+opentelemetry = "0.17"
+opentelemetry-jaeger = "0.16"
+pest = "2.0"
+pest_derive = "2.0"
+rand = "0.8"
+sbroad-proc = { path = "../sbroad-proc", version = "0.1" }
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_yaml = "0.8"
+sha2 = "0.10"
+tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git", features = ["picodata", "schema"] }
+traversal = "0.1"
+uuid = { version = "1.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
+yaml-rust = "0.4"
+
+[dev-dependencies]
+criterion = "0.3"
+pretty_assertions = "1.3"
+rmp-serde = "0.14"
+
+[lib]
+name = "sbroad"
+crate-type = ["cdylib", "rlib"]
+
+[[bench]]
+name = "parse"
+harness = false
+
+[features]
+mock = []
