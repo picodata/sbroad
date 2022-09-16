@@ -1,38 +1,73 @@
 //! Opentelemetry module
+//!
+//! This module contains the opentelemetry instrumentation for the sbroad library.
+//! There are two main use case for it:
+//! - tracing of some exact query (global tracer exports spans to the jaeger)
+//! - query execution statistics sampled from 1% of all queries (statistics tracer
+//!   writing to the temporary spaces)
 
 use crate::debug;
 
 use ahash::AHashMap;
+use base64ct::{Base64, Encoding};
 use opentelemetry::global::{get_text_map_propagator, tracer, BoxedTracer};
 use opentelemetry::propagation::{Extractor, Injector};
-use opentelemetry::trace::noop::NoopTracer;
+use opentelemetry::sdk::trace::{
+    Config as SdkConfig, Sampler as SdkSampler, Tracer as SdkTracer,
+    TracerProvider as SdkTracerProvider,
+};
+use opentelemetry::trace::TracerProvider;
 
 #[allow(unused_imports)]
 use opentelemetry::trace::{SpanBuilder, SpanKind, TraceContextExt, Tracer};
 #[allow(unused_imports)]
 use opentelemetry::{Context, KeyValue};
 
+use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 mod fiber;
+pub mod statistics;
 
 #[cfg(not(feature = "mock"))]
+use crate::warn;
+#[cfg(not(feature = "mock"))]
 use fiber::fiber_id;
+#[cfg(not(feature = "mock"))]
+use tarantool::error::Error as TntError;
+#[cfg(not(feature = "mock"))]
+use tarantool::transaction::start_transaction;
 
 static TRACER_NAME: &str = "libsbroad";
-thread_local!(static TRACE_MANAGER: RefCell<TraceManager> = RefCell::new(TraceManager::new()));
+static RATIO: f64 = 0.01;
+thread_local!(
+    /// Thread-local storage for the trace information of the current fiber.
+    ///
+    /// Pay attention, that all mutable accesses to this variable should be
+    /// wrapped with Tarantool transaction. The reason is that statistics
+    /// tracer can create temporary tables on the instance. As a result,
+    /// Tarantool yields the fiber while the RefCell is still mutably borrowed.
+    /// An access to TRACE_MANAGER on a new fiber leads to panic. So we have to
+    /// be sure that transaction commit is called after the RefCell is released.
+    static TRACE_MANAGER: RefCell<TraceManager> = RefCell::new(TraceManager::new())
+);
 thread_local!(static GLOBAL_TRACER: RefCell<BoxedTracer> = RefCell::new(tracer(TRACER_NAME)));
 lazy_static! {
-    static ref NOOP_TRACER: NoopTracer = NoopTracer::new();
+    static ref STATISTICS_PROVIDER: SdkTracerProvider = SdkTracerProvider::builder()
+        .with_span_processor(statistics::StatCollector::new())
+        .with_config(SdkConfig::default().with_sampler(SdkSampler::TraceIdRatioBased(RATIO)))
+        .build();
+    #[derive(Debug)]
+    static ref STATISTICS_TRACER: SdkTracer = STATISTICS_PROVIDER.versioned_tracer("stat", None, None);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum QueryTracer {
     Global,
-    Noop,
+    Statistics,
 }
 
 #[allow(dead_code)]
@@ -48,6 +83,7 @@ impl Debug for TraceInfo {
             .field("tracer", &self.tracer)
             // Context `Debug` trait doesn't print anything useful.
             .field("context", &self.context.span())
+            .field("id", &self.id)
             .finish()
     }
 }
@@ -63,7 +99,8 @@ impl TraceInfo {
     }
 
     fn empty() -> Self {
-        Self::new(QueryTracer::Noop, Context::new(), "".to_string())
+        // TODO: handle disable statistics.
+        Self::new(QueryTracer::Statistics, Context::new(), "".to_string())
     }
 
     fn tracer(&self) -> &QueryTracer {
@@ -105,11 +142,11 @@ impl TraceManager {
 
 #[inline]
 #[allow(dead_code)]
-// We need this function as NoopTracer doesn't implement `ObjectSafeTracer` trait.
+// We need this function as statistics tracer doesn't implement `ObjectSafeTracer` trait.
 fn build_ctx(tracer: &QueryTracer, sb: SpanBuilder, ctx: &Context) -> Context {
     match tracer {
-        QueryTracer::Noop => {
-            let span = NOOP_TRACER.build_with_context(sb, ctx);
+        QueryTracer::Statistics => {
+            let span = STATISTICS_TRACER.build_with_context(sb, ctx);
             ctx.with_span(span)
         }
         QueryTracer::Global => {
@@ -129,12 +166,15 @@ where
     #[cfg(not(feature = "mock"))]
     {
         let fid = fiber_id();
-        let old_ti = TRACE_MANAGER.with(|tm| {
-            tm.borrow_mut()
-                .remove(fid)
-                .map_or(TraceInfo::empty(), |ti| ti)
-        });
         let id = current_id();
+        let old_ti = start_transaction(|| -> Result<TraceInfo, TntError> {
+            Ok(TRACE_MANAGER.with(|tm| {
+                tm.borrow_mut()
+                    .remove(fid)
+                    .map_or(TraceInfo::empty(), |ti| ti)
+            }))
+        })
+        .unwrap();
         let ctx = build_ctx(
             old_ti.tracer(),
             SpanBuilder::from_name(name)
@@ -143,23 +183,53 @@ where
             old_ti.context(),
         );
         let ti = TraceInfo::new(old_ti.tracer().clone(), ctx, id);
-        debug!(
-            Option::from("child span"),
-            &format!(
-                "fiber {}, child span {}: insert new trace info {:?}",
-                fid, name, ti
-            ),
-        );
-        TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, ti));
+        start_transaction(|| -> Result<(), TntError> {
+            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+                Ok(mut mut_tm) => {
+                    debug!(
+                        Option::from("child span"),
+                        &format!(
+                            "fiber {}, child span {}: insert trace info {:?}",
+                            fid, name, ti
+                        ),
+                    );
+                    mut_tm.insert(fid, ti);
+                }
+                Err(_e) => {
+                    warn!(
+                        Option::from("query span"),
+                        &format!(
+                        "fiber {}, child span {}: failed to insert trace info {:?}, error: {:?}",
+                        fid, name, ti, _e
+                    ),
+                    );
+                }
+            });
+            Ok(())
+        })
+        .unwrap();
         let result = f();
-        debug!(
-            Option::from("child span"),
-            &format!(
-                "fiber {}, child span {}: restore old trace info {:?}",
-                fid, name, old_ti
-            ),
-        );
-        TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, old_ti));
+        start_transaction(|| -> Result<(), TntError> {
+            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+                Ok(mut mut_tm) => {
+                    debug!(
+                        Option::from("child span"),
+                        &format!("fiber {}, child span {}: restore old trace info {:?}", fid, name, old_ti),
+                    );
+                    mut_tm.insert(fid, old_ti);
+                }
+                Err(_e) => {
+                    warn!(
+                        Option::from("query span"),
+                        &format!(
+                            "fiber {}, child span {}: failed to restore old trace info {:?}, error: {:?}",
+                            fid, name, old_ti, _e
+                        ),
+                    );
+                }
+            });
+            Ok(())
+        }).unwrap();
         return result;
     }
     f()
@@ -171,7 +241,7 @@ where
 pub fn query_span<T, F>(
     name: &'static str,
     id: &str,
-    tracer: QueryTracer,
+    tracer: &QueryTracer,
     ctx: &Context,
     sql: &str,
     f: F,
@@ -187,8 +257,8 @@ where
             "query_sql",
             sql.char_indices()
                 // Maximum number of bytes per a single name-value pair: 4096.
-                // UTF-8 character can be up to 4 bytes long, `query_id` is 8 bytes long.
-                .filter_map(|(i, c)| if i <= 4084 { Some(c) } else { None })
+                // UTF-8 character can be up to 4 bytes long, `query_sql` is 9 bytes long.
+                .filter_map(|(i, c)| if i <= 4083 { Some(c) } else { None })
                 .collect::<String>(),
         ));
 
@@ -200,22 +270,55 @@ where
                 .with_attributes(attributes),
             ctx,
         );
-        let ti = TraceInfo::new(tracer, ctx, id.to_string());
+        let ti = TraceInfo::new(tracer.clone(), ctx, id.to_string());
 
-        debug!(
-            Option::from("query span"),
-            &format!(
-                "fiber {}, query span {}: insert trace info {:?}",
-                fid, name, ti
-            ),
-        );
-        TRACE_MANAGER.with(|tm| tm.borrow_mut().insert(fid, ti));
+        start_transaction(|| -> Result<(), TntError> {
+            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+                Ok(mut mut_tm) => {
+                    debug!(
+                        Option::from("query span"),
+                        &format!(
+                            "fiber {}, query span {}: insert trace info {:?}",
+                            fid, name, ti
+                        ),
+                    );
+                    mut_tm.insert(fid, ti);
+                }
+                Err(_e) => {
+                    warn!(
+                        Option::from("query span"),
+                        &format!(
+                            "fiber {}, query span {}: failed to insert trace info {:?}, error: {:?}",
+                            fid, name, ti, _e
+                        ),
+                    );
+                }
+            });
+            Ok(())
+        }).unwrap();
         let result = f();
-        debug!(
-            Option::from("query span"),
-            &format!("fiber {}, query span {}: remove trace info", fid, name),
-        );
-        TRACE_MANAGER.with(|tm| tm.borrow_mut().remove(fid));
+        start_transaction(|| -> Result<(), TntError> {
+            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+                Ok(mut mut_tm) => {
+                    debug!(
+                        Option::from("query span"),
+                        &format!("fiber {}, query span {}: remove trace info", fid, name),
+                    );
+                    mut_tm.remove(fid);
+                }
+                Err(_e) => {
+                    warn!(
+                        Option::from("query span"),
+                        &format!(
+                            "fiber {}, query span {}: failed to remove trace info, error: {:?}",
+                            fid, name, _e
+                        ),
+                    );
+                }
+            });
+            Ok(())
+        })
+        .unwrap();
         return result;
     }
     f()
@@ -238,12 +341,34 @@ pub fn current_id() -> String {
 
 #[inline]
 #[must_use]
-pub fn new_id() -> String {
+fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+#[inline]
+#[must_use]
+pub fn query_id(pattern: &str) -> String {
+    let hash = Sha256::digest(pattern.as_bytes());
+    Base64::encode_string(&hash)
 }
 
 pub fn update_global_tracer() {
     GLOBAL_TRACER.with(|gt| *gt.borrow_mut() = tracer(TRACER_NAME));
+}
+
+#[must_use]
+#[allow(unreachable_code)]
+pub fn force_trace() -> bool {
+    #[cfg(not(feature = "mock"))]
+    {
+        let fid = fiber_id();
+        return TRACE_MANAGER.with(|tm| {
+            tm.borrow()
+                .get(fid)
+                .map_or(false, |ti| ti.tracer() == &QueryTracer::Global)
+        });
+    }
+    false
 }
 
 #[allow(unused_variables)]
@@ -290,13 +415,18 @@ pub fn extract_context(carrier: &mut dyn Extractor) -> Context {
 pub fn extract_params<S: ::std::hash::BuildHasher>(
     context: Option<HashMap<String, String, S>>,
     id: Option<String>,
+    pattern: &str,
+    force_trace: bool,
 ) -> (String, Context, QueryTracer) {
-    let tracer = if let (None, None) = (&id, &context) {
-        QueryTracer::Noop
-    } else {
-        QueryTracer::Global
+    let tracer = match (force_trace, &id, &context) {
+        (_, None, None) | (false, _, _) => QueryTracer::Statistics,
+        _ => QueryTracer::Global,
     };
-    let id = if let Some(id) = id { id } else { new_id() };
+    let id = if let Some(id) = id {
+        id
+    } else {
+        query_id(pattern)
+    };
     let ctx = if let Some(mut carrier) = context {
         debug!(
             Option::from("parameters extraction"),

@@ -18,50 +18,66 @@ use sbroad::{debug, error};
 pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match PatternWithParams::try_from(args) {
         Ok(params) => params,
-        Err(e) => return tarantool_error(&e.to_string()),
+        Err(e) => {
+            error!(Option::from("dispatch_query"), &format!("Error: {}", e));
+            return tarantool_error(&e.to_string());
+        }
     };
 
     // We initialize the global tracer on every configuration update.
     // As a side effect, we can't trace load_config() call itself (sic!).
     let ret_code = load_config(&COORDINATOR_ENGINE);
 
-    let (id, ctx, tracer) = extract_params(lua_params.context, lua_params.id);
+    let (id, ctx, tracer) = extract_params(
+        lua_params.context,
+        lua_params.id,
+        &lua_params.pattern,
+        lua_params.force_trace,
+    );
 
-    query_span("api.router", &id, tracer, &ctx, &lua_params.pattern, || {
-        if ret_code != 0 {
-            return ret_code;
-        }
-        COORDINATOR_ENGINE.with(|engine| {
-            let runtime = match engine.try_borrow() {
-                Ok(runtime) => runtime,
-                Err(e) => {
-                    return tarantool_error(&format!(
-                        "Failed to borrow the runtime while dispatching the query: {}",
-                        e
-                    ));
-                }
-            };
-            let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params) {
-                Ok(q) => q,
-                Err(e) => {
-                    error!(Option::from("query dispatch"), &format!("{:?}", e));
-                    return tarantool_error(&e.to_string());
-                }
-            };
-
-            match query.dispatch() {
-                Ok(result) => child_span("tarantool.tuple.return", || {
-                    if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
-                        f_ctx.return_tuple(tuple).unwrap();
-                        0
-                    } else {
-                        tarantool_error("Unsupported result type")
-                    }
-                }),
-                Err(e) => tarantool_error(&e.to_string()),
+    query_span(
+        "\"api.router\"",
+        &id,
+        &tracer,
+        &ctx,
+        &lua_params.pattern,
+        || {
+            if ret_code != 0 {
+                return ret_code;
             }
-        })
-    })
+            COORDINATOR_ENGINE.with(|engine| {
+                let runtime = match engine.try_borrow() {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        return tarantool_error(&format!(
+                            "Failed to borrow the runtime while dispatching the query: {}",
+                            e
+                        ));
+                    }
+                };
+                let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params)
+                {
+                    Ok(q) => q,
+                    Err(e) => {
+                        error!(Option::from("query dispatch"), &format!("{:?}", e));
+                        return tarantool_error(&e.to_string());
+                    }
+                };
+
+                match query.dispatch() {
+                    Ok(result) => child_span("\"tarantool.tuple.return\"", || {
+                        if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
+                            f_ctx.return_tuple(tuple).unwrap();
+                            0
+                        } else {
+                            tarantool_error("Unsupported result type")
+                        }
+                    }),
+                    Err(e) => tarantool_error(&e.to_string()),
+                }
+            })
+        },
+    )
 }
 
 #[derive(Debug)]
@@ -71,6 +87,7 @@ struct ExecuteQueryParams {
     context: Option<HashMap<String, String>>,
     id: Option<String>,
     is_data_modifier: bool,
+    force_trace: bool,
 }
 
 impl TryFrom<FunctionArgs> for ExecuteQueryParams {
@@ -102,6 +119,7 @@ impl<'de> Deserialize<'de> for ExecuteQueryParams {
             Option<HashMap<String, String>>,
             Option<String>,
             bool,
+            bool,
         );
 
         let struct_helper = StructHelper::deserialize(deserializer)?;
@@ -112,6 +130,7 @@ impl<'de> Deserialize<'de> for ExecuteQueryParams {
             context: struct_helper.2,
             id: struct_helper.3,
             is_data_modifier: struct_helper.4,
+            force_trace: struct_helper.5,
         })
     }
 }
@@ -128,11 +147,16 @@ pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int
         return ret_code;
     }
 
-    let (id, ctx, tracer) = extract_params(lua_params.context, lua_params.id);
+    let (id, ctx, tracer) = extract_params(
+        lua_params.context,
+        lua_params.id,
+        &lua_params.pattern,
+        lua_params.force_trace,
+    );
     query_span(
-        "api.storage",
+        "\"api.storage\"",
         &id,
-        tracer,
+        &tracer,
         &ctx,
         &lua_params.pattern,
         || {

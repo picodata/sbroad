@@ -14,7 +14,7 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::value::Value;
 use crate::ir::Node;
-use crate::otm::{child_span, current_id, inject_context};
+use crate::otm::{child_span, current_id, force_trace, inject_context};
 
 use super::tree::SyntaxData;
 
@@ -24,6 +24,7 @@ pub struct PatternWithParams {
     pub params: Vec<Value>,
     pub context: Option<HashMap<String, String>>,
     pub id: Option<String>,
+    pub force_trace: bool,
 }
 
 impl PartialEq for PatternWithParams {
@@ -63,6 +64,7 @@ impl<'de> Deserialize<'de> for PatternWithParams {
             Vec<Value>,
             Option<HashMap<String, String>>,
             Option<String>,
+            bool,
         );
 
         let struct_helper = StructHelper::deserialize(deserializer)?;
@@ -72,6 +74,7 @@ impl<'de> Deserialize<'de> for PatternWithParams {
             params: struct_helper.1,
             context: struct_helper.2,
             id: struct_helper.3,
+            force_trace: struct_helper.4,
         })
     }
 }
@@ -81,12 +84,14 @@ impl PatternWithParams {
     pub fn new(pattern: String, params: Vec<Value>) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
+        let force_trace = force_trace();
         if carrier.is_empty() {
             PatternWithParams {
                 pattern,
                 params,
                 context: None,
                 id: None,
+                force_trace,
             }
         } else {
             PatternWithParams {
@@ -94,6 +99,7 @@ impl PatternWithParams {
                 params,
                 context: Some(carrier),
                 id: Some(current_id()),
+                force_trace,
             }
         }
     }
@@ -117,7 +123,7 @@ impl ExecutionPlan {
         nodes: &[&SyntaxData],
         buckets: &Buckets,
     ) -> Result<PatternWithParams, QueryPlannerError> {
-        let (sql, params) = child_span("syntax.ordered.sql", || {
+        let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
             let mut sql = String::new();

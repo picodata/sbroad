@@ -61,7 +61,7 @@ _G.read_on_some = function(tbl_rs_query, waiting_timeout)
         local replica = vshard.router.routeall()[rs_uuid]
         local future, err = replica:callbre(
             "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], false },
+            { query['pattern'], query['params'], query['context'], query['id'], false, query['force_trace'] },
             { is_async = true }
         )
         if err ~= nil then
@@ -98,7 +98,7 @@ _G.write_on_some = function(tbl_rs_query, waiting_timeout)
         local replica = vshard.router.routeall()[rs_uuid]
         local future, err = replica:callrw(
             "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], true },
+            { query['pattern'], query['params'], query['context'], query['id'], true, query['force_trace'] },
             { is_async = true }
         )
         if err ~= nil then
@@ -133,7 +133,7 @@ _G.read_on_all = function(query, waiting_timeout)
     for _, replica in pairs(replicas) do
         local future, err = replica:callbre(
             "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], false },
+            { query['pattern'], query['params'], query['context'], query['id'], false, query['force_trace'] },
             { is_async = true }
         )
         if err ~= nil then
@@ -170,7 +170,7 @@ _G.write_on_all = function(query, waiting_timeout)
     for _, replica in pairs(replicas) do
         local future, err = replica:callrw(
             "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], true },
+            { query['pattern'], query['params'], query['context'], query['id'], true, query['force_trace'] },
             { is_async = true }
         )
         if err ~= nil then
@@ -254,7 +254,7 @@ end
 local function trace(query, params, context, id)
     local has_err, parser_res = pcall(
         function()
-            return box.func["libsbroad.dispatch_query"]:call({ query, params, context, id })
+            return box.func["libsbroad.dispatch_query"]:call({ query, params, context, id, false })
         end
     )
 

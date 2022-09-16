@@ -41,10 +41,8 @@ use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionKey, MotionPolicy, Target};
 use crate::ir::value::Value;
 use crate::ir::Plan;
-use crate::otm::child_span;
-use base64ct::{Base64, Encoding};
+use crate::otm::{child_span, query_id};
 use sbroad_proc::otm_child_span;
-use sha2::{Digest, Sha256};
 
 pub mod bucket;
 pub mod engine;
@@ -101,8 +99,7 @@ where
         C::Cache: Cache<String, Plan>,
         C::ParseTree: Ast,
     {
-        let hash = Sha256::digest(sql.as_bytes());
-        let key = Base64::encode_string(&hash);
+        let key = query_id(sql);
         let ir_cache = coordinator.ir_cache();
 
         let mut plan = Plan::new();
