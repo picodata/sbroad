@@ -1,5 +1,6 @@
 [workspace]
 members = [
+   "sbroad-benches",
    "sbroad-core",
    "sbroad-proc",
 ]

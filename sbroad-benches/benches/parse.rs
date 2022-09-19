@@ -1,7 +1,5 @@
-extern crate sbroad;
-
 use criterion::{criterion_group, criterion_main, Criterion};
-use engine::RouterRuntimeMock;
+use sbroad_benches::engine::RouterRuntimeMock;
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
@@ -262,5 +260,3 @@ fn bench_query1(c: &mut Criterion) {
 
 criterion_group!(benches, bench_query1);
 criterion_main!(benches);
-
-mod engine;

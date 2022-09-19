@@ -12,11 +12,11 @@ IMAGE_NAME = docker-public.binary.picodata.io/sbroad-builder:0.6.0
 
 bench:
 	make clean
-	cargo bench --features mock
+	cargo bench -p sbroad-benches
 
 bench_check:
 	make clean
-	cargo bench --no-run --features mock
+	cargo bench -p sbroad-benches --no-run
 
 build:
 	make clean

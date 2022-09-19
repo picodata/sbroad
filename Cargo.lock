@@ -971,12 +971,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "sbroad"
+name = "sbroad-benches"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "sbroad-core",
+]
+
+[[package]]
+name = "sbroad-core"
 version = "0.1.0"
 dependencies = [
  "ahash",
  "base64ct",
- "criterion",
  "hash32",
  "itertools",
  "lazy_static",

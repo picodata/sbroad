@@ -1,5 +1,5 @@
 [package]
-name = "sbroad"
+name = "sbroad-core"
 version = "0.1.0"
 authors = [
     "Picodata"
@@ -29,17 +29,12 @@ uuid = { version = "1.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
 yaml-rust = "0.4"
 
 [dev-dependencies]
-criterion = "0.3"
 pretty_assertions = "1.3"
 rmp-serde = "0.14"
 
 [lib]
 name = "sbroad"
 crate-type = ["cdylib", "rlib"]
-
-[[bench]]
-name = "parse"
-harness = false
 
 [features]
 mock = []
