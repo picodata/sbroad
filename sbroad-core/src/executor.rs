@@ -47,6 +47,7 @@ use sbroad_proc::otm_child_span;
 use sha2::{Digest, Sha256};
 
 pub mod bucket;
+pub mod hash;
 pub mod engine;
 pub mod ir;
 pub mod lru;

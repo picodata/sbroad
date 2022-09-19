@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
+use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::ir::value::Value;

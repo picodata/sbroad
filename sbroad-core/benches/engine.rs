@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
-use sbroad::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use sbroad::executor::engine::cartridge::hash::bucket_id_by_tuple;
+use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::executor::engine::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator, CoordinatorMetadata,

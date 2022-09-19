@@ -2,7 +2,7 @@ extern crate sbroad;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use engine::RouterRuntimeMock;
-use sbroad::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
 

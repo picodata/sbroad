@@ -13,8 +13,6 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::value::Value;
 
-pub mod cartridge;
-
 /// A metadata storage trait of the cluster.
 pub trait CoordinatorMetadata {
     /// Get a table by name that contains:

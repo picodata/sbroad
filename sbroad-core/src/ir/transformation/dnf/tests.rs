@@ -1,4 +1,4 @@
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
+use crate::backend::sql::ir::PatternWithParams;
 use crate::ir::transformation::helpers::sql_to_sql;
 use crate::ir::value::Value;
 use crate::ir::Plan;

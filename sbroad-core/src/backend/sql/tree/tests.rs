@@ -3,7 +3,7 @@ use std::path::Path;
 
 use pretty_assertions::assert_eq;
 
-use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;

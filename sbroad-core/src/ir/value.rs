@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua;
 
-use crate::executor::engine::cartridge::hash::ToHashString;
+use crate::executor::hash::ToHashString;
 use crate::ir::value::double::Double;
 
 /// SQL uses three-valued logic. We need to implement
