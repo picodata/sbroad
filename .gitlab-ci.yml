@@ -58,9 +58,9 @@ deploy-luarocks:
         - echo "$DEPLOY_PROD_SSH_KEY" | base64 -d | ssh-add -
     script:
         - echo "Build release $CI_COMMIT_TAG"
-        - tarantoolctl rocks new_version --tag "$CI_COMMIT_TAG"
-        - tarantoolctl rocks install sbroad-"$CI_COMMIT_TAG"-1.rockspec
-        - tarantoolctl rocks pack sbroad-"$CI_COMMIT_TAG-1".rockspec
+        - cd sbroad-cartridge && tarantoolctl rocks new_version --tag "$CI_COMMIT_TAG"
+        - cd sbroad-cartridge && tarantoolctl rocks install sbroad-"$CI_COMMIT_TAG"-1.rockspec
+        - cd sbroad-cartridge && tarantoolctl rocks pack sbroad-"$CI_COMMIT_TAG-1".rockspec
         - echo "Deploying luarocks..."
-        - scp -o stricthostkeychecking=no sbroad*rock luarocks@94.26.239.246:/data/nginx/www/packrepo/luarocks
+        - cd sbroad-cartridge && scp -o stricthostkeychecking=no sbroad*rock luarocks@94.26.239.246:/data/nginx/www/packrepo/luarocks
         - ssh -o stricthostkeychecking=no luarocks@94.26.239.246 "luarocks-admin make_manifest /data/nginx/www/packrepo/luarocks"
