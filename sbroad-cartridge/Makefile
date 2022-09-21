@@ -1,0 +1,27 @@
+OS := $(shell uname -s)
+ifeq ($(OS), Linux)
+	SRC_LIB = libsbroad_cartridge.so
+	DEST_LIB = libsbroad.so
+else
+	ifeq ($(OS), Darwin)
+		SRC_LIB = libsbroad_cartridge.dylib
+		DEST_LIB = libsbroad.dylib
+	endif
+endif
+
+build:
+	cargo build --release
+
+build_integration:
+	cd test_app && cartridge build
+
+run_integration:
+	cd test_app && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/
+
+install_release:
+	mkdir -p $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf ../target/release/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
+	cp -Rf src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf cartridge $(LUADIR)
+
+test_integration: build_integration run_integration

@@ -20,5 +20,9 @@ yaml-rust = "0.4"
 pretty_assertions = "1.3"
 rmp-serde = "0.14"
 
+[lib]
+name = "sbroad_cartridge"
+crate-type = ["cdylib", "rlib"]
+
 [features]
 mock = ["sbroad-core/mock"]
