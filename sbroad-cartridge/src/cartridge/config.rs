@@ -5,12 +5,12 @@ extern crate yaml_rust;
 use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use crate::errors::QueryPlannerError;
-use crate::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
-use crate::executor::lru::DEFAULT_CAPACITY;
-use crate::executor::CoordinatorMetadata;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
-use crate::{debug, warn};
+use sbroad::errors::QueryPlannerError;
+use sbroad::executor::engine::CoordinatorMetadata;
+use sbroad::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
+use sbroad::executor::lru::DEFAULT_CAPACITY;
+use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
+use sbroad::{debug, warn};
 
 /// Cluster metadata information
 ///
@@ -71,7 +71,7 @@ impl RouterConfiguration {
         Err(QueryPlannerError::InvalidClusterSchema)
     }
 
-    pub(in crate::executor::engine::cartridge) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.tables.is_empty()
     }
 

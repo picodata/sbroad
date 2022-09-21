@@ -10,28 +10,29 @@ use std::convert::TryInto;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
-use crate::error;
-use crate::errors::QueryPlannerError;
-use crate::executor::bucket::Buckets;
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::engine::cartridge::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use crate::executor::engine::cartridge::config::RouterConfiguration;
-use crate::executor::engine::cartridge::hash::bucket_id_by_tuple;
-use crate::executor::engine::cartridge::update_tracing;
-use crate::executor::engine::{
+use crate::cartridge::config::RouterConfiguration;
+use crate::cartridge::update_tracing;
+
+use sbroad::backend::sql::ir::PatternWithParams;
+use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::error;
+use sbroad::errors::QueryPlannerError;
+use sbroad::executor::bucket::Buckets;
+use sbroad::executor::engine::{
     normalize_name_from_schema, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator,
+    Coordinator, CoordinatorMetadata,
 };
-use crate::executor::ir::ExecutionPlan;
-use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
-use crate::executor::result::ProducerResult;
-use crate::executor::vtable::VirtualTable;
-use crate::executor::{Cache, CoordinatorMetadata};
-use crate::frontend::sql::ast::AbstractSyntaxTree;
-use crate::ir::helpers::RepeatableState;
-use crate::ir::value::Value;
-use crate::ir::Plan;
-use crate::otm::child_span;
+use sbroad::executor::hash::bucket_id_by_tuple;
+use sbroad::executor::ir::ExecutionPlan;
+use sbroad::executor::lru::Cache;
+use sbroad::executor::lru::{LRUCache, DEFAULT_CAPACITY};
+use sbroad::executor::result::ProducerResult;
+use sbroad::executor::vtable::VirtualTable;
+use sbroad::frontend::sql::ast::AbstractSyntaxTree;
+use sbroad::ir::helpers::RepeatableState;
+use sbroad::ir::value::Value;
+use sbroad::ir::Plan;
+use sbroad::otm::child_span;
 use sbroad_proc::otm_child_span;
 
 type GroupedBuckets = HashMap<String, Vec<u64>>;
@@ -205,7 +206,7 @@ impl Coordinator for RouterRuntime {
                 buckets
             };
 
-            let rs_buckets = buckets.group()?;
+            let rs_buckets = group(buckets)?;
             rs_query.reserve(rs_buckets.len());
 
             for (rs, bucket_ids) in &rs_buckets {
@@ -474,35 +475,30 @@ impl RouterRuntime {
     }
 }
 
-impl Buckets {
-    #[otm_child_span("buckets.group")]
-    fn group(&self) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
-        let lua_buckets: Vec<u64> = match self {
-            Buckets::All => {
-                return Err(QueryPlannerError::CustomError(
-                    "Grouping buckets is not supported for all buckets".into(),
-                ))
-            }
-            Buckets::Filtered(list) => list.iter().copied().collect(),
-        };
+#[otm_child_span("buckets.group")]
+fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
+    let lua_buckets: Vec<u64> = match buckets {
+        Buckets::All => {
+            return Err(QueryPlannerError::CustomError(
+                "Grouping buckets is not supported for all buckets".into(),
+            ))
+        }
+        Buckets::Filtered(list) => list.iter().copied().collect(),
+    };
 
-        let lua = tarantool::lua_state();
+    let lua = tarantool::lua_state();
 
-        let fn_group: LuaFunction<_> =
-            lua.get("group_buckets_by_replicasets").ok_or_else(|| {
-                QueryPlannerError::LuaError(
-                    "Lua function `group_buckets_by_replicasets` not found".into(),
-                )
-            })?;
+    let fn_group: LuaFunction<_> = lua.get("group_buckets_by_replicasets").ok_or_else(|| {
+        QueryPlannerError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
+    })?;
 
-        let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
-            Ok(v) => v,
-            Err(e) => {
-                error!(Option::from("buckets group"), &format!("{:?}", e));
-                return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
-            }
-        };
+    let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(Option::from("buckets group"), &format!("{:?}", e));
+            return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+        }
+    };
 
-        Ok(res)
-    }
+    Ok(res)
 }

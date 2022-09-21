@@ -1,15 +1,13 @@
 //! Tarantool cartridge engine module.
 
-pub mod backend;
 pub mod config;
-pub mod hash;
 pub mod router;
 pub mod storage;
 
-use crate::errors::QueryPlannerError;
-use crate::otm::update_global_tracer;
 use opentelemetry::global::{set_text_map_propagator, set_tracer_provider};
 use opentelemetry::sdk::propagation::{TextMapCompositePropagator, TraceContextPropagator};
+use sbroad::errors::QueryPlannerError;
+use sbroad::otm::update_global_tracer;
 
 static SERVICE_NAME: &str = "sbroad";
 

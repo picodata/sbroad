@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use sbroad_benches::engine::RouterRuntimeMock;
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
 use sbroad::ir::value::Value;
+use sbroad_benches::engine::RouterRuntimeMock;
 
 #[allow(clippy::too_many_lines)]
 fn query1_sql() -> String {

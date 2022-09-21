@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::os::raw::c_int;
 
-use crate::errors::QueryPlannerError;
+use sbroad::errors::QueryPlannerError;
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use serde::{de::Deserializer, Deserialize, Serialize};
 
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
-use crate::executor::engine::Coordinator;
-use crate::ir::value::Value;
-use crate::log::tarantool_error;
+use sbroad::executor::engine::Coordinator;
+use sbroad::ir::value::Value;
+use sbroad::log::tarantool_error;
 
 #[derive(Debug, Default, Serialize, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values

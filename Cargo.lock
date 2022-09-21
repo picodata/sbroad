@@ -979,6 +979,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sbroad-cartridge"
+version = "0.1.0"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry-jaeger",
+ "pretty_assertions",
+ "rand",
+ "rmp-serde 0.14.4",
+ "sbroad-core",
+ "sbroad-proc",
+ "serde",
+ "serde_yaml",
+ "tarantool",
+ "yaml-rust",
+]
+
+[[package]]
 name = "sbroad-core"
 version = "0.1.0"
 dependencies = [
@@ -1001,7 +1018,6 @@ dependencies = [
  "tarantool",
  "traversal",
  "uuid 1.1.2",
- "yaml-rust",
 ]
 
 [[package]]

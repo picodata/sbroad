@@ -2,8 +2,8 @@ use std::os::raw::c_int;
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
-use crate::executor::engine::{Configuration, Coordinator};
-use crate::log::tarantool_error;
+use sbroad::executor::engine::{Configuration, Coordinator};
+use sbroad::log::tarantool_error;
 
 /// Flush cached configuration in the Rust memory of the coordinator runtime.
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.

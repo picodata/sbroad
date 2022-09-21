@@ -2,14 +2,14 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::bucket::Buckets;
-use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator, CoordinatorMetadata,
 };
+use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::ExecutionPlan;
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::result::ProducerResult;

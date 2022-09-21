@@ -5,13 +5,13 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use crate::api::helper::load_config;
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
-use crate::errors::QueryPlannerError;
-use crate::executor::engine::cartridge::backend::sql::ir::PatternWithParams;
-use crate::executor::Query;
-use crate::ir::value::Value;
-use crate::log::tarantool_error;
-use crate::otm::{child_span, extract_params, query_span};
-use crate::{debug, error};
+use sbroad::backend::sql::ir::PatternWithParams;
+use sbroad::errors::QueryPlannerError;
+use sbroad::executor::Query;
+use sbroad::ir::value::Value;
+use sbroad::log::tarantool_error;
+use sbroad::otm::{child_span, extract_params, query_span};
+use sbroad::{debug, error};
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]

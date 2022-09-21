@@ -1,5 +1,5 @@
-use crate::executor::engine::Configuration;
-use crate::log::tarantool_error;
+use sbroad::executor::engine::Configuration;
+use sbroad::log::tarantool_error;
 use std::cell::RefCell;
 use std::os::raw::c_int;
 use std::thread::LocalKey;

@@ -2,16 +2,16 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
-use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
     Coordinator,
 };
-use crate::executor::ir::ExecutionPlan;
 use crate::executor::hash::bucket_id_by_tuple;
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
@@ -21,7 +21,6 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
 use crate::ir::Plan;
-
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]

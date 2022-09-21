@@ -1,18 +1,16 @@
-use crate::errors::QueryPlannerError;
-use crate::executor::engine::cartridge::config::StorageConfiguration;
-use crate::executor::engine::cartridge::update_tracing;
-use crate::executor::engine::Configuration;
-use crate::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
-use crate::ir::value::Value;
-use crate::otm::child_span;
-use crate::{debug, error, warn};
+use crate::cartridge::config::StorageConfiguration;
+use crate::cartridge::update_tracing;
+use sbroad::errors::QueryPlannerError;
+use sbroad::executor::engine::Configuration;
+use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
+use sbroad::ir::value::Value;
+use sbroad::otm::child_span;
+use sbroad::{debug, error, warn};
 use sbroad_proc::otm_child_span;
 use std::any::Any;
 use std::cell::RefCell;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
-
-pub const DEFAULT_SIZE_BYTES: usize = 10 * 1024 * 1024;
 
 struct Statement {
     id: u32,

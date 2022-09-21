@@ -125,10 +125,7 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node does not contain children
-    pub(in crate) fn get_motion_child(
-        &self,
-        node_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    pub(crate) fn get_motion_child(&self, node_id: usize) -> Result<usize, QueryPlannerError> {
         let node = self.get_ir_plan().get_relation_node(node_id)?;
         if !node.is_motion() {
             return Err(CustomError(format!(
