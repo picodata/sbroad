@@ -1,6 +1,9 @@
+include sbroad-cartridge/Makefile 
+
 all: build
 
 IMAGE_NAME = docker-public.binary.picodata.io/sbroad-builder:0.6.0
+ROOT=sbroad-cartridge
 
 bench:
 	make clean
@@ -35,9 +38,6 @@ lint:
 
 test:
 	cargo test --features mock -vv
-
-test_integration:
-	cd sbroad-cartridge && $(MAKE) test_integration
 
 test_all: test bench_check test_integration
 
