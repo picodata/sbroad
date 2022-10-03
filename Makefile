@@ -14,24 +14,22 @@ bench_check:
 	make clean
 	cargo bench -p sbroad-benches --no-run
 
-build_debug:
-	make clean
-	cargo build
-
 clean:
-	rm -rf $(TARGET_ROOT)/release/build/sbroad-*
-	rm -rf $(TARGET_ROOT)/release/deps/sbroad-*
-	rm -rf $(TARGET_ROOT)/release/incremental/sbroad-*
-	rm -rf $(TARGET_ROOT)/debug/build/sbroad-*
-	rm -rf $(TARGET_ROOT)/debug/deps/sbroad-*
-	rm -rf $(TARGET_ROOT)/debug/incremental/sbroad-*
+	rm -rf $(TARGET_ROOT)/release/libsbroad*
+	rm -rf $(TARGET_ROOT)/release/build/libsbroad*
+	rm -rf $(TARGET_ROOT)/release/deps/libsbroad*
+	rm -rf $(TARGET_ROOT)/release/incremental/libsbroad*
+	rm -rf $(TARGET_ROOT)/debug/libsbroad*
+	rm -rf $(TARGET_ROOT)/debug/build/libsbroad*
+	rm -rf $(TARGET_ROOT)/debug/deps/libsbroad*
+	rm -rf $(TARGET_ROOT)/debug/incremental/libsbroad*
 
 lint:
 	cargo fmt --all -- --check
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
 	cargo audit -f audit.toml
 	./deps.sh
-	./.rocks/bin/luacheck .
+	./.rocks/bin/luacheck . --exclude-files ./sbroad-cartridge/test_app/.rocks/*
 
 test:
 	cargo test --features mock -vv

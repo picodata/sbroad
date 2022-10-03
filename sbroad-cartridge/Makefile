@@ -16,11 +16,20 @@ TEST_APP=$(CARTRIDGE_MODULE)/test_app
 build:
 	cargo build --release
 
+build_debug:
+	cargo build
+
 build_integration:
 	cartridge build $(TEST_APP)
 
 run_integration:
 	cd $(TEST_APP) && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/ && cd ..
+
+install_debug:
+	mkdir -p $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf ../target/debug/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
+	cp -Rf src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf cartridge $(LUADIR)
 
 install_release:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
