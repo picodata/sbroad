@@ -9,8 +9,9 @@ else
 	endif
 endif
 
-ROOT?=.
-TEST_APP=$(ROOT)/test_app
+TARGET_ROOT?=../target
+CARTRIDGE_MODULE?=.
+TEST_APP=$(CARTRIDGE_MODULE)/test_app
 
 build:
 	cargo build --release
@@ -23,9 +24,9 @@ run_integration:
 
 install_release:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
-	cp -Rf ../target/release/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
-	cp -Rf src/*.lua $(LUADIR)/$(PROJECT_NAME)
-	cp -Rf cartridge $(LUADIR)
+	cp -Rf $(TARGET_ROOT)/release/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
+	cp -Rf $(CARTRIDGE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf $(CARTRIDGE_MODULE)/cartridge $(LUADIR)
 
 test_integration: 
 	$(MAKE) build_integration && $(MAKE) run_integration
