@@ -9,13 +9,16 @@ macro_rules! log {
         let _line: i32 = line!().try_into().unwrap_or(0);
         #[cfg(not(feature = "mock"))]
         {
-            tarantool::log::say(
-                tarantool::log::SayLevel::$level,
-                file!(),
-                _line,
-                $error,
-                $($message)*
-            );
+            let tnt_level: i32 = unsafe { tarantool::ffi::tarantool::LOG_LEVEL };
+            if tnt_level >= tarantool::log::SayLevel::$level as i32 {
+                tarantool::log::say(
+                    tarantool::log::SayLevel::$level,
+                    file!(),
+                    _line,
+                    $error,
+                    $($message)*
+                );
+            }
         }
     }};
 }
