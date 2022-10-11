@@ -87,6 +87,13 @@ local function init()
         'libsbroad.invalidate_segment_cache',
         { if_not_exists = true, language = 'C' }
     )
+
+    box.schema.func.create(
+        'libsbroad.init_statistics',
+        { if_not_exists = true, language = 'C' }
+    )
+
+    box.func["libsbroad.init_statistics"]:call({})
 end
 
 local function invalidate_cache()

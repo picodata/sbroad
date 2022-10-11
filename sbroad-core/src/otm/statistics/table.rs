@@ -33,9 +33,9 @@ use tarantool::{index, space};
 
 use crate::{debug, warn};
 
-thread_local!(pub(super) static QUERY: RefCell<QuerySpace> = RefCell::new(QuerySpace::new()));
-thread_local!(pub(super) static SPAN: RefCell<SpanMap> = RefCell::new(SpanMap::new()));
-thread_local!(pub(super) static STAT: RefCell<StatSpace> = RefCell::new(StatSpace::new()));
+thread_local!(pub static QUERY: RefCell<QuerySpace> = RefCell::new(QuerySpace::new()));
+thread_local!(pub static SPAN: RefCell<SpanMap> = RefCell::new(SpanMap::new()));
+thread_local!(pub static STAT: RefCell<StatSpace> = RefCell::new(StatSpace::new()));
 
 pub trait RustMap {
     type Key;

@@ -9,3 +9,4 @@ pub mod calculate_bucket_id;
 pub mod exec_query;
 mod helper;
 pub mod invalidate_cached_schema;
+pub mod statistics;

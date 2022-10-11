@@ -217,6 +217,13 @@ local function init()
         'libsbroad.dispatch_query',
         { if_not_exists = true, language = 'C' }
     )
+
+    box.schema.func.create(
+        'libsbroad.init_statistics',
+        { if_not_exists = true, language = 'C' }
+    )
+
+    box.func["libsbroad.init_statistics"]:call({})
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
