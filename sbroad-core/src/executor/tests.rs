@@ -1353,6 +1353,9 @@ mod between;
 mod bucket_id;
 
 #[cfg(test)]
+mod empty_motion;
+
+#[cfg(test)]
 mod not_in;
 
 #[cfg(test)]

@@ -250,12 +250,14 @@ impl ExecutionPlan {
                     SyntaxData::VTable(vtable) => {
                         let cols_count = vtable.get_columns().len();
 
-                        let cols = |base_idx| {
+                        let cols = |base_idx: &mut usize| {
                             vtable
                                 .get_columns()
                                 .iter()
-                                .enumerate()
-                                .map(|(i, c)| format!("COLUMN_{} as \"{}\"", base_idx + i, c.name))
+                                .map(|c| {
+                                    *base_idx += 1;
+                                    format!("COLUMN_{} as \"{}\"", base_idx, c.name)
+                                })
                                 .collect::<Vec<String>>()
                                 .join(",")
                         };
@@ -278,8 +280,6 @@ impl ExecutionPlan {
                         };
 
                         if tuples.is_empty() {
-                            anonymous_col_idx_base += 1;
-
                             let values = (0..cols_count)
                                 .map(|_| "null")
                                 .collect::<Vec<&str>>()
@@ -288,7 +288,7 @@ impl ExecutionPlan {
                             write!(
                                 sql,
                                 "SELECT {} FROM (VALUES ({})) WHERE FALSE",
-                                cols(anonymous_col_idx_base),
+                                cols(&mut anonymous_col_idx_base),
                                 values
                             )
                             .map_err(|e| QueryPlannerError::CustomError(e.to_string()))?;
@@ -299,12 +299,12 @@ impl ExecutionPlan {
                                 .collect::<Vec<String>>()
                                 .join(",");
 
-                            anonymous_col_idx_base += cols_count * tuples.len() - (cols_count - 1);
+                            anonymous_col_idx_base += cols_count * (tuples.len() - 1);
 
                             write!(
                                 sql,
                                 "SELECT {} FROM (VALUES {})",
-                                cols(anonymous_col_idx_base),
+                                cols(&mut anonymous_col_idx_base),
                                 values
                             )
                             .map_err(|e| {
