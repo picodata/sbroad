@@ -42,7 +42,6 @@ const SPACE_FORMAT_NOT_FOUND: &str = "space format not found";
 const UNINITIALIZED_DISTRIBUTION: &str = "uninitialized distribution";
 const UNSUPPORTED_TYPE_IR_VALUE: &str = "unsupported type ir value";
 const VALUE_OUT_OF_RANGE_ERROR: &str = "value out of range";
-const TYPE_NOT_IMPLEMENTED: &str = "type is not implemented";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum QueryPlannerError {
@@ -87,7 +86,6 @@ pub enum QueryPlannerError {
     SpaceNotFound,
     UninitializedDistribution,
     ValueOutOfRange,
-    TypeNotImplemented,
     UnsupportedValueType,
 }
 
@@ -135,7 +133,6 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::SpaceNotFound => SPACE_NOT_FOUND,
             QueryPlannerError::UninitializedDistribution => UNINITIALIZED_DISTRIBUTION,
             QueryPlannerError::ValueOutOfRange => VALUE_OUT_OF_RANGE_ERROR,
-            QueryPlannerError::TypeNotImplemented => TYPE_NOT_IMPLEMENTED,
             QueryPlannerError::UnsupportedValueType => UNSUPPORTED_TYPE_IR_VALUE,
         };
         write!(f, "{}", p)

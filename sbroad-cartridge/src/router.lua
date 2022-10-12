@@ -223,7 +223,6 @@ local function init()
         { if_not_exists = true, language = 'C' }
     )
 
-    box.func["libsbroad.init_statistics"]:call({})
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
@@ -258,6 +257,10 @@ local function invalidate_cache ()
     box.func["libsbroad.invalidate_coordinator_cache"]:call({})
 end
 
+local function init_statistics ()
+    box.func["libsbroad.init_statistics"]:call({})
+end
+
 local function trace(query, params, context, id)
     local has_err, parser_res = pcall(
         function()
@@ -281,5 +284,6 @@ return {
     invalidate_cache = invalidate_cache,
     execute = execute,
     trace = trace,
-    calculate_bucket_id = calculate_bucket_id
+    calculate_bucket_id = calculate_bucket_id,
+    init_statistics = init_statistics
 }

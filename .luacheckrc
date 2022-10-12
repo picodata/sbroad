@@ -29,8 +29,7 @@ include_files = {
 
 exclude_files = {
     "build/**/*.lua",
-    ".rocks/**/*.lua",
+    "**/.rocks/**/*.lua",
     ".git/**/*.lua",
     "http/mime_types.lua",
-    "test_app/.rocks/**/*.lua"
 }

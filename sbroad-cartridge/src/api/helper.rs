@@ -1,3 +1,4 @@
+use sbroad::error;
 use sbroad::executor::engine::Configuration;
 use sbroad::log::tarantool_error;
 use std::cell::RefCell;
@@ -11,7 +12,7 @@ where
     // Tarantool can yield in the middle of a current closure,
     // so we can hold only an immutable reference to the engine.
     let mut config: Option<_> = None;
-    (*engine).with(|engine| {
+    let mut code = (*engine).with(|engine| {
         let runtime = match engine.try_borrow() {
             Ok(runtime) => runtime,
             Err(e) => {
@@ -26,14 +27,21 @@ where
                 config = conf;
                 0
             }
-            Err(e) => tarantool_error(&format!("Failed to get configuration: {}", e)),
+            Err(e) => {
+                error!(Option::from("get config"), &format!("{:?}", e));
+                tarantool_error(&format!("Failed to get configuration: {}", e))
+            }
         }
     });
+
+    if code != 0 {
+        return code;
+    }
 
     // Tarantool never yields here, so it is possible to hold
     // a mutable reference to the engine.
     if let Some(config) = config {
-        (*engine).with(|runtime| {
+        code = (*engine).with(|runtime| {
             let mut runtime = match runtime.try_borrow_mut() {
                 Ok(runtime) => runtime,
                 Err(e) => {
@@ -48,5 +56,5 @@ where
         });
     }
 
-    0
+    code
 }

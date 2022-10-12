@@ -2,10 +2,12 @@ local t = require('luatest')
 local target_queries = t.group('target_queries')
 
 local helper = require('test.helper')
-local cluster = helper.cluster
+local cluster = nil
 
 target_queries.before_all(
         function()
+            cluster = helper.cluster
+
             local api = cluster:server("api-1").net_box
 
             local r, err = api:call("sbroad.execute", {

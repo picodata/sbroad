@@ -23,7 +23,7 @@ build_integration:
 	cartridge build $(TEST_APP)
 
 run_integration:
-	cd $(TEST_APP) && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=7 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/ && cd ..
+	cd $(TEST_APP) && rm -rf tmp/tarantool.log && TARANTOOL_LOG_LEVEL=5 TARANTOOL_LOG=tmp/tarantool.log ./.rocks/bin/luatest --coverage -v test/ && cd ..
 
 install_debug:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)

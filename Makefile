@@ -29,7 +29,7 @@ lint:
 	cargo clippy -- -Dclippy::all -Wclippy::pedantic
 	cargo audit -f audit.toml
 	./deps.sh
-	./.rocks/bin/luacheck . --exclude-files ./sbroad-cartridge/test_app/.rocks/*
+	./.rocks/bin/luacheck .
 
 test:
 	cargo test --features mock -vv

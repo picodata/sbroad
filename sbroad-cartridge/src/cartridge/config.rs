@@ -99,7 +99,12 @@ impl RouterConfiguration {
                             };
                             let t = match val["type"].as_str() {
                                 Some(t) => Type::new(t)?,
-                                None => return Err(QueryPlannerError::TypeNotImplemented),
+                                None => {
+                                    return Err(QueryPlannerError::CustomError(format!(
+                                        "Type not found for columns {}",
+                                        name
+                                    )))
+                                }
                             };
                             let qualified_name = normalize_name_from_schema(name);
                             debug!(

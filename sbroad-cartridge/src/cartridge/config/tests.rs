@@ -166,3 +166,76 @@ fn test_waiting_timeout() {
 
     assert_eq!(s.get_exec_waiting_timeout(), 200);
 }
+#[test]
+fn test_invalid_schema() {
+    let test_schema = r#"spaces:
+      TEST_SPACE:
+        engine: vinyl
+        is_local: false
+        temporary: false
+        format:
+          - name: bucket_id
+            type: unsigned
+            is_nullable: false
+          - name: FID
+            type: integer
+            is_nullable: false
+          - name: DATE_START
+            type: integer
+            is_nullable: false
+          - name: DATE_END
+            type: integer
+            is_nullable: false
+          - name: COMMON_ID
+            type: string
+            is_nullable: false
+          - name: EXCLUDE_ID
+            type: string
+            is_nullable: true
+          - name: COMMON_TEXT
+            type: string
+            is_nullable: false
+          - name: COMMON_DETAIL
+            type: array
+            is_nullable: false
+          - name: TYPOLOGY_TYPE
+            type: integer
+            is_nullable: true
+          - name: TYPOLOGY_ID
+            type: string
+            is_nullable: true
+        indexes:
+          - type: TREE
+            name: primary
+            unique: true
+            parts:
+              - path: FID
+                type: integer
+                is_nullable: false
+              - path: COMMON_ID
+                type: string
+                is_nullable: false
+              - path: DATE_START
+                type: integer
+                is_nullable: false
+          - type: TREE
+            name: bucket_id
+            unique: false
+            parts:
+              - path: bucket_id
+                type: unsigned
+                is_nullable: false
+        sharding_key:
+          - FID
+          - COMMON_ID
+          - DATE_START
+"#;
+
+    let mut s = RouterConfiguration::new();
+    s.set_sharding_column("\"bucket_id\"".into());
+
+    assert_eq!(
+        s.load_schema(test_schema).unwrap_err(),
+        QueryPlannerError::CustomError("type `array` not implemented".into())
+    );
+}

@@ -11,6 +11,7 @@ local function init(opts) -- luacheck: no unused args
     _G.sbroad.trace = sbroad_router.trace
 
     sbroad_router.init()
+    sbroad_router.init_statistics()
 
     return true
 end

@@ -5,44 +5,16 @@ local fio = require('fio')
 local t = require('luatest')
 local cartridge_helpers = require('cartridge.test-helpers')
 
-local helper = {}
+local helper = {
+    cluster = nil
+}
 
 -- luacheck: ignore package
 helper.root = fio.dirname(fio.abspath(package.search('init')))
 helper.datadir = fio.pathjoin(helper.root, 'tmp', 'db_test')
 helper.server_command = fio.pathjoin(helper.root, 'init.lua')
 
-helper.cluster = cartridge_helpers.Cluster:new({
-    server_command = helper.server_command,
-    datadir = helper.datadir,
-    use_vshard = true,
-    replicasets = {
-        {
-            alias = "api",
-            uuid = cartridge_helpers.uuid('a'),
-            roles = {'app.roles.api'},
-            servers = {
-                { instance_uuid = cartridge_helpers.uuid('a', 1) }
-            },
-        },
-        {
-            alias = "storage-1",
-            uuid = cartridge_helpers.uuid("b"),
-            roles = { "app.roles.storage" },
-            servers = {
-                { instance_uuid = cartridge_helpers.uuid("b", 1) }
-            },
-        },
-        {
-            alias = "storage-2",
-            uuid = cartridge_helpers.uuid("c"),
-            roles = { "app.roles.storage" },
-            servers = {
-                { instance_uuid = cartridge_helpers.uuid("c", 1) }
-            },
-        }
-    }
-})
+-- helper.cluster = nil
 
 local config = {
   ["executor_waiting_timeout"] = 200,
@@ -1356,15 +1328,56 @@ local config = {
 
 helper.cluster_config = config
 
-t.before_suite(function()
+helper.start_test_cluster = function (cfg)
     fio.rmtree(helper.datadir)
     fio.mktree(helper.datadir)
+
+    helper.cluster = cartridge_helpers.Cluster:new({
+            server_command = helper.server_command,
+            datadir = helper.datadir,
+            use_vshard = true,
+            replicasets = {
+                {
+                    alias = "api",
+                    uuid = cartridge_helpers.uuid('a'),
+                    roles = {'app.roles.api'},
+                    servers = {
+                        { instance_uuid = cartridge_helpers.uuid('a', 1) }
+                    },
+                },
+                {
+                    alias = "storage-1",
+                    uuid = cartridge_helpers.uuid("b"),
+                    roles = { "app.roles.storage" },
+                    servers = {
+                        { instance_uuid = cartridge_helpers.uuid("b", 1) }
+                    },
+                },
+                {
+                    alias = "storage-2",
+                    uuid = cartridge_helpers.uuid("c"),
+                    roles = { "app.roles.storage" },
+                    servers = {
+                        { instance_uuid = cartridge_helpers.uuid("c", 1) }
+                    },
+                }
+            }
+    })
+
     helper.cluster:start()
-    helper.cluster:upload_config(config)
+    helper.cluster:upload_config(cfg)
+end
+
+helper.stop_test_cluster = function ()
+    helper.cluster:stop()
+end
+
+t.before_suite(function()
+    helper.start_test_cluster(config)
 end)
 
 t.after_suite(function()
-    helper.cluster:stop()
+    helper.stop_test_cluster()
 end)
 
 return helper

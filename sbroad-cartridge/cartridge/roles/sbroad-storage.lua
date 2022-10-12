@@ -2,6 +2,7 @@ local sbroad_storage = require('sbroad.storage')
 
 local function init(opts) -- luacheck: no unused args
     sbroad_storage.init()
+    sbroad_storage.init_statistics()
     return true
 end
 

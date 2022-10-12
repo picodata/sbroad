@@ -44,7 +44,10 @@ impl Type {
             "scalar" => Ok(Type::Scalar),
             "string" => Ok(Type::String),
             "unsigned" => Ok(Type::Unsigned),
-            _ => Err(QueryPlannerError::TypeNotImplemented),
+            v => Err(QueryPlannerError::CustomError(format!(
+                "type `{}` not implemented",
+                v
+            ))),
         }
     }
 }

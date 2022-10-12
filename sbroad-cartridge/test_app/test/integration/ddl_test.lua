@@ -2,10 +2,12 @@ local t = require('luatest')
 local g = t.group('sbroad_with_ddl')
 
 local helper = require('test.helper')
-local cluster = helper.cluster
+local cluster = nil
 
 g.before_all(
         function()
+            cluster = helper.cluster
+
             local storage1 = cluster:server("storage-1-1").net_box
             storage1:call("box.execute", { [[truncate table "broken_hot"]] })
             storage1:call("box.execute", { [[truncate table "BROKEN"]] })
