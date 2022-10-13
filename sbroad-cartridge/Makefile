@@ -11,6 +11,7 @@ endif
 
 TARGET_ROOT?=../target
 CARTRIDGE_MODULE?=.
+CORE_MODULE=$(CARTRIDGE_MODULE)/../sbroad-core
 TEST_APP=$(CARTRIDGE_MODULE)/test_app
 
 build_cartridge_engine:
@@ -27,14 +28,16 @@ run_integration:
 
 install_debug:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
-	cp -Rf ../target/debug/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
-	cp -Rf src/*.lua $(LUADIR)/$(PROJECT_NAME)
-	cp -Rf cartridge $(LUADIR)
+	cp -Rf $(TARGET_ROOT)/debug/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
+	cp -Rf $(CARTRIDGE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf $(CORE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf $(CARTRIDGE_MODULE)/cartridge $(LUADIR)
 
 install_release:
 	mkdir -p $(LUADIR)/$(PROJECT_NAME)
 	cp -Rf $(TARGET_ROOT)/release/$(SRC_LIB) $(LIBDIR)/$(DEST_LIB)
 	cp -Rf $(CARTRIDGE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
+	cp -Rf $(CORE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
 	cp -Rf $(CARTRIDGE_MODULE)/cartridge $(LUADIR)
 
 test_integration: 

@@ -1,9 +1,5 @@
+require 'sbroad.core'
 local cartridge = require('cartridge')
-
-_G.fiber_id = function ()
-  local fiber = require('fiber')
-  return fiber.id()
-end
 
 _G.get_jaeger_agent_host = function()
     local cfg = cartridge.config_get_readonly()
