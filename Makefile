@@ -6,6 +6,12 @@ IMAGE_NAME=docker-public.binary.picodata.io/sbroad-builder:0.6.0
 TARGET_ROOT=target
 CARTRIDGE_MODULE=sbroad-cartridge
 
+build:
+	cargo build --release
+
+build_debug:
+	cargo build
+
 bench:
 	make clean
 	cargo bench -p sbroad-benches

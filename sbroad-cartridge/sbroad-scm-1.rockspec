@@ -24,6 +24,6 @@ build = {
         LUADIR = "$(LUADIR)",
         PROJECT_NAME = "sbroad",
     },
-    build_target = "build",
+    build_target = "build_cartridge_engine",
     install_target = "install_release",
 }

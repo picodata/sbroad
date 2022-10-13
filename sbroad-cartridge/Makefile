@@ -13,11 +13,11 @@ TARGET_ROOT?=../target
 CARTRIDGE_MODULE?=.
 TEST_APP=$(CARTRIDGE_MODULE)/test_app
 
-build:
-	cargo build --release
+build_cartridge_engine:
+	cargo build -p sbroad-cartridge --release
 
-build_debug:
-	cargo build
+build_cartridge_engine_debug:
+	cargo build -p sbroad-cartridge
 
 build_integration:
 	cartridge build $(TEST_APP)
