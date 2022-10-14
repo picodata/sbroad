@@ -1,8 +1,17 @@
+local sbroad_common = require('sbroad.init')
 local sbroad_storage = require('sbroad.storage')
 
 local function init(opts) -- luacheck: no unused args
+    if rawget(_G, 'sbroad') == nil then
+        rawset(_G, 'sbroad', {})
+    end
+
+    _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
+
+    sbroad_common.init()
+    sbroad_common.init_statistics()
     sbroad_storage.init()
-    sbroad_storage.init_statistics()
+
     return true
 end
 
@@ -16,6 +25,7 @@ return {
     init = init,
     apply_config = apply_config,
     dependencies = {
-        "cartridge.roles.vshard-storage",
+        'cartridge.roles.vshard-storage',
+        'cartridge.roles.vshard-router',
     },
 }

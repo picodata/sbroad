@@ -1,3 +1,4 @@
+local sbroad_common = require('sbroad.init')
 local sbroad_router = require('sbroad.router')
 
 local function init(opts) -- luacheck: no unused args
@@ -6,12 +7,13 @@ local function init(opts) -- luacheck: no unused args
         rawset(_G, 'sbroad', {})
     end
 
-    _G.sbroad.calculate_bucket_id = sbroad_router.calculate_bucket_id
+    _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
     _G.sbroad.execute = sbroad_router.execute
     _G.sbroad.trace = sbroad_router.trace
 
     sbroad_router.init()
-    sbroad_router.init_statistics()
+    sbroad_common.init()
+    sbroad_common.init_statistics()
 
     return true
 end
@@ -25,5 +27,5 @@ return {
     role_name = 'sbroad-router',
     init = init,
     apply_config = apply_config,
-    dependencies = {'cartridge.roles.vshard-router'},
+    dependencies = {'cartridge.roles.vshard-router'}
 }
