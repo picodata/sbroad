@@ -24,11 +24,6 @@ local function init ()
     })
 
     box.schema.func.create(
-        'libsbroad.calculate_bucket_id_by_dict',
-        { if_not_exists = true, language = 'C' }
-    )
-
-    box.schema.func.create(
         'libsbroad.init_statistics',
         { if_not_exists = true, language = 'C' }
     )
