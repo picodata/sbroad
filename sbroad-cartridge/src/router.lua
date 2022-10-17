@@ -215,7 +215,7 @@ end
 local function trace(query, params, context, id)
     local has_err, parser_res = pcall(
         function()
-            return box.func["libsbroad.dispatch_query"]:call({ query, params, context, id, false })
+            return box.func["libsbroad.dispatch_query"]:call({ query, params, context, id, true })
         end
     )
 
@@ -227,7 +227,17 @@ local function trace(query, params, context, id)
 end
 
 local function execute(query, params)
-    return trace(query, params, box.NULL, box.NULL)
+    local has_err, parser_res = pcall(
+        function()
+            return box.func["libsbroad.dispatch_query"]:call({ query, params, box.NULL, box.NULL, false })
+        end
+    )
+
+    if has_err == false then
+        return nil, parser_res
+    end
+
+    return parser_res[1]
 end
 
 return {

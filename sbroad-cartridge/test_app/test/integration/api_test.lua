@@ -1065,6 +1065,7 @@ g.test_trace1 = function()
     -- No external context, only query id
     local carrier = box.NULL
 
+    api:call("box.cfg", {{log_level = 7}})
     local r, err = api:call("sbroad.trace", { [[
         SELECT "id" FROM "BROKEN" WHERE "id" = ?
     ]], {1}, carrier, "id1" })
@@ -1076,4 +1077,8 @@ g.test_trace1 = function()
         },
         rows = {},
     })
+    api:call("box.cfg", {{log_level = 5}})
+
+    local pattern = 'tracer: Global'
+    t.assert_equals(helper.grep_log(pattern), pattern)
 end
