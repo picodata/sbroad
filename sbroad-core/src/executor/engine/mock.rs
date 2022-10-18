@@ -17,6 +17,7 @@ use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::{Cache, CoordinatorMetadata};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
@@ -25,6 +26,7 @@ use crate::ir::Plan;
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct RouterConfigurationMock {
+    functions: HashMap<String, Function>,
     tables: HashMap<String, Table>,
     bucket_count: usize,
     sharding_column: String,
@@ -38,6 +40,17 @@ impl CoordinatorMetadata for RouterConfigurationMock {
             None => Err(QueryPlannerError::CustomError(format!(
                 "Space {} not found",
                 table_name
+            ))),
+        }
+    }
+
+    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError> {
+        let name = normalize_name_from_sql(fn_name);
+        match self.functions.get(&name) {
+            Some(v) => Ok(v),
+            None => Err(QueryPlannerError::CustomError(format!(
+                "Function {} not found",
+                name
             ))),
         }
     }
@@ -83,6 +96,11 @@ impl RouterConfigurationMock {
     #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn new() -> Self {
+        let name_bucket_id = normalize_name_from_sql("bucket_id");
+        let fn_bucket_id = Function::new_stable(name_bucket_id.clone());
+        let mut functions = HashMap::new();
+        functions.insert(name_bucket_id, fn_bucket_id);
+
         let mut tables = HashMap::new();
 
         let columns = vec![
@@ -181,6 +199,7 @@ impl RouterConfigurationMock {
         );
 
         RouterConfigurationMock {
+            functions,
             tables,
             bucket_count: 10000,
             sharding_column: "\"bucket_id\"".into(),

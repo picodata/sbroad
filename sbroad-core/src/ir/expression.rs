@@ -90,6 +90,19 @@ pub enum Expression {
         /// of the last "add Motion" transformation.
         distribution: Option<Distribution>,
     },
+    /// Stable function cannot modify the database and
+    /// is guaranteed to return the same results given
+    /// the same arguments for all rows within a single
+    /// statement.
+    ///
+    /// Example: `bucket_id("1")` (the number of buckets can be
+    /// changed only after restarting the cluster).
+    StableFunction {
+        /// Function name.
+        name: String,
+        /// Function arguments.
+        children: Vec<usize>,
+    },
     /// Unary expression returning boolean result.
     Unary {
         /// Unary operator.

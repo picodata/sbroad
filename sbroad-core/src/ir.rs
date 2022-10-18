@@ -15,6 +15,7 @@ use crate::ir::value::Value;
 
 pub mod distribution;
 pub mod expression;
+pub mod function;
 pub mod helpers;
 pub mod operator;
 pub mod relation;

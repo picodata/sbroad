@@ -9,6 +9,7 @@ use sbroad::errors::QueryPlannerError;
 use sbroad::executor::engine::CoordinatorMetadata;
 use sbroad::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
 use sbroad::executor::lru::DEFAULT_CAPACITY;
+use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
 use sbroad::{debug, warn};
 
@@ -35,6 +36,9 @@ pub struct RouterConfiguration {
 
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
+
+    /// IR functions
+    functions: HashMap<String, Function>,
 }
 
 impl Default for RouterConfiguration {
@@ -53,6 +57,7 @@ impl RouterConfiguration {
             jaeger_agent_port: 6831,
             tables: HashMap::new(),
             sharding_column: String::new(),
+            functions: HashMap::new(),
         }
     }
 
@@ -61,6 +66,7 @@ impl RouterConfiguration {
     /// # Errors
     /// Returns `QueryPlannerError` when process was terminated.
     pub fn load_schema(&mut self, s: &str) -> Result<(), QueryPlannerError> {
+        self.init_core_functions();
         if let Ok(docs) = YamlLoader::load_from_str(s) {
             if let Some(schema) = docs.get(0) {
                 self.init_table_segments(schema)?;
@@ -73,6 +79,15 @@ impl RouterConfiguration {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.tables.is_empty()
+    }
+
+    /// Populate metadata about core functions.
+    /// Core functions should be present in the cluster
+    /// (imported by the core.lua file).
+    fn init_core_functions(&mut self) {
+        let name_bucket_id = normalize_name_from_sql("bucket_id");
+        let fn_bucket_id = Function::new_stable(name_bucket_id.clone());
+        self.functions.insert(name_bucket_id, fn_bucket_id);
     }
 
     /// Transform space information from schema to table segments
@@ -232,6 +247,17 @@ impl CoordinatorMetadata for RouterConfiguration {
             Some(v) => Ok(v.clone()),
             None => Err(QueryPlannerError::CustomError(format!(
                 "Space {} not found",
+                name
+            ))),
+        }
+    }
+
+    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError> {
+        let name = normalize_name_from_sql(fn_name);
+        match self.functions.get(&name) {
+            Some(v) => Ok(v),
+            None => Err(QueryPlannerError::CustomError(format!(
+                "Function {} not found",
                 name
             ))),
         }

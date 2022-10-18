@@ -11,6 +11,8 @@ use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
+use crate::ir::function::Function;
+use crate::ir::relation::Table;
 use crate::ir::value::Value;
 
 /// A metadata storage trait of the cluster.
@@ -22,10 +24,13 @@ pub trait CoordinatorMetadata {
     ///
     /// # Errors
     /// - Failed to get table by name from the metadata.
-    fn get_table_segment(
-        &self,
-        table_name: &str,
-    ) -> Result<crate::ir::relation::Table, QueryPlannerError>;
+    fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError>;
+
+    /// Lookup for a function in the metadata cache.
+    ///
+    /// # Errors
+    /// - Failed to get function by name from the metadata.
+    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError>;
 
     fn get_exec_waiting_timeout(&self) -> u64;
 

@@ -75,7 +75,7 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
 
 Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
     FunctionName = @{ Name }
-    FunctionArgs = { (Expr ~ ("," ~ Expr)*)? }
+    FunctionArgs = _{ (Expr ~ ("," ~ Expr)*)? }
 
 
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }

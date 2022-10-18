@@ -168,6 +168,16 @@ impl<'n> Iterator for ExpressionIterator<'n> {
 
                 None
             }
+            Some(Node::Expression(Expression::StableFunction { children, .. })) => {
+                let child_step = *self.child.borrow();
+                match children.get(child_step) {
+                    None => None,
+                    Some(child) => {
+                        *self.child.borrow_mut() += 1;
+                        Some(child)
+                    }
+                }
+            }
             Some(
                 Node::Expression(Expression::Constant { .. } | Expression::Reference { .. })
                 | Node::Relational(_)
@@ -293,7 +303,8 @@ impl<'p> Iterator for SubtreeIterator<'p> {
                         }
                         None
                     }
-                    Expression::Row { list, .. } => {
+                    Expression::Row { list, .. }
+                    | Expression::StableFunction { children: list, .. } => {
                         let child_step = *self.child.borrow();
                         return match list.get(child_step) {
                             None => None,

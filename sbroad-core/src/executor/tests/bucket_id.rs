@@ -64,6 +64,30 @@ fn bucket2_test() {
 }
 
 #[test]
+fn bucket3_test() {
+    let sql = r#"SELECT *, bucket_id('111') FROM "t1""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+
+    expected.rows.push(vec![
+        Value::String("Execute query on all buckets".to_string()),
+        Value::String(String::from(PatternWithParams::new(
+            r#"SELECT "t1"."a", "t1"."b", "BUCKET_ID" (?) as "COLUMN_1" FROM "t1""#.to_string(),
+            vec![Value::from("111".to_string())],
+        ))),
+    ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
 fn sharding_keys_from_tuple1() {
     let coordinator = RouterRuntimeMock::new();
     let tuple = vec![Value::from("123"), Value::from(1_u64)];

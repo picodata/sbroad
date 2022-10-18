@@ -232,6 +232,9 @@ impl ExecutionPlan {
                                         sql.push_str(alias);
                                     }
                                 }
+                                Expression::StableFunction { name, .. } => {
+                                    sql.push_str(name.as_str());
+                                }
                             },
                         }
                     }

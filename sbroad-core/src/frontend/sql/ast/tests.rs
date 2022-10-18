@@ -152,7 +152,7 @@ fn invalid_query() {
 1 | select a frAm t
   |        ^---
   |
-  = expected Alias, Asterisk, True, False, Null, Decimal, Double, Integer, Unsigned, Row, or Parameter"#,
+  = expected Alias, Asterisk, Function, True, False, Null, Decimal, Double, Integer, Unsigned, Row, or Parameter"#,
         ),
         format!("{}", ast),
     );

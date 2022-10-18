@@ -537,6 +537,35 @@ impl Ast for AbstractSyntaxTree {
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
                 }
+                Type::Function => {
+                    if let Some((first, other)) = node.children.split_first() {
+                        let mut plan_arg_list = Vec::new();
+                        for ast_child_id in other {
+                            let plan_child_id = map.get(*ast_child_id)?;
+                            plan_arg_list.push(plan_child_id);
+                        }
+                        let function_name =
+                            self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
+                                QueryPlannerError::CustomError("Function name is not found.".into())
+                            })?;
+                        let func = metadata.get_function(function_name)?;
+                        if func.is_stable() {
+                            let plan_func_id = plan.add_stable_function(func, plan_arg_list)?;
+                            map.add(*id, plan_func_id);
+                        } else {
+                            // At the moment we don't support any non-stable functions.
+                            // Later this code block should handle other function behaviors.
+                            return Err(QueryPlannerError::CustomError(format!(
+                                "Function {} is not stable.",
+                                function_name
+                            )));
+                        }
+                    } else {
+                        return Err(QueryPlannerError::CustomError(
+                            "Function has no children.".into(),
+                        ));
+                    }
+                }
                 Type::InnerJoin => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError(
@@ -739,6 +768,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::AliasName
                 | Type::ColumnName
+                | Type::FunctionName
                 | Type::ScanName
                 | Type::Select
                 | Type::SubQueryName
@@ -861,7 +891,10 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Row { ref list, .. } => {
+                    Expression::Row { ref list, .. }
+                    | Expression::StableFunction {
+                        children: ref list, ..
+                    } => {
                         for param_id in list {
                             if param_set.contains(param_id) {
                                 idx -= 1;
@@ -935,7 +968,11 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Row { ref mut list, .. } => {
+                    Expression::Row { ref mut list, .. }
+                    | Expression::StableFunction {
+                        children: ref mut list,
+                        ..
+                    } => {
                         for param_id in list {
                             if param_set.contains(param_id) {
                                 idx -= 1;
