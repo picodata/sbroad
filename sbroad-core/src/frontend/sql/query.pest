@@ -10,8 +10,8 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
         Projection = { ((Asterisk | Column) ~ ("," ~ (Asterisk | Column))*?) }
-            Column = { Row | Alias | Value | Reference }
-                Alias = {(Value | Reference) ~ ^"as" ~ AliasName }
+            Column = { Alias | Value }
+                Alias = {Value ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }
                 Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
                     ColumnName = @{ Name }
@@ -31,9 +31,9 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
         ValuesRow = { Row }
 
-Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
+Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | Value | Reference }
+    Primary = _{ SubQuery | Value }
     Unary = _{ IsNull | IsNotNull}
         IsNull = { Primary ~ ^"is" ~ ^"null" }
         IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
@@ -73,6 +73,10 @@ Expr = _{  Or | And | Unary | Between | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
+Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
+    FunctionName = @{ Name }
+    FunctionArgs = { (Expr ~ ("," ~ Expr)*)? }
+
 
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
@@ -88,7 +92,7 @@ Punctuation = _{
 }
 Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | WHITESPACE }
 
-Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString }
+Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString | Function | Reference }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }
@@ -98,8 +102,8 @@ Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned |
     Unsigned = @{ ASCII_DIGIT+ }
     SingleQuotedString = _{ "'" ~ String ~ "'" }
     Row = {
-        ("(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
-        | (^"row" ~ "(" ~ (Value | Reference) ~ ("," ~ (Value | Reference))* ~ ")")
+        ("(" ~ Value ~ ("," ~ Value)* ~ ")")
+        | (^"row" ~ "(" ~ Value ~ ("," ~ Value)* ~ ")")
     }
     Parameter = @{ "?" }
 
