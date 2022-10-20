@@ -115,3 +115,31 @@ fn front_explain_select_sql2() {
         panic!("Explain must be string")
     }
 }
+
+#[test]
+fn front_explain_select_sql3() {
+    let sql = r#"EXPLAIN SELECT "a" FROM "t3" as "q1"
+        INNER JOIN (SELECT "t3"."a" as "a2", "t3"."b" as "b2" FROM "t3") as "q2"
+        on "q1"."a" = "q2"."a2""#;
+
+    let metadata = &RouterRuntimeMock::new();
+    let mut query = Query::new(metadata, sql, vec![]).unwrap();
+
+    let expected_explain = format!(
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        r#"projection ("q1"."a" -> "a")"#,
+        r#"    join on ROW("q1"."a") = ROW("q2"."a2")"#,
+        r#"        scan "q1""#,
+        r#"            projection ("q1"."a" -> "a", "q1"."b" -> "b")"#,
+        r#"                scan "t3" -> "q1""#,
+        r#"        scan "q2""#,
+        r#"            projection ("t3"."a" -> "a2", "t3"."b" -> "b2")"#,
+        r#"                scan "t3""#,
+    );
+
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+        assert_eq!(expected_explain, *actual_explain);
+    } else {
+        panic!("Explain must be string")
+    }
+}

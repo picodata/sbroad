@@ -404,7 +404,10 @@ impl Relational {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
-                    QueryPlannerError::CustomError(String::from("Row has no such alias"))
+                    QueryPlannerError::CustomError(format!(
+                        "Row doesn't has a column at position {}",
+                        position
+                    ))
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
                 if let Expression::Alias { child, .. } = col_node {
@@ -630,24 +633,58 @@ impl Plan {
         // remove a sharding column from its output with a
         // projection node and wrap the result with a sub-query
         // scan.
+        // As a side effect, we also need to update the references
+        // to the child's output in the condition expression as
+        // we have filtered out the sharding column.
         let mut children: Vec<usize> = Vec::with_capacity(2);
         for child in &[left, right] {
             let child_node = self.get_relation_node(*child)?;
-            let chid_id = if let Relational::ScanRelation {
+            if let Relational::ScanRelation {
                 relation, alias, ..
             } = child_node
             {
+                // We'll need it later to update the condition expression (borrow checker).
+                let table = self.get_relation(relation).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!(
+                        "Failed to find relation {} in the plan",
+                        relation
+                    ))
+                })?;
+                let sharding_column_pos = table.get_bucket_id_position()?;
+
+                // Wrap relation with sub-query scan.
                 let scan_name = if let Some(alias_name) = alias {
                     alias_name.clone()
                 } else {
                     relation.clone()
                 };
                 let proj_id = self.add_proj(*child, &[])?;
-                self.add_sub_query(proj_id, Some(&scan_name))?
+                let sq_id = self.add_sub_query(proj_id, Some(&scan_name))?;
+                children.push(sq_id);
+
+                // Update references to the sub-query's output in the condition.
+                let condition_iter = Bft::new(&condition, |node| self.nodes.expr_iter(node, false));
+                let refs = condition_iter
+                    .filter_map(|(_, id)| {
+                        let expr = self.get_expression_node(*id).ok();
+                        if let Some(Expression::Reference { .. }) = expr {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                for ref_id in refs {
+                    let expr = self.get_mut_expression_node(ref_id)?;
+                    if let Expression::Reference { position, .. } = expr {
+                        if *position > sharding_column_pos {
+                            *position -= 1;
+                        }
+                    }
+                }
             } else {
-                *child
-            };
-            children.push(chid_id);
+                children.push(*child);
+            }
         }
         if let (Some(left_id), Some(right_id)) = (children.first(), children.get(1)) {
             let output = self.add_row_for_join(*left_id, *right_id)?;
