@@ -20,6 +20,8 @@ use sbroad_proc::otm_child_span;
 pub enum SyntaxData {
     /// "as alias_name"
     Alias(String),
+    /// "cast"
+    Cast,
     /// ")"
     CloseParenthesis,
     /// ","
@@ -59,6 +61,14 @@ impl SyntaxNode {
     fn new_alias(name: String) -> Self {
         SyntaxNode {
             data: SyntaxData::Alias(name),
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_cast() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Cast,
             left: None,
             right: Vec::new(),
         }
@@ -626,6 +636,20 @@ impl<'p> SyntaxPlan<'p> {
                 }
             },
             Node::Expression(expr) => match expr {
+                Expression::Cast { child, to } => {
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        Some(self.nodes.push_syntax_node(SyntaxNode::new_cast())),
+                        vec![
+                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                            self.nodes.get_syntax_node_id(*child)?,
+                            self.nodes
+                                .push_syntax_node(SyntaxNode::new_alias(String::from(to))),
+                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                        ],
+                    );
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
                 Expression::Constant { .. } => {
                     let sn = SyntaxNode::new_parameter(id);
                     Ok(self.nodes.push_syntax_node(sn))

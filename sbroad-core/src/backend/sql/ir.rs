@@ -167,6 +167,7 @@ impl ExecutionPlan {
                         sql.push_str("as ");
                         sql.push_str(s);
                     }
+                    SyntaxData::Cast => sql.push_str("CAST"),
                     SyntaxData::CloseParenthesis => sql.push(')'),
                     SyntaxData::Comma => sql.push(','),
                     SyntaxData::Condition => sql.push_str("ON"),
@@ -202,6 +203,7 @@ impl ExecutionPlan {
                             Node::Expression(expr) => match expr {
                                 Expression::Alias { .. }
                                 | Expression::Bool { .. }
+                                | Expression::Cast { .. }
                                 | Expression::Row { .. }
                                 | Expression::Unary { .. } => {}
                                 Expression::Constant { value, .. } => {

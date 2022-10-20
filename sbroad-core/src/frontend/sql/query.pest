@@ -77,6 +77,23 @@ Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
     FunctionName = @{ Name }
     FunctionArgs = _{ (Expr ~ ("," ~ Expr)*)? }
 
+Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
+    Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble
+             | TypeInt | TypeNumber | TypeScalar | TypeString
+             | TypeText | TypeUnsigned | TypeVarchar }
+    TypeAny = { ^"any" }
+    TypeBool = { (^"boolean" | ^"bool") }
+    TypeDecimal = { ^"decimal" }
+    TypeDouble = { ^"double" }
+    TypeInt = { (^"integer" | ^"int") }
+    TypeNumber = { ^"number" }
+    TypeScalar = { ^"scalar" }
+    TypeString = { ^"string" }
+    TypeText = { ^"text" }
+    TypeUnsigned = { ^"unsigned" }
+    TypeVarchar = { ^"varchar" ~ "(" ~ Length ~ ")" }
+        Length = @{ Unsigned }
+
 
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
@@ -92,7 +109,7 @@ Punctuation = _{
 }
 Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | WHITESPACE }
 
-Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString | Function | Reference }
+Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString | Cast | Function | Reference }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }

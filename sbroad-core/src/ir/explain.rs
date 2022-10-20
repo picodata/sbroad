@@ -41,6 +41,7 @@ impl Col {
                     column.alias = Some(name.to_string());
                 }
                 Expression::Bool { .. }
+                | Expression::Cast { .. }
                 | Expression::StableFunction { .. }
                 | Expression::Row { .. }
                 | Expression::Constant { .. }
@@ -223,6 +224,7 @@ impl Row {
                     row.add_col(RowVal::Const(value.clone()));
                 }
                 Expression::Bool { .. }
+                | Expression::Cast { .. }
                 | Expression::StableFunction { .. }
                 | Expression::Row { .. }
                 | Expression::Alias { .. }
@@ -309,6 +311,7 @@ impl Selection {
             }
             Expression::Reference { .. }
             | Expression::StableFunction { .. }
+            | Expression::Cast { .. }
             | Expression::Constant { .. }
             | Expression::Alias { .. } => {
                 return Err(QueryPlannerError::CustomError(

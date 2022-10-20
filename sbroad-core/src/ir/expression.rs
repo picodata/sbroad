@@ -19,6 +19,8 @@ use super::distribution::Distribution;
 use super::value::Value;
 use super::{operator, Node, Nodes, Plan};
 
+pub mod cast;
+
 /// Tuple tree build blocks.
 ///
 /// A tuple describes a single portion of data moved among cluster nodes.
@@ -51,6 +53,15 @@ pub enum Expression {
         op: operator::Bool,
         /// Right branch expression node index in the plan node arena.
         right: usize,
+    },
+    /// Type cast expression.
+    ///
+    /// Example: `cast(a as text)`.
+    Cast {
+        /// Target expression that must be casted to another type.
+        child: usize,
+        /// Cast type.
+        to: cast::Type,
     },
     /// Constant expressions.
     ///

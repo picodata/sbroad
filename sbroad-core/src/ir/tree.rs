@@ -114,7 +114,9 @@ impl<'n> Iterator for ExpressionIterator<'n> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.nodes.arena.get(*self.current) {
             Some(Node::Expression(
-                Expression::Alias { child, .. } | Expression::Unary { child, .. },
+                Expression::Alias { child, .. }
+                | Expression::Cast { child, .. }
+                | Expression::Unary { child, .. },
             )) => {
                 let child_step = *self.child.borrow();
                 if child_step == 0 {
@@ -284,7 +286,9 @@ impl<'p> Iterator for SubtreeIterator<'p> {
             return match child {
                 Node::Parameter => None,
                 Node::Expression(exp) => match exp {
-                    Expression::Alias { child, .. } | Expression::Unary { child, .. } => {
+                    Expression::Alias { child, .. }
+                    | Expression::Cast { child, .. }
+                    | Expression::Unary { child, .. } => {
                         let step = *self.child.borrow();
                         *self.child.borrow_mut() += 1;
                         if step == 0 {

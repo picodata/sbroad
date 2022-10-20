@@ -15,6 +15,7 @@ use crate::frontend::sql::ast::{
 };
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
+use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::value::Value;
@@ -530,6 +531,45 @@ impl Ast for AbstractSyntaxTree {
                     let and_id = plan.add_cond(greater_eq_id, Bool::And, less_eq_id)?;
                     map.add(*id, and_id);
                 }
+                Type::Cast => {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
+                        QueryPlannerError::CustomError("Condition has no children.".into())
+                    })?;
+                    let plan_child_id = map.get(*ast_child_id)?;
+                    let ast_type_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Cast type node id is not found among cast children.".into(),
+                        )
+                    })?;
+                    let ast_type = self.nodes.get_node(*ast_type_id)?;
+                    let cast_type = if ast_type.rule == Type::TypeVarchar {
+                        // Get the length of the varchar.
+                        let ast_len_id = ast_type.children.first().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                "Cast type length node id is not found among cast children.".into(),
+                            )
+                        })?;
+                        let ast_len = self.nodes.get_node(*ast_len_id)?;
+                        let len = ast_len
+                            .value
+                            .as_ref()
+                            .ok_or_else(|| {
+                                QueryPlannerError::CustomError("Varchar length is empty".into())
+                            })?
+                            .parse::<usize>()
+                            .map_err(|e| {
+                                QueryPlannerError::CustomError(format!(
+                                    "Failed to parse varchar length: {:?}",
+                                    e
+                                ))
+                            })?;
+                        Ok(CastType::Varchar(len))
+                    } else {
+                        CastType::try_from(&ast_type.rule)
+                    }?;
+                    let cast_id = plan.add_cast(plan_child_id, cast_type)?;
+                    map.add(*id, cast_id);
+                }
                 Type::Condition => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Condition has no children.".into())
@@ -769,10 +809,22 @@ impl Ast for AbstractSyntaxTree {
                 Type::AliasName
                 | Type::ColumnName
                 | Type::FunctionName
+                | Type::Length
                 | Type::ScanName
                 | Type::Select
                 | Type::SubQueryName
-                | Type::TargetColumns => {}
+                | Type::TargetColumns
+                | Type::TypeAny
+                | Type::TypeBool
+                | Type::TypeDecimal
+                | Type::TypeDouble
+                | Type::TypeInt
+                | Type::TypeNumber
+                | Type::TypeScalar
+                | Type::TypeString
+                | Type::TypeText
+                | Type::TypeUnsigned
+                | Type::TypeVarchar => {}
                 rule => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Not implements type: {:?}",
@@ -870,6 +922,10 @@ impl Plan {
                         child: ref param_id,
                         ..
                     }
+                    | Expression::Cast {
+                        child: ref param_id,
+                        ..
+                    }
                     | Expression::Unary {
                         child: ref param_id,
                         ..
@@ -942,6 +998,10 @@ impl Plan {
                 },
                 Node::Expression(expr) => match expr {
                     Expression::Alias {
+                        child: ref mut param_id,
+                        ..
+                    }
+                    | Expression::Cast {
                         child: ref mut param_id,
                         ..
                     }

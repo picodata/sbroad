@@ -441,8 +441,8 @@
 **no**
 
 ## F201. CAST function.
-1. Subclause 6.13, “cast specification”: For all supported data types: **no**
-1. Subclause 6.26, “value expression”: cast specification: **no**
+1. Subclause 6.13, “cast specification”: For all supported data types: **yes**
+1. Subclause 6.26, “value expression”: cast specification: **yes**
 
 ## F221. Explicit defaults.
 1. Subclause 6.5, “contextually typed value specification”: default specification: **no**
