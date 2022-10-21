@@ -2,8 +2,12 @@
 
 Currently the library contains a query planner and an executor for the distributed SQL in a Tarantool `cartridge` cluster.
 
+## Supported Tarantool versions
+Sbroad is only supported by Picodata Tarantool currently.
+You can download it [here](https://picodata.io/download)
+
 ## Getting started
- 
+
 First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools installed and available in your environment. 
 
 An example of the `sbroad` integration with Tarantool can be found in the `test_app` folder.
