@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use crate::errors::QueryPlannerError;
 use crate::frontend::sql::ast::Type as AstType;
 use crate::ir::expression::Expression;
@@ -60,6 +62,12 @@ impl From<&Type> for String {
             Type::Unsigned => "unsigned".to_string(),
             Type::Varchar(length) => format!("varchar({})", length),
         }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
     }
 }
 

@@ -5,6 +5,7 @@ use serde::Serialize;
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
+use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::{
@@ -15,16 +16,97 @@ use crate::ir::Plan;
 use super::operator::{Bool, Unary};
 use super::value::Value;
 
+#[derive(Debug, Serialize)]
+enum ColExpr {
+    Column(String),
+    Cast(Box<ColExpr>, CastType),
+    StableFunction(String, Box<ColExpr>),
+    None,
+}
+
+impl Display for ColExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match &self {
+            ColExpr::Column(c) => c.to_string(),
+            ColExpr::Cast(v, t) => format!("{}::{}", v, t),
+            ColExpr::StableFunction(name, arg) => format!("{}({})", name, arg),
+            ColExpr::None => "".to_string(),
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+impl From<&ColExpr> for String {
+    fn from(s: &ColExpr) -> Self {
+        s.to_string()
+    }
+}
+
+impl Default for ColExpr {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl ColExpr {
+    #[allow(dead_code)]
+    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, QueryPlannerError> {
+        let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, true));
+        let mut resul_expr = Self::None;
+
+        for (_, id) in dft_post {
+            let current_node = plan.get_expression_node(*id)?;
+
+            match &current_node {
+                Expression::Cast { to, .. } => {
+                    resul_expr = Self::Cast(Box::new(resul_expr), to.clone());
+                }
+                Expression::Reference { position, .. } => {
+                    let mut col_name = String::new();
+
+                    let rel_id: usize = *plan.get_relational_from_reference_node(*id)?;
+                    let rel_node = plan.get_relation_node(rel_id)?;
+
+                    if let Some(name) = rel_node.scan_name(plan, *position)? {
+                        col_name.push_str(name);
+                        col_name.push('.');
+                    }
+
+                    let alias = plan.get_alias_from_reference_node(current_node)?;
+                    col_name.push_str(alias);
+
+                    resul_expr = Self::Column(col_name);
+                }
+                Expression::Constant { value } => {
+                    resul_expr = Self::Column(value.to_string());
+                }
+                Expression::StableFunction { name, .. } => {
+                    resul_expr = Self::StableFunction(name.clone(), Box::new(resul_expr));
+                }
+                Expression::Alias { .. }
+                | Expression::Bool { .. }
+                | Expression::Row { .. }
+                | Expression::Unary { .. } => {
+                    return Err(QueryPlannerError::CustomError(format!(
+                        "Column expression node [{:?}] is not supported for yet",
+                        current_node
+                    )));
+                }
+            }
+        }
+
+        Ok(resul_expr)
+    }
+}
+
 #[derive(Debug, Serialize, Default)]
 struct Col {
     /// Column alias from sql query
     alias: Option<String>,
 
-    /// Column name
-    col: String,
-
-    /// Column table
-    scan: Option<String>,
+    /// Column expression (e.g. column name, function, etc.)
+    col: ColExpr,
 }
 
 impl Col {
@@ -36,33 +118,10 @@ impl Col {
         for (_, id) in dft_post {
             let current_node = plan.get_expression_node(*id)?;
 
-            match &current_node {
-                Expression::Alias { name, .. } => {
-                    column.alias = Some(name.to_string());
-                }
-                Expression::Bool { .. }
-                | Expression::Cast { .. }
-                | Expression::StableFunction { .. }
-                | Expression::Row { .. }
-                | Expression::Constant { .. }
-                | Expression::Unary { .. } => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Expression node [{:?}] is not supported for explain yet",
-                        current_node
-                    )));
-                }
-                Expression::Reference { position, .. } => {
-                    let rel_id: usize = *plan.get_relational_from_reference_node(*id)?;
-
-                    let rel_node = plan.get_relation_node(rel_id)?;
-                    let alias = plan.get_alias_from_reference_node(current_node)?;
-
-                    column.col.push_str(alias);
-
-                    if let Some(name) = rel_node.scan_name(plan, *position)? {
-                        column.scan = Some(name.to_string());
-                    }
-                }
+            if let Expression::Alias { name, .. } = &current_node {
+                column.alias = Some(name.to_string());
+            } else {
+                column.col = ColExpr::new(plan, *id)?;
             }
         }
 
@@ -72,12 +131,7 @@ impl Col {
 
 impl Display for Col {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
-        if let Some(tbl) = &self.scan {
-            write!(s, "{}.", tbl)?;
-        }
-
-        s.push_str(&self.col);
+        let mut s = String::from(&self.col);
 
         if let Some(a) = &self.alias {
             write!(s, " -> {}", a)?;
@@ -223,17 +277,6 @@ impl Row {
                 Expression::Constant { value, .. } => {
                     row.add_col(RowVal::Const(value.clone()));
                 }
-                Expression::Bool { .. }
-                | Expression::Cast { .. }
-                | Expression::StableFunction { .. }
-                | Expression::Row { .. }
-                | Expression::Alias { .. }
-                | Expression::Unary { .. } => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Expression node [{:?}] is not supported for selection's explain node yet",
-                        current_node
-                    )));
-                }
                 Expression::Reference { position, .. } => {
                     let rel_id: usize = *plan.get_relational_from_reference_node(*child)?;
 
@@ -254,6 +297,15 @@ impl Row {
 
                         row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                     }
+                }
+                Expression::Bool { .. }
+                | Expression::Cast { .. }
+                | Expression::StableFunction { .. }
+                | Expression::Row { .. }
+                | Expression::Alias { .. }
+                | Expression::Unary { .. } => {
+                    let col = Col::new(plan, *child)?;
+                    row.add_col(RowVal::Column(col));
                 }
             }
         }
@@ -309,19 +361,18 @@ impl Selection {
                 let row = Row::from_ir_nodes(plan, list, ref_map)?;
                 Selection::Row(row)
             }
-            Expression::Reference { .. }
-            | Expression::StableFunction { .. }
-            | Expression::Cast { .. }
-            | Expression::Constant { .. }
-            | Expression::Alias { .. } => {
-                return Err(QueryPlannerError::CustomError(
-                    "Unsupported expression in selection's explain node".into(),
-                ));
-            }
             Expression::Unary { op, child } => Selection::UnaryOp {
                 op: op.clone(),
                 child: Box::new(Selection::new(plan, *child, ref_map)?),
             },
+            Expression::Reference { .. }
+            | Expression::Cast { .. }
+            | Expression::StableFunction { .. }
+            | Expression::Constant { .. }
+            | Expression::Alias { .. } => {
+                let row = Row::from_ir_nodes(plan, &[subtree_node_id], ref_map)?;
+                Selection::Row(row)
+            }
         };
 
         Ok(result)

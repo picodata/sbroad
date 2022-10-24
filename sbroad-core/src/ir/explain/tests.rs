@@ -389,3 +389,101 @@ fn select_value_plan() {
 
     assert_eq!(actual_explain, explain_tree.to_string());
 }
+
+#[test]
+fn select_cast_plan1() {
+    let query = r#"SELECT CAST("id" as unsigned) as "b" FROM "test_space""#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("test_space"."id"::unsigned -> "b")
+    scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string());
+}
+
+#[test]
+fn select_cast_plan2() {
+    let query = r#"SELECT "id", "FIRST_NAME" FROM "test_space" WHERE CAST("id" as integer) = 1"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
+    selection ROW("test_space"."id"::int) = ROW(1)
+        scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string());
+}
+
+#[test]
+fn select_cast_plan_nested() {
+    let query = r#"SELECT cast(bucket_id("id") as string) FROM "test_space""#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("BUCKET_ID"("test_space"."id")::string -> "COLUMN_1")
+    scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string());
+}
+
+#[test]
+fn select_cast_plan_nested_where() {
+    let query = r#"SELECT "id" FROM "test_space" WHERE cast(bucket_id("id") as string) = 1"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("BUCKET_ID"("test_space"."id")::string) = ROW(1)
+        scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string());
+}
+
+#[test]
+fn select_cast_plan_nested_where2() {
+    let query = r#"SELECT "id" FROM "test_space" WHERE bucket_id(cast(42 as string)) = 1"#;
+
+    let plan = sql_to_optimized_ir(query, vec![]);
+
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+
+    let mut actual_explain = String::new();
+    actual_explain.push_str(
+        r#"projection ("test_space"."id" -> "id")
+    selection ROW("BUCKET_ID"(42::string)) = ROW(1)
+        scan "test_space"
+"#,
+    );
+
+    assert_eq!(actual_explain, explain_tree.to_string());
+}
