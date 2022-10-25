@@ -24,6 +24,8 @@ pub enum SyntaxData {
     Cast,
     /// ")"
     CloseParenthesis,
+    /// "||"
+    Concat,
     /// ","
     Comma,
     /// "on"
@@ -77,6 +79,14 @@ impl SyntaxNode {
     fn new_close() -> Self {
         SyntaxNode {
             data: SyntaxData::CloseParenthesis,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_concat() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Concat,
             left: None,
             right: Vec::new(),
         }
@@ -646,6 +656,17 @@ impl<'p> SyntaxPlan<'p> {
                             self.nodes
                                 .push_syntax_node(SyntaxNode::new_alias(String::from(to))),
                             self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                        ],
+                    );
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
+                Expression::Concat { left, right } => {
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        Some(self.nodes.get_syntax_node_id(*left)?),
+                        vec![
+                            self.nodes.push_syntax_node(SyntaxNode::new_concat()),
+                            self.nodes.get_syntax_node_id(*right)?,
                         ],
                     );
                     Ok(self.nodes.push_syntax_node(sn))

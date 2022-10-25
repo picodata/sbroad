@@ -487,3 +487,13 @@ fn select_cast_plan_nested_where2() {
 
     assert_eq!(actual_explain, explain_tree.to_string());
 }
+
+pub(crate) fn explain_check(sql: &str, explain: &str) {
+    let plan = sql_to_optimized_ir(sql, vec![]);
+    let top = &plan.get_top().unwrap();
+    let explain_tree = FullExplain::new(&plan, *top).unwrap();
+    assert_eq!(explain, explain_tree.to_string());
+}
+
+#[cfg(test)]
+mod concat;

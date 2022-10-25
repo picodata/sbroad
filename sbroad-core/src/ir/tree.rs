@@ -125,7 +125,9 @@ impl<'n> Iterator for ExpressionIterator<'n> {
                 }
                 None
             }
-            Some(Node::Expression(Expression::Bool { left, right, .. })) => {
+            Some(Node::Expression(
+                Expression::Bool { left, right, .. } | Expression::Concat { left, right },
+            )) => {
                 let child_step = *self.child.borrow();
                 if child_step == 0 {
                     *self.child.borrow_mut() += 1;
@@ -296,7 +298,7 @@ impl<'p> Iterator for SubtreeIterator<'p> {
                         }
                         None
                     }
-                    Expression::Bool { left, right, .. } => {
+                    Expression::Bool { left, right, .. } | Expression::Concat { left, right } => {
                         let child_step = *self.child.borrow();
                         if child_step == 0 {
                             *self.child.borrow_mut() += 1;

@@ -20,6 +20,7 @@ use super::value::Value;
 use super::{operator, Node, Nodes, Plan};
 
 pub mod cast;
+pub mod concat;
 
 /// Tuple tree build blocks.
 ///
@@ -62,6 +63,15 @@ pub enum Expression {
         child: usize,
         /// Cast type.
         to: cast::Type,
+    },
+    /// String concatenation expression.
+    ///
+    /// Example: `a || 'hello'`.
+    Concat {
+        /// Left expression node id.
+        left: usize,
+        /// Right expression node id.
+        right: usize,
     },
     /// Constant expressions.
     ///

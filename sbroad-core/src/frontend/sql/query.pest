@@ -75,7 +75,8 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
 
 Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
     FunctionName = @{ Name }
-    FunctionArgs = _{ (Expr ~ ("," ~ Expr)*)? }
+    FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
+    FunctionExpr = _{ Primary | Parentheses }
 
 Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
     Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble
@@ -94,8 +95,13 @@ Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
     TypeVarchar = { ^"varchar" ~ "(" ~ Length ~ ")" }
         Length = @{ Unsigned }
 
+Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
+    ConcatLeft = _{ SingleQuotedString | Cast | Function | Reference }
+    ConcatRight = _{ Concat | ConcatLeft }
 
-NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_" | ASCII_DIGIT)+ }
+
+NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_") }
+NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
 Keyword = { ^"except" | ^"union" | ^"where" }
 Character = _{ ASCII_ALPHANUMERIC | 'А' .. 'Я' | 'а' .. 'я' | Other | Punctuation | SYMBOL }
@@ -109,7 +115,7 @@ Punctuation = _{
 }
 Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | WHITESPACE }
 
-Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | SingleQuotedString | Cast | Function | Reference }
+Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | Concat | ConcatLeft }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }

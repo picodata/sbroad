@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write as _};
 
+use itertools::Itertools;
 use serde::Serialize;
 use traversal::DftPost;
 
@@ -20,7 +21,9 @@ use super::value::Value;
 enum ColExpr {
     Column(String),
     Cast(Box<ColExpr>, CastType),
+    Concat(Box<ColExpr>, Box<ColExpr>),
     StableFunction(String, Box<ColExpr>),
+    Row(Vec<ColExpr>),
     None,
 }
 
@@ -29,7 +32,9 @@ impl Display for ColExpr {
         let s = match &self {
             ColExpr::Column(c) => c.to_string(),
             ColExpr::Cast(v, t) => format!("{}::{}", v, t),
+            ColExpr::Concat(l, r) => format!("{} || {}", l, r),
             ColExpr::StableFunction(name, arg) => format!("{}({})", name, arg),
+            ColExpr::Row(list) => format!("({})", list.iter().format(", ")),
             ColExpr::None => "".to_string(),
         };
 
@@ -52,15 +57,21 @@ impl Default for ColExpr {
 impl ColExpr {
     #[allow(dead_code)]
     fn new(plan: &Plan, subtree_top: usize) -> Result<Self, QueryPlannerError> {
-        let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, true));
-        let mut resul_expr = Self::None;
+        let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, false));
+        let mut stack: Vec<ColExpr> = Vec::new();
 
         for (_, id) in dft_post {
             let current_node = plan.get_expression_node(*id)?;
 
             match &current_node {
                 Expression::Cast { to, .. } => {
-                    resul_expr = Self::Cast(Box::new(resul_expr), to.clone());
+                    let expr = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Failed to pop from stack while processing CAST expression".to_string(),
+                        )
+                    })?;
+                    let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
+                    stack.push(cast_expr);
                 }
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
@@ -76,18 +87,52 @@ impl ColExpr {
                     let alias = plan.get_alias_from_reference_node(current_node)?;
                     col_name.push_str(alias);
 
-                    resul_expr = Self::Column(col_name);
+                    stack.push(ColExpr::Column(col_name));
+                }
+                Expression::Concat { .. } => {
+                    let right = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Failed to pop right child from stack while processing CONCAT expression".to_string(),
+                        )
+                    })?;
+                    let left = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Failed to pop left child from stack while processing CONCAT expression".to_string(),
+                        )
+                    })?;
+                    let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
+                    stack.push(concat_expr);
                 }
                 Expression::Constant { value } => {
-                    resul_expr = Self::Column(value.to_string());
+                    let expr = ColExpr::Column(value.to_string());
+                    stack.push(expr);
                 }
                 Expression::StableFunction { name, .. } => {
-                    resul_expr = Self::StableFunction(name.clone(), Box::new(resul_expr));
+                    let expr = stack.pop().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Failed to pop from stack while processing STABLE FUNCTION expression"
+                                .to_string(),
+                        )
+                    })?;
+                    let func_expr = ColExpr::StableFunction(name.clone(), Box::new(expr));
+                    stack.push(func_expr);
                 }
-                Expression::Alias { .. }
-                | Expression::Bool { .. }
-                | Expression::Row { .. }
-                | Expression::Unary { .. } => {
+                Expression::Row { list, .. } => {
+                    let mut len = list.len();
+                    let mut row: Vec<ColExpr> = Vec::with_capacity(len);
+                    while len > 0 {
+                        let expr = stack.pop().ok_or_else(|| {
+                            QueryPlannerError::CustomError(
+                                format!("Failed to pop {} element from stack while processing ROW expression", len),
+                            )
+                        })?;
+                        row.push(expr);
+                        len -= 1;
+                    }
+                    let row_expr = ColExpr::Row(row);
+                    stack.push(row_expr);
+                }
+                Expression::Alias { .. } | Expression::Bool { .. } | Expression::Unary { .. } => {
                     return Err(QueryPlannerError::CustomError(format!(
                         "Column expression node [{:?}] is not supported for yet",
                         current_node
@@ -96,7 +141,9 @@ impl ColExpr {
             }
         }
 
-        Ok(resul_expr)
+        stack
+            .pop()
+            .ok_or_else(|| QueryPlannerError::CustomError("Failed to pop from stack".to_string()))
     }
 }
 
@@ -300,6 +347,7 @@ impl Row {
                 }
                 Expression::Bool { .. }
                 | Expression::Cast { .. }
+                | Expression::Concat { .. }
                 | Expression::StableFunction { .. }
                 | Expression::Row { .. }
                 | Expression::Alias { .. }
@@ -327,7 +375,7 @@ impl Display for Row {
     }
 }
 
-/// Recursive type which describe `WHERE` cause in eplain
+/// Recursive type which describe `WHERE` cause in explain
 #[derive(Debug, Serialize)]
 enum Selection {
     Row(Row),
@@ -368,6 +416,7 @@ impl Selection {
             Expression::Reference { .. }
             | Expression::Cast { .. }
             | Expression::StableFunction { .. }
+            | Expression::Concat { .. }
             | Expression::Constant { .. }
             | Expression::Alias { .. } => {
                 let row = Row::from_ir_nodes(plan, &[subtree_node_id], ref_map)?;

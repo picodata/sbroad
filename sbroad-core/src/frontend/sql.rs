@@ -570,6 +570,22 @@ impl Ast for AbstractSyntaxTree {
                     let cast_id = plan.add_cast(plan_child_id, cast_type)?;
                     map.add(*id, cast_id);
                 }
+                Type::Concat => {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Left node id is not found among concat children.".into(),
+                        )
+                    })?;
+                    let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
+                    let ast_right_id = node.children.get(1).ok_or_else(|| {
+                        QueryPlannerError::CustomError(
+                            "Right node id is not found among concat children.".into(),
+                        )
+                    })?;
+                    let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
+                    let concat_id = plan.add_concat(plan_left_id, plan_right_id)?;
+                    map.add(*id, concat_id);
+                }
                 Type::Condition => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Condition has no children.".into())
@@ -938,6 +954,10 @@ impl Plan {
                         ref left,
                         ref right,
                         ..
+                    }
+                    | Expression::Concat {
+                        ref left,
+                        ref right,
                     } => {
                         for param_id in &[*left, *right] {
                             if param_set.contains(param_id) {
@@ -1019,6 +1039,10 @@ impl Plan {
                         ref mut left,
                         ref mut right,
                         ..
+                    }
+                    | Expression::Concat {
+                        ref mut left,
+                        ref mut right,
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
                             if param_set.contains(param_id) {
@@ -1057,14 +1081,19 @@ impl Plan {
         Ok(())
     }
 
-    /// Wrap references and constants in the plan into rows.
+    /// Wrap references, constants, functions, concatenations and casts in the plan into rows.
     fn as_row(
         &mut self,
         expr_id: usize,
         rows: &mut HashSet<usize>,
     ) -> Result<usize, QueryPlannerError> {
-        if let Node::Expression(Expression::Reference { .. } | Expression::Constant { .. }) =
-            self.get_node(expr_id)?
+        if let Node::Expression(
+            Expression::Reference { .. }
+            | Expression::Constant { .. }
+            | Expression::Cast { .. }
+            | Expression::Concat { .. }
+            | Expression::StableFunction { .. },
+        ) = self.get_node(expr_id)?
         {
             let row_id = self.nodes.add_row(vec![expr_id], None);
             rows.insert(row_id);

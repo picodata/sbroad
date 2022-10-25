@@ -50,7 +50,7 @@
 1. Subclause 6.30, the character substring function: **no**
 
 ### E021-07. Character concatenation.
-1. Subclause 6.29, the concatenation expression: **no**
+1. Subclause 6.29, the concatenation expression: **yes**
 
 ### E021-08. UPPER and LOWER functions.
 1. Subclause 6.30, the fold function: **no**

@@ -1346,6 +1346,28 @@ fn get_motion_policy(plan: &Plan, motion_id: usize) -> &MotionPolicy {
     }
 }
 
+pub(crate) fn broadcast_check(sql: &str, pattern: &str, params: Vec<Value>) {
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+
+    expected.rows.push(vec![
+        Value::String("Execute query on all buckets".to_string()),
+        Value::String(String::from(PatternWithParams::new(
+            pattern.to_string(),
+            params,
+        ))),
+    ]);
+    assert_eq!(expected, result);
+}
+
 #[cfg(test)]
 mod between;
 
@@ -1354,6 +1376,9 @@ mod bucket_id;
 
 #[cfg(test)]
 mod cast;
+
+#[cfg(test)]
+mod concat;
 
 #[cfg(test)]
 mod empty_motion;

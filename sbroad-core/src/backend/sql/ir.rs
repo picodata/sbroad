@@ -169,6 +169,7 @@ impl ExecutionPlan {
                     }
                     SyntaxData::Cast => sql.push_str("CAST"),
                     SyntaxData::CloseParenthesis => sql.push(')'),
+                    SyntaxData::Concat => sql.push_str("||"),
                     SyntaxData::Comma => sql.push(','),
                     SyntaxData::Condition => sql.push_str("ON"),
                     SyntaxData::From => sql.push_str("FROM"),
@@ -204,6 +205,7 @@ impl ExecutionPlan {
                                 Expression::Alias { .. }
                                 | Expression::Bool { .. }
                                 | Expression::Cast { .. }
+                                | Expression::Concat { .. }
                                 | Expression::Row { .. }
                                 | Expression::Unary { .. } => {}
                                 Expression::Constant { value, .. } => {
