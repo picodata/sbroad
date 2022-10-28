@@ -82,7 +82,7 @@ impl Plan {
         let nodes: Vec<usize> = ir_tree.map(|(_, id)| *id).collect();
         for id in &nodes {
             let rel = self.get_relation_node(*id)?;
-            let new_tree_id = match rel {
+            let (new_tree_id, old_tree_id) = match rel {
                 Relational::Selection {
                     filter: tree_id, ..
                 }
@@ -90,10 +90,13 @@ impl Plan {
                     condition: tree_id, ..
                 } => {
                     let expr_id = *tree_id;
-                    f(self, expr_id)?
+                    (f(self, expr_id)?, expr_id)
                 }
                 _ => continue,
             };
+            if old_tree_id != new_tree_id {
+                self.undo.add(new_tree_id, old_tree_id);
+            }
             let rel = self.get_mut_relation_node(*id)?;
             match rel {
                 Relational::Selection {

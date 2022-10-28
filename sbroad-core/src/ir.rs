@@ -11,6 +11,7 @@ use operator::Relational;
 use relation::Table;
 
 use crate::errors::QueryPlannerError;
+use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;
 
 pub mod distribution;
@@ -22,6 +23,32 @@ pub mod relation;
 pub mod transformation;
 pub mod tree;
 pub mod value;
+
+/// A tree map structure where the value points to the parent key.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct TreeMap(HashMap<usize, usize, RepeatableState>);
+
+impl TreeMap {
+    pub fn new() -> Self {
+        Self(HashMap::with_hasher(RepeatableState))
+    }
+
+    pub fn add(&mut self, old_id: usize, new_id: usize) {
+        self.0.insert(new_id, old_id);
+    }
+
+    pub fn get(&self, new_id: usize) -> Option<usize> {
+        self.0.get(&new_id).copied()
+    }
+
+    pub fn get_oldest(&self, new_id: usize) -> usize {
+        let mut id = new_id;
+        while let Some(old_id) = self.get(id) {
+            id = old_id;
+        }
+        id
+    }
+}
 
 /// Plan tree node.
 ///
@@ -109,8 +136,12 @@ pub struct Plan {
     /// be added last. The plan without a top should be treated as invalid.
     top: Option<usize>,
     /// The flag is enabled if user wants to get a query plan only.
-    /// In this case we don't need to execute query
+    /// In this case we don't need to execute query.
     is_explain: bool,
+    /// The undo log is used to track the changes in the plan tree
+    /// during the optimization process. It is used to restore the
+    /// original subtree after the optimization (if it is needed).
+    undo: TreeMap,
 }
 
 impl Default for Plan {
@@ -165,6 +196,7 @@ impl Plan {
             slices: None,
             top: None,
             is_explain: false,
+            undo: TreeMap::new(),
         }
     }
 

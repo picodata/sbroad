@@ -45,7 +45,7 @@ impl Plan {
             }
         };
 
-        // To not apply current transformation to motion and sub-query nodes.
+        // Do not apply current transformation to motion and sub-query nodes.
         if self.get_motion_from_row(right_id)?.is_some()
             || self.get_sub_query_from_row_node(right_id)?.is_some()
         {
