@@ -111,6 +111,9 @@ fn test_getting_table_segment() {
       - name: \"sys_op\"
         type: \"number\"
         is_nullable: false
+      - name: detail
+        type: array
+        is_nullable: false
       - name: \"bucket_id\"
         type: \"unsigned\"
         is_nullable: true
@@ -144,6 +147,7 @@ fn test_getting_table_segment() {
             Column::new("\"product_code\"", Type::String, ColumnRole::User),
             Column::new("\"product_units\"", Type::Boolean, ColumnRole::User),
             Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
+            Column::new("\"detail\"", Type::Array, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["\"identification_number\"", "\"product_code\""],
@@ -166,11 +170,12 @@ fn test_waiting_timeout() {
 
     assert_eq!(s.get_exec_waiting_timeout(), 200);
 }
+
 #[test]
 fn test_invalid_schema() {
     let test_schema = r#"spaces:
       TEST_SPACE:
-        engine: vinyl
+        engine: memtx
         is_local: false
         temporary: false
         format:
@@ -196,7 +201,7 @@ fn test_invalid_schema() {
             type: string
             is_nullable: false
           - name: COMMON_DETAIL
-            type: array
+            type: map
             is_nullable: false
           - name: TYPOLOGY_TYPE
             type: integer
@@ -236,6 +241,6 @@ fn test_invalid_schema() {
 
     assert_eq!(
         s.load_schema(test_schema).unwrap_err(),
-        QueryPlannerError::CustomError("type `array` not implemented".into())
+        QueryPlannerError::CustomError("type `map` not implemented".into())
     );
 }

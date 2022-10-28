@@ -29,6 +29,9 @@ else
 end
 
 -- configure cartridge
+-- configure cartridge
+local utils = require('app.utils')
+rawset(_G, "crud_sharding_func", utils.crud_sharding_func )
 
 local cartridge = require('cartridge')
 

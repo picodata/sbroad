@@ -93,6 +93,15 @@ fn unsigned() {
 }
 
 #[test]
+fn tuple() {
+    let t = Tuple::from(vec![Value::Unsigned(0), Value::String("hello".to_string())]);
+    assert_eq!(
+        Value::Tuple(t),
+        Value::from(vec![Value::from(0_u64), Value::from("hello")])
+    );
+}
+
+#[test]
 #[allow(clippy::too_many_lines)]
 fn equivalence() {
     // Boolean

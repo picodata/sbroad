@@ -15,6 +15,7 @@ return {
     role_name = 'app.roles.storage',
     init = init,
     dependencies = {
-        'cartridge.roles.sbroad-storage'
+        'cartridge.roles.sbroad-storage',
+        'cartridge.roles.crud-storage',
     },
 }

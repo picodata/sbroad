@@ -1,6 +1,6 @@
 //! Value module.
 
-use std::fmt;
+use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::num::NonZeroI32;
 use std::str::FromStr;
@@ -10,8 +10,82 @@ use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua;
 
+use crate::error;
 use crate::executor::hash::ToHashString;
 use crate::ir::value::double::Double;
+
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
+pub struct Tuple(Vec<Value>);
+
+impl Display for Tuple {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.0
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl From<Vec<Value>> for Tuple {
+    fn from(v: Vec<Value>) -> Self {
+        Tuple(v)
+    }
+}
+
+impl<L: tlua::AsLua> tlua::Push<L> for Tuple {
+    type Err = tlua::Void;
+
+    #[allow(unreachable_code)]
+    fn push_to_lua(&self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
+        match self.0.push_to_lua(lua) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                error!(Option::from("push ir tuple to lua"), &format!("{:?}", e.0),);
+                Err((tlua::Void::from(e.0), e.1))
+            }
+        }
+    }
+}
+
+impl<L> tlua::PushInto<L> for Tuple
+where
+    L: tlua::AsLua,
+{
+    type Err = tlua::Void;
+
+    #[allow(unreachable_code)]
+    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
+        match self.0.push_into_lua(lua) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                error!(
+                    Option::from("push ir tuple into lua"),
+                    &format!("{:?}", e.0),
+                );
+                Err((tlua::Void::from(e.0), e.1))
+            }
+        }
+    }
+}
+
+impl<L> tlua::PushOneInto<L> for Tuple where L: tlua::AsLua {}
+
+impl<L> tlua::LuaRead<L> for Tuple
+where
+    L: tlua::AsLua,
+{
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Tuple, L> {
+        match Vec::lua_read_at_position(lua, index) {
+            Ok(v) => Ok(Tuple::from(v)),
+            Err(lua) => Err(lua),
+        }
+    }
+}
 
 /// SQL uses three-valued logic. We need to implement
 /// it to compare values with each other.
@@ -50,6 +124,8 @@ pub enum Value {
     String(String),
     /// Unsigned integer type.
     Unsigned(u64),
+    /// Tuple type
+    Tuple(Tuple),
 }
 
 /// As a side effect, `NaN == NaN` is true.
@@ -66,6 +142,7 @@ impl fmt::Display for Value {
             Value::Double(v) => fmt::Display::fmt(&v, f),
             Value::Decimal(v) => fmt::Display::fmt(v, f),
             Value::String(v) => write!(f, "'{}'", v),
+            Value::Tuple(v) => write!(f, "{}", v),
         }
     }
 }
@@ -133,6 +210,19 @@ impl From<f64> for Value {
     }
 }
 
+impl From<Tuple> for Value {
+    fn from(v: Tuple) -> Self {
+        Value::Tuple(v)
+    }
+}
+
+impl From<Vec<Value>> for Value {
+    fn from(v: Vec<Value>) -> Self {
+        let t = Tuple::from(v);
+        Value::Tuple(t)
+    }
+}
+
 impl From<Trivalent> for Value {
     fn from(f: Trivalent) -> Self {
         match f {
@@ -156,11 +246,12 @@ impl Value {
                 | Value::Integer(_)
                 | Value::Decimal(_)
                 | Value::Double(_)
-                | Value::String(_) => Trivalent::False,
+                | Value::String(_)
+                | Value::Tuple(_) => Trivalent::False,
             },
             Value::Null => Trivalent::Unknown,
             Value::Integer(s) => match other {
-                Value::Boolean(_) | Value::String(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (s == o).into(),
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
@@ -171,7 +262,7 @@ impl Value {
                 Value::Unsigned(o) => (&Decimal::from(*s) == o).into(),
             },
             Value::Double(s) => match other {
-                Value::Boolean(_) | Value::String(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (*s == Double::from(*o)).into(),
                 // If double can't be converted to decimal without error then it is not equal to decimal.
@@ -183,7 +274,7 @@ impl Value {
                 }
             },
             Value::Decimal(s) => match other {
-                Value::Boolean(_) | Value::String(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (s == &Decimal::from(*o)).into(),
                 Value::Decimal(o) => (s == o).into(),
@@ -192,7 +283,7 @@ impl Value {
                 Value::Unsigned(o) => (s == &Decimal::from(*o)).into(),
             },
             Value::Unsigned(s) => match other {
-                Value::Boolean(_) | Value::String(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (Decimal::from(*s) == *o).into(),
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
@@ -207,9 +298,20 @@ impl Value {
                 | Value::Integer(_)
                 | Value::Decimal(_)
                 | Value::Double(_)
-                | Value::Unsigned(_) => Trivalent::False,
+                | Value::Unsigned(_)
+                | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::String(o) => s.eq(o).into(),
+            },
+            Value::Tuple(_) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::String(_)
+                | Value::Tuple(_) => Trivalent::False,
+                Value::Null => Trivalent::Unknown,
             },
         }
     }
@@ -229,6 +331,7 @@ impl ToHashString for Value {
             Value::Double(v) => v.to_string(),
             Value::Boolean(v) => v.to_string(),
             Value::String(v) => v.to_string(),
+            Value::Tuple(v) => v.to_string(),
             Value::Null => "NULL".to_string(),
         }
     }
@@ -246,6 +349,7 @@ impl Serialize for Value {
             Value::Double(Double { value }) => serializer.serialize_f64(*value),
             Value::Boolean(v) => serializer.serialize_bool(*v),
             Value::String(v) => serializer.serialize_str(v),
+            Value::Tuple(v) => v.serialize(serializer),
             Value::Null => serializer.serialize_none(),
         }
     }
@@ -266,6 +370,7 @@ impl<'de> Deserialize<'de> for Value {
             Float(f64),
             Boolean(bool),
             String(String),
+            Tuple(Tuple),
             Null(()),
         }
 
@@ -289,6 +394,7 @@ impl<'de> Deserialize<'de> for Value {
                     }
                     EncodedValue::Boolean(v) => Value::Boolean(v),
                     EncodedValue::String(v) => Value::String(v),
+                    EncodedValue::Tuple(v) => Value::Tuple(v),
                     EncodedValue::Null(_) => Value::Null,
                 }
             }
@@ -308,6 +414,7 @@ impl From<Value> for String {
             Value::Double(v) => v.to_string(),
             Value::Boolean(v) => v.to_string(),
             Value::String(v) => v,
+            Value::Tuple(v) => v.to_string(),
             Value::Null => "NULL".to_string(),
         }
     }
@@ -324,6 +431,7 @@ impl<L: tlua::AsLua> tlua::Push<L> for Value {
             Value::Double(v) => v.push_to_lua(lua),
             Value::Boolean(v) => v.push_to_lua(lua),
             Value::String(v) => v.push_to_lua(lua),
+            Value::Tuple(v) => v.push_to_lua(lua),
             Value::Null => tlua::Null.push_to_lua(lua),
         }
     }
@@ -334,7 +442,8 @@ where
     L: tlua::AsLua,
 {
     type Err = tlua::Void;
-    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
+
+    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
         match self {
             Value::Unsigned(v) => v.push_into_lua(lua),
             Value::Integer(v) => v.push_into_lua(lua),
@@ -342,6 +451,7 @@ where
             Value::Double(v) => v.push_into_lua(lua),
             Value::Boolean(v) => v.push_into_lua(lua),
             Value::String(v) => v.push_into_lua(lua),
+            Value::Tuple(v) => v.push_into_lua(lua),
             Value::Null => tlua::Null.push_into_lua(lua),
         }
     }
@@ -393,6 +503,10 @@ where
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::String(v)),
+            Err(lua) => lua,
+        };
+        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
+            Ok(v) => return Ok(Self::Tuple(v)),
             Err(lua) => lua,
         };
         let lua = match tlua::Null::lua_read_at_position(lua, index) {

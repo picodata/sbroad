@@ -10,6 +10,7 @@ dependencies = {
     'checks == 3.1.0-1',
     'cartridge == 2.7.5-1',
     'metrics == 0.14.0-1',
+    'crud == 0.14.0-1',
     'cartridge-cli-extensions == 1.1.1-1',
     'luatest',
     'luacov'

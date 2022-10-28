@@ -16,7 +16,8 @@ use super::distribution::Key;
 
 const DEFAULT_VALUE: Value = Value::Null;
 
-/// Supported column types.
+/// Supported column types, which is used in a schema only.
+/// This `Type` doesn't have any relation with `Type` from IR.
 #[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
     Boolean,
@@ -27,6 +28,7 @@ pub enum Type {
     Scalar,
     String,
     Unsigned,
+    Array,
 }
 
 impl Type {
@@ -44,6 +46,7 @@ impl Type {
             "scalar" => Ok(Type::Scalar),
             "string" => Ok(Type::String),
             "unsigned" => Ok(Type::Unsigned),
+            "array" => Ok(Type::Array),
             v => Err(QueryPlannerError::CustomError(format!(
                 "type `{}` not implemented",
                 v
@@ -96,6 +99,7 @@ impl SerSerialize for Column {
             Type::Scalar => map.serialize_entry("type", "scalar")?,
             Type::String => map.serialize_entry("type", "string")?,
             Type::Unsigned => map.serialize_entry("type", "unsigned")?,
+            Type::Array => map.serialize_entry("type", "array")?,
         }
 
         map.end()
@@ -136,6 +140,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
                 Ok(Column::new(&column_name, Type::String, ColumnRole::User))
             }
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, ColumnRole::User)),
+            "array" => Ok(Column::new(&column_name, Type::Array, ColumnRole::User)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }

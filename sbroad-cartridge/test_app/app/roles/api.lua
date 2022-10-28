@@ -29,6 +29,7 @@ return {
     role_name = 'app.roles.api',
     init = init,
     dependencies = {
-        'cartridge.roles.sbroad-router'
+        'cartridge.roles.sbroad-router',
+        'cartridge.roles.crud-router',
     },
 }

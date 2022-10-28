@@ -1,5 +1,5 @@
 local t = require('luatest')
-local g = t.group('schema_validate')
+local g = t.group('array_field')
 local helper = require('test.helper')
 
 g.before_all(
@@ -18,7 +18,7 @@ g.before_all(
                 },
                 {
                   name = "a",
-                  type = "map",
+                  type = "array",
                   is_nullable = false,
                 },
                 {
@@ -57,13 +57,17 @@ g.before_all(
               },
               is_local = false,
               sharding_key = { "id" },
+              sharding_func = "crud_sharding_func"
             },
           }
         }
       }
 
-
       helper.start_test_cluster(cfg)
+
+      local api = helper.cluster:server("api-1").net_box
+      local _, err = api:call('crud.insert', {'t', {1, { 1, 2, 'a' }, box.NULL}})
+      t.assert_equals(err, nil)
     end
 )
 
@@ -75,9 +79,18 @@ g.after_all(
     end
 )
 
-g.test_schema_invalid = function ()
+g.test_array_read = function ()
   local api = helper.cluster:server("api-1").net_box
 
-  local _, err = api:call("sbroad.execute", { [[select * from "t"]], {}})
-  t.assert_str_contains(tostring(err), "Failed to get configuration: type `map` not implemented")
+  local r, err = api:call("sbroad.execute", { [[select "id", "a" from "t"]], {}})
+  t.assert_equals(err, nil)
+  t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "a", type = "array"},
+        },
+        rows = {
+          { 1, { 1, 2, 'a' }}
+        },
+    })
 end
