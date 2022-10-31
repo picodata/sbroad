@@ -12,6 +12,7 @@ trait ExpressionTreeIterator<'nodes>: TreeIterator<'nodes> {
 ///
 /// The iterator returns the next child for expression
 /// nodes. It is required to use `traversal` crate.
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct ExpressionIterator<'n> {
     current: &'n usize,

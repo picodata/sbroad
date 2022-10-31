@@ -30,6 +30,7 @@ use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::helpers::RepeatableState;
+use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
 use sbroad::ir::Plan;
 use sbroad::otm::child_span;
@@ -185,7 +186,7 @@ impl Coordinator for RouterRuntime {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
-        let sp = SyntaxPlan::new(plan, top_id)?;
+        let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
         let ordered = OrderedSyntaxNodes::try_from(sp)?;
         let nodes = ordered.to_syntax_data()?;
         let is_data_modifier = plan.subtree_modifies_data(top_id)?;

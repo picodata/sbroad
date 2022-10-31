@@ -114,7 +114,7 @@ fn map_reduce_query() {
                         "{} {} {}",
                         r#"SELECT "hash_testing"."product_code""#,
                         r#"FROM "hash_testing""#,
-                        r#"WHERE ("hash_testing"."identification_number", "hash_testing"."product_code") = (?, ?)"#,
+                        r#"WHERE ("hash_testing"."identification_number") = (?) and ("hash_testing"."product_code") = (?)"#,
                     ), vec![param1, param457],
                 )
             )
@@ -332,45 +332,39 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let param2 = Value::from(2_u64);
     let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
-    expected.rows.extend(vec![
-        vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(
-                String::from(
-                    PatternWithParams::new(
-                        format!(
-                            "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
-                            r#"SELECT "t3"."id""#,
-                            r#""t3"."FIRST_NAME""#,
-                            r#""t8"."identification_number""#,
-                            r#"FROM ("#,
-                            r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
-                            r#"FROM "test_space""#,
-                            r#"WHERE ("test_space"."sysFrom") >= (?) and ("test_space"."sys_op") < (?)"#,
-                            r#"UNION ALL"#,
-                            r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
-                            r#"FROM "test_space_hist""#,
-                            r#"WHERE ("test_space_hist"."sysFrom") <= (?)"#,
-                            r#") as "t3""#,
-                            r#"INNER JOIN"#,
-                            r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (?))"#,
-                            r#") as "t8""#,
-                            r#"ON ("t3"."id") = ("t8"."identification_number")"#,
-                            r#"WHERE ("t3"."id", "t3"."id", "t8"."identification_number") = ("t8"."identification_number", ?, ?)"#
-                        ),
-                        vec![
-                            Value::from(0_u64),
-                            Value::from(0_u64),
-                            Value::from(0_u64),
-                            Value::from(2_u64),
-                            Value::from(2_u64),
-                            Value::from(2_u64)
-                        ]
-                    )
-                )
-            )
-        ],
-    ]);
+    expected.rows.extend(vec![vec![
+        Value::String(format!("Execute query on a bucket [{}]", bucket2)),
+        Value::String(String::from(PatternWithParams::new(
+            format!(
+                "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
+                r#"SELECT "t3"."id""#,
+                r#""t3"."FIRST_NAME""#,
+                r#""t8"."identification_number""#,
+                r#"FROM ("#,
+                r#"SELECT "test_space"."id", "test_space"."FIRST_NAME""#,
+                r#"FROM "test_space""#,
+                r#"WHERE ("test_space"."sys_op") < (?) and ("test_space"."sysFrom") >= (?)"#,
+                r#"UNION ALL"#,
+                r#"SELECT "test_space_hist"."id", "test_space_hist"."FIRST_NAME""#,
+                r#"FROM "test_space_hist""#,
+                r#"WHERE ("test_space_hist"."sysFrom") <= (?)"#,
+                r#") as "t3""#,
+                r#"INNER JOIN"#,
+                r#"(SELECT COLUMN_1 as "identification_number" FROM (VALUES (?))"#,
+                r#") as "t8""#,
+                r#"ON ("t3"."id") = ("t8"."identification_number")"#,
+                r#"WHERE ("t3"."id") = (?) and ("t8"."identification_number") = (?)"#
+            ),
+            vec![
+                Value::from(0_u64),
+                Value::from(0_u64),
+                Value::from(0_u64),
+                Value::from(2_u64),
+                Value::from(2_u64),
+                Value::from(2_u64),
+            ],
+        ))),
+    ]]);
     assert_eq!(expected, result);
 }
 

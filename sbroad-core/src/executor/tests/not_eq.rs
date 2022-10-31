@@ -41,9 +41,9 @@ fn not_eq1_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE ("t"."product_code") <> (?) and ("t"."identification_number") <> (?)"#,
+                r#"WHERE ("t"."identification_number") <> (?) and ("t"."product_code") <> (?)"#,
             ),
-            vec![Value::from(2_u64), Value::from(1_u64)],
+            vec![Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);

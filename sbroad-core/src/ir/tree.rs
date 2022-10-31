@@ -13,6 +13,14 @@ trait PlanTreeIterator<'plan>: TreeIterator<'plan> {
     fn get_plan(&self) -> &'plan Plan;
 }
 
+/// A snapshot describes the version of the plan
+/// subtree to iterate over.
+#[derive(Debug, Clone)]
+pub enum Snapshot {
+    Latest,
+    Oldest,
+}
+
 pub mod and;
 pub mod eq_class;
 pub mod expression;

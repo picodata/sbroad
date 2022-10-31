@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
+use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
 use sbroad_benches::engine::RouterRuntimeMock;
 
@@ -237,7 +238,7 @@ fn query1(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
     let plan = query.get_exec_plan();
-    let sp = SyntaxPlan::new(plan, top_id).unwrap();
+    let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
     plan.to_sql(&nodes, &buckets).unwrap();

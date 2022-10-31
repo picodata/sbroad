@@ -7,6 +7,7 @@ use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
+use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
@@ -40,7 +41,7 @@ pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
 /// # Panics
 ///   if query is not correct
 #[allow(dead_code)]
-pub fn sql_to_sql(
+pub fn check_transformation(
     query: &str,
     params: Vec<Value>,
     f_transform: &dyn Fn(&mut Plan),
@@ -49,7 +50,7 @@ pub fn sql_to_sql(
     f_transform(&mut plan);
     let ex_plan = ExecutionPlan::from(plan);
     let top_id = ex_plan.get_ir_plan().get_top().unwrap();
-    let sp = SyntaxPlan::new(&ex_plan, top_id).unwrap();
+    let sp = SyntaxPlan::new(&ex_plan, top_id, Snapshot::Latest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
     ex_plan.to_sql(&nodes, &Buckets::All).unwrap()

@@ -28,7 +28,14 @@ pub mod value;
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct TreeMap(HashMap<usize, usize, RepeatableState>);
 
+impl Default for TreeMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TreeMap {
+    #[must_use]
     pub fn new() -> Self {
         Self(HashMap::with_hasher(RepeatableState))
     }
@@ -37,16 +44,23 @@ impl TreeMap {
         self.0.insert(new_id, old_id);
     }
 
-    pub fn get(&self, new_id: usize) -> Option<usize> {
-        self.0.get(&new_id).copied()
+    #[must_use]
+    pub fn get(&self, new_id: &usize) -> Option<&usize> {
+        self.0.get(new_id)
     }
 
-    pub fn get_oldest(&self, new_id: usize) -> usize {
-        let mut id = new_id;
-        while let Some(old_id) = self.get(id) {
-            id = old_id;
+    #[must_use]
+    pub fn get_oldest(&self, new_id: &usize) -> Option<&usize> {
+        match self.0.get_key_value(new_id) {
+            None => None,
+            Some((id, _)) => {
+                let mut current = id;
+                while let Some(parent) = self.get(current) {
+                    current = parent;
+                }
+                Some(current)
+            }
         }
-        id
     }
 }
 
@@ -138,10 +152,9 @@ pub struct Plan {
     /// The flag is enabled if user wants to get a query plan only.
     /// In this case we don't need to execute query.
     is_explain: bool,
-    /// The undo log is used to track the changes in the plan tree
-    /// during the optimization process. It is used to restore the
-    /// original subtree after the optimization (if it is needed).
-    undo: TreeMap,
+    /// The undo log keeps the history of the plan transformations. It can
+    /// be used to revert the plan subtree to some previous snapshot if needed.
+    pub(crate) undo: TreeMap,
 }
 
 impl Default for Plan {

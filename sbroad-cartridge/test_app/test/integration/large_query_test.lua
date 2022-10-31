@@ -116,8 +116,12 @@ g.before_all(
         local _, err = api:call(
           "sbroad.execute",
           {
-            [[INSERT INTO "VSA_PROXY"
-               ("fid","date_start","date_end","common_id","exclude_id", "common_text", "common_detail", "typology_type", "typology_id")
+            [[INSERT INTO "VSA_PROXY" (
+              "fid", "date_start", "date_end",
+              "common_id", "exclude_id",
+              "common_text", "common_detail",
+              "typology_type", "typology_id"
+             )
              VALUES (?,?,?,?,?,?,?,?,?)]],
             rec
           }

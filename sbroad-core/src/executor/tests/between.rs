@@ -57,12 +57,12 @@ fn between1_test() {
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE ("t"."identification_number") <= (SELECT COLUMN_1 as "id" FROM (VALUES (?)))"#,
-                r#"and ("t"."identification_number") >= (?)"#,
+                r#"WHERE ("t"."identification_number") >= (?)"#,
+                r#"and ("t"."identification_number") <= (SELECT COLUMN_1 as "id" FROM (VALUES (?)))"#,
             ),
             vec![
-                Value::from(2_u64),
                 Value::from(1_u64),
+                Value::from(2_u64),
             ],
         ))),
     ]]);
@@ -123,14 +123,14 @@ fn between2_test() {
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE (SELECT COLUMN_1 as "id" FROM (VALUES (?))) <= (?)"#,
-                r#"and (SELECT COLUMN_2 as "id" FROM (VALUES (?))) >= (?)"#,
+                r#"WHERE (SELECT COLUMN_1 as "id" FROM (VALUES (?))) >= (?)"#,
+                r#"and (SELECT COLUMN_2 as "id" FROM (VALUES (?))) <= (?)"#,
             ),
             vec![
                 Value::from(2_u64),
-                Value::from(3_u64),
-                Value::from(2_u64),
                 Value::from(1_u64),
+                Value::from(2_u64),
+                Value::from(3_u64),
             ],
         ))),
     ]]);

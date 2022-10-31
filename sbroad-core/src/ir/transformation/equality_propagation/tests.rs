@@ -1,5 +1,5 @@
 use crate::backend::sql::ir::PatternWithParams;
-use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::transformation::helpers::check_transformation;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
@@ -28,7 +28,10 @@ fn equality_propagation1() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &derive_equalities), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &derive_equalities),
+        expected
+    );
 }
 
 #[test]
@@ -41,7 +44,10 @@ fn equality_propagation2() {
         vec![Value::Null, Value::Null],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &derive_equalities), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &derive_equalities),
+        expected
+    );
 }
 
 #[test]
@@ -58,7 +64,10 @@ fn equality_propagation3() {
         vec![Value::from(1_u64), Value::Null, Value::Null],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &derive_equalities), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &derive_equalities),
+        expected
+    );
 }
 
 #[test]
@@ -81,7 +90,10 @@ fn equality_propagation4() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &derive_equalities), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &derive_equalities),
+        expected
+    );
 }
 
 #[test]
@@ -106,5 +118,8 @@ fn equality_propagation5() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &derive_equalities), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &derive_equalities),
+        expected
+    );
 }

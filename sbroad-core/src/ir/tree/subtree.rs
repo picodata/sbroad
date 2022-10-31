@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 
-use super::{PlanTreeIterator, TreeIterator};
+use super::{PlanTreeIterator, Snapshot, TreeIterator};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::{Node, Nodes, Plan};
@@ -9,6 +9,7 @@ use crate::ir::{Node, Nodes, Plan};
 trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {}
 
 /// Expression and relational nodes iterator.
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct SubtreeIterator<'plan> {
     current: &'plan usize,
@@ -42,7 +43,7 @@ impl<'plan> Iterator for SubtreeIterator<'plan> {
     type Item = &'plan usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        subtree_next(self)
+        subtree_next(self, &Snapshot::Latest)
     }
 }
 
@@ -57,8 +58,66 @@ impl<'plan> Plan {
     }
 }
 
+/// Expression and relational nodes flashback iterator.
+/// It uses the UNDO transformation log to go back to the
+/// original state of some subtrees in the plan (selections
+/// at the moment).
+#[derive(Debug)]
+pub struct FlashbackSubtreeIterator<'plan> {
+    current: &'plan usize,
+    child: RefCell<usize>,
+    plan: &'plan Plan,
+}
+
+impl<'nodes> TreeIterator<'nodes> for FlashbackSubtreeIterator<'nodes> {
+    fn get_current(&self) -> &'nodes usize {
+        self.current
+    }
+
+    fn get_child(&self) -> &RefCell<usize> {
+        &self.child
+    }
+
+    fn get_nodes(&self) -> &'nodes Nodes {
+        &self.plan.nodes
+    }
+}
+
+impl<'plan> PlanTreeIterator<'plan> for FlashbackSubtreeIterator<'plan> {
+    fn get_plan(&self) -> &'plan Plan {
+        self.plan
+    }
+}
+
+impl<'plan> SubtreePlanIterator<'plan> for FlashbackSubtreeIterator<'plan> {}
+
+impl<'plan> Iterator for FlashbackSubtreeIterator<'plan> {
+    type Item = &'plan usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        subtree_next(self, &Snapshot::Oldest)
+    }
+}
+
+impl<'plan> Plan {
+    #[must_use]
+    pub fn flashback_subtree_iter(
+        &'plan self,
+        current: &'plan usize,
+    ) -> FlashbackSubtreeIterator<'plan> {
+        FlashbackSubtreeIterator {
+            current,
+            child: RefCell::new(0),
+            plan: self,
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
-fn subtree_next<'plan>(iter: &mut impl SubtreePlanIterator<'plan>) -> Option<&'plan usize> {
+fn subtree_next<'plan>(
+    iter: &mut impl SubtreePlanIterator<'plan>,
+    snapshot: &Snapshot,
+) -> Option<&'plan usize> {
     if let Some(child) = iter.get_nodes().arena.get(*iter.get_current()) {
         return match child {
             Node::Parameter => None,
@@ -198,9 +257,17 @@ fn subtree_next<'plan>(iter: &mut impl SubtreePlanIterator<'plan>) -> Option<&'p
                         Ordering::Less => {
                             return children.get(step);
                         }
-                        Ordering::Equal => {
-                            return Some(filter);
-                        }
+                        Ordering::Equal => match snapshot {
+                            Snapshot::Latest => Some(filter),
+                            Snapshot::Oldest => {
+                                return Some(
+                                    iter.get_plan()
+                                        .undo
+                                        .get_oldest(filter)
+                                        .map_or_else(|| filter, |id| id),
+                                );
+                            }
+                        },
                         Ordering::Greater => None,
                     }
                 }

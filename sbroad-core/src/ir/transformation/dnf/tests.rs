@@ -1,5 +1,5 @@
 use crate::backend::sql::ir::PatternWithParams;
-use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::transformation::helpers::check_transformation;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
@@ -28,7 +28,7 @@ fn dnf1() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn dnf2() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn dnf3() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn dnf4() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn dnf5() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }
 
 #[test]
@@ -133,5 +133,5 @@ fn dnf6() {
         vec![Value::from(1_u64), Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &set_dnf), expected);
+    assert_eq!(check_transformation(input, vec![], &set_dnf), expected);
 }

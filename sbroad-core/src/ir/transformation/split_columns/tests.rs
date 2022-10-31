@@ -2,7 +2,7 @@ use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
-use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::transformation::helpers::check_transformation;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
@@ -19,7 +19,10 @@ fn split_columns1() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &split_columns), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &split_columns),
+        expected
+    );
 }
 
 #[test]
@@ -30,7 +33,10 @@ fn split_columns2() {
         vec![Value::from(1_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &split_columns), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &split_columns),
+        expected
+    );
 }
 
 #[test]
@@ -61,7 +67,10 @@ fn split_columns4() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &split_columns), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &split_columns),
+        expected
+    );
 }
 
 #[test]
@@ -76,5 +85,8 @@ fn split_columns5() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(2_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &split_columns), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &split_columns),
+        expected
+    );
 }

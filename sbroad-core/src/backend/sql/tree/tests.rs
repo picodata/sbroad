@@ -6,6 +6,7 @@ use pretty_assertions::assert_eq;
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
@@ -49,7 +50,7 @@ fn sql_order_selection() {
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // test the syntax plan
-    let sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
+    let sp = SyntaxPlan::new(&exec_plan, top_id, Snapshot::Latest).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
@@ -65,7 +66,7 @@ fn sql_order_selection() {
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
     // get nodes in the sql-convenient order
-    let sp = SyntaxPlan::new(&exec_plan, top_id).unwrap();
+    let sp = SyntaxPlan::new(&exec_plan, top_id, Snapshot::Latest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
     let mut nodes_iter = nodes.into_iter();

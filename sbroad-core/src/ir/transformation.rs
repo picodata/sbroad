@@ -95,7 +95,7 @@ impl Plan {
                 _ => continue,
             };
             if old_tree_id != new_tree_id {
-                self.undo.add(new_tree_id, old_tree_id);
+                self.undo.add(old_tree_id, new_tree_id);
             }
             let rel = self.get_mut_relation_node(*id)?;
             match rel {

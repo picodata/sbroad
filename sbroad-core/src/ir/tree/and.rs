@@ -10,6 +10,7 @@ trait AndTreeIterator<'nodes>: TreeIterator<'nodes> {}
 /// Children iterator for "and"-ed expression chains.
 ///
 /// The iterator returns the next child for the chained `Bool::And` nodes.
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct AndIterator<'n> {
     current: &'n usize,

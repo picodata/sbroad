@@ -20,6 +20,7 @@ use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
@@ -318,7 +319,7 @@ impl Coordinator for RouterRuntimeMock {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let mut result = ProducerResult::new();
-        let sp = SyntaxPlan::new(plan, top_id)?;
+        let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
         let ordered = OrderedSyntaxNodes::try_from(sp)?;
         let nodes = ordered.to_syntax_data()?;
 

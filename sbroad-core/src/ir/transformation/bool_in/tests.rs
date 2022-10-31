@@ -1,5 +1,5 @@
 use crate::backend::sql::ir::PatternWithParams;
-use crate::ir::transformation::helpers::sql_to_sql;
+use crate::ir::transformation::helpers::check_transformation;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
@@ -20,7 +20,10 @@ fn bool_in1() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &replace_in_operator), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &replace_in_operator),
+        expected
+    );
 }
 
 #[test]
@@ -43,7 +46,10 @@ fn bool_in2() {
         ],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &replace_in_operator), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &replace_in_operator),
+        expected
+    );
 }
 
 #[test]
@@ -58,5 +64,8 @@ fn bool_in3() {
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
 
-    assert_eq!(sql_to_sql(input, vec![], &replace_in_operator), expected);
+    assert_eq!(
+        check_transformation(input, vec![], &replace_in_operator),
+        expected
+    );
 }

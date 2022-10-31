@@ -11,6 +11,7 @@ trait EqClassTreeIterator<'nodes>: TreeIterator<'nodes> {}
 ///
 /// The iterator returns the next child for the chained `Bool::And`
 /// and `Bool::Eq` nodes.
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct EqClassIterator<'n> {
     current: &'n usize,

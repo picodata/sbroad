@@ -17,6 +17,7 @@ use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
+use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
 use sbroad::ir::Plan;
 
@@ -431,7 +432,7 @@ impl Coordinator for RouterRuntimeMock {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
         let result = ProducerResult::new();
-        let sp = SyntaxPlan::new(plan, top_id)?;
+        let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
         let ordered = OrderedSyntaxNodes::try_from(sp)?;
         let nodes = ordered.to_syntax_data()?;
         plan.to_sql(&nodes, buckets)?;

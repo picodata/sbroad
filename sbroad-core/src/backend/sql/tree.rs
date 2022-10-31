@@ -11,6 +11,7 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::tree::Snapshot;
 use crate::ir::Node;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
@@ -238,7 +239,10 @@ impl SyntaxNodes {
     /// - nothing was found
     fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, QueryPlannerError> {
         self.map.get(&plan_id).copied().ok_or_else(|| {
-            QueryPlannerError::CustomError("Current plan node is absent in the map".into())
+            QueryPlannerError::CustomError(format!(
+                "Current plan node ({}) is absent in the map",
+                plan_id
+            ))
         })
     }
 
@@ -424,6 +428,7 @@ pub struct SyntaxPlan<'p> {
     pub(crate) nodes: SyntaxNodes,
     top: Option<usize>,
     plan: &'p ExecutionPlan,
+    snapshot: Snapshot,
 }
 
 #[allow(dead_code)]
@@ -560,10 +565,17 @@ impl<'p> SyntaxPlan<'p> {
                     let left_id = *children.first().ok_or_else(|| {
                         QueryPlannerError::CustomError("Selection has no children.".into())
                     })?;
+                    let filter_id = match self.snapshot {
+                        Snapshot::Latest => *filter,
+                        Snapshot::Oldest => *ir_plan
+                            .undo
+                            .get_oldest(filter)
+                            .map_or_else(|| filter, |id| id),
+                    };
                     let sn = SyntaxNode::new_pointer(
                         id,
                         Some(self.nodes.get_syntax_node_id(left_id)?),
-                        vec![self.nodes.get_syntax_node_id(*filter)?],
+                        vec![self.nodes.get_syntax_node_id(filter_id)?],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -906,6 +918,7 @@ impl<'p> SyntaxPlan<'p> {
             nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id()),
             top: None,
             plan,
+            snapshot: Snapshot::Latest,
         }
     }
 
@@ -916,17 +929,36 @@ impl<'p> SyntaxPlan<'p> {
     /// - Failed to get to the top of the syntax tree
     /// - Failed to move projection nodes under their scans
     #[otm_child_span("syntax.new")]
-    pub fn new(plan: &'p ExecutionPlan, top: usize) -> Result<Self, QueryPlannerError> {
+    pub fn new(
+        plan: &'p ExecutionPlan,
+        top: usize,
+        snapshot: Snapshot,
+    ) -> Result<Self, QueryPlannerError> {
         let mut sp = SyntaxPlan::empty(plan);
+        sp.snapshot = snapshot.clone();
         let ir_plan = plan.get_ir_plan();
 
         // Wrap plan's nodes and preserve their ids.
-        let dft_post = DftPost::new(&top, |node| ir_plan.subtree_iter(node));
-        for (_, id) in dft_post {
-            // it works only for post-order traversal
-            let sn_id = sp.add_plan_node(*id)?;
-            if *id == top {
-                sp.set_top(sn_id)?;
+        match snapshot {
+            Snapshot::Latest => {
+                let dft_post = DftPost::new(&top, |node| ir_plan.subtree_iter(node));
+                for (_, id) in dft_post {
+                    // it works only for post-order traversal
+                    let sn_id = sp.add_plan_node(*id)?;
+                    if *id == top {
+                        sp.set_top(sn_id)?;
+                    }
+                }
+            }
+            Snapshot::Oldest => {
+                let dft_post = DftPost::new(&top, |node| ir_plan.flashback_subtree_iter(node));
+                for (_, id) in dft_post {
+                    // it works only for post-order traversal
+                    let sn_id = sp.add_plan_node(*id)?;
+                    if *id == top {
+                        sp.set_top(sn_id)?;
+                    }
+                }
             }
         }
         sp.move_proj_under_scan()?;
