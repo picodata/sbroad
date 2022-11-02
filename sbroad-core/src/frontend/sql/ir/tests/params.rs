@@ -27,7 +27,7 @@ fn front_params2() {
 
     let expected_explain = String::from(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op", "test_space"."FIRST_NAME") = ROW(NULL, 'hello')
+    selection ROW("test_space"."sys_op") = ROW(NULL) and ROW("test_space"."FIRST_NAME") = ROW('hello')
         scan "test_space"
 "#,
     );
@@ -45,7 +45,7 @@ fn front_params3() {
 
     let expected_explain = String::from(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op", "test_space"."FIRST_NAME") = ROW(NULL, 'кириллица')
+    selection ROW("test_space"."sys_op") = ROW(NULL) and ROW("test_space"."FIRST_NAME") = ROW('кириллица')
         scan "test_space"
 "#,
     );

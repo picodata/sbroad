@@ -35,7 +35,7 @@ fn simple_query_with_cond_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")
-    selection ROW("t"."identification_number", "t"."product_code") = ROW(1, '222')
+    selection ROW("t"."identification_number") = ROW(1) and ROW("t"."product_code") = ROW('222')
         scan "hash_testing" -> "t"
 "#,
     );
@@ -85,7 +85,7 @@ WHERE "id" = 1"#;
         scan "t"
             union all
                 projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sysFrom") < ROW(0) and ROW("test_space"."sys_op") > ROW(0)
+                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
                         scan "test_space"
                 projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
                     selection ROW("test_space_hist"."sys_op") < ROW(0)
@@ -122,7 +122,7 @@ WHERE "id" IN (SELECT "id"
         scan "t"
             union all
                 projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sysFrom") < ROW(0) and ROW("test_space"."sys_op") > ROW(0)
+                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
                         scan "test_space"
                 projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
                     selection ROW("test_space_hist"."sys_op") < ROW(0)
@@ -194,7 +194,7 @@ WHERE "id" IN (SELECT "id"
         scan "t"
             union all
                 projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sysFrom") < ROW(0) and ROW("test_space"."sys_op") > ROW(0)
+                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
                         scan "test_space"
                 projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
                     selection ROW("test_space_hist"."sys_op") < ROW(0)
@@ -215,7 +215,7 @@ subquery $1:
 motion [policy: segment([ref("identification_number")]), generation: none]
             scan
                 projection ("hash_testing"."identification_number" -> "identification_number")
-                    selection ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(5, '123')
+                    selection ROW("hash_testing"."identification_number") = ROW(5) and ROW("hash_testing"."product_code") = ROW('123')
                         scan "hash_testing"
 "#);
 
@@ -295,7 +295,7 @@ fn unary_condition_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("test_space"."FIRST_NAME") is not null and ROW("test_space"."id") is null
+    selection ROW("test_space"."id") is null and ROW("test_space"."FIRST_NAME") is not null
         scan "test_space"
 "#,
     );

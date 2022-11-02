@@ -729,7 +729,8 @@ impl FullExplain {
                             "Selection node doesn't have any children".into(),
                         ));
                     }
-                    let s = Selection::new(ir, *filter, &sq_ref_map)?;
+                    let filter_id = ir.undo.get_oldest(filter).map_or_else(|| *filter, |id| *id);
+                    let s = Selection::new(ir, filter_id, &sq_ref_map)?;
                     Some(ExplainNode::Selection(s))
                 }
                 Relational::UnionAll { .. } => {

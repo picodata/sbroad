@@ -28,7 +28,7 @@ fn front_sql2() {
 
     let expected_explain = String::from(
         r#"projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
-    selection ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(1, '1') or ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(2, '2')
+    selection ROW("hash_testing"."identification_number") = ROW(1) and ROW("hash_testing"."product_code") = ROW('1') or ROW("hash_testing"."identification_number") = ROW(2) and ROW("hash_testing"."product_code") = ROW('2')
         scan "hash_testing"
 "#,
     );
@@ -87,7 +87,7 @@ fn front_sql4() {
 
     let expected_explain = String::from(
         r#"projection ("t3"."identification_number" -> "identification_number", "t3"."product_code" -> "product_code")
-    selection ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 1) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 1) or ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 2) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 2) or ROW("t3"."product_code", "t3"."identification_number") = ROW('1', 3) or ROW("t3"."product_code", "t3"."identification_number") = ROW('2', 3)
+    selection ROW("t3"."identification_number") = ROW(1) or ROW("t3"."identification_number") = ROW(2) or ROW("t3"."identification_number") = ROW(3) and ROW("t3"."product_code") = ROW('1') or ROW("t3"."product_code") = ROW('2')
         scan "t3"
             union all
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
@@ -137,7 +137,7 @@ fn front_sql6() {
 
     let expected_explain = String::from(
         r#"projection ("T"."id" -> "id", "hash_testing"."product_units" -> "product_units")
-    selection ROW("hash_testing"."identification_number", "hash_testing"."product_code") = ROW(5, '123')
+    selection ROW("hash_testing"."identification_number") = ROW(5) and ROW("hash_testing"."product_code") = ROW('123')
         join on ROW("hash_testing"."identification_number") = ROW("T"."id")
             scan "hash_testing"
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
@@ -196,12 +196,12 @@ fn front_sql9() {
 
     let expected_explain = String::from(
         r#"projection ("t3"."id" -> "id", "t3"."FIRST_NAME" -> "FIRST_NAME", "t8"."identification_number" -> "identification_number", "t8"."product_code" -> "product_code")
-    selection ROW("t3"."id", "t8"."product_code", "t3"."id", "t8"."identification_number") = ROW("t8"."identification_number", '123', 1, 1)
+    selection ROW("t3"."id") = ROW(1) and ROW("t8"."identification_number") = ROW(1) and ROW("t8"."product_code") = ROW('123')
         join on ROW("t3"."id") = ROW("t8"."identification_number")
             scan "t3"
                 union all
                     projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                        selection ROW("test_space"."sysFrom") >= ROW(0) and ROW("test_space"."sys_op") < ROW(0)
+                        selection ROW("test_space"."sys_op") < ROW(0) and ROW("test_space"."sysFrom") >= ROW(0)
                             scan "test_space"
                     projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
                         selection ROW("test_space_hist"."sysFrom") <= ROW(0)
@@ -316,7 +316,7 @@ fn front_sql18() {
 
     let expected_explain = String::from(
         r#"projection ("hash_testing"."product_code" -> "product_code")
-    selection ROW("hash_testing"."product_code") <= ROW(2) and ROW("hash_testing"."product_code") >= ROW(1)
+    selection ROW("hash_testing"."product_code") >= ROW(1) and ROW("hash_testing"."product_code") <= ROW(2)
         scan "hash_testing"
 "#,
     );
