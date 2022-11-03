@@ -24,17 +24,19 @@ pub mod transformation;
 pub mod tree;
 pub mod value;
 
-/// A tree map structure where the value points to the parent key.
+/// Transformation log keep the history of the plan subtree modifications.
+/// When we modify the plan subtree, we add a new entry to the log, where
+/// the key is a new subtree top node and the value is the previous version.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct TreeMap(HashMap<usize, usize, RepeatableState>);
+pub struct TransformationLog(HashMap<usize, usize, RepeatableState>);
 
-impl Default for TreeMap {
+impl Default for TransformationLog {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TreeMap {
+impl TransformationLog {
     #[must_use]
     pub fn new() -> Self {
         Self(HashMap::with_hasher(RepeatableState))
@@ -154,7 +156,7 @@ pub struct Plan {
     is_explain: bool,
     /// The undo log keeps the history of the plan transformations. It can
     /// be used to revert the plan subtree to some previous snapshot if needed.
-    pub(crate) undo: TreeMap,
+    pub(crate) undo: TransformationLog,
 }
 
 impl Default for Plan {
@@ -209,7 +211,7 @@ impl Plan {
             slices: None,
             top: None,
             is_explain: false,
-            undo: TreeMap::new(),
+            undo: TransformationLog::new(),
         }
     }
 

@@ -6,7 +6,7 @@
 //! - `__sbroad_query` space - stores the queries that are currently being executed.
 //!   Its query id is used as a key for the `__sbroad_stat` space.
 //! - `__sbroad_stat` space - stores the statistics for the query spans. The spans
-//!   are stored as a tree map for each query.
+//!   are stored as a flat tree for each query.
 //! - `SpanMap` hash table - stores the mapping between the span id and the span name.
 //!   The reason is that the span context contains only the span id, so we use
 //!   this table to save the span name when create the span (and remove it when
