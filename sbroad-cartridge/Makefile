@@ -40,5 +40,5 @@ install_release:
 	cp -Rf $(CORE_MODULE)/src/*.lua $(LUADIR)/$(PROJECT_NAME)
 	cp -Rf $(CARTRIDGE_MODULE)/cartridge $(LUADIR)
 
-test_integration: 
+test_integration:
 	$(MAKE) build_integration && $(MAKE) run_integration

@@ -9,6 +9,7 @@ use sbroad::{debug, error, warn};
 use sbroad_proc::otm_child_span;
 use std::any::Any;
 use std::cell::RefCell;
+use std::fmt::Display;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
@@ -141,6 +142,7 @@ impl Configuration for StorageRuntime {
 
     fn update_config(&mut self, metadata: Self::Configuration) {
         self.metadata = metadata;
+        update_box_param("sql_cache_size", self.metadata.storage_size_bytes);
     }
 }
 
@@ -333,5 +335,22 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
             error!(Option::from("write_unprepared"), &format!("{:?}", e));
             Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
         }
+    }
+}
+
+fn update_box_param<T>(param: &str, val: T)
+where
+    T: Display,
+{
+    let lua = tarantool::lua_state();
+    match lua.exec(&format!("box.cfg{{{} = {}}}", param, val)) {
+        Ok(_) => debug!(
+            Option::from("update_box_param"),
+            &format!("box.cfg param {} was updated to {}", param, val)
+        ),
+        Err(e) => warn!(
+            Option::from("update_box_param"),
+            &format!("box.cfg update error: {}", e)
+        ),
     }
 }

@@ -87,6 +87,55 @@ local config = {
   ["storage_cache_size_bytes"] = 204800,
   ["schema"] = {
     spaces = {
+        space_for_breake_cache = {
+          format = {
+              { name = "id", type = "integer", is_nullable = false },
+              { name = "field1", type = "number", is_nullable = false },
+              { name = "field2", type = "number", is_nullable = false },
+              { name = "field3", type = "string", is_nullable = false },
+              { name = "field4", type = "boolean", is_nullable = false },
+              { name = "field5", type = "integer", is_nullable = false },
+              { name = "field6", type = "integer", is_nullable = false },
+              { name = "field7", type = "integer", is_nullable = false },
+              { name = "field8", type = "integer", is_nullable = false },
+              { name = "field9", type = "integer", is_nullable = false },
+              { name = "field10", type = "string", is_nullable = false },
+              { name = "field11", type = "string", is_nullable = false },
+              { name = "field12", type = "integer", is_nullable = false },
+              { name = "field13", type = "number", is_nullable = false },
+              { name = "bucket_id", type = "unsigned", is_nullable = true },
+          },
+          temporary = false,
+          engine = "vinyl",
+          indexes = {
+              {
+                  unique = true,
+                  parts = {
+                      {
+                          path = "id",
+                          type = "integer",
+                          is_nullable = false,
+                      },
+                  },
+                  type = "TREE",
+                  name = "id",
+              },
+              {
+                  unique = false,
+                  parts = {
+                      {
+                          path = "bucket_id",
+                          type = "unsigned",
+                          is_nullable = true,
+                      },
+                  },
+                  type = "TREE",
+                  name = "bucket_id",
+              },
+          },
+          is_local = false,
+          sharding_key = { "id" },
+      },
       t = {
         format = {
             {
@@ -1397,30 +1446,27 @@ helper.start_test_cluster = function (cfg)
             server_command = helper.server_command,
             datadir = helper.datadir,
             use_vshard = true,
+            cookie='123',
             replicasets = {
                 {
                     alias = "api",
                     uuid = cartridge_helpers.uuid('a'),
                     roles = {'app.roles.api'},
-                    servers = {
-                        { instance_uuid = cartridge_helpers.uuid('a', 1) }
-                    },
+                    servers = 1,
                 },
                 {
                     alias = "storage-1",
                     uuid = cartridge_helpers.uuid("b"),
                     roles = { "app.roles.storage" },
-                    servers = {
-                        { instance_uuid = cartridge_helpers.uuid("b", 1) }
-                    },
+                    all_rw = false,
+                    servers = 2,
+                    weight = 1
                 },
                 {
                     alias = "storage-2",
                     uuid = cartridge_helpers.uuid("c"),
                     roles = { "app.roles.storage" },
-                    servers = {
-                        { instance_uuid = cartridge_helpers.uuid("c", 1) }
-                    },
+                    servers = 1,
                 }
             }
     })
