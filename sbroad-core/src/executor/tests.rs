@@ -1378,10 +1378,13 @@ mod concat;
 mod empty_motion;
 
 #[cfg(test)]
+mod frontend;
+
+#[cfg(test)]
 mod not_in;
 
 #[cfg(test)]
 mod not_eq;
 
 #[cfg(test)]
-mod frontend;
+mod subtree;

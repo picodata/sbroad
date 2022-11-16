@@ -611,27 +611,29 @@ impl<'p> SyntaxPlan<'p> {
                 Relational::Motion { .. } => {
                     let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);
-                    let child_id = self.plan.get_motion_child(id)?;
-                    let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
                     let mut children: Vec<usize> = Vec::new();
-                    if let Relational::ScanSubQuery { .. } = child_rel {
-                        children = Vec::from([
-                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                            self.nodes
-                                .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
-                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                        ]);
+                    if let Ok(child_id) = self.plan.get_motion_child(id) {
+                        let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
+                        if let Relational::ScanSubQuery { .. } = child_rel {
+                            children = Vec::from([
+                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ]);
 
-                        if let Some(name) = vtable_alias {
-                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            if let Some(name) = vtable_alias {
+                                children
+                                    .push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            }
+                            let sn = SyntaxNode::new_pointer(id, None, children);
+                            return Ok(self.nodes.push_syntax_node(sn));
                         }
-                    } else {
-                        children.push(
-                            self.nodes
-                                .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
-                        );
                     }
-
+                    children.push(
+                        self.nodes
+                            .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
+                    );
                     let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }

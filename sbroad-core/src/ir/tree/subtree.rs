@@ -6,7 +6,10 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::{Node, Nodes, Plan};
 
-trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {}
+trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {
+    fn need_output(&self) -> bool;
+    fn need_motion_subtree(&self) -> bool;
+}
 
 /// Expression and relational nodes iterator.
 #[allow(clippy::module_name_repetitions)]
@@ -37,7 +40,15 @@ impl<'plan> PlanTreeIterator<'plan> for SubtreeIterator<'plan> {
     }
 }
 
-impl<'plan> SubtreePlanIterator<'plan> for SubtreeIterator<'plan> {}
+impl<'plan> SubtreePlanIterator<'plan> for SubtreeIterator<'plan> {
+    fn need_output(&self) -> bool {
+        false
+    }
+
+    fn need_motion_subtree(&self) -> bool {
+        true
+    }
+}
 
 impl<'plan> Iterator for SubtreeIterator<'plan> {
     type Item = &'plan usize;
@@ -89,7 +100,15 @@ impl<'plan> PlanTreeIterator<'plan> for FlashbackSubtreeIterator<'plan> {
     }
 }
 
-impl<'plan> SubtreePlanIterator<'plan> for FlashbackSubtreeIterator<'plan> {}
+impl<'plan> SubtreePlanIterator<'plan> for FlashbackSubtreeIterator<'plan> {
+    fn need_output(&self) -> bool {
+        false
+    }
+
+    fn need_motion_subtree(&self) -> bool {
+        true
+    }
+}
 
 impl<'plan> Iterator for FlashbackSubtreeIterator<'plan> {
     type Item = &'plan usize;
@@ -106,6 +125,66 @@ impl<'plan> Plan {
         current: &'plan usize,
     ) -> FlashbackSubtreeIterator<'plan> {
         FlashbackSubtreeIterator {
+            current,
+            child: RefCell::new(0),
+            plan: self,
+        }
+    }
+}
+
+/// An iterator used while copying and execution plan subtree.
+#[derive(Debug)]
+pub struct ExecPlanSubtreeIterator<'plan> {
+    current: &'plan usize,
+    child: RefCell<usize>,
+    plan: &'plan Plan,
+}
+
+impl<'nodes> TreeIterator<'nodes> for ExecPlanSubtreeIterator<'nodes> {
+    fn get_current(&self) -> &'nodes usize {
+        self.current
+    }
+
+    fn get_child(&self) -> &RefCell<usize> {
+        &self.child
+    }
+
+    fn get_nodes(&self) -> &'nodes Nodes {
+        &self.plan.nodes
+    }
+}
+
+impl<'plan> PlanTreeIterator<'plan> for ExecPlanSubtreeIterator<'plan> {
+    fn get_plan(&self) -> &'plan Plan {
+        self.plan
+    }
+}
+
+impl<'plan> SubtreePlanIterator<'plan> for ExecPlanSubtreeIterator<'plan> {
+    fn need_output(&self) -> bool {
+        true
+    }
+
+    fn need_motion_subtree(&self) -> bool {
+        false
+    }
+}
+
+impl<'plan> Iterator for ExecPlanSubtreeIterator<'plan> {
+    type Item = &'plan usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        subtree_next(self, &Snapshot::Oldest)
+    }
+}
+
+impl<'plan> Plan {
+    #[must_use]
+    pub fn exec_plan_subtree_iter(
+        &'plan self,
+        current: &'plan usize,
+    ) -> ExecPlanSubtreeIterator<'plan> {
+        ExecPlanSubtreeIterator {
             current,
             child: RefCell::new(0),
             plan: self,
@@ -173,7 +252,7 @@ fn subtree_next<'plan>(
                             .get_relational_from_reference_node(*iter.get_current())
                         {
                             match iter.get_plan().get_relation_node(*rel_id) {
-                                Ok(rel_node) if rel_node.is_subquery() => {
+                                Ok(rel_node) if rel_node.is_subquery() || rel_node.is_motion() => {
                                     // Check if the sub-query is an additional one.
                                     let parent = iter.get_plan().get_relation_node(parent_id);
                                     let mut is_additional = false;
@@ -219,15 +298,48 @@ fn subtree_next<'plan>(
                     }
                 }
 
-                Relational::Except { children, .. }
-                | Relational::Insert { children, .. }
-                | Relational::Motion { children, .. }
-                | Relational::ScanSubQuery { children, .. }
-                | Relational::UnionAll { children, .. } => {
+                Relational::Except {
+                    children, output, ..
+                }
+                | Relational::Insert {
+                    children, output, ..
+                }
+                | Relational::ScanSubQuery {
+                    children, output, ..
+                }
+                | Relational::UnionAll {
+                    children, output, ..
+                } => {
                     let step = *iter.get_child().borrow();
                     if step < children.len() {
                         *iter.get_child().borrow_mut() += 1;
                         return children.get(step);
+                    }
+                    if iter.need_output() && step == children.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(output);
+                    }
+                    None
+                }
+                Relational::Motion {
+                    children, output, ..
+                } => {
+                    if iter.need_motion_subtree() {
+                        let step = *iter.get_child().borrow();
+                        if step < children.len() {
+                            *iter.get_child().borrow_mut() += 1;
+                            return children.get(step);
+                        }
+                        if iter.need_output() && step == children.len() {
+                            *iter.get_child().borrow_mut() += 1;
+                            return Some(output);
+                        }
+                    } else {
+                        let step = *iter.get_child().borrow();
+                        if iter.need_output() && step == 0 {
+                            *iter.get_child().borrow_mut() += 1;
+                            return Some(output);
+                        }
                     }
                     None
                 }
@@ -248,7 +360,10 @@ fn subtree_next<'plan>(
                     None
                 }
                 Relational::Selection {
-                    children, filter, ..
+                    children,
+                    filter,
+                    output,
+                    ..
                 } => {
                     let step = *iter.get_child().borrow();
 
@@ -268,19 +383,37 @@ fn subtree_next<'plan>(
                                 );
                             }
                         },
-                        Ordering::Greater => None,
+                        Ordering::Greater => {
+                            if step == 2 && iter.need_output() {
+                                return Some(output);
+                            }
+                            None
+                        }
                     }
                 }
-                Relational::ValuesRow { data, .. } => {
+                Relational::ValuesRow { data, output, .. } => {
                     let step = *iter.get_child().borrow();
 
                     *iter.get_child().borrow_mut() += 1;
                     if step == 0 {
                         return Some(data);
                     }
+                    if iter.need_output() && step == 1 {
+                        return Some(output);
+                    }
                     None
                 }
-                Relational::ScanRelation { .. } => None,
+                Relational::ScanRelation { output, .. } => {
+                    if iter.need_output() {
+                        let step = *iter.get_child().borrow();
+
+                        *iter.get_child().borrow_mut() += 1;
+                        if step == 0 {
+                            return Some(output);
+                        }
+                    }
+                    None
+                }
             },
         };
     }

@@ -273,7 +273,7 @@ impl Relational {
         ))
     }
 
-    /// Gets output tuple node index in plan node arena.
+    /// Gets an immutable id of the output tuple node of the plan's arena.
     #[must_use]
     pub fn output(&self) -> usize {
         match self {
@@ -291,7 +291,25 @@ impl Relational {
         }
     }
 
-    // Gets a copy of the children nodes.
+    /// Gets an immutable reference to the output tuple node id.
+    #[must_use]
+    pub fn mut_output(&mut self) -> &mut usize {
+        match self {
+            Relational::Except { output, .. }
+            | Relational::InnerJoin { output, .. }
+            | Relational::Insert { output, .. }
+            | Relational::Motion { output, .. }
+            | Relational::Projection { output, .. }
+            | Relational::ScanRelation { output, .. }
+            | Relational::ScanSubQuery { output, .. }
+            | Relational::Selection { output, .. }
+            | Relational::UnionAll { output, .. }
+            | Relational::Values { output, .. }
+            | Relational::ValuesRow { output, .. } => output,
+        }
+    }
+
+    // Gets an immutable reference to the children nodes.
     #[must_use]
     pub fn children(&self) -> Option<&[usize]> {
         match self {
@@ -305,6 +323,44 @@ impl Relational {
             | Relational::UnionAll { children, .. }
             | Relational::ValuesRow { children, .. }
             | Relational::Values { children, .. } => Some(children),
+            Relational::ScanRelation { .. } => None,
+        }
+    }
+
+    // Gets a mutable reference to the children nodes.
+    #[must_use]
+    pub fn mut_children(&mut self) -> Option<&mut [usize]> {
+        match self {
+            Relational::Except {
+                ref mut children, ..
+            }
+            | Relational::InnerJoin {
+                ref mut children, ..
+            }
+            | Relational::Insert {
+                ref mut children, ..
+            }
+            | Relational::Motion {
+                ref mut children, ..
+            }
+            | Relational::Projection {
+                ref mut children, ..
+            }
+            | Relational::ScanSubQuery {
+                ref mut children, ..
+            }
+            | Relational::Selection {
+                ref mut children, ..
+            }
+            | Relational::UnionAll {
+                ref mut children, ..
+            }
+            | Relational::ValuesRow {
+                ref mut children, ..
+            }
+            | Relational::Values {
+                ref mut children, ..
+            } => Some(children),
             Relational::ScanRelation { .. } => None,
         }
     }

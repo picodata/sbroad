@@ -131,6 +131,12 @@ where
         &self.exec_plan
     }
 
+    /// Get the mutable reference to the execution plan of the query.
+    #[must_use]
+    pub fn get_mut_exec_plan(&mut self) -> &mut ExecutionPlan {
+        &mut self.exec_plan
+    }
+
     /// Get the coordinator runtime of the query.
     #[must_use]
     pub fn get_coordinator(&self) -> &C {
