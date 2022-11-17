@@ -27,7 +27,7 @@ end
 _G.prepare = function(pattern)
     local prep, err = box.prepare(pattern)
     if err ~= nil then
-        error("Failed to prepare statement: %s. Error: %s", pattern, err)
+        error(string.format("Failed to prepare statement: %s. Error: %s", pattern, err), 1)
     end
     return prep.stmt_id
 end
