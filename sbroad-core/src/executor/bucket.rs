@@ -123,7 +123,7 @@ where
 
                     // The right side is a regular row with constants
                     // on the positions of the left keys (if we are lucky).
-                    for key in keys {
+                    for key in keys.iter() {
                         let mut values: Vec<&Value> = Vec::new();
                         for position in &key.positions {
                             let right_column_id =

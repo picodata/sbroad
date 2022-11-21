@@ -38,11 +38,10 @@ fn scan_rel() {
 
     plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(row) = plan.get_node(scan_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
             row.distribution().unwrap(),
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            }
+            &Distribution::Segment { keys: keys.into() }
         );
     } else {
         panic!("Wrong output node type!");

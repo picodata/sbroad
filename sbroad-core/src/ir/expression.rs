@@ -7,9 +7,9 @@
 //! - distribution of the data in the tuple
 
 use ahash::RandomState;
-use std::collections::{HashMap, HashSet};
-
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use tarantool::tlua::{self, LuaRead, PushInto};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
@@ -33,7 +33,7 @@ pub mod concat;
 /// and should not be changed. It ensures that we always know the
 /// name of any column in the tuple and therefore simplifies AST
 /// deserialization.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Expression {
     /// Expression name.
     ///

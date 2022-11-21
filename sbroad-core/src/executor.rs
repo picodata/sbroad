@@ -23,7 +23,6 @@
 //! 5. Repeats step 3 till we are done with motion layers.
 //! 6. Executes the final IR top subtree and returns the final result to the user.
 
-use ahash::RandomState;
 use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
 use std::rc::Rc;
@@ -157,18 +156,18 @@ where
         }
 
         let slices = self.exec_plan.get_ir_plan().clone_slices();
-        if let Some(slices) = slices {
+        if let Some(slices) = slices.slices() {
             for slice in slices {
-                for motion_id in slice {
+                for motion_id in slice.positions() {
                     // TODO: make it work in parallel
-                    let top_id = self.exec_plan.get_motion_subtree_root(motion_id)?;
+                    let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
                     let buckets = self.bucket_discovery(top_id)?;
                     let virtual_table = self.coordinator.materialize_motion(
                         &mut self.exec_plan,
-                        motion_id,
+                        *motion_id,
                         &buckets,
                     )?;
-                    self.add_motion_result(motion_id, virtual_table)?;
+                    self.add_motion_result(*motion_id, virtual_table)?;
                 }
             }
         }
@@ -234,8 +233,7 @@ where
     ) -> Result<(), QueryPlannerError> {
         vtable.set_motion_key(sharding_key);
 
-        let mut index: HashMap<u64, Vec<usize>, RandomState> =
-            HashMap::with_hasher(RandomState::new());
+        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
         for (pos, tuple) in vtable.get_tuples().iter().enumerate() {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
             for target in &sharding_key.targets {

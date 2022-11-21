@@ -2,8 +2,10 @@
 
 use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroI32;
 
 use serde::{Deserialize, Serialize};
+use tarantool::tlua::{self, AsLua, LuaRead, PushGuard, PushInto, Void};
 
 use crate::collection;
 use crate::errors::QueryPlannerError;
@@ -18,7 +20,7 @@ use super::{Node, Plan};
 /// If table T1 is segmented by columns (a, b) and produces
 /// tuples with columns (a, b, c), it means that for any T1 tuple
 /// on a segment S1: f(a, b) = S1 and (a, b) is a segmentation key.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Key {
     /// A list of column positions in the tuple that form a
     /// segmentation key.
@@ -32,8 +34,61 @@ impl Key {
     }
 }
 
-/// Tuple distribution in the cluster.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct KeySet(HashSet<Key>);
+
+impl KeySet {
+    pub fn iter(&self) -> impl Iterator<Item = &Key> {
+        self.0.iter()
+    }
+
+    #[must_use]
+    pub fn intersection(&self, other: &Self) -> Self {
+        KeySet(self.0.intersection(&other.0).cloned().collect())
+    }
+
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        KeySet(self.0.union(&other.0).cloned().collect())
+    }
+}
+
+impl From<HashSet<Key>> for KeySet {
+    fn from(keys: HashSet<Key>) -> Self {
+        Self(keys)
+    }
+}
+
+impl<L> LuaRead<L> for KeySet
+where
+    L: AsLua,
+{
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<KeySet, L> {
+        match HashMap::<Key, ()>::lua_read_at_position(lua, index) {
+            Ok(map) => {
+                let keys = map.into_iter().map(|(k, _)| k).collect();
+                Ok(KeySet(keys))
+            }
+            Err(lua) => Err(lua),
+        }
+    }
+}
+
+impl<L> PushInto<L> for KeySet
+where
+    L: AsLua,
+{
+    type Err = Void;
+    fn push_into_lua(self, lua: L) -> Result<PushGuard<L>, (Void, L)> {
+        let map: HashMap<Key, ()> = self.0.into_iter().map(|k| (k, ())).collect();
+        Ok(tlua::push_userdata(map, lua, |_| {}))
+    }
+}
+
+impl<L> tlua::PushOneInto<L> for KeySet where L: AsLua {}
+
+/// Tuple distribution in the cluster.
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Distribution {
     /// A tuple can be located on any data node.
     /// Example: projection removes the segment key columns.
@@ -45,7 +100,7 @@ pub enum Distribution {
     /// Example: tuples from the segmented table.
     Segment {
         /// A set of distribution keys (we can have multiple keys after join)
-        keys: HashSet<Key>,
+        keys: KeySet,
     },
 }
 
@@ -66,13 +121,13 @@ impl Distribution {
                 },
             ) => {
                 let mut keys: HashSet<Key> = HashSet::new();
-                for key in keys_left.intersection(keys_right) {
+                for key in keys_left.intersection(keys_right).iter() {
                     keys.insert(Key::new(key.positions.clone()));
                 }
                 if keys.is_empty() {
                     Distribution::Any
                 } else {
-                    Distribution::Segment { keys }
+                    Distribution::Segment { keys: keys.into() }
                 }
             }
         }
@@ -101,13 +156,13 @@ impl Distribution {
                 },
             ) => {
                 let mut keys: HashSet<Key> = HashSet::new();
-                for key in keys_left.union(keys_right) {
+                for key in keys_left.union(keys_right).iter() {
                     keys.insert(Key::new(key.positions.clone()));
                 }
                 if keys.is_empty() {
                     Distribution::Any
                 } else {
-                    Distribution::Segment { keys }
+                    Distribution::Segment { keys: keys.into() }
                 }
             }
         }
@@ -362,7 +417,7 @@ impl Plan {
                     Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Segment { keys }) => {
                         let mut new_keys: HashSet<Key> = HashSet::new();
-                        for key in keys {
+                        for key in keys.iter() {
                             let mut new_key: Key = Key::new(Vec::new());
                             let all_found = key.positions.iter().all(|pos| {
                                 child_pos_map
@@ -381,7 +436,9 @@ impl Plan {
                         if new_keys.is_empty() {
                             return Ok(Distribution::Any);
                         }
-                        return Ok(Distribution::Segment { keys: new_keys });
+                        return Ok(Distribution::Segment {
+                            keys: new_keys.into(),
+                        });
                     }
                 }
             }
@@ -432,9 +489,8 @@ impl Plan {
                     ..
                 } = self.get_mut_expression_node(row_id)?
                 {
-                    *distribution = Some(Distribution::Segment {
-                        keys: collection! { new_key },
-                    });
+                    let keys: HashSet<_> = collection! { new_key };
+                    *distribution = Some(Distribution::Segment { keys: keys.into() });
                 }
             }
             return Ok(());

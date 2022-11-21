@@ -3,10 +3,10 @@
 //! Contains operator nodes that transform the tuples in IR tree.
 
 use ahash::RandomState;
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
+use tarantool::tlua::{self, LuaRead, PushInto};
 
 use crate::errors::QueryPlannerError;
 
@@ -14,12 +14,12 @@ use super::expression::Expression;
 use super::transformation::redistribution::{DataGeneration, MotionPolicy};
 use super::{Node, Nodes, Plan};
 use crate::collection;
-use crate::ir::distribution::Distribution;
+use crate::ir::distribution::{Distribution, KeySet};
 use crate::ir::relation::ColumnRole;
 use traversal::Bft;
 
 /// Binary operator returning Bool expression.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
 pub enum Bool {
     /// `&&`
     And,
@@ -85,7 +85,7 @@ impl Display for Bool {
 }
 
 /// Unary operator returning Bool expression.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
 pub enum Unary {
     /// `is null`
     IsNull,
@@ -125,7 +125,7 @@ impl Display for Unary {
 ///
 /// Transforms input tuple(s) into the output one using the
 /// relation algebra logic.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Relational {
     Except {
         /// Contains exactly two elements: left and right node indexes
@@ -614,8 +614,9 @@ impl Plan {
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
+        let keys: HashSet<_> = collection! { rel.key.clone() };
         let dist = Distribution::Segment {
-            keys: collection! { rel.key.clone() },
+            keys: KeySet::from(keys),
         };
         let output = self.nodes.add_row_of_aliases(refs, Some(dist))?;
         let insert = Node::Relational(Relational::Insert {

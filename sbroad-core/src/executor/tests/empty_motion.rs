@@ -23,7 +23,15 @@ fn empty_motion1_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion1_id = query.exec_plan.get_ir_plan().clone_slices().unwrap()[0][0];
+    let motion1_id = query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap()
+        .clone();
     let mut virtual_t1 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
@@ -32,7 +40,15 @@ fn empty_motion1_test() {
             .unwrap();
     }
     query.coordinator.add_virtual_table(motion1_id, virtual_t1);
-    let motion2_id = query.exec_plan.get_ir_plan().clone_slices().unwrap()[0][1];
+    let motion2_id = query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(1)
+        .unwrap()
+        .clone();
     let mut virtual_t2 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {

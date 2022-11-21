@@ -6,6 +6,7 @@ use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
+use crate::ir::Slices;
 use ahash::RandomState;
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -351,7 +352,7 @@ fn union_all_in_sq() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -363,7 +364,7 @@ fn inner_join_eq_for_keys() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -376,7 +377,7 @@ fn join_inner_sq_eq_for_keys() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -388,14 +389,7 @@ fn join_inner_eq_non_match_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -422,7 +416,7 @@ fn join_inner_sq_eq_for_keys_with_const() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -434,14 +428,7 @@ fn join_inner_sq_less_for_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -459,14 +446,7 @@ fn join_inner_sq_eq_no_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -484,14 +464,7 @@ fn join_inner_sq_eq_no_outer_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -510,14 +483,7 @@ fn inner_join_full_policy_sq_in_filter() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -537,7 +503,7 @@ fn inner_join_local_policy_sq_in_filter() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -553,7 +519,7 @@ fn inner_join_local_policy_sq_with_union_all_in_filter() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -568,14 +534,7 @@ fn inner_join_full_policy_sq_with_union_all_in_filter() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -603,7 +562,7 @@ fn join_inner_and_local_full_policies() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -616,14 +575,7 @@ fn join_inner_or_local_full_policies() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
@@ -657,14 +609,7 @@ fn join1() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -687,12 +632,8 @@ fn join1() {
     }
     let join = join_node.unwrap();
     let dist = plan.get_distribution(join.output()).unwrap();
-    assert_eq!(
-        &Distribution::Segment {
-            keys: collection! { Key::new(vec![0]) },
-        },
-        dist,
-    );
+    let keys: HashSet<_> = collection! { Key::new(vec![0]) };
+    assert_eq!(&Distribution::Segment { keys: keys.into() }, dist,);
 }
 
 #[test]
@@ -701,14 +642,7 @@ fn redistribution1() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -733,14 +667,7 @@ fn redistribution2() {
     plan.add_motions().unwrap();
     // Though data allows to be inserted locally still gather it on the
     // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -765,14 +692,7 @@ fn redistribution3() {
     plan.add_motions().unwrap();
     // Though data allows to be inserted locally still gather it on the
     // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -795,14 +715,7 @@ fn redistribution4() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -825,14 +738,7 @@ fn redistribution5() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -855,14 +761,7 @@ fn redistribution6() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_id = *plan
-        .slices
-        .as_ref()
-        .unwrap()
-        .first()
-        .unwrap()
-        .first()
-        .unwrap();
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(
@@ -882,8 +781,7 @@ fn redistribution6() {
 ///   Motion node does not found
 #[must_use]
 pub fn get_motion_id(plan: &Plan, slice_id: usize, motion_idx: usize) -> Option<&usize> {
-    let slice = plan.slices.as_ref().unwrap().get(slice_id).unwrap();
-    slice.get(motion_idx)
+    plan.slices.slice(slice_id).unwrap().position(motion_idx)
 }
 
 #[cfg(test)]

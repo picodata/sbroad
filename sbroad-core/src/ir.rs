@@ -2,9 +2,10 @@
 //!
 //! Contains the logical plan tree and helpers.
 
-use std::collections::{HashMap, HashSet};
-
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::num::NonZeroI32;
+use tarantool::tlua::{self, AsLua, LuaRead, PushInto};
 
 use expression::Expression;
 use operator::Relational;
@@ -66,6 +67,36 @@ impl TransformationLog {
     }
 }
 
+impl<L> tlua::LuaRead<L> for TransformationLog
+where
+    L: tlua::AsLua,
+{
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<TransformationLog, L> {
+        match HashMap::lua_read_at_position(lua, index) {
+            Ok(map) => {
+                let mut log = TransformationLog::new();
+                for (new_id, old_id) in map {
+                    log.add(old_id, new_id);
+                }
+                Ok(log)
+            }
+            Err(lua) => Err(lua),
+        }
+    }
+}
+
+impl<L> tlua::PushInto<L> for TransformationLog
+where
+    L: AsLua,
+{
+    type Err = tlua::Void;
+    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
+        Ok(tlua::push_userdata(self.0, lua, |_| {}))
+    }
+}
+
+impl<L> tlua::PushOneInto<L> for TransformationLog where L: tlua::AsLua {}
+
 /// Plan tree node.
 ///
 /// There are two kinds of node variants: expressions and relational
@@ -78,7 +109,7 @@ impl TransformationLog {
 ///
 /// Enum was chosen as we don't want to mess with dynamic
 /// dispatching and its performance penalties.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
@@ -86,7 +117,7 @@ pub enum Node {
 }
 
 /// Plan nodes storage.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Nodes {
     /// We don't want to mess with the borrow checker and RefCell/Rc,
     /// so all nodes are stored in the single arena ("nodes" array).
@@ -131,8 +162,56 @@ impl Nodes {
     }
 }
 
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Slice(Vec<usize>);
+
+impl From<Vec<usize>> for Slice {
+    fn from(vec: Vec<usize>) -> Self {
+        Self(vec)
+    }
+}
+
+impl Slice {
+    #[must_use]
+    pub fn position(&self, index: usize) -> Option<&usize> {
+        self.0.get(index)
+    }
+
+    #[must_use]
+    pub fn positions(&self) -> &[usize] {
+        &self.0
+    }
+}
+
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Slices(Option<Vec<Slice>>);
+
+impl From<Option<Vec<Slice>>> for Slices {
+    fn from(vec: Option<Vec<Slice>>) -> Self {
+        Self(vec)
+    }
+}
+
+impl From<Option<Vec<Vec<usize>>>> for Slices {
+    fn from(vec: Option<Vec<Vec<usize>>>) -> Self {
+        Self(vec.map(|vec| vec.into_iter().map(Slice::from).collect()))
+    }
+}
+
+impl Slices {
+    #[must_use]
+    pub fn slice(&self, index: usize) -> Option<&Slice> {
+        self.0.as_ref().and_then(|slices| slices.get(index))
+    }
+
+    #[must_use]
+    pub fn slices(&self) -> Option<&Vec<Slice>> {
+        self.0.as_ref()
+    }
+}
+
 /// Logical plan tree structure.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Plan {
     /// Append only arena for the plan nodes.
     pub(crate) nodes: Nodes,
@@ -146,7 +225,7 @@ pub struct Plan {
     /// Motions level by level in a bottom-up manner to the "slices" array
     /// of arrays. All the slices on the same level can be executed in parallel.
     /// In fact, "slices" is a prepared set of commands for the executor.
-    slices: Option<Vec<Vec<usize>>>,
+    slices: Slices,
     /// The plan top is marked as optional for tree creation convenience.
     /// We build the plan tree in a bottom-up manner, so the top would
     /// be added last. The plan without a top should be treated as invalid.
@@ -208,7 +287,7 @@ impl Plan {
         Plan {
             nodes: Nodes { arena: Vec::new() },
             relations: None,
-            slices: None,
+            slices: Slices(None),
             top: None,
             is_explain: false,
             undo: TransformationLog::new(),
@@ -255,7 +334,7 @@ impl Plan {
 
     /// Clone plan slices.
     #[must_use]
-    pub fn clone_slices(&self) -> Option<Vec<Vec<usize>>> {
+    pub fn clone_slices(&self) -> Slices {
         self.slices.clone()
     }
 
@@ -543,7 +622,7 @@ impl Plan {
 
     /// Set slices of the plan.
     pub fn set_slices(&mut self, slices: Option<Vec<Vec<usize>>>) {
-        self.slices = slices;
+        self.slices = slices.into();
     }
 }
 

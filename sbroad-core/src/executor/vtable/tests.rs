@@ -24,7 +24,7 @@ fn virtual_table() {
         tuples: vec![vec![Value::from(1_u64)]],
         name: Some(String::from("test")),
         distribution_key: None,
-        index: HashMap::with_hasher(RandomState::new()),
+        index: VTableIndex::new(),
     };
 
     assert_eq!(expected, vtable);

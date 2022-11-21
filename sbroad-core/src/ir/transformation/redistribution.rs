@@ -1,15 +1,15 @@
 //! Resolve distribution conflicts and insert motion nodes to IR.
 
 use ahash::RandomState;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-
-use serde::{Deserialize, Serialize};
+use tarantool::tlua::{self, LuaRead, PushInto};
 use traversal::{Bft, DftPost};
 
 use crate::errors::QueryPlannerError;
-use crate::ir::distribution::{Distribution, Key};
+use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Column;
@@ -19,7 +19,7 @@ use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
 /// Redistribution key targets (columns or values of the key).
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Target {
     /// A position of the existing column in the tuple.
     Reference(usize),
@@ -31,7 +31,7 @@ pub enum Target {
     Value(Value),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct MotionKey {
     pub targets: Vec<Target>,
 }
@@ -63,7 +63,7 @@ impl From<&Key> for MotionKey {
 }
 
 /// Determinate what portion of data to move between data nodes in cluster.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionPolicy {
     /// Move all data.
     Full,
@@ -74,7 +74,7 @@ pub enum MotionPolicy {
 }
 
 /// Determine what portion of data to generate during motion.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DataGeneration {
     /// Nothing to generate.
     None,
@@ -304,7 +304,7 @@ impl Plan {
                     keys: ref keys_inner,
                 } = inner_dist
                 {
-                    if keys_outer.intersection(keys_inner).next().is_some() {
+                    if keys_outer.intersection(keys_inner).iter().next().is_some() {
                         return Ok(MotionPolicy::Local);
                     }
                 }
@@ -582,7 +582,7 @@ impl Plan {
         let right_dist = self.get_distribution(right_row_id)?;
 
         let get_policy_for_one_side_segment = |row_map: &HashMap<usize, usize>,
-                                               keys_set: &HashSet<Key>|
+                                               keys_set: &KeySet|
          -> Result<MotionPolicy, QueryPlannerError> {
             let keys = keys_set.iter().map(Clone::clone).collect::<Vec<_>>();
             let (outer_keys, _) =
@@ -910,12 +910,7 @@ impl Plan {
                             } = right_dist
                             {
                                 // Distribution key sets have common keys, no need for the data motion.
-                                if right_keys
-                                    .intersection(left_keys)
-                                    .into_iter()
-                                    .next()
-                                    .is_some()
-                                {
+                                if right_keys.intersection(left_keys).iter().next().is_some() {
                                     return Ok(map);
                                 }
                             }

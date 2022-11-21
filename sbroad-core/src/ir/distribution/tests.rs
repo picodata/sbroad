@@ -34,10 +34,9 @@ fn proj_preserve_dist_key() {
     };
     plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
@@ -49,10 +48,9 @@ fn proj_preserve_dist_key() {
     };
     plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             proj_row.distribution().unwrap()
         );
     }
@@ -76,20 +74,18 @@ fn proj_shuffle_dist_key() {
 
     plan.set_distribution(scan_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1, 0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
 
     plan.set_distribution(proj_output).unwrap();
     if let Node::Expression(proj_row) = plan.get_node(proj_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0, 1]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0, 1]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             proj_row.distribution().unwrap()
         );
     }
@@ -112,10 +108,9 @@ fn proj_shrink_dist_key_1() {
     let proj_output = 14;
 
     plan.set_distribution(scan_output).unwrap();
+    let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
     assert_eq!(
-        &Distribution::Segment {
-            keys: collection! { Key::new(vec![1, 0]) }
-        },
+        &Distribution::Segment { keys: keys.into() },
         plan.get_distribution(scan_output).unwrap()
     );
 
@@ -143,10 +138,9 @@ fn proj_shrink_dist_key_2() {
     let proj_output = 12;
 
     plan.set_distribution(scan_output).unwrap();
+    let keys: HashSet<_> = collection! { Key::new(vec![1, 0]) };
     assert_eq!(
-        &Distribution::Segment {
-            keys: collection! { Key::new(vec![1, 0]) }
-        },
+        &Distribution::Segment { keys: keys.into() },
         plan.get_distribution(scan_output).unwrap()
     );
 
@@ -176,18 +170,16 @@ fn union_all_fallback_to_random() {
     let union_output = 16;
 
     plan.set_distribution(scan_t1_output).unwrap();
+    let keys: HashSet<_> = collection! { Key::new(vec![0]) };
     assert_eq!(
-        &Distribution::Segment {
-            keys: collection! { Key::new(vec![0]) }
-        },
+        &Distribution::Segment { keys: keys.into() },
         plan.get_distribution(scan_t1_output).unwrap()
     );
 
     plan.set_distribution(scan_t2_output).unwrap();
+    let keys: HashSet<_> = collection! { Key::new(vec![1]) };
     assert_eq!(
-        &Distribution::Segment {
-            keys: collection! { Key::new(vec![1]) }
-        },
+        &Distribution::Segment { keys: keys.into() },
         plan.get_distribution(scan_t2_output).unwrap()
     );
 
@@ -218,30 +210,27 @@ fn union_preserve_dist() {
 
     plan.set_distribution(scan_t1_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
 
     plan.set_distribution(scan_t2_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
 
     plan.set_distribution(union_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(union_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
@@ -267,30 +256,27 @@ fn join_unite_keys() {
 
     plan.set_distribution(scan_t1_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t1_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
 
     plan.set_distribution(scan_t2_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(scan_t2_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![1]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![1]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }
 
     plan.set_distribution(join_output).unwrap();
     if let Node::Expression(scan_row) = plan.get_node(join_output).unwrap() {
+        let keys: HashSet<_> = collection! { Key::new(vec![0]), Key::new(vec![3]) };
         assert_eq!(
-            &Distribution::Segment {
-                keys: collection! { Key::new(vec![0]), Key::new(vec![3]) }
-            },
+            &Distribution::Segment { keys: keys.into() },
             scan_row.distribution().unwrap()
         );
     }

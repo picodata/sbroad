@@ -7,7 +7,7 @@ use std::fmt::Formatter;
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer, Serialize};
-use tarantool::tlua::{self, LuaRead};
+use tarantool::tlua::{self, LuaRead, PushInto};
 
 use crate::errors::QueryPlannerError;
 use crate::ir::value::Value;
@@ -18,7 +18,7 @@ const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
 /// This `Type` doesn't have any relation with `Type` from IR.
-#[derive(LuaRead, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
+#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
     Boolean,
     Decimal,
@@ -56,7 +56,7 @@ impl Type {
 }
 
 /// A role of the column in the relation.
-#[derive(PartialEq, Debug, Eq, Clone)]
+#[derive(LuaRead, PushInto, PartialEq, Debug, Eq, Clone)]
 pub enum ColumnRole {
     /// General purpose column available for the user.
     User,
@@ -65,7 +65,7 @@ pub enum ColumnRole {
 }
 
 /// Relation column.
-#[derive(PartialEq, Debug, Eq, Clone)]
+#[derive(LuaRead, PushInto, PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
@@ -176,7 +176,7 @@ impl Column {
 /// Table is a tuple storage in the cluster.
 ///
 /// Tables are tuple storages in the cluster.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Table {
     /// List of the columns.
     pub columns: Vec<Column>,

@@ -5,8 +5,9 @@ use crate::frontend::sql::ast::Type as AstType;
 use crate::ir::expression::Expression;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
+use tarantool::tlua::{self, LuaRead, PushInto};
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Type {
     Any,
     Boolean,

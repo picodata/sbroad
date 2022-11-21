@@ -2,6 +2,7 @@ use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::Slices;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -39,7 +40,7 @@ fn between2() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
 
 #[test]
@@ -70,5 +71,5 @@ fn between4() {
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
     let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(expected, plan.slices);
+    assert_eq!(Slices::from(expected), plan.slices);
 }
