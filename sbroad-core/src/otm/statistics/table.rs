@@ -27,7 +27,7 @@ use opentelemetry::trace::SpanId;
 use space::Field;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use tarantool::index::{IndexFieldType, IndexOptions, IndexType, IteratorType};
+use tarantool::index::{FieldType, IndexOptions, IndexType, IteratorType};
 use tarantool::space::{Space, SpaceCreateOptions, SpaceEngineType};
 use tarantool::{index, space};
 
@@ -340,7 +340,7 @@ impl TarantoolSpace for QuerySpace {
         let pk = IndexOptions {
             r#type: Some(IndexType::Tree),
             unique: Some(true),
-            parts: Some(vec![Part::new(1, IndexFieldType::String)]),
+            parts: Some(vec![Part::new(1, FieldType::String)]),
             if_not_exists: Some(true),
             ..Default::default()
         };
@@ -427,8 +427,8 @@ impl TarantoolSpace for StatSpace {
             r#type: Some(IndexType::Tree),
             unique: Some(true),
             parts: Some(vec![
-                Part::new(1, IndexFieldType::String),
-                Part::new(2, IndexFieldType::String),
+                Part::new(1, FieldType::String),
+                Part::new(2, FieldType::String),
             ]),
             if_not_exists: Some(true),
             ..Default::default()
