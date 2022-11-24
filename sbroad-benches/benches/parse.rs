@@ -1,12 +1,14 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::Query;
+use sbroad::frontend::sql::ast::AbstractSyntaxTree;
+use sbroad::frontend::Ast;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
 use sbroad_benches::engine::RouterRuntimeMock;
 
 #[allow(clippy::too_many_lines)]
-fn query1_sql() -> String {
+fn query_sql() -> String {
     let sql = r#"SELECT
     *
     FROM
@@ -233,7 +235,18 @@ fn query1_sql() -> String {
     sql.into()
 }
 
-fn query1(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
+fn parse_ast(pattern: &str) {
+    AbstractSyntaxTree::new(pattern).unwrap();
+}
+
+fn bench_ast_build(c: &mut Criterion) {
+    c.bench_function("parsing_ast", |b| {
+        let sql_str = query_sql();
+        b.iter(|| parse_ast(&sql_str));
+    });
+}
+
+fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
@@ -244,20 +257,20 @@ fn query1(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     plan.to_sql(&nodes, &buckets).unwrap();
 }
 
-fn bench_query1(c: &mut Criterion) {
+fn bench_ir_build(c: &mut Criterion) {
     let mut engine = RouterRuntimeMock::new();
-    let sql = query1_sql();
+    let sql = query_sql();
     let mut sys_from: u64 = 42;
     let mut reestrid: u64 = 666;
-    c.bench_function("query1", |b| {
+    c.bench_function("building_ir", |b| {
         b.iter(|| {
             let params = vec![Value::from(sys_from), Value::from(reestrid)];
             sys_from += 1;
             reestrid += 1;
-            query1(&sql, params, &mut engine);
+            build_ir(&sql, params, &mut engine);
         });
     });
 }
 
-criterion_group!(benches, bench_query1);
+criterion_group!(benches, bench_ir_build, bench_ast_build);
 criterion_main!(benches);
