@@ -1,5 +1,5 @@
 local t = require('luatest')
-local g = t.group('broken_cache')
+local g = t.group('configuration.sql_cache')
 
 local helper = require('test.helper.cluster_async_replication')
 local cluster = nil
