@@ -5,10 +5,9 @@ use std::hash::Hash;
 use std::num::NonZeroI32;
 use std::str::FromStr;
 
-use serde::ser;
 use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
-use tarantool::tlua;
+use tarantool::tlua::{self, LuaRead};
 
 use crate::error;
 use crate::executor::hash::ToHashString;
@@ -108,7 +107,7 @@ impl From<bool> for Trivalent {
 
 /// Values are used to keep constants in the IR tree
 /// or results in the virtual tables.
-#[derive(Hash, PartialEq, Debug, Clone)]
+#[derive(Hash, PartialEq, Debug, Clone, Deserialize, Serialize)]
 pub enum Value {
     /// Boolean type.
     Boolean(bool),
@@ -135,14 +134,14 @@ impl Eq for Value {}
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Value::Boolean(v) => write!(f, "{}", v),
+            Value::Boolean(v) => write!(f, "{v}"),
             Value::Null => write!(f, "NULL"),
-            Value::Unsigned(v) => write!(f, "{}", v),
-            Value::Integer(v) => write!(f, "{}", v),
+            Value::Unsigned(v) => write!(f, "{v}"),
+            Value::Integer(v) => write!(f, "{v}"),
             Value::Double(v) => fmt::Display::fmt(&v, f),
             Value::Decimal(v) => fmt::Display::fmt(v, f),
-            Value::String(v) => write!(f, "'{}'", v),
-            Value::Tuple(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "'{v}'"),
+            Value::Tuple(v) => write!(f, "{v}"),
         }
     }
 }
@@ -256,8 +255,8 @@ impl Value {
                 Value::Integer(o) => (s == o).into(),
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
                 // If double can't be converted to decimal without error then it is not equal to integer.
-                Value::Double(o) => (Decimal::from_str(&format!("{}", s))
-                    == Decimal::from_str(&format!("{}", o)))
+                Value::Double(o) => (Decimal::from_str(&format!("{s}"))
+                    == Decimal::from_str(&format!("{o}")))
                 .into(),
                 Value::Unsigned(o) => (&Decimal::from(*s) == o).into(),
             },
@@ -266,11 +265,11 @@ impl Value {
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (*s == Double::from(*o)).into(),
                 // If double can't be converted to decimal without error then it is not equal to decimal.
-                Value::Decimal(o) => (Decimal::from_str(&format!("{}", s)) == Ok(*o)).into(),
+                Value::Decimal(o) => (Decimal::from_str(&format!("{s}")) == Ok(*o)).into(),
                 Value::Double(o) => (s == o).into(),
                 // If double can't be converted to decimal without error then it is not equal to unsigned.
                 Value::Unsigned(o) => {
-                    (Decimal::from_str(&format!("{}", s)) == Ok(Decimal::from(*o))).into()
+                    (Decimal::from_str(&format!("{s}")) == Ok(Decimal::from(*o))).into()
                 }
             },
             Value::Decimal(s) => match other {
@@ -279,7 +278,7 @@ impl Value {
                 Value::Integer(o) => (s == &Decimal::from(*o)).into(),
                 Value::Decimal(o) => (s == o).into(),
                 // If double can't be converted to decimal without error then it is not equal to decimal.
-                Value::Double(o) => (Ok(*s) == Decimal::from_str(&format!("{}", o))).into(),
+                Value::Double(o) => (Ok(*s) == Decimal::from_str(&format!("{o}"))).into(),
                 Value::Unsigned(o) => (s == &Decimal::from(*o)).into(),
             },
             Value::Unsigned(s) => match other {
@@ -289,7 +288,7 @@ impl Value {
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
                 // If double can't be converted to decimal without error then it is not equal to unsigned.
                 Value::Double(o) => {
-                    (Ok(Decimal::from(*s)) == Decimal::from_str(&format!("{}", o))).into()
+                    (Ok(Decimal::from(*s)) == Decimal::from_str(&format!("{o}"))).into()
                 }
                 Value::Unsigned(o) => (s == o).into(),
             },
@@ -337,71 +336,75 @@ impl ToHashString for Value {
     }
 }
 
-impl Serialize for Value {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: ser::Serializer,
-    {
-        match &self {
-            Value::Unsigned(v) => serializer.serialize_u64(*v),
-            Value::Integer(v) => serializer.serialize_i64(*v),
-            Value::Decimal(v) => v.serialize(serializer),
-            Value::Double(Double { value }) => serializer.serialize_f64(*value),
-            Value::Boolean(v) => serializer.serialize_bool(*v),
-            Value::String(v) => serializer.serialize_str(v),
-            Value::Tuple(v) => v.serialize(serializer),
-            Value::Null => serializer.serialize_none(),
+#[allow(clippy::module_name_repetitions)]
+#[derive(Clone, LuaRead, PartialEq, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum EncodedValue {
+    Boolean(bool),
+    Decimal(Decimal),
+    Double(Double),
+    Integer(i64),
+    Unsigned(u64),
+    Float(f64),
+    String(String),
+    Tuple(Tuple),
+    Null(()),
+}
+
+impl fmt::Display for EncodedValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            EncodedValue::Boolean(v) => write!(f, "{v}"),
+            EncodedValue::Decimal(v) => fmt::Display::fmt(v, f),
+            EncodedValue::Double(v) => fmt::Display::fmt(&v, f),
+            EncodedValue::Integer(v) => write!(f, "{v}"),
+            EncodedValue::Unsigned(v) => write!(f, "{v}"),
+            EncodedValue::Float(v) => write!(f, "{v}"),
+            EncodedValue::String(v) => write!(f, "'{v}'"),
+            EncodedValue::Tuple(v) => write!(f, "{v}"),
+            EncodedValue::Null(_) => write!(f, "NULL"),
         }
     }
 }
 
-impl<'de> Deserialize<'de> for Value {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum EncodedValue {
-            Unsigned(u64),
-            Integer(i64),
-            Decimal(Decimal),
-            Double(Double),
-            Float(f64),
-            Boolean(bool),
-            String(String),
-            Tuple(Tuple),
-            Null(()),
+impl From<Value> for EncodedValue {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Boolean(v) => EncodedValue::Boolean(v),
+            Value::Decimal(v) => EncodedValue::Decimal(v),
+            Value::Double(v) => EncodedValue::Double(v),
+            Value::Integer(v) => EncodedValue::Integer(v),
+            Value::Null => EncodedValue::Null(()),
+            Value::String(v) => EncodedValue::String(v),
+            Value::Tuple(v) => EncodedValue::Tuple(v),
+            Value::Unsigned(v) => EncodedValue::Unsigned(v),
         }
+    }
+}
 
-        impl From<EncodedValue> for Value {
-            fn from(v: EncodedValue) -> Self {
-                match v {
-                    EncodedValue::Unsigned(v) => Value::Unsigned(v),
-                    EncodedValue::Integer(v) => Value::Integer(v),
-                    EncodedValue::Decimal(v) => Value::Decimal(v),
-                    EncodedValue::Double(v) => {
-                        if v.value.is_nan() {
-                            return Value::Null;
-                        }
-                        Value::Double(v)
-                    }
-                    EncodedValue::Float(v) => {
-                        if v.is_nan() {
-                            return Value::Null;
-                        }
-                        Value::Double(Double::from(v))
-                    }
-                    EncodedValue::Boolean(v) => Value::Boolean(v),
-                    EncodedValue::String(v) => Value::String(v),
-                    EncodedValue::Tuple(v) => Value::Tuple(v),
-                    EncodedValue::Null(_) => Value::Null,
+impl From<EncodedValue> for Value {
+    fn from(value: EncodedValue) -> Self {
+        match value {
+            EncodedValue::Unsigned(v) => Value::Unsigned(v),
+            EncodedValue::Integer(v) => Value::Integer(v),
+            EncodedValue::Decimal(v) => Value::Decimal(v),
+            EncodedValue::Double(v) => {
+                if v.value.is_nan() {
+                    return Value::Null;
                 }
+                Value::Double(v)
             }
+            EncodedValue::Float(v) => {
+                if v.is_nan() {
+                    return Value::Null;
+                }
+                Value::Double(Double::from(v))
+            }
+            EncodedValue::Boolean(v) => Value::Boolean(v),
+            EncodedValue::String(v) => Value::String(v),
+            EncodedValue::Tuple(v) => Value::Tuple(v),
+            EncodedValue::Null(_) => Value::Null,
         }
-
-        let encoded = EncodedValue::deserialize(deserializer)?;
-        Ok(encoded.into())
     }
 }
 

@@ -9,10 +9,10 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use sbroad::executor::engine::Coordinator;
-use sbroad::ir::value::Value;
+use sbroad::ir::value::{EncodedValue, Value};
 use sbroad::log::tarantool_error;
 
-#[derive(Debug, Default, Serialize, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values
 pub struct ArgsMap {
     /// A key:value `HashMap` with key String and custom type Value
@@ -28,19 +28,24 @@ impl<'de> Deserialize<'de> for ArgsMap {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        #[serde(rename = "Args")]
-        struct StructHelper(HashMap<String, Value>, String);
+        #[serde(rename = "FunctionArgs")]
+        struct StructHelper(HashMap<String, EncodedValue>, String);
 
-        let struct_helper = StructHelper::deserialize(deserializer)?;
+        let mut struct_helper = StructHelper::deserialize(deserializer)?;
+        let rec: HashMap<String, Value> = struct_helper
+            .0
+            .drain()
+            .map(|(key, encoded)| (key, Value::from(encoded)))
+            .collect();
 
         Ok(ArgsMap {
-            rec: struct_helper.0,
+            rec,
             space: struct_helper.1,
         })
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 /// Tuple with space name and vec of values
 pub struct ArgsTuple {
     /// Vec of custom type Value
@@ -56,13 +61,14 @@ impl<'de> Deserialize<'de> for ArgsTuple {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        #[serde(rename = "Args")]
-        struct StructHelper(Vec<Value>, String);
+        #[serde(rename = "FunctionArgs")]
+        struct StructHelper(Vec<EncodedValue>, String);
 
-        let struct_helper = StructHelper::deserialize(deserializer)?;
+        let mut struct_helper = StructHelper::deserialize(deserializer)?;
+        let rec: Vec<Value> = struct_helper.0.drain(..).map(Value::from).collect();
 
         Ok(ArgsTuple {
-            rec: struct_helper.0,
+            rec,
             space: struct_helper.1,
         })
     }
@@ -154,7 +160,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
                 ctx.return_mp(&bucket_id).unwrap();
                 0
             }
-            Err(e) => tarantool_error(&format!("{:?}", e)),
+            Err(e) => tarantool_error(&format!("{e:?}")),
         }
     })
 }

@@ -210,7 +210,7 @@ nodes:
     - Expression:
         Bool:
           left: 35
-          op: Lt
+          op: lt
           right: 33
     - Expression:
         Reference:
@@ -241,12 +241,12 @@ nodes:
     - Expression:
         Bool:
           left: 40
-          op: Eq
+          op: eq
           right: 38
     - Expression:
         Bool:
           left: 36
-          op: Or
+          op: or
           right: 41
     - Expression:
         Reference:
@@ -295,7 +295,7 @@ nodes:
           children:
             - 17
           policy: Full
-          generation: None
+          generation: none
           output: 49
     - Expression:
         Reference:
@@ -321,30 +321,35 @@ nodes:
               targets:
                 - Reference:  
                     0
-          generation: None
+          generation: none
           output: 53
 relations:
-  t1:
-    columns:
-      - name: a
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t1
-  t2:
-    columns:
-      - name: a
-        type: integer
-      - name: b
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t2
+  tables:
+    t1:
+      columns:
+        - name: a
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t1
+    t2:
+      columns:
+        - name: a
+          type: integer
+        - name: b
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t2
 slices:
-  - - 50
-    - 54
+  slices:
+    - slice:
+      - 50
+      - 54
 top: 46
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

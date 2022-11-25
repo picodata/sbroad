@@ -57,7 +57,7 @@ impl FromStr for Double {
         Ok(Double {
             value: s
                 .parse::<f64>()
-                .map_err(|_| QueryPlannerError::CustomError(format!("{} is not a valid f64", s)))?,
+                .map_err(|_| QueryPlannerError::CustomError(format!("{s} is not a valid f64")))?,
         })
     }
 }
@@ -76,7 +76,7 @@ where
 {
     type Err = tlua::Void;
     fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
-        Ok(tlua::push_userdata(self.value, lua, |_| {}))
+        self.value.push_into_lua(lua)
     }
 }
 

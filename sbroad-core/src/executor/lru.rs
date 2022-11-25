@@ -94,7 +94,7 @@ where
 
     fn get_node(&self, key: &Option<Key>) -> Result<&LRUNode<Key, Value>, QueryPlannerError> {
         self.map.get(key).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("LRU node with key {:?} not found", key))
+            QueryPlannerError::CustomError(format!("LRU node with key {key:?} not found"))
         })
     }
 
@@ -103,7 +103,7 @@ where
         key: &Option<Key>,
     ) -> Result<&mut LRUNode<Key, Value>, QueryPlannerError> {
         self.map.get_mut(key).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("Mutable LRU node with key {:?} not found", key))
+            QueryPlannerError::CustomError(format!("Mutable LRU node with key {key:?} not found"))
         })
     }
 
@@ -202,11 +202,11 @@ where
         }
         let head = LRUNode::sentinel();
         let mut map: HashMap<Option<Key>, LRUNode<Key, Value>> =
-            HashMap::with_capacity((capacity + 2) as usize);
+            HashMap::with_capacity(capacity + 2);
         map.insert(None, head);
 
         Ok(LRUCache {
-            capacity: capacity as usize,
+            capacity,
             size: 0,
             map,
             evict_fn,

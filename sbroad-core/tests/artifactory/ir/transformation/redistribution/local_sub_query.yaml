@@ -127,7 +127,7 @@ nodes:
     - Expression:
         Bool:
           left: 19
-          op: Eq
+          op: eq
           right: 17
     - Expression:
         Reference:
@@ -156,23 +156,27 @@ nodes:
           filter: 20
           output: 23
 relations:
-  t1:
-    columns:
-      - name: a
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t1
-  t2:
-    columns:
-      - name: a
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t2
-slices: ~
+  tables:
+    t1:
+      columns:
+        - name: a
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t1
+    t2:
+      columns:
+        - name: a
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t2
+slices:
+  slices: []
 top: 24
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

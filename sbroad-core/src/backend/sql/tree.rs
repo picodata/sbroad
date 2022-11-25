@@ -1,14 +1,12 @@
 use ahash::RandomState;
 use std::collections::HashMap;
 use std::mem::take;
-use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::vtable::VirtualTable;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::tree::Snapshot;
@@ -41,8 +39,9 @@ pub enum SyntaxData {
     PlanId(usize),
     /// parameter (a wrapper over a plan constants)
     Parameter(usize),
-    /// virtual table
-    VTable(Rc<VirtualTable>),
+    /// virtual table (the key is a motion node id
+    /// pointing to the execution plan's virtual table)
+    VTable(usize),
 }
 
 /// A syntax tree node.
@@ -158,9 +157,9 @@ impl SyntaxNode {
         }
     }
 
-    fn new_vtable(value: Rc<VirtualTable>) -> Self {
+    fn new_vtable(motion_id: usize) -> Self {
         SyntaxNode {
-            data: SyntaxData::VTable(value),
+            data: SyntaxData::VTable(motion_id),
             left: None,
             right: Vec::new(),
         }
@@ -424,6 +423,7 @@ impl Select {
 /// A wrapper over original plan tree.
 /// We can modify it as we wish without any influence
 /// on the original plan tree.
+#[derive(Debug)]
 pub struct SyntaxPlan<'p> {
     pub(crate) nodes: SyntaxNodes,
     top: Option<usize>,
@@ -440,11 +440,12 @@ impl<'p> SyntaxPlan<'p> {
     #[allow(clippy::too_many_lines)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
         let ir_plan = self.plan.get_ir_plan();
-
-        match ir_plan.get_node(id)? {
-            Node::Parameter => Err(QueryPlannerError::CustomError(
-                "Parameters are not supported in the backend's syntax tree".into(),
-            )),
+        let node = ir_plan.get_node(id)?;
+        match node {
+            Node::Parameter => {
+                let sn = SyntaxNode::new_parameter(id);
+                Ok(self.nodes.push_syntax_node(sn))
+            }
             Node::Relational(rel) => match rel {
                 Relational::Insert {
                     columns,
@@ -517,6 +518,13 @@ impl<'p> SyntaxPlan<'p> {
                             "Inner join doesn't have a right child.".into(),
                         )
                     })?;
+                    let condition_id = match self.snapshot {
+                        Snapshot::Latest => *condition,
+                        Snapshot::Oldest => *ir_plan
+                            .undo
+                            .get_oldest(condition)
+                            .map_or_else(|| condition, |id| id),
+                    };
 
                     let sn = SyntaxNode::new_pointer(
                         id,
@@ -524,7 +532,7 @@ impl<'p> SyntaxPlan<'p> {
                         vec![
                             self.nodes.get_syntax_node_id(right_id)?,
                             self.nodes.push_syntax_node(SyntaxNode::new_condition()),
-                            self.nodes.get_syntax_node_id(*condition)?,
+                            self.nodes.get_syntax_node_id(condition_id)?,
                         ],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
@@ -612,28 +620,20 @@ impl<'p> SyntaxPlan<'p> {
                     let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);
                     let mut children: Vec<usize> = Vec::new();
-                    if let Ok(child_id) = self.plan.get_motion_child(id) {
-                        let child_rel = self.plan.get_ir_plan().get_relation_node(child_id)?;
-                        if let Relational::ScanSubQuery { .. } = child_rel {
-                            children = Vec::from([
-                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                self.nodes
-                                    .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
-                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                            ]);
+                    if vtable_alias.is_some() {
+                        children = Vec::from([
+                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                            self.nodes.push_syntax_node(SyntaxNode::new_vtable(id)),
+                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                        ]);
 
-                            if let Some(name) = vtable_alias {
-                                children
-                                    .push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
-                            }
-                            let sn = SyntaxNode::new_pointer(id, None, children);
-                            return Ok(self.nodes.push_syntax_node(sn));
+                        if let Some(name) = vtable_alias {
+                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
                         }
+                        let sn = SyntaxNode::new_pointer(id, None, children);
+                        return Ok(self.nodes.push_syntax_node(sn));
                     }
-                    children.push(
-                        self.nodes
-                            .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(&vtable))),
-                    );
+                    children.push(self.nodes.push_syntax_node(SyntaxNode::new_vtable(id)));
                     let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -731,9 +731,7 @@ impl<'p> SyntaxPlan<'p> {
                                 vec![
                                     self.nodes.push_syntax_node(SyntaxNode::new_open()),
                                     self.nodes
-                                        .push_syntax_node(SyntaxNode::new_vtable(Rc::clone(
-                                            &vtable,
-                                        ))),
+                                        .push_syntax_node(SyntaxNode::new_vtable(motion_id)),
                                     self.nodes.push_syntax_node(SyntaxNode::new_close()),
                                 ],
                             );
@@ -775,7 +773,7 @@ impl<'p> SyntaxPlan<'p> {
                             vec![
                                 self.nodes.get_syntax_node_id(*left)?,
                                 self.nodes
-                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
                                 self.nodes.get_syntax_node_id(*right)?,
                                 self.nodes.push_syntax_node(SyntaxNode::new_close()),
                             ],
@@ -786,7 +784,7 @@ impl<'p> SyntaxPlan<'p> {
                             Some(self.nodes.get_syntax_node_id(*left)?),
                             vec![
                                 self.nodes
-                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op))),
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
                                 self.nodes.get_syntax_node_id(*right)?,
                             ],
                         )
@@ -799,7 +797,7 @@ impl<'p> SyntaxPlan<'p> {
                         Some(self.nodes.get_syntax_node_id(*child)?),
                         vec![self
                             .nodes
-                            .push_syntax_node(SyntaxNode::new_operator(&format!("{}", op)))],
+                            .push_syntax_node(SyntaxNode::new_operator(&format!("{op}")))],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -1046,6 +1044,7 @@ impl<'p> SyntaxPlan<'p> {
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OrderedSyntaxNodes {
     arena: Vec<SyntaxNode>,
     positions: Vec<usize>,
@@ -1065,7 +1064,7 @@ impl OrderedSyntaxNodes {
                     .arena
                     .get(*id)
                     .ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!("Invalid syntax node id: {}", id))
+                        QueryPlannerError::CustomError(format!("Invalid syntax node id: {id}"))
                     })?
                     .data,
             );

@@ -385,7 +385,7 @@ impl Chain {
                     continue;
                 }
 
-                for (a, b) in (&ec.set).iter().tuple_windows() {
+                for (a, b) in (ec.set).iter().tuple_windows() {
                     let left_id = a.to_plan(plan);
                     let right_id = b.to_plan(plan);
                     let eq_id = plan.add_cond(left_id, Bool::Eq, right_id)?;

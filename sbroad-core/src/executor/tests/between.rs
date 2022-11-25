@@ -7,7 +7,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
 
@@ -52,8 +52,8 @@ fn between1_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
@@ -87,8 +87,6 @@ fn between2_test() {
     // Validate the motion type.
     let motion1_id = *get_motion_id(plan, 0, 0).unwrap();
     assert_eq!(&MotionPolicy::Full, get_motion_policy(plan, motion1_id));
-    let motion2_id = *get_motion_id(plan, 0, 1).unwrap();
-    assert_eq!(&MotionPolicy::Full, get_motion_policy(plan, motion2_id));
     assert_eq!(true, get_motion_id(plan, 0, 2).is_none());
 
     // Mock a virtual table.
@@ -104,9 +102,6 @@ fn between2_test() {
     query
         .coordinator
         .add_virtual_table(motion1_id, virtual_table.clone());
-    query
-        .coordinator
-        .add_virtual_table(motion2_id, virtual_table);
 
     // Execute the query.
     let result = *query
@@ -118,8 +113,8 @@ fn between2_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,

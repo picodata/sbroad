@@ -105,13 +105,13 @@ impl SpanProcessor for StatCollector {
         };
 
         let parent_span: String = if span.parent_span_id == SpanId::INVALID {
-            "".to_string()
+            String::new()
         } else {
             SPAN.with(|span_table| {
                 let span_table = span_table.borrow();
                 span_table
                     .get(&span.parent_span_id)
-                    .map_or_else(|| "".to_string(), |span_name| span_name.value().to_string())
+                    .map_or_else(String::new, |span_name| span_name.value().to_string())
             })
         };
 

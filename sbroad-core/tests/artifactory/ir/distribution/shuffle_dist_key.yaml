@@ -81,22 +81,26 @@ nodes:
             - 9
           output: 14
 relations:
-  t:
-    columns:
-      - name: a
-        type: Boolean
-      - name: b
-        type: Number
-      - name: c
-        type: String
-      - name: d
-        type: String
-    key:
-      positions:
-        - 1
-        - 0
-    name: t
-slices: ~
+  tables:
+    t:
+      columns:
+        - name: a
+          type: Boolean
+        - name: b
+          type: Number
+        - name: c
+          type: String
+        - name: d
+          type: String
+      key:
+        positions:
+          - 1
+          - 0
+      name: t
+slices:
+  slices: []
 top: 15
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

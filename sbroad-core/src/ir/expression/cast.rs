@@ -5,9 +5,8 @@ use crate::frontend::sql::ast::Type as AstType;
 use crate::ir::expression::Expression;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
-use tarantool::tlua::{self, LuaRead, PushInto};
 
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Type {
     Any,
     Boolean,
@@ -61,7 +60,7 @@ impl From<&Type> for String {
             Type::String => "string".to_string(),
             Type::Text => "text".to_string(),
             Type::Unsigned => "unsigned".to_string(),
-            Type::Varchar(length) => format!("varchar({})", length),
+            Type::Varchar(length) => format!("varchar({length})"),
         }
     }
 }

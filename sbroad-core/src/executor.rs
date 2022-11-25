@@ -41,6 +41,7 @@ use crate::ir::transformation::redistribution::{DataGeneration, MotionKey, Motio
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
+use ahash::AHashMap;
 use sbroad_proc::otm_child_span;
 
 pub mod bucket;
@@ -103,7 +104,7 @@ where
 
         let mut plan = Plan::new();
         let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to create a new query: {:?}", e))
+            QueryPlannerError::CustomError(format!("Failed to create a new query: {e:?}"))
         })?;
         if let Some(cached_plan) = cache.get(&key)? {
             plan = cached_plan.clone();
@@ -155,20 +156,38 @@ where
             return self.coordinator.explain_format(self.to_explain()?);
         }
 
+        self.get_mut_exec_plan()
+            .get_mut_ir_plan()
+            .restore_constants()?;
+
         let slices = self.exec_plan.get_ir_plan().clone_slices();
-        if let Some(slices) = slices.slices() {
-            for slice in slices {
-                for motion_id in slice.positions() {
-                    // TODO: make it work in parallel
-                    let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
-                    let buckets = self.bucket_discovery(top_id)?;
-                    let virtual_table = self.coordinator.materialize_motion(
-                        &mut self.exec_plan,
-                        *motion_id,
-                        &buckets,
-                    )?;
-                    self.add_motion_result(*motion_id, virtual_table)?;
+        let mut already_materialized: AHashMap<usize, usize> =
+            AHashMap::with_capacity(slices.slices().len());
+        for slice in slices.slices() {
+            // TODO: make it work in parallel
+            for motion_id in slice.positions() {
+                let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
+
+                // Multiple motions can point to the same subtree (BETWEEN operator).
+                if let Some(id) = already_materialized.get(&top_id) {
+                    let vtable = self.get_exec_plan().get_motion_vtable(*id)?;
+                    if let Some(vtables) = self.get_mut_exec_plan().get_mut_vtables() {
+                        vtables.insert(*motion_id, Rc::clone(&vtable));
+                    }
+                    // Unlink the subtree under the motion node
+                    // (it has already been materialized and replaced with invalid nodes).
+                    self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
+                    continue;
                 }
+
+                let buckets = self.bucket_discovery(top_id)?;
+                let virtual_table = self.coordinator.materialize_motion(
+                    &mut self.exec_plan,
+                    *motion_id,
+                    &buckets,
+                )?;
+                self.add_motion_result(*motion_id, virtual_table)?;
+                already_materialized.insert(top_id, *motion_id);
             }
         }
 

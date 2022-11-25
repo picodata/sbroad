@@ -104,78 +104,71 @@ impl RouterConfiguration {
 
         for (space_name, params) in spaces.iter() {
             if let Some(current_space_name) = space_name.as_str() {
-                let fields = match params["format"].as_vec() {
-                    Some(fields) => {
-                        let mut result = Vec::new();
-                        for val in fields {
-                            let name: &str = match val["name"].as_str() {
-                                Some(s) => s,
-                                None => return Err(QueryPlannerError::InvalidColumnName),
-                            };
-                            let t = match val["type"].as_str() {
-                                Some(t) => Type::new(t)?,
-                                None => {
-                                    return Err(QueryPlannerError::CustomError(format!(
-                                        "Type not found for columns {}",
-                                        name
-                                    )))
-                                }
-                            };
-                            let qualified_name = normalize_name_from_schema(name);
-                            debug!(
-                                Option::from("configuration parsing"),
-                                &format!(
-                                    "Column's original name: {}, qualified name {}",
-                                    name, qualified_name
-                                ),
-                            );
-                            let role = if self.get_sharding_column().eq(&qualified_name) {
-                                ColumnRole::Sharding
-                            } else {
-                                ColumnRole::User
-                            };
-                            let col = Column::new(&qualified_name, t, role);
-                            result.push(col);
-                        }
-                        result
-                    }
-                    None => {
-                        warn!(
+                let fields = if let Some(fields) = params["format"].as_vec() {
+                    let mut result = Vec::new();
+                    for val in fields {
+                        let name: &str = match val["name"].as_str() {
+                            Some(s) => s,
+                            None => return Err(QueryPlannerError::InvalidColumnName),
+                        };
+                        let t = match val["type"].as_str() {
+                            Some(t) => Type::new(t)?,
+                            None => {
+                                return Err(QueryPlannerError::CustomError(format!(
+                                    "Type not found for columns {}",
+                                    name
+                                )))
+                            }
+                        };
+                        let qualified_name = normalize_name_from_schema(name);
+                        debug!(
                             Option::from("configuration parsing"),
-                            &format!("Skip space {}: fields not found.", current_space_name),
+                            &format!(
+                                "Column's original name: {}, qualified name {}",
+                                name, qualified_name
+                            ),
                         );
-                        continue;
+                        let role = if self.get_sharding_column().eq(&qualified_name) {
+                            ColumnRole::Sharding
+                        } else {
+                            ColumnRole::User
+                        };
+                        let col = Column::new(&qualified_name, t, role);
+                        result.push(col);
                     }
+                    result
+                } else {
+                    warn!(
+                        Option::from("configuration parsing"),
+                        &format!("Skip space {current_space_name}: fields not found."),
+                    );
+                    continue;
                 };
 
-                let keys: Vec<String> = match params["sharding_key"].as_vec() {
-                    Some(keys) => {
-                        let mut result = Vec::new();
-                        for k in keys {
-                            let key: &str = match k.as_str() {
-                                Some(k) => k,
-                                None => {
-                                    warn!(
-                                        Option::from("configuration parsing"),
-                                        &format!(
-                                            "Skip space {}: failed to convert key {:?} to string.",
-                                            current_space_name, k
-                                        ),
-                                    );
-                                    continue;
-                                }
-                            };
-                            result.push(normalize_name_from_schema(key));
-                        }
-                        result
+                let keys: Vec<String> = if let Some(keys) = params["sharding_key"].as_vec() {
+                    let mut result = Vec::new();
+                    for k in keys {
+                        let key: &str = if let Some(k) = k.as_str() {
+                            k
+                        } else {
+                            warn!(
+                                Option::from("configuration parsing"),
+                                &format!(
+                                    "Skip space {}: failed to convert key {:?} to string.",
+                                    current_space_name, k
+                                ),
+                            );
+                            continue;
+                        };
+                        result.push(normalize_name_from_schema(key));
                     }
-                    None => {
-                        warn!(
-                            Option::from("configuration parsing"),
-                            &format!("Skip space {}: keys not found.", current_space_name),
-                        );
-                        continue;
-                    }
+                    result
+                } else {
+                    warn!(
+                        Option::from("configuration parsing"),
+                        &format!("Skip space {current_space_name}: keys not found."),
+                    );
+                    continue;
                 };
 
                 let table_name: String = normalize_name_from_schema(current_space_name);

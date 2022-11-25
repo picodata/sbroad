@@ -135,6 +135,6 @@ impl fmt::Display for QueryPlannerError {
             QueryPlannerError::ValueOutOfRange => VALUE_OUT_OF_RANGE_ERROR,
             QueryPlannerError::UnsupportedValueType => UNSUPPORTED_TYPE_IR_VALUE,
         };
-        write!(f, "{}", p)
+        write!(f, "{p}")
     }
 }

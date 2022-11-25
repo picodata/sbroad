@@ -14,15 +14,14 @@ fn exec_plan_subtree_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -39,7 +38,7 @@ fn exec_plan_subtree_test() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check sub-query
-    let subplan1 = exec_plan.new_from_subtree(motion_child_id).unwrap();
+    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
     let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
@@ -53,7 +52,7 @@ fn exec_plan_subtree_test() {
         ));
 
     // Check main query
-    let subplan2 = exec_plan.new_from_subtree(top_id).unwrap();
+    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
     let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();

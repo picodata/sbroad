@@ -128,7 +128,7 @@ nodes:
     - Expression:
         Bool:
           left: 21
-          op: Eq
+          op: eq
           right: 19
     - Expression:
         Reference:
@@ -180,30 +180,34 @@ nodes:
               targets:
                 - Reference:
                     0
-          generation: None
+          generation: none
           output: 29
 relations:
-  t1:
-    columns:
-      - name: a
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t1
-  t2:
-    columns:
-      - name: a
-        type: integer
-      - name: b
-        type: integer
-    key:
-      positions:
-        - 0
-    name: t2
+  tables:
+    t1:
+      columns:
+        - name: a
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t1
+    t2:
+      columns:
+        - name: a
+          type: integer
+        - name: b
+          type: integer
+      key:
+        positions:
+          - 0
+      name: t2
 slices:
-  -
-    - 30
+  slices:
+    - slice:
+        - 30
 top: 26
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

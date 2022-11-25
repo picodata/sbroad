@@ -14,21 +14,14 @@ fn between1() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let motion_gt_eq_id = *get_motion_id(&plan, 0, 0).unwrap();
-    let motion = plan.get_relation_node(motion_gt_eq_id).unwrap();
+    let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
     }
-    let motion_lt_eq_id = *get_motion_id(&plan, 0, 1).unwrap();
-    let motion = plan.get_relation_node(motion_lt_eq_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(*policy, MotionPolicy::Full);
-    } else {
-        panic!("Expected a motion node");
-    }
-    let no_other_motions = get_motion_id(&plan, 0, 2).is_none();
+    let no_other_motions = get_motion_id(&plan, 0, 1).is_none();
     assert_eq!(no_other_motions, true);
 }
 
@@ -39,8 +32,7 @@ fn between2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -70,6 +62,5 @@ fn between4() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }

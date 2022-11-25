@@ -155,7 +155,7 @@ fn invalid_query() {
   |
   = expected Alias, Asterisk, Function, Cast, Concat, True, False, Null, Decimal, Double, Integer, Unsigned, Row, or Parameter"#,
         ),
-        format!("{}", ast),
+        format!("{ast}"),
     );
 }
 

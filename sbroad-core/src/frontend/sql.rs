@@ -3,7 +3,6 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
-use ahash::RandomState;
 use pest::Parser;
 use std::collections::{HashMap, HashSet};
 use traversal::DftPost;
@@ -17,12 +16,32 @@ use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational, Unary};
+use crate::ir::operator::{Bool, Unary};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 
 use sbroad_proc::otm_child_span;
+
+/// Helper structure to fix the double linking
+/// problem in the BETWEEN operator.
+/// We transform `left BETWEEN center AND right` to
+/// `left >= center AND left <= right`.
+struct Between {
+    /// Left node id.
+    left_id: usize,
+    /// Less or equal node id (`left <= right`)
+    less_eq_id: usize,
+}
+
+impl Between {
+    fn new(left_id: usize, less_eq_id: usize) -> Self {
+        Self {
+            left_id,
+            less_eq_id,
+        }
+    }
+}
 
 impl Ast for AbstractSyntaxTree {
     /// Build an empty AST.
@@ -113,6 +132,8 @@ impl Ast for AbstractSyntaxTree {
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
         let mut col_idx: usize = 0;
+
+        let mut betweens: Vec<Between> = Vec::new();
 
         for (_, id) in dft_post {
             let node = self.nodes.get_node(*id)?;
@@ -273,8 +294,7 @@ impl Ast for AbstractSyntaxTree {
                                     }
                                 } else {
                                     return Err(QueryPlannerError::CustomError(
-                                        "Left and right plan nodes do not match the AST scan name."
-                                            .into(),
+                                        format!("Left and right plan nodes do not match the AST scan name: {ast_scan_name:?}"),
                                     ));
                                 }
                             } else {
@@ -344,8 +364,8 @@ impl Ast for AbstractSyntaxTree {
                                 let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
                                 if plan_scan_name != ast_scan_name {
                                     return Err(QueryPlannerError::CustomError(
-                                            format!("Scan name for the column {:?} doesn't match: expected {:?}, found {:?}",
-                                            get_column_name(*ast_col_id), plan_scan_name, ast_scan_name
+                                            format!("Scan name for the column {:?} doesn't match: expected {plan_scan_name:?}, found {ast_scan_name:?}",
+                                            get_column_name(*ast_col_id)
                                         )));
                                 }
                             } else {
@@ -530,6 +550,7 @@ impl Ast for AbstractSyntaxTree {
                     let less_eq_id = plan.add_cond(plan_left_id, Bool::LtEq, plan_right_id)?;
                     let and_id = plan.add_cond(greater_eq_id, Bool::And, less_eq_id)?;
                     map.add(*id, and_id);
+                    betweens.push(Between::new(plan_left_id, less_eq_id));
                 }
                 Type::Cast => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -856,231 +877,14 @@ impl Ast for AbstractSyntaxTree {
                 .ok_or_else(|| QueryPlannerError::CustomError("No top in AST.".into()))?,
         )?;
         plan.set_top(plan_top_id)?;
-        plan.replace_sq_with_references()?;
+        let replaces = plan.replace_sq_with_references()?;
+        plan.fix_betweens(&betweens, &replaces)?;
 
         Ok(plan)
     }
 }
 
 impl Plan {
-    /// Substitute parameters to the plan.
-    ///
-    /// # Errors
-    /// - Invalid amount of parameters.
-    /// - Internal errors.
-    #[allow(clippy::too_many_lines)]
-    #[otm_child_span("plan.bind")]
-    pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), QueryPlannerError> {
-        // Nothing to do here.
-        if params.is_empty() {
-            return Ok(());
-        }
-
-        let top_id = self.get_top()?;
-        let tree = DftPost::new(&top_id, |node| self.subtree_iter(node));
-        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
-
-        // Transform parameters to values. The result values are stored in the
-        // opposite to parameters order.
-        let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
-        while let Some(param) = params.pop() {
-            value_ids.push(self.add_const(param));
-        }
-
-        // We need to use rows instead of values in some cases (AST can solve
-        // this problem for non-parameterized queries, but for parameterized
-        // queries it is IR responsibility).
-        let mut row_ids: HashMap<usize, usize, RandomState> =
-            HashMap::with_hasher(RandomState::new());
-
-        // Gather all parameter nodes from the tree to a hash set.
-        let param_set = self.get_params();
-
-        // Closure to retrieve a corresponding value for a parameter node.
-        let get_value = |pos: usize| -> Result<usize, QueryPlannerError> {
-            let val_id = value_ids.get(pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Parameter in position {} is not found.",
-                    pos
-                ))
-            })?;
-            Ok(*val_id)
-        };
-
-        // Populate rows.
-        let mut idx = value_ids.len();
-        for id in &nodes {
-            let node = self.get_node(*id)?;
-            match node {
-                Node::Relational(rel) => match rel {
-                    Relational::Selection {
-                        filter: ref param_id,
-                        ..
-                    }
-                    | Relational::InnerJoin {
-                        condition: ref param_id,
-                        ..
-                    }
-                    | Relational::Projection {
-                        output: ref param_id,
-                        ..
-                    } => {
-                        if param_set.contains(param_id) {
-                            idx -= 1;
-                            let val_id = get_value(idx)?;
-                            row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
-                        }
-                    }
-                    _ => {}
-                },
-                Node::Expression(expr) => match expr {
-                    Expression::Alias {
-                        child: ref param_id,
-                        ..
-                    }
-                    | Expression::Cast {
-                        child: ref param_id,
-                        ..
-                    }
-                    | Expression::Unary {
-                        child: ref param_id,
-                        ..
-                    } => {
-                        if param_set.contains(param_id) {
-                            idx -= 1;
-                        }
-                    }
-                    Expression::Bool {
-                        ref left,
-                        ref right,
-                        ..
-                    }
-                    | Expression::Concat {
-                        ref left,
-                        ref right,
-                    } => {
-                        for param_id in &[*left, *right] {
-                            if param_set.contains(param_id) {
-                                idx -= 1;
-                                let val_id = get_value(idx)?;
-                                row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
-                            }
-                        }
-                    }
-                    Expression::Row { ref list, .. }
-                    | Expression::StableFunction {
-                        children: ref list, ..
-                    } => {
-                        for param_id in list {
-                            if param_set.contains(param_id) {
-                                idx -= 1;
-                            }
-                        }
-                    }
-                    Expression::Constant { .. } | Expression::Reference { .. } => {}
-                },
-                Node::Parameter => {}
-            }
-        }
-
-        let get_row = |idx: usize| -> Result<usize, QueryPlannerError> {
-            let row_id = row_ids.get(&idx).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!("Row in position {} is not found.", idx))
-            })?;
-            Ok(*row_id)
-        };
-
-        // Replace parameters in the plan.
-        idx = value_ids.len();
-        for id in &nodes {
-            let node = self.get_mut_node(*id)?;
-            match node {
-                Node::Relational(rel) => match rel {
-                    Relational::Selection {
-                        filter: ref mut param_id,
-                        ..
-                    }
-                    | Relational::InnerJoin {
-                        condition: ref mut param_id,
-                        ..
-                    }
-                    | Relational::Projection {
-                        output: ref mut param_id,
-                        ..
-                    } => {
-                        if param_set.contains(param_id) {
-                            idx -= 1;
-                            let row_id = get_row(idx)?;
-                            *param_id = row_id;
-                        }
-                    }
-                    _ => {}
-                },
-                Node::Expression(expr) => match expr {
-                    Expression::Alias {
-                        child: ref mut param_id,
-                        ..
-                    }
-                    | Expression::Cast {
-                        child: ref mut param_id,
-                        ..
-                    }
-                    | Expression::Unary {
-                        child: ref mut param_id,
-                        ..
-                    } => {
-                        if param_set.contains(param_id) {
-                            idx -= 1;
-                            let val_id = get_value(idx)?;
-                            *param_id = val_id;
-                        }
-                    }
-                    Expression::Bool {
-                        ref mut left,
-                        ref mut right,
-                        ..
-                    }
-                    | Expression::Concat {
-                        ref mut left,
-                        ref mut right,
-                    } => {
-                        for param_id in &mut [left, right].iter_mut() {
-                            if param_set.contains(param_id) {
-                                idx -= 1;
-                                let row_id = get_row(idx)?;
-                                **param_id = row_id;
-                            }
-                        }
-                    }
-                    Expression::Row { ref mut list, .. }
-                    | Expression::StableFunction {
-                        children: ref mut list,
-                        ..
-                    } => {
-                        for param_id in list {
-                            if param_set.contains(param_id) {
-                                idx -= 1;
-                                let val_id = get_value(idx)?;
-                                *param_id = val_id;
-                            }
-                        }
-                    }
-                    Expression::Constant { .. } | Expression::Reference { .. } => {}
-                },
-                Node::Parameter => {}
-            }
-        }
-
-        // Update values row output.
-        for id in nodes {
-            if let Ok(Relational::ValuesRow { .. }) = self.get_relation_node(id) {
-                self.update_values_row(id)?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Wrap references, constants, functions, concatenations and casts in the plan into rows.
     fn as_row(
         &mut self,

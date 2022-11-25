@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
 
@@ -22,8 +22,8 @@ fn bucket1_test() {
     let mut expected = ProducerResult::new();
 
     expected.rows.push(vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             r#"SELECT "t1"."a", "t1"."b", "t1"."bucket_id" FROM "t1""#.to_string(),
             vec![],
         ))),
@@ -50,8 +50,8 @@ fn bucket2_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
                 r#"SELECT "t1"."a", "t1"."bucket_id", "t1"."b" FROM "t1""#,
@@ -78,8 +78,8 @@ fn bucket3_test() {
     let mut expected = ProducerResult::new();
 
     expected.rows.push(vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             r#"SELECT "t1"."a", "t1"."b", "BUCKET_ID" (?) as "COLUMN_1" FROM "t1""#.to_string(),
             vec![Value::from("111".to_string())],
         ))),

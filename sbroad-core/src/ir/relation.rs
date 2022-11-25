@@ -7,7 +7,6 @@ use std::fmt::Formatter;
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer, Serialize};
-use tarantool::tlua::{self, LuaRead, PushInto};
 
 use crate::errors::QueryPlannerError;
 use crate::ir::value::Value;
@@ -18,7 +17,7 @@ const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
 /// This `Type` doesn't have any relation with `Type` from IR.
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
     Boolean,
     Decimal,
@@ -56,7 +55,7 @@ impl Type {
 }
 
 /// A role of the column in the relation.
-#[derive(LuaRead, PushInto, PartialEq, Debug, Eq, Clone)]
+#[derive(PartialEq, Debug, Eq, Clone)]
 pub enum ColumnRole {
     /// General purpose column available for the user.
     User,
@@ -65,7 +64,7 @@ pub enum ColumnRole {
 }
 
 /// Relation column.
-#[derive(LuaRead, PushInto, PartialEq, Debug, Eq, Clone)]
+#[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
@@ -121,26 +120,31 @@ impl<'de> Visitor<'de> for ColumnVisitor {
     {
         let mut column_name = String::new();
         let mut column_type = String::new();
+        let mut column_role = String::new();
         while let Some((key, value)) = map.next_entry::<String, String>()? {
             match key.as_str() {
                 "name" => column_name.push_str(&value),
                 "type" => column_type.push_str(&value.to_lowercase()),
-                _ => return Err(Error::custom("invalid column param")),
+                "role" => column_role.push_str(&value.to_lowercase()),
+                _ => return Err(Error::custom(&format!("invalid column param: {key}"))),
             }
         }
 
+        let role: ColumnRole = match column_role.as_str() {
+            "sharding" => ColumnRole::Sharding,
+            _ => ColumnRole::User,
+        };
+
         match column_type.as_str() {
-            "boolean" => Ok(Column::new(&column_name, Type::Boolean, ColumnRole::User)),
-            "decimal" => Ok(Column::new(&column_name, Type::Decimal, ColumnRole::User)),
-            "double" => Ok(Column::new(&column_name, Type::Double, ColumnRole::User)),
-            "integer" => Ok(Column::new(&column_name, Type::Integer, ColumnRole::User)),
-            "number" | "numeric" => Ok(Column::new(&column_name, Type::Number, ColumnRole::User)),
-            "scalar" => Ok(Column::new(&column_name, Type::Scalar, ColumnRole::User)),
-            "string" | "text" | "varchar" => {
-                Ok(Column::new(&column_name, Type::String, ColumnRole::User))
-            }
-            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, ColumnRole::User)),
-            "array" => Ok(Column::new(&column_name, Type::Array, ColumnRole::User)),
+            "boolean" => Ok(Column::new(&column_name, Type::Boolean, role)),
+            "decimal" => Ok(Column::new(&column_name, Type::Decimal, role)),
+            "double" => Ok(Column::new(&column_name, Type::Double, role)),
+            "integer" => Ok(Column::new(&column_name, Type::Integer, role)),
+            "number" | "numeric" => Ok(Column::new(&column_name, Type::Number, role)),
+            "scalar" => Ok(Column::new(&column_name, Type::Scalar, role)),
+            "string" | "text" | "varchar" => Ok(Column::new(&column_name, Type::String, role)),
+            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role)),
+            "array" => Ok(Column::new(&column_name, Type::Array, role)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }
@@ -176,7 +180,7 @@ impl Column {
 /// Table is a tuple storage in the cluster.
 ///
 /// Tables are tuple storages in the cluster.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Table {
     /// List of the columns.
     pub columns: Vec<Column>,
@@ -306,6 +310,39 @@ impl Table {
     #[must_use]
     pub fn get_sharding_positions(&self) -> &[usize] {
         &self.key.positions
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Relations {
+    tables: HashMap<String, Table>,
+}
+
+impl Default for Relations {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Relations {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            tables: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, table: Table) {
+        self.tables.insert(table.name().into(), table);
+    }
+
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&Table> {
+        self.tables.get(name)
+    }
+
+    pub fn drain(&mut self) -> HashMap<String, Table> {
+        std::mem::take(&mut self.tables)
     }
 }
 

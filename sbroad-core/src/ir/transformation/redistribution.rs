@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use tarantool::tlua::{self, LuaRead, PushInto};
 use traversal::{Bft, DftPost};
 
 use crate::errors::QueryPlannerError;
@@ -19,7 +18,7 @@ use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
 /// Redistribution key targets (columns or values of the key).
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Target {
     /// A position of the existing column in the tuple.
     Reference(usize),
@@ -31,7 +30,7 @@ pub enum Target {
     Value(Value),
 }
 
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct MotionKey {
     pub targets: Vec<Target>,
 }
@@ -63,7 +62,7 @@ impl From<&Key> for MotionKey {
 }
 
 /// Determinate what portion of data to move between data nodes in cluster.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionPolicy {
     /// Move all data.
     Full,
@@ -74,7 +73,8 @@ pub enum MotionPolicy {
 }
 
 /// Determine what portion of data to generate during motion.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DataGeneration {
     /// Nothing to generate.
     None,
@@ -89,7 +89,7 @@ impl Display for DataGeneration {
             DataGeneration::ShardingColumn => "sharding_column",
         };
 
-        write!(f, "{}", op)
+        write!(f, "{op}")
     }
 }
 
@@ -805,7 +805,7 @@ impl Plan {
                     .collect::<HashMap<_, _>>();
                 let mut motion_key: MotionKey = MotionKey::new();
                 let rel = self.get_relation(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Relation {} not found", relation))
+                    QueryPlannerError::CustomError(format!("Relation {relation} not found"))
                 })?;
                 for pos in &rel.key.positions {
                     if let Some(child_pos) = columns_map.get(pos) {
@@ -817,8 +817,7 @@ impl Plan {
                         // Check that the column exists on the requested position.
                         rel.columns.get(*pos).ok_or_else(|| {
                             QueryPlannerError::CustomError(format!(
-                                "Column {} not found in relation {}",
-                                pos, relation
+                                "Column {pos} not found in relation {relation}"
                             ))
                         })?;
                         // We need a default value for the key column.
@@ -861,7 +860,7 @@ impl Plan {
         let sharding_pos =
             if let Relational::Insert { relation, .. } = self.get_relation_node(rel_id)? {
                 let rel = self.get_relation(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Relation {} not found", relation))
+                    QueryPlannerError::CustomError(format!("Relation {relation} not found"))
                 })?;
                 rel.get_bucket_id_position()?
             } else {
@@ -1016,7 +1015,7 @@ impl Plan {
             }
         }
         if !motions.is_empty() {
-            self.set_slices(Some(motions.into_iter().rev().collect()));
+            self.set_slices(motions.into_iter().rev().collect());
         }
 
         Ok(())

@@ -128,28 +128,25 @@ pub trait TarantoolSpace {
             Some(space) => {
                 let space_id = space.id();
                 // Find the space to validate the its id.
-                match Space::find(&name) {
-                    Some(found_space) => {
-                        // The space was recreated by user, need to update the cache.
-                        if found_space.id() != space_id {
-                            warn!(
-                                Option::from("space"),
-                                &format!(
-                                    "Space {} was found with different id: {} != {}",
-                                    &name,
-                                    space_id,
-                                    found_space.id()
-                                )
-                            );
-                            *space = found_space;
-                        }
+                if let Some(found_space) = Space::find(&name) {
+                    // The space was recreated by user, need to update the cache.
+                    if found_space.id() != space_id {
+                        warn!(
+                            Option::from("space"),
+                            &format!(
+                                "Space {} was found with different id: {} != {}",
+                                &name,
+                                space_id,
+                                found_space.id()
+                            )
+                        );
+                        *space = found_space;
                     }
-                    None => {
-                        // Someone has removed the space from the instance.
-                        // Remove the cached space and try to create it again.
-                        *self.space_mut() = None;
-                        self.try_create_space();
-                    }
+                } else {
+                    // Someone has removed the space from the instance.
+                    // Remove the cached space and try to create it again.
+                    *self.space_mut() = None;
+                    self.try_create_space();
                 }
             }
             None => {
@@ -226,7 +223,7 @@ impl TarantoolSpace for QuerySpace {
     fn upsert(&mut self, tuple: Self::Tuple) {
         self.space_update_cache();
         if let Some(space) = self.space_mut() {
-            if let Err(_e) = space.upsert(&tuple, &[("+", 2, 1)]) {
+            if let Err(_e) = space.upsert(&tuple, [("+", 2, 1)]) {
                 warn!(
                     Option::from("space query"),
                     &format!("Space {} upsert error: {}", self.name(), _e)
@@ -249,7 +246,7 @@ impl TarantoolSpace for QuerySpace {
                         match tuple.decode::<Self::Tuple>() {
                             Ok((_, _, ref_counter)) => {
                                 if ref_counter > 0 {
-                                    if let Err(_e) = space.upsert(&tuple, &[("-", 2, 1)]) {
+                                    if let Err(_e) = space.upsert(&tuple, [("-", 2, 1)]) {
                                         warn!(
                                             Option::from("space query"),
                                             &format!("Space {} upsert error: {}", self.name(), _e)
@@ -308,14 +305,14 @@ impl TarantoolSpace for QuerySpace {
                                 }
                             }
                             Err(err) => {
-                                let _msg = format!("Can't decode tuple: {}", err);
+                                let _msg = format!("Can't decode tuple: {err}");
                                 warn!(Option::from("space query"), &_msg);
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    let _msg = &format!("failed to select tuple: {}", err);
+                    let _msg = &format!("failed to select tuple: {err}");
                     warn!(Option::from("space query"), &_msg);
                 }
             }
@@ -358,7 +355,7 @@ impl TarantoolSpace for QuerySpace {
                         *space = Some(table);
                     }
                     Err(err) => {
-                        let _msg = &format!("failed to create index __SBROAD_QUERY_PK: {}", err);
+                        let _msg = &format!("failed to create index __SBROAD_QUERY_PK: {err}");
                         warn!(Option::from("space query"), &_msg);
                     }
                 }
@@ -444,7 +441,7 @@ impl TarantoolSpace for StatSpace {
                         *space = Some(table);
                     }
                     Err(err) => {
-                        let _msg = &format!("failed to create index __SBROAD_STAT_PK: {}", err);
+                        let _msg = &format!("failed to create index __SBROAD_STAT_PK: {err}");
                         warn!(Option::from("space stat"), &_msg);
                     }
                 }

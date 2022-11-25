@@ -39,9 +39,14 @@ end
 _G.read = function(stmt_id, stmt, params)
     local res, err = box.execute(stmt_id, params)
     if err ~= nil then
-    -- The statement can be evicted from the cache,
-    -- while we were yielding in Lua. So we execute
-    -- it without the cache.
+        -- We don't have SQL query for retrying,
+        -- so simply return an error
+        if stmt == nil or stmt == '' then
+            error(err)
+        end
+        -- The statement can be evicted from the cache,
+        -- while we were yielding in Lua. So we execute
+        -- it without the cache.
         res, err = box.execute(stmt, params)
         if err ~= nil then
             error(err)
@@ -65,6 +70,11 @@ end
 _G.write = function(stmt_id, stmt, params)
     local res, err = box.execute(stmt_id, params)
     if err ~= nil then
+        -- We don't have SQL query for retrying,
+        -- so simply return an error
+        if stmt == nil or stmt == '' then
+            error(err)
+        end
         -- The statement can be evicted from the cache,
         -- while we were yielding in Lua. So we execute
         -- it without the cache.
@@ -79,12 +89,17 @@ end
 
 local function init()
     box.schema.func.create(
-        'libsbroad.execute_query',
+        'libsbroad.execute',
         { if_not_exists = true, language = 'C' }
     )
 
     box.schema.func.create(
         'libsbroad.invalidate_segment_cache',
+        { if_not_exists = true, language = 'C' }
+    )
+
+    box.schema.func.create(
+        'libsbroad.rpc_mock',
         { if_not_exists = true, language = 'C' }
     )
 end

@@ -7,7 +7,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
 
@@ -28,8 +28,8 @@ fn shard_query() {
     let param1 = Value::from(1_u64);
     let bucket = coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
-        Value::from(format!("Execute query on a bucket [{}]", bucket)),
-        Value::from(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
                 r#"SELECT "test_space"."FIRST_NAME" FROM "test_space""#,
@@ -67,8 +67,8 @@ fn shard_union_query() {
     let param1 = Value::from(1_u64);
     let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}{} {} {}{} {}",
                 r#"SELECT "t3"."id""#,
@@ -106,8 +106,8 @@ fn map_reduce_query() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param457]);
 
     expected.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(
             String::from(
                 PatternWithParams::new(
                     format!(
@@ -131,15 +131,14 @@ fn linker_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -167,8 +166,8 @@ fn linker_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket3}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -182,8 +181,8 @@ fn linker_test() {
             ),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -218,15 +217,14 @@ fn union_linker_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -254,8 +252,8 @@ fn union_linker_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket3}]")),
+            EncodedValue::String(
                 String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
@@ -274,8 +272,8 @@ fn union_linker_test() {
             ))
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(
                 String::from(PatternWithParams::new(
                 format!(
                     "{} {}{} {} {} {} {} {} {}{} {}",
@@ -324,15 +322,14 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = virtual_table_23();
     virtual_table.set_alias("\"t8\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
@@ -357,8 +354,8 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{}, {}, {} {}{} {} {} {} {} {} {}{} {} {}{} {} {}",
                 r#"SELECT "t3"."id""#,
@@ -402,15 +399,14 @@ fn join_linker2_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -449,8 +445,8 @@ fn join_linker2_test() {
     let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {}",
                 r#"SELECT "t1"."id" FROM (SELECT"#,
@@ -477,15 +473,14 @@ fn join_linker3_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -524,8 +519,8 @@ fn join_linker3_test() {
     let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {} {}",
                 r#"SELECT "t2"."id1" FROM"#,
@@ -557,15 +552,14 @@ fn join_linker4_test() {
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
 
-    let motion_t2_id = query
+    let motion_t2_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_t2 = VirtualTable::new();
     virtual_t2.add_column(Column {
         name: "r_id".into(),
@@ -586,15 +580,14 @@ fn join_linker4_test() {
         .coordinator
         .add_virtual_table(motion_t2_id, virtual_t2);
 
-    let motion_sq_id = query
+    let motion_sq_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(1)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_sq = VirtualTable::new();
     virtual_sq.add_column(Column {
         name: "fn".into(),
@@ -630,8 +623,8 @@ fn join_linker4_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {}",
                     r#"SELECT "T1"."id" FROM (SELECT"#,
@@ -646,8 +639,8 @@ fn join_linker4_test() {
             ))),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {}",
                     r#"SELECT "T1"."id" FROM (SELECT"#,
@@ -675,15 +668,14 @@ fn anonymous_col_index_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion1_id = query
+    let motion1_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_t1 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
@@ -694,15 +686,14 @@ fn anonymous_col_index_test() {
     query
         .coordinator
         .add_virtual_table(motion1_id, virtual_table_23());
-    let motion2_id = query
+    let motion2_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(1)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_t2 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
@@ -728,8 +719,8 @@ fn anonymous_col_index_test() {
     let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket3)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket3}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {} {} {} {}",
                     "SELECT",
@@ -747,8 +738,8 @@ fn anonymous_col_index_test() {
             ))),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {} {} {} {} {} {} {} {}",
                     "SELECT",
@@ -787,8 +778,8 @@ fn sharding_column1_test() {
     let param1 = Value::from(1_u64);
     let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
@@ -818,8 +809,8 @@ fn sharding_column2_test() {
     let param1 = Value::from(1_u64);
     let bucket = query.coordinator.determine_bucket_id(&[&param1]);
     expected.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "test_space"."id", "test_space"."sysFrom","#,
@@ -840,15 +831,14 @@ fn insert1_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -881,8 +871,8 @@ fn insert1_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {}",
                     r#"INSERT INTO "t" ("b", "bucket_id")"#,
@@ -892,8 +882,8 @@ fn insert1_test() {
             ))),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(String::from(PatternWithParams::new(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {}",
                     r#"INSERT INTO "t" ("b", "bucket_id")"#,
@@ -918,15 +908,14 @@ fn insert2_test() {
     // the target table, we still add a motion and collect a
     // virtual table for it on coordinator to recalculate
     // a "bucket_id" field for "t".
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
         name: "a".into(),
@@ -957,8 +946,8 @@ fn insert2_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(
             String::from(
                 PatternWithParams::new(
                     format!(
@@ -981,15 +970,14 @@ fn insert3_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -1027,8 +1015,8 @@ fn insert3_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -1041,8 +1029,8 @@ fn insert3_test() {
             ),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -1069,15 +1057,14 @@ fn insert4_test() {
 
     // Though data allows to be inserted locally still gather it on the
     // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
         name: "b".into(),
@@ -1108,8 +1095,8 @@ fn insert4_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(
             String::from(
                 PatternWithParams::new(
                     format!(
@@ -1132,15 +1119,14 @@ fn insert5_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -1173,8 +1159,8 @@ fn insert5_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(
             String::from(
                 PatternWithParams::new(
                     format!(
@@ -1204,15 +1190,14 @@ fn insert6_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -1250,8 +1235,8 @@ fn insert6_test() {
 
     expected.rows.extend(vec![
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -1273,8 +1258,8 @@ fn insert6_test() {
             ),
         ],
         vec![
-            Value::String(format!("Execute query on a bucket [{}]", bucket2)),
-            Value::String(
+            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
+            EncodedValue::String(
                 String::from(
                     PatternWithParams::new(
                         format!(
@@ -1318,15 +1303,14 @@ fn insert8_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column::new(
@@ -1363,8 +1347,8 @@ fn insert8_test() {
     let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(
             String::from(
                 PatternWithParams::new(
                     format!(
@@ -1398,15 +1382,14 @@ fn insert9_test() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     )
     .unwrap();
-    let motion_id = query
+    let motion_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
@@ -1437,8 +1420,8 @@ fn insert9_test() {
     let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
     expected.rows.extend(vec![vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket1)),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
@@ -1489,8 +1472,8 @@ pub(crate) fn broadcast_check(sql: &str, pattern: &str, params: Vec<Value>) {
     let mut expected = ProducerResult::new();
 
     expected.rows.push(vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             pattern.to_string(),
             params,
         ))),

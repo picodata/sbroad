@@ -28,8 +28,8 @@ where
                 0
             }
             Err(e) => {
-                error!(Option::from("get config"), &format!("{:?}", e));
-                tarantool_error(&format!("Failed to get configuration: {}", e))
+                error!(Option::from("get config"), &format!("{e:?}"));
+                tarantool_error(&format!("Failed to get configuration: {e}"))
             }
         }
     });

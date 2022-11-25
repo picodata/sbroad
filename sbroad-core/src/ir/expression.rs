@@ -9,7 +9,6 @@
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use tarantool::tlua::{self, LuaRead, PushInto};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
@@ -33,7 +32,7 @@ pub mod concat;
 /// and should not be changed. It ensures that we always know the
 /// name of any column in the tuple and therefore simplifies AST
 /// deserialization.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Expression {
     /// Expression name.
     ///
@@ -195,34 +194,6 @@ impl Expression {
         Ok(d.is_unknown())
     }
 
-    /// Gets value from const node
-    ///
-    /// # Errors
-    /// - node isn't constant type
-    pub fn get_const_value(&self) -> Result<Value, QueryPlannerError> {
-        if let Expression::Constant { value } = self.clone() {
-            return Ok(value);
-        }
-
-        Err(QueryPlannerError::CustomError(
-            "Node isn't const type".into(),
-        ))
-    }
-
-    /// Gets reference value from const node
-    ///
-    /// # Errors
-    /// - node isn't constant type
-    pub fn get_const_value_ref(&self) -> Result<&Value, QueryPlannerError> {
-        if let Expression::Constant { value } = self {
-            return Ok(value);
-        }
-
-        Err(QueryPlannerError::CustomError(
-            "Node isn't const type".into(),
-        ))
-    }
-
     /// Gets relational node id containing the reference.
     ///
     /// # Errors
@@ -242,12 +213,6 @@ impl Expression {
     #[must_use]
     pub fn is_row(&self) -> bool {
         matches!(self, Expression::Row { .. })
-    }
-
-    /// The node is a constant expression.
-    #[must_use]
-    pub fn is_const(&self) -> bool {
-        matches!(self, Expression::Constant { .. })
     }
 
     /// Replaces parent in the reference node with the new one.
@@ -295,11 +260,6 @@ impl Nodes {
             .get(right)
             .ok_or(QueryPlannerError::InvalidNode)?;
         Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
-    }
-
-    /// Adds constant node.
-    pub fn add_const(&mut self, value: Value) -> usize {
-        self.push(Node::Expression(Expression::Constant { value }))
     }
 
     /// Adds reference node.
@@ -365,7 +325,7 @@ impl Nodes {
         child: usize,
     ) -> Result<usize, QueryPlannerError> {
         self.arena.get(child).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("Invalid node in the plan arena:{}", child))
+            QueryPlannerError::CustomError(format!("Invalid node in the plan arena:{child}"))
         })?;
         Ok(self.push(Node::Expression(Expression::Unary { op, child })))
     }
@@ -731,6 +691,9 @@ impl Plan {
     }
 
     /// A relational node pointed by the reference.
+    /// In a case of a reference in the Motion node
+    /// within a dispatched IR to the storage, returns
+    /// the Motion node itself.
     ///
     /// # Errors
     /// - reference is invalid
@@ -742,12 +705,16 @@ impl Plan {
             targets, parent, ..
         }) = self.get_node(ref_id)?
         {
-            let referred_rel_id = parent.as_ref().ok_or_else(|| {
-                QueryPlannerError::CustomError("Reference node has no parent".into())
-            });
-            let rel = self.get_relation_node(*referred_rel_id.clone()?)?;
+            let referred_rel_id = if let Some(parent) = parent {
+                parent
+            } else {
+                return Err(QueryPlannerError::CustomError(
+                    "Reference node has no parent".into(),
+                ));
+            };
+            let rel = self.get_relation_node(*referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
-                return referred_rel_id;
+                return Ok(referred_rel_id);
             } else if let Some(children) = rel.children() {
                 match targets {
                     None => {
@@ -757,12 +724,21 @@ impl Plan {
                     }
                     Some(positions) => match (positions.first(), positions.get(1)) {
                         (Some(first), None) => {
-                            let child_id = children.get(*first).ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                    "Relational node has no child at first position".into(),
-                                )
-                            })?;
-                            return Ok(child_id);
+                            if let Some(child_id) = children.get(*first) {
+                                return Ok(child_id);
+                            }
+                            // When we dispatch IR to the storage, we truncate the
+                            // subtree below the Motion node. So, the references in
+                            // the Motion's output row are broken. We treat them in
+                            // a special way: we return the Motion node itself. Be
+                            // aware of the circular references in the tree!
+                            if let Relational::Motion { .. } = rel {
+                                return Ok(referred_rel_id);
+                            }
+                            return Err(QueryPlannerError::CustomError(format!(
+                                "Relational node {:?} has no child at first position",
+                                rel
+                            )));
                         }
                         _ => {
                             return Err(QueryPlannerError::CustomError(
@@ -787,16 +763,17 @@ impl Plan {
         &self,
         row_id: usize,
     ) -> Result<HashSet<usize, RandomState>, QueryPlannerError> {
-        let mut rel_nodes: HashSet<usize, RandomState> = HashSet::with_hasher(RandomState::new());
-
         let row = self.get_expression_node(row_id)?;
         if let Expression::Row { .. } = row {
         } else {
             return Err(QueryPlannerError::CustomError("Node is not a row".into()));
         }
         let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
-        for (_, id) in post_tree {
-            let reference = self.get_expression_node(*id)?;
+        let nodes: Vec<usize> = post_tree.map(|(_, id)| *id).collect();
+        let mut rel_nodes: HashSet<usize, RandomState> =
+            HashSet::with_capacity_and_hasher(nodes.len(), RandomState::new());
+        for id in nodes {
+            let reference = self.get_expression_node(id)?;
             if let Expression::Reference {
                 targets, parent, ..
             } = reference
@@ -807,7 +784,6 @@ impl Plan {
                 let rel = self.get_relation_node(referred_rel_id)?;
                 if let Some(children) = rel.children() {
                     if let Some(positions) = targets {
-                        rel_nodes.reserve(positions.len());
                         for pos in positions {
                             if let Some(child) = children.get(*pos) {
                                 rel_nodes.insert(*child);
@@ -817,6 +793,7 @@ impl Plan {
                 }
             }
         }
+        rel_nodes.shrink_to_fit();
         Ok(rel_nodes)
     }
 
@@ -906,12 +883,10 @@ impl Plan {
         let node = self.get_expression_node(row_id)?;
         if let Expression::Row { list, .. } = node {
             let const_node_id = list.get(child_num).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!("Child {} wasn't found", child_num))
+                QueryPlannerError::CustomError(format!("Child {child_num} wasn't found"))
             })?;
 
-            let v = self
-                .get_expression_node(*const_node_id)?
-                .get_const_value()?;
+            let v = self.get_expression_node(*const_node_id)?.as_const_value()?;
 
             return Ok(v);
         }

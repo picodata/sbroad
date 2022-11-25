@@ -135,7 +135,7 @@ where
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;
                             if let Expression::Constant { .. } = right_column_expr {
-                                values.push(right_column_expr.get_const_value_ref()?);
+                                values.push(right_column_expr.as_const_value_ref()?);
                             } else {
                                 // One of the columns is not a constant. Skip this key.
                                 values = Vec::new();
@@ -198,8 +198,16 @@ where
     #[otm_child_span("query.bucket.discovery")]
     pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, QueryPlannerError> {
         let ir_plan = self.exec_plan.get_ir_plan();
-        let rel_tree = DftPost::new(&top_id, |node| ir_plan.nodes.rel_iter(node));
-        let nodes: Vec<usize> = rel_tree.map(|(_, id)| *id).collect();
+        let tree = DftPost::new(&top_id, |node| ir_plan.flashback_subtree_iter(node));
+        let nodes: Vec<usize> = tree
+            .filter_map(|(_, id)| {
+                if ir_plan.get_relation_node(*id).is_ok() {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         for node_id in nodes {
             if self.bucket_map.get(&node_id).is_some() {

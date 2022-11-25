@@ -90,7 +90,7 @@ g.test_bucket_id_calculation = function()
 
     local r, err = api:call("sbroad.calculate_bucket_id", { { 1, "123" } })
     t.assert_equals(r, nil)
-    t.assert_str_contains(tostring(err), "space_name is required")
+    t.assert_str_contains(tostring(err), "space name is required")
 
     r, err = api:call("sbroad.calculate_bucket_id", { "1123" })
     t.assert_equals(err, nil)

@@ -55,7 +55,7 @@ fn split_columns3() {
             r#"Row { list: [12, 13, 14], distribution: None },"#,
             r#"Row { list: [16, 17], distribution: None }"#,
         ),
-        format!("{}", plan_err)
+        format!("{plan_err}")
     );
 }
 

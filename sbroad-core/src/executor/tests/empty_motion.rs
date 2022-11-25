@@ -6,7 +6,7 @@ use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
 
@@ -23,15 +23,14 @@ fn empty_motion1_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion1_id = query
+    let motion1_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(0)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_t1 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
@@ -40,15 +39,14 @@ fn empty_motion1_test() {
             .unwrap();
     }
     query.coordinator.add_virtual_table(motion1_id, virtual_t1);
-    let motion2_id = query
+    let motion2_id = *query
         .exec_plan
         .get_ir_plan()
         .clone_slices()
         .slice(0)
         .unwrap()
         .position(1)
-        .unwrap()
-        .clone();
+        .unwrap();
     let mut virtual_t2 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
@@ -66,8 +64,8 @@ fn empty_motion1_test() {
 
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String("Execute query on all buckets".into()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".into()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {} {} {} {} {} {} {} {} {} {} {}",
                 r#"SELECT "Q"."a", "Q"."b" FROM"#,
@@ -75,14 +73,14 @@ fn empty_motion1_test() {
                 r#"(SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t") as "t""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT COLUMN_1 as "g",COLUMN_2 as "h" FROM (VALUES (null,null)) WHERE FALSE) as "t2""#,
-                r#"ON ("t"."a", "t"."b") = ("t2"."g", "t2"."h")"#,
+                r#"ON ("t"."a") = ("t2"."g") and ("t"."b") = ("t2"."h")"#,
                 r#"WHERE ("t"."a") = (?)"#,
                 r#"EXCEPT"#,
                 r#"SELECT "t"."a", "t"."b" FROM"#,
                 r#"(SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t") as "t""#,
                 r#"INNER JOIN"#,
                 r#"(SELECT COLUMN_3 as "g",COLUMN_4 as "h" FROM (VALUES (null,null)) WHERE FALSE) as "t2""#,
-                r#"ON ("t"."a", "t"."b") = ("t2"."g", "t2"."h")"#,
+                r#"ON ("t"."a") = ("t2"."g") and ("t"."b") = ("t2"."h")"#,
                 r#"WHERE ("t"."a") = (?)) as "Q""#,
             ),
             vec![Value::from(0_u64), Value::from(1_u64)],

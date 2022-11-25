@@ -92,27 +92,31 @@ nodes:
             - 11
           output: 16
 relations:
-  t1:
-    columns:
-      - name: a
-        type: Boolean
-      - name: b
-        type: Number
-    key:
-      positions:
-        - 0
-    name: t1
-  t2:
-    columns:
-      - name: a
-        type: Boolean
-      - name: b
-        type: Number
-    key:
-      positions:
-        - 0
-    name: t2
-slices: ~
+  tables:
+    t1:
+      columns:
+        - name: a
+          type: Boolean
+        - name: b
+          type: Number
+      key:
+        positions:
+          - 0
+      name: t1
+    t2:
+      columns:
+        - name: a
+          type: Boolean
+        - name: b
+          type: Number
+      key:
+        positions:
+          - 0
+      name: t2
+slices:
+  slices: []
 top: 17
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

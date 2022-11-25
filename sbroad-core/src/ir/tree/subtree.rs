@@ -282,6 +282,7 @@ fn subtree_next<'plan>(
                 Relational::InnerJoin {
                     children,
                     condition,
+                    output,
                     ..
                 } => {
                     let step = *iter.get_child().borrow();
@@ -291,10 +292,23 @@ fn subtree_next<'plan>(
                         Ordering::Less => {
                             return children.get(step);
                         }
-                        Ordering::Equal => {
-                            return Some(condition);
+                        Ordering::Equal => match snapshot {
+                            Snapshot::Latest => Some(condition),
+                            Snapshot::Oldest => {
+                                return Some(
+                                    iter.get_plan()
+                                        .undo
+                                        .get_oldest(condition)
+                                        .map_or_else(|| condition, |id| id),
+                                );
+                            }
+                        },
+                        Ordering::Greater => {
+                            if step == 3 && iter.need_output() {
+                                return Some(output);
+                            }
+                            None
                         }
-                        Ordering::Greater => None,
                     }
                 }
 

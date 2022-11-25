@@ -2,10 +2,8 @@
 
 use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
-use std::num::NonZeroI32;
 
 use serde::{Deserialize, Serialize};
-use tarantool::tlua::{self, AsLua, LuaRead, PushGuard, PushInto, Void};
 
 use crate::collection;
 use crate::errors::QueryPlannerError;
@@ -20,7 +18,7 @@ use super::{Node, Plan};
 /// If table T1 is segmented by columns (a, b) and produces
 /// tuples with columns (a, b, c), it means that for any T1 tuple
 /// on a segment S1: f(a, b) = S1 and (a, b) is a segmentation key.
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
 pub struct Key {
     /// A list of column positions in the tuple that form a
     /// segmentation key.
@@ -59,36 +57,8 @@ impl From<HashSet<Key>> for KeySet {
     }
 }
 
-impl<L> LuaRead<L> for KeySet
-where
-    L: AsLua,
-{
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<KeySet, L> {
-        match HashMap::<Key, ()>::lua_read_at_position(lua, index) {
-            Ok(map) => {
-                let keys = map.into_iter().map(|(k, _)| k).collect();
-                Ok(KeySet(keys))
-            }
-            Err(lua) => Err(lua),
-        }
-    }
-}
-
-impl<L> PushInto<L> for KeySet
-where
-    L: AsLua,
-{
-    type Err = Void;
-    fn push_into_lua(self, lua: L) -> Result<PushGuard<L>, (Void, L)> {
-        let map: HashMap<Key, ()> = self.0.into_iter().map(|k| (k, ())).collect();
-        Ok(tlua::push_userdata(map, lua, |_| {}))
-    }
-}
-
-impl<L> tlua::PushOneInto<L> for KeySet where L: AsLua {}
-
 /// Tuple distribution in the cluster.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Distribution {
     /// A tuple can be located on any data node.
     /// Example: projection removes the segment key columns.
@@ -273,14 +243,13 @@ impl Plan {
                 break;
             }
         }
-        let parent_id: usize = match parent_node {
-            Some(parent_id) => parent_id,
-            None => {
-                // There are no references in the row, so it is a row of constants
-                // with replicated distribution.
-                self.set_const_dist(row_id)?;
-                return Ok(());
-            }
+        let parent_id: usize = if let Some(parent_id) = parent_node {
+            parent_id
+        } else {
+            // There are no references in the row, so it is a row of constants
+            // with replicated distribution.
+            self.set_const_dist(row_id)?;
+            return Ok(());
         };
         let parent = self.get_relation_node(parent_id)?;
 
@@ -472,32 +441,28 @@ impl Plan {
         table_pos_map: &HashMap<usize, usize, RandomState>,
         row_id: usize,
     ) -> Result<(), QueryPlannerError> {
-        if let Some(relations) = &self.relations {
-            let table: &Table = relations
-                .get(table_name)
-                .ok_or(QueryPlannerError::InvalidRelation)?;
-            let mut new_key: Key = Key::new(Vec::new());
-            let all_found = table.key.positions.iter().all(|pos| {
-                table_pos_map.get(pos).map_or(false, |v| {
-                    new_key.positions.push(*v);
-                    true
-                })
-            });
-            if all_found {
-                if let Expression::Row {
-                    ref mut distribution,
-                    ..
-                } = self.get_mut_expression_node(row_id)?
-                {
-                    let keys: HashSet<_> = collection! { new_key };
-                    *distribution = Some(Distribution::Segment { keys: keys.into() });
-                }
+        let table: &Table = self
+            .relations
+            .get(table_name)
+            .ok_or(QueryPlannerError::InvalidRelation)?;
+        let mut new_key: Key = Key::new(Vec::new());
+        let all_found = table.key.positions.iter().all(|pos| {
+            table_pos_map.get(pos).map_or(false, |v| {
+                new_key.positions.push(*v);
+                true
+            })
+        });
+        if all_found {
+            if let Expression::Row {
+                ref mut distribution,
+                ..
+            } = self.get_mut_expression_node(row_id)?
+            {
+                let keys: HashSet<_> = collection! { new_key };
+                *distribution = Some(Distribution::Segment { keys: keys.into() });
             }
-            return Ok(());
         }
-        Err(QueryPlannerError::CustomError(
-            "Relations are not initialized in the plan".to_string(),
-        ))
+        Ok(())
     }
 
     fn set_two_children_node_dist(

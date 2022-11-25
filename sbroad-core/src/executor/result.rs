@@ -6,9 +6,9 @@ use tarantool::tlua::{self, LuaRead};
 use crate::errors::QueryPlannerError;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
-type ExecutorTuple = Vec<Value>;
+type ExecutorTuple = Vec<EncodedValue>;
 
 #[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct MetadataColumn {
@@ -60,7 +60,7 @@ impl TryInto<Column> for &MetadataColumn {
 
 /// Results of query execution for `SELECT`.
 #[allow(clippy::module_name_repetitions)]
-#[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(LuaRead, Debug, Deserialize, PartialEq, Clone)]
 pub struct ProducerResult {
     pub metadata: Vec<MetadataColumn>,
     pub rows: Vec<ExecutorTuple>,
@@ -94,8 +94,12 @@ impl ProducerResult {
             result.add_column(col.try_into()?);
         }
 
-        for t in &self.rows {
-            result.add_tuple(t.clone());
+        for encoded_tuple in &self.rows {
+            let tuple = encoded_tuple
+                .iter()
+                .map(|v| Value::from(v.clone()))
+                .collect();
+            result.add_tuple(tuple);
         }
 
         Ok(result)

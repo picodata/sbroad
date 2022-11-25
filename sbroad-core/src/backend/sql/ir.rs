@@ -1,8 +1,9 @@
 use itertools::Itertools;
-use serde::{Deserialize, Deserializer, Serialize};
+use opentelemetry::Context;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use tarantool::tlua;
+use tarantool::tlua::{self, Push};
 use tarantool::tuple::{FunctionArgs, Tuple};
 
 use crate::debug;
@@ -12,13 +13,16 @@ use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VTableTuple;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 use crate::ir::Node;
-use crate::otm::{child_span, current_id, force_trace, inject_context};
+use crate::otm::{
+    child_span, current_id, deserialize_context, force_trace, get_tracer, inject_context, query_id,
+    QueryTracer,
+};
 
 use super::tree::SyntaxData;
 
-#[derive(Debug, Eq, Serialize, tlua::Push)]
+#[derive(Debug, Eq, Deserialize, Serialize, Push)]
 pub struct PatternWithParams {
     pub pattern: String,
     pub params: Vec<Value>,
@@ -41,41 +45,49 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
             Option::from("argument parsing"),
             &format!("Query parameters: {:?}", value),
         );
-        Tuple::from(value)
-            .decode::<PatternWithParams>()
-            .map_err(|e| {
-                QueryPlannerError::CustomError(format!(
-                    "Parsing error (pattern with parameters): {:?}",
-                    e
-                ))
-            })
+        match Tuple::from(value).decode::<EncodedPatternWithParams>() {
+            Ok(encoded) => Ok(PatternWithParams::from(encoded)),
+            Err(e) => Err(QueryPlannerError::CustomError(format!(
+                "Parsing error (pattern with parameters): {:?}",
+                e
+            ))),
+        }
     }
 }
 
-impl<'de> Deserialize<'de> for PatternWithParams {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(rename = "PatternWithParams")]
-        struct StructHelper(
-            String,
-            Vec<Value>,
-            Option<HashMap<String, String>>,
-            Option<String>,
-            bool,
-        );
+#[derive(Deserialize, Serialize)]
+struct EncodedPatternWithParams(
+    String,
+    Vec<EncodedValue>,
+    Option<HashMap<String, String>>,
+    Option<String>,
+    bool,
+);
 
-        let struct_helper = StructHelper::deserialize(deserializer)?;
+impl From<PatternWithParams> for EncodedPatternWithParams {
+    fn from(mut value: PatternWithParams) -> Self {
+        let encoded_params: Vec<EncodedValue> =
+            value.params.drain(..).map(EncodedValue::from).collect();
+        EncodedPatternWithParams(
+            value.pattern,
+            encoded_params,
+            value.context,
+            value.id,
+            value.force_trace,
+        )
+    }
+}
 
-        Ok(PatternWithParams {
-            pattern: struct_helper.0,
-            params: struct_helper.1,
-            context: struct_helper.2,
-            id: struct_helper.3,
-            force_trace: struct_helper.4,
-        })
+impl From<EncodedPatternWithParams> for PatternWithParams {
+    fn from(mut value: EncodedPatternWithParams) -> Self {
+        let params: Vec<Value> = value.1.drain(..).map(Value::from).collect();
+        PatternWithParams {
+            pattern: value.0,
+            params,
+            context: value.2,
+            id: value.3,
+            force_trace: value.4,
+        }
     }
 }
 
@@ -103,6 +115,20 @@ impl PatternWithParams {
             }
         }
     }
+
+    #[must_use]
+    pub fn get_tracer(&self) -> QueryTracer {
+        get_tracer(self.force_trace, self.id.as_ref(), self.context.as_ref())
+    }
+
+    #[must_use]
+    pub fn clone_id(&self) -> String {
+        self.id.clone().unwrap_or_else(|| query_id(&self.pattern))
+    }
+
+    pub fn extract_context(&mut self) -> Context {
+        deserialize_context(self.context.take())
+    }
 }
 
 impl From<PatternWithParams> for String {
@@ -112,7 +138,60 @@ impl From<PatternWithParams> for String {
 }
 
 impl ExecutionPlan {
-    /// Transform plan sub-tree (pointed by top) to sql string
+    /// # Errors
+    /// - IR plan is invalid
+    pub fn to_params(
+        &self,
+        nodes: &[&SyntaxData],
+        buckets: &Buckets,
+    ) -> Result<Vec<Value>, QueryPlannerError> {
+        let ir_plan = self.get_ir_plan();
+        let mut params: Vec<Value> = Vec::new();
+
+        for data in nodes {
+            match data {
+                SyntaxData::Parameter(id) => {
+                    let value = ir_plan.get_expression_node(*id)?;
+                    if let Expression::Constant { value, .. } = value {
+                        params.push(value.clone());
+                    } else {
+                        return Err(QueryPlannerError::CustomError(format!(
+                            "Parameter {:?} is not a constant",
+                            value
+                        )));
+                    }
+                }
+                SyntaxData::VTable(motion_id) => {
+                    let vtable = self.get_motion_vtable(*motion_id)?;
+                    let tuples: Vec<&VTableTuple> = match buckets {
+                        Buckets::All => vtable.get_tuples().iter().collect(),
+                        Buckets::Filtered(bucket_ids) => {
+                            if vtable.get_index().is_empty() {
+                                // TODO: Implement selection push-down (join_linker3_test).
+                                vtable.get_tuples().iter().collect()
+                            } else {
+                                bucket_ids
+                                    .iter()
+                                    .filter_map(|bucket_id| vtable.get_index().get(bucket_id))
+                                    .flatten()
+                                    .filter_map(|pos| vtable.get_tuples().get(*pos))
+                                    .collect()
+                            }
+                        }
+                    };
+                    for t in tuples {
+                        for v in t {
+                            params.push(v.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(params)
+    }
+
+    /// Transform plan sub-tree (pointed by top) to sql string pattern with parameters.
     ///
     /// # Errors
     /// - plan is invalid and can't be transformed
@@ -201,45 +280,60 @@ impl ExecutionPlan {
                                 Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                                 Relational::Values { .. } => sql.push_str("VALUES"),
                             },
-                            Node::Expression(expr) => match expr {
-                                Expression::Alias { .. }
-                                | Expression::Bool { .. }
-                                | Expression::Cast { .. }
-                                | Expression::Concat { .. }
-                                | Expression::Row { .. }
-                                | Expression::Unary { .. } => {}
-                                Expression::Constant { value, .. } => {
-                                    write!(sql, "{}", value).map_err(|e| {
-                                        QueryPlannerError::CustomError(format!(
-                                            "Failed to write constant value to SQL: {}",
-                                            e
-                                        ))
-                                    })?;
-                                }
-                                Expression::Reference { position, .. } => {
-                                    let rel_id: usize =
-                                        *ir_plan.get_relational_from_reference_node(*id)?;
-                                    let rel_node = ir_plan.get_relation_node(rel_id)?;
-                                    let alias = &ir_plan.get_alias_from_reference_node(expr)?;
+                            Node::Expression(expr) => {
+                                match expr {
+                                    Expression::Alias { .. }
+                                    | Expression::Bool { .. }
+                                    | Expression::Cast { .. }
+                                    | Expression::Concat { .. }
+                                    | Expression::Row { .. }
+                                    | Expression::Unary { .. } => {}
+                                    Expression::Constant { value, .. } => {
+                                        write!(sql, "{value}").map_err(|e| {
+                                            QueryPlannerError::CustomError(format!(
+                                                "Failed to write constant value to SQL: {e}"
+                                            ))
+                                        })?;
+                                    }
+                                    Expression::Reference { position, .. } => {
+                                        let rel_id: usize =
+                                            *ir_plan.get_relational_from_reference_node(*id)?;
+                                        let rel_node = ir_plan.get_relation_node(rel_id)?;
 
-                                    if rel_node.is_insert() {
-                                        // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
-                                        // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
-                                        sql.push_str(alias);
-                                    } else if let Some(name) =
-                                        rel_node.scan_name(ir_plan, *position)?
-                                    {
-                                        sql.push_str(name);
-                                        sql.push('.');
-                                        sql.push_str(alias);
-                                    } else {
+                                        if rel_node.is_motion() {
+                                            if let Ok(vt) = self.get_motion_vtable(*id) {
+                                                let alias = (*vt).get_columns().get(*position).map(|column| &column.name).ok_or_else(|| QueryPlannerError::CustomError(format!("Failed to get column name for position {position}")))?;
+                                                if let Some(name) = (*vt).get_alias() {
+                                                    sql.push_str(name);
+                                                    sql.push('.');
+                                                    sql.push_str(alias);
+                                                    continue;
+                                                }
+                                            }
+                                        }
+
+                                        let alias = &ir_plan.get_alias_from_reference_node(expr)?;
+                                        if rel_node.is_insert() {
+                                            // We expect `INSERT INTO t(a, b) VALUES(1, 2)`
+                                            // rather then `INSERT INTO t(t.a, t.b) VALUES(1, 2)`.
+                                            sql.push_str(alias);
+                                            continue;
+                                        }
+                                        if let Some(name) =
+                                            rel_node.scan_name(ir_plan, *position)?
+                                        {
+                                            sql.push_str(name);
+                                            sql.push('.');
+                                            sql.push_str(alias);
+                                            continue;
+                                        }
                                         sql.push_str(alias);
                                     }
+                                    Expression::StableFunction { name, .. } => {
+                                        sql.push_str(name.as_str());
+                                    }
                                 }
-                                Expression::StableFunction { name, .. } => {
-                                    sql.push_str(name.as_str());
-                                }
-                            },
+                            }
                         }
                     }
                     SyntaxData::Parameter(id) => {
@@ -254,7 +348,8 @@ impl ExecutionPlan {
                             )));
                         }
                     }
-                    SyntaxData::VTable(vtable) => {
+                    SyntaxData::VTable(motion_id) => {
+                        let vtable = self.get_motion_vtable(*motion_id)?;
                         let cols_count = vtable.get_columns().len();
 
                         let cols = |base_idx: &mut usize| {
@@ -263,7 +358,7 @@ impl ExecutionPlan {
                                 .iter()
                                 .map(|c| {
                                     *base_idx += 1;
-                                    format!("COLUMN_{} as \"{}\"", base_idx, c.name)
+                                    format!("COLUMN_{base_idx} as \"{}\"", c.name)
                                 })
                                 .collect::<Vec<String>>()
                                 .join(",")

@@ -1,25 +1,28 @@
-use serde::{Deserialize, Deserializer};
-use std::collections::HashMap;
+use rmp::decode::RmpRead;
 use std::os::raw::c_int;
-use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
+use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple, TupleBuffer};
 
 use crate::api::helper::load_config;
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
+use protocol::RequiredData;
 use sbroad::backend::sql::ir::PatternWithParams;
 use sbroad::errors::QueryPlannerError;
 use sbroad::executor::Query;
-use sbroad::ir::value::Value;
 use sbroad::log::tarantool_error;
-use sbroad::otm::{child_span, extract_params, query_span};
+use sbroad::otm::{child_span, query_span};
 use sbroad::{debug, error};
+
+use self::protocol::EncodedRequiredData;
+
+pub mod protocol;
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
 pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
-    let lua_params = match PatternWithParams::try_from(args) {
+    let mut lua_params = match PatternWithParams::try_from(args) {
         Ok(params) => params,
         Err(e) => {
-            error!(Option::from("dispatch_query"), &format!("Error: {}", e));
+            error!(Option::from("dispatch_query"), &format!("Error: {e}"));
             return tarantool_error(&e.to_string());
         }
     };
@@ -28,12 +31,9 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
     // As a side effect, we can't trace load_config() call itself (sic!).
     let ret_code = load_config(&COORDINATOR_ENGINE);
 
-    let (id, ctx, tracer) = extract_params(
-        lua_params.context,
-        lua_params.id,
-        &lua_params.pattern,
-        lua_params.force_trace,
-    );
+    let id = lua_params.clone_id();
+    let ctx = lua_params.extract_context();
+    let tracer = lua_params.get_tracer();
 
     query_span(
         "\"api.router\"",
@@ -59,17 +59,25 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                 {
                     Ok(q) => q,
                     Err(e) => {
-                        error!(Option::from("query dispatch"), &format!("{:?}", e));
+                        error!(Option::from("query dispatch"), &format!("{e:?}"));
                         return tarantool_error(&e.to_string());
                     }
                 };
 
                 match query.dispatch() {
                     Ok(result) => child_span("\"tarantool.tuple.return\"", || {
-                        if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
+                        if let Some(tuple) = (*result).downcast_ref::<Tuple>() {
+                            debug!(
+                                Option::from("query dispatch"),
+                                &format!("Returning tuple: {tuple:?}")
+                            );
                             f_ctx.return_tuple(tuple).unwrap();
                             0
                         } else {
+                            error!(
+                                Option::from("query dispatch"),
+                                &format!("Failed to downcast result: {result:?}")
+                            );
                             tarantool_error("Unsupported result type")
                         }
                     }),
@@ -80,66 +88,47 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
     )
 }
 
-#[derive(Debug)]
-struct ExecuteQueryParams {
-    pattern: String,
-    params: Vec<Value>,
-    context: Option<HashMap<String, String>>,
-    id: Option<String>,
-    is_data_modifier: bool,
-    force_trace: bool,
-}
-
-impl TryFrom<FunctionArgs> for ExecuteQueryParams {
-    type Error = QueryPlannerError;
-
-    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        debug!(
-            Option::from("argument parsing"),
-            &format!("Execute query parameters: {:?}", value),
-        );
-        Tuple::from(value)
-            .decode::<ExecuteQueryParams>()
-            .map_err(|e| {
-                QueryPlannerError::CustomError(format!("Parsing error (dispatched query): {:?}", e))
-            })
+fn decode_msgpack(args: FunctionArgs) -> Result<(Vec<u8>, Vec<u8>), QueryPlannerError> {
+    debug!(Option::from("decode_msgpack"), &format!("args: {args:?}"));
+    let tuple_buf: Vec<u8> = TupleBuffer::from(Tuple::from(args)).into();
+    let mut stream = rmp::decode::Bytes::from(tuple_buf.as_slice());
+    let array_len = rmp::decode::read_array_len(&mut stream)
+        .map_err(|e| QueryPlannerError::CustomError(format!("array length: {e:?}")))?
+        as usize;
+    if array_len != 2 {
+        return Err(QueryPlannerError::CustomError(format!(
+            "Expected tuple of 2 elements, got {}",
+            array_len
+        )));
     }
-}
+    let req_len = rmp::decode::read_str_len(&mut stream)
+        .map_err(|e| QueryPlannerError::CustomError(format!("read required data length: {e:?}")))?
+        as usize;
+    let mut required: Vec<u8> = vec![0_u8; req_len];
+    stream
+        .read_exact_buf(&mut required)
+        .map_err(|e| QueryPlannerError::CustomError(format!("read required data: {e:?}")))?;
 
-impl<'de> Deserialize<'de> for ExecuteQueryParams {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(rename = "ExecuteQueryParams")]
-        struct StructHelper(
-            String,
-            Vec<Value>,
-            Option<HashMap<String, String>>,
-            Option<String>,
-            bool,
-            bool,
-        );
+    let opt_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
+        QueryPlannerError::CustomError(format!("read optional data string length: {e:?}"))
+    })? as usize;
+    let mut optional: Vec<u8> = vec![0_u8; opt_len];
+    stream
+        .read_exact_buf(&mut optional)
+        .map_err(|e| QueryPlannerError::CustomError(format!("read optional data: {e:?}")))?;
 
-        let struct_helper = StructHelper::deserialize(deserializer)?;
-
-        Ok(ExecuteQueryParams {
-            pattern: struct_helper.0,
-            params: struct_helper.1,
-            context: struct_helper.2,
-            id: struct_helper.3,
-            is_data_modifier: struct_helper.4,
-            force_trace: struct_helper.5,
-        })
-    }
+    Ok((required, optional))
 }
 
 #[no_mangle]
-pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
-    let lua_params = match ExecuteQueryParams::try_from(args) {
-        Ok(param) => param,
-        Err(e) => return tarantool_error(&e.to_string()),
+pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+    let (raw_required, mut raw_optional) = match decode_msgpack(args) {
+        Ok(raw_data) => raw_data,
+        Err(e) => {
+            let err = format!("Failed to decode dispatched data: {e:?}");
+            error!(Option::from("execute"), &err);
+            return tarantool_error(&err);
+        }
     };
 
     let ret_code = load_config(&SEGMENT_ENGINE);
@@ -147,45 +136,49 @@ pub extern "C" fn execute_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int
         return ret_code;
     }
 
-    let (id, ctx, tracer) = extract_params(
-        lua_params.context,
-        lua_params.id,
-        &lua_params.pattern,
-        lua_params.force_trace,
-    );
-    query_span(
-        "\"api.storage\"",
-        &id,
-        &tracer,
-        &ctx,
-        &lua_params.pattern,
-        || {
-            SEGMENT_ENGINE.with(|engine| {
-                let runtime = match engine.try_borrow() {
-                    Ok(runtime) => runtime,
-                    Err(e) => {
-                        return tarantool_error(&format!(
-                            "Failed to borrow the runtime while executing the query: {}",
-                            e
-                        ));
-                    }
-                };
-                match runtime.execute(
-                    lua_params.pattern.as_str(),
-                    &lua_params.params,
-                    lua_params.is_data_modifier,
-                ) {
-                    Ok(result) => {
-                        if let Some(tuple) = (&*result).downcast_ref::<Tuple>() {
-                            f_ctx.return_tuple(tuple).unwrap();
-                            0
-                        } else {
-                            tarantool_error("Unsupported result type")
-                        }
-                    }
-                    Err(e) => tarantool_error(&e.to_string()),
+    let mut required = match RequiredData::try_from(EncodedRequiredData::from(raw_required)) {
+        Ok(data) => data,
+        Err(e) => {
+            let err = format!("Failed to decode required data: {e:?}");
+            error!(Option::from("execute"), &err);
+            return tarantool_error(&err);
+        }
+    };
+
+    let id: String = required.id().into();
+    let ctx = required.extract_context();
+    let tracer = required.tracer();
+
+    query_span("\"api.storage\"", &id, &tracer, &ctx, "", || {
+        SEGMENT_ENGINE.with(|engine| {
+            let runtime = match engine.try_borrow() {
+                Ok(runtime) => runtime,
+                Err(e) => {
+                    return tarantool_error(&format!(
+                        "Failed to borrow the runtime while executing the query: {}",
+                        e
+                    ));
                 }
-            })
-        },
-    )
+            };
+            match runtime.execute_plan(&mut required, &mut raw_optional) {
+                Ok(result) => {
+                    if let Some(tuple) = (*result).downcast_ref::<Tuple>() {
+                        f_ctx.return_tuple(tuple).unwrap();
+                        0
+                    } else {
+                        error!(
+                            Option::from("execute"),
+                            &format!("Failed to downcast result: {result:?}")
+                        );
+                        tarantool_error("Unsupported result type")
+                    }
+                }
+                Err(e) => {
+                    let error = format!("Failed to execute the query: {e}");
+                    error!(Option::from("execute"), &error);
+                    tarantool_error(&error)
+                }
+            }
+        })
+    })
 }

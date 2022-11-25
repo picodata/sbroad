@@ -70,7 +70,7 @@ fn integer() {
 
 #[test]
 fn string() {
-    assert_eq!(Value::String("".to_string()), Value::from(""));
+    assert_eq!(Value::String(String::new()), Value::from(""));
     assert_eq!(Value::String("hello".to_string()), Value::from("hello"));
     assert_eq!(
         Value::String("hello".to_string()),

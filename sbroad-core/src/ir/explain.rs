@@ -31,14 +31,14 @@ impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
             ColExpr::Column(c) => c.to_string(),
-            ColExpr::Cast(v, t) => format!("{}::{}", v, t),
-            ColExpr::Concat(l, r) => format!("{} || {}", l, r),
-            ColExpr::StableFunction(name, arg) => format!("{}({})", name, arg),
+            ColExpr::Cast(v, t) => format!("{v}::{t}"),
+            ColExpr::Concat(l, r) => format!("{l} || {r}"),
+            ColExpr::StableFunction(name, arg) => format!("{name}({arg})"),
             ColExpr::Row(list) => format!("({})", list.iter().format(", ")),
-            ColExpr::None => "".to_string(),
+            ColExpr::None => String::new(),
         };
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -123,7 +123,7 @@ impl ColExpr {
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
                             QueryPlannerError::CustomError(
-                                format!("Failed to pop {} element from stack while processing ROW expression", len),
+                                format!("Failed to pop {len} element from stack while processing ROW expression"),
                             )
                         })?;
                         row.push(expr);
@@ -181,10 +181,10 @@ impl Display for Col {
         let mut s = String::from(&self.col);
 
         if let Some(a) = &self.alias {
-            write!(s, " -> {}", a)?;
+            write!(s, " -> {a}")?;
         }
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -221,8 +221,8 @@ impl Display for Projection {
             .collect::<Vec<String>>()
             .join(", ");
 
-        write!(s, "({})", cols)?;
-        write!(f, "{}", s)
+        write!(s, "({cols})")?;
+        write!(f, "{s}")
     }
 }
 
@@ -249,10 +249,10 @@ impl Display for Scan {
         s.push_str(&self.table);
 
         if let Some(a) = &self.alias {
-            write!(s, " -> {}", a)?;
+            write!(s, " -> {a}")?;
         }
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -290,7 +290,7 @@ impl Display for RowVal {
             RowVal::SqRef(r) => r.to_string(),
         };
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -371,7 +371,7 @@ impl Display for Row {
             .collect::<Vec<String>>()
             .join(", ");
 
-        write!(f, "ROW({})", cols)
+        write!(f, "ROW({cols})")
     }
 }
 
@@ -433,14 +433,14 @@ impl Display for Selection {
         let s = match &self {
             Selection::Row(r) => r.to_string(),
             Selection::BinaryOp { left, op, right } => {
-                format!("{} {} {}", left, op, right)
+                format!("{left} {op} {right}")
             }
             Selection::UnaryOp { op, child } => match op {
-                Unary::IsNull | Unary::IsNotNull => format!("{} {}", child, op),
+                Unary::IsNull | Unary::IsNotNull => format!("{child} {op}"),
             },
         };
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -462,9 +462,9 @@ impl Display for SubQuery {
         let mut s = String::from("scan");
 
         if let Some(a) = &self.alias {
-            write!(s, " {}", a)?;
+            write!(s, " {a}")?;
         }
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -501,7 +501,7 @@ impl Display for MotionPolicy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
             MotionPolicy::Full => write!(f, "full"),
-            MotionPolicy::Segment(mk) => write!(f, "segment({})", mk),
+            MotionPolicy::Segment(mk) => write!(f, "segment({mk})"),
             MotionPolicy::Local => write!(f, "local"),
         }
     }
@@ -521,7 +521,7 @@ impl Display for MotionKey {
             .collect::<Vec<String>>()
             .join(", ");
 
-        write!(f, "[{}]", targets)
+        write!(f, "[{targets}]")
     }
 }
 
@@ -534,8 +534,8 @@ enum Target {
 impl Display for Target {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Target::Reference(s) => write!(f, "ref({})", s),
-            Target::Value(v) => write!(f, "value({})", v),
+            Target::Reference(s) => write!(f, "ref({s})"),
+            Target::Value(v) => write!(f, "value({v})"),
         }
     }
 }
@@ -572,18 +572,18 @@ impl Display for ExplainNode {
         let s = match &self {
             ExplainNode::Except => "except".to_string(),
             ExplainNode::InnerJoin(i) => i.to_string(),
-            ExplainNode::ValueRow(r) => format!("value row (data={})", r),
+            ExplainNode::ValueRow(r) => format!("value row (data={r})"),
             ExplainNode::Value => "values".to_string(),
-            ExplainNode::Insert(s) => format!("insert {}", s),
+            ExplainNode::Insert(s) => format!("insert {s}"),
             ExplainNode::Projection(e) => e.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
-            ExplainNode::Selection(s) => format!("selection {}", s),
+            ExplainNode::Selection(s) => format!("selection {s}"),
             ExplainNode::UnionAll => "union all".to_string(),
             ExplainNode::SubQuery(s) => s.to_string(),
             ExplainNode::Motion(m) => m.to_string(),
         };
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -615,7 +615,7 @@ impl Display for ExplainTreePart {
             s.push_str(&child.to_string());
         }
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -652,10 +652,10 @@ impl Display for FullExplain {
         let mut s = self.main_query.to_string();
 
         for (pos, sq) in self.subqueries.iter().enumerate() {
-            writeln!(s, "subquery ${}:", pos)?;
+            writeln!(s, "subquery ${pos}:")?;
             s.push_str(&sq.to_string());
         }
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -779,7 +779,7 @@ impl FullExplain {
                             let col_list =
                                 ir.get_expression_node(child_output_id)?.get_row_list()?;
 
-                            let targets = (&s.targets)
+                            let targets = (s.targets)
                                 .iter()
                                 .map(|r| match r {
                                     IrTarget::Reference(pos) => {

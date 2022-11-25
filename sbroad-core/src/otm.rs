@@ -23,7 +23,6 @@ use opentelemetry::trace::{SpanBuilder, SpanKind, TraceContextExt, Tracer};
 #[allow(unused_imports)]
 use opentelemetry::{Context, KeyValue};
 
-use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -100,7 +99,7 @@ impl TraceInfo {
 
     fn empty() -> Self {
         // TODO: handle disable statistics.
-        Self::new(QueryTracer::Statistics, Context::new(), "".to_string())
+        Self::new(QueryTracer::Statistics, Context::new(), String::new())
     }
 
     fn tracer(&self) -> &QueryTracer {
@@ -348,8 +347,7 @@ fn new_id() -> String {
 #[inline]
 #[must_use]
 pub fn query_id(pattern: &str) -> String {
-    let hash = Sha256::digest(pattern.as_bytes());
-    Base64::encode_string(&hash)
+    Base64::encode_string(blake3::hash(pattern.as_bytes()).to_hex().as_bytes())
 }
 
 pub fn update_global_tracer() {
@@ -412,6 +410,44 @@ pub fn extract_context(carrier: &mut dyn Extractor) -> Context {
 }
 
 #[must_use]
+pub fn get_tracer<S: ::std::hash::BuildHasher>(
+    force_trace: bool,
+    id: Option<&String>,
+    context: Option<&HashMap<String, String, S>>,
+) -> QueryTracer {
+    match (force_trace, id, context) {
+        (_, None, None) | (false, _, _) => QueryTracer::Statistics,
+        (_, None, Some(carrier)) => {
+            if carrier.is_empty() {
+                QueryTracer::Statistics
+            } else {
+                QueryTracer::Global
+            }
+        }
+        _ => QueryTracer::Global,
+    }
+}
+
+pub fn deserialize_context<S: ::std::hash::BuildHasher>(
+    context: Option<HashMap<String, String, S>>,
+) -> Context {
+    if let Some(mut carrier) = context {
+        debug!(
+            Option::from("dispatched IR"),
+            &format!("Serialized OTM span context: {:?}", carrier),
+        );
+        let ctx = extract_context(&mut carrier);
+        debug!(
+            Option::from("dispatched IR"),
+            &format!("Deserialized OTM span context: {:?}", ctx.span()),
+        );
+        ctx
+    } else {
+        Context::new()
+    }
+}
+
+#[must_use]
 pub fn extract_params<S: ::std::hash::BuildHasher>(
     context: Option<HashMap<String, String, S>>,
     id: Option<String>,
@@ -422,11 +458,7 @@ pub fn extract_params<S: ::std::hash::BuildHasher>(
         (_, None, None) | (false, _, _) => QueryTracer::Statistics,
         _ => QueryTracer::Global,
     };
-    let id = if let Some(id) = id {
-        id
-    } else {
-        query_id(pattern)
-    };
+    let id = id.unwrap_or_else(|| query_id(pattern));
     let ctx = if let Some(mut carrier) = context {
         debug!(
             Option::from("parameters extraction"),

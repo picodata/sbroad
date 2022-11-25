@@ -69,17 +69,21 @@ nodes:
             - 5
           output: 10
 relations:
-  t:
-    columns:
-      - name: a
-        type: Boolean
-      - name: b
-        type: Number
-    key:
-      positions:
-        - 0
-    name: t
-slices: ~
+  tables:
+    t:
+      columns:
+        - name: a
+          type: Boolean
+        - name: b
+          type: Number
+      key:
+        positions:
+          - 0
+      name: t
+slices:
+  slices: []
 top: 11
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

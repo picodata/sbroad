@@ -2,100 +2,30 @@
 //!
 //! Contains the logical plan tree and helpers.
 
+use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::num::NonZeroI32;
-use tarantool::tlua::{self, AsLua, LuaRead, PushInto};
 
 use expression::Expression;
 use operator::Relational;
 use relation::Table;
 
 use crate::errors::QueryPlannerError;
-use crate::ir::helpers::RepeatableState;
-use crate::ir::value::Value;
+use crate::ir::undo::TransformationLog;
+
+use self::parameters::Parameters;
+use self::relation::Relations;
 
 pub mod distribution;
 pub mod expression;
 pub mod function;
 pub mod helpers;
 pub mod operator;
+pub mod parameters;
 pub mod relation;
 pub mod transformation;
 pub mod tree;
+pub mod undo;
 pub mod value;
-
-/// Transformation log keep the history of the plan subtree modifications.
-/// When we modify the plan subtree, we add a new entry to the log, where
-/// the key is a new subtree top node and the value is the previous version.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct TransformationLog(HashMap<usize, usize, RepeatableState>);
-
-impl Default for TransformationLog {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TransformationLog {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(HashMap::with_hasher(RepeatableState))
-    }
-
-    pub fn add(&mut self, old_id: usize, new_id: usize) {
-        self.0.insert(new_id, old_id);
-    }
-
-    #[must_use]
-    pub fn get(&self, new_id: &usize) -> Option<&usize> {
-        self.0.get(new_id)
-    }
-
-    #[must_use]
-    pub fn get_oldest(&self, new_id: &usize) -> Option<&usize> {
-        match self.0.get_key_value(new_id) {
-            None => None,
-            Some((id, _)) => {
-                let mut current = id;
-                while let Some(parent) = self.get(current) {
-                    current = parent;
-                }
-                Some(current)
-            }
-        }
-    }
-}
-
-impl<L> tlua::LuaRead<L> for TransformationLog
-where
-    L: tlua::AsLua,
-{
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<TransformationLog, L> {
-        match HashMap::lua_read_at_position(lua, index) {
-            Ok(map) => {
-                let mut log = TransformationLog::new();
-                for (new_id, old_id) in map {
-                    log.add(old_id, new_id);
-                }
-                Ok(log)
-            }
-            Err(lua) => Err(lua),
-        }
-    }
-}
-
-impl<L> tlua::PushInto<L> for TransformationLog
-where
-    L: AsLua,
-{
-    type Err = tlua::Void;
-    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
-        Ok(tlua::push_userdata(self.0, lua, |_| {}))
-    }
-}
-
-impl<L> tlua::PushOneInto<L> for TransformationLog where L: tlua::AsLua {}
 
 /// Plan tree node.
 ///
@@ -109,7 +39,7 @@ impl<L> tlua::PushOneInto<L> for TransformationLog where L: tlua::AsLua {}
 ///
 /// Enum was chosen as we don't want to mess with dynamic
 /// dispatching and its performance penalties.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Node {
     Expression(Expression),
     Relational(Relational),
@@ -117,7 +47,7 @@ pub enum Node {
 }
 
 /// Plan nodes storage.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Nodes {
     /// We don't want to mess with the borrow checker and RefCell/Rc,
     /// so all nodes are stored in the single arena ("nodes" array).
@@ -145,6 +75,16 @@ impl Nodes {
             .count()
     }
 
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.arena.is_empty()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.arena.len()
+    }
+
     /// Add new node to arena.
     ///
     /// Inserts a new node to the arena and returns its position,
@@ -160,72 +100,105 @@ impl Nodes {
     pub fn next_id(&self) -> usize {
         self.arena.len()
     }
+
+    /// Replace a node in arena with another one.
+    ///
+    /// # Errors
+    /// - The node with the given position doesn't exist.
+    pub fn replace(&mut self, id: usize, node: Node) -> Result<Node, QueryPlannerError> {
+        if id >= self.arena.len() {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Can't replace node with id {} as it is out of arena bounds",
+                id
+            )));
+        }
+        let old_node = std::mem::replace(&mut self.arena[id], node);
+        Ok(old_node)
+    }
+
+    pub fn reserve(&mut self, capacity: usize) {
+        self.arena.reserve(capacity);
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.arena.shrink_to_fit();
+    }
 }
 
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct Slice(Vec<usize>);
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Slice {
+    slice: Vec<usize>,
+}
 
 impl From<Vec<usize>> for Slice {
     fn from(vec: Vec<usize>) -> Self {
-        Self(vec)
+        Self { slice: vec }
     }
 }
 
 impl Slice {
     #[must_use]
     pub fn position(&self, index: usize) -> Option<&usize> {
-        self.0.get(index)
+        self.slice.get(index)
     }
 
     #[must_use]
     pub fn positions(&self) -> &[usize] {
-        &self.0
+        &self.slice
     }
 }
 
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct Slices(Option<Vec<Slice>>);
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Slices {
+    pub slices: Vec<Slice>,
+}
 
-impl From<Option<Vec<Slice>>> for Slices {
-    fn from(vec: Option<Vec<Slice>>) -> Self {
-        Self(vec)
+impl From<Vec<Slice>> for Slices {
+    fn from(vec: Vec<Slice>) -> Self {
+        Self { slices: vec }
     }
 }
 
-impl From<Option<Vec<Vec<usize>>>> for Slices {
-    fn from(vec: Option<Vec<Vec<usize>>>) -> Self {
-        Self(vec.map(|vec| vec.into_iter().map(Slice::from).collect()))
+impl From<Vec<Vec<usize>>> for Slices {
+    fn from(vec: Vec<Vec<usize>>) -> Self {
+        Self {
+            slices: vec.into_iter().map(Slice::from).collect(),
+        }
     }
 }
 
 impl Slices {
     #[must_use]
     pub fn slice(&self, index: usize) -> Option<&Slice> {
-        self.0.as_ref().and_then(|slices| slices.get(index))
+        self.slices.get(index)
     }
 
     #[must_use]
-    pub fn slices(&self) -> Option<&Vec<Slice>> {
-        self.0.as_ref()
+    pub fn slices(&self) -> &[Slice] {
+        self.slices.as_ref()
+    }
+
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { slices: vec![] }
     }
 }
 
 /// Logical plan tree structure.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Plan {
     /// Append only arena for the plan nodes.
     pub(crate) nodes: Nodes,
     /// Relations are stored in a hash-map, with a table name acting as a
-    /// key to guarantee its uniqueness across the plan. The map is marked
-    /// optional because plans without relations do exist (`select 1`).
-    pub(crate) relations: Option<HashMap<String, Table>>,
+    /// key to guarantee its uniqueness across the plan.
+    pub(crate) relations: Relations,
     /// Slice is a plan subtree under Motion node, that can be executed
     /// on a single db instance without data distribution problems (we add
     /// Motions to resolve them). Them we traverse the plan tree and collect
     /// Motions level by level in a bottom-up manner to the "slices" array
     /// of arrays. All the slices on the same level can be executed in parallel.
     /// In fact, "slices" is a prepared set of commands for the executor.
-    slices: Slices,
+    pub(crate) slices: Slices,
     /// The plan top is marked as optional for tree creation convenience.
     /// We build the plan tree in a bottom-up manner, so the top would
     /// be added last. The plan without a top should be treated as invalid.
@@ -236,6 +209,8 @@ pub struct Plan {
     /// The undo log keeps the history of the plan transformations. It can
     /// be used to revert the plan subtree to some previous snapshot if needed.
     pub(crate) undo: TransformationLog,
+    /// Maps parameter to the corresponding constant node.
+    pub(crate) constants: Parameters,
 }
 
 impl Default for Plan {
@@ -250,16 +225,7 @@ impl Plan {
     ///
     /// If relation already exists, do nothing.
     pub fn add_rel(&mut self, table: Table) {
-        match &mut self.relations {
-            None => {
-                let mut map = HashMap::new();
-                map.insert(String::from(table.name()), table);
-                self.relations = Some(map);
-            }
-            Some(relations) => {
-                relations.entry(String::from(table.name())).or_insert(table);
-            }
-        }
+        self.relations.insert(table);
     }
 
     /// Check that plan tree is valid.
@@ -286,11 +252,12 @@ impl Plan {
     pub fn new() -> Self {
         Plan {
             nodes: Nodes { arena: Vec::new() },
-            relations: None,
-            slices: Slices(None),
+            relations: Relations::new(),
+            slices: Slices { slices: vec![] },
             top: None,
             is_explain: false,
             undo: TransformationLog::new(),
+            constants: Parameters::new(),
         }
     }
 
@@ -341,9 +308,7 @@ impl Plan {
     /// Get relation in the plan by its name.
     #[must_use]
     pub fn get_relation(&self, name: &str) -> Option<&Table> {
-        self.relations
-            .as_ref()
-            .and_then(|relations| relations.get(name))
+        self.relations.get(name)
     }
 
     /// Construct a plan from the YAML file.
@@ -390,11 +355,6 @@ impl Plan {
         self.nodes.next_id()
     }
 
-    /// Add constant value to the plan.
-    pub fn add_const(&mut self, v: Value) -> usize {
-        self.nodes.add_const(v)
-    }
-
     /// Add condition node to the plan.
     ///
     /// # Errors
@@ -418,29 +378,6 @@ impl Plan {
         child: usize,
     ) -> Result<usize, QueryPlannerError> {
         self.nodes.add_unary_bool(op, child)
-    }
-
-    pub fn add_param(&mut self) -> usize {
-        self.nodes.push(Node::Parameter)
-    }
-
-    // Gather all parameter nodes from the tree to a hash set.
-    #[must_use]
-    pub fn get_params(&self) -> HashSet<usize> {
-        let param_set: HashSet<usize> = self
-            .nodes
-            .arena
-            .iter()
-            .enumerate()
-            .filter_map(|(id, node)| {
-                if let Node::Parameter = node {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        param_set
     }
 
     /// Marks plan as query explain
@@ -502,7 +439,17 @@ impl Plan {
     pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, QueryPlannerError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
-            Node::Relational(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
+            Node::Parameter => {
+                let node = self.constants.get(node_id);
+                if let Some(Node::Expression(exp)) = node {
+                    Ok(exp)
+                } else {
+                    Err(QueryPlannerError::CustomError(
+                        "Parameter node does not refer to an expression".into(),
+                    ))
+                }
+            }
+            Node::Relational(_) => Err(QueryPlannerError::CustomError(
                 "Node isn't expression".into(),
             )),
         }
@@ -552,19 +499,9 @@ impl Plan {
             // In a case of insert we don't inspect children output tuple
             // but rather use target relation columns.
             if let Relational::Insert { ref relation, .. } = ref_node {
-                let rel = self
-                    .relations
-                    .as_ref()
-                    .ok_or_else(|| {
-                        QueryPlannerError::CustomError("Plan contains no relations".into())
-                    })?
-                    .get(relation)
-                    .ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Relation {} doesn't exist",
-                            relation
-                        ))
-                    })?;
+                let rel = self.relations.get(relation).ok_or_else(|| {
+                    QueryPlannerError::CustomError(format!("Relation {relation} doesn't exist"))
+                })?;
                 let col_name = rel
                     .columns
                     .get(*position)
@@ -613,19 +550,59 @@ impl Plan {
                     _ => return Err(QueryPlannerError::CustomError("Expected alias node".into())),
                 }
             }
+
+            return Err(QueryPlannerError::CustomError(
+                "Failed to get a referred relational node".into(),
+            ));
         }
 
         Err(QueryPlannerError::CustomError(
-            "Node isn't reference type".into(),
+            "Node is not of a reference type".into(),
         ))
     }
 
     /// Set slices of the plan.
-    pub fn set_slices(&mut self, slices: Option<Vec<Vec<usize>>>) {
+    pub fn set_slices(&mut self, slices: Vec<Vec<usize>>) {
         self.slices = slices.into();
+    }
+
+    /// # Errors
+    /// - serialization error (to binary)
+    pub fn pattern_id(&self) -> Result<String, QueryPlannerError> {
+        let mut bytes: Vec<u8> = bincode::serialize(&self.nodes).map_err(|e| {
+            QueryPlannerError::CustomError(format!(
+                "Failed to serialize plan nodes to binary: {:?}",
+                e
+            ))
+        })?;
+        let mut relation_bytes: Vec<u8> = bincode::serialize(&self.relations).map_err(|e| {
+            QueryPlannerError::CustomError(format!(
+                "Failed to serialize plan relations to binary: {:?}",
+                e
+            ))
+        })?;
+        let mut slice_bytes: Vec<u8> = bincode::serialize(&self.slices).map_err(|e| {
+            QueryPlannerError::CustomError(format!(
+                "Failed to serialize plan slices to binary: {:?}",
+                e
+            ))
+        })?;
+        let mut top_bytes: Vec<u8> = bincode::serialize(&self.top).map_err(|e| {
+            QueryPlannerError::CustomError(format!(
+                "Failed to serialize plan top to binary: {:?}",
+                e
+            ))
+        })?;
+        bytes.append(&mut relation_bytes);
+        bytes.append(&mut slice_bytes);
+        bytes.append(&mut top_bytes);
+
+        let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes());
+        Ok(hash)
     }
 }
 
+pub mod api;
 mod explain;
 #[cfg(test)]
 mod tests;

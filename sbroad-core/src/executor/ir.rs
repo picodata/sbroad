@@ -2,20 +2,37 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use ahash::AHashMap;
+use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
 use crate::errors::QueryPlannerError;
 use crate::errors::QueryPlannerError::CustomError;
-use crate::executor::vtable::VirtualTable;
+use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::{Node, Plan};
 
-#[derive(Debug, Clone)]
+/// Query type (used to parse the returned results).
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+pub enum QueryType {
+    /// SELECT query.
+    DQL,
+    /// INSERT query.
+    DML,
+}
+
+/// Connection type to the Tarantool instance.
+#[derive(Debug)]
+pub enum ConnectionType {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ExecutionPlan {
     plan: Plan,
-    vtables: Option<HashMap<usize, Rc<VirtualTable>>>,
+    pub vtables: Option<VirtualTableMap>,
 }
 
 impl From<Plan> for ExecutionPlan {
@@ -40,15 +57,15 @@ impl ExecutionPlan {
 
     #[must_use]
     pub fn get_vtables(&self) -> Option<&HashMap<usize, Rc<VirtualTable>>> {
-        self.vtables.as_ref()
+        self.vtables.as_ref().map(VirtualTableMap::map)
     }
 
     pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<usize, Rc<VirtualTable>>> {
-        self.vtables.as_mut()
+        self.vtables.as_mut().map(VirtualTableMap::mut_map)
     }
 
     pub fn set_vtables(&mut self, vtables: HashMap<usize, Rc<VirtualTable>>) {
-        self.vtables = Some(vtables);
+        self.vtables = Some(VirtualTableMap::new(vtables));
     }
 
     /// Get motion virtual table
@@ -59,7 +76,7 @@ impl ExecutionPlan {
         &self,
         motion_id: usize,
     ) -> Result<Rc<VirtualTable>, QueryPlannerError> {
-        if let Some(vtable) = &self.vtables {
+        if let Some(vtable) = self.get_vtables() {
             if let Some(result) = vtable.get(&motion_id) {
                 return Ok(Rc::clone(result));
             }
@@ -190,25 +207,71 @@ impl ExecutionPlan {
         Ok(*child_id)
     }
 
+    /// Unlink the subtree of the motion node.
+    ///
+    /// # Errors
+    /// - not a motion node
+    pub fn unlink_motion_subtree(&mut self, motion_id: usize) -> Result<(), QueryPlannerError> {
+        let motion = self.get_mut_ir_plan().get_mut_relation_node(motion_id)?;
+        if let Relational::Motion {
+            ref mut children, ..
+        } = motion
+        {
+            *children = vec![];
+        } else {
+            return Err(QueryPlannerError::CustomError(format!(
+                "Node ({}) is not motion",
+                motion_id
+            )));
+        }
+        Ok(())
+    }
+
     /// Build a new execution plan from the subtree of the existing execution plan.
+    /// The operation is destructive and the subtree is removed from the original plan.
     ///
     /// # Errors
     /// - the original execution plan is invalid
     #[allow(clippy::too_many_lines)]
-    pub fn new_from_subtree(&self, top_id: usize) -> Result<Self, QueryPlannerError> {
-        let mut map: AHashMap<usize, usize> = AHashMap::new();
-        let mut new_vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, QueryPlannerError> {
+        let nodes_capacity = self.get_ir_plan().nodes.len();
+        // Translates the original plan's node id to the new sub-plan one.
+        let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes_capacity);
+        let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
+        let mut new_vtables: HashMap<usize, Rc<VirtualTable>> =
+            HashMap::with_capacity(vtables_capacity);
         let mut new_plan = Plan::new();
-        let ir_plan = self.get_ir_plan();
-        let subtree = DftPost::new(&top_id, |node| ir_plan.exec_plan_subtree_iter(node));
-        for (_, node_id) in subtree {
-            let mut node = ir_plan.get_node(*node_id)?.clone();
+        new_plan.nodes.reserve(nodes_capacity);
+        let subtree = DftPost::new(&top_id, |node| {
+            self.get_ir_plan().exec_plan_subtree_iter(node)
+        });
+        let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
+        for node_id in nodes {
+            // We have already processed this node (sub-queries in BETWEEN can be referred twice).
+            if translation.contains_key(&node_id) {
+                continue;
+            }
+
+            let dst_node = self.get_mut_ir_plan().get_mut_node(node_id)?;
+            // Replace the node with some invalid value.
+            // TODO: introduce some new enum variant for this purpose.
+            let mut node: Node = std::mem::replace(dst_node, Node::Parameter);
+            let ir_plan = self.get_ir_plan();
             let next_id = new_plan.nodes.next_id();
             match node {
                 Node::Relational(ref mut rel) => {
+                    if let Relational::ValuesRow { data, .. } = rel {
+                        *data = *translation.get(data).ok_or_else(|| {
+                            QueryPlannerError::CustomError(format!(
+                                "Failed to build an execution plan subtree: could not find data node id {} in the map",
+                                data
+                            ))
+                        })?;
+                    }
+
                     if let Relational::Motion { children, .. } = rel {
                         if let Some(vtable) =
-                            self.get_vtables().map_or_else(|| None, |v| v.get(node_id))
+                            self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
                         {
                             new_vtables.insert(next_id, Rc::clone(vtable));
                         }
@@ -217,7 +280,7 @@ impl ExecutionPlan {
 
                     if let Some(children) = rel.mut_children() {
                         for child_id in children {
-                            *child_id = *map.get(child_id).ok_or_else(|| {
+                            *child_id = *translation.get(child_id).ok_or_else(|| {
                                 QueryPlannerError::CustomError(format!(
                                     "Failed to build an execution plan subtree: could not find child node id {} in the map",
                                     child_id
@@ -227,10 +290,10 @@ impl ExecutionPlan {
                     }
 
                     let output = rel.output();
-                    *rel.mut_output() = *map.get(&output).ok_or_else(|| {
+                    *rel.mut_output() = *translation.get(&output).ok_or_else(|| {
                         QueryPlannerError::CustomError(format!(
-                            "Failed to build an execution plan subtree: could not find output node id {} in the map",
-                            output
+                            "Failed to find an output node {} in relational node {:?}",
+                            output, rel
                         ))
                     })?;
                     new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
@@ -244,21 +307,26 @@ impl ExecutionPlan {
                         ..
                     } = rel
                     {
-                        let oldest_expr_id = ir_plan
-                            .undo
-                            .get_oldest(expr_id)
-                            .map_or_else(|| &*expr_id, |id| id);
-                        *expr_id = *map.get(oldest_expr_id).ok_or_else(|| {
+                        // We transform selection's filter and join's condition to DNF for a better bucket calculation.
+                        // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
+                        // parser can fail to parse such SQL).
+
+                        // FIXME: UNDO operation can cause problems  ша we introduce more complicated transformations
+                        // for filter/condition (but then the UNDO logic should be changed as well).
+                        let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
+                        *expr_id = *translation.get(undo_expr_id).ok_or_else(|| {
                             QueryPlannerError::CustomError(format!(
                                 "Failed to build an execution plan subtree: could not find filter/condition node id {} in the map",
-                                oldest_expr_id
+                                undo_expr_id
                             ))
                         })?;
                         new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
                     }
 
-                    if let Relational::ScanRelation { relation, .. } = rel {
-                        let table = ir_plan.relations.as_ref().and_then(|r| r.get(relation)).ok_or_else(|| {
+                    if let Relational::ScanRelation { relation, .. }
+                    | Relational::Insert { relation, .. } = rel
+                    {
+                        let table = ir_plan.relations.get(relation).ok_or_else(|| {
                             QueryPlannerError::CustomError(format!(
                                 "Failed to build an execution plan subtree: could not find relation {} in the original plan",
                                 relation
@@ -271,7 +339,7 @@ impl ExecutionPlan {
                     Expression::Alias { ref mut child, .. }
                     | Expression::Cast { ref mut child, .. }
                     | Expression::Unary { ref mut child, .. } => {
-                        *child = *map.get(child).ok_or_else(|| {
+                        *child = *translation.get(child).ok_or_else(|| {
                                 QueryPlannerError::CustomError(format!(
                                     "Failed to build an execution plan subtree: could not find child node id {} in the map",
                                     child
@@ -288,13 +356,13 @@ impl ExecutionPlan {
                         ref mut right,
                         ..
                     } => {
-                        *left = *map.get(left).ok_or_else(|| {
+                        *left = *translation.get(left).ok_or_else(|| {
                                 QueryPlannerError::CustomError(format!(
                                     "Failed to build an execution plan subtree: could not find left child node id {} in the map",
                                     left
                                 ))
                             })?;
-                        *right = *map.get(right).ok_or_else(|| {
+                        *right = *translation.get(right).ok_or_else(|| {
                                 QueryPlannerError::CustomError(format!(
                                     "Failed to build an execution plan subtree: could not find right child node id {} in the map",
                                     right
@@ -313,7 +381,7 @@ impl ExecutionPlan {
                         ref mut children, ..
                     } => {
                         for child in children {
-                            *child = *map.get(child).ok_or_else(|| {
+                            *child = *translation.get(child).ok_or_else(|| {
                                     QueryPlannerError::CustomError(format!(
                                         "Failed to build an execution plan subtree: could not find child node id {} in the map",
                                         child
@@ -326,21 +394,45 @@ impl ExecutionPlan {
                 Node::Parameter { .. } => {}
             }
             new_plan.nodes.push(node);
-            map.insert(*node_id, next_id);
-            if top_id == *node_id {
+            translation.insert(node_id, next_id);
+            if top_id == node_id {
                 new_plan.set_top(next_id)?;
             }
         }
 
+        new_plan.stash_constants()?;
+        new_plan.nodes.shrink_to_fit();
+
         let vtables = if new_vtables.is_empty() {
             None
         } else {
-            Some(new_vtables)
+            Some(VirtualTableMap::new(new_vtables))
         };
         let new_exec_plan = ExecutionPlan {
             plan: new_plan,
             vtables,
         };
         Ok(new_exec_plan)
+    }
+
+    /// # Errors
+    /// - execution plan is invalid
+    pub fn query_type(&self) -> Result<QueryType, QueryPlannerError> {
+        let top_id = self.get_ir_plan().get_top()?;
+        let top = self.get_ir_plan().get_relation_node(top_id)?;
+        if top.is_insert() {
+            Ok(QueryType::DML)
+        } else {
+            Ok(QueryType::DQL)
+        }
+    }
+
+    /// # Errors
+    /// - execution plan is invalid
+    pub fn connection_type(&self) -> Result<ConnectionType, QueryPlannerError> {
+        match self.query_type()? {
+            QueryType::DML => Ok(ConnectionType::Write),
+            QueryType::DQL => Ok(ConnectionType::Read),
+        }
     }
 }

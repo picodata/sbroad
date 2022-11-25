@@ -24,15 +24,19 @@ nodes:
           output: 2
           relation: t
 relations:
-  t:
-    columns:
-      - name: a
-        type: Boolean
-    key:
-      positions:
-        - 0
-    name: t
-slices: ~
+  tables:
+    t:
+      columns:
+        - name: a
+          type: Boolean
+      key:
+        positions:
+          - 0
+      name: t
+slices:
+  slices: []
 top: ~
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

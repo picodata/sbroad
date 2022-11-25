@@ -52,15 +52,17 @@ _G.group_buckets_by_replicasets = function(buckets)
     return map
 end
 
-_G.read_on_some = function(tbl_rs_query, waiting_timeout)
+_G.read_dql_on_some = function(tbl_rs_ir, waiting_timeout)
     local result = nil
     local futures = {}
 
-    for rs_uuid, query in pairs(tbl_rs_query) do
+    for rs_uuid, map in pairs(tbl_rs_ir) do
         local replica = vshard.router.routeall()[rs_uuid]
+        local required = map["required"]
+        local optional = map["optional"]
         local future, err = replica:callbre(
-            "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], false, query['force_trace'] },
+            "libsbroad.execute",
+            { required, optional },
             { is_async = true }
         )
         if err ~= nil then
@@ -89,15 +91,17 @@ _G.read_on_some = function(tbl_rs_query, waiting_timeout)
     return box.tuple.new{result}
 end
 
-_G.write_on_some = function(tbl_rs_query, waiting_timeout)
+_G.write_dml_on_some = function(tbl_rs_ir, waiting_timeout)
     local result = nil
     local futures = {}
 
-    for rs_uuid, query in pairs(tbl_rs_query) do
+    for rs_uuid, map in pairs(tbl_rs_ir) do
         local replica = vshard.router.routeall()[rs_uuid]
+        local required = map["required"]
+        local optional = map["optional"]
         local future, err = replica:callrw(
-            "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], true, query['force_trace'] },
+            "libsbroad.execute",
+            { required, optional },
             { is_async = true }
         )
         if err ~= nil then
@@ -124,15 +128,15 @@ _G.write_on_some = function(tbl_rs_query, waiting_timeout)
     return box.tuple.new{result}
 end
 
-_G.read_on_all = function(query, waiting_timeout)
+_G.read_dql_on_all = function(required, optional, waiting_timeout)
     local replicas = vshard.router.routeall()
     local result = nil
     local futures = {}
 
     for _, replica in pairs(replicas) do
         local future, err = replica:callbre(
-            "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], false, query['force_trace'] },
+            "libsbroad.execute",
+            { required, optional },
             { is_async = true }
         )
         if err ~= nil then
@@ -161,15 +165,15 @@ _G.read_on_all = function(query, waiting_timeout)
     return box.tuple.new{result}
 end
 
-_G.write_on_all = function(query, waiting_timeout)
+_G.write_dml_on_all = function(required, optional, waiting_timeout)
     local replicas = vshard.router.routeall()
     local result = nil
     local futures = {}
 
     for _, replica in pairs(replicas) do
         local future, err = replica:callrw(
-            "libsbroad.execute_query",
-            { query['pattern'], query['params'], query['context'], query['id'], true, query['force_trace'] },
+            "libsbroad.execute",
+            { required, optional },
             { is_async = true }
         )
         if err ~= nil then

@@ -1,7 +1,10 @@
+use crate::api::exec_query::protocol::{EncodedOptionalData, OptionalData, RequiredData};
 use crate::cartridge::config::StorageConfiguration;
 use crate::cartridge::update_tracing;
 use sbroad::errors::QueryPlannerError;
+use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::Configuration;
+use sbroad::executor::ir::QueryType;
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::ir::value::Value;
 use sbroad::otm::child_span;
@@ -35,6 +38,10 @@ impl PreparedStmt {
     fn id(&self) -> Result<u32, QueryPlannerError> {
         Ok(self.statement()?.id)
     }
+
+    fn pattern(&self) -> Result<&str, QueryPlannerError> {
+        Ok(&self.statement()?.pattern)
+    }
 }
 
 impl std::fmt::Debug for PreparedStmt {
@@ -50,7 +57,7 @@ impl std::fmt::Debug for PreparedStmt {
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
     metadata: StorageConfiguration,
-    cache: RefCell<LRUCache<u32, PreparedStmt>>,
+    cache: RefCell<LRUCache<String, PreparedStmt>>,
 }
 
 impl Configuration for StorageRuntime {
@@ -79,13 +86,13 @@ impl Configuration for StorageRuntime {
                 Err(e) => {
                     error!(
                         Option::from("getting storage cache capacity"),
-                        &format!("{:?}", e),
+                        &format!("{e:?}"),
                     );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
             let storage_capacity = usize::try_from(capacity)
-                .map_err(|e| QueryPlannerError::CustomError(format!("{:?}", e)))?;
+                .map_err(|e| QueryPlannerError::CustomError(format!("{e:?}")))?;
 
             let storage_cache_size_bytes: LuaFunction<_> =
                 lua.eval("return get_storage_cache_size_bytes;").unwrap();
@@ -94,24 +101,21 @@ impl Configuration for StorageRuntime {
                 Err(e) => {
                     error!(
                         Option::from("getting storage cache size bytes"),
-                        &format!("{:?}", e),
+                        &format!("{e:?}"),
                     );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
             let storage_size_bytes = usize::try_from(cache_size_bytes)
-                .map_err(|e| QueryPlannerError::CustomError(format!("{}", e)))?;
+                .map_err(|e| QueryPlannerError::CustomError(format!("{e}")))?;
 
             let jaeger_agent_host: LuaFunction<_> =
                 lua.eval("return get_jaeger_agent_host;").unwrap();
             let jaeger_host: String = match jaeger_agent_host.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    error!(
-                        Option::from("getting jaeger agent host"),
-                        &format!("{:?}", e),
-                    );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -120,11 +124,8 @@ impl Configuration for StorageRuntime {
             let jaeger_port: u16 = match jaeger_agent_port.call() {
                 Ok(res) => res,
                 Err(e) => {
-                    error!(
-                        Option::from("getting jaeger agent port"),
-                        &format!("{:?}", e),
-                    );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)));
+                    error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
+                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -152,7 +153,7 @@ impl StorageRuntime {
     /// # Errors
     /// - Failed to initialize the LRU cache.
     pub fn new() -> Result<Self, QueryPlannerError> {
-        let cache: LRUCache<u32, PreparedStmt> =
+        let cache: LRUCache<String, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
             metadata: StorageConfiguration::new(),
@@ -162,27 +163,64 @@ impl StorageRuntime {
         Ok(result)
     }
 
-    /// Put a prepared statement into the cache and execute it.
-    ///
-    /// # Errors
-    /// - Failed to prepare the statement (invalid SQL or lack of memory in `sql_cache_size`).
-    /// - Failed to put or get a prepared statement from the cache.
-    /// - Failed to execute the prepared statement.
     #[allow(unused_variables)]
-    pub fn execute(
+    pub fn execute_plan(
         &self,
-        pattern: &str,
-        params: &[Value],
-        is_data_modifier: bool,
+        required: &mut RequiredData,
+        raw_optional: &mut Vec<u8>,
     ) -> Result<Box<dyn Any>, QueryPlannerError> {
+        let plan_id = required.plan_id.clone();
+
+        // Use all buckets as we don't want to filter any data from the execution plan
+        // (this work has already been done on the coordinator).
+        let buckets = Buckets::All;
+
+        // Look for the prepared statement in the cache.
+        if let Some(stmt) = self
+            .cache
+            .try_borrow_mut()
+            .map_err(|e| QueryPlannerError::CustomError(format!("Failed to borrow cache: {e}")))?
+            .get(&plan_id)?
+        {
+            let stmt_id = stmt.id()?;
+            // The statement was found in the cache, so we can execute it.
+            debug!(
+                Option::from("execute plan"),
+                &format!("Execute prepared statement {stmt:?}"),
+            );
+            let result = match required.query_type {
+                QueryType::DML => write_prepared(stmt_id, "", &required.parameters),
+                QueryType::DQL => read_prepared(stmt_id, "", &required.parameters),
+            };
+
+            // If prepared statement is invalid for some reason, fallback to the long pass
+            // and recompile the query.
+            if result.is_ok() {
+                return result;
+            }
+        }
+
         // Find a statement in the Tarantool's cache or prepare it
         // (i.e. compile and put into the cache).
-        let stmt_id = match prepare(pattern) {
+        debug!(
+            Option::from("execute plan"),
+            &format!("Failed to find a plan (id {plan_id}) in the cache."),
+        );
+        let data = std::mem::take(raw_optional);
+        let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
+        optional.exec_plan.get_mut_ir_plan().restore_constants()?;
+        let nodes = optional.ordered.to_syntax_data()?;
+        let pattern_with_params = optional.exec_plan.to_sql(&nodes, &buckets)?;
+        match prepare(&pattern_with_params.pattern) {
             Ok(stmt) => {
                 let stmt_id = stmt.id()?;
                 debug!(
-                    Option::from("execute"),
-                    &format!("Created prepared statement {}", stmt_id),
+                    Option::from("execute plan"),
+                    &format!(
+                        "Created prepared statement {} for the pattern {}",
+                        stmt_id,
+                        stmt.pattern()?
+                    ),
                 );
                 self.cache
                     .try_borrow_mut()
@@ -192,8 +230,24 @@ impl StorageRuntime {
                             stmt, e
                         ))
                     })?
-                    .put(stmt_id, stmt)?;
-                stmt_id
+                    .put(plan_id, stmt)?;
+                // The statement was found in the cache, so we can execute it.
+                debug!(
+                    Option::from("execute plan"),
+                    &format!("Execute prepared statement {stmt_id}"),
+                );
+                if required.query_type == QueryType::DML {
+                    return write_prepared(
+                        stmt_id,
+                        &pattern_with_params.pattern,
+                        &pattern_with_params.params,
+                    );
+                }
+                read_prepared(
+                    stmt_id,
+                    &pattern_with_params.pattern,
+                    &pattern_with_params.params,
+                )
             }
             Err(e) => {
                 // Possibly the statement is correct, but doesn't fit into
@@ -201,24 +255,20 @@ impl StorageRuntime {
                 // So we try to execute it bypassing the cache.
                 warn!(
                     Option::from("execute"),
-                    &format!("Failed to prepare the statement: {}, error: {}", pattern, e),
+                    &format!(
+                        "Failed to prepare the statement: {}, error: {e}",
+                        pattern_with_params.pattern
+                    ),
                 );
-                if is_data_modifier {
-                    return write_unprepared(pattern, params);
+                if required.query_type == QueryType::DML {
+                    return write_unprepared(
+                        &pattern_with_params.pattern,
+                        &pattern_with_params.params,
+                    );
                 }
-                return read_unprepared(pattern, params);
+                read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
             }
-        };
-
-        // The statement was found in the cache, so we can execute it.
-        debug!(
-            Option::from("execute"),
-            &format!("Execute prepared statement {}", stmt_id),
-        );
-        if is_data_modifier {
-            return write_prepared(stmt_id, pattern, params);
         }
-        read_prepared(stmt_id, pattern, params)
     }
 }
 
@@ -239,8 +289,8 @@ fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
             Ok(PreparedStmt(Some(stmt)))
         }
         Err(e) => {
-            error!(Option::from("prepare"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("prepare"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -256,8 +306,8 @@ fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
     match unprepare_stmt.call_with_args::<(), _>(stmt.id()?) {
         Ok(_) => Ok(()),
         Err(e) => {
-            error!(Option::from("unprepare"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("unprepare"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -277,8 +327,8 @@ fn read_prepared(
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            error!(Option::from("read_prepared"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("read_prepared"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -294,8 +344,8 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPl
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            error!(Option::from("read_unprepared"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("read_unprepared"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -315,8 +365,8 @@ fn write_prepared(
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            error!(Option::from("write_prepared"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("write_prepared"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -332,8 +382,8 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryP
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
-            error!(Option::from("write_unprepared"), &format!("{:?}", e));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {:?}", e)))
+            error!(Option::from("write_unprepared"), &format!("{e:?}"));
+            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
@@ -343,14 +393,14 @@ where
     T: Display,
 {
     let lua = tarantool::lua_state();
-    match lua.exec(&format!("box.cfg{{{} = {}}}", param, val)) {
+    match lua.exec(&format!("box.cfg{{{param} = {val}}}")) {
         Ok(_) => debug!(
             Option::from("update_box_param"),
-            &format!("box.cfg param {} was updated to {}", param, val)
+            &format!("box.cfg param {param} was updated to {val}")
         ),
         Err(e) => warn!(
             Option::from("update_box_param"),
-            &format!("box.cfg update error: {}", e)
+            &format!("box.cfg update error: {e}")
         ),
     }
 }

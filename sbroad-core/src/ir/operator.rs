@@ -6,7 +6,6 @@ use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use tarantool::tlua::{self, LuaRead, PushInto};
 
 use crate::errors::QueryPlannerError;
 
@@ -19,7 +18,8 @@ use crate::ir::relation::ColumnRole;
 use traversal::Bft;
 
 /// Binary operator returning Bool expression.
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum Bool {
     /// `&&`
     And,
@@ -80,12 +80,13 @@ impl Display for Bool {
             Bool::NotIn => "not in",
         };
 
-        write!(f, "{}", op)
+        write!(f, "{op}")
     }
 }
 
 /// Unary operator returning Bool expression.
-#[derive(LuaRead, PushInto, Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum Unary {
     /// `is null`
     IsNull,
@@ -117,7 +118,7 @@ impl Display for Unary {
             Unary::IsNotNull => "is not null",
         };
 
-        write!(f, "{}", op)
+        write!(f, "{op}")
     }
 }
 
@@ -125,7 +126,7 @@ impl Display for Unary {
 ///
 /// Transforms input tuple(s) into the output one using the
 /// relation algebra logic.
-#[derive(LuaRead, PushInto, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Relational {
     Except {
         /// Contains exactly two elements: left and right node indexes
@@ -157,6 +158,8 @@ pub enum Relational {
         output: usize,
     },
     Motion {
+        // Scan name.
+        alias: Option<String>,
         /// Contains exactly one single element: child node index
         /// from the plan node arena.
         children: Vec<usize>,
@@ -452,11 +455,9 @@ impl Relational {
             Relational::ScanRelation {
                 alias, relation, ..
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
-            Relational::ScanSubQuery { alias, .. } => Ok(alias.as_deref()),
             Relational::Projection { .. }
             | Relational::Selection { .. }
-            | Relational::InnerJoin { .. }
-            | Relational::Motion { .. } => {
+            | Relational::InnerJoin { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
@@ -471,6 +472,12 @@ impl Relational {
                     if let Expression::Reference { position: pos, .. } = child_node {
                         let rel_id = *plan.get_relational_from_reference_node(*child)?;
                         let rel_node = plan.get_relation_node(rel_id)?;
+                        if rel_node == self {
+                            return Err(QueryPlannerError::CustomError(format!(
+                                "Reference to the same node {:?} at position {}",
+                                rel_node, position
+                            )));
+                        }
                         return rel_node.scan_name(plan, *pos);
                     }
                 } else {
@@ -479,6 +486,9 @@ impl Relational {
                     )));
                 }
                 Ok(None)
+            }
+            Relational::ScanSubQuery { alias, .. } | Relational::Motion { alias, .. } => {
+                Ok(alias.as_deref())
             }
             Relational::Except { .. }
             | Relational::UnionAll { .. }
@@ -551,11 +561,8 @@ impl Plan {
         child: usize,
         columns: &[&str],
     ) -> Result<usize, QueryPlannerError> {
-        let rel_map = self.relations.as_ref().ok_or_else(|| {
-            QueryPlannerError::CustomError("Plan doesn't contain any relations".to_string())
-        })?;
-        let rel = rel_map.get(relation).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("Invalid relation: {}", relation))
+        let rel = self.relations.get(relation).ok_or_else(|| {
+            QueryPlannerError::CustomError(format!("Invalid relation: {relation}"))
         })?;
         let columns: Vec<usize> = if columns.is_empty() {
             rel.columns
@@ -641,26 +648,24 @@ impl Plan {
     ) -> Result<usize, QueryPlannerError> {
         let nodes = &mut self.nodes;
 
-        if let Some(relations) = &self.relations {
-            if let Some(rel) = relations.get(table) {
-                let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
-                for (pos, col) in rel.columns.iter().enumerate() {
-                    let r_id = nodes.add_ref(None, None, pos);
-                    let col_alias_id = nodes.add_alias(&col.name, r_id)?;
-                    refs.push(col_alias_id);
-                }
-
-                let output_id = nodes.add_row_of_aliases(refs, None)?;
-                let scan = Relational::ScanRelation {
-                    output: output_id,
-                    relation: String::from(table),
-                    alias: alias.map(String::from),
-                };
-
-                let scan_id = nodes.push(Node::Relational(scan));
-                self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
-                return Ok(scan_id);
+        if let Some(rel) = self.relations.get(table) {
+            let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
+            for (pos, col) in rel.columns.iter().enumerate() {
+                let r_id = nodes.add_ref(None, None, pos);
+                let col_alias_id = nodes.add_alias(&col.name, r_id)?;
+                refs.push(col_alias_id);
             }
+
+            let output_id = nodes.add_row_of_aliases(refs, None)?;
+            let scan = Relational::ScanRelation {
+                output: output_id,
+                relation: String::from(table),
+                alias: alias.map(String::from),
+            };
+
+            let scan_id = nodes.push(Node::Relational(scan));
+            self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
+            return Ok(scan_id);
         }
         Err(QueryPlannerError::CustomError(format!(
             "Failed to find relation {} among the plan relations",
@@ -772,14 +777,16 @@ impl Plan {
         policy: &MotionPolicy,
         generation: &DataGeneration,
     ) -> Result<usize, QueryPlannerError> {
-        if let Node::Relational(_) = self.get_node(child_id)? {
+        let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
+            rel.scan_name(self, 0)?.map(String::from)
         } else {
             return Err(QueryPlannerError::InvalidRelation);
-        }
+        };
 
         let output = self.add_row_for_output(child_id, &[], true)?;
         self.set_const_dist(output)?;
         let motion = Relational::Motion {
+            alias,
             children: vec![child_id],
             policy: policy.clone(),
             generation: generation.clone(),
@@ -960,7 +967,7 @@ impl Plan {
         for col_id in columns {
             // Generate a row of aliases for the incoming row.
             *col_idx += 1;
-            let name = format!("COLUMN_{}", col_idx);
+            let name = format!("COLUMN_{col_idx}");
             let alias_id = self.nodes.add_alias(&name, col_id)?;
             aliases.push(alias_id);
         }
@@ -1086,7 +1093,7 @@ impl Plan {
         let output_list = output.clone_row_list()?;
         for (pos, alias_id) in output_list.iter().enumerate() {
             let new_child_id = *data_list.get(pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!("Expected a child at position {}", pos))
+                QueryPlannerError::CustomError(format!("Expected a child at position {pos}"))
             })?;
             let alias = self.get_mut_expression_node(*alias_id)?;
             if let Expression::Alias { ref mut child, .. } = alias {

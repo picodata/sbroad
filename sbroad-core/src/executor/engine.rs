@@ -254,7 +254,7 @@ pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
 
 #[must_use]
 pub fn normalize_name_from_schema(s: &str) -> String {
-    format!("\"{}\"", s)
+    format!("\"{s}\"")
 }
 
 #[must_use]

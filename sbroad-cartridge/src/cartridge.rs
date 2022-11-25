@@ -19,7 +19,7 @@ pub fn update_tracing(host: &str, port: u16) -> Result<(), QueryPlannerError> {
     let propagator = TextMapCompositePropagator::new(vec![Box::new(TraceContextPropagator::new())]);
     set_text_map_propagator(propagator);
     let provider = opentelemetry_jaeger::new_pipeline()
-        .with_agent_endpoint(&format!("{}:{}", host, port))
+        .with_agent_endpoint(format!("{host}:{port}"))
         .with_service_name(SERVICE_NAME)
         .build_simple()
         .map_err(|e| {

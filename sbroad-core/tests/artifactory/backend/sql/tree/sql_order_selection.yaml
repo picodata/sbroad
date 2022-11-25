@@ -39,7 +39,8 @@ nodes:
     #6
     - Expression:
         Constant:
-          value: 1
+          value:
+            Unsigned: 1
     #7
     - Expression:
         Row:
@@ -50,7 +51,7 @@ nodes:
     - Expression:
         Bool:
           left: 5
-          op: Eq
+          op: eq
           right: 7
     #9
     - Expression:
@@ -102,15 +103,19 @@ nodes:
             - 12
           output: 15
 relations:
-  t:
-    columns:
-      - name: a
-        type: boolean
-    key:
-      positions:
-        - 0
-    name: t
-slices: ~
+  tables:
+    t:
+      columns:
+        - name: a
+          type: boolean
+      key:
+        positions:
+          - 0
+      name: t
+slices:
+  slices: []
 top: 16
 is_explain: false
-undo: {}
+undo:
+  log: {}
+constants: {}

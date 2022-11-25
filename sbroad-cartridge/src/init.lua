@@ -11,7 +11,7 @@ local function calculate_bucket_id(values, space_name) -- luacheck: no unused ar
 
     local has_err, result = pcall(function ()
        if type(values) == 'table' and space_name == nil then
-           return false, error("space_name is required")
+           return false, error("space name is required")
        end
 
        return true

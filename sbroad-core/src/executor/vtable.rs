@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::num::NonZeroI32;
+use std::rc::Rc;
 use std::vec;
 
 use serde::{Deserialize, Serialize};
-use tarantool::tlua::{self, AsLua, LuaRead};
 
 use crate::errors::QueryPlannerError;
 use crate::ir::relation::Column;
@@ -12,7 +11,8 @@ use crate::ir::value::Value;
 
 type ShardingKey = Vec<Value>;
 pub type VTableTuple = Vec<Value>;
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VTableIndex {
     value: HashMap<u64, Vec<usize>>,
 }
@@ -31,36 +31,12 @@ impl From<HashMap<u64, Vec<usize>>> for VTableIndex {
     }
 }
 
-impl<L> tlua::LuaRead<L> for VTableIndex
-where
-    L: tlua::AsLua,
-{
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<VTableIndex, L> {
-        match HashMap::lua_read_at_position(lua, index) {
-            Ok(map) => Ok(VTableIndex::from(map)),
-            Err(lua) => Err(lua),
-        }
-    }
-}
-
-impl<L> tlua::PushInto<L> for VTableIndex
-where
-    L: AsLua,
-{
-    type Err = tlua::Void;
-    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
-        Ok(tlua::push_userdata(self.value, lua, |_| {}))
-    }
-}
-
-impl<L> tlua::PushOneInto<L> for VTableIndex where L: tlua::AsLua {}
-
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 struct ShardingRecord(ShardingKey, usize);
 
 /// Result tuple storage, created by the executor. All tuples
 /// have a distribution key.
-#[derive(LuaRead, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VirtualTable {
     /// List of the columns.
     columns: Vec<Column>,
@@ -74,16 +50,6 @@ pub struct VirtualTable {
     /// the key is a bucket id, the value is a list of positions
     /// in the `tuples` list corresponding to the bucket.
     index: VTableIndex,
-}
-
-impl<L> tlua::PushInto<L> for VirtualTable
-where
-    L: AsLua,
-{
-    type Err = tlua::Void;
-    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (tlua::Void, L)> {
-        Ok(tlua::push_userdata(self, lua, |_| {}))
-    }
 }
 
 impl Default for VirtualTable {
@@ -219,6 +185,46 @@ impl VirtualTable {
     #[must_use]
     pub fn get_alias(&self) -> Option<&String> {
         self.name.as_ref()
+    }
+
+    /// Create a new virtual table from an original one with
+    /// a list of tuples corresponding to some exact buckets.
+    #[must_use]
+    pub fn new_with_buckets(&self, buckets: &[u64]) -> Self {
+        let mut result = Self::new();
+        result.columns = self.columns.clone();
+        result.distribution_key = self.distribution_key.clone();
+        result.name = self.name.clone();
+
+        for bucket in buckets {
+            if let Some(positions) = self.index.value.get(bucket) {
+                for pos in positions {
+                    result.tuples.push(self.tuples[*pos].clone());
+                }
+                result.index.value.insert(*bucket, positions.clone());
+            }
+        }
+
+        result
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct VirtualTableMap(HashMap<usize, Rc<VirtualTable>>);
+
+impl VirtualTableMap {
+    #[must_use]
+    pub fn new(map: HashMap<usize, Rc<VirtualTable>>) -> Self {
+        Self(map)
+    }
+
+    #[must_use]
+    pub fn map(&self) -> &HashMap<usize, Rc<VirtualTable>> {
+        &self.0
+    }
+
+    pub fn mut_map(&mut self) -> &mut HashMap<usize, Rc<VirtualTable>> {
+        &mut self.0
     }
 }
 

@@ -21,7 +21,7 @@ use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::tree::Snapshot;
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 use crate::ir::Plan;
 
 #[allow(clippy::module_name_repetitions)]
@@ -397,8 +397,8 @@ fn exec_on_some(bucket: u64, query: &str) -> ProducerResult {
     let mut result = ProducerResult::new();
 
     result.rows.push(vec![
-        Value::String(format!("Execute query on a bucket [{}]", bucket)),
-        Value::String(String::from(query)),
+        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
+        EncodedValue::String(String::from(query)),
     ]);
 
     result
@@ -408,8 +408,8 @@ fn exec_on_all(query: &str) -> ProducerResult {
     let mut result = ProducerResult::new();
 
     result.rows.push(vec![
-        Value::String(String::from("Execute query on all buckets")),
-        Value::String(String::from(query)),
+        EncodedValue::String(String::from("Execute query on all buckets")),
+        EncodedValue::String(String::from(query)),
     ]);
 
     result

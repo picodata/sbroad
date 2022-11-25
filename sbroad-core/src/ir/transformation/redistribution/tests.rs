@@ -351,8 +351,7 @@ fn union_all_in_sq() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -363,8 +362,7 @@ fn inner_join_eq_for_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -376,8 +374,7 @@ fn join_inner_sq_eq_for_keys() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -415,8 +412,7 @@ fn join_inner_sq_eq_for_keys_with_const() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -502,8 +498,7 @@ fn inner_join_local_policy_sq_in_filter() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -518,8 +513,7 @@ fn inner_join_local_policy_sq_with_union_all_in_filter() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]
@@ -561,8 +555,7 @@ fn join_inner_and_local_full_policies() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    let expected: Option<Vec<Vec<usize>>> = None;
-    assert_eq!(Slices::from(expected), plan.slices);
+    assert_eq!(Slices::empty(), plan.slices);
 }
 
 #[test]

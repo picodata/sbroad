@@ -7,7 +7,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
 
@@ -53,8 +53,8 @@ fn not_in1_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        Value::String("Execute query on all buckets".to_string()),
-        Value::String(String::from(PatternWithParams::new(
+        EncodedValue::String("Execute query on all buckets".to_string()),
+        EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
