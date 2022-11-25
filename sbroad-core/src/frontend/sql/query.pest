@@ -104,7 +104,7 @@ NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
 Keyword = { ^"except" | ^"union" | ^"where" }
-Character = _{ ASCII_ALPHANUMERIC | 'А' .. 'Я' | 'а' .. 'я' | Other | Punctuation | SYMBOL }
+Character = _{ LETTER | NUMBER | Other | OTHER_ALPHABETIC| Punctuation | SYMBOL }
 Punctuation = _{
     CONNECTOR_PUNCTUATION
     | DASH_PUNCTUATION
@@ -113,7 +113,7 @@ Punctuation = _{
     | INITIAL_PUNCTUATION
     | "." | "?" | "!" | ":" | ";" | ","
 }
-Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | WHITESPACE }
+Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | WHITESPACE }
 
 Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | Concat | ConcatLeft }
     True = @{ ^"true" }
