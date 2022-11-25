@@ -1,7 +1,7 @@
 local t = require('luatest')
 local g = t.group('sbroad_with_ddl')
 
-local helper = require('test.helper')
+local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
 g.before_all(

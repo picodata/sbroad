@@ -1,6 +1,6 @@
 local t = require('luatest')
 local g = t.group('array_field')
-local helper = require('test.helper')
+local helper = require('test.helper.cluster_no_replication')
 
 g.before_all(
     function()

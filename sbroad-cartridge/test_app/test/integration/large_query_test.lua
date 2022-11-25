@@ -1,6 +1,6 @@
 local t = require('luatest')
 local g = t.group('data_query_test')
-local helper = require('test.helper')
+local helper = require('test.helper.cluster_no_replication')
 local data = require('test.data.test_data')
 
 g.before_all(

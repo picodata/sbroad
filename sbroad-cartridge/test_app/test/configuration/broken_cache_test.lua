@@ -1,7 +1,7 @@
 local t = require('luatest')
 local g = t.group('broken_cache')
 
-local helper = require('test.helper')
+local helper = require('test.helper.cluster_async_replication')
 local cluster = nil
 
 g.before_all(
