@@ -341,5 +341,23 @@ fn front_sql19() {
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+// Check double angle quotation marks in the strings
+#[test]
+fn front_sql20() {
+    let input = r#"SELECT "identification_number" FROM "hash_testing"
+        WHERE "product_code" = '«123»'"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("hash_testing"."identification_number" -> "identification_number")
+    selection ROW("hash_testing"."product_code") = ROW('«123»')
+        scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod params;

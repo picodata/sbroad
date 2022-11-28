@@ -113,7 +113,7 @@ Punctuation = _{
     | INITIAL_PUNCTUATION
     | "." | "?" | "!" | ":" | ";" | ","
 }
-Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | WHITESPACE }
+Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | "»" | WHITESPACE }
 
 Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | Concat | ConcatLeft }
     True = @{ ^"true" }
