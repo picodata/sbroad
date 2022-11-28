@@ -63,12 +63,4 @@ helper.stop_test_cluster = function ()
     helper.cluster:stop()
 end
 
-t.before_suite(function()
-    helper.start_test_cluster(config)
-end)
-
-t.after_suite(function()
-    helper.stop_test_cluster()
-end)
-
 return helper

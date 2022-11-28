@@ -5,29 +5,31 @@ local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
 g.before_all(
-        function()
-            cluster = helper.cluster
+    function()
+        helper.start_test_cluster(helper.cluster_config)
+        cluster = helper.cluster
 
-            local storage1 = cluster:server("storage-1-1").net_box
-            storage1:call("box.execute", { [[truncate table "broken_hot"]] })
-            storage1:call("box.execute", { [[truncate table "BROKEN"]] })
+        local storage1 = cluster:server("storage-1-1").net_box
+        storage1:call("box.execute", { [[truncate table "broken_hot"]] })
+        storage1:call("box.execute", { [[truncate table "BROKEN"]] })
 
-            local storage2 = cluster:server("storage-2-1").net_box
-            storage2:call("box.execute", { [[truncate table "broken_hot"]] })
-            storage2:call("box.execute", { [[truncate table "BROKEN"]] })
-        end
+        local storage2 = cluster:server("storage-2-1").net_box
+        storage2:call("box.execute", { [[truncate table "broken_hot"]] })
+        storage2:call("box.execute", { [[truncate table "BROKEN"]] })
+    end
 )
 
 g.after_all(
-        function()
-            local storage1 = cluster:server("storage-1-1").net_box
-            storage1:call("box.execute", { [[truncate table "broken_hot"]] })
-            storage1:call("box.execute", { [[truncate table "BROKEN"]] })
+    function()
+        local storage1 = cluster:server("storage-1-1").net_box
+        storage1:call("box.execute", { [[truncate table "broken_hot"]] })
+        storage1:call("box.execute", { [[truncate table "BROKEN"]] })
 
-            local storage2 = cluster:server("storage-2-1").net_box
-            storage2:call("box.execute", { [[truncate table "broken_hot"]] })
-            storage2:call("box.execute", { [[truncate table "BROKEN"]] })
-        end
+        local storage2 = cluster:server("storage-2-1").net_box
+        storage2:call("box.execute", { [[truncate table "broken_hot"]] })
+        storage2:call("box.execute", { [[truncate table "BROKEN"]] })
+        helper.stop_test_cluster()
+    end
 )
 
 g.test_insert_after_index = function()

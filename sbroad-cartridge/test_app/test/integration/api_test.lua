@@ -4,11 +4,10 @@ local g = t.group('integration_api')
 local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
-g.before_all(
-    function()
+g.before_all(function()
+    helper.start_test_cluster(helper.cluster_config)
     cluster = helper.cluster
-    end
-)
+end)
 
 g.before_each(
     function()
@@ -81,6 +80,10 @@ g.after_each(
         storage2:call("box.execute", { [[truncate table "t"]] })
     end
 )
+
+g.after_all(function()
+    helper.stop_test_cluster()
+end)
 
 g.test_bucket_id_calculation = function()
     local api = cluster:server("api-1").net_box
@@ -261,6 +264,7 @@ g.test_complex_shard_key_query = function()
             { 1, "123", 1, 360 }
         },
     })
+
 end
 
 g.test_null_col_result = function()

@@ -5,141 +5,144 @@ local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
 target_queries.before_all(
-        function()
-            cluster = helper.cluster
+    function()
+        helper.start_test_cluster(helper.cluster_config)
+        cluster = helper.cluster
 
-            local api = cluster:server("api-1").net_box
+        local api = cluster:server("api-1").net_box
 
-            local r, err = api:call("sbroad.execute", {
-                [[insert into "col1_transactions_actual"
-                ("col1", "amount", "account_id", "sys_from")
-                values (?, ?, ?, ?), (?, ?, ?, ?)]],
-                {
-                    1, 3, 1, 0,
-                    3, 3, 1, 0
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 2})
+        local r, err = api:call("sbroad.execute", {
+            [[insert into "col1_transactions_actual"
+            ("col1", "amount", "account_id", "sys_from")
+            values (?, ?, ?, ?), (?, ?, ?, ?)]],
+            {
+                1, 3, 1, 0,
+                3, 3, 1, 0
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "col1_transactions_history"
-                ("id", "col1", "amount", "account_id", "sys_from", "sys_to")
-                values (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)]],
-                {
-                    1, 1, 2, 1, 0, 2,
-                    2, 1, 1, 1, 0, 1
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 2})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "col1_transactions_history"
+            ("id", "col1", "amount", "account_id", "sys_from", "sys_to")
+            values (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)]],
+            {
+                1, 1, 2, 1, 0, 2,
+                2, 1, 1, 1, 0, 1
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "col1_col2_transactions_actual"
-                ("col1", "col2", "amount", "account_id", "sys_from")
-                values (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)]],
-                {
-                    1, 2, 3, 1, 0,
-                    1, 1, 3, 1, 0
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 2})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "col1_col2_transactions_actual"
+            ("col1", "col2", "amount", "account_id", "sys_from")
+            values (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)]],
+            {
+                1, 2, 3, 1, 0,
+                1, 1, 3, 1, 0
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "col1_col2_transactions_history"
-                ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
-                values (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)]],
-                {
-                    1, 1, 2, 2, 1, 0, 2,
-                    2, 1, 2, 1, 1, 0, 1
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 2})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "col1_col2_transactions_history"
+            ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
+            values (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)]],
+            {
+                1, 1, 2, 2, 1, 0, 2,
+                2, 1, 2, 1, 1, 0, 1
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
 
-            r = api:call("sbroad.execute", {
-                [[insert into "cola_accounts_actual"
-                ("id", "cola", "colb", "sys_from")
-                values (?, ?, ?, ?), (?, ?, ?, ?)]],
-                {
-                    1, 1, 3, 0,
-                    1, 2, 3, 0
-                }
-            })
-            t.assert_equals(r, {row_count = 2})
+        r = api:call("sbroad.execute", {
+            [[insert into "cola_accounts_actual"
+            ("id", "cola", "colb", "sys_from")
+            values (?, ?, ?, ?), (?, ?, ?, ?)]],
+            {
+                1, 1, 3, 0,
+                1, 2, 3, 0
+            }
+        })
+        t.assert_equals(r, {row_count = 2})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "cola_accounts_history"
-                ("id", "cola", "colb", "sys_from", "sys_to")
-                values (?, ?, ?, ?, ?)]],
-                {
-                    1, 1, 2, 0, 2
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 1})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "cola_accounts_history"
+            ("id", "cola", "colb", "sys_from", "sys_to")
+            values (?, ?, ?, ?, ?)]],
+            {
+                1, 1, 2, 0, 2
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "cola_colb_accounts_actual"
-                ("id", "cola", "colb", "sys_from")
-                values (?, ?, ?, ?)]],
-                {
-                    1, 1, 3, 0
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 1})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "cola_colb_accounts_actual"
+            ("id", "cola", "colb", "sys_from")
+            values (?, ?, ?, ?)]],
+            {
+                1, 1, 3, 0
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "cola_colb_accounts_history"
-                ("id", "cola", "colb", "sys_from", "sys_to")
-                values (?, ?, ?, ?, ?)]],
-                {
-                    1, 1, 2, 0, 2
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 1})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "cola_colb_accounts_history"
+            ("id", "cola", "colb", "sys_from", "sys_to")
+            values (?, ?, ?, ?, ?)]],
+            {
+                1, 1, 2, 0, 2
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "col1_col2_transactions_num_actual"
-                ("col1", "col2", "amount", "account_id", "sys_from")
-                values (?, ?, ?, ?, ?)]],
-                {
-                   1, 2, 3, 1, 0
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 1})
+        r, err = api:call("sbroad.execute", {
+            [[insert into "col1_col2_transactions_num_actual"
+            ("col1", "col2", "amount", "account_id", "sys_from")
+            values (?, ?, ?, ?, ?)]],
+            {
+                1, 2, 3, 1, 0
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
 
-            r, err = api:call("sbroad.execute", {
-                [[insert into "col1_col2_transactions_num_history"
-                ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
-                values (?, ?, ?, ?, ?, ?, ?)]],
-                {
-                   1, 1, 2, 2, 1, 0, 2
-                }
-            })
-            t.assert_equals(err, nil)
-            t.assert_equals(r, {row_count = 1})
-        end
+        r, err = api:call("sbroad.execute", {
+            [[insert into "col1_col2_transactions_num_history"
+            ("id", "col1", "col2", "amount", "account_id", "sys_from", "sys_to")
+            values (?, ?, ?, ?, ?, ?, ?)]],
+            {
+                1, 1, 2, 2, 1, 0, 2
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
+    end
 )
 
 target_queries.after_all(
-        function()
-            local storage1 = cluster:server("storage-1-1").net_box
-            storage1:call("box.execute", { [[truncate table "col1_transactions_actual"]] })
-            storage1:call("box.execute", { [[truncate table "col1_transactions_history"]] })
-            storage1:call("box.execute", { [[truncate table "col1_col2_transactions_actual"]] })
-            storage1:call("box.execute", { [[truncate table "col1_col2_transactions_history"]] })
+    function()
+        local storage1 = cluster:server("storage-1-1").net_box
+        storage1:call("box.execute", { [[truncate table "col1_transactions_actual"]] })
+        storage1:call("box.execute", { [[truncate table "col1_transactions_history"]] })
+        storage1:call("box.execute", { [[truncate table "col1_col2_transactions_actual"]] })
+        storage1:call("box.execute", { [[truncate table "col1_col2_transactions_history"]] })
 
-            local storage2 = cluster:server("storage-2-1").net_box
-            storage2:call("box.execute", { [[truncate table "col1_transactions_actual"]] })
-            storage2:call("box.execute", { [[truncate table "col1_transactions_history"]] })
-            storage1:call("box.execute", { [[truncate table "col1_col2_transactions_actual"]] })
-            storage1:call("box.execute", { [[truncate table "col1_col2_transactions_history"]] })
-        end
+        local storage2 = cluster:server("storage-2-1").net_box
+        storage2:call("box.execute", { [[truncate table "col1_transactions_actual"]] })
+        storage2:call("box.execute", { [[truncate table "col1_transactions_history"]] })
+        storage1:call("box.execute", { [[truncate table "col1_col2_transactions_actual"]] })
+        storage1:call("box.execute", { [[truncate table "col1_col2_transactions_history"]] })
+
+        helper.stop_test_cluster()
+    end
 )
 
 target_queries.test_type_1 = function()

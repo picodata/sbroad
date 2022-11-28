@@ -5,8 +5,6 @@ local data = require('test.data.test_data')
 
 g.before_all(
     function()
-      helper.stop_test_cluster()
-
       local cfg = {
         schema = {
           spaces = {
@@ -132,13 +130,9 @@ g.before_all(
     end
 )
 
-g.after_all(
-    function()
-      helper.stop_test_cluster()
-
-      helper.start_test_cluster(helper.cluster_config)
-    end
-)
+g.after_all(function()
+  helper.stop_test_cluster()
+end)
 
 g.test_schema_invalid = function ()
   local api = helper.cluster:server("api-1").net_box

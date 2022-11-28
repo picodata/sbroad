@@ -5,25 +5,27 @@ local helper = require('test.helper.cluster_async_replication')
 local cluster = nil
 
 g.before_all(
-        function()
-            cluster = helper.cluster
+    function()
+        helper.start_test_cluster(helper.cluster_config)
+        cluster = helper.cluster
 
-            local storage1 = cluster:server("storage-1-1").net_box
-            storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
+        local storage1 = cluster:server("storage-1-1").net_box
+        storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
 
-            local storage2 = cluster:server("storage-2-1").net_box
-            storage2:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
-        end
+        local storage2 = cluster:server("storage-2-1").net_box
+        storage2:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
+    end
 )
 
 g.after_all(
-        function()
-            local storage1 = cluster:server("storage-1-1").net_box
-            storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
+    function()
+        local storage1 = cluster:server("storage-1-1").net_box
+        storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
 
-            local storage2 = cluster:server("storage-2-1").net_box
-            storage2:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
-        end
+        local storage2 = cluster:server("storage-2-1").net_box
+        storage2:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
+        helper.stop_test_cluster()
+    end
 )
 
 g.test_change_cache_by_config_replica = function()

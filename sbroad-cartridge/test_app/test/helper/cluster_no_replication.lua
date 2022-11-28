@@ -17,7 +17,7 @@ helper.datadir = fio.pathjoin(helper.root, 'tmp', 'db_test')
 helper.server_command = fio.pathjoin(helper.root, 'init.lua')
 
 helper.grep_log = function(what, bytes)
-  local filename = fio.pathjoin(helper.root, 'tmp', 'tarantool_integration.log')
+  local filename = fio.pathjoin(helper.root, 'tmp', 'tarantool.log')
   local file = fio.open(filename, {'O_RDONLY', 'O_NONBLOCK'})
 
   local function fail(msg)
@@ -121,13 +121,5 @@ end
 helper.stop_test_cluster = function ()
     helper.cluster:stop()
 end
-
-t.before_suite(function()
-    helper.start_test_cluster(config)
-end)
-
-t.after_suite(function()
-    helper.stop_test_cluster()
-end)
 
 return helper
