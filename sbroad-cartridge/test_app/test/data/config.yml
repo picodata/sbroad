@@ -1093,4 +1093,3 @@ schema:
       engine: memtx
       sharding_key:
       - id
-

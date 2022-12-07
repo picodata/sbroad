@@ -1,3 +1,6 @@
+use crate::executor::engine::mock::RouterConfigurationMock;
+use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use pretty_assertions::assert_eq;
 
@@ -357,6 +360,170 @@ fn front_sql20() {
     );
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby() {
+    let input = r#"SELECT "identification_number", "product_code" FROM "hash_testing" group by "identification_number", "product_code""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection ("identification_number" -> "identification_number", "product_code" -> "product_code")
+    group by ("identification_number" -> "identification_number", "product_code" -> "product_code")
+        motion [policy: segment([ref("identification_number"), ref("product_code")]), generation: none]
+            scan 
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                    group by ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                        scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_less_cols_in_proj() {
+    // check case when we specify less columns than in groupby clause
+    let input = r#"SELECT "identification_number" FROM "hash_testing"
+        GROUP BY "identification_number", "product_units"
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("identification_number" -> "identification_number")
+    group by ("identification_number" -> "identification_number", "product_units" -> "product_units")
+        motion [policy: segment([ref("identification_number"), ref("product_units")]), generation: none]
+            scan 
+                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_units" -> "product_units")
+                    group by ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_units" -> "product_units")
+                        scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_union_1() {
+    let input = r#"SELECT "identification_number" FROM "hash_testing"
+        GROUP BY "identification_number"
+        UNION ALL
+        SELECT "identification_number" FROM "hash_testing""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"union all
+    projection ("identification_number" -> "identification_number")
+        group by ("identification_number" -> "identification_number")
+            motion [policy: segment([ref("identification_number")]), generation: none]
+                scan 
+                    projection ("hash_testing"."identification_number" -> "identification_number")
+                        group by ("hash_testing"."identification_number" -> "identification_number")
+                            scan "hash_testing"
+    projection ("hash_testing"."identification_number" -> "identification_number")
+        scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_union_2() {
+    let input = r#"SELECT "identification_number" FROM "hash_testing" UNION ALL
+        SELECT * FROM (SELECT "identification_number" FROM "hash_testing"
+        GROUP BY "identification_number"
+        UNION ALL
+        SELECT "identification_number" FROM "hash_testing")"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"union all
+    projection ("hash_testing"."identification_number" -> "identification_number")
+        scan "hash_testing"
+    projection ("identification_number" -> "identification_number")
+        scan
+            union all
+                projection ("identification_number" -> "identification_number")
+                    group by ("identification_number" -> "identification_number")
+                        motion [policy: segment([ref("identification_number")]), generation: none]
+                            scan 
+                                projection ("hash_testing"."identification_number" -> "identification_number")
+                                    group by ("hash_testing"."identification_number" -> "identification_number")
+                                        scan "hash_testing"
+                projection ("hash_testing"."identification_number" -> "identification_number")
+                    scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_join_1() {
+    // inner select is a kostyl because tables have the col sys_op
+    let input = r#"SELECT "product_code", "product_units" FROM (SELECT "product_units", "product_code", "identification_number" FROM "hash_testing") as t2
+        INNER JOIN (SELECT "id" from "test_space") as t
+        ON t2."identification_number" = t."id"
+        group by t2."product_code", t2."product_units"
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("product_code" -> "product_code", "product_units" -> "product_units")
+    group by ("product_code" -> "product_code", "product_units" -> "product_units")
+        motion [policy: segment([ref("product_code"), ref("product_units")]), generation: none]
+            scan 
+                projection ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
+                    group by ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
+                        join on ROW("T2"."identification_number") = ROW("T"."id")
+                            scan "T2"
+                                projection ("hash_testing"."product_units" -> "product_units", "hash_testing"."product_code" -> "product_code", "hash_testing"."identification_number" -> "identification_number")
+                                    scan "hash_testing"
+                            motion [policy: full, generation: none]
+                                scan "T"
+                                    projection ("test_space"."id" -> "id")
+                                        scan "test_space"
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_insert() {
+    let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t" group by "b", "d""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t"
+    motion [policy: segment([ref("b"), value(NULL)]), generation: sharding_column]
+        projection ("b" -> "b", "d" -> "d")
+            group by ("b" -> "b", "d" -> "d")
+                motion [policy: segment([ref("b"), ref("d")]), generation: none]
+                    scan 
+                        projection ("t"."b" -> "b", "t"."d" -> "d")
+                            group by ("t"."b" -> "b", "t"."d" -> "d")
+                                scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_invalid() {
+    let input = r#"select "b", "a" from "t" group by "b""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let plan = ast.resolve_metadata(metadata);
+
+    assert_eq!(true, plan.is_err());
 }
 
 #[test]

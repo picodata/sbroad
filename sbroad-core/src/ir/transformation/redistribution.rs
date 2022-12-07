@@ -11,6 +11,7 @@ use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Column;
+
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -754,6 +755,31 @@ impl Plan {
         }
     }
 
+    #[allow(clippy::unused_self)]
+    #[must_use]
+    pub fn resolve_groupby_conflicts(
+        &self,
+        children: &[usize],
+        grouping_cols: &[usize],
+    ) -> Strategy {
+        let mut strategy: Strategy = HashMap::new();
+
+        // first columns of groupby output are grouping columns
+        let mut targets: Vec<Target> = Vec::with_capacity(grouping_cols.len());
+        for pos in 0..grouping_cols.len() {
+            targets.push(Target::Reference(pos));
+        }
+
+        strategy.insert(
+            children[0],
+            (
+                MotionPolicy::Segment(MotionKey { targets }),
+                DataGeneration::None,
+            ),
+        );
+        strategy
+    }
+
     /// Derive the motion policy for the inner child and sub-queries in the join node.
     ///
     /// # Errors
@@ -765,11 +791,13 @@ impl Plan {
         expr_id: usize,
     ) -> Result<Strategy, SbroadError> {
         // First, we need to set the motion policy for each boolean expression in the join condition.
-        let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
-        for node in &nodes {
-            let bool_op = BoolOp::from_expr(self, *node)?;
-            self.set_distribution(bool_op.left)?;
-            self.set_distribution(bool_op.right)?;
+        {
+            let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
+            for node in &nodes {
+                let bool_op = BoolOp::from_expr(self, *node)?;
+                self.set_distribution(bool_op.left)?;
+                self.set_distribution(bool_op.right)?;
+            }
         }
 
         // Init the strategy (motion policy map) for all the join children except the outer child.
@@ -1077,8 +1105,8 @@ impl Plan {
                 Relational::Projection { output, .. }
                 | Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
-                | Relational::UnionAll { output, .. }
                 | Relational::Values { output, .. }
+                | Relational::UnionAll { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
                 }
@@ -1093,6 +1121,18 @@ impl Plan {
                     self.set_distribution(output)?;
                     let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
                     self.create_motion_nodes(*id, &strategy)?;
+                }
+                Relational::GroupBy {
+                    output,
+                    children,
+                    is_final,
+                    gr_cols,
+                } => {
+                    self.set_distribution(output)?;
+                    if is_final {
+                        let strategy = self.resolve_groupby_conflicts(&children, &gr_cols);
+                        self.create_motion_nodes(*id, &strategy)?;
+                    }
                 }
                 Relational::InnerJoin {
                     output, condition, ..

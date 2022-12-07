@@ -671,9 +671,18 @@ impl Plan {
             })
         });
         if !all_found {
+            // If the child is a group by then the parent is projection (will be false when we add `Having` node).
+            // If this reference is inside arithmetic expression it would be better to throw an
+            // error like `select a + b group by a is wrong!`, but we can't check it here.
+            if let Relational::GroupBy { .. } = self.get_relation_node(child_node)? {
+                return Err(SbroadError::Invalid(
+                    Entity::Query,
+                    Some(format!("Invalid projection with group by clause: columns {} are not found in grouping columns!", col_names.join(", ")))
+                ));
+            }
             return Err(SbroadError::NotFound(
                 Entity::Column,
-                format!("with name {col_names:?}"),
+                format!("with name {}", col_names.join(", ")),
             ));
         }
 

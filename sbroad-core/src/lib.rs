@@ -4,6 +4,7 @@ extern crate lazy_static;
 
 #[macro_use]
 extern crate pest_derive;
+extern crate core;
 
 pub mod backend;
 pub mod errors;

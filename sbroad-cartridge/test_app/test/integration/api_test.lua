@@ -198,7 +198,7 @@ g.test_query_errored = function()
 
     -- luacheck: max line length 140
     local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })
-    t.assert_equals(tostring(err), "Sbroad Error: column with name [\"\\\"NotFoundColumn\\\"\"] not found")
+    t.assert_equals(tostring(err), "Sbroad Error: column with name \"NotFoundColumn\" not found")
 
     local invalid_type_param = datetime.new{
         nsec = 123456789,

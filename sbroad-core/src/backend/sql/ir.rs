@@ -1,6 +1,7 @@
 use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::IntoIter;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use tarantool::tlua::{self, Push};
@@ -137,15 +138,17 @@ impl From<PatternWithParams> for String {
     }
 }
 
+#[derive(Debug)]
 pub struct TmpSpaceMap {
     inner: AHashMap<String, TmpSpace>,
 }
 
-impl Iterator for TmpSpaceMap {
-    type Item = TmpSpace;
+impl IntoIterator for TmpSpaceMap {
+    type Item = (String, TmpSpace);
+    type IntoIter = IntoIter<String, TmpSpace>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.drain().next().map(|(_, v)| v)
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
     }
 }
 
@@ -291,6 +294,7 @@ impl ExecutionPlan {
                             }
                             Node::Relational(rel) => match rel {
                                 Relational::Except { .. } => sql.push_str("EXCEPT"),
+                                Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
                                 Relational::Insert { relation, .. } => {
                                     sql.push_str("INSERT INTO ");
                                     sql.push_str(relation.as_str());

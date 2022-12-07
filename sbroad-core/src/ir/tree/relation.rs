@@ -74,6 +74,14 @@ fn relational_next<'nodes>(
             }
             None
         }
+        Some(Node::Relational(Relational::GroupBy { children, .. })) => {
+            let step = *iter.get_child().borrow();
+            if step == 0 {
+                *iter.get_child().borrow_mut() += 1;
+                return children.get(step);
+            }
+            None
+        }
         Some(
             Node::Relational(Relational::ScanRelation { .. })
             | Node::Expression(_)

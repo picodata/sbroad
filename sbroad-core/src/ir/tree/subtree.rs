@@ -330,6 +330,28 @@ fn subtree_next<'plan>(
                     }
                     None
                 }
+                Relational::GroupBy {
+                    children,
+                    output,
+                    gr_cols,
+                    ..
+                } => {
+                    let step = *iter.get_child().borrow();
+                    if step == 0 {
+                        *iter.get_child().borrow_mut() += 1;
+                        return children.get(step);
+                    }
+                    let col_idx = step - 1;
+                    if col_idx < gr_cols.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return gr_cols.get(col_idx);
+                    }
+                    if iter.need_output() && col_idx == gr_cols.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(output);
+                    }
+                    None
+                }
                 Relational::Motion {
                     children, output, ..
                 } => {

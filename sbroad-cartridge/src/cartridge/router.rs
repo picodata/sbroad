@@ -6,6 +6,7 @@ use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+
 use std::rc::Rc;
 
 use tarantool::tlua::LuaFunction;
@@ -219,7 +220,7 @@ impl RouterRuntime {
             return Err(SbroadError::Invalid(
                 Entity::Buckets,
                 Some(format!("Expected Buckets::Filtered, got {buckets:?}")),
-            ));
+            ))
         };
         let random_bucket = self.get_random_bucket();
         let buckets = if bucket_set.is_empty() {
@@ -596,7 +597,7 @@ fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, SbroadError> {
         Buckets::All => {
             return Err(SbroadError::Unsupported(
                 Entity::Buckets,
-                Some("grouping buckets is not supported for all buckets".into()),
+                Some("grouping buckets is not supported for Buckets::All".into()),
             ))
         }
         Buckets::Filtered(list) => list.iter().copied().collect(),

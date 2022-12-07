@@ -4,6 +4,7 @@
 
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
+
 use std::slice::Iter;
 
 use expression::Expression;
@@ -509,6 +510,35 @@ impl Plan {
                 Some("node is not expression type".into()),
             )),
         }
+    }
+
+    /// Gets list of `Row` children ids
+    ///
+    /// # Errors
+    /// - supplied id does not correspond to `Row` node
+    pub fn get_row_list(&self, row_id: usize) -> Result<&[usize], SbroadError> {
+        self.get_expression_node(row_id)?.get_row_list()
+    }
+
+    /// Gets `GroupBy` column by idx
+    ///
+    /// # Errors
+    /// - supplied index is out of range
+    /// - node is not `GroupBy`
+    pub fn get_groupby_col(&self, groupby_id: usize, col_idx: usize) -> Result<usize, SbroadError> {
+        let node = self.get_relation_node(groupby_id)?;
+        if let Relational::GroupBy { gr_cols, .. } = node {
+            let col_id = gr_cols.get(col_idx).ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(format!(
+                    "groupby column index out of range. Node: {node:?}"
+                ))
+            })?;
+            return Ok(*col_id);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("Expected GroupBy node. Got: {node:?}")),
+        ))
     }
 
     /// Get alias string for `Reference` node

@@ -1,8 +1,8 @@
 use ahash::RandomState;
+use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 use std::mem::take;
-
-use serde::{Deserialize, Serialize};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
@@ -174,6 +174,51 @@ pub struct SyntaxNodes {
     map: HashMap<usize, usize, RandomState>,
 }
 
+#[derive(Debug)]
+pub struct SyntaxIterator<'n> {
+    current: usize,
+    child: usize,
+    nodes: &'n SyntaxNodes,
+}
+
+impl<'n> SyntaxNodes {
+    #[must_use]
+    pub fn iter(&'n self, current: usize) -> SyntaxIterator<'n> {
+        SyntaxIterator {
+            current,
+            child: 0,
+            nodes: self,
+        }
+    }
+}
+
+impl<'n> Iterator for SyntaxIterator<'n> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        syntax_next(self).copied()
+    }
+}
+
+fn syntax_next<'nodes>(iter: &mut SyntaxIterator<'nodes>) -> Option<&'nodes usize> {
+    match iter.nodes.arena.get(iter.current) {
+        Some(SyntaxNode { left, right, .. }) => {
+            if iter.child == 0 {
+                iter.child += 1;
+                if let Some(left_id) = left {
+                    return Some(left_id);
+                }
+            }
+            let right_idx = iter.child - 1;
+            if right_idx < right.len() {
+                iter.child += 1;
+                return Some(&right[right_idx]);
+            }
+            None
+        }
+        None => None,
+    }
+}
 impl SyntaxNodes {
     /// Add sub-query syntax node
     ///
@@ -311,16 +356,129 @@ struct Select {
     selection: Option<usize>,
     /// Join syntax node
     join: Option<usize>,
+    /// GroupBy syntax node
+    groupby: Option<usize>,
 }
 
+type NodeAdder = fn(&mut Select, usize, &SyntaxPlan) -> Result<bool, SbroadError>;
 impl Select {
+    fn add_one_of(
+        id: usize,
+        select: &mut Select,
+        sp: &SyntaxPlan,
+        adders: &[NodeAdder],
+    ) -> Result<bool, SbroadError> {
+        for add in adders {
+            if add(select, id, sp)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn add_inner_join(
+        select: &mut Select,
+        id: usize,
+        sp: &SyntaxPlan,
+    ) -> Result<bool, SbroadError> {
+        let sn = sp.nodes.get_syntax_node(id)?;
+        let left_id = sn.left_id_or_err()?;
+        let sn_left = sp.nodes.get_syntax_node(left_id)?;
+        let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+        if let Node::Relational(Relational::InnerJoin { .. }) = sp.plan_node_or_err(&sn.data)? {
+            select.join = Some(id);
+            if let Node::Relational(
+                Relational::ScanRelation { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Motion { .. },
+            ) = plan_node_left
+            {
+                select.scan = left_id;
+                return Ok(true);
+            }
+            return Err(SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some(format!(
+                    "Expected a scan or motion after InnerJoin. Got: {plan_node_left:?}"
+                )),
+            ));
+        }
+        Ok(false)
+    }
+
+    fn add_selection(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
+        let sn = sp.nodes.get_syntax_node(id)?;
+        if let Node::Relational(Relational::Selection { .. }) = sp.plan_node_or_err(&sn.data)? {
+            select.selection = Some(id);
+            let left_id = sn.left_id_or_err()?;
+            let sn_left = sp.nodes.get_syntax_node(left_id)?;
+            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+            if let Node::Relational(
+                Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+            ) = plan_node_left
+            {
+                select.scan = left_id;
+                return Ok(true);
+            }
+            if !Select::add_one_of(left_id, select, sp, &[Select::add_inner_join])? {
+                return Err(SbroadError::Invalid(
+                    Entity::SyntaxPlan,
+                    Some(format!(
+                        "expected InnerJoin or Scan after Selection. Got {plan_node_left:?}"
+                    )),
+                ));
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn add_groupby(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
+        let sn = sp.nodes.get_syntax_node(id)?;
+        if let Node::Relational(Relational::GroupBy { .. }) = sp.plan_node_or_err(&sn.data)? {
+            select.groupby = Some(id);
+            let left_id = sn.left_id_or_err()?;
+            let sn_left = sp.nodes.get_syntax_node(left_id)?;
+            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+            if let Node::Relational(
+                Relational::ScanRelation { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Motion { .. },
+            ) = plan_node_left
+            {
+                select.scan = left_id;
+                return Ok(true);
+            }
+            if !Select::add_one_of(
+                left_id,
+                select,
+                sp,
+                &[Select::add_selection, Select::add_inner_join],
+            )? {
+                return Err(SbroadError::Invalid(
+                    Entity::SyntaxPlan,
+                    Some(format!(
+                        "expected Scan or InnerJoin, or Selection after GroupBy. Got {plan_node_left:?}"
+                    ))));
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Constructor.
     ///
-    /// There are four valid combinations of the `SELECT` command:
+    /// There are several valid combinations of the `SELECT` command:
     /// - projection -> selection -> join -> scan
+    /// - projection -> groupby -> selection -> join -> scan
     /// - projection -> join -> scan
+    /// - projection -> groupby -> join -> scan
     /// - projection -> selection -> scan
+    /// - projection -> groupby -> selection -> scan
     /// - projection -> scan
+    /// - projection -> groupby -> scan
     fn new(
         sp: &SyntaxPlan,
         parent: Option<usize>,
@@ -328,122 +486,45 @@ impl Select {
         id: usize,
     ) -> Result<Option<Select>, SbroadError> {
         let sn = sp.nodes.get_syntax_node(id)?;
-        // Expecting projection
-        // projection -> ...
         if let Some(Node::Relational(Relational::Projection { .. })) = sp.get_plan_node(&sn.data)? {
-        } else {
-            return Ok(None);
-        }
-        let left_id = sn.left_id_or_err()?;
-        let sn_left = sp.nodes.get_syntax_node(left_id)?;
-        let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-
-        match plan_node_left {
-            // Expecting projection over selection
-            // projection -> selection -> ...
-            Node::Relational(Relational::Selection { .. }) => {
-                let next_left_id = sn_left.left_id_or_err()?;
-                let sn_next_left = sp.nodes.get_syntax_node(next_left_id)?;
-                let plan_node_next_left = sp.plan_node_or_err(&sn_next_left.data)?;
-
-                match plan_node_next_left {
-                    // Expecting selection over join
-                    // projection -> selection -> join -> ...
-                    Node::Relational(Relational::InnerJoin { .. }) => {
-                        let next_next_left_id = sn_next_left.left_id_or_err()?;
-                        let sn_next_next_left = sp.nodes.get_syntax_node(next_next_left_id)?;
-                        let plan_node_next_next_left =
-                            sp.plan_node_or_err(&sn_next_next_left.data)?;
-
-                        // Expecting join over scan
-                        // projection -> selection -> join -> scan
-                        if let Node::Relational(
-                            Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                        ) = plan_node_next_next_left
-                        {
-                            let select = Select {
-                                parent,
-                                branch,
-                                proj: id,
-                                scan: next_next_left_id,
-                                selection: Some(left_id),
-                                join: Some(next_left_id),
-                            };
-                            return Ok(Some(select));
-                        }
-                    }
-                    // Expecting selection over scan
-                    // projection -> selection -> scan
-                    Node::Relational(
-                        Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                    ) => {
-                        return Ok(Some(Select {
-                            parent,
-                            branch,
-                            proj: id,
-                            scan: next_left_id,
-                            selection: Some(left_id),
-                            join: None,
-                        }));
-                    }
-                    _ => {
-                        return Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(
-                                "current node must be InnerJoin, ScanSubQuery or ScanRelation"
-                                    .into(),
-                            ),
-                        ));
-                    }
-                }
-            }
-            // Expecting projection over scan
-            // projection -> scan
-            Node::Relational(Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. }) => {
-                return Ok(Some(Select {
-                    parent,
-                    branch,
-                    proj: id,
-                    scan: left_id,
-                    selection: None,
-                    join: None,
-                }));
-            }
-            // Expecting projection over inner join
-            // projection -> join -> ...
-            Node::Relational(Relational::InnerJoin { .. }) => {
-                let next_left_id = sn_left.left_id_or_err()?;
-                let sn_next_left = sp.nodes.get_syntax_node(next_left_id)?;
-                let plan_node_next_left = sp.plan_node_or_err(&sn_next_left.data)?;
-
-                // Expecting join over scan
-                // projection -> join -> scan
-                if let Node::Relational(
-                    Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-                ) = plan_node_next_left
-                {
-                    let select = Select {
-                        parent,
-                        branch,
-                        proj: id,
-                        scan: next_left_id,
-                        selection: None,
-                        join: Some(left_id),
-                    };
-                    return Ok(Some(select));
-                }
-            }
-            _ => {
+            let mut select = Select {
+                parent,
+                branch,
+                proj: id,
+                scan: 0,
+                selection: None,
+                join: None,
+                groupby: None,
+            };
+            let left_id = sn.left_id_or_err()?;
+            let sn_left = sp.nodes.get_syntax_node(left_id)?;
+            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+            if let Node::Relational(
+                Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+            ) = plan_node_left
+            {
+                select.scan = left_id;
+            } else if !Select::add_one_of(
+                left_id,
+                &mut select,
+                sp,
+                &[
+                    Select::add_selection,
+                    Select::add_inner_join,
+                    Select::add_groupby,
+                ],
+            )? {
                 return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some("current node must be Selection, ScanRelation, or InnerJoin".into()),
-                ))
+                    Entity::SyntaxPlan,
+                    Some(format!(
+                        "expected Scan, InnerJoin, Selection, GroupBy after Projection. Got {plan_node_left:?}"
+                    ))));
+            }
+            if select.scan != 0 {
+                return Ok(Some(select));
             }
         }
-        Err(SbroadError::Invalid(
-            Entity::Plan,
-            Some("invalid combination of the select command".into()),
-        ))
+        Ok(None)
     }
 }
 
@@ -597,6 +678,27 @@ impl<'p> SyntaxPlan<'p> {
                     Err(SbroadError::Invalid(Entity::Node, None))
                 }
                 Relational::ScanSubQuery { .. } => self.nodes.add_sq(rel, id),
+                Relational::GroupBy {
+                    children, gr_cols, ..
+                } => {
+                    let left_id = *children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues("GroupBy has no children.".into())
+                    })?;
+                    let mut right: Vec<usize> = Vec::with_capacity(gr_cols.len() * 2);
+                    if let Some((last, other)) = gr_cols.split_last() {
+                        for col_id in other {
+                            right.push(self.nodes.get_syntax_node_id(*col_id)?);
+                            right.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                        }
+                        right.push(self.nodes.get_syntax_node_id(*last)?);
+                    }
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        Some(self.nodes.get_syntax_node_id(left_id)?),
+                        right,
+                    );
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
                 Relational::Selection {
                     children, filter, ..
                 } => {
@@ -659,7 +761,10 @@ impl<'p> SyntaxPlan<'p> {
                         ]);
 
                         if let Some(name) = vtable_alias {
-                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            if !name.is_empty() {
+                                children
+                                    .push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            }
                         }
                         let sn = SyntaxNode::new_pointer(id, None, children);
                         return Ok(self.nodes.push_syntax_node(sn));
@@ -939,7 +1044,14 @@ impl<'p> SyntaxPlan<'p> {
     fn gather_selects(&self) -> Result<Option<Vec<Select>>, SbroadError> {
         let mut selects: Vec<Select> = Vec::new();
         let top = self.get_top()?;
-        for (pos, node) in self.nodes.arena.iter().enumerate() {
+        let mut dfs = PostOrder::with_capacity(
+            |node| self.nodes.iter(node),
+            self.plan.get_ir_plan().nodes.len(),
+        );
+        dfs.populate_nodes(top);
+        let nodes = dfs.take_nodes();
+        for (_, pos) in nodes {
+            let node = self.nodes.get_syntax_node(pos)?;
             if pos == top {
                 let select = Select::new(self, None, None, pos)?;
                 if let Some(s) = select {
@@ -1036,59 +1148,31 @@ impl<'p> SyntaxPlan<'p> {
         Ok(sp)
     }
 
-    /// Reorder `SELECT` chain to:
-    ///
-    /// parent (if some) -branch-> selection (if some) -left->
-    /// join (if some) -left-> scan -left-> projection
-    ///
-    /// # Errors
-    /// - select nodes (parent, scan, projection, selection) are invalid
     fn reorder(&mut self, select: &Select) -> Result<(), SbroadError> {
         // Move projection under scan.
         let mut proj = self.nodes.get_mut_syntax_node(select.proj)?;
+        let new_top = proj.left.ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some("Proj syntax node does not have left child!".into()),
+            )
+        })?;
         proj.left = None;
         let mut scan = self.nodes.get_mut_syntax_node(select.scan)?;
         scan.left = Some(select.proj);
-        let mut top = select.scan;
-
-        if let Some(id) = select.selection {
-            let mut selection = self.nodes.get_mut_syntax_node(id)?;
-
-            match select.join {
-                // Try to move join under selection.
-                Some(join_id) => {
-                    selection.left = Some(join_id);
-                    // Try to move scan under join.
-                    let mut join = self.nodes.get_mut_syntax_node(join_id)?;
-                    join.left = Some(top);
-                }
-                // Try to move scan under selection.
-                None => {
-                    selection.left = Some(top);
-                }
-            }
-            top = id;
-        } else {
-            // Try to move scan under join.
-            if let Some(join_id) = select.join {
-                let mut join = self.nodes.get_mut_syntax_node(join_id)?;
-                join.left = Some(top);
-                top = join_id;
-            }
-        }
 
         // Try to move new top under parent.
         if let Some(id) = select.parent {
             let mut parent = self.nodes.get_mut_syntax_node(id)?;
             match select.branch {
                 Some(Branch::Left) => {
-                    parent.left = Some(top);
+                    parent.left = Some(new_top);
                 }
                 Some(Branch::Right) => {
                     let mut found: bool = false;
                     for child in &mut parent.right {
                         if child == &select.proj {
-                            *child = top;
+                            *child = new_top;
                             found = true;
                         }
                     }
@@ -1113,7 +1197,7 @@ impl<'p> SyntaxPlan<'p> {
 
         // Update the syntax plan top if it was current projection
         if self.get_top()? == select.proj {
-            self.set_top(top)?;
+            self.set_top(new_top)?;
         }
 
         Ok(())

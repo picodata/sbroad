@@ -143,6 +143,7 @@ impl ExecutionPlan {
         match rel {
             Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
             Relational::Except { .. }
+            | Relational::GroupBy { .. }
             | Relational::InnerJoin { .. }
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }
@@ -310,6 +311,21 @@ impl ExecutionPlan {
                                 )
                             })?;
                         }
+                    }
+
+                    if let Relational::GroupBy { gr_cols, .. } = rel {
+                        let mut new_cols: Vec<usize> = Vec::with_capacity(gr_cols.len());
+                        for col_id in gr_cols.iter() {
+                            let new_col_id = *translation.get(col_id).ok_or_else(|| {
+                                SbroadError::NotFound(
+                                    Entity::Node,
+                                    format!("grouping column {col_id} in translation map"),
+                                )
+                            })?;
+                            new_plan.replace_parent_in_subtree(new_col_id, None, Some(next_id))?;
+                            new_cols.push(new_col_id);
+                        }
+                        *gr_cols = new_cols;
                     }
 
                     let output = rel.output();

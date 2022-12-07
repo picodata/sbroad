@@ -1,0 +1,110 @@
+---
+nodes:
+  arena:
+    - children: #0
+        - 13
+      rule: Select
+      value: ~
+    - children: #1
+        - 6
+        - 4
+        - 2
+      rule: GroupBy
+      value: ~
+    - children: #2
+        - 3
+      rule: Reference
+      value: ~
+    - children: [] #3
+      rule: ColumnName
+      value: b
+    - children: #4
+        - 5
+      rule: Reference
+      value: ~
+    - children: [] #5
+      rule: ColumnName
+      value: a
+    - children: #6
+        - 11
+        - 7
+      rule: Selection
+      value: ~
+    - children: #7
+        - 9
+        - 8
+      rule: Gt
+      value: ~
+    - children: [] #8
+      rule: Unsigned
+      value: "1"
+    - children: #9
+        - 10
+      rule: Reference
+      value: ~
+    - children: [] #10
+      rule: ColumnName
+      value: a
+    - children: #11
+        - 12
+      rule: Scan
+      value: ~
+    - children: [] #12
+      rule: Table
+      value: t1
+    - children: #13
+        - 1
+        - 17
+        - 14
+      rule: Projection
+      value: ~
+    - children: #14
+        - 23
+      rule: Column
+      value: ~
+    - children: #15
+        - 16
+      rule: Reference
+      value: ~
+    - children: [] #16
+      rule: ColumnName
+      value: b
+    - children: #17
+        - 21
+      rule: Column
+      value: ~
+    - children: #18
+        - 19
+      rule: Reference
+      value: ~
+    - children: [] #19
+      rule: ColumnName
+      value: a
+    - children: [] #20
+      rule: AliasName
+      value: a
+    - children: #21
+        - 18
+        - 20
+      rule: Alias
+      value: ~
+    - children: [] #22
+      rule: AliasName
+      value: b
+    - children: #23
+        - 15
+        - 22
+      rule: Alias
+      value: ~
+top: 13
+map:
+  2:
+    - 6
+  4:
+    - 6
+  9:
+    - 11
+  15:
+    - 1
+  18:
+    - 1

@@ -352,7 +352,7 @@ impl Plan {
         Ok(())
     }
 
-    fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
+    pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let mut map = HashMap::new();
         let mut subtree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);

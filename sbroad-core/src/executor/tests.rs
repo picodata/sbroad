@@ -1,12 +1,14 @@
 use pretty_assertions::assert_eq;
 
 use crate::backend::sql::ir::PatternWithParams;
+
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
+
 use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
@@ -1518,6 +1520,75 @@ pub(crate) fn broadcast_check(sql: &str, pattern: &str, params: Vec<Value>) {
             params,
         ))),
     ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn groupby_linker_test() {
+    let sql = r#"SELECT t1."id" as "ii" FROM "test_space" as t1 group by t1."id""#;
+
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let top_id = query.exec_plan.get_motion_subtree_root(motion_id).unwrap();
+    if Buckets::All != query.bucket_discovery(top_id).unwrap() {
+        panic!("Expected Buckets::All for local groupby")
+    };
+    let mut virtual_t1 = VirtualTable::new();
+    virtual_t1.add_column(Column {
+        name: "id".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+
+    let mut buckets: Vec<u64> = vec![];
+    let tuples: Vec<Vec<Value>> = vec![vec![Value::from(1_u64)], vec![Value::from(2_u64)]];
+
+    for tuple in tuples.iter() {
+        virtual_t1.add_tuple(tuple.clone());
+        let mut ref_tuple: Vec<&Value> = Vec::with_capacity(tuple.len());
+        for v in tuple.iter() {
+            ref_tuple.push(v);
+        }
+        buckets.push(coordinator.determine_bucket_id(&ref_tuple));
+    }
+
+    virtual_t1.set_alias("").unwrap();
+
+    query.coordinator.add_virtual_table(motion_id, virtual_t1);
+
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+    for buc in buckets {
+        expected.rows.extend(vec![vec![
+            EncodedValue::String(format!("Execute query on a bucket [{buc}]")),
+            EncodedValue::String(String::from(PatternWithParams::new(
+                format!(
+                    "{} {} {}",
+                    r#"SELECT "id" as "ii" FROM (SELECT"#,
+                    r#""id" FROM "TMP_test_37")"#,
+                    r#"GROUP BY "T1"."id""#,
+                ),
+                vec![],
+            ))),
+        ]]);
+    }
+
+    expected.rows.sort_by_key(|k| k[0].to_string());
     assert_eq!(expected, result);
 }
 

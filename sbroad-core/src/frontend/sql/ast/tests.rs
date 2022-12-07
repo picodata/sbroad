@@ -56,6 +56,21 @@ fn transform_select_3() {
 }
 
 #[test]
+fn transform_select_3_group_by() {
+    let query = r#"select a from t group by a"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_3_group_by.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
 fn transform_select_4() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
@@ -71,6 +86,21 @@ fn transform_select_4() {
 }
 
 #[test]
+fn transform_select_4_1() {
+    let query = r#"select a, b from t1 where a > 1 group by a, b"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_1.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
 fn transform_select_5() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a where t1.a > 0"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
@@ -80,6 +110,36 @@ fn transform_select_5() {
         .join("frontend")
         .join("sql")
         .join("transform_select_5.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_5_1() {
+    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a group by t1.a, t2.b"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_5_1.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_6() {
+    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a where t1.a > 1 group by t1.a, t2.b"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_6.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
     assert_eq!(expected, ast);

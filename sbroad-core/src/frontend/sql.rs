@@ -87,6 +87,7 @@ impl Ast for AbstractSyntaxTree {
 
             // Update parent's node children list
             ast.nodes.add_child(stack_node.parent, node)?;
+
             // Clean parent values (only leafs should contain data)
             if let Some(parent) = stack_node.parent {
                 ast.nodes.update_value(parent, None)?;
@@ -127,6 +128,10 @@ impl Ast for AbstractSyntaxTree {
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
         let mut col_idx: usize = 0;
+
+        let mut groupby_nodes: Vec<usize> = Vec::new();
+        let mut scan_nodes: Vec<usize> = Vec::new();
+        let mut sq_nodes: Vec<usize> = Vec::new();
 
         let mut betweens: Vec<Between> = Vec::new();
         let mut arithmetic_expression_ids: Vec<usize> = Vec::new();
@@ -239,6 +244,7 @@ impl Ast for AbstractSyntaxTree {
                         let t = metadata.get_table_segment(table)?;
                         plan.add_rel(t);
                         let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
+                        scan_nodes.push(scan_id);
                         map.add(id, scan_id);
                     } else {
                         return Err(SbroadError::Invalid(
@@ -272,6 +278,7 @@ impl Ast for AbstractSyntaxTree {
                         None
                     };
                     let plan_sq_id = plan.add_sub_query(plan_child_id, alias_name.as_deref())?;
+                    sq_nodes.push(plan_sq_id);
                     map.add(id, plan_sq_id);
                 }
                 Type::Reference => {
@@ -726,6 +733,21 @@ impl Ast for AbstractSyntaxTree {
                         ));
                     }
                 }
+                Type::GroupBy => {
+                    if node.children.len() < 2 {
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "Group by must have at least 2 children.".into(),
+                        ));
+                    }
+                    let mut children: Vec<usize> = Vec::with_capacity(node.children.len());
+                    for ast_column_id in &node.children {
+                        let plan_column_id = map.get(*ast_column_id)?;
+                        children.push(plan_column_id);
+                    }
+                    let groupby_id = plan.add_groupby(&children)?;
+                    groupby_nodes.push(groupby_id);
+                    map.add(id, groupby_id);
+                }
                 Type::InnerJoin => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Join has no children.".into())
@@ -861,6 +883,9 @@ impl Ast for AbstractSyntaxTree {
                         }
                     }
                     let projection_id = plan.add_proj_internal(plan_child_id, &columns)?;
+                    if let Some(groupby_id) = groupby_nodes.pop() {
+                        plan.add_two_stage_aggregation(groupby_id)?;
+                    }
                     map.add(id, projection_id);
                 }
                 Type::Multiplication | Type::Addition => {

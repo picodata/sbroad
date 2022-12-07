@@ -207,7 +207,7 @@ impl StorageRuntime {
             ));
         }
 
-        let (pattern_with_params, tmp_spaces) = compile_encoded_optional(raw_optional)?;
+        let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
         debug!(
             Option::from("execute"),
             &format!(
@@ -220,9 +220,7 @@ impl StorageRuntime {
         } else {
             read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
         };
-        for space in tmp_spaces {
-            drop(space);
-        }
+
         result
     }
 
@@ -272,7 +270,7 @@ impl StorageRuntime {
             &format!("Failed to find a plan (id {plan_id}) in the cache."),
         );
 
-        let (pattern_with_params, tmp_spaces) = compile_encoded_optional(raw_optional)?;
+        let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
         let result = match prepare(&pattern_with_params.pattern) {
             Ok(stmt) => {
                 let stmt_id = stmt.id()?;
@@ -331,9 +329,7 @@ impl StorageRuntime {
                 }
             }
         };
-        for space in tmp_spaces {
-            drop(space);
-        }
+
         result
     }
 }

@@ -106,7 +106,7 @@ fn projection() {
 
     // Invalid alias names in the output
     assert_eq!(
-        SbroadError::NotFound(Entity::Column, r#"with name ["a", "e"]"#.into()),
+        SbroadError::NotFound(Entity::Column, r#"with name a, e"#.into()),
         plan.add_proj(scan_id, &["a", "e"]).unwrap_err()
     );
 
@@ -397,12 +397,6 @@ fn sub_query() {
     assert_eq!(
         SbroadError::Invalid(Entity::Node, Some("node is not Relational type".into())),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
-    );
-
-    // Invalid name
-    assert_eq!(
-        SbroadError::Invalid(Entity::Name, None),
-        plan.add_sub_query(scan_id, Some("")).unwrap_err()
     );
 }
 

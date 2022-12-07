@@ -81,6 +81,7 @@ pub enum Distribution {
 
 impl Distribution {
     /// Calculate a new distribution for the `Except` and `UnionAll` output tuple.
+    /// Single
     fn union_except(left: &Distribution, right: &Distribution) -> Distribution {
         match (left, right) {
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
@@ -407,16 +408,17 @@ impl Plan {
         child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
     ) -> Result<Distribution, SbroadError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
+            let node = self.get_node(relational_op.output())?;
             if let Node::Expression(Expression::Row {
                 distribution: child_dist,
                 ..
-            }) = self.get_node(relational_op.output())?
+            }) = node
             {
                 match child_dist {
                     None => {
                         return Err(SbroadError::Invalid(
                             Entity::Distribution,
-                            Some("distribution is uninitialized".into()),
+                            Some("distribution is uninitialized".to_string()),
                         ))
                     }
                     Some(Distribution::Any) => return Ok(Distribution::Any),
@@ -458,13 +460,21 @@ impl Plan {
     /// # Errors
     /// - Node is not of a row type.
     pub fn set_const_dist(&mut self, row_id: usize) -> Result<(), SbroadError> {
+        self.set_dist(row_id, Distribution::Replicated)
+    }
+
+    /// Sets the `Distribution` of row to given one
+    ///
+    /// # Errors
+    /// - supplied node is `Row`
+    pub fn set_dist(&mut self, row_id: usize, dist: Distribution) -> Result<(), SbroadError> {
         if let Expression::Row {
             ref mut distribution,
             ..
         } = self.get_mut_expression_node(row_id)?
         {
             if distribution.is_none() {
-                *distribution = Some(Distribution::Replicated);
+                *distribution = Some(dist);
             }
             return Ok(());
         }

@@ -51,6 +51,8 @@ pub enum Type {
     FunctionName,
     Gt,
     GtEq,
+    GroupBy,
+    GroupingElement,
     In,
     InnerJoin,
     Insert,
@@ -130,6 +132,8 @@ impl Type {
             Rule::False => Ok(Type::False),
             Rule::Function => Ok(Type::Function),
             Rule::FunctionName => Ok(Type::FunctionName),
+            Rule::GroupBy => Ok(Type::GroupBy),
+            Rule::GroupingElement => Ok(Type::GroupingElement),
             Rule::Gt => Ok(Type::Gt),
             Rule::GtEq => Ok(Type::GtEq),
             Rule::In => Ok(Type::In),
@@ -266,6 +270,8 @@ impl fmt::Display for Type {
             Type::Value => "Value".to_string(),
             Type::Values => "Values".to_string(),
             Type::ValuesRow => "ValuesRow".to_string(),
+            Type::GroupBy => "GroupBy".to_string(),
+            Type::GroupingElement => "GroupingElement".to_string(),
         };
         write!(f, "{p}")
     }
@@ -333,6 +339,40 @@ impl ParseNodes {
         let id = self.next_id();
         self.arena.push(node);
         id
+    }
+
+    /// Push `child_id` to the front of `node_id` children
+    ///
+    /// # Errors
+    /// - Failed to get node from arena
+    pub fn push_front_child(&mut self, node_id: usize, child_id: usize) -> Result<(), SbroadError> {
+        let node = self.get_mut_node(node_id)?;
+        node.children.insert(0, child_id);
+        Ok(())
+    }
+
+    /// Push `child_id` to the back of `node_id` children
+    ///
+    /// # Errors
+    /// - Failed to get node from arena
+    pub fn push_back_child(&mut self, node_id: usize, child_id: usize) -> Result<(), SbroadError> {
+        let node = self.get_mut_node(node_id)?;
+        node.children.push(child_id);
+        Ok(())
+    }
+
+    /// Sets node children to given children
+    ///
+    /// # Errors
+    /// - failed to get node from arena
+    pub fn set_children(
+        &mut self,
+        node_id: usize,
+        new_children: Vec<usize>,
+    ) -> Result<(), SbroadError> {
+        let node = self.get_mut_node(node_id)?;
+        node.children = new_children;
+        Ok(())
     }
 
     /// Get next node id
@@ -410,6 +450,22 @@ impl PartialEq for AbstractSyntaxTree {
     }
 }
 
+/// Helper function to extract i-th element of array, when we sure it is safe
+/// But we don't want to panic if future changes break something, so we
+/// bubble out with error.
+///
+/// Supposed to be used only in `transform_select_X` methods!
+#[inline]
+fn get_or_err(arr: &[usize], idx: usize) -> Result<usize, SbroadError> {
+    arr.get(idx)
+        .ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues(format!(
+                "AST children array: {arr:?}. Requested index: {idx}"
+            ))
+        })
+        .map(|v| *v)
+}
+
 #[allow(dead_code)]
 impl AbstractSyntaxTree {
     /// Set the top of AST.
@@ -467,6 +523,7 @@ impl AbstractSyntaxTree {
                 3 => self.transform_select_3(*node, &children)?,
                 4 => self.transform_select_4(*node, &children)?,
                 5 => self.transform_select_5(*node, &children)?,
+                6 => self.transform_select_6(*node, &children)?,
                 _ => return Err(SbroadError::Invalid(Entity::AST, None)),
             }
         }
@@ -507,343 +564,195 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
-    /// Transforms `Select` with `Projection` and `Scan`
+    fn check<const N: usize, const M: usize>(
+        &self,
+        allowed: &[[Type; N]; M],
+        select_children: &[usize],
+    ) -> Result<(), SbroadError> {
+        let allowed_len = if let Some(seq) = allowed.first() {
+            seq.len()
+        } else {
+            return Err(SbroadError::UnexpectedNumberOfValues(
+                "Expected at least one sequence to check select children".into(),
+            ));
+        };
+        if select_children.len() != allowed_len {
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "Expected select {allowed_len} children, got {}",
+                select_children.len()
+            )));
+        }
+        let mut is_match = false;
+        for seq in allowed {
+            let mut all_types_matched = true;
+            for (child, expected_type) in select_children.iter().zip(seq) {
+                let node = self.nodes.get_node(*child)?;
+                if node.rule != *expected_type {
+                    all_types_matched = false;
+                    break;
+                }
+            }
+            if all_types_matched {
+                is_match = true;
+                break;
+            }
+        }
+        if !is_match {
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("Could not match select children to any expected sequence".into()),
+            ));
+        }
+        Ok(())
+    }
+
     fn transform_select_2(
         &mut self,
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        if children.len() != 2 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "expect children list len 2, got {}",
-                children.len()
-            )));
-        }
-
-        // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
-        })?;
-        let scan = self.nodes.get_node(scan_id)?;
-        if scan.rule != Type::Scan {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("scan.rule is not Scan type".into()),
-            ));
-        }
-
-        // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
-        })?;
-        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {proj_id}"),
-            )
-        })?;
-        if proj.rule != Type::Projection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("proj.rule is not Projection type".into()),
-            ));
-        }
-
-        // Append `Scan` to the `Projection` children (zero position)
-        proj.children.insert(0, scan_id);
-
-        // Leave `Projection` the only child of `Select`.
-        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {select_id}"),
-            )
-        })?;
-        select.children = vec![proj_id];
-
+        let allowed = [[Type::Projection, Type::Scan]];
+        self.check(&allowed, children)?;
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 1)?)?;
+        self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
 
-    /// Transforms `Select` with `Projection`, `Scan` and `Selection`.
     fn transform_select_3(
         &mut self,
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        if children.len() != 3 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "expect children list len 3, got {}",
-                children.len()
-            )));
-        }
-
-        // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
-        })?;
-        let scan = self.nodes.get_node(scan_id)?;
-        if scan.rule != Type::Scan {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("scan.rule is not Scan type".into()),
-            ));
-        }
-
-        // Check that the third child is `Selection`.
-        let selection_id: usize = *children.get(2).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 2".into())
-        })?;
-        let selection = self.nodes.arena.get_mut(selection_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {selection_id}"),
-            )
-        })?;
-        if selection.rule != Type::Selection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("selection.rule is not Selection type".into()),
-            ));
-        }
-
-        // Append `Scan` to the `Selection` children (zero position)
-        selection.children.insert(0, scan_id);
-
-        // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
-        })?;
-        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {proj_id}"),
-            )
-        })?;
-        if proj.rule != Type::Projection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("proj.rule is not Projection type".into()),
-            ));
-        }
-
-        // Append `Selection` to the `Projection` children (zero position)
-        proj.children.insert(0, selection_id);
-
-        // Leave `Projection` the only child of `Select`.
-        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {select_id}"),
-            )
-        })?;
-        select.children = vec![proj_id];
-
+        let allowed = [
+            [Type::Projection, Type::Scan, Type::GroupBy],
+            [Type::Projection, Type::Scan, Type::Selection],
+        ];
+        self.check(&allowed, children)?;
+        self.nodes
+            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 2)?)?;
+        self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
 
-    /// Transforms `Select` with `Projection`, `Scan`, `InnerJoin` and `Condition`
     fn transform_select_4(
         &mut self,
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        if children.len() != 4 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "expect children list len 4, got {}",
-                children.len()
-            )));
+        let allowed = [
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::InnerJoin,
+                Type::Condition,
+            ],
+            [Type::Projection, Type::Scan, Type::Selection, Type::GroupBy],
+        ];
+        self.check(&allowed, children)?;
+        match self.nodes.get_node(children[2])?.rule {
+            Type::InnerJoin => {
+                // insert Scan as first child of InnerJoin
+                self.nodes
+                    .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+                // push Condition as last child of InnerJoin
+                self.nodes
+                    .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
+                // insert InnerJoin as first child of Projection
+                self.nodes
+                    .push_front_child(get_or_err(children, 0)?, get_or_err(children, 2)?)?;
+            }
+            Type::Selection => {
+                // insert Selection as first child of GroupBy
+                self.nodes
+                    .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
+                // insert Scan as first child of Selection
+                self.nodes
+                    .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+                // insert GroupBy as first child of Projection
+                self.nodes
+                    .push_front_child(get_or_err(children, 0)?, get_or_err(children, 3)?)?;
+            }
+            _ => return Err(SbroadError::Invalid(Entity::AST, None)),
         }
-
-        // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
-        })?;
-        let scan = self.nodes.get_node(scan_id)?;
-        if scan.rule != Type::Scan {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("scan.rule is not Scan type".into()),
-            ));
-        }
-
-        // Check that the forth child is `Condition`.
-        let cond_id: usize = *children.get(3).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 3".into())
-        })?;
-        let cond = self.nodes.get_node(cond_id)?;
-        if cond.rule != Type::Condition {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("cond.rule is not Condition type".into()),
-            ));
-        }
-
-        // Check that the third child is `InnerJoin`.
-        let join_id: usize = *children
-            .get(2)
-            .ok_or_else(|| SbroadError::NotFound(Entity::Node, "with index 2".into()))?;
-        let join = self.nodes.arena.get_mut(join_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {join_id}"),
-            )
-        })?;
-        if join.rule != Type::InnerJoin {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("join.rule is not InnerJoin type".into()),
-            ));
-        }
-
-        // Push `Condition` (forth child) to the end of th `InnerJoin` children list.
-        join.children.push(cond_id);
-
-        // Append `Scan` to the `InnerJoin` children (zero position)
-        join.children.insert(0, scan_id);
-
-        // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
-        })?;
-        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {proj_id}"),
-            )
-        })?;
-        if proj.rule != Type::Projection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("proj.rule is not Projection type".into()),
-            ));
-        }
-
-        // Append `InnerJoin` to the `Projection` children (zero position)
-        proj.children.insert(0, join_id);
-
-        // Leave `Projection` the only child of `Select`.
-        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {select_id}"),
-            )
-        })?;
-        select.children = vec![proj_id];
-
+        self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
 
-    /// Transforms `Select` with `Projection`, `Scan`, `InnerJoin`, `Condition` and `Selection`
     fn transform_select_5(
         &mut self,
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        if children.len() != 5 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "expect children list len 5, got {}",
-                children.len()
-            )));
-        }
-
-        // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
-        })?;
-        let scan = self.nodes.get_node(scan_id)?;
-        if scan.rule != Type::Scan {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("scan.rule is not Scan type".into()),
-            ));
-        }
-
-        // Check that the forth child is `Condition`.
-        let cond_id: usize = *children.get(3).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 3".into())
-        })?;
-        let cond = self.nodes.get_node(cond_id)?;
-        if cond.rule != Type::Condition {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("cond.rule is not Condition type".into()),
-            ));
-        }
-
-        // Check that the third child is `InnerJoin`.
-        let join_id: usize = *children.get(2).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 2".into())
-        })?;
-        let join = self.nodes.arena.get_mut(join_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {join_id}"),
-            )
-        })?;
-        if join.rule != Type::InnerJoin {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("join.rule is not InnerJoin type".into()),
-            ));
-        }
-
-        // Push `Condition` (forth child) to the end of the `InnerJoin` children list.
-        join.children.push(cond_id);
-
-        // Append `Scan` to the `InnerJoin` children (zero position)
-        join.children.insert(0, scan_id);
-
-        // Check that the fifth child is `Selection`.
-        let selection_id: usize = *children.get(4).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "from children list with index 4".into())
-        })?;
-        let selection = self.nodes.arena.get_mut(selection_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {selection_id}"),
-            )
-        })?;
-        if selection.rule != Type::Selection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("selection.rule is not Selection type".into()),
-            ));
-        }
-
-        // Append `InnerJoin` to the `Selection` children (zero position)
-        selection.children.insert(0, join_id);
-
-        // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
-        })?;
-        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {proj_id}"),
-            )
-        })?;
-        if proj.rule != Type::Projection {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("proj.rule is not Projection type".into()),
-            ));
-        }
-
-        // Append `Selection` to the `Projection` children (zero position)
-        proj.children.insert(0, selection_id);
-
-        // Leave `Projection` the only child of `Select`.
-        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(mutable) from arena with index {select_id}"),
-            )
-        })?;
-        select.children = vec![proj_id];
+        let allowed = [
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::InnerJoin,
+                Type::Condition,
+                Type::Selection,
+            ],
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::InnerJoin,
+                Type::Condition,
+                Type::GroupBy,
+            ],
+        ];
+        self.check(&allowed, children)?;
+        // insert InnerJoin as first child of Selection | GroupBy
+        self.nodes
+            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 2)?)?;
+        // insert Scan as first child of InnerJoin
+        self.nodes
+            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+        // push back condition as last child of InnerJoin
+        self.nodes
+            .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
+        // insert GroupBy | Selection as first child of Projection
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 4)?)?;
+        self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
 
+    fn transform_select_6(
+        &mut self,
+        select_id: usize,
+        children: &[usize],
+    ) -> Result<(), SbroadError> {
+        let allowed = [[
+            Type::Projection,
+            Type::Scan,
+            Type::InnerJoin,
+            Type::Condition,
+            Type::Selection,
+            Type::GroupBy,
+        ]];
+        self.check(&allowed, children)?;
+        // insert Selection as first child of GroupBy
+        self.nodes
+            .push_front_child(get_or_err(children, 5)?, get_or_err(children, 4)?)?;
+        // insert InnerJoin as first child of Selection
+        self.nodes
+            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 2)?)?;
+        // insert Scan as first child fo InnerJoin
+        self.nodes
+            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+        // push back Condition as last child of InnerJoin
+        self.nodes
+            .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
+        // insert GroupBy as first child of Projection
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 5)?)?;
+        self.nodes.set_children(select_id, vec![children[0]])?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
     /// Add aliases to projection columns.
     ///
     /// # Errors
@@ -931,6 +840,7 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     /// Map references to the corresponding relational nodes.
     ///
     /// # Errors
@@ -1016,6 +926,25 @@ impl AbstractSyntaxTree {
                         if node.rule == Type::Reference {
                             if let Entry::Vacant(entry) = map.entry(id) {
                                 entry.insert(vec![*left_id, *right_id]);
+                            }
+                        }
+                    }
+                }
+                Type::GroupBy => {
+                    let rel_id = rel_node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "AST group by doesn't have any children.".into(),
+                        )
+                    })?;
+                    for top in rel_node.children.iter().skip(1) {
+                        let mut subtree =
+                            PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+                        for (_, id) in subtree.iter(*top) {
+                            let node = self.nodes.get_node(id)?;
+                            if let Type::Reference = node.rule {
+                                if let Entry::Vacant(entry) = map.entry(id) {
+                                    entry.insert(vec![*rel_id]);
+                                }
                             }
                         }
                     }

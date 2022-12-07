@@ -234,6 +234,44 @@ impl Display for Projection {
 }
 
 #[derive(Debug, Serialize)]
+struct GroupBy {
+    /// List of colums in sql query
+    cols: Vec<Col>,
+}
+
+impl GroupBy {
+    #[allow(dead_code)]
+    fn new(plan: &Plan, output_id: usize) -> Result<Self, SbroadError> {
+        let mut result = GroupBy { cols: vec![] };
+
+        let alias_list = plan.get_expression_node(output_id)?;
+
+        for col_node_id in alias_list.get_row_list()? {
+            let col = Col::new(plan, *col_node_id)?;
+
+            result.cols.push(col);
+        }
+        Ok(result)
+    }
+}
+
+impl Display for GroupBy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut s = "group by ".to_string();
+
+        let cols = &self
+            .cols
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        write!(s, "({cols})")?;
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct Scan {
     /// Table name
     table: String,
@@ -587,6 +625,7 @@ impl Display for InnerJoin {
 #[allow(dead_code)]
 enum ExplainNode {
     Except,
+    GroupBy(GroupBy),
     InnerJoin(InnerJoin),
     ValueRow(Row),
     Value,
@@ -608,6 +647,7 @@ impl Display for ExplainNode {
             ExplainNode::Value => "values".to_string(),
             ExplainNode::Insert(s) => format!("insert {s}"),
             ExplainNode::Projection(e) => e.to_string(),
+            ExplainNode::GroupBy(p) => p.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
             ExplainNode::Selection(s) => format!("selection {s}"),
             ExplainNode::UnionAll => "union all".to_string(),
@@ -713,6 +753,16 @@ impl FullExplain {
                         ));
                     }
                     Some(ExplainNode::Except)
+                }
+                Relational::GroupBy { output, .. } => {
+                    let child = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Groupby node must have at least one child".into(),
+                        )
+                    })?;
+                    current_node.children.push(child);
+                    let p = GroupBy::new(ir, *output)?;
+                    Some(ExplainNode::GroupBy(p))
                 }
                 Relational::Projection { output, .. } => {
                     // TODO: change this logic when we'll enable sub-queries in projection

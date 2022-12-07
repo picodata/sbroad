@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::engine::Coordinator;
+
 use crate::executor::Query;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::value::Value;

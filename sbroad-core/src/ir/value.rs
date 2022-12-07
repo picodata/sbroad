@@ -14,7 +14,7 @@ use crate::executor::hash::ToHashString;
 use crate::ir::value::double::Double;
 
 #[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
-pub struct Tuple(Vec<Value>);
+pub struct Tuple(pub(crate) Vec<Value>);
 
 impl Display for Tuple {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

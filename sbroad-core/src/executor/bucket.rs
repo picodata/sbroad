@@ -262,6 +262,9 @@ where
                 | Relational::Projection {
                     children, output, ..
                 }
+                | Relational::GroupBy {
+                    children, output, ..
+                }
                 | Relational::ScanSubQuery {
                     children, output, ..
                 } => {

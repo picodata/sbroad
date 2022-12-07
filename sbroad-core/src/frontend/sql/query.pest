@@ -7,7 +7,8 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
-        ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
+        ^"on" ~ Condition)? ~ (^"where" ~ Selection)? ~
+        (^"group" ~ ^"by" ~ GroupBy)?
     }
         Projection = { (Asterisk | ArithmeticExprAlias | Column) ~ ("," ~ (Asterisk | ArithmeticExprAlias | Column))*? }
             Column = { Alias | Value }
@@ -24,6 +25,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
             Table = @{ Name }
         InnerJoin = { Scan }
         Condition = { Expr }
+        GroupBy = { GroupingElement ~ ("," ~ GroupingElement)* }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (SubQuery | Select) }
     Except = { (SubQuery | Select) ~ ((^"except" ~ ^"distinct") | ^"except") ~ (SubQuery | Select) }
     SubQuery = { "(" ~ (Except | UnionAll | Select | Values) ~ ")" }
@@ -113,6 +115,7 @@ Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
     ConcatLeft = _{ SingleQuotedString | Cast | Function | Reference }
     ConcatRight = _{ Concat | ConcatLeft }
 
+GroupingElement = _{ Concat | Cast | Function | Reference }
 
 NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_") }
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }

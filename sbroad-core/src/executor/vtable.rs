@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::vec;
 
@@ -56,6 +57,19 @@ pub struct VirtualTable {
 impl Default for VirtualTable {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Display for VirtualTable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for col in &self.columns {
+            write!(f, "{col:?}, ")?;
+        }
+        writeln!(f)?;
+        for row in &self.tuples {
+            writeln!(f, "{row:?}")?;
+        }
+        writeln!(f)
     }
 }
 
@@ -195,13 +209,6 @@ impl VirtualTable {
     /// # Errors
     /// - Try to set an empty alias name to the virtual table.
     pub fn set_alias(&mut self, name: &str) -> Result<(), SbroadError> {
-        if name.is_empty() {
-            return Err(SbroadError::Invalid(
-                Entity::Value,
-                Some("can't set empty alias for virtual table".into()),
-            ));
-        }
-
         self.name = Some(String::from(name));
         Ok(())
     }
