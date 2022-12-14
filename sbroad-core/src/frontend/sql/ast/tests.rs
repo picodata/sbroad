@@ -141,6 +141,7 @@ fn traversal() {
 
     assert_eq!(None, dft_post.next());
 }
+
 #[test]
 fn invalid_query() {
     let query = r#"select a frAm t"#;
@@ -156,4 +157,22 @@ fn invalid_query() {
         ),
         format!("{}", ast),
     );
+}
+
+#[test]
+fn invalid_condition() {
+    let query = r#"SELECT "identification_number", "product_code" FROM "test_space" WHERE
+    "identification_number" = 1 "product_code" = 2"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap_err();
+    assert_eq!(
+        format!(
+            r#"Parsing error:  --> 2:33
+  |
+2 |     "identification_number" = 1 "product_code" = 2
+  |                                 ^---
+  |
+  = expected EOI"#,
+        ),
+        format!("{}", ast),
+    )
 }
