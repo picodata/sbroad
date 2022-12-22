@@ -12,7 +12,7 @@ dependencies = {
     'metrics == 0.14.0-1',
     'crud == 0.14.0-1',
     'cartridge-cli-extensions == 1.1.1-1',
-    'luatest',
+    'luatest == 0.5.7',
     'luacov'
 }
 build = {
