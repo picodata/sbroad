@@ -9,7 +9,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
         ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
-        Projection = { ((Asterisk | Column) ~ ("," ~ (Asterisk | Column))*?) }
+        Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))*? }
             Column = { Alias | Value }
                 Alias = {Value ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }
@@ -31,9 +31,22 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
         ValuesRow = { Row }
 
+ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
+    ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
+    ArithELeft = _{ ArithParentheses | Column }
+    Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
+        MultiplicationRight = _{ Multiplication | ArithELeft }
+    Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
+        AdditionLeft = _{ MultiplicationRight }
+        AdditionRight = _{ Addition | Multiplication | ArithELeft }
+    Multiply = { "*" }
+    Divide = { "/" }
+    Add = { "+" }
+    Subtract = { "-" }
+
 Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | Value }
+    Primary = _{ ArithmeticExpr | SubQuery | Value }
     Unary = _{ IsNull | IsNotNull}
         IsNull = { Primary ~ ^"is" ~ ^"null" }
         IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
