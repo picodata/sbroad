@@ -198,7 +198,9 @@ where
     #[otm_child_span("query.bucket.discovery")]
     pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, QueryPlannerError> {
         let ir_plan = self.exec_plan.get_ir_plan();
-        let tree = DftPost::new(&top_id, |node| ir_plan.flashback_subtree_iter(node));
+        // We use a `subtree_iter()` because we need DNF version of the filter/condition
+        // expressions to determine buckets.
+        let tree = DftPost::new(&top_id, |node| ir_plan.subtree_iter(node));
         let nodes: Vec<usize> = tree
             .filter_map(|(_, id)| {
                 if ir_plan.get_relation_node(*id).is_ok() {
