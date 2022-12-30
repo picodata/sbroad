@@ -56,6 +56,7 @@ pub struct RequiredData {
     pub(crate) plan_id: String,
     pub(crate) parameters: Vec<Value>,
     pub(crate) query_type: QueryType,
+    pub(crate) can_be_cached: bool,
     context: ContextCarrier,
     force_trace: bool,
     trace_id: Option<String>,
@@ -67,6 +68,7 @@ impl Default for RequiredData {
             plan_id: String::new(),
             parameters: vec![],
             query_type: QueryType::DQL,
+            can_be_cached: true,
             context: ContextCarrier::empty(),
             force_trace: false,
             trace_id: None,
@@ -98,7 +100,12 @@ impl TryFrom<&[u8]> for RequiredData {
 }
 
 impl RequiredData {
-    pub fn new(plan_id: String, parameters: Vec<Value>, query_type: QueryType) -> Self {
+    pub fn new(
+        plan_id: String,
+        parameters: Vec<Value>,
+        query_type: QueryType,
+        can_be_cached: bool,
+    ) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
         let force_trace = force_trace();
@@ -107,6 +114,7 @@ impl RequiredData {
                 plan_id,
                 parameters,
                 query_type,
+                can_be_cached,
                 context: ContextCarrier::empty(),
                 force_trace,
                 trace_id: None,
@@ -116,6 +124,7 @@ impl RequiredData {
                 plan_id,
                 parameters,
                 query_type,
+                can_be_cached,
                 context: ContextCarrier::new(carrier),
                 force_trace,
                 trace_id: Some(current_id()),

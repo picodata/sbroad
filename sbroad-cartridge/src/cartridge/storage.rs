@@ -176,36 +176,40 @@ impl StorageRuntime {
         let buckets = Buckets::All;
 
         // Look for the prepared statement in the cache.
-        if let Some(stmt) = self
-            .cache
-            .try_borrow_mut()
-            .map_err(|e| QueryPlannerError::CustomError(format!("Failed to borrow cache: {e}")))?
-            .get(&plan_id)?
-        {
-            let stmt_id = stmt.id()?;
-            // The statement was found in the cache, so we can execute it.
+        if required.can_be_cached {
+            if let Some(stmt) = self
+                .cache
+                .try_borrow_mut()
+                .map_err(|e| {
+                    QueryPlannerError::CustomError(format!("Failed to borrow cache: {e}"))
+                })?
+                .get(&plan_id)?
+            {
+                let stmt_id = stmt.id()?;
+                // The statement was found in the cache, so we can execute it.
+                debug!(
+                    Option::from("execute plan"),
+                    &format!("Execute prepared statement {stmt:?}"),
+                );
+                let result = match required.query_type {
+                    QueryType::DML => write_prepared(stmt_id, "", &required.parameters),
+                    QueryType::DQL => read_prepared(stmt_id, "", &required.parameters),
+                };
+
+                // If prepared statement is invalid for some reason, fallback to the long pass
+                // and recompile the query.
+                if result.is_ok() {
+                    return result;
+                }
+            }
             debug!(
                 Option::from("execute plan"),
-                &format!("Execute prepared statement {stmt:?}"),
+                &format!("Failed to find a plan (id {plan_id}) in the cache."),
             );
-            let result = match required.query_type {
-                QueryType::DML => write_prepared(stmt_id, "", &required.parameters),
-                QueryType::DQL => read_prepared(stmt_id, "", &required.parameters),
-            };
-
-            // If prepared statement is invalid for some reason, fallback to the long pass
-            // and recompile the query.
-            if result.is_ok() {
-                return result;
-            }
         }
 
         // Find a statement in the Tarantool's cache or prepare it
         // (i.e. compile and put into the cache).
-        debug!(
-            Option::from("execute plan"),
-            &format!("Failed to find a plan (id {plan_id}) in the cache."),
-        );
         let data = std::mem::take(raw_optional);
         let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
         optional.exec_plan.get_mut_ir_plan().restore_constants()?;
@@ -222,15 +226,17 @@ impl StorageRuntime {
                         stmt.pattern()?
                     ),
                 );
-                self.cache
-                    .try_borrow_mut()
-                    .map_err(|e| {
-                        QueryPlannerError::CustomError(format!(
-                            "Failed to put prepared statement {:?} into the cache: {:?}",
-                            stmt, e
-                        ))
-                    })?
-                    .put(plan_id, stmt)?;
+                if required.can_be_cached {
+                    self.cache
+                        .try_borrow_mut()
+                        .map_err(|e| {
+                            QueryPlannerError::CustomError(format!(
+                                "Failed to put prepared statement {:?} into the cache: {:?}",
+                                stmt, e
+                            ))
+                        })?
+                        .put(plan_id, stmt)?;
+                }
                 // The statement was found in the cache, so we can execute it.
                 debug!(
                     Option::from("execute plan"),

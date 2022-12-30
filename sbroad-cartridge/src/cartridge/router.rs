@@ -206,6 +206,12 @@ impl Coordinator for RouterRuntime {
             }
         };
 
+        // We should not use the cache on the storage if the plan contains virtual tables,
+        // as they can contain different amount of tuples that are not taken into account
+        // when calculating the cache key.
+        let can_be_cached =
+            |plan: &ExecutionPlan| plan.get_vtables().map_or(true, HashMap::is_empty);
+
         let encode_plan =
             |exec_plan: ExecutionPlan| -> Result<(Binary, Binary), QueryPlannerError> {
                 let sp_top_id = exec_plan.get_ir_plan().get_top()?;
@@ -215,7 +221,12 @@ impl Coordinator for RouterRuntime {
                 // Virtual tables in the plan must be already filtered, so we can use all buckets here.
                 let params = exec_plan.to_params(&nodes, &Buckets::All)?;
                 let query_type = exec_plan.query_type()?;
-                let required_data = RequiredData::new(sub_plan_id.clone(), params, query_type);
+                let required_data = RequiredData::new(
+                    sub_plan_id.clone(),
+                    params,
+                    query_type,
+                    can_be_cached(&exec_plan),
+                );
                 let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
                 let raw_required_data: Vec<u8> = encoded_required_data.into();
                 let optional_data = OptionalData::new(exec_plan, ordered);
