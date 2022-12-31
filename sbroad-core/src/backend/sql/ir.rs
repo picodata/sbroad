@@ -10,7 +10,6 @@ use crate::debug;
 use crate::errors::QueryPlannerError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
-use crate::executor::vtable::VTableTuple;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::value::{EncodedValue, Value};
@@ -163,22 +162,7 @@ impl ExecutionPlan {
                 }
                 SyntaxData::VTable(motion_id) => {
                     let vtable = self.get_motion_vtable(*motion_id)?;
-                    let tuples: Vec<&VTableTuple> = match buckets {
-                        Buckets::All => vtable.get_tuples().iter().collect(),
-                        Buckets::Filtered(bucket_ids) => {
-                            if vtable.get_index().is_empty() {
-                                // TODO: Implement selection push-down (join_linker3_test).
-                                vtable.get_tuples().iter().collect()
-                            } else {
-                                bucket_ids
-                                    .iter()
-                                    .filter_map(|bucket_id| vtable.get_index().get(bucket_id))
-                                    .flatten()
-                                    .filter_map(|pos| vtable.get_tuples().get(*pos))
-                                    .collect()
-                            }
-                        }
-                    };
+                    let tuples = (*vtable).get_tuples_with_buckets(buckets);
                     for t in tuples {
                         for v in t {
                             params.push(v.clone());
@@ -364,22 +348,7 @@ impl ExecutionPlan {
                                 .join(",")
                         };
 
-                        let tuples: Vec<&VTableTuple> = match buckets {
-                            Buckets::All => vtable.get_tuples().iter().collect(),
-                            Buckets::Filtered(bucket_ids) => {
-                                if vtable.get_index().is_empty() {
-                                    // TODO: Implement selection push-down (join_linker3_test).
-                                    vtable.get_tuples().iter().collect()
-                                } else {
-                                    bucket_ids
-                                        .iter()
-                                        .filter_map(|bucket_id| vtable.get_index().get(bucket_id))
-                                        .flatten()
-                                        .filter_map(|pos| vtable.get_tuples().get(*pos))
-                                        .collect()
-                                }
-                            }
-                        };
+                        let tuples = (*vtable).get_tuples_with_buckets(buckets);
 
                         if tuples.is_empty() {
                             let values = (0..cols_count)
@@ -417,7 +386,7 @@ impl ExecutionPlan {
                             })?;
 
                             for t in tuples {
-                                for v in t {
+                                for v in t.iter() {
                                     params.push(v.clone());
                                 }
                             }

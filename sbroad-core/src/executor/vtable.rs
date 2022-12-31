@@ -5,6 +5,7 @@ use std::vec;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::QueryPlannerError;
+use crate::executor::bucket::Buckets;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 use crate::ir::value::Value;
@@ -127,6 +128,28 @@ impl VirtualTable {
     /// Set vtable index
     pub fn set_index(&mut self, index: HashMap<u64, Vec<usize>>) {
         self.index = index.into();
+    }
+
+    /// Get vtable's tuples corresponding to the buckets.
+    #[must_use]
+    pub fn get_tuples_with_buckets(&self, buckets: &Buckets) -> Vec<&VTableTuple> {
+        let tuples: Vec<&VTableTuple> = match buckets {
+            Buckets::All => self.get_tuples().iter().collect(),
+            Buckets::Filtered(bucket_ids) => {
+                if self.get_index().is_empty() {
+                    // TODO: Implement selection push-down (join_linker3_test).
+                    self.get_tuples().iter().collect()
+                } else {
+                    bucket_ids
+                        .iter()
+                        .filter_map(|bucket_id| self.get_index().get(bucket_id))
+                        .flatten()
+                        .filter_map(|pos| self.get_tuples().get(*pos))
+                        .collect()
+                }
+            }
+        };
+        tuples
     }
 
     /// Get virtual table tuples' values, participating in the distribution key.
