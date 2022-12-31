@@ -32,10 +32,9 @@ use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::helpers::RepeatableState;
-use sbroad::ir::operator::Relational;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
-use sbroad::ir::{Node, Plan};
+use sbroad::ir::Plan;
 use sbroad::otm::child_span;
 use sbroad::{debug, error};
 use sbroad_proc::otm_child_span;
@@ -302,12 +301,8 @@ impl Coordinator for RouterRuntime {
         // We should get a motion alias name before we take the subtree in dispatch.
         let alias = plan.get_motion_alias(motion_node_id)?.map(String::from);
         let result = self.dispatch(plan, top_id, buckets)?;
-        // Unlink motion node's children sub tree (it is already replaced with invalid values).
-        if let Node::Relational(Relational::Motion { children, .. }) =
-            plan.get_mut_ir_plan().get_mut_node(motion_node_id)?
-        {
-            *children = vec![];
-        }
+        // Unlink motion node's child sub tree (it is already replaced with invalid values).
+        plan.unlink_motion_subtree(motion_node_id)?;
         let mut vtable = if let Ok(tuple) = result.downcast::<Tuple>() {
             let data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
                 QueryPlannerError::CustomError(format!("Motion node {motion_node_id}. {e}"))
