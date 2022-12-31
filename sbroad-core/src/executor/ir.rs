@@ -311,7 +311,7 @@ impl ExecutionPlan {
                         // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
                         // parser can fail to parse such SQL).
 
-                        // FIXME: UNDO operation can cause problems  ша we introduce more complicated transformations
+                        // FIXME: UNDO operation can cause problems if we introduce more complicated transformations
                         // for filter/condition (but then the UNDO logic should be changed as well).
                         let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
                         *expr_id = *translation.get(undo_expr_id).ok_or_else(|| {
