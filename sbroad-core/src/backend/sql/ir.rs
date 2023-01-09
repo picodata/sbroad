@@ -7,7 +7,7 @@ use tarantool::tlua::{self, Push};
 use tarantool::tuple::{FunctionArgs, Tuple};
 
 use crate::debug;
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
@@ -37,19 +37,19 @@ impl PartialEq for PatternWithParams {
 }
 
 impl TryFrom<FunctionArgs> for PatternWithParams {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
         debug!(
             Option::from("argument parsing"),
-            &format!("Query parameters: {:?}", value),
+            &format!("Query parameters: {value:?}"),
         );
         match Tuple::from(value).decode::<EncodedPatternWithParams>() {
             Ok(encoded) => Ok(PatternWithParams::from(encoded)),
-            Err(e) => Err(QueryPlannerError::CustomError(format!(
-                "Parsing error (pattern with parameters): {:?}",
-                e
-            ))),
+            Err(e) => Err(SbroadError::ParsingError(
+                Entity::PatternWithParams,
+                format!("{e:?}"),
+            )),
         }
     }
 }
@@ -143,7 +143,7 @@ impl ExecutionPlan {
         &self,
         nodes: &[&SyntaxData],
         buckets: &Buckets,
-    ) -> Result<Vec<Value>, QueryPlannerError> {
+    ) -> Result<Vec<Value>, SbroadError> {
         let ir_plan = self.get_ir_plan();
         let mut params: Vec<Value> = Vec::new();
 
@@ -154,10 +154,10 @@ impl ExecutionPlan {
                     if let Expression::Constant { value, .. } = value {
                         params.push(value.clone());
                     } else {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "Parameter {:?} is not a constant",
-                            value
-                        )));
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some(format!("parameter {value:?} is not a constant")),
+                        ));
                     }
                 }
                 SyntaxData::VTable(motion_id) => {
@@ -185,7 +185,7 @@ impl ExecutionPlan {
         &self,
         nodes: &[&SyntaxData],
         buckets: &Buckets,
-    ) -> Result<PatternWithParams, QueryPlannerError> {
+    ) -> Result<PatternWithParams, SbroadError> {
         let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
@@ -242,8 +242,11 @@ impl ExecutionPlan {
                         let node = ir_plan.get_node(*id)?;
                         match node {
                             Node::Parameter => {
-                                return Err(QueryPlannerError::CustomError(
-                                    "Parameters are not supported in the generated SQL".into(),
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Parameters are not supported in the generated SQL".into(),
+                                    ),
                                 ));
                             }
                             Node::Relational(rel) => match rel {
@@ -274,9 +277,11 @@ impl ExecutionPlan {
                                     | Expression::Unary { .. } => {}
                                     Expression::Constant { value, .. } => {
                                         write!(sql, "{value}").map_err(|e| {
-                                            QueryPlannerError::CustomError(format!(
-                                                "Failed to write constant value to SQL: {e}"
-                                            ))
+                                            SbroadError::FailedTo(
+                                                Action::Put,
+                                                Some(Entity::Value),
+                                                format!("constant value to SQL: {e}"),
+                                            )
                                         })?;
                                     }
                                     Expression::Reference { position, .. } => {
@@ -286,7 +291,18 @@ impl ExecutionPlan {
 
                                         if rel_node.is_motion() {
                                             if let Ok(vt) = self.get_motion_vtable(*id) {
-                                                let alias = (*vt).get_columns().get(*position).map(|column| &column.name).ok_or_else(|| QueryPlannerError::CustomError(format!("Failed to get column name for position {position}")))?;
+                                                let alias = (*vt)
+                                                    .get_columns()
+                                                    .get(*position)
+                                                    .map(|column| &column.name)
+                                                    .ok_or_else(|| {
+                                                        SbroadError::NotFound(
+                                                            Entity::Name,
+                                                            format!(
+                                                                "for column at position {position}"
+                                                            ),
+                                                        )
+                                                    })?;
                                                 if let Some(name) = (*vt).get_alias() {
                                                     sql.push_str(name);
                                                     sql.push('.');
@@ -326,10 +342,10 @@ impl ExecutionPlan {
                         if let Expression::Constant { value, .. } = value {
                             params.push(value.clone());
                         } else {
-                            return Err(QueryPlannerError::CustomError(format!(
-                                "Parameter {:?} is not a constant",
-                                value
-                            )));
+                            return Err(SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(format!("parameter {value:?} is not a constant")),
+                            ));
                         }
                     }
                     SyntaxData::VTable(motion_id) => {
@@ -362,7 +378,9 @@ impl ExecutionPlan {
                                 cols(&mut anonymous_col_idx_base),
                                 values
                             )
-                            .map_err(|e| QueryPlannerError::CustomError(e.to_string()))?;
+                            .map_err(|e| {
+                                SbroadError::Invalid(Entity::VirtualTable, Some(e.to_string()))
+                            })?;
                         } else {
                             let values = tuples
                                 .iter()
@@ -379,10 +397,11 @@ impl ExecutionPlan {
                                 values
                             )
                             .map_err(|e| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to generate SQL for VTable: {}",
-                                    e
-                                ))
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    None,
+                                    format!("SQL for VTable: {e}"),
+                                )
                             })?;
 
                             for t in tuples {
@@ -404,7 +423,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - If the subtree top is not a relational node.
-    pub fn subtree_modifies_data(&self, top_id: usize) -> Result<bool, QueryPlannerError> {
+    pub fn subtree_modifies_data(&self, top_id: usize) -> Result<bool, SbroadError> {
         // Tarantool doesn't support `INSERT`, `UPDATE` and `DELETE` statements
         // with `RETURNING` clause. That is why it is enough to check if the top
         // node is a data modification statement or not.

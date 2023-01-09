@@ -1,4 +1,4 @@
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
@@ -46,12 +46,12 @@ impl Plan {
         &mut self,
         function: &Function,
         children: Vec<usize>,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         if !function.is_stable() {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Function {} is not stable",
-                function.name
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::SQLFunction,
+                Some(format!("function {} is not stable", function.name)),
+            ));
         }
         let func_expr = Expression::StableFunction {
             name: function.name.to_string(),

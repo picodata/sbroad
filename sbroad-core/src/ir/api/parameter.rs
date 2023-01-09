@@ -1,4 +1,4 @@
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::value::Value;
@@ -41,7 +41,7 @@ impl Plan {
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("plan.bind")]
-    pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), QueryPlannerError> {
+    pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), SbroadError> {
         // Nothing to do here.
         if params.is_empty() {
             return Ok(());
@@ -68,12 +68,9 @@ impl Plan {
         let param_set = self.get_param_set();
 
         // Closure to retrieve a corresponding value for a parameter node.
-        let get_value = |pos: usize| -> Result<usize, QueryPlannerError> {
+        let get_value = |pos: usize| -> Result<usize, SbroadError> {
             let val_id = value_ids.get(pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Parameter in position {} is not found.",
-                    pos
-                ))
+                SbroadError::NotFound(Entity::Node, format!("(Parameter) in position {pos}"))
             })?;
             Ok(*val_id)
         };
@@ -154,9 +151,9 @@ impl Plan {
             }
         }
 
-        let get_row = |idx: usize| -> Result<usize, QueryPlannerError> {
+        let get_row = |idx: usize| -> Result<usize, SbroadError> {
             let row_id = row_ids.get(&idx).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!("Row in position {idx} is not found."))
+                SbroadError::NotFound(Entity::Node, format!("(Row) at position {idx}"))
             })?;
             Ok(*row_id)
         };

@@ -9,7 +9,7 @@ use expression::Expression;
 use operator::Relational;
 use relation::Table;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::undo::TransformationLog;
 
 use self::parameters::Parameters;
@@ -105,11 +105,10 @@ impl Nodes {
     ///
     /// # Errors
     /// - The node with the given position doesn't exist.
-    pub fn replace(&mut self, id: usize, node: Node) -> Result<Node, QueryPlannerError> {
+    pub fn replace(&mut self, id: usize, node: Node) -> Result<Node, SbroadError> {
         if id >= self.arena.len() {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Can't replace node with id {} as it is out of arena bounds",
-                id
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "can't replace node with id {id} as it is out of arena bounds"
             )));
         }
         let old_node = std::mem::replace(&mut self.arena[id], node);
@@ -231,13 +230,21 @@ impl Plan {
     /// Check that plan tree is valid.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the plan tree check fails.
-    pub fn check(&self) -> Result<(), QueryPlannerError> {
+    /// Returns `SbroadError` when the plan tree check fails.
+    pub fn check(&self) -> Result<(), SbroadError> {
         match self.top {
-            None => return Err(QueryPlannerError::InvalidPlan),
+            None => {
+                return Err(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some("plan tree top is None".into()),
+                ))
+            }
             Some(top) => {
                 if self.nodes.arena.get(top).is_none() {
-                    return Err(QueryPlannerError::ValueOutOfRange);
+                    return Err(SbroadError::NotFound(
+                        Entity::Node,
+                        format!("from arena with index {top}"),
+                    ));
                 }
             }
         }
@@ -270,11 +277,14 @@ impl Plan {
     /// Get a node by its pointer (position in the node arena).
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the node with requested index
+    /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_node(&self, id: usize) -> Result<&Node, QueryPlannerError> {
+    pub fn get_node(&self, id: usize) -> Result<&Node, SbroadError> {
         match self.nodes.arena.get(id) {
-            None => Err(QueryPlannerError::ValueOutOfRange),
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format!("from arena with index {id}"),
+            )),
             Some(node) => Ok(node),
         }
     }
@@ -282,11 +292,14 @@ impl Plan {
     /// Get a mutable node by its pointer (position in the node arena).
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the node with requested index
+    /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_mut_node(&mut self, id: usize) -> Result<&mut Node, QueryPlannerError> {
+    pub fn get_mut_node(&mut self, id: usize) -> Result<&mut Node, SbroadError> {
         match self.nodes.arena.get_mut(id) {
-            None => Err(QueryPlannerError::ValueOutOfRange),
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {id}"),
+            )),
             Some(node) => Ok(node),
         }
     }
@@ -295,8 +308,9 @@ impl Plan {
     ///
     /// # Errors
     /// - top node is None (i.e. invalid plan)
-    pub fn get_top(&self) -> Result<usize, QueryPlannerError> {
-        self.top.ok_or(QueryPlannerError::InvalidPlan)
+    pub fn get_top(&self) -> Result<usize, SbroadError> {
+        self.top
+            .ok_or_else(|| SbroadError::Invalid(Entity::Plan, Some("plan tree top is None".into())))
     }
 
     /// Clone plan slices.
@@ -314,11 +328,11 @@ impl Plan {
     /// Construct a plan from the YAML file.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the YAML plan is invalid.
-    pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the YAML plan is invalid.
+    pub fn from_yaml(s: &str) -> Result<Self, SbroadError> {
         let plan: Plan = match serde_yaml::from_str(s) {
             Ok(p) => p,
-            Err(e) => return Err(QueryPlannerError::CustomError(e.to_string())),
+            Err(e) => return Err(SbroadError::Invalid(Entity::Plan, Some(e.to_string()))),
         };
         plan.check()?;
         Ok(plan)
@@ -329,7 +343,7 @@ impl Plan {
     /// # Errors
     /// - node is not relational
     /// - node's output is not a row of aliases
-    pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, QueryPlannerError> {
+    pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, SbroadError> {
         if let Node::Relational(rel) = self.get_node(node)? {
             if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
                 let mut cols: Vec<usize> = Vec::with_capacity(list.len());
@@ -339,14 +353,18 @@ impl Plan {
                     {
                         cols.push(*child);
                     } else {
-                        return Err(QueryPlannerError::InvalidNode);
+                        return Err(SbroadError::Invalid(
+                            Entity::Node,
+                            Some("node's output is not a row of aliases".into()),
+                        ));
                     }
                 }
                 return Ok(self.nodes.add_row(cols, None));
             }
         }
-        Err(QueryPlannerError::CustomError(
-            "Node is not relational".into(),
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not Relational type".into()),
         ))
     }
 
@@ -358,13 +376,13 @@ impl Plan {
     /// Add condition node to the plan.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the condition node can't append'.
+    /// Returns `SbroadError` when the condition node can't append'.
     pub fn add_cond(
         &mut self,
         left: usize,
         op: operator::Bool,
         right: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         self.nodes.add_bool(left, op, right)
     }
 
@@ -372,11 +390,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Child node is invalid
-    pub fn add_unary(
-        &mut self,
-        op: operator::Unary,
-        child: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    pub fn add_unary(&mut self, op: operator::Unary, child: usize) -> Result<usize, SbroadError> {
         self.nodes.add_unary_bool(op, child)
     }
 
@@ -394,7 +408,7 @@ impl Plan {
     /// Set top node of plan
     /// # Errors
     /// - top node doesn't exist in the plan.
-    pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_top(&mut self, top: usize) -> Result<(), SbroadError> {
         self.get_node(top)?;
         self.top = Some(top);
         Ok(())
@@ -405,11 +419,12 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not a relational type
-    pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, QueryPlannerError> {
+    pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, SbroadError> {
         match self.get_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
-                "Node isn't relational".into(),
+            Node::Expression(_) | Node::Parameter => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("node is not Relational type".into()),
             )),
         }
     }
@@ -422,11 +437,12 @@ impl Plan {
     pub fn get_mut_relation_node(
         &mut self,
         node_id: usize,
-    ) -> Result<&mut Relational, QueryPlannerError> {
+    ) -> Result<&mut Relational, SbroadError> {
         match self.get_mut_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
-                "Node isn't relational".into(),
+            Node::Expression(_) | Node::Parameter => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("Node is not relational".into()),
             )),
         }
     }
@@ -436,7 +452,7 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not expression type
-    pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, QueryPlannerError> {
+    pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, SbroadError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
             Node::Parameter => {
@@ -444,13 +460,15 @@ impl Plan {
                 if let Some(Node::Expression(exp)) = node {
                     Ok(exp)
                 } else {
-                    Err(QueryPlannerError::CustomError(
-                        "Parameter node does not refer to an expression".into(),
+                    Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some("parameter node does not refer to an expression".into()),
                     ))
                 }
             }
-            Node::Relational(_) => Err(QueryPlannerError::CustomError(
-                "Node isn't expression".into(),
+            Node::Relational(_) => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("node is not Expression type".into()),
             )),
         }
     }
@@ -463,11 +481,12 @@ impl Plan {
     pub fn get_mut_expression_node(
         &mut self,
         node_id: usize,
-    ) -> Result<&mut Expression, QueryPlannerError> {
+    ) -> Result<&mut Expression, SbroadError> {
         match self.get_mut_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
-            Node::Relational(_) | Node::Parameter => Err(QueryPlannerError::CustomError(
-                "Node isn't expression".into(),
+            Node::Relational(_) | Node::Parameter => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("node is not expression type".into()),
             )),
         }
     }
@@ -478,10 +497,7 @@ impl Plan {
     /// - node doesn't exist in the plan
     /// - node is not `Reference`
     /// - invalid references between nodes
-    pub fn get_alias_from_reference_node(
-        &self,
-        node: &Expression,
-    ) -> Result<&str, QueryPlannerError> {
+    pub fn get_alias_from_reference_node(&self, node: &Expression) -> Result<&str, SbroadError> {
         if let Expression::Reference {
             targets,
             position,
@@ -491,7 +507,7 @@ impl Plan {
             let ref_node = if let Some(parent) = parent {
                 self.get_relation_node(*parent)?
             } else {
-                return Err(QueryPlannerError::CustomError(
+                return Err(SbroadError::UnexpectedNumberOfValues(
                     "Reference node has no parent".into(),
                 ));
             };
@@ -499,17 +515,18 @@ impl Plan {
             // In a case of insert we don't inspect children output tuple
             // but rather use target relation columns.
             if let Relational::Insert { ref relation, .. } = ref_node {
-                let rel = self.relations.get(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Relation {relation} doesn't exist"))
-                })?;
+                let rel = self
+                    .relations
+                    .get(relation)
+                    .ok_or_else(|| SbroadError::NotFound(Entity::Table, relation.to_string()))?;
                 let col_name = rel
                     .columns
                     .get(*position)
                     .ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Relation {} has no column {}",
-                            relation, position
-                        ))
+                        SbroadError::NotFound(
+                            Entity::Table,
+                            "{relation}'s column {position}".into(),
+                        )
                     })?
                     .name
                     .as_str();
@@ -518,19 +535,22 @@ impl Plan {
 
             if let Some(list_of_column_nodes) = ref_node.children() {
                 let child_ids = targets.as_ref().ok_or_else(|| {
-                    QueryPlannerError::CustomError("Node refs to scan node, not alias".into())
+                    SbroadError::Invalid(
+                        Entity::Target,
+                        Some("node refs to scan node, not alias".into()),
+                    )
                 })?;
                 let column_index_in_list = child_ids.first().ok_or_else(|| {
-                    QueryPlannerError::CustomError("Invalid child index in target".into())
+                    SbroadError::UnexpectedNumberOfValues("Target has no children".into())
                 })?;
                 let col_idx_in_rel =
                     list_of_column_nodes
                         .get(*column_index_in_list)
                         .ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Not found column node with index {}",
-                                column_index_in_list
-                            ))
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                format!("type Column with index {column_index_in_list}"),
+                            )
                         })?;
 
                 let column_rel_node = self.get_relation_node(*col_idx_in_rel)?;
@@ -541,23 +561,34 @@ impl Plan {
                         .get_row_list()?
                         .get(*position)
                         .ok_or_else(|| {
-                            QueryPlannerError::CustomError("Invalid position in row list".into())
+                            SbroadError::NotFound(
+                                Entity::Column,
+                                format!("at position {} in row list", position),
+                            )
                         })?;
 
                 let col_alias_node = self.get_expression_node(*col_alias_idx)?;
                 match col_alias_node {
                     Expression::Alias { name, .. } => return Ok(name),
-                    _ => return Err(QueryPlannerError::CustomError("Expected alias node".into())),
+                    _ => {
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some("expected alias node".into()),
+                        ))
+                    }
                 }
             }
 
-            return Err(QueryPlannerError::CustomError(
-                "Failed to get a referred relational node".into(),
+            return Err(SbroadError::FailedTo(
+                Action::Get,
+                None,
+                "a referred relational node".into(),
             ));
         }
 
-        Err(QueryPlannerError::CustomError(
-            "Node is not of a reference type".into(),
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not of a reference type".into()),
         ))
     }
 
@@ -568,30 +599,34 @@ impl Plan {
 
     /// # Errors
     /// - serialization error (to binary)
-    pub fn pattern_id(&self) -> Result<String, QueryPlannerError> {
+    pub fn pattern_id(&self) -> Result<String, SbroadError> {
         let mut bytes: Vec<u8> = bincode::serialize(&self.nodes).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize plan nodes to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                None,
+                format!("plan nodes to binary: {e:?}"),
+            )
         })?;
         let mut relation_bytes: Vec<u8> = bincode::serialize(&self.relations).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize plan relations to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                None,
+                format!("plan relations to binary: {e:?}"),
+            )
         })?;
         let mut slice_bytes: Vec<u8> = bincode::serialize(&self.slices).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize plan slices to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                None,
+                format!("plan slices to binary: {e:?}"),
+            )
         })?;
         let mut top_bytes: Vec<u8> = bincode::serialize(&self.top).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize plan top to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                None,
+                format!("plan top to binary: {e:?}"),
+            )
         })?;
         bytes.append(&mut relation_bytes);
         bytes.append(&mut slice_bytes);

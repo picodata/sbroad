@@ -1288,10 +1288,11 @@ fn insert7_test() {
     let result = Query::new(&coordinator, sql, vec![]).unwrap_err();
 
     assert_eq!(
-        QueryPlannerError::CustomError(format!(
-            "System column {} cannot be inserted",
-            "\"bucket_id\""
-        )),
+        SbroadError::FailedTo(
+            Action::Insert,
+            Some(Entity::Column),
+            format!("system column {} cannot be inserted", "\"bucket_id\""),
+        ),
         result
     );
 }

@@ -5,8 +5,7 @@ use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
-use crate::errors::QueryPlannerError::CustomError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
@@ -72,20 +71,17 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - Failed to find a virtual table for the motion node.
-    pub fn get_motion_vtable(
-        &self,
-        motion_id: usize,
-    ) -> Result<Rc<VirtualTable>, QueryPlannerError> {
+    pub fn get_motion_vtable(&self, motion_id: usize) -> Result<Rc<VirtualTable>, SbroadError> {
         if let Some(vtable) = self.get_vtables() {
             if let Some(result) = vtable.get(&motion_id) {
                 return Ok(Rc::clone(result));
             }
         }
 
-        Err(QueryPlannerError::CustomError(format!(
-            "Motion node ({}) doesn't have a corresponding virtual table",
-            motion_id
-        )))
+        Err(SbroadError::NotFound(
+            Entity::VirtualTable,
+            format!("for Motion node ({motion_id})"),
+        ))
     }
 
     /// Extract policy from motion node
@@ -93,21 +89,22 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node is not `Motion` type
-    pub fn get_motion_policy(&self, node_id: usize) -> Result<MotionPolicy, QueryPlannerError> {
+    pub fn get_motion_policy(&self, node_id: usize) -> Result<MotionPolicy, SbroadError> {
         if let Relational::Motion { policy, .. } = &self.plan.get_relation_node(node_id)? {
             return Ok(policy.clone());
         }
 
-        Err(QueryPlannerError::CustomError(String::from(
-            "Invalid motion",
-        )))
+        Err(SbroadError::Invalid(
+            Entity::Relational,
+            Some("invalid motion".into()),
+        ))
     }
 
     /// Get motion alias name
     ///
     /// # Errors
     /// - node is not valid
-    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<&String>, QueryPlannerError> {
+    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<&String>, SbroadError> {
         let sq_id = &self.get_motion_child(node_id)?;
         if let Relational::ScanSubQuery { alias, .. } =
             self.get_ir_plan().get_relation_node(*sq_id)?
@@ -122,7 +119,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - node is not valid
-    pub fn get_motion_subtree_root(&self, node_id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn get_motion_subtree_root(&self, node_id: usize) -> Result<usize, SbroadError> {
         let top_id = &self.get_motion_child(node_id)?;
         let rel = self.get_ir_plan().get_relation_node(*top_id)?;
         match rel {
@@ -135,9 +132,10 @@ impl ExecutionPlan {
             | Relational::UnionAll { .. }
             | Relational::Values { .. }
             | Relational::ValuesRow { .. } => Ok(*top_id),
-            Relational::Motion { .. } | Relational::Insert { .. } => Err(
-                QueryPlannerError::CustomError("Invalid motion child node".to_string()),
-            ),
+            Relational::Motion { .. } | Relational::Insert { .. } => Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("invalid motion child node".to_string()),
+            )),
         }
     }
 
@@ -146,21 +144,21 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node does not contain children
-    pub(crate) fn get_motion_child(&self, node_id: usize) -> Result<usize, QueryPlannerError> {
+    pub(crate) fn get_motion_child(&self, node_id: usize) -> Result<usize, SbroadError> {
         let node = self.get_ir_plan().get_relation_node(node_id)?;
         if !node.is_motion() {
-            return Err(CustomError(format!(
-                "Current node ({}) is not motion",
-                node_id
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some(format!("current node ({node_id}) is not motion")),
+            ));
         }
 
         let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
-            QueryPlannerError::CustomError("Could not get motion children".to_string())
+            SbroadError::NotFound(Entity::Node, format!("that is Motion {node_id} child(ren)"))
         })?;
 
         if children.len() != 1 {
-            return Err(CustomError(format!(
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
                 "Motion node ({}) must have once child only (actual {})",
                 node_id,
                 children.len()
@@ -168,7 +166,7 @@ impl ExecutionPlan {
         }
 
         let child_id = children.first().ok_or_else(|| {
-            QueryPlannerError::CustomError("Failed to get the first motion child".to_string())
+            SbroadError::UnexpectedNumberOfValues("Motion has no children".to_string())
         })?;
 
         Ok(*child_id)
@@ -179,21 +177,24 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node does not contain children
-    fn get_subquery_child(&self, node_id: usize) -> Result<usize, QueryPlannerError> {
+    fn get_subquery_child(&self, node_id: usize) -> Result<usize, SbroadError> {
         let node = self.get_ir_plan().get_relation_node(node_id)?;
         if !node.is_subquery() {
-            return Err(CustomError(format!(
-                "Current node ({}) is not sub query",
-                node_id
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("current node ({node_id}) is not sub query")),
+            ));
         }
 
         let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
-            QueryPlannerError::CustomError("Could not get subquery children".to_string())
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("that is Subquery {node_id} child(ren)"),
+            )
         })?;
 
         if children.len() != 1 {
-            return Err(CustomError(format!(
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
                 "Sub query node ({}) must have once child only (actual {})",
                 node_id,
                 children.len()
@@ -201,7 +202,7 @@ impl ExecutionPlan {
         }
 
         let child_id = children.first().ok_or_else(|| {
-            QueryPlannerError::CustomError("Could not find subquery child".to_string())
+            SbroadError::UnexpectedNumberOfValues("could not find subquery child".to_string())
         })?;
 
         Ok(*child_id)
@@ -211,7 +212,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - not a motion node
-    pub fn unlink_motion_subtree(&mut self, motion_id: usize) -> Result<(), QueryPlannerError> {
+    pub fn unlink_motion_subtree(&mut self, motion_id: usize) -> Result<(), SbroadError> {
         let motion = self.get_mut_ir_plan().get_mut_relation_node(motion_id)?;
         if let Relational::Motion {
             ref mut children, ..
@@ -219,10 +220,10 @@ impl ExecutionPlan {
         {
             *children = vec![];
         } else {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Node ({}) is not motion",
-                motion_id
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some(format!("node ({motion_id}) is not motion")),
+            ));
         }
         Ok(())
     }
@@ -233,7 +234,7 @@ impl ExecutionPlan {
     /// # Errors
     /// - the original execution plan is invalid
     #[allow(clippy::too_many_lines)]
-    pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, QueryPlannerError> {
+    pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, SbroadError> {
         let nodes_capacity = self.get_ir_plan().nodes.len();
         // Translates the original plan's node id to the new sub-plan one.
         let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes_capacity);
@@ -262,10 +263,11 @@ impl ExecutionPlan {
                 Node::Relational(ref mut rel) => {
                     if let Relational::ValuesRow { data, .. } = rel {
                         *data = *translation.get(data).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to build an execution plan subtree: could not find data node id {} in the map",
-                                data
-                            ))
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format!("could not find data node id {data} in the map"),
+                            )
                         })?;
                     }
 
@@ -281,20 +283,21 @@ impl ExecutionPlan {
                     if let Some(children) = rel.mut_children() {
                         for child_id in children {
                             *child_id = *translation.get(child_id).ok_or_else(|| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to build an execution plan subtree: could not find child node id {} in the map",
-                                    child_id
-                                ))
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    Some(Entity::SubTree),
+                                    format!("could not find child node id {child_id} in the map"),
+                                )
                             })?;
                         }
                     }
 
                     let output = rel.output();
                     *rel.mut_output() = *translation.get(&output).ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Failed to find an output node {} in relational node {:?}",
-                            output, rel
-                        ))
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            format!("as output node {output} in relational node {rel:?}"),
+                        )
                     })?;
                     new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
 
@@ -315,10 +318,14 @@ impl ExecutionPlan {
                         // for filter/condition (but then the UNDO logic should be changed as well).
                         let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
                         *expr_id = *translation.get(undo_expr_id).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to build an execution plan subtree: could not find filter/condition node id {} in the map",
-                                undo_expr_id
-                            ))
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format!(
+                                    "could not find filter/condition node id {} in the map",
+                                    undo_expr_id
+                                ),
+                            )
                         })?;
                         new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
                     }
@@ -326,12 +333,20 @@ impl ExecutionPlan {
                     if let Relational::ScanRelation { relation, .. }
                     | Relational::Insert { relation, .. } = rel
                     {
-                        let table = ir_plan.relations.get(relation).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to build an execution plan subtree: could not find relation {} in the original plan",
-                                relation
-                            ))
-                        })?.clone();
+                        let table = ir_plan
+                            .relations
+                            .get(relation)
+                            .ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    Some(Entity::SubTree),
+                                    format!(
+                                        "could not find relation {} in the original plan",
+                                        relation
+                                    ),
+                                )
+                            })?
+                            .clone();
                         new_plan.add_rel(table);
                     }
                 }
@@ -340,11 +355,12 @@ impl ExecutionPlan {
                     | Expression::Cast { ref mut child, .. }
                     | Expression::Unary { ref mut child, .. } => {
                         *child = *translation.get(child).ok_or_else(|| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to build an execution plan subtree: could not find child node id {} in the map",
-                                    child
-                                ))
-                            })?;
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format!("could not find child node id {child} in the map"),
+                            )
+                        })?;
                     }
                     Expression::Bool {
                         ref mut left,
@@ -357,17 +373,19 @@ impl ExecutionPlan {
                         ..
                     } => {
                         *left = *translation.get(left).ok_or_else(|| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to build an execution plan subtree: could not find left child node id {} in the map",
-                                    left
-                                ))
-                            })?;
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format!("could not find left child node id {left} in the map"),
+                            )
+                        })?;
                         *right = *translation.get(right).ok_or_else(|| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to build an execution plan subtree: could not find right child node id {} in the map",
-                                    right
-                                ))
-                            })?;
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format!("could not find right child node id {right} in the map"),
+                            )
+                        })?;
                     }
                     Expression::Reference { ref mut parent, .. } => {
                         // The new parent node id MUST be set while processing the relational nodes.
@@ -382,11 +400,12 @@ impl ExecutionPlan {
                     } => {
                         for child in children {
                             *child = *translation.get(child).ok_or_else(|| {
-                                    QueryPlannerError::CustomError(format!(
-                                        "Failed to build an execution plan subtree: could not find child node id {} in the map",
-                                        child
-                                    ))
-                                })?;
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    Some(Entity::SubTree),
+                                    format!("could not find child node id {child} in the map"),
+                                )
+                            })?;
                         }
                     }
                     Expression::Constant { .. } => {}
@@ -417,7 +436,7 @@ impl ExecutionPlan {
 
     /// # Errors
     /// - execution plan is invalid
-    pub fn query_type(&self) -> Result<QueryType, QueryPlannerError> {
+    pub fn query_type(&self) -> Result<QueryType, SbroadError> {
         let top_id = self.get_ir_plan().get_top()?;
         let top = self.get_ir_plan().get_relation_node(top_id)?;
         if top.is_insert() {
@@ -429,7 +448,7 @@ impl ExecutionPlan {
 
     /// # Errors
     /// - execution plan is invalid
-    pub fn connection_type(&self) -> Result<ConnectionType, QueryPlannerError> {
+    pub fn connection_type(&self) -> Result<ConnectionType, SbroadError> {
         match self.query_type()? {
             QueryType::DML => Ok(ConnectionType::Write),
             QueryType::DQL => Ok(ConnectionType::Read),

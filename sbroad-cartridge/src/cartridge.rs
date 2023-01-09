@@ -6,7 +6,7 @@ pub mod storage;
 
 use opentelemetry::global::{set_text_map_propagator, set_tracer_provider};
 use opentelemetry::sdk::propagation::{TextMapCompositePropagator, TraceContextPropagator};
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Action, SbroadError};
 use sbroad::otm::update_global_tracer;
 
 static SERVICE_NAME: &str = "sbroad";
@@ -15,7 +15,7 @@ static SERVICE_NAME: &str = "sbroad";
 ///
 /// # Errors
 /// - failed to build OTM global trace provider
-pub fn update_tracing(host: &str, port: u16) -> Result<(), QueryPlannerError> {
+pub fn update_tracing(host: &str, port: u16) -> Result<(), SbroadError> {
     let propagator = TextMapCompositePropagator::new(vec![Box::new(TraceContextPropagator::new())]);
     set_text_map_propagator(propagator);
     let provider = opentelemetry_jaeger::new_pipeline()
@@ -23,10 +23,11 @@ pub fn update_tracing(host: &str, port: u16) -> Result<(), QueryPlannerError> {
         .with_service_name(SERVICE_NAME)
         .build_simple()
         .map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to build OTM global trace provider: {}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Build,
+                None,
+                format!("OTM global trace provider: {e}"),
+            )
         })?;
     set_tracer_provider(provider);
     update_global_tracer();

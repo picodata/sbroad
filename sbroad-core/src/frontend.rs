@@ -3,7 +3,7 @@
 //! A list of different frontend implementations
 //! to build the intermediate representation (IR).
 
-use crate::errors::QueryPlannerError;
+use crate::errors::SbroadError;
 use crate::executor::engine::CoordinatorMetadata;
 use crate::ir::Plan;
 
@@ -16,7 +16,7 @@ pub trait Ast {
     ///
     /// # Errors
     /// - SQL query is not valid or not supported.
-    fn new(query: &str) -> Result<Self, QueryPlannerError>
+    fn new(query: &str) -> Result<Self, SbroadError>
     where
         Self: Sized;
 
@@ -27,7 +27,7 @@ pub trait Ast {
     ///
     /// # Errors
     /// - Failed to resolve AST nodes with cluster metadata.
-    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
+    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, SbroadError>
     where
         M: CoordinatorMetadata;
 }

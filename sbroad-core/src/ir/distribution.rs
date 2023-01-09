@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::collection;
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 
 use super::expression::Expression;
 use super::operator::Relational;
@@ -219,15 +219,15 @@ impl Plan {
     /// Calculate and set tuple distribution.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when current expression is not a `Row` or contains broken references.
+    /// Returns `SbroadError` when current expression is not a `Row` or contains broken references.
     #[allow(clippy::too_many_lines)]
-    pub fn set_distribution(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_distribution(&mut self, row_id: usize) -> Result<(), SbroadError> {
         let row_children = self.get_expression_node(row_id)?.get_row_list()?;
 
         // There are two kinds of rows: constructed from aliases (projections)
         // and constructed from any other expressions (selection filters, join conditions, etc).
         // This closure returns the proper child id for the row.
-        let row_child_id = |col_id: usize| -> Result<usize, QueryPlannerError> {
+        let row_child_id = |col_id: usize| -> Result<usize, SbroadError> {
             match self.get_expression_node(col_id) {
                 Ok(Expression::Alias { child, .. }) => Ok(*child),
                 Ok(_) => Ok(col_id),
@@ -268,14 +268,17 @@ impl Plan {
                 {
                     // As the row is located in the branch relational node, the targets should be non-empty.
                     let targets = targets.as_ref().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Reference targets are empty".to_string())
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Reference targets are empty".to_string(),
+                        )
                     })?;
                     ref_map.reserve(targets.len());
                     ref_nodes.reserve(targets.len());
                     for target in targets {
                         let referred_id = *parent_children.get(*target).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "The reference points to invalid column".to_string(),
+                            SbroadError::NotFound(
+                                Entity::Expression,
+                                "reference points to invalid column".to_string(),
                             )
                         })?;
                         ref_nodes.append(referred_id);
@@ -307,8 +310,9 @@ impl Plan {
                 ReferredNodes::None => {
                     // We should never get here as we have already handled the case
                     // when there are no references in the row (a row of constants).
-                    return Err(QueryPlannerError::CustomError(
-                        "The row contains no references".to_string(),
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some("the row contains no references".to_string()),
                     ));
                 }
                 ReferredNodes::Single(child_id) => {
@@ -329,7 +333,7 @@ impl Plan {
                     self.set_two_children_node_dist(&ref_map, n1, n2, parent_id, row_id)?;
                 }
                 ReferredNodes::Multiple(_) => {
-                    return Err(QueryPlannerError::CustomError(
+                    return Err(SbroadError::DuplicatedValue(
                         "Row contains multiple references to the same node (and in is not VALUES)"
                             .to_string(),
                     ));
@@ -346,8 +350,9 @@ impl Plan {
                 } = self.get_expression_node(child_id)?
                 {
                     if targets.is_some() {
-                        return Err(QueryPlannerError::CustomError(
-                            "References to the children targets in the leaf (relation scan) node are not supported".to_string(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some("References to the children targets in the leaf (relation scan) node are not supported".to_string()),
                         ));
                     }
                     table_map.insert(*position, pos);
@@ -358,8 +363,9 @@ impl Plan {
             let table_name: String = if let Relational::ScanRelation { relation, .. } = parent {
                 relation.clone()
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "The parent node is not a relation scan node".to_string(),
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some("the parent node is not a relation scan node".to_string()),
                 ));
             };
             self.set_scan_dist(&table_name, &table_map, row_id)?;
@@ -373,7 +379,7 @@ impl Plan {
         &self,
         child_rel_node: usize,
         child_pos_map: &HashMap<(usize, usize), usize, RandomState>,
-    ) -> Result<Distribution, QueryPlannerError> {
+    ) -> Result<Distribution, SbroadError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
             if let Node::Expression(Expression::Row {
                 distribution: child_dist,
@@ -381,7 +387,12 @@ impl Plan {
             }) = self.get_node(relational_op.output())?
             {
                 match child_dist {
-                    None => return Err(QueryPlannerError::UninitializedDistribution),
+                    None => {
+                        return Err(SbroadError::Invalid(
+                            Entity::Distribution,
+                            Some("distribution is uninitialized".into()),
+                        ))
+                    }
                     Some(Distribution::Any) => return Ok(Distribution::Any),
                     Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Segment { keys }) => {
@@ -412,14 +423,14 @@ impl Plan {
                 }
             }
         }
-        Err(QueryPlannerError::InvalidRow)
+        Err(SbroadError::Invalid(Entity::Relational, None))
     }
 
     /// Sets row distribution to replicated.
     ///
     /// # Errors
     /// - Node is not of a row type.
-    pub fn set_const_dist(&mut self, row_id: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_const_dist(&mut self, row_id: usize) -> Result<(), SbroadError> {
         if let Expression::Row {
             ref mut distribution,
             ..
@@ -430,8 +441,9 @@ impl Plan {
             }
             return Ok(());
         }
-        Err(QueryPlannerError::CustomError(
-            "The node is not a row type".to_string(),
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("the node is not a row type".to_string()),
         ))
     }
 
@@ -440,11 +452,13 @@ impl Plan {
         table_name: &str,
         table_pos_map: &HashMap<usize, usize, RandomState>,
         row_id: usize,
-    ) -> Result<(), QueryPlannerError> {
-        let table: &Table = self
-            .relations
-            .get(table_name)
-            .ok_or(QueryPlannerError::InvalidRelation)?;
+    ) -> Result<(), SbroadError> {
+        let table: &Table = self.relations.get(table_name).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Table,
+                format!("{} among plan relations", table_name),
+            )
+        })?;
         let mut new_key: Key = Key::new(Vec::new());
         let all_found = table.key.positions.iter().all(|pos| {
             table_pos_map.get(pos).map_or(false, |v| {
@@ -472,7 +486,7 @@ impl Plan {
         right_id: usize,
         parent_id: usize,
         row_id: usize,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         let left_dist = self.dist_from_child(left_id, child_pos_map)?;
         let right_dist = self.dist_from_child(right_id, child_pos_map)?;
 
@@ -483,8 +497,9 @@ impl Plan {
             }
             Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist),
             _ => {
-                return Err(QueryPlannerError::CustomError(
-                    "Invalid row: expected Except, UnionAll or InnerJoin".to_string(),
+                return Err(SbroadError::Invalid(
+                    Entity::Relational,
+                    Some("expected Except, UnionAll or InnerJoin".to_string()),
                 ))
             }
         };
@@ -496,8 +511,9 @@ impl Plan {
         {
             *distribution = Some(new_dist);
         } else {
-            return Err(QueryPlannerError::CustomError(
-                "Invalid row: expected Row".to_string(),
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("expected Row".to_string()),
             ));
         };
 
@@ -508,15 +524,19 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not of a row type.
-    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, QueryPlannerError> {
+    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, SbroadError> {
         match self.get_node(row_id)? {
             Node::Expression(expr) => expr.distribution(),
-            Node::Relational(_) => Err(QueryPlannerError::CustomError(
-                "Failed to get distribution for a relational node (try its row output tuple)."
-                    .to_string(),
+            Node::Relational(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some(
+                    "Failed to get distribution for a relational node (try its row output tuple)."
+                        .to_string(),
+                ),
             )),
-            Node::Parameter => Err(QueryPlannerError::CustomError(
-                "Failed to get distribution for a parameter node.".to_string(),
+            Node::Parameter => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for a parameter node.".to_string()),
             )),
         }
     }
@@ -530,8 +550,8 @@ impl Plan {
     pub fn get_or_init_distribution(
         &mut self,
         row_id: usize,
-    ) -> Result<&Distribution, QueryPlannerError> {
-        if let Err(QueryPlannerError::UninitializedDistribution) = self.get_distribution(row_id) {
+    ) -> Result<&Distribution, SbroadError> {
+        if let Err(SbroadError::Invalid(Entity::Distribution, _)) = self.get_distribution(row_id) {
             self.set_distribution(row_id)?;
         }
         self.get_distribution(row_id)

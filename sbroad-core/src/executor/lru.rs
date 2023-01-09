@@ -1,17 +1,17 @@
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Debug;
 
 pub const DEFAULT_CAPACITY: usize = 50;
 
-pub type EvictFn<Value> = Box<dyn Fn(&mut Value) -> Result<(), QueryPlannerError>>;
+pub type EvictFn<Value> = Box<dyn Fn(&mut Value) -> Result<(), SbroadError>>;
 
 pub trait Cache<Key, Value> {
     /// Builds a new cache with the given capacity.
     ///
     /// # Errors
     /// - Capacity is not valid (zero).
-    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError>
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, SbroadError>
     where
         Self: Sized;
 
@@ -19,13 +19,13 @@ pub trait Cache<Key, Value> {
     ///
     /// # Errors
     /// - Internal error (should never happen).
-    fn get(&mut self, key: &Key) -> Result<Option<&Value>, QueryPlannerError>;
+    fn get(&mut self, key: &Key) -> Result<Option<&Value>, SbroadError>;
 
     /// Inserts a key-value pair into the cache.
     ///
     /// # Errors
     /// - Internal error (should never happen).
-    fn put(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError>;
+    fn put(&mut self, key: Key, value: Value) -> Result<(), SbroadError>;
 }
 
 #[derive(Debug)]
@@ -92,22 +92,19 @@ where
         self.map.get(key)
     }
 
-    fn get_node(&self, key: &Option<Key>) -> Result<&LRUNode<Key, Value>, QueryPlannerError> {
-        self.map.get(key).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("LRU node with key {key:?} not found"))
-        })
+    fn get_node(&self, key: &Option<Key>) -> Result<&LRUNode<Key, Value>, SbroadError> {
+        self.map
+            .get(key)
+            .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("(LRU) with key {key:?}")))
     }
 
-    fn get_node_mut(
-        &mut self,
-        key: &Option<Key>,
-    ) -> Result<&mut LRUNode<Key, Value>, QueryPlannerError> {
+    fn get_node_mut(&mut self, key: &Option<Key>) -> Result<&mut LRUNode<Key, Value>, SbroadError> {
         self.map.get_mut(key).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("Mutable LRU node with key {key:?} not found"))
+            SbroadError::NotFound(Entity::Node, format!("(mutable LRU) with key {key:?}"))
         })
     }
 
-    fn add_first(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError> {
+    fn add_first(&mut self, key: Key, value: Value) -> Result<(), SbroadError> {
         let new_node = LRUNode::new(value);
         self.map.insert(Some(key.clone()), new_node);
         self.size += 1;
@@ -117,7 +114,7 @@ where
         Ok(())
     }
 
-    fn make_first(&mut self, key: &Key) -> Result<(), QueryPlannerError> {
+    fn make_first(&mut self, key: &Key) -> Result<(), SbroadError> {
         self.unlink_node(&Some(key.clone()))?;
         let head_node = self.get_node(&None)?;
         let head_next_id = head_node.next.clone();
@@ -125,7 +122,7 @@ where
         Ok(())
     }
 
-    fn is_first(&self, key: &Key) -> Result<bool, QueryPlannerError> {
+    fn is_first(&self, key: &Key) -> Result<bool, SbroadError> {
         let head_node = self.get_node(&None)?;
         Ok(head_node.next == Some(key.clone()))
     }
@@ -135,7 +132,7 @@ where
         key: Key,
         prev: &Option<Key>,
         next: &Option<Key>,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         let node = self.get_node_mut(&Some(key.clone()))?;
         node.replace_prev(prev.clone());
         node.replace_next(next.clone());
@@ -146,7 +143,7 @@ where
         Ok(())
     }
 
-    fn unlink_node(&mut self, key: &Option<Key>) -> Result<(), QueryPlannerError> {
+    fn unlink_node(&mut self, key: &Option<Key>) -> Result<(), SbroadError> {
         // We don't want to remove sentinel.
         if key.is_none() {
             return Ok(());
@@ -162,7 +159,7 @@ where
         Ok(())
     }
 
-    fn remove_last(&mut self) -> Result<(), QueryPlannerError> {
+    fn remove_last(&mut self) -> Result<(), SbroadError> {
         let head_node = self.get_node(&None)?;
         let head_prev_id = head_node.prev.clone();
         if head_prev_id.is_none() {
@@ -172,10 +169,10 @@ where
         let map = &mut self.map;
         if let Some(evict_fn) = &self.evict_fn {
             let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Mutable LRU node with key {:?} not found",
-                    &head_prev_id
-                ))
+                SbroadError::NotFound(
+                    Entity::Node,
+                    format!("(mutable LRU) with key {:?}", &head_prev_id),
+                )
             })?;
             evict_fn(&mut head_prev.value)?;
         }
@@ -194,10 +191,11 @@ where
     Value: Default + Debug,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
-    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, QueryPlannerError> {
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, SbroadError> {
         if capacity == 0 {
-            return Err(QueryPlannerError::CustomError(
-                "LRU cache capacity must be greater than zero".to_string(),
+            return Err(SbroadError::Invalid(
+                Entity::Cache,
+                Some("LRU cache capacity must be greater than zero".to_string()),
             ));
         }
         let head = LRUNode::sentinel();
@@ -213,7 +211,7 @@ where
         })
     }
 
-    fn get(&mut self, key: &Key) -> Result<Option<&Value>, QueryPlannerError> {
+    fn get(&mut self, key: &Key) -> Result<Option<&Value>, SbroadError> {
         if self.get_node_or_none(&Some(key.clone())).is_none() {
             return Ok(None);
         }
@@ -227,14 +225,15 @@ where
         if let Some(node) = self.get_node_or_none(&Some(key.clone())) {
             Ok(Some(&node.value))
         } else {
-            Err(QueryPlannerError::CustomError(format!(
-                "Failed to retrieve a value from the LRU cache for a key {:?}",
-                key
-            )))
+            Err(SbroadError::FailedTo(
+                Action::Retrieve,
+                Some(Entity::Value),
+                format!("from the LRU cache for a key {key:?}"),
+            ))
         }
     }
 
-    fn put(&mut self, key: Key, value: Value) -> Result<(), QueryPlannerError> {
+    fn put(&mut self, key: Key, value: Value) -> Result<(), SbroadError> {
         if let Entry::Occupied(mut entry) = self.map.entry(Some(key.clone())) {
             let node = entry.get_mut();
             node.value = value;

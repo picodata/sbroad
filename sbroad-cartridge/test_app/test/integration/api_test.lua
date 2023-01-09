@@ -1,7 +1,9 @@
 local t = require('luatest')
+local datetime = require("datetime")
 local g = t.group('integration_api')
 
 local helper = require('test.helper.cluster_no_replication')
+local config_handler = require('test.helper.config_handler')
 local cluster = nil
 
 g.before_all(function()
@@ -81,6 +83,11 @@ g.after_each(
     end
 )
 
+g.after_test("test_unsupported_column", function()
+    local default_config = config_handler.get_init_config(helper.root)
+    cluster:upload_config(default_config)
+end)
+
 g.after_all(function()
     helper.stop_test_cluster()
 end)
@@ -159,9 +166,13 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(r, nil)
     t.assert_str_contains(tostring(err), [[expected to have 3 filed(s), got 5]])
 
+    -- luacheck: max line length 150
     r, err = api:call("sbroad.calculate_bucket_id", { { id = 1 }, "testing_space" })
     t.assert_equals(r, nil)
-    t.assert_str_contains(tostring(err), [[Missing quoted sharding key column]])
+    t.assert_equals(
+        tostring(err),
+        [["sharding key (quoted) column \"\\\"name\\\"\" in the quoted map {\"\\\"id\\\"\": \"id\"} (original map: {\"id\": Integer(1)}) not found"]]
+    )
 
     r, err = api:call("sbroad.calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
     t.assert_equals(r, nil)
@@ -176,7 +187,82 @@ g.test_incorrect_query = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" INNER JOIN "testing_space"]], {} })
-    t.assert_str_contains(tostring(err), "Parsing error")
+    t.assert_str_contains(tostring(err), "parsing error")
+end
+
+g.test_query_errored = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "NotFoundSpace"]], {} })
+    t.assert_str_contains(tostring(err), "\"space \\\"NotFoundSpace\\\" not found\"")
+
+    -- luacheck: max line length 140
+    local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })
+    t.assert_equals(tostring(err), [["column with name [\"\\\"NotFoundColumn\\\"\"] not found"]])
+
+    local invalid_type_param = datetime.new{
+        nsec = 123456789,
+        sec = 20,
+        min = 25,
+        hour = 18,
+        day = 20,
+        month = 8,
+        year = 2021,
+        tzoffset  = 180
+    }
+
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {invalid_type_param} })
+    t.assert_equals(
+        tostring(err),
+        "\"pattern with parameters parsing error: Decode(Syntax(\\\"data did not match any variant of untagged enum EncodedValue\\\"))\""
+    )
+
+    -- check err when params lenght is less then amount of sign `?`
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {} })
+    t.assert_equals(
+        tostring(err),
+        "\"invalid node: parameter node does not refer to an expression\""
+    )
+end
+
+g.test_unsupported_column = function()
+    local api = cluster:server("api-1").net_box
+
+    local config = cluster:download_config()
+    local space_with_unsupported_column = {
+        format = {
+            { type = "integer", name = "id", is_nullable = false },
+            { type = "datetime", name = "unsupported_column", is_nullable = false },
+            { type = "unsigned", name = "bucket_id", is_nullable = true },
+        },
+        temporary = false,
+        engine = "memtx",
+        is_local = false,
+        sharding_key = { "id" },
+        indexes = {
+            {
+                unique = true,
+                parts = {{ path = "id", type = "integer", is_nullable = false}},
+                name = "id",
+                type = "TREE"
+            },
+            {
+                unique = false,
+                parts = { { path = "bucket_id", type = "unsigned", is_nullable = true } },
+                name = "bucket_id",
+                type = "TREE"
+            }
+        }
+    }
+
+    config["schema"]["spaces"]["space_with_unsupported_column"] = space_with_unsupported_column
+    cluster:upload_config(config)
+
+    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "space_with_unsupported_column"]], {} })
+    t.assert_str_contains(
+        tostring(err),
+        "type datetime not implemented"
+    )
 end
 
 g.test_join_query_is_valid = function()

@@ -12,17 +12,14 @@
 //!   select a from t where (a) = (1) and (2) = (b)
 //! ```
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
-fn call_expr_tree_split_columns(
-    plan: &mut Plan,
-    top_id: usize,
-) -> Result<usize, QueryPlannerError> {
+fn call_expr_tree_split_columns(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_replace_bool(
         top_id,
         &call_split_bool,
@@ -37,7 +34,7 @@ fn call_expr_tree_split_columns(
     )
 }
 
-fn call_split_bool(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+fn call_split_bool(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.split_bool(top_id)
 }
 
@@ -49,17 +46,17 @@ impl Plan {
     /// - If the operator is not a boolean operator.
     /// - If left and right tuples have different number of columns.
     /// - If the plan is invalid for some unknown reason.
-    fn split_bool(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
+    fn split_bool(&mut self, expr_id: usize) -> Result<usize, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         let (left_id, right_id, op) = match expr {
             Expression::Bool {
                 left, op, right, ..
             } => (*left, *right, op.clone()),
             _ => {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Node is not a boolean expression: {:?}",
-                    expr
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("node is not a boolean expression: {expr:?}")),
+                ));
             }
         };
         let left_expr = self.get_expression_node(left_id)?;
@@ -74,8 +71,8 @@ impl Plan {
         ) = (left_expr, right_expr)
         {
             if left_list.len() != right_list.len() {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Left and right rows have different number of columns: {:?}, {:?}",
+                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                    "left and right rows have different number of columns: {:?}, {:?}",
                     left_expr, right_expr
                 )));
             }
@@ -111,7 +108,7 @@ impl Plan {
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
     #[otm_child_span("plan.transformation.split_columns")]
-    pub fn split_columns(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn split_columns(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_split_columns)
     }
 }

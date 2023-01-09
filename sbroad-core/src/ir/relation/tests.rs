@@ -61,9 +61,44 @@ fn table_seg_duplicate_columns() {
             &["b", "a"],
         )
         .unwrap_err(),
-        QueryPlannerError::CustomError(
-            "Table has duplicated columns and couldn't be loaded".into()
-        )
+        SbroadError::DuplicatedValue("Table has duplicated columns and couldn't be loaded".into())
+    );
+}
+
+#[test]
+fn table_seg_dno_bucket_id_column() {
+    let t1 = Table::new_seg(
+        "t",
+        vec![
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+        ],
+        &["b", "a"],
+    )
+    .unwrap();
+
+    assert_eq!(
+        SbroadError::UnexpectedNumberOfValues("Table has no bucket_id columns".into()),
+        t1.get_bucket_id_position().unwrap_err()
+    );
+
+    let t2 = Table::new_seg(
+        "t",
+        vec![
+            Column::new("a", Type::Boolean, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
+            Column::new("c", Type::String, ColumnRole::User),
+            Column::new("bucket_id", Type::String, ColumnRole::Sharding),
+            Column::new("bucket_id2", Type::String, ColumnRole::Sharding),
+        ],
+        &["b", "a"],
+    )
+    .unwrap();
+
+    assert_eq!(
+        SbroadError::UnexpectedNumberOfValues("Table has more than one bucket_id column".into()),
+        t2.get_bucket_id_position().unwrap_err()
     );
 }
 
@@ -81,7 +116,7 @@ fn table_seg_wrong_key() {
             &["a", "e"],
         )
         .unwrap_err(),
-        QueryPlannerError::InvalidShardingKey
+        SbroadError::Invalid(Entity::ShardingKey, None)
     );
 }
 
@@ -122,7 +157,7 @@ fn table_seg_serialized_duplicate_columns() {
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
         Table::seg_from_yaml(&s).unwrap_err(),
-        QueryPlannerError::CustomError(
+        SbroadError::DuplicatedValue(
             "Table contains duplicate columns. Unable to convert to YAML.".into()
         )
     );
@@ -139,7 +174,10 @@ fn table_seg_serialized_out_of_range_key() {
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
         Table::seg_from_yaml(&s).unwrap_err(),
-        QueryPlannerError::ValueOutOfRange
+        SbroadError::Invalid(
+            Entity::Value,
+            Some("key positions must be less than 1".into())
+        )
     );
 }
 
@@ -153,7 +191,11 @@ fn table_seg_serialized_no_key() {
         .join("table_seg_serialized_no_key.yaml");
     let s = fs::read_to_string(path).unwrap();
     let t = Table::seg_from_yaml(&s);
-    assert_eq!(t.unwrap_err(), QueryPlannerError::Serialization);
+    assert_eq!(t.unwrap_err(), SbroadError::FailedTo(
+        Action::Serialize,
+        Some(Entity::Table),
+        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 52, line: 5, col: 5 }, path: \"key\" }))".into())
+    );
 }
 
 #[test]
@@ -167,7 +209,11 @@ fn table_seg_serialized_no_columns() {
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
         Table::seg_from_yaml(&s).unwrap_err(),
-        QueryPlannerError::Serialization
+        SbroadError::FailedTo(
+            Action::Serialize,
+            Some(Entity::Table),
+            "Message(\"invalid type: unit value, expected a sequence\", Some(Pos { marker: Marker { index: 9, line: 1, col: 9 }, path: \"columns\" }))".into()
+        )
     );
 }
 

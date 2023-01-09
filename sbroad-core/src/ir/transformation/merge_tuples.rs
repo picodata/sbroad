@@ -10,7 +10,7 @@
 //! select * from t where (a, b, c) = (1, 2, 3)
 //! ```
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
@@ -20,18 +20,18 @@ use sbroad_proc::otm_child_span;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use traversal::Bft;
 
-fn call_expr_tree_merge_tuples(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+fn call_expr_tree_merge_tuples(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
 fn call_build_and_chains(
     plan: &mut Plan,
     nodes: &[usize],
-) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
+) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
     plan.populate_and_chains(nodes)
 }
 
-fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, SbroadError> {
     chain.as_plan(plan)
 }
 
@@ -61,15 +61,17 @@ impl Chain {
     /// - Failed if the node is not an expression.
     /// - Failed if expression is not an "AND" or "OR".
     /// - There is something wrong with our sub-queries.
-    pub fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), QueryPlannerError> {
+    pub fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), SbroadError> {
         let bool_expr = plan.get_expression_node(expr_id)?;
         if let Expression::Bool { left, op, right } = bool_expr {
             if let Bool::And | Bool::Or = op {
                 // We don't expect nested AND/OR expressions in DNF.
-                return Err(QueryPlannerError::CustomError(format!(
-                    "AND/OR expressions are not supported: {:?}",
-                    bool_expr
-                )));
+                return Err(SbroadError::Unsupported(
+                    Entity::Operator,
+                    Some(format!(
+                        "AND/OR expressions are not supported: {bool_expr:?}"
+                    )),
+                ));
             }
 
             // Merge expression into tuples only for equality operators.
@@ -125,7 +127,7 @@ impl Chain {
         Ok(())
     }
 
-    fn as_plan(&self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+    fn as_plan(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
         let other_top_id = match self.other.split_first() {
             Some((first, other)) => {
                 let mut top_id = *first;
@@ -163,8 +165,8 @@ impl Chain {
             }
             (Some(grouped_top_id), None) => Ok(grouped_top_id),
             (None, Some(other_top_id)) => Ok(other_top_id),
-            (None, None) => Err(QueryPlannerError::CustomError(
-                "No expressions to merge".to_string(),
+            (None, None) => Err(SbroadError::UnexpectedNumberOfValues(
+                "no expressions to merge, expected one or twoe".to_string(),
             )),
         }
     }
@@ -187,7 +189,7 @@ impl Chain {
 }
 
 impl Plan {
-    fn get_columns_or_self(&self, expr_id: usize) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_columns_or_self(&self, expr_id: usize) -> Result<Vec<usize>, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Row { list, .. } => Ok(list.clone()),
@@ -203,7 +205,7 @@ impl Plan {
     pub fn populate_and_chains(
         &mut self,
         nodes: &[usize],
-    ) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
+    ) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
         let mut visited: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
         let mut chains: HashMap<usize, Chain, RepeatableState> =
             HashMap::with_capacity_and_hasher(nodes.len(), RepeatableState);
@@ -267,12 +269,10 @@ impl Plan {
         f_build_chains: &dyn Fn(
             &mut Plan,
             &[usize],
-        ) -> Result<
-            HashMap<usize, Chain, RepeatableState>,
-            QueryPlannerError,
-        >,
-        f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, QueryPlannerError>,
-    ) -> Result<usize, QueryPlannerError> {
+        )
+            -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError>,
+        f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, SbroadError>,
+    ) -> Result<usize, SbroadError> {
         let tree = Bft::new(&expr_id, |node| self.nodes.expr_iter(node, false));
         let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
         let chains = f_build_chains(self, &nodes)?;
@@ -293,10 +293,10 @@ impl Plan {
                         {
                             *child_id = new_child_id;
                         } else {
-                            return Err(QueryPlannerError::CustomError(format!(
-                                "Expected alias expression: {:?}",
-                                expr_mut
-                            )));
+                            return Err(SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(format!("expected alias expression: {expr_mut:?}")),
+                            ));
                         }
                     }
                 }
@@ -319,10 +319,10 @@ impl Plan {
                                     *right_id = new_child_id;
                                 }
                             } else {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Expected boolean expression: {:?}",
-                                    expr_mut
-                                )));
+                                return Err(SbroadError::Invalid(
+                                    Entity::Expression,
+                                    Some(format!("expected boolean expression: {expr_mut:?}")),
+                                ));
                             }
                         }
                     }
@@ -338,16 +338,16 @@ impl Plan {
                                 if let Some(child_id) = list.get_mut(pos) {
                                     *child_id = new_child_id;
                                 } else {
-                                    return Err(QueryPlannerError::CustomError(format!(
-                                        "Expected a column at position {} in the row {:?}",
+                                    return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                                        "expected a column at position {} in the row {:?}",
                                         pos, expr_mut
                                     )));
                                 }
                             } else {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Expected row expression: {:?}",
-                                    expr_mut
-                                )));
+                                return Err(SbroadError::Invalid(
+                                    Entity::Expression,
+                                    Some(format!("expected row expression: {expr_mut:?}")),
+                                ));
                             }
                         }
                     }
@@ -371,7 +371,7 @@ impl Plan {
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
     #[otm_child_span("plan.transformation.merge_tuples")]
-    pub fn merge_tuples(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn merge_tuples(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_merge_tuples)
     }
 }

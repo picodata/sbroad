@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ast::Type as AstType;
 use crate::ir::expression::Expression;
 use crate::ir::{Node, Plan};
@@ -22,7 +22,7 @@ pub enum Type {
 }
 
 impl TryFrom<&AstType> for Type {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     /// Pay attention that we can't build `Type::Varchar(length)` from string
     /// because it has an additional length parameter. It should be constructed
@@ -39,10 +39,10 @@ impl TryFrom<&AstType> for Type {
             AstType::TypeString => Ok(Type::String),
             AstType::TypeText => Ok(Type::Text),
             AstType::TypeUnsigned => Ok(Type::Unsigned),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "Unsupported type: {:?}",
-                ast_type
-            ))),
+            _ => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some(format!("{ast_type:?}")),
+            )),
         }
     }
 }
@@ -76,7 +76,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Child node is not of the expression type.
-    pub fn add_cast(&mut self, expr_id: usize, to_type: Type) -> Result<usize, QueryPlannerError> {
+    pub fn add_cast(&mut self, expr_id: usize, to_type: Type) -> Result<usize, SbroadError> {
         self.get_expression_node(expr_id)?;
         let cast_expr = Expression::Cast {
             child: expr_id,

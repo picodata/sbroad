@@ -83,7 +83,7 @@ impl SpanProcessor for StatCollector {
                 let tuple = (id.to_string(), query_sql.to_string(), 2);
                 query_space.borrow_mut().upsert(tuple);
             });
-            debug!(Option::from("on start"), &format!("query: {}", query_sql));
+            debug!(Option::from("on start"), &format!("query: {query_sql}"));
         }
 
         // Register current span mapping (span id: span name).
@@ -92,7 +92,7 @@ impl SpanProcessor for StatCollector {
             let value = SpanName::from(span_data.name.clone());
             debug!(
                 Option::from("on start"),
-                &format!("key: {:?}, value: {:?}", key, value)
+                &format!("key: {key:?}, value: {value:?}")
             );
             span_table.borrow_mut().push(key, value);
         });

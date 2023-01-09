@@ -4,7 +4,7 @@ use traversal::DftPost;
 
 use crate::executor::ir::ExecutionPlan;
 use crate::{
-    errors::QueryPlannerError,
+    errors::{SbroadError, Entity},
     ir::{distribution::Distribution, expression::Expression},
 };
 
@@ -32,7 +32,7 @@ impl<'e> ExecutionPlan<'e> {
     fn get_motion_sharding_keys(
         &self,
         top_node_id: usize,
-    ) -> Result<HashSet<String>, QueryPlannerError> {
+    ) -> Result<HashSet<String>, SbroadError> {
         let mut result = HashSet::new();
 
         let ir_plan = self.get_ir_plan();
@@ -55,7 +55,7 @@ impl<'e> ExecutionPlan<'e> {
     pub fn discovery(
         &mut self,
         node_id: usize,
-    ) -> Result<Option<HashSet<String>>, QueryPlannerError> {
+    ) -> Result<Option<HashSet<String>>, SbroadError> {
         let mut dist_keys: HashSet<String> = HashSet::new();
 
         let motion_shard_keys = self.get_motion_sharding_keys(node_id)?;
@@ -88,7 +88,7 @@ impl<'e> ExecutionPlan<'e> {
                 };
 
                 // Get the distribution of the left row.
-                if let Err(QueryPlannerError::UninitializedDistribution) =
+                if let Err(SbroadError::Invalid(Entity::Distribution, _)) =
                     ir_plan.get_distribution(left_id)
                 {
                     ir_plan.set_distribution(left_id)?;
@@ -103,12 +103,10 @@ impl<'e> ExecutionPlan<'e> {
                             return Ok(None);
                         }
                         let position = positions.get(0).ok_or_else(|| {
-                            QueryPlannerError::CustomError("Invalid distribution key".into())
+                            SbroadError::NotFound(Entity::DistributionKey, "with index 0".into())
                         })?;
                         let right_column_id = *right_columns.get(*position).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Left and right rows have different length.".into(),
-                            )
+                            SbroadError::UnexpectedNumberOfValues("left and right rows have different length.".into())
                         })?;
                         let right_column = ir_plan.get_expression_node(right_column_id)?;
                         if right_column.is_const() {

@@ -27,7 +27,7 @@ use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
 use std::rc::Rc;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::Coordinator;
 use crate::executor::engine::CoordinatorMetadata;
@@ -54,7 +54,7 @@ pub mod vtable;
 
 impl Plan {
     /// Apply optimization rules to the plan.
-    pub(crate) fn optimize(&mut self) -> Result<(), QueryPlannerError> {
+    pub(crate) fn optimize(&mut self) -> Result<(), SbroadError> {
         self.replace_in_operator()?;
         self.split_columns()?;
         self.set_dnf()?;
@@ -93,7 +93,7 @@ where
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
     #[otm_child_span("query.new")]
-    pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, QueryPlannerError>
+    pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, SbroadError>
     where
         C::Configuration: CoordinatorMetadata,
         C::Cache: Cache<String, Plan>,
@@ -104,7 +104,7 @@ where
 
         let mut plan = Plan::new();
         let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to create a new query: {e:?}"))
+            SbroadError::FailedTo(Action::Create, Some(Entity::Query), format!("{e:?}"))
         })?;
         if let Some(cached_plan) = cache.get(&key)? {
             plan = cached_plan.clone();
@@ -151,7 +151,7 @@ where
     /// - Failed to materialize motion result and build a virtual table.
     /// - Failed to get plan top.
     #[otm_child_span("query.dispatch")]
-    pub fn dispatch(&mut self) -> Result<Box<dyn Any>, QueryPlannerError> {
+    pub fn dispatch(&mut self) -> Result<Box<dyn Any>, SbroadError> {
         if self.is_explain() {
             return self.coordinator.explain_format(self.to_explain()?);
         }
@@ -206,7 +206,7 @@ where
         &mut self,
         motion_id: usize,
         mut vtable: VirtualTable,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         let (policy, generation) = if let Relational::Motion {
             policy, generation, ..
         } = self
@@ -216,8 +216,9 @@ where
         {
             (policy.clone(), generation.clone())
         } else {
-            return Err(QueryPlannerError::CustomError(
-                "Invalid motion node".to_string(),
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("invalid motion node".to_string()),
             ));
         };
         if let MotionPolicy::Segment(shard_key) = policy {
@@ -249,7 +250,7 @@ where
         vtable: &mut VirtualTable,
         sharding_key: &MotionKey,
         generation: &DataGeneration,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         vtable.set_motion_key(sharding_key);
 
         let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
@@ -259,10 +260,13 @@ where
                 match target {
                     Target::Reference(col_idx) => {
                         let part = tuple.get(*col_idx).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to find a distribution key column {} in the tuple {:?}.",
+                            SbroadError::NotFound(
+                                Entity::DistributionKey,
+                                format!(
+                                "failed to find a distribution key column {} in the tuple {:?}.",
                                 pos, tuple
-                            ))
+                            ),
+                            )
                         })?;
                         shard_key_tuple.push(part);
                     }
@@ -309,7 +313,7 @@ where
     ///
     /// # Errors
     /// - Failed to build explain
-    pub fn to_explain(&self) -> Result<String, QueryPlannerError> {
+    pub fn to_explain(&self) -> Result<String, SbroadError> {
         self.exec_plan.get_ir_plan().as_explain()
     }
 

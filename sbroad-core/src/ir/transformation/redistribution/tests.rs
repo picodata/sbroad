@@ -1,6 +1,6 @@
 use super::*;
 use crate::collection;
-use crate::errors::QueryPlannerError;
+use crate::errors::SbroadError;
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
@@ -65,7 +65,10 @@ fn segment_motion_for_sub_query() {
     assert_eq!(Some(sq_id), plan.get_sub_query_from_row_node(b_id).unwrap());
 
     assert_eq!(
-        QueryPlannerError::UninitializedDistribution,
+        SbroadError::Invalid(
+            Entity::Distribution,
+            Some("distribution is uninitialized".into()),
+        ),
         plan.resolve_sub_query_conflicts(select_id, eq_id)
             .unwrap_err()
     );

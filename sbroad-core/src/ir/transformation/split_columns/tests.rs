@@ -50,8 +50,9 @@ fn split_columns3() {
     let plan_err = plan.split_columns().unwrap_err();
     assert_eq!(
         format!(
-            "{} {} {}",
-            r#"Left and right rows have different number of columns:"#,
+            "{} {} {} {}",
+            r#"unexpected number of values:"#,
+            r#"left and right rows have different number of columns:"#,
             r#"Row { list: [12, 13, 14], distribution: None },"#,
             r#"Row { list: [16, 17], distribution: None }"#,
         ),

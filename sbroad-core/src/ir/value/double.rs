@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroI32;
 use std::str::FromStr;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use serde::{Deserialize, Serialize};
 use tarantool::tlua;
 
@@ -51,13 +51,13 @@ impl From<u64> for Double {
 }
 
 impl FromStr for Double {
-    type Err = QueryPlannerError;
+    type Err = SbroadError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Double {
-            value: s
-                .parse::<f64>()
-                .map_err(|_| QueryPlannerError::CustomError(format!("{s} is not a valid f64")))?,
+            value: s.parse::<f64>().map_err(|_| {
+                SbroadError::ParsingError(Entity::Value, format!("{s} is not a valid f64"))
+            })?,
         })
     }
 }

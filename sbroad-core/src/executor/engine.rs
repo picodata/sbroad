@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
@@ -24,13 +24,13 @@ pub trait CoordinatorMetadata {
     ///
     /// # Errors
     /// - Failed to get table by name from the metadata.
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError>;
+    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError>;
 
     /// Lookup for a function in the metadata cache.
     ///
     /// # Errors
     /// - Failed to get function by name from the metadata.
-    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError>;
+    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError>;
 
     fn get_exec_waiting_timeout(&self) -> u64;
 
@@ -41,20 +41,19 @@ pub trait CoordinatorMetadata {
     /// # Errors
     /// - Metadata does not contain space
     /// - Metadata contains incorrect sharding keys format
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError>;
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError>;
 
     /// Provides vector of the sharding key column positions in a tuple or an error
     ///
     /// # Errors
     /// - Metadata does not contain space
-    fn get_sharding_positions_by_space(&self, space: &str)
-        -> Result<Vec<usize>, QueryPlannerError>;
+    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError>;
 
     /// Provides amlount of table columns
     ///
     /// # Errors
     /// - Metadata does not contain space
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError>;
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError>;
 }
 
 /// Cluster configuration.
@@ -77,7 +76,7 @@ pub trait Configuration: Sized {
     ///
     /// # Errors
     /// - Internal error.
-    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError>;
+    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError>;
 
     /// Update cached cluster configuration.
     fn update_config(&mut self, metadata: Self::Configuration);
@@ -92,7 +91,7 @@ pub trait Coordinator: Configuration {
     ///
     /// # Errors
     /// - Invalid capacity (zero).
-    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError>;
+    fn clear_ir_cache(&self) -> Result<(), SbroadError>;
 
     fn ir_cache(&self) -> &RefCell<Self::Cache>
     where
@@ -107,7 +106,7 @@ pub trait Coordinator: Configuration {
         plan: &mut ExecutionPlan,
         motion_node_id: usize,
         buckets: &Buckets,
-    ) -> Result<VirtualTable, QueryPlannerError>;
+    ) -> Result<VirtualTable, SbroadError>;
 
     /// Dispatch a sql query to the shards in cluster and get the results.
     ///
@@ -118,13 +117,13 @@ pub trait Coordinator: Configuration {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<Box<dyn Any>, QueryPlannerError>;
+    ) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Setup output format of query explain
     ///
     /// # Errors
     /// - internal executor errors
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError>;
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Extract a list of the sharding keys from a map for the given space.
     ///
@@ -134,7 +133,7 @@ pub trait Coordinator: Configuration {
         &'engine self,
         space: String,
         args: &'rec HashMap<String, Value>,
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
+    ) -> Result<Vec<&'rec Value>, SbroadError>;
 
     /// Extract a list of the sharding key values from a tuple for the given space.
     ///
@@ -144,7 +143,7 @@ pub trait Coordinator: Configuration {
         &'engine self,
         space: String,
         args: &'rec [Value],
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError>;
+    ) -> Result<Vec<&'rec Value>, SbroadError>;
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &[&Value]) -> u64;
@@ -159,7 +158,7 @@ pub fn sharding_keys_from_tuple<'rec>(
     conf: &impl CoordinatorMetadata,
     space: &str,
     tuple: &'rec [Value],
-) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+) -> Result<Vec<&'rec Value>, SbroadError> {
     let quoted_space = normalize_name_from_schema(space);
     let sharding_positions = conf.get_sharding_positions_by_space(&quoted_space)?;
     let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());
@@ -168,10 +167,10 @@ pub fn sharding_keys_from_tuple<'rec>(
         // The tuple contains a "bucket_id" column.
         for position in &sharding_positions {
             let value = tuple.get(*position).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Missing sharding key position {:?} in the tuple {:?}",
-                    position, tuple
-                ))
+                SbroadError::NotFound(
+                    Entity::ShardingKey,
+                    format!("position {:?} in the tuple {:?}", position, tuple),
+                )
             })?;
             sharding_tuple.push(value);
         }
@@ -190,29 +189,35 @@ pub fn sharding_keys_from_tuple<'rec>(
             let corrected_pos = match position.cmp(&bucket_position) {
                 Ordering::Less => *position,
                 Ordering::Equal => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        r#"The tuple {:?} contains a "bucket_id" position {} in a sharding key {:?}"#,
-                        tuple, position, sharding_positions
-                    )))
+                    return Err(SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format!(
+                            r#"the tuple {:?} contains a "bucket_id" position {} in a sharding key {:?}"#,
+                            tuple, position, sharding_positions
+                        )),
+                    ))
                 }
                 Ordering::Greater => *position - 1,
             };
             let value = tuple.get(corrected_pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Missing sharding key position {:?} in the tuple {:?}",
-                    corrected_pos, tuple
-                ))
+                SbroadError::NotFound(
+                    Entity::ShardingKey,
+                    format!("position {corrected_pos:?} in the tuple {tuple:?}"),
+                )
             })?;
             sharding_tuple.push(value);
         }
         Ok(sharding_tuple)
     } else {
-        Err(QueryPlannerError::CustomError(format!(
-            "The tuple {:?} was expected to have {} filed(s), got {}.",
-            tuple,
-            table_col_amount - 1,
-            tuple.len()
-        )))
+        Err(SbroadError::Invalid(
+            Entity::Tuple,
+            Some(format!(
+                "the tuple {:?} was expected to have {} filed(s), got {}.",
+                tuple,
+                table_col_amount - 1,
+                tuple.len()
+            )),
+        ))
     }
 }
 
@@ -225,7 +230,7 @@ pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
     conf: &impl CoordinatorMetadata,
     space: &str,
     map: &'rec HashMap<String, Value, S>,
-) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+) -> Result<Vec<&'rec Value>, SbroadError> {
     let quoted_space = normalize_name_from_schema(space);
     let sharding_key = conf.get_sharding_key_by_space(&quoted_space)?;
     let quoted_map = map
@@ -236,16 +241,17 @@ pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
     for quoted_column in &sharding_key {
         if let Some(column) = quoted_map.get(quoted_column) {
             let value = map.get(*column).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Missing sharding key column {:?} in the map {:?}",
-                    column, map
-                ))
+                SbroadError::NotFound(
+                    Entity::ShardingKey,
+                    format!("column {column:?} in the map {map:?}"),
+                )
             })?;
             tuple.push(value);
         } else {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Missing quoted sharding key column {:?} in the quoted map {:?}. Original map: {:?}",
-                quoted_column, quoted_map, map
+            return Err(SbroadError::NotFound(
+                Entity::ShardingKey,
+                format!(
+                "(quoted) column {quoted_column:?} in the quoted map {quoted_map:?} (original map: {map:?})"
             )));
         }
     }

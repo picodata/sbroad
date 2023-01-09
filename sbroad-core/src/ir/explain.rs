@@ -5,7 +5,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
@@ -56,7 +56,7 @@ impl Default for ColExpr {
 
 impl ColExpr {
     #[allow(dead_code)]
-    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, QueryPlannerError> {
+    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
         let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, false));
         let mut stack: Vec<ColExpr> = Vec::new();
 
@@ -66,8 +66,8 @@ impl ColExpr {
             match &current_node {
                 Expression::Cast { to, .. } => {
                     let expr = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Failed to pop from stack while processing CAST expression".to_string(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing CAST expression".to_string(),
                         )
                     })?;
                     let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
@@ -91,13 +91,13 @@ impl ColExpr {
                 }
                 Expression::Concat { .. } => {
                     let right = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Failed to pop right child from stack while processing CONCAT expression".to_string(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing CONCAT expression".to_string(),
                         )
                     })?;
                     let left = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Failed to pop left child from stack while processing CONCAT expression".to_string(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing CONCAT expression".to_string(),
                         )
                     })?;
                     let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
@@ -109,8 +109,8 @@ impl ColExpr {
                 }
                 Expression::StableFunction { name, .. } => {
                     let expr = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Failed to pop from stack while processing STABLE FUNCTION expression"
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing STABLE FUNCTION expression"
                                 .to_string(),
                         )
                     })?;
@@ -122,8 +122,8 @@ impl ColExpr {
                     let mut row: Vec<ColExpr> = Vec::with_capacity(len);
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                format!("Failed to pop {len} element from stack while processing ROW expression"),
+                            SbroadError::UnexpectedNumberOfValues(
+                                format!("stack is empty, expected to pop {len} element while processing ROW expression"),
                             )
                         })?;
                         row.push(expr);
@@ -133,17 +133,19 @@ impl ColExpr {
                     stack.push(row_expr);
                 }
                 Expression::Alias { .. } | Expression::Bool { .. } | Expression::Unary { .. } => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Column expression node [{:?}] is not supported for yet",
-                        current_node
-                    )));
+                    return Err(SbroadError::Unsupported(
+                        Entity::Expression,
+                        Some(format!(
+                            "Column expression node [{current_node:?}] is not supported for yet"
+                        )),
+                    ));
                 }
             }
         }
 
         stack
             .pop()
-            .ok_or_else(|| QueryPlannerError::CustomError("Failed to pop from stack".to_string()))
+            .ok_or_else(|| SbroadError::UnexpectedNumberOfValues("stack is empty".to_string()))
     }
 }
 
@@ -158,7 +160,7 @@ struct Col {
 
 impl Col {
     #[allow(dead_code)]
-    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, QueryPlannerError> {
+    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
         let mut column = Col::default();
 
         let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, true));
@@ -196,7 +198,7 @@ struct Projection {
 
 impl Projection {
     #[allow(dead_code)]
-    fn new(plan: &Plan, output_id: usize) -> Result<Self, QueryPlannerError> {
+    fn new(plan: &Plan, output_id: usize) -> Result<Self, SbroadError> {
         let mut result = Projection { cols: vec![] };
 
         let alias_list = plan.get_expression_node(output_id)?;
@@ -314,7 +316,7 @@ impl Row {
         plan: &Plan,
         node_ids: &[usize],
         ref_map: &HashMap<usize, usize>,
-    ) -> Result<Self, QueryPlannerError> {
+    ) -> Result<Self, SbroadError> {
         let mut row = Row::new();
 
         for child in node_ids {
@@ -337,8 +339,9 @@ impl Row {
                         row.add_col(RowVal::Column(col));
                     } else {
                         let sq_offset = ref_map.get(&rel_id).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "The sub-query was not found in the map".into(),
+                            SbroadError::NotFound(
+                                Entity::SubQuery,
+                                format!("with index {rel_id} in the map"),
                             )
                         })?;
 
@@ -396,7 +399,7 @@ impl Selection {
         plan: &Plan,
         subtree_node_id: usize,
         ref_map: &HashMap<usize, usize>,
-    ) -> Result<Self, QueryPlannerError> {
+    ) -> Result<Self, SbroadError> {
         let current_node = plan.get_expression_node(subtree_node_id)?;
 
         let result = match current_node {
@@ -662,7 +665,7 @@ impl Display for FullExplain {
 impl FullExplain {
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    pub fn new(ir: &Plan, top_id: usize) -> Result<Self, QueryPlannerError> {
+    pub fn new(ir: &Plan, top_id: usize) -> Result<Self, SbroadError> {
         let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
         let mut result = FullExplain::default();
 
@@ -676,7 +679,7 @@ impl FullExplain {
                         current_node.children.push(left);
                         current_node.children.push(right);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
+                        return Err(SbroadError::UnexpectedNumberOfValues(
                             "Exception node must have exactly two children".into(),
                         ));
                     }
@@ -685,7 +688,7 @@ impl FullExplain {
                 Relational::Projection { output, .. } => {
                     // TODO: change this logic when we'll enable sub-queries in projection
                     let child = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
+                        SbroadError::UnexpectedNumberOfValues(
                             "Projection node must have exactly one child".into(),
                         )
                     })?;
@@ -710,8 +713,8 @@ impl FullExplain {
                     if let Some((_, other)) = children.split_first() {
                         for sq_id in other.iter().rev() {
                             let sq_node = stack.pop().ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                    "Selection node failed to get a sub-query.".into(),
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "Selection node failed to pop a sub-query.".into(),
                                 )
                             })?;
                             result.subqueries.push(sq_node);
@@ -719,13 +722,13 @@ impl FullExplain {
                             sq_ref_map.insert(*sq_id, offset);
                         }
                         let child = stack.pop().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
+                            SbroadError::UnexpectedNumberOfValues(
                                 "Selection node must have exactly one child".into(),
                             )
                         })?;
                         current_node.children.push(child);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
+                        return Err(SbroadError::UnexpectedNumberOfValues(
                             "Selection node doesn't have any children".into(),
                         ));
                     }
@@ -738,7 +741,7 @@ impl FullExplain {
                         current_node.children.push(left);
                         current_node.children.push(right);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
+                        return Err(SbroadError::UnexpectedNumberOfValues(
                             "Union all node must have exactly two children".into(),
                         ));
                     }
@@ -746,7 +749,7 @@ impl FullExplain {
                 }
                 Relational::ScanSubQuery { alias, .. } => {
                     let child = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
+                        SbroadError::UnexpectedNumberOfValues(
                             "ScanSubQuery node must have exactly one child".into(),
                         )
                     })?;
@@ -761,7 +764,7 @@ impl FullExplain {
                     ..
                 } => {
                     let child = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
+                        SbroadError::UnexpectedNumberOfValues(
                             "Motion node must have exactly one child".into(),
                         )
                     })?;
@@ -770,8 +773,8 @@ impl FullExplain {
                     let p = match policy {
                         IrMotionPolicy::Segment(s) => {
                             let child_id = children.first().ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                    "Current node should have exactly one child".to_string(),
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "current node should have exactly one child".to_string(),
                                 )
                             })?;
 
@@ -784,9 +787,10 @@ impl FullExplain {
                                 .map(|r| match r {
                                     IrTarget::Reference(pos) => {
                                         let col_id = *col_list.get(*pos).ok_or_else(|| {
-                                            QueryPlannerError::CustomError(String::from(
-                                                "Invalid position in list",
-                                            ))
+                                            SbroadError::NotFound(
+                                                Entity::Target,
+                                                format!("reference with position {}", pos),
+                                            )
                                         })?;
                                         let col_name = ir
                                             .get_expression_node(col_id)?
@@ -814,7 +818,7 @@ impl FullExplain {
                     ..
                 } => {
                     if children.len() < 2 {
-                        return Err(QueryPlannerError::CustomError(
+                        return Err(SbroadError::UnexpectedNumberOfValues(
                             "Join must have at least two children".into(),
                         ));
                     }
@@ -824,8 +828,8 @@ impl FullExplain {
 
                     for sq_id in subquery_ids.iter().rev() {
                         let sq_node = stack.pop().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Join node failed to get a sub-query.".into(),
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Join node failed to pop a sub-query.".into(),
                             )
                         })?;
                         result.subqueries.push(sq_node);
@@ -837,7 +841,7 @@ impl FullExplain {
                         current_node.children.push(left);
                         current_node.children.push(right);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
+                        return Err(SbroadError::UnexpectedNumberOfValues(
                             "Join node must have exactly two children".into(),
                         ));
                     }
@@ -851,8 +855,8 @@ impl FullExplain {
 
                     for sq_id in children.iter().rev() {
                         let sq_node = stack.pop().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Insert node failed to get a sub-query.".into(),
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Insert node failed to pop a sub-query.".into(),
                             )
                         })?;
 
@@ -871,8 +875,8 @@ impl FullExplain {
 
                     while amount_values > 0 {
                         let value_row = stack.pop().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Insert node failed to get a value row.".into(),
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Insert node failed to pop a value row.".into(),
                             )
                         })?;
 
@@ -883,8 +887,8 @@ impl FullExplain {
                 }
                 Relational::Insert { relation, .. } => {
                     let values = stack.pop().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Insert node failed to get a value row.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Insert node failed to pop a value row.".into(),
                         )
                     })?;
 
@@ -897,7 +901,7 @@ impl FullExplain {
         }
         result.main_query = stack
             .pop()
-            .ok_or_else(|| QueryPlannerError::CustomError("Invalid explain top node.".into()))?;
+            .ok_or_else(|| SbroadError::NotFound(Entity::Node, "that is explain top".into()))?;
         Ok(result)
     }
 }
@@ -908,7 +912,7 @@ impl Plan {
     /// # Errors
     /// - Failed to get top node
     /// - Failed to build explain
-    pub fn as_explain(&self) -> Result<String, QueryPlannerError> {
+    pub fn as_explain(&self) -> Result<String, SbroadError> {
         let top_id = self.get_top()?;
         let explain = FullExplain::new(self, top_id)?;
         Ok(explain.to_string())

@@ -10,7 +10,7 @@
 //! SELECT * FROM t WHERE (a = 1) or (a = 2) or (a = 3)
 //! ```
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::Plan;
@@ -18,17 +18,17 @@ use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
-fn call_expr_tree_replace_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+fn call_expr_tree_replace_in(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_replace_bool(top_id, &call_from_in, &[Bool::In])
 }
 
-fn call_from_in(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+fn call_from_in(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.in_to_or(top_id)
 }
 
 impl Plan {
     /// Convert the IN operator to the chain of the OR-ed equalities.
-    fn in_to_or(&mut self, expr_id: usize) -> Result<usize, QueryPlannerError> {
+    fn in_to_or(&mut self, expr_id: usize) -> Result<usize, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         let (left_id, right_id) = match expr {
             Expression::Bool {
@@ -38,10 +38,10 @@ impl Plan {
                 ..
             } => (*left, *right),
             _ => {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Node is not a boolean IN expression: {:?}",
-                    expr
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("Node is not a boolean IN expression: {expr:?}")),
+                ));
             }
         };
 
@@ -85,7 +85,7 @@ impl Plan {
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
     #[otm_child_span("plan.transformation.replace_in_operator")]
-    pub fn replace_in_operator(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn replace_in_operator(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_replace_in)
     }
 }

@@ -4,7 +4,7 @@ use std::path::Path;
 use pretty_assertions::assert_eq;
 
 use crate::collection;
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::relation::{Column, ColumnRole, Table, Type};
 use crate::ir::value::Value;
@@ -103,21 +103,19 @@ fn projection() {
 
     // Invalid alias names in the output
     assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Some of the columns ["a", "e"] were not found in the table"#.into()
-        ),
+        SbroadError::NotFound(Entity::Column, r#"with name ["a", "e"]"#.into()),
         plan.add_proj(scan_id, &["a", "e"]).unwrap_err()
     );
 
     // Expression node instead of relational one
     assert_eq!(
-        QueryPlannerError::CustomError("Node isn't relational".into()),
+        SbroadError::Invalid(Entity::Node, Some("node is not Relational type".into())),
         plan.add_proj(1, &["a"]).unwrap_err()
     );
 
     // Try to build projection from the non-existing node
     assert_eq!(
-        QueryPlannerError::ValueOutOfRange,
+        SbroadError::NotFound(Entity::Node, format!("from arena with index 42")),
         plan.add_proj(42, &["a"]).unwrap_err()
     );
 }
@@ -164,15 +162,24 @@ fn selection() {
     // Correct Selection operator
     plan.add_select(&[scan_id], gt_id).unwrap();
 
+    // Invalid children list len
+    assert_eq!(
+        SbroadError::UnexpectedNumberOfValues("children list is empty".into(),),
+        plan.add_select(&[], gt_id).unwrap_err()
+    );
+
     // Non-trivalent filter
     assert_eq!(
-        QueryPlannerError::CustomError("Filter expression is not a trivalent expression.".into()),
+        SbroadError::Invalid(
+            Entity::Expression,
+            Some("filter expression is not a trivalent expression.".into())
+        ),
         plan.add_select(&[scan_id], const_row).unwrap_err()
     );
 
     // Non-relational child
     assert_eq!(
-        QueryPlannerError::InvalidRelation,
+        SbroadError::Invalid(Entity::Relational, None),
         plan.add_select(&[const_row], gt_id).unwrap_err()
     );
 }
@@ -187,6 +194,109 @@ fn selection_serialize() {
         .join("selection.yaml");
     let s = fs::read_to_string(path).unwrap();
     Plan::from_yaml(&s).unwrap();
+}
+
+#[test]
+fn except() {
+    let mut valid_plan = Plan::default();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
+    let t1_copy = t1.clone();
+    valid_plan.add_rel(t1);
+    let scan_t1_id = valid_plan.add_scan("t1", None).unwrap();
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
+    valid_plan.add_rel(t2);
+    let scan_t2_id = valid_plan.add_scan("t2", None).unwrap();
+
+    // Correct Except operator
+    valid_plan.add_except(scan_t1_id, scan_t2_id).unwrap();
+
+    let mut invalid_plan = Plan::default();
+
+    invalid_plan.add_rel(t1_copy);
+    let scan_t1_id = invalid_plan.add_scan("t1", None).unwrap();
+
+    let t3 = Table::new_seg(
+        "t3",
+        vec![
+            Column::new("a", Type::Unsigned, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    invalid_plan.add_rel(t3);
+    let scan_t3_id = invalid_plan.add_scan("t3", None).unwrap();
+
+    assert_eq!(
+        SbroadError::UnexpectedNumberOfValues(
+            "children tuples have mismatching amount of columns in except node: left 1, right 2"
+                .into()
+        ),
+        invalid_plan.add_except(scan_t1_id, scan_t3_id).unwrap_err()
+    );
+}
+
+#[test]
+fn insert() {
+    let mut plan = Plan::default();
+
+    let t1 = Table::new_seg(
+        "t1",
+        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        &["a"],
+    )
+    .unwrap();
+
+    plan.add_rel(t1);
+    let scan_t1_id = plan.add_scan("t1", None).unwrap();
+
+    let t2 = Table::new_seg(
+        "t2",
+        vec![
+            Column::new("a", Type::Unsigned, ColumnRole::User),
+            Column::new("b", Type::Unsigned, ColumnRole::User),
+            Column::new("c", Type::Unsigned, ColumnRole::Sharding),
+        ],
+        &["a"],
+    )
+    .unwrap();
+    plan.add_rel(t2);
+
+    assert_eq!(
+        SbroadError::NotFound(Entity::Table, "t4 among plan relations".into()),
+        plan.add_insert("t4", scan_t1_id, &["a"]).unwrap_err()
+    );
+
+    assert_eq!(
+        SbroadError::FailedTo(
+            Action::Insert,
+            Some(Entity::Column),
+            "system column c cannot be inserted".into(),
+        ),
+        plan.add_insert("t2", scan_t1_id, &["a", "b", "c"])
+            .unwrap_err()
+    );
+
+    assert_eq!(
+        SbroadError::UnexpectedNumberOfValues(
+            "invalid number of values: 1. Table t2 expects 2 column(s).".into()
+        ),
+        plan.add_insert("t2", scan_t1_id, &["a", "b"]).unwrap_err()
+    );
+
+    plan.add_insert("t1", scan_t1_id, &["a"]).unwrap();
 }
 
 #[test]
@@ -242,8 +352,8 @@ fn union_all_col_amount_mismatch() {
 
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
     assert_eq!(
-        QueryPlannerError::CustomError(
-            "Children tuples have mismatching amount of columns in union all node: left 1, right 2"
+        SbroadError::UnexpectedNumberOfValues(
+            "children tuples have mismatching amount of columns in union all node: left 1, right 2"
                 .into()
         ),
         plan.add_union_all(scan_t2_id, scan_t1_id).unwrap_err()
@@ -271,13 +381,13 @@ fn sub_query() {
     // Non-relational child node
     let a = 1;
     assert_eq!(
-        QueryPlannerError::CustomError("Node isn't relational".into()),
+        SbroadError::Invalid(Entity::Node, Some("node is not Relational type".into())),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
 
     // Invalid name
     assert_eq!(
-        QueryPlannerError::InvalidName,
+        SbroadError::Invalid(Entity::Name, None),
         plan.add_sub_query(scan_id, Some("")).unwrap_err()
     );
 }
@@ -445,9 +555,7 @@ fn join_duplicate_columns() {
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     assert_eq!(
-        QueryPlannerError::CustomError(
-            "Row can't be added because `a` already has an alias".into()
-        ),
+        SbroadError::DuplicatedValue("row can't be added because `a` already has an alias".into()),
         plan.add_join(scan_t1, scan_t2, condition).unwrap_err()
     );
 }

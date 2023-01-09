@@ -4,10 +4,11 @@
 
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
+use serde_yaml::mapping::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 
 use super::expression::Expression;
 use super::transformation::redistribution::{DataGeneration, MotionPolicy};
@@ -47,8 +48,8 @@ impl Bool {
     /// Creates `Bool` from the operator string.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the operator is invalid.
-    pub fn from(s: &str) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the operator is invalid.
+    pub fn from(s: &str) -> Result<Self, SbroadError> {
         match s.to_lowercase().as_str() {
             "and" => Ok(Bool::And),
             "or" => Ok(Bool::Or),
@@ -60,7 +61,7 @@ impl Bool {
             "<=" => Ok(Bool::LtEq),
             "!=" | "<>" => Ok(Bool::NotEq),
             "not in" => Ok(Bool::NotIn),
-            _ => Err(QueryPlannerError::InvalidBool),
+            _ => Err(SbroadError::Unsupported(Entity::Operator, None)),
         }
     }
 }
@@ -98,15 +99,17 @@ impl Unary {
     /// Creates `Unary` from the operator string.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the operator is invalid.
-    pub fn from(s: &str) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the operator is invalid.
+    pub fn from(s: &str) -> Result<Self, SbroadError> {
         match s.to_lowercase().as_str() {
             "is null" => Ok(Unary::IsNull),
             "is not null" => Ok(Unary::IsNotNull),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "Invalid unary operator: {}",
-                s
-            ))),
+            _ => Err(SbroadError::Invalid(
+                Entity::Operator,
+                Some(format!(
+                    "expected `is null` or `is not null`, got unary operator `{s}`"
+                )),
+            )),
         }
     }
 }
@@ -242,11 +245,11 @@ impl Relational {
     /// is a row of aliases with unique names.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the output tuple is invalid.
+    /// Returns `SbroadError` when the output tuple is invalid.
     pub fn output_alias_position_map<'rel_op, 'nodes>(
         &'rel_op self,
         nodes: &'nodes Nodes,
-    ) -> Result<HashMap<&'nodes str, usize, RandomState>, QueryPlannerError> {
+    ) -> Result<HashMap<&'nodes str, usize, RandomState>, SbroadError> {
         if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
         {
             let state = RandomState::new();
@@ -267,12 +270,14 @@ impl Relational {
             if valid {
                 return Ok(map);
             }
-            return Err(QueryPlannerError::CustomError(
-                "Invalid output tuple".to_string(),
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("invalid output tuple".to_string()),
             ));
         }
-        Err(QueryPlannerError::CustomError(
-            "Failed to find an output tuple node in the arena".to_string(),
+        Err(SbroadError::NotFound(
+            Entity::Node,
+            "(an output tuple) from the arena".to_string(),
         ))
     }
 
@@ -390,7 +395,7 @@ impl Relational {
     ///
     /// # Errors
     /// - try to set children for the scan node (it is always a leaf node)
-    pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), QueryPlannerError> {
+    pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), SbroadError> {
         match self {
             Relational::Except {
                 children: ref mut old,
@@ -435,9 +440,10 @@ impl Relational {
                 *old = children;
                 Ok(())
             }
-            Relational::ScanRelation { .. } => Err(QueryPlannerError::CustomError(String::from(
-                "Scan is a leaf node",
-            ))),
+            Relational::ScanRelation { .. } => Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("Scan is a leaf node".into()),
+            )),
         }
     }
 
@@ -449,7 +455,7 @@ impl Relational {
         &'n self,
         plan: &'n Plan,
         position: usize,
-    ) -> Result<Option<&'n str>, QueryPlannerError> {
+    ) -> Result<Option<&'n str>, SbroadError> {
         match self {
             Relational::Insert { relation, .. } => Ok(Some(relation.as_str())),
             Relational::ScanRelation {
@@ -461,10 +467,10 @@ impl Relational {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Row doesn't has a column at position {}",
-                        position
-                    ))
+                    SbroadError::NotFound(
+                        Entity::Column,
+                        format!("at position {} of Row", position),
+                    )
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
                 if let Expression::Alias { child, .. } = col_node {
@@ -473,7 +479,7 @@ impl Relational {
                         let rel_id = *plan.get_relational_from_reference_node(*child)?;
                         let rel_node = plan.get_relation_node(rel_id)?;
                         if rel_node == self {
-                            return Err(QueryPlannerError::CustomError(format!(
+                            return Err(SbroadError::DuplicatedValue(format!(
                                 "Reference to the same node {:?} at position {}",
                                 rel_node, position
                             )));
@@ -481,9 +487,10 @@ impl Relational {
                         return rel_node.scan_name(plan, *pos);
                     }
                 } else {
-                    return Err(QueryPlannerError::CustomError(String::from(
-                        "Expected an alias in the output row",
-                    )));
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some("expected an alias in the output row".into()),
+                    ));
                 }
                 Ok(None)
             }
@@ -501,15 +508,16 @@ impl Relational {
     ///
     /// # Errors
     /// - relational node is not a scan.
-    pub fn set_scan_name(&mut self, name: Option<String>) -> Result<(), QueryPlannerError> {
+    pub fn set_scan_name(&mut self, name: Option<String>) -> Result<(), SbroadError> {
         match self {
             Relational::ScanRelation { ref mut alias, .. }
             | Relational::ScanSubQuery { ref mut alias, .. } => {
                 *alias = name;
                 Ok(())
             }
-            _ => Err(QueryPlannerError::CustomError(
-                "Relational node is not a scan.".into(),
+            _ => Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("Relational node is not a Scan.".into()),
             )),
         }
     }
@@ -522,8 +530,8 @@ impl Plan {
     /// - children nodes are not relational
     /// - children tuples are invalid
     /// - children tuples have mismatching structure
-    pub fn add_except(&mut self, left: usize, right: usize) -> Result<usize, QueryPlannerError> {
-        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
+    pub fn add_except(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
+        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
             Ok(plan
                 .get_expression_node(child_output)?
@@ -534,8 +542,8 @@ impl Plan {
         let left_row_len = child_row_len(left, self)?;
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Children tuples have mismatching amount of columns in except node: left {}, right {}",
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "children tuples have mismatching amount of columns in except node: left {}, right {}",
                 left_row_len, right_row_len
             )));
         }
@@ -560,9 +568,9 @@ impl Plan {
         relation: &str,
         child: usize,
         columns: &[&str],
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let rel = self.relations.get(relation).ok_or_else(|| {
-            QueryPlannerError::CustomError(format!("Invalid relation: {relation}"))
+            SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
         })?;
         let columns: Vec<usize> = if columns.is_empty() {
             rel.columns
@@ -582,17 +590,13 @@ impl Plan {
                 match names.get(name) {
                     Some((&ColumnRole::User, pos)) => cols.push(*pos),
                     Some((&ColumnRole::Sharding, _)) => {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "System column {} cannot be inserted",
-                            name
-                        )))
+                        return Err(SbroadError::FailedTo(
+                            Action::Insert,
+                            Some(Entity::Column),
+                            format!("system column {name} cannot be inserted"),
+                        ))
                     }
-                    None => {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "Column {} does not exist",
-                            name
-                        )))
-                    }
+                    None => return Err(SbroadError::NotFound(Entity::Column, (*name).to_string())),
                 }
             }
             cols
@@ -602,13 +606,14 @@ impl Plan {
         let child_output_list_len = if let Expression::Row { list, .. } = child_output {
             list.len()
         } else {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Child output is not a row.",
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("child output is not a Row.".into()),
+            ));
         };
         if child_output_list_len != columns.len() {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Invalid number of values: {}. Table {} expects {} column(s).",
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "invalid number of values: {}. Table {} expects {} column(s).",
                 child_output_list_len,
                 relation,
                 columns.len()
@@ -641,11 +646,7 @@ impl Plan {
     ///
     /// # Errors
     /// - relation is invalid
-    pub fn add_scan(
-        &mut self,
-        table: &str,
-        alias: Option<&str>,
-    ) -> Result<usize, QueryPlannerError> {
+    pub fn add_scan(&mut self, table: &str, alias: Option<&str>) -> Result<usize, SbroadError> {
         let nodes = &mut self.nodes;
 
         if let Some(rel) = self.relations.get(table) {
@@ -667,10 +668,10 @@ impl Plan {
             self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
             return Ok(scan_id);
         }
-        Err(QueryPlannerError::CustomError(format!(
-            "Failed to find relation {} among the plan relations",
-            table
-        )))
+        Err(SbroadError::NotFound(
+            Entity::Table,
+            format!("{} among the plan relations", table),
+        ))
     }
 
     /// Adds inner join node.
@@ -684,11 +685,12 @@ impl Plan {
         left: usize,
         right: usize,
         condition: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         if !self.is_trivalent(condition)? {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Condition is not a trivalent expression",
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("Condition is not a trivalent expression".into()),
+            ));
         }
 
         // For any child in a relational scan, we need to
@@ -707,10 +709,10 @@ impl Plan {
             {
                 // We'll need it later to update the condition expression (borrow checker).
                 let table = self.get_relation(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!(
-                        "Failed to find relation {} in the plan",
-                        relation
-                    ))
+                    SbroadError::NotFound(
+                        Entity::Table,
+                        format!("{} among plan relations", relation),
+                    )
                 })?;
                 let sharding_column_pos = table.get_bucket_id_position()?;
 
@@ -761,8 +763,9 @@ impl Plan {
             self.replace_parent_in_subtree(output, None, Some(join_id))?;
             return Ok(join_id);
         }
-        Err(QueryPlannerError::CustomError(
-            "Invalid children for join".to_string(),
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("invalid children for join".to_string()),
         ))
     }
 
@@ -776,11 +779,11 @@ impl Plan {
         child_id: usize,
         policy: &MotionPolicy,
         generation: &DataGeneration,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
             rel.scan_name(self, 0)?.map(String::from)
         } else {
-            return Err(QueryPlannerError::InvalidRelation);
+            return Err(SbroadError::Invalid(Entity::Relational, None));
         };
 
         let output = self.add_row_for_output(child_id, &[], true)?;
@@ -805,11 +808,7 @@ impl Plan {
     /// - child node is not relational
     /// - child output tuple is invalid
     /// - column name do not match the ones in the child output tuple
-    pub fn add_proj(
-        &mut self,
-        child: usize,
-        col_names: &[&str],
-    ) -> Result<usize, QueryPlannerError> {
+    pub fn add_proj(&mut self, child: usize, col_names: &[&str]) -> Result<usize, SbroadError> {
         let output = self.add_row_for_output(child, col_names, false)?;
         let proj = Relational::Projection {
             children: vec![child],
@@ -831,7 +830,7 @@ impl Plan {
         &mut self,
         child: usize,
         columns: &[usize],
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let output = self.nodes.add_row_of_aliases(columns.to_vec(), None)?;
         let proj = Relational::Projection {
             children: vec![child],
@@ -850,26 +849,27 @@ impl Plan {
     /// - filter expression is not boolean
     /// - children nodes are not relational
     /// - first child output tuple is not valid
-    pub fn add_select(
-        &mut self,
-        children: &[usize],
-        filter: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    pub fn add_select(&mut self, children: &[usize], filter: usize) -> Result<usize, SbroadError> {
         let first_child: usize = match children.len() {
-            0 => return Err(QueryPlannerError::InvalidInput),
+            0 => {
+                return Err(SbroadError::UnexpectedNumberOfValues(
+                    "children list is empty".into(),
+                ))
+            }
             _ => children[0],
         };
 
         if !self.is_trivalent(filter)? {
-            return Err(QueryPlannerError::CustomError(
-                "Filter expression is not a trivalent expression.".into(),
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("filter expression is not a trivalent expression.".into()),
             ));
         }
 
         for child in children {
             if let Node::Relational(_) = self.get_node(*child)? {
             } else {
-                return Err(QueryPlannerError::InvalidRelation);
+                return Err(SbroadError::Invalid(Entity::Relational, None));
             }
         }
 
@@ -895,10 +895,10 @@ impl Plan {
         &mut self,
         child: usize,
         alias: Option<&str>,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let name: Option<String> = if let Some(name) = alias {
             if name.is_empty() {
-                return Err(QueryPlannerError::InvalidName);
+                return Err(SbroadError::Invalid(Entity::Name, None));
             }
             Some(String::from(name))
         } else {
@@ -923,8 +923,8 @@ impl Plan {
     /// - children nodes are not relational
     /// - children tuples are invalid
     /// - children tuples have mismatching structure
-    pub fn add_union_all(&mut self, left: usize, right: usize) -> Result<usize, QueryPlannerError> {
-        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, QueryPlannerError> {
+    pub fn add_union_all(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
+        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
             Ok(plan
                 .get_expression_node(child_output)?
@@ -935,8 +935,8 @@ impl Plan {
         let left_row_len = child_row_len(left, self)?;
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Children tuples have mismatching amount of columns in union all node: left {}, right {}",
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "children tuples have mismatching amount of columns in union all node: left {}, right {}",
                 left_row_len, right_row_len
             )));
         }
@@ -960,7 +960,7 @@ impl Plan {
         &mut self,
         row_id: usize,
         col_idx: &mut usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let row = self.get_expression_node(row_id)?;
         let columns = row.clone_row_list()?;
         let mut aliases: Vec<usize> = Vec::with_capacity(columns.len());
@@ -988,21 +988,21 @@ impl Plan {
     /// # Errors
     /// - No child nodes
     /// - Child node is not relational
-    pub fn add_values(&mut self, children: Vec<usize>) -> Result<usize, QueryPlannerError> {
+    pub fn add_values(&mut self, children: Vec<usize>) -> Result<usize, SbroadError> {
         // Get the last row of the children list. We need it to
         // get the correct anonymous column names.
         let last_id = if let Some(last_id) = children.last() {
             *last_id
         } else {
-            return Err(QueryPlannerError::CustomError(
-                "Values node must have at least one child.".into(),
+            return Err(SbroadError::UnexpectedNumberOfValues(
+                "Values node has no children, expected at least one child.".into(),
             ));
         };
         let child_last = self.get_relation_node(last_id)?;
         let last_output_id = if let Relational::ValuesRow { output, .. } = child_last {
             *output
         } else {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::UnexpectedNumberOfValues(
                 "Values node must have at least one child row.".into(),
             ));
         };
@@ -1014,12 +1014,15 @@ impl Plan {
                 if let Expression::Alias { name, .. } = alias {
                     aliases.push(name.clone());
                 } else {
-                    return Err(QueryPlannerError::CustomError("Expected an alias".into()));
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some("Expected an alias".into()),
+                    ));
                 }
             }
             aliases
         } else {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::UnexpectedNumberOfValues(
                 "Values node must have at least one child row.".into(),
             ));
         };
@@ -1045,11 +1048,11 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.output())
         } else {
-            Err(QueryPlannerError::InvalidRelation)
+            Err(SbroadError::Invalid(Entity::Relational, None))
         }
     }
 
@@ -1057,15 +1060,13 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_children(
-        &self,
-        rel_id: usize,
-    ) -> Result<Option<&[usize]>, QueryPlannerError> {
+    pub fn get_relational_children(&self, rel_id: usize) -> Result<Option<&[usize]>, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.children())
         } else {
-            Err(QueryPlannerError::CustomError(
-                "Invalid relational node".into(),
+            Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("invalid relational node".into()),
             ))
         }
     }
@@ -1076,33 +1077,33 @@ impl Plan {
     /// - Node is not values row
     /// - Output and data tuples have different number of columns
     /// - Output is not a row of aliases
-    pub fn update_values_row(&mut self, id: usize) -> Result<(), QueryPlannerError> {
+    pub fn update_values_row(&mut self, id: usize) -> Result<(), SbroadError> {
         let values_row = self.get_node(id)?;
         let (output_id, data_id) =
             if let Node::Relational(Relational::ValuesRow { output, data, .. }) = values_row {
                 (*output, *data)
             } else {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Expected a values row: {:?}",
-                    values_row
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("Expected a values row: {values_row:?}")),
+                ));
             };
         let data = self.get_expression_node(data_id)?;
         let data_list = data.clone_row_list()?;
         let output = self.get_expression_node(output_id)?;
         let output_list = output.clone_row_list()?;
         for (pos, alias_id) in output_list.iter().enumerate() {
-            let new_child_id = *data_list.get(pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!("Expected a child at position {pos}"))
-            })?;
+            let new_child_id = *data_list
+                .get(pos)
+                .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("at position {pos}")))?;
             let alias = self.get_mut_expression_node(*alias_id)?;
             if let Expression::Alias { ref mut child, .. } = alias {
                 *child = new_child_id;
             } else {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Expected an alias: {:?}",
-                    alias
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("expected an alias: {alias:?}")),
+                ));
             }
         }
         Ok(())
@@ -1117,17 +1118,19 @@ impl Plan {
         &mut self,
         rel_id: usize,
         children: Vec<usize>,
-    ) -> Result<(), QueryPlannerError> {
-        if let Node::Relational(ref mut rel) = self
-            .nodes
-            .arena
-            .get_mut(rel_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?
+    ) -> Result<(), SbroadError> {
+        if let Node::Relational(ref mut rel) =
+            self.nodes.arena.get_mut(rel_id).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Node,
+                    format!("(mutable) from arena with index {rel_id}"),
+                )
+            })?
         {
             rel.set_children(children)?;
             Ok(())
         } else {
-            Err(QueryPlannerError::InvalidRelation)
+            Err(SbroadError::Invalid(Entity::Relational, None))
         }
     }
 
@@ -1136,7 +1139,7 @@ impl Plan {
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
-    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, QueryPlannerError> {
+    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
         let rel_tree = Bft::new(&top_id, |node| self.nodes.rel_iter(node));
         for (_, id) in rel_tree {
@@ -1166,7 +1169,7 @@ impl Plan {
         &self,
         rel_id: usize,
         sq_id: usize,
-    ) -> Result<bool, QueryPlannerError> {
+    ) -> Result<bool, SbroadError> {
         let children = if let Some(children) = self.get_relational_children(rel_id)? {
             children
         } else {

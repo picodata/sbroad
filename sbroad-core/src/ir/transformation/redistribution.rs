@@ -7,7 +7,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use traversal::{Bft, DftPost};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
@@ -100,7 +100,7 @@ struct BoolOp {
 }
 
 impl BoolOp {
-    fn from_expr(plan: &Plan, expr_id: usize) -> Result<Self, QueryPlannerError> {
+    fn from_expr(plan: &Plan, expr_id: usize) -> Result<Self, SbroadError> {
         if let Expression::Bool {
             left, op, right, ..
         } = plan.get_expression_node(expr_id)?
@@ -111,7 +111,7 @@ impl BoolOp {
                 right: *right,
             })
         } else {
-            Err(QueryPlannerError::InvalidBool)
+            Err(SbroadError::Invalid(Entity::Operator, None))
         }
     }
 }
@@ -155,7 +155,7 @@ impl Plan {
     ///
     /// # Errors
     /// - plan doesn't contain the top node
-    fn get_relational_nodes_dfs_post(&self) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_relational_nodes_dfs_post(&self) -> Result<Vec<usize>, SbroadError> {
         let top = self.get_top()?;
         let post_tree = DftPost::new(&top, |node| self.nodes.rel_iter(node));
         let nodes: Vec<usize> = post_tree.map(|(_, id)| *id).collect();
@@ -169,7 +169,7 @@ impl Plan {
     pub(crate) fn get_bool_nodes_with_row_children(
         &self,
         top: usize,
-    ) -> Result<Vec<usize>, QueryPlannerError> {
+    ) -> Result<Vec<usize>, SbroadError> {
         let mut nodes: Vec<usize> = Vec::new();
 
         let post_tree = DftPost::new(&top, |node| self.nodes.expr_iter(node, false));
@@ -197,10 +197,7 @@ impl Plan {
     /// # Errors
     /// - Row node is not of a row type
     /// There are more than one sub-queries in the row node.
-    pub fn get_sub_query_from_row_node(
-        &self,
-        row_id: usize,
-    ) -> Result<Option<usize>, QueryPlannerError> {
+    pub fn get_sub_query_from_row_node(&self, row_id: usize) -> Result<Option<usize>, SbroadError> {
         let rel_ids = self.get_relational_from_row_nodes(row_id)?;
         self.get_sub_query_among_rel_nodes(&rel_ids)
     }
@@ -213,7 +210,7 @@ impl Plan {
     pub fn get_sub_query_among_rel_nodes(
         &self,
         rel_nodes: &HashSet<usize, RandomState>,
-    ) -> Result<Option<usize>, QueryPlannerError> {
+    ) -> Result<Option<usize>, SbroadError> {
         let mut sq_set: HashSet<usize, RandomState> = HashSet::with_hasher(RandomState::new());
         for rel_id in rel_nodes {
             if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(*rel_id)? {
@@ -223,7 +220,7 @@ impl Plan {
         match sq_set.len().cmp(&1) {
             Ordering::Equal => sq_set.iter().next().map_or_else(
                 || {
-                    Err(QueryPlannerError::CustomError(format!(
+                    Err(SbroadError::UnexpectedNumberOfValues(format!(
                         "Failed to get the first sub-query node from the list of relational nodes: {:?}.",
                         rel_nodes
                     )))
@@ -231,7 +228,7 @@ impl Plan {
                 |sq_id| Ok(Some(*sq_id)),
             ),
             Ordering::Less => Ok(None),
-            Ordering::Greater => Err(QueryPlannerError::CustomError(format!(
+            Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(format!(
                 "Found multiple sub-queries in a list of relational nodes: {:?}.",
                 rel_nodes
             ))),
@@ -243,7 +240,7 @@ impl Plan {
     /// # Errors
     /// - Row node is not of a row type
     /// - There are more than one motion nodes in the row node
-    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, QueryPlannerError> {
+    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, SbroadError> {
         let rel_nodes = self.get_relational_from_row_nodes(node_id)?;
         self.get_motion_among_rel_nodes(&rel_nodes)
     }
@@ -256,7 +253,7 @@ impl Plan {
     pub fn get_motion_among_rel_nodes(
         &self,
         rel_nodes: &HashSet<usize, RandomState>,
-    ) -> Result<Option<usize>, QueryPlannerError> {
+    ) -> Result<Option<usize>, SbroadError> {
         let mut motion_set: HashSet<usize> = HashSet::new();
 
         for child in rel_nodes {
@@ -268,14 +265,14 @@ impl Plan {
         match motion_set.len().cmp(&1) {
             Ordering::Equal => {
                 let motion_id = motion_set.iter().next().ok_or_else(|| {
-                    QueryPlannerError::CustomError(
-                        "Failed to get the first motion node from the set.".into(),
+                    SbroadError::UnexpectedNumberOfValues(
+                        "failed to get the first Motion node from the set.".into(),
                     )
                 })?;
                 Ok(Some(*motion_id))
             }
             Ordering::Less => Ok(None),
-            Ordering::Greater => Err(QueryPlannerError::CustomError(
+            Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
                 "Node must contain only a single motion".into(),
             )),
         }
@@ -291,7 +288,7 @@ impl Plan {
         outer_id: usize,
         inner_id: usize,
         op: &Bool,
-    ) -> Result<MotionPolicy, QueryPlannerError> {
+    ) -> Result<MotionPolicy, SbroadError> {
         let outer_dist = self.get_distribution(outer_id)?;
         let inner_dist = self.get_distribution(inner_id)?;
         if Bool::Eq == *op || Bool::In == *op || Bool::NotEq == *op || Bool::NotIn == *op {
@@ -311,7 +308,7 @@ impl Plan {
                 // Redistribute the inner tuples using the first key from the outer tuple.
                 return keys_outer.iter().next().map_or_else(
                     || {
-                        Err(QueryPlannerError::CustomError(String::from(
+                        Err(SbroadError::UnexpectedNumberOfValues(String::from(
                             "Failed to get the first distribution key from the outer row.",
                         )))
                     },
@@ -327,13 +324,15 @@ impl Plan {
         &mut self,
         rel_id: usize,
         strategy: &Strategy,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         let children: Vec<usize> = if let Some(children) = self.get_relational_children(rel_id)? {
             children.to_vec()
         } else {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Trying to add motions under the leaf relational node.",
-            )));
+            return Err(SbroadError::FailedTo(
+                Action::Add,
+                Some(Entity::Motion),
+                "trying to add motions under the leaf relational node".into(),
+            ));
         };
 
         // Check that all children we need to add motions exist in the current relational node.
@@ -342,9 +341,11 @@ impl Plan {
             .iter()
             .all(|(node, _)| children_set.get(node).is_some())
         {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Trying to add motions for non-existing children in relational node.",
-            )));
+            return Err(SbroadError::FailedTo(
+                Action::Add,
+                Some(Entity::Motion),
+                "trying to add motions for non-existing children in relational node".into(),
+            ));
         }
 
         // Add motions.
@@ -368,7 +369,7 @@ impl Plan {
         &self,
         rel_id: usize,
         row_id: usize,
-    ) -> Result<Option<usize>, QueryPlannerError> {
+    ) -> Result<Option<usize>, SbroadError> {
         if self.get_expression_node(row_id)?.is_row() {
             if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
                 if self.is_additional_child_of_rel(rel_id, sq_id)? {
@@ -383,7 +384,7 @@ impl Plan {
         &self,
         rel_id: usize,
         node_id: usize,
-    ) -> Result<Vec<(usize, MotionPolicy)>, QueryPlannerError> {
+    ) -> Result<Vec<(usize, MotionPolicy)>, SbroadError> {
         let mut strategies: Vec<(usize, MotionPolicy)> = Vec::new();
         let bool_op = BoolOp::from_expr(self, node_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
@@ -431,7 +432,7 @@ impl Plan {
         &mut self,
         rel_id: usize,
         expr_id: usize,
-    ) -> Result<Strategy, QueryPlannerError> {
+    ) -> Result<Strategy, SbroadError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
             let bool_op = BoolOp::from_expr(self, *node)?;
@@ -454,16 +455,17 @@ impl Plan {
     /// # Errors
     /// - If the node is not a join node.
     /// - Join node has no children.
-    fn get_join_children(&self, join_id: usize) -> Result<&[usize], QueryPlannerError> {
+    fn get_join_children(&self, join_id: usize) -> Result<&[usize], SbroadError> {
         let join = self.get_relation_node(join_id)?;
         if let Relational::InnerJoin { .. } = join {
         } else {
-            return Err(QueryPlannerError::CustomError(
-                "Join node is not an inner join.".into(),
+            return Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("Join node is not an inner join.".into()),
             ));
         }
         let children = join.children().ok_or_else(|| {
-            QueryPlannerError::CustomError("Join node doesn't have any children.".into())
+            SbroadError::UnexpectedNumberOfValues("Join node has no children.".into())
         })?;
         Ok(children)
     }
@@ -474,40 +476,38 @@ impl Plan {
         key: &Key,
         row_map: &HashMap<usize, usize>,
         join_children: &[usize],
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let mut children_set: HashSet<usize> = HashSet::new();
         for pos in &key.positions {
             let column_id = *row_map.get(pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(format!(
-                    "Column {} not found in row map {:?}.",
-                    pos, row_map
-                ))
+                SbroadError::NotFound(Entity::Column, format!("{} in row map {:?}", pos, row_map))
             })?;
             if let Expression::Reference { targets, .. } = self.get_expression_node(column_id)? {
                 if let Some(targets) = targets {
                     for target in targets {
                         let child_id = *join_children.get(*target).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Target {} not found in join children {:?}.",
-                                target, join_children
-                            ))
+                            SbroadError::NotFound(
+                                Entity::Target,
+                                format!("{} in join children {:?}", target, join_children),
+                            )
                         })?;
                         children_set.insert(child_id);
                     }
                 }
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Row column is not a reference.".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some("Row column is not a reference.".into()),
                 ));
             }
         }
         if children_set.len() > 1 {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::UnexpectedNumberOfValues(
                 "Distribution key in the join condition has more than one child.".into(),
             ));
         }
         children_set.iter().next().copied().ok_or_else(|| {
-            QueryPlannerError::CustomError(
+            SbroadError::UnexpectedNumberOfValues(
                 "Distribution key in the join condition has no children.".into(),
             )
         })
@@ -517,7 +517,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If the node is not a row node.
-    fn build_row_map(&self, row_id: usize) -> Result<HashMap<usize, usize>, QueryPlannerError> {
+    fn build_row_map(&self, row_id: usize) -> Result<HashMap<usize, usize>, SbroadError> {
         let columns = self.get_expression_node(row_id)?.get_row_list()?;
         let mut map: HashMap<usize, usize> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
@@ -538,16 +538,16 @@ impl Plan {
         join_id: usize,
         keys: &[Key],
         row_map: &HashMap<usize, usize>,
-    ) -> Result<(Vec<Key>, Vec<Key>), QueryPlannerError> {
+    ) -> Result<(Vec<Key>, Vec<Key>), SbroadError> {
         let mut outer_keys: Vec<Key> = Vec::new();
         let mut inner_keys: Vec<Key> = Vec::new();
 
         let children = self.get_join_children(join_id)?;
         let outer_child = *children.first().ok_or_else(|| {
-            QueryPlannerError::CustomError("Join node doesn't have an outer child.".into())
+            SbroadError::UnexpectedNumberOfValues("Join node has no children.".into())
         })?;
         let inner_child = *children.get(1).ok_or_else(|| {
-            QueryPlannerError::CustomError("Join node doesn't have an inner child.".into())
+            SbroadError::NotFound(Entity::Node, "that is Join node inner child".into())
         })?;
 
         for key in keys {
@@ -558,8 +558,12 @@ impl Plan {
                 inner_keys.push(key.clone());
             } else {
                 // It can be only a sub-query, but we have already processed it.
-                return Err(QueryPlannerError::CustomError(
-                    "Distribution key doesn't correspond  to inner or outer join children.".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::DistributionKey,
+                    Some(
+                        "distribution key doesn't correspond to inner or outer join children."
+                            .into(),
+                    ),
                 ));
             }
         }
@@ -577,13 +581,13 @@ impl Plan {
         join_id: usize,
         left_row_id: usize,
         right_row_id: usize,
-    ) -> Result<MotionPolicy, QueryPlannerError> {
+    ) -> Result<MotionPolicy, SbroadError> {
         let left_dist = self.get_distribution(left_row_id)?;
         let right_dist = self.get_distribution(right_row_id)?;
 
         let get_policy_for_one_side_segment = |row_map: &HashMap<usize, usize>,
                                                keys_set: &KeySet|
-         -> Result<MotionPolicy, QueryPlannerError> {
+         -> Result<MotionPolicy, SbroadError> {
             let keys = keys_set.iter().map(Clone::clone).collect::<Vec<_>>();
             let (outer_keys, _) =
                 self.split_join_keys_to_inner_and_outer(join_id, &keys, row_map)?;
@@ -655,7 +659,7 @@ impl Plan {
         &mut self,
         rel_id: usize,
         expr_id: usize,
-    ) -> Result<Strategy, QueryPlannerError> {
+    ) -> Result<Strategy, SbroadError> {
         // First, we need to set the motion policy for each boolean expression in the join condition.
         let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
         for node in &nodes {
@@ -672,14 +676,17 @@ impl Plan {
                 strategy.insert(*child_id, (MotionPolicy::Full, DataGeneration::None));
             }
         } else {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::UnexpectedNumberOfValues(
                 "Join node doesn't have any children.".into(),
             ));
         }
 
         // Let's improve the full motion policy for the join children (sub-queries and the inner child).
         let inner_child = *join_children.get(1).ok_or_else(|| {
-            QueryPlannerError::CustomError("Join node doesn't have an inner child.".into())
+            SbroadError::NotFound(
+                Entity::Node,
+                "that is Join node inner child with index 1.".into(),
+            )
         })?;
         let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
@@ -722,8 +729,9 @@ impl Plan {
                         Bool::And => join_policy_for_and(&left_policy, &right_policy),
                         Bool::Or => join_policy_for_or(&left_policy, &right_policy),
                         _ => {
-                            return Err(QueryPlannerError::CustomError(
-                                "Unsupported boolean operation".into(),
+                            return Err(SbroadError::Unsupported(
+                                Entity::Operator,
+                                Some("unsupported boolean operation, expected And or Or".into()),
                             ))
                         }
                     }
@@ -736,8 +744,9 @@ impl Plan {
                         Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq => MotionPolicy::Full,
                         Bool::And | Bool::Or => {
                             // "a and 1" or "a or 1" expressions make no sense.
-                            return Err(QueryPlannerError::CustomError(
-                                "Unsupported boolean operation".into(),
+                            return Err(SbroadError::Unsupported(
+                                Entity::Operator,
+                                Some("unsupported boolean operation And or Or".into()),
                             ));
                         }
                     }
@@ -751,8 +760,9 @@ impl Plan {
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
                 _ => {
-                    return Err(QueryPlannerError::CustomError(
-                        "Unsupported boolean operation".into(),
+                    return Err(SbroadError::Unsupported(
+                        Entity::Operator,
+                        Some("unsupported boolean operation".into()),
                     ))
                 }
             };
@@ -762,7 +772,8 @@ impl Plan {
         Ok(strategy)
     }
 
-    fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, QueryPlannerError> {
+    #[allow(clippy::too_many_lines)]
+    fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
         let mut map: Strategy = HashMap::new();
         match self.get_relation_node(rel_id)? {
             Relational::Insert {
@@ -775,7 +786,7 @@ impl Plan {
                 {
                     *child
                 } else {
-                    return Err(QueryPlannerError::CustomError(
+                    return Err(SbroadError::UnexpectedNumberOfValues(
                         "Insert node doesn't have exactly a single child.".into(),
                     ));
                 };
@@ -787,12 +798,16 @@ impl Plan {
                 {
                     (list, distribution)
                 } else {
-                    return Err(QueryPlannerError::CustomError(
-                        "Insert child node has an invalid node instead of the output row".into(),
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(
+                            "Insert child node has an invalid node instead of the output row"
+                                .into(),
+                        ),
                     ));
                 };
                 if list.len() != columns.len() {
-                    return Err(QueryPlannerError::CustomError(format!(
+                    return Err(SbroadError::UnexpectedNumberOfValues(format!(
                         "Insert node expects {} columns instead of {}",
                         list.len(),
                         columns.len()
@@ -805,7 +820,7 @@ impl Plan {
                     .collect::<HashMap<_, _>>();
                 let mut motion_key: MotionKey = MotionKey::new();
                 let rel = self.get_relation(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Relation {relation} not found"))
+                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
                 })?;
                 for pos in &rel.key.positions {
                     if let Some(child_pos) = columns_map.get(pos) {
@@ -816,9 +831,10 @@ impl Plan {
                     } else {
                         // Check that the column exists on the requested position.
                         rel.columns.get(*pos).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Column {pos} not found in relation {relation}"
-                            ))
+                            SbroadError::NotFound(
+                                Entity::Column,
+                                format!("{pos} in relation {relation}"),
+                            )
                         })?;
                         // We need a default value for the key column.
                         motion_key
@@ -827,10 +843,10 @@ impl Plan {
                     }
                 }
                 if distribution.is_none() {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Insert node child {} has no distribution",
-                        child
-                    )));
+                    return Err(SbroadError::Invalid(
+                        Entity::Distribution,
+                        Some(format!("Insert node child {child} has no distribution")),
+                    ));
                 }
 
                 // At the moment we always add a segment motion policy under the
@@ -849,8 +865,9 @@ impl Plan {
                 );
             }
             _ => {
-                return Err(QueryPlannerError::CustomError(
-                    "Expected insert node".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Relational,
+                    Some("expected insert node".into()),
                 ))
             }
         }
@@ -860,12 +877,13 @@ impl Plan {
         let sharding_pos =
             if let Relational::Insert { relation, .. } = self.get_relation_node(rel_id)? {
                 let rel = self.get_relation(relation).ok_or_else(|| {
-                    QueryPlannerError::CustomError(format!("Relation {relation} not found"))
+                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
                 })?;
                 rel.get_bucket_id_position()?
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Expected insert node".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Relational,
+                    Some("expected insert node".into()),
                 ));
             };
         if let Relational::Insert {
@@ -878,7 +896,7 @@ impl Plan {
         Ok(map)
     }
 
-    fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, QueryPlannerError> {
+    fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
         let mut map: Strategy = HashMap::new();
         match self.get_relation_node(rel_id)? {
             Relational::Except { children, .. } => {
@@ -892,7 +910,7 @@ impl Plan {
                     let right_output_row =
                         self.get_expression_node(right_output_id)?.get_row_list()?;
                     if left_output_row.len() != right_output_row.len() {
-                        return Err(QueryPlannerError::CustomError(format!(
+                        return Err(SbroadError::UnexpectedNumberOfValues(format!(
                             "Except node children have different row lengths: left {}, right {}",
                             left_output_row.len(),
                             right_output_row.len()
@@ -913,8 +931,9 @@ impl Plan {
                                     return Ok(map);
                                 }
                             }
-                            let key = left_keys.iter().next().ok_or_else(|| QueryPlannerError::CustomError(
-                                "Left child's segment distribution is invalid: no keys found in the set".into()
+                            let key = left_keys.iter().next().ok_or_else(|| SbroadError::Invalid(
+                                Entity::Distribution,
+                                Some("left child's segment distribution is invalid: no keys found in the set".into())
                             ))?;
                             map.insert(
                                 *right,
@@ -927,12 +946,13 @@ impl Plan {
                     }
                     return Ok(map);
                 }
-                Err(QueryPlannerError::CustomError(
+                Err(SbroadError::UnexpectedNumberOfValues(
                     "Except node doesn't have exactly two children.".into(),
                 ))
             }
-            _ => Err(QueryPlannerError::CustomError(
-                "Expected except node".into(),
+            _ => Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("expected Except node".into()),
             )),
         }
     }
@@ -944,7 +964,7 @@ impl Plan {
     /// - failed to resolve distribution conflicts
     /// - failed to set distribution
     #[otm_child_span("plan.transformation.add_motions")]
-    pub fn add_motions(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn add_motions(&mut self) -> Result<(), SbroadError> {
         let nodes = self.get_relational_nodes_dfs_post()?;
         for id in &nodes {
             match self.get_relation_node(*id)?.clone() {
@@ -962,7 +982,7 @@ impl Plan {
                 Relational::Motion { .. } => {
                     // We can apply this transformation only once,
                     // i.e. to the plan without any motion nodes.
-                    return Err(QueryPlannerError::CustomError(String::from(
+                    return Err(SbroadError::DuplicatedValue(String::from(
                         "IR already has Motion nodes.",
                     )));
                 }

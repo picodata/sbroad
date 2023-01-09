@@ -156,7 +156,7 @@ fn test_getting_table_segment() {
 
     assert_eq!(
         s.get_table_segment("invalid_table").unwrap_err(),
-        QueryPlannerError::CustomError(r#"Space "INVALID_TABLE" not found"#.into())
+        SbroadError::NotFound(Entity::Space, r#""INVALID_TABLE""#.into())
     );
     assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected);
 }
@@ -241,6 +241,6 @@ fn test_invalid_schema() {
 
     assert_eq!(
         s.load_schema(test_schema).unwrap_err(),
-        QueryPlannerError::CustomError("type `map` not implemented".into())
+        SbroadError::NotImplemented(Entity::Type, "map".into())
     );
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Coordinator;
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
@@ -74,7 +74,7 @@ impl<'a, T> Query<'a, T>
 where
     T: Coordinator,
 {
-    fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, QueryPlannerError> {
+    fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
         let mut buckets: Vec<Buckets> = Vec::new();
         let ir_plan = self.exec_plan.get_ir_plan();
         let expr = ir_plan.get_expression_node(expr_id)?;
@@ -89,19 +89,23 @@ where
             for (left_id, right_id) in pairs {
                 let left_expr = ir_plan.get_expression_node(left_id)?;
                 if !left_expr.is_row() {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Left side of equality expression is not a row: {:?}",
-                        left_expr
-                    )));
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some(format!(
+                            "left side of equality expression is not a row: {left_expr:?}"
+                        )),
+                    ));
                 }
                 let right_expr = ir_plan.get_expression_node(right_id)?;
                 let right_columns = if let Expression::Row { list, .. } = right_expr {
                     list.clone()
                 } else {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Right side of equality expression is not a row: {:?}",
-                        right_expr
-                    )));
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some(format!(
+                            "right side of equality expression is not a row: {right_expr:?}"
+                        )),
+                    ));
                 };
 
                 // Get the distribution of the left row.
@@ -128,10 +132,10 @@ where
                         for position in &key.positions {
                             let right_column_id =
                                 *right_columns.get(*position).ok_or_else(|| {
-                                    QueryPlannerError::CustomError(format!(
-                                        "Right row does not have column at position {}",
-                                        position
-                                    ))
+                                    SbroadError::NotFound(
+                                        Entity::Column,
+                                        format!("at position {} for right row", position),
+                                    )
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;
                             if let Expression::Constant { .. } = right_column_expr {
@@ -162,7 +166,7 @@ where
         }
     }
 
-    fn get_expression_tree_buckets(&self, expr_id: usize) -> Result<Buckets, QueryPlannerError> {
+    fn get_expression_tree_buckets(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;
         let mut result: Vec<Buckets> = Vec::new();
@@ -196,7 +200,7 @@ where
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("query.bucket.discovery")]
-    pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, QueryPlannerError> {
+    pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         // We use a `subtree_iter()` because we need DNF version of the filter/condition
         // expressions to determine buckets.
@@ -236,8 +240,9 @@ where
                             .insert(*output, Buckets::new_filtered(buckets));
                     }
                     MotionPolicy::Local => {
-                        return Err(QueryPlannerError::CustomError(
-                            "Local motion policy should never appear in the plan".to_string(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Motion,
+                            Some("local motion policy should never appear in the plan".to_string()),
                         ));
                     }
                 },
@@ -251,7 +256,7 @@ where
                     children, output, ..
                 } => {
                     let child_id = children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
+                        SbroadError::UnexpectedNumberOfValues(
                             "Current node should have exactly one child".to_string(),
                         )
                     })?;
@@ -260,9 +265,10 @@ where
                         .bucket_map
                         .get(&child_rel.output())
                         .ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the child from the bucket map."
-                                    .to_string(),
+                            SbroadError::FailedTo(
+                                Action::Retrieve,
+                                Some(Entity::Buckets),
+                                "of the child from the bucket map.".to_string(),
                             )
                         })?
                         .clone();
@@ -281,16 +287,21 @@ where
                         // child's buckets here.
                         let first_rel =
                             self.exec_plan.get_ir_plan().get_relation_node(*first_id)?;
-                        let first_buckets = self.bucket_map.get(&first_rel.output()).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the first except child from the bucket map."
-                                    .to_string(),
-                            )
-                        })?.clone();
+                        let first_buckets = self
+                            .bucket_map
+                            .get(&first_rel.output())
+                            .ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the first except child from the bucket map.".to_string(),
+                                )
+                            })?
+                            .clone();
                         self.bucket_map.insert(*output, first_buckets);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Current node should have exactly two children".to_string(),
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "current node should have exactly two children".to_string(),
                         ));
                     }
                 }
@@ -304,23 +315,28 @@ where
                             self.exec_plan.get_ir_plan().get_relation_node(*first_id)?;
                         let second_rel =
                             self.exec_plan.get_ir_plan().get_relation_node(*second_id)?;
-                        let first_buckets = self.bucket_map.get(&first_rel.output()).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the first union all child from the bucket map."
-                                    .to_string(),
-                            )
-                        })?;
-                        let second_buckets = self.bucket_map.get(&second_rel.output()).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the second union all child from the bucket map."
-                                    .to_string(),
-                            )
-                        })?;
+                        let first_buckets =
+                            self.bucket_map.get(&first_rel.output()).ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the first union all child from the bucket map.".to_string(),
+                                )
+                            })?;
+                        let second_buckets =
+                            self.bucket_map.get(&second_rel.output()).ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the second union all child from the bucket map."
+                                        .to_string(),
+                                )
+                            })?;
                         let buckets = first_buckets.conjunct(second_buckets);
                         self.bucket_map.insert(*output, buckets);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Current node should have exactly two children".to_string(),
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "current node should have exactly two children".to_string(),
                         ));
                     }
                 }
@@ -333,8 +349,8 @@ where
                     // We need to get the buckets of the child node for the case
                     // when the filter returns no buckets to reduce.
                     let child_id = children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Current node should have exactly one child".to_string(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "current node should have exactly one child".to_string(),
                         )
                     })?;
                     let child_rel = self.exec_plan.get_ir_plan().get_relation_node(*child_id)?;
@@ -342,10 +358,11 @@ where
                         .bucket_map
                         .get(&child_rel.output())
                         .ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                            "Failed to retrieve buckets of the selection child from the bucket map."
-                                .to_string(),
-                        )
+                            SbroadError::FailedTo(
+                                Action::Retrieve,
+                                Some(Entity::Buckets),
+                                "of the selection child from the bucket map.".to_string(),
+                            )
                         })?
                         .clone();
                     let output_id = *output;
@@ -369,20 +386,22 @@ where
                             .bucket_map
                             .get(&inner_rel.output())
                             .ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the inner child from the bucket map."
-                                    .to_string(),
-                            )
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the inner child from the bucket map.".to_string(),
+                                )
                             })?
                             .clone();
                         let outer_buckets = self
                             .bucket_map
                             .get(&outer_rel.output())
                             .ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                "Failed to retrieve buckets of the outer child from the bucket map."
-                                .to_string(),
-                            )
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the outer child from the bucket map.".to_string(),
+                                )
                             })?
                             .clone();
                         let output_id = *output;
@@ -395,8 +414,8 @@ where
                                 .disjunct(&filter_buckets),
                         );
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Current node should have at least two children".to_string(),
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "current node should have at least two children".to_string(),
                         ));
                     }
                 }
@@ -413,9 +432,10 @@ where
             .bucket_map
             .get(&top_rel.output())
             .ok_or_else(|| {
-                QueryPlannerError::CustomError(
-                    "Failed to retrieve buckets of the top relation from the bucket map."
-                        .to_string(),
+                SbroadError::FailedTo(
+                    Action::Retrieve,
+                    Some(Entity::Buckets),
+                    "of the top relation from the bucket map.".to_string(),
                 )
             })?
             .clone();

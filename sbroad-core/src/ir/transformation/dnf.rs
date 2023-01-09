@@ -70,7 +70,7 @@
 //! └─────┘          └─────┘
 //! ```
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::{Node, Plan};
@@ -101,7 +101,7 @@ impl Chain {
 
     /// Append a new node to the chain. Keep AND and OR nodes in the back,
     /// while other nodes in the front of the chain double-ended queue.
-    fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), QueryPlannerError> {
+    fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), SbroadError> {
         let expr = plan.get_expression_node(expr_id)?;
         if let Expression::Bool {
             op: Bool::And | Bool::Or,
@@ -116,7 +116,7 @@ impl Chain {
     }
 
     /// Pop AND and OR nodes (we append them to the back).
-    fn pop_back(&mut self, plan: &Plan) -> Result<Option<usize>, QueryPlannerError> {
+    fn pop_back(&mut self, plan: &Plan) -> Result<Option<usize>, SbroadError> {
         if let Some(expr_id) = self.nodes.back() {
             let expr = plan.get_expression_node(*expr_id)?;
             if let Expression::Bool {
@@ -136,7 +136,7 @@ impl Chain {
     }
 
     /// Convert a chain to a new expression tree (reuse trivalent expressions).
-    fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+    fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, SbroadError> {
         let mut top_id: Option<usize> = None;
         while let Some(expr_id) = self.pop_front() {
             match top_id {
@@ -149,8 +149,8 @@ impl Chain {
                 }
             }
         }
-        let new_top_id =
-            top_id.ok_or_else(|| QueryPlannerError::CustomError("Empty chain".into()))?;
+        let new_top_id = top_id
+            .ok_or_else(|| SbroadError::Invalid(Entity::Chain, Some("Empty chain".into())))?;
         Ok(new_top_id)
     }
 
@@ -160,7 +160,7 @@ impl Chain {
     }
 }
 
-fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, QueryPlannerError> {
+fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_to_dnf(top_id)
 }
 
@@ -170,7 +170,7 @@ impl Plan {
     /// # Errors
     /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
-    pub fn get_dnf_chains(&self, top_id: usize) -> Result<VecDeque<Chain>, QueryPlannerError> {
+    pub fn get_dnf_chains(&self, top_id: usize) -> Result<VecDeque<Chain>, SbroadError> {
         let capacity: usize = self.nodes.arena.iter().fold(0_usize, |acc, node| {
             acc + match node {
                 Node::Expression(Expression::Bool {
@@ -212,8 +212,9 @@ impl Plan {
                         chain.push(*left, self)?;
                     }
                     _ => {
-                        return Err(QueryPlannerError::CustomError(
-                            "Chain returned unexpected boolean operator".into(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Chain,
+                            Some("Chain returned unexpected boolean operator".into()),
                         ))
                     }
                 }
@@ -230,7 +231,7 @@ impl Plan {
     /// - Failed to retrieve DNF chains.
     /// - Failed to convert the AND chain to a new expression tree.
     /// - Failed to concatenate the AND expression trees to the OR tree.
-    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let mut result = self.get_dnf_chains(top_id)?;
 
         let mut new_top_id: Option<usize> = None;
@@ -242,8 +243,9 @@ impl Plan {
             }
         }
 
-        new_top_id
-            .ok_or_else(|| QueryPlannerError::CustomError("Chain returned no expressions".into()))
+        new_top_id.ok_or_else(|| {
+            SbroadError::Invalid(Entity::Chain, Some("Chain returned no expressions".into()))
+        })
     }
 
     /// Convert an expression tree of trivalent nodes to a conjunctive
@@ -254,7 +256,7 @@ impl Plan {
     /// - If the plan doesn't contain relational operators where expected.
     /// - If failed to convert an expression tree to a CNF.
     #[otm_child_span("plan.transformation.set_dnf")]
-    pub fn set_dnf(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn set_dnf(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_to_dnf)
     }
 }

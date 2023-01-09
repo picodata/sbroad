@@ -6,7 +6,7 @@ use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
 
 use sbroad::backend::sql::tree::OrderedSyntaxNodes;
 use sbroad::debug;
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::ir::{ExecutionPlan, QueryType};
 use sbroad::ir::value::Value;
 use sbroad::otm::{
@@ -77,24 +77,29 @@ impl Default for RequiredData {
 }
 
 impl TryFrom<RequiredData> for Vec<u8> {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: RequiredData) -> Result<Self, Self::Error> {
         bincode::serialize(&value).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize required data to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                Some(Entity::RequiredData),
+                format!("to binary: {e:?}"),
+            )
         })
     }
 }
 
 impl TryFrom<&[u8]> for RequiredData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         bincode::deserialize(value).map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to deserialize required data: {e:?}"))
+            SbroadError::FailedTo(
+                Action::Deserialize,
+                Some(Entity::RequiredData),
+                format!("{e:?}"),
+            )
         })
     }
 }
@@ -167,7 +172,7 @@ impl From<EncodedRequiredData> for Vec<u8> {
 }
 
 impl TryFrom<RequiredData> for EncodedRequiredData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: RequiredData) -> Result<Self, Self::Error> {
         let bytes: Vec<u8> = value.try_into()?;
@@ -176,7 +181,7 @@ impl TryFrom<RequiredData> for EncodedRequiredData {
 }
 
 impl TryFrom<EncodedRequiredData> for RequiredData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: EncodedRequiredData) -> Result<Self, Self::Error> {
         let ir: RequiredData = value.0.as_slice().try_into()?;
@@ -191,24 +196,29 @@ pub struct OptionalData {
 }
 
 impl TryFrom<OptionalData> for Vec<u8> {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: OptionalData) -> Result<Self, Self::Error> {
         bincode::serialize(&value).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize required data to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                Some(Entity::RequiredData),
+                format!("to binary: {e:?}"),
+            )
         })
     }
 }
 
 impl TryFrom<&[u8]> for OptionalData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         bincode::deserialize(value).map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to deserialize required data: {e:?}"))
+            SbroadError::FailedTo(
+                Action::Deserialize,
+                Some(Entity::RequiredData),
+                format!("{e:?}"),
+            )
         })
     }
 }
@@ -218,18 +228,23 @@ impl OptionalData {
         OptionalData { exec_plan, ordered }
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, QueryPlannerError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, SbroadError> {
         bincode::serialize(self).map_err(|e| {
-            QueryPlannerError::CustomError(format!(
-                "Failed to serialize required data to binary: {:?}",
-                e
-            ))
+            SbroadError::FailedTo(
+                Action::Serialize,
+                Some(Entity::RequiredData),
+                format!("to binary: {e:?}"),
+            )
         })
     }
 
-    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, QueryPlannerError> {
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, SbroadError> {
         bincode::deserialize(bytes).map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to deserialize required data: {e:?}"))
+            SbroadError::FailedTo(
+                Action::Deserialize,
+                Some(Entity::RequiredData),
+                format!("{e:?}"),
+            )
         })
     }
 }
@@ -249,7 +264,7 @@ impl From<EncodedOptionalData> for Vec<u8> {
 }
 
 impl TryFrom<OptionalData> for EncodedOptionalData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: OptionalData) -> Result<Self, Self::Error> {
         let bytes: Vec<u8> = value.try_into()?;
@@ -258,7 +273,7 @@ impl TryFrom<OptionalData> for EncodedOptionalData {
 }
 
 impl TryFrom<EncodedOptionalData> for OptionalData {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: EncodedOptionalData) -> Result<Self, Self::Error> {
         let ir: OptionalData = value.0.as_slice().try_into()?;

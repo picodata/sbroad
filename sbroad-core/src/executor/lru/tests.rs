@@ -1,5 +1,5 @@
 use super::{Cache, LRUCache};
-use crate::errors::QueryPlannerError;
+use crate::errors::SbroadError;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
@@ -17,7 +17,7 @@ fn lru1() {
 
 #[test]
 fn lru2() {
-    let cache_err: Result<LRUCache<usize, Plan>, QueryPlannerError> = LRUCache::new(0, None);
+    let cache_err: Result<LRUCache<usize, Plan>, SbroadError> = LRUCache::new(0, None);
     assert_eq!(cache_err.is_err(), true);
 }
 
@@ -26,7 +26,7 @@ fn lru3() {
     let evict_fn = Box::new(|value: &mut String| {
         let value_old = value.clone();
         value.push_str("_old");
-        Err(QueryPlannerError::CustomError(format!(
+        Err(SbroadError::UnexpectedNumberOfValues(format!(
             "changed {} to {} during cache eviction",
             value_old, value
         )))
@@ -34,7 +34,9 @@ fn lru3() {
     let mut cache: LRUCache<usize, String> = LRUCache::new(1, Some(evict_fn)).unwrap();
     cache.put(1, "one".to_string()).unwrap();
     assert_eq!(
-        QueryPlannerError::CustomError("changed one to one_old during cache eviction".to_string()),
+        SbroadError::UnexpectedNumberOfValues(
+            "changed one to one_old during cache eviction".to_string()
+        ),
         cache.put(2, "two".to_string()).unwrap_err()
     );
 }

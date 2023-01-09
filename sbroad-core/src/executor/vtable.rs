@@ -4,7 +4,7 @@ use std::vec;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
@@ -156,7 +156,7 @@ impl VirtualTable {
     ///
     /// # Errors
     /// - Failed to find a distribution key.
-    pub fn get_tuple_distribution(&self) -> Result<HashSet<Vec<&Value>>, QueryPlannerError> {
+    pub fn get_tuple_distribution(&self) -> Result<HashSet<Vec<&Value>>, SbroadError> {
         let mut result: HashSet<Vec<&Value>> = HashSet::with_capacity(self.tuples.len());
 
         for tuple in &self.tuples {
@@ -166,10 +166,10 @@ impl VirtualTable {
                     match target {
                         Target::Reference(pos) => {
                             let part = tuple.get(*pos).ok_or_else(|| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to find a distribution key column {} in the tuple {:?}.",
-                                    pos, tuple
-                                ))
+                                SbroadError::NotFound(
+                                    Entity::DistributionKey,
+                                    format!("column {pos} in the tuple {tuple:?}."),
+                                )
                             })?;
                             shard_key_tuple.push(part);
                         }
@@ -179,8 +179,9 @@ impl VirtualTable {
                     }
                 }
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Distribution key not found".into(),
+                return Err(SbroadError::NotFound(
+                    Entity::DistributionKey,
+                    "for virtual table".into(),
                 ));
             }
             result.insert(shard_key_tuple);
@@ -193,10 +194,11 @@ impl VirtualTable {
     ///
     /// # Errors
     /// - Try to set an empty alias name to the virtual table.
-    pub fn set_alias(&mut self, name: &str) -> Result<(), QueryPlannerError> {
+    pub fn set_alias(&mut self, name: &str) -> Result<(), SbroadError> {
         if name.is_empty() {
-            return Err(QueryPlannerError::CustomError(
-                "Can't set empty alias for virtual table".into(),
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some("can't set empty alias for virtual table".into()),
             ));
         }
 

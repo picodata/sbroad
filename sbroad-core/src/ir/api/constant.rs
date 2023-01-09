@@ -1,4 +1,4 @@
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::value::Value;
 use crate::ir::{Node, Nodes, Plan};
@@ -8,13 +8,14 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't constant type
-    pub fn as_const_value(&self) -> Result<Value, QueryPlannerError> {
+    pub fn as_const_value(&self) -> Result<Value, SbroadError> {
         if let Expression::Constant { value } = self.clone() {
             return Ok(value);
         }
 
-        Err(QueryPlannerError::CustomError(
-            "Node isn't const type".into(),
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not Const type".into()),
         ))
     }
 
@@ -22,13 +23,14 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't constant type
-    pub fn as_const_value_ref(&self) -> Result<&Value, QueryPlannerError> {
+    pub fn as_const_value_ref(&self) -> Result<&Value, SbroadError> {
         if let Expression::Constant { value } = self {
             return Ok(value);
         }
 
-        Err(QueryPlannerError::CustomError(
-            "Node isn't const type".into(),
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not Const type".into()),
         ))
     }
 
@@ -72,14 +74,17 @@ impl Plan {
     ///
     /// # Errors
     /// - The parameters map is corrupted (parameters map points to invalid nodes).
-    pub fn restore_constants(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn restore_constants(&mut self) -> Result<(), SbroadError> {
         for (id, const_node) in self.constants.drain() {
             if let Node::Expression(Expression::Constant { .. }) = const_node {
             } else {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Restoring parameters filed: node {:?} (id: {}) is not of a constant type",
-                    const_node, id
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!(
+                        "Restoring parameters filed: node {:?} (id: {}) is not of a constant type",
+                        const_node, id
+                    )),
+                ));
             }
             self.nodes.replace(id, const_node)?;
         }
@@ -90,7 +95,7 @@ impl Plan {
     ///
     /// # Errors
     /// - The plan is corrupted (collected constants point to invalid arena positions).
-    pub fn stash_constants(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn stash_constants(&mut self) -> Result<(), SbroadError> {
         let constants = self.get_const_list();
         for const_id in constants {
             let const_node = self.nodes.replace(const_id, Node::Parameter)?;

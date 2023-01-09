@@ -12,7 +12,7 @@ use pest::iterators::Pair;
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 
 /// Parse tree
 #[derive(Parser)]
@@ -94,7 +94,7 @@ pub enum Type {
 
 impl Type {
     #[allow(dead_code)]
-    fn from_rule(rule: Rule) -> Result<Self, QueryPlannerError> {
+    fn from_rule(rule: Rule) -> Result<Self, SbroadError> {
         match rule {
             Rule::Alias => Ok(Type::Alias),
             Rule::AliasName => Ok(Type::AliasName),
@@ -161,7 +161,10 @@ impl Type {
             Rule::Value => Ok(Type::Value),
             Rule::Values => Ok(Type::Values),
             Rule::ValuesRow => Ok(Type::ValuesRow),
-            _ => Err(QueryPlannerError::InvalidAst),
+            _ => Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("got unexpected rule".into()),
+            )),
         }
     }
 }
@@ -176,7 +179,7 @@ pub struct ParseNode {
 
 #[allow(dead_code)]
 impl ParseNode {
-    pub(super) fn new(rule: Rule, value: Option<String>) -> Result<Self, QueryPlannerError> {
+    pub(super) fn new(rule: Rule, value: Option<String>) -> Result<Self, SbroadError> {
         Ok(ParseNode {
             children: vec![],
             rule: Type::from_rule(rule)?,
@@ -204,18 +207,23 @@ impl ParseNodes {
     ///
     /// # Errors
     /// - Failed to get a node from arena.
-    pub fn get_node(&self, node: usize) -> Result<&ParseNode, QueryPlannerError> {
-        self.arena.get(node).ok_or(QueryPlannerError::InvalidNode)
+    pub fn get_node(&self, node: usize) -> Result<&ParseNode, SbroadError> {
+        self.arena.get(node).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, format!("from arena with index {node}"))
+        })
     }
 
     /// Get a mutable node from arena
     ///
     /// # Errors
     /// - Failed to get a node from arena.
-    pub fn get_mut_node(&mut self, node: usize) -> Result<&mut ParseNode, QueryPlannerError> {
-        self.arena
-            .get_mut(node)
-            .ok_or(QueryPlannerError::InvalidNode)
+    pub fn get_mut_node(&mut self, node: usize) -> Result<&mut ParseNode, SbroadError> {
+        self.arena.get_mut(node).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {node}"),
+            )
+        })
     }
 
     /// Push a new node to arena
@@ -243,17 +251,15 @@ impl ParseNodes {
     ///
     /// # Errors
     /// - Failed to retrieve node from arena.
-    pub fn add_child(
-        &mut self,
-        node: Option<usize>,
-        child: usize,
-    ) -> Result<(), QueryPlannerError> {
+    pub fn add_child(&mut self, node: Option<usize>, child: usize) -> Result<(), SbroadError> {
         if let Some(parent) = node {
             self.get_node(child)?;
-            let parent_node = self
-                .arena
-                .get_mut(parent)
-                .ok_or(QueryPlannerError::InvalidNode)?;
+            let parent_node = self.arena.get_mut(parent).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Node,
+                    format!("(mutable) from arena with index {parent}"),
+                )
+            })?;
             parent_node.children.insert(0, child);
         }
         Ok(())
@@ -263,15 +269,13 @@ impl ParseNodes {
     ///
     /// # Errors
     /// - Target node is present in the arena.
-    pub fn update_value(
-        &mut self,
-        node: usize,
-        value: Option<String>,
-    ) -> Result<(), QueryPlannerError> {
-        let mut node = self
-            .arena
-            .get_mut(node)
-            .ok_or(QueryPlannerError::InvalidNode)?;
+    pub fn update_value(&mut self, node: usize, value: Option<String>) -> Result<(), SbroadError> {
+        let mut node = self.arena.get_mut(node).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {node}"),
+            )
+        })?;
         node.value = value;
         Ok(())
     }
@@ -310,7 +314,7 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - The new top is not in the arena.
-    pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_top(&mut self, top: usize) -> Result<(), SbroadError> {
         self.nodes.get_node(top)?;
         self.top = Some(top);
         Ok(())
@@ -320,26 +324,33 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - AST tree doesn't have a top node.
-    pub fn get_top(&self) -> Result<usize, QueryPlannerError> {
-        self.top
-            .ok_or_else(|| QueryPlannerError::CustomError("No top node found in AST".to_string()))
+    pub fn get_top(&self) -> Result<usize, SbroadError> {
+        self.top.ok_or_else(|| {
+            SbroadError::Invalid(Entity::AST, Some("no top node found in AST".into()))
+        })
     }
 
     /// Serialize AST from YAML.
     ///
     /// # Errors
     /// - Failed to parse YAML.
-    pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+    pub fn from_yaml(s: &str) -> Result<Self, SbroadError> {
         let ast: AbstractSyntaxTree = match serde_yaml::from_str(s) {
             Ok(p) => p,
-            Err(_) => return Err(QueryPlannerError::Serialization),
+            Err(e) => {
+                return Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::AST),
+                    format!("{e:?}"),
+                ))
+            }
         };
         Ok(ast)
     }
 
     /// `Select` node is not IR-friendly as it can have up to five children.
     /// Transform this node in IR-way (to a binary sub-tree).
-    pub(super) fn transform_select(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn transform_select(&mut self) -> Result<(), SbroadError> {
         let mut selects: HashSet<usize> = HashSet::new();
         for (id, node) in self.nodes.arena.iter().enumerate() {
             if node.rule == Type::Select {
@@ -354,7 +365,7 @@ impl AbstractSyntaxTree {
                 3 => self.transform_select_3(*node, &children)?,
                 4 => self.transform_select_4(*node, &children)?,
                 5 => self.transform_select_5(*node, &children)?,
-                _ => return Err(QueryPlannerError::InvalidAst),
+                _ => return Err(SbroadError::Invalid(Entity::AST, None)),
             }
         }
 
@@ -371,15 +382,14 @@ impl AbstractSyntaxTree {
         for (parent_id, children_pos) in parents {
             let parent = self.nodes.get_node(parent_id)?;
             let child_id = *parent.children.get(children_pos).ok_or_else(|| {
-                QueryPlannerError::CustomError(
-                    "Parent node doesn't contain a child at expected position.".into(),
+                SbroadError::NotFound(
+                    Entity::Node,
+                    format!("at expected position {}", children_pos),
                 )
             })?;
             let child = self.nodes.get_node(child_id)?;
             let mut node_id = *child.children.first().ok_or_else(|| {
-                QueryPlannerError::CustomError(
-                    "Selection node doesn't contain any children.".into(),
-                )
+                SbroadError::UnexpectedNumberOfValues("Selection node has no children.".into())
             })?;
             let parent = self.nodes.get_mut_node(parent_id)?;
             swap(&mut parent.children[children_pos], &mut node_id);
@@ -389,7 +399,7 @@ impl AbstractSyntaxTree {
         if selects.contains(&top_id) {
             let top = self.nodes.get_node(top_id)?;
             let child_id = *top.children.first().ok_or_else(|| {
-                QueryPlannerError::CustomError(
+                SbroadError::UnexpectedNumberOfValues(
                     "Selection node doesn't contain any children.".into(),
                 )
             })?;
@@ -403,38 +413,53 @@ impl AbstractSyntaxTree {
         &mut self,
         select_id: usize,
         children: &[usize],
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         if children.len() != 2 {
-            return Err(QueryPlannerError::InvalidInput);
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "expect children list len 2, got {}",
+                children.len()
+            )));
         }
 
         // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let scan_id: usize = *children.get(1).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
+        })?;
         let scan = self.nodes.get_node(scan_id)?;
         if scan.rule != Type::Scan {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("scan.rule is not Scan type".into()),
+            ));
         }
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let proj = self
-            .nodes
-            .arena
-            .get_mut(proj_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
+        })?;
+        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {proj_id}"),
+            )
+        })?;
         if proj.rule != Type::Projection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("proj.rule is not Projection type".into()),
+            ));
         }
 
         // Append `Scan` to the `Projection` children (zero position)
         proj.children.insert(0, scan_id);
 
         // Leave `Projection` the only child of `Select`.
-        let mut select = self
-            .nodes
-            .arena
-            .get_mut(select_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {select_id}"),
+            )
+        })?;
         select.children = vec![proj_id];
 
         Ok(())
@@ -445,52 +470,73 @@ impl AbstractSyntaxTree {
         &mut self,
         select_id: usize,
         children: &[usize],
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         if children.len() != 3 {
-            return Err(QueryPlannerError::InvalidInput);
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "expect children list len 3, got {}",
+                children.len()
+            )));
         }
 
         // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let scan_id: usize = *children.get(1).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
+        })?;
         let scan = self.nodes.get_node(scan_id)?;
         if scan.rule != Type::Scan {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("scan.rule is not Scan type".into()),
+            ));
         }
 
         // Check that the third child is `Selection`.
-        let selection_id: usize = *children.get(2).ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let selection = self
-            .nodes
-            .arena
-            .get_mut(selection_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let selection_id: usize = *children.get(2).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 2".into())
+        })?;
+        let selection = self.nodes.arena.get_mut(selection_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {selection_id}"),
+            )
+        })?;
         if selection.rule != Type::Selection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("selection.rule is not Selection type".into()),
+            ));
         }
 
         // Append `Scan` to the `Selection` children (zero position)
         selection.children.insert(0, scan_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let proj = self
-            .nodes
-            .arena
-            .get_mut(proj_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
+        })?;
+        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {proj_id}"),
+            )
+        })?;
         if proj.rule != Type::Projection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("proj.rule is not Projection type".into()),
+            ));
         }
 
         // Append `Selection` to the `Projection` children (zero position)
         proj.children.insert(0, selection_id);
 
         // Leave `Projection` the only child of `Select`.
-        let mut select = self
-            .nodes
-            .arena
-            .get_mut(select_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {select_id}"),
+            )
+        })?;
         select.children = vec![proj_id];
 
         Ok(())
@@ -501,34 +547,53 @@ impl AbstractSyntaxTree {
         &mut self,
         select_id: usize,
         children: &[usize],
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         if children.len() != 4 {
-            return Err(QueryPlannerError::InvalidInput);
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "expect children list len 4, got {}",
+                children.len()
+            )));
         }
 
         // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let scan_id: usize = *children.get(1).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
+        })?;
         let scan = self.nodes.get_node(scan_id)?;
         if scan.rule != Type::Scan {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("scan.rule is not Scan type".into()),
+            ));
         }
 
         // Check that the forth child is `Condition`.
-        let cond_id: usize = *children.get(3).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let cond_id: usize = *children.get(3).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 3".into())
+        })?;
         let cond = self.nodes.get_node(cond_id)?;
         if cond.rule != Type::Condition {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("cond.rule is not Condition type".into()),
+            ));
         }
 
         // Check that the third child is `InnerJoin`.
-        let join_id: usize = *children.get(2).ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let join = self
-            .nodes
-            .arena
-            .get_mut(join_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let join_id: usize = *children
+            .get(2)
+            .ok_or_else(|| SbroadError::NotFound(Entity::Node, "with index 2".into()))?;
+        let join = self.nodes.arena.get_mut(join_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {join_id}"),
+            )
+        })?;
         if join.rule != Type::InnerJoin {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("join.rule is not InnerJoin type".into()),
+            ));
         }
 
         // Push `Condition` (forth child) to the end of th `InnerJoin` children list.
@@ -538,25 +603,32 @@ impl AbstractSyntaxTree {
         join.children.insert(0, scan_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let proj = self
-            .nodes
-            .arena
-            .get_mut(proj_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
+        })?;
+        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {proj_id}"),
+            )
+        })?;
         if proj.rule != Type::Projection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("proj.rule is not Projection type".into()),
+            ));
         }
 
         // Append `InnerJoin` to the `Projection` children (zero position)
         proj.children.insert(0, join_id);
 
         // Leave `Projection` the only child of `Select`.
-        let mut select = self
-            .nodes
-            .arena
-            .get_mut(select_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {select_id}"),
+            )
+        })?;
         select.children = vec![proj_id];
 
         Ok(())
@@ -567,34 +639,53 @@ impl AbstractSyntaxTree {
         &mut self,
         select_id: usize,
         children: &[usize],
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         if children.len() != 5 {
-            return Err(QueryPlannerError::InvalidInput);
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "expect children list len 5, got {}",
+                children.len()
+            )));
         }
 
         // Check that the second child is `Scan`.
-        let scan_id: usize = *children.get(1).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let scan_id: usize = *children.get(1).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 1".into())
+        })?;
         let scan = self.nodes.get_node(scan_id)?;
         if scan.rule != Type::Scan {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("scan.rule is not Scan type".into()),
+            ));
         }
 
         // Check that the forth child is `Condition`.
-        let cond_id: usize = *children.get(3).ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let cond_id: usize = *children.get(3).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 3".into())
+        })?;
         let cond = self.nodes.get_node(cond_id)?;
         if cond.rule != Type::Condition {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("cond.rule is not Condition type".into()),
+            ));
         }
 
         // Check that the third child is `InnerJoin`.
-        let join_id: usize = *children.get(2).ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let join = self
-            .nodes
-            .arena
-            .get_mut(join_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let join_id: usize = *children.get(2).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 2".into())
+        })?;
+        let join = self.nodes.arena.get_mut(join_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {join_id}"),
+            )
+        })?;
         if join.rule != Type::InnerJoin {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("join.rule is not InnerJoin type".into()),
+            ));
         }
 
         // Push `Condition` (forth child) to the end of the `InnerJoin` children list.
@@ -604,39 +695,52 @@ impl AbstractSyntaxTree {
         join.children.insert(0, scan_id);
 
         // Check that the fifth child is `Selection`.
-        let selection_id: usize = *children.get(4).ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let selection = self
-            .nodes
-            .arena
-            .get_mut(selection_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let selection_id: usize = *children.get(4).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "from children list with index 4".into())
+        })?;
+        let selection = self.nodes.arena.get_mut(selection_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {selection_id}"),
+            )
+        })?;
         if selection.rule != Type::Selection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("selection.rule is not Selection type".into()),
+            ));
         }
 
         // Append `InnerJoin` to the `Selection` children (zero position)
         selection.children.insert(0, join_id);
 
         // Check that the first child is `Projection`.
-        let proj_id: usize = *children.first().ok_or(QueryPlannerError::ValueOutOfRange)?;
-        let proj = self
-            .nodes
-            .arena
-            .get_mut(proj_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let proj_id: usize = *children.first().ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues("children list is empty".into())
+        })?;
+        let proj = self.nodes.arena.get_mut(proj_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {proj_id}"),
+            )
+        })?;
         if proj.rule != Type::Projection {
-            return Err(QueryPlannerError::InvalidAst);
+            return Err(SbroadError::Invalid(
+                Entity::AST,
+                Some("proj.rule is not Projection type".into()),
+            ));
         }
 
         // Append `Selection` to the `Projection` children (zero position)
         proj.children.insert(0, selection_id);
 
         // Leave `Projection` the only child of `Select`.
-        let mut select = self
-            .nodes
-            .arena
-            .get_mut(select_id)
-            .ok_or(QueryPlannerError::ValueOutOfRange)?;
+        let mut select = self.nodes.arena.get_mut(select_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {select_id}"),
+            )
+        })?;
         select.children = vec![proj_id];
         Ok(())
     }
@@ -645,7 +749,7 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - columns are invalid
-    pub(super) fn add_aliases_to_projection(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn add_aliases_to_projection(&mut self) -> Result<(), SbroadError> {
         let mut columns: Vec<(usize, Option<String>)> = Vec::new();
         // Collect projection columns and their names.
         for (_, node) in self.nodes.arena.iter().enumerate() {
@@ -655,9 +759,7 @@ impl AbstractSyntaxTree {
                     let child = self.nodes.get_node(*child_id)?;
                     if let Type::Column = child.rule {
                         let col_child_id = *child.children.first().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Column doesn't have any children".into(),
-                            )
+                            SbroadError::UnexpectedNumberOfValues("Column has no children".into())
                         })?;
                         let col_child = self.nodes.get_node(col_child_id)?;
                         match &col_child.rule {
@@ -674,8 +776,9 @@ impl AbstractSyntaxTree {
                                 {
                                     *col_name_id
                                 } else {
-                                    return Err(QueryPlannerError::CustomError(
-                                        "Column doesn't have any children".into(),
+                                    return Err(SbroadError::NotFound(
+                                        Entity::Node,
+                                        "that is first child of the Column".into(),
                                     ));
                                 };
                                 let col_name = self.nodes.get_node(col_name_id)?;
@@ -683,8 +786,9 @@ impl AbstractSyntaxTree {
                                     .value
                                     .as_ref()
                                     .ok_or_else(|| {
-                                        QueryPlannerError::CustomError(
-                                            "Column name is empty".into(),
+                                        SbroadError::Invalid(
+                                            Entity::Name,
+                                            Some("of Column is empty".into()),
                                         )
                                     })?
                                     .clone();
@@ -702,12 +806,13 @@ impl AbstractSyntaxTree {
         for (id, name) in columns {
             let node = self.nodes.get_node(id)?;
             if node.rule != Type::Column {
-                return Err(QueryPlannerError::CustomError(
-                    "Parsed node is not a column.".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some("Parsed node is not a column.".into()),
                 ));
             }
             let child_id = *node.children.first().ok_or_else(|| {
-                QueryPlannerError::CustomError("Column doesn't have any children".into())
+                SbroadError::UnexpectedNumberOfValues("Column has no children".into())
             })?;
             let child = self.nodes.get_node(child_id)?;
             if let Type::Alias | Type::Asterisk = child.rule {
@@ -731,7 +836,7 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - Projection, selection and inner join nodes don't have valid children.
-    pub(super) fn build_ref_to_relation_map(&mut self) -> Result<(), QueryPlannerError> {
+    pub(super) fn build_ref_to_relation_map(&mut self) -> Result<(), SbroadError> {
         let mut map: HashMap<usize, Vec<usize>> = HashMap::new();
         // Traverse relational nodes in Post Order and then enter their subtrees
         // and map expressions to relational nodes.
@@ -742,8 +847,8 @@ impl AbstractSyntaxTree {
             match rel_node.rule {
                 Type::Projection => {
                     let rel_id = rel_node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST projection doesn't have any children.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "AST Projection has no children.".into(),
                         )
                     })?;
                     for top in rel_node.children.iter().skip(1) {
@@ -760,13 +865,14 @@ impl AbstractSyntaxTree {
                 }
                 Type::Selection => {
                     let rel_id = rel_node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST selection doesn't have any children.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "AST selection has no children.".into(),
                         )
                     })?;
                     let filter = rel_node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST selection doesn't have a filter child.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is AST selection filter child with index 1".into(),
                         )
                     })?;
                     let subtree = DftPost::new(filter, |node| self.nodes.ast_iter(node));
@@ -781,18 +887,20 @@ impl AbstractSyntaxTree {
                 }
                 Type::InnerJoin => {
                     let left_id = rel_node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST inner join doesn't have a left child.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "AST inner join has no children.".into(),
                         )
                     })?;
                     let right_id = rel_node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST inner join doesn't have a right child.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is AST inner join right child with index 1".into(),
                         )
                     })?;
                     let cond_id = rel_node.children.get(2).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "AST inner join doesn't have a condition child.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is AST inner join condition child with index 2".into(),
                         )
                     })?;
                     // ast_iter is not working here - we have to ignore sub-queries in the join condition.
@@ -817,14 +925,11 @@ impl AbstractSyntaxTree {
     ///
     /// # Errors
     /// - Reference is not found.
-    pub fn get_referred_relational_nodes(
-        &self,
-        id: usize,
-    ) -> Result<Vec<usize>, QueryPlannerError> {
+    pub fn get_referred_relational_nodes(&self, id: usize) -> Result<Vec<usize>, SbroadError> {
         self.map
             .get(&id)
             .cloned()
-            .ok_or_else(|| QueryPlannerError::CustomError("Reference is not found.".into()))
+            .ok_or_else(|| SbroadError::NotFound(Entity::Relational, format!("(id {id})")))
     }
 }
 

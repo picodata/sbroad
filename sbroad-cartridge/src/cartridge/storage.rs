@@ -1,7 +1,7 @@
 use crate::api::exec_query::protocol::{EncodedOptionalData, OptionalData, RequiredData};
 use crate::cartridge::config::StorageConfiguration;
 use crate::cartridge::update_tracing;
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::Configuration;
 use sbroad::executor::ir::QueryType;
@@ -29,17 +29,20 @@ impl PreparedStmt {
     ///
     /// # Errors
     /// - Returns None instead of a regular statement (sentinel node in the cache).
-    fn statement(&self) -> Result<&Statement, QueryPlannerError> {
-        self.0
-            .as_ref()
-            .ok_or_else(|| QueryPlannerError::CustomError("Statement is not prepared".to_string()))
+    fn statement(&self) -> Result<&Statement, SbroadError> {
+        self.0.as_ref().ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::Statement,
+                Some("Statement is not prepared".to_string()),
+            )
+        })
     }
 
-    fn id(&self) -> Result<u32, QueryPlannerError> {
+    fn id(&self) -> Result<u32, SbroadError> {
         Ok(self.statement()?.id)
     }
 
-    fn pattern(&self) -> Result<&str, QueryPlannerError> {
+    fn pattern(&self) -> Result<&str, SbroadError> {
         Ok(&self.statement()?.pattern)
     }
 }
@@ -75,7 +78,7 @@ impl Configuration for StorageRuntime {
         self.metadata.is_empty()
     }
 
-    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
+    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
         if self.is_config_empty() {
             let lua = tarantool::lua_state();
 
@@ -88,11 +91,11 @@ impl Configuration for StorageRuntime {
                         Option::from("getting storage cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
             let storage_capacity = usize::try_from(capacity)
-                .map_err(|e| QueryPlannerError::CustomError(format!("{e:?}")))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e:?}"))))?;
 
             let storage_cache_size_bytes: LuaFunction<_> =
                 lua.eval("return get_storage_cache_size_bytes;").unwrap();
@@ -103,11 +106,11 @@ impl Configuration for StorageRuntime {
                         Option::from("getting storage cache size bytes"),
                         &format!("{e:?}"),
                     );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
             let storage_size_bytes = usize::try_from(cache_size_bytes)
-                .map_err(|e| QueryPlannerError::CustomError(format!("{e}")))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e}"))))?;
 
             let jaeger_agent_host: LuaFunction<_> =
                 lua.eval("return get_jaeger_agent_host;").unwrap();
@@ -115,7 +118,7 @@ impl Configuration for StorageRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -125,7 +128,7 @@ impl Configuration for StorageRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -152,7 +155,7 @@ impl StorageRuntime {
     ///
     /// # Errors
     /// - Failed to initialize the LRU cache.
-    pub fn new() -> Result<Self, QueryPlannerError> {
+    pub fn new() -> Result<Self, SbroadError> {
         let cache: LRUCache<String, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
@@ -168,7 +171,7 @@ impl StorageRuntime {
         &self,
         required: &mut RequiredData,
         raw_optional: &mut Vec<u8>,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let plan_id = required.plan_id.clone();
 
         // Use all buckets as we don't want to filter any data from the execution plan
@@ -181,7 +184,7 @@ impl StorageRuntime {
                 .cache
                 .try_borrow_mut()
                 .map_err(|e| {
-                    QueryPlannerError::CustomError(format!("Failed to borrow cache: {e}"))
+                    SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}"))
                 })?
                 .get(&plan_id)?
             {
@@ -230,10 +233,11 @@ impl StorageRuntime {
                     self.cache
                         .try_borrow_mut()
                         .map_err(|e| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to put prepared statement {:?} into the cache: {:?}",
-                                stmt, e
-                            ))
+                            SbroadError::FailedTo(
+                                Action::Put,
+                                None,
+                                format!("prepared statement {stmt:?} into the cache: {e:?}"),
+                            )
                         })?
                         .put(plan_id, stmt)?;
                 }
@@ -279,12 +283,12 @@ impl StorageRuntime {
 }
 
 #[otm_child_span("tarantool.statement.prepare")]
-fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
+fn prepare(pattern: &str) -> Result<PreparedStmt, SbroadError> {
     let lua = tarantool::lua_state();
 
     let prepare_stmt: LuaFunction<_> = lua
         .get("prepare")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `prepare` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `prepare` not found".into()))?;
 
     match prepare_stmt.call_with_args::<u32, _>(pattern) {
         Ok(stmt_id) => {
@@ -296,100 +300,92 @@ fn prepare(pattern: &str) -> Result<PreparedStmt, QueryPlannerError> {
         }
         Err(e) => {
             error!(Option::from("prepare"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
 
 #[otm_child_span("tarantool.statement.unprepare")]
-fn unprepare(stmt: &mut PreparedStmt) -> Result<(), QueryPlannerError> {
+fn unprepare(stmt: &mut PreparedStmt) -> Result<(), SbroadError> {
     let lua = tarantool::lua_state();
 
     let unprepare_stmt: LuaFunction<_> = lua
         .get("unprepare")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `unprepare` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `unprepare` not found".into()))?;
 
     match unprepare_stmt.call_with_args::<(), _>(stmt.id()?) {
         Ok(_) => Ok(()),
         Err(e) => {
             error!(Option::from("unprepare"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
 
 #[otm_child_span("tarantool.statement.prepared.read")]
-fn read_prepared(
-    stmt_id: u32,
-    stmt: &str,
-    params: &[Value],
-) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn read_prepared(stmt_id: u32, stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("read")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_prepared"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
 
 #[otm_child_span("tarantool.statement.unprepared.read")]
-fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("read")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `read` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_unprepared"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
 
 #[otm_child_span("tarantool.statement.prepared.write")]
-fn write_prepared(
-    stmt_id: u32,
-    stmt: &str,
-    params: &[Value],
-) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn write_prepared(stmt_id: u32, stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("write")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_prepared"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }
 
 #[otm_child_span("tarantool.statement.unprepared.write")]
-fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, QueryPlannerError> {
+fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("write")
-        .ok_or_else(|| QueryPlannerError::LuaError("Lua function `write` not found".into()))?;
+        .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
     match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_unprepared"), &format!("{e:?}"));
-            Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
         }
     }
 }

@@ -5,7 +5,7 @@ use std::mem::take;
 use serde::{Deserialize, Serialize};
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
@@ -148,11 +148,12 @@ impl SyntaxNode {
         }
     }
 
-    fn left_id_or_err(&self) -> Result<usize, QueryPlannerError> {
+    fn left_id_or_err(&self) -> Result<usize, SbroadError> {
         match self.left {
             Some(id) => Ok(id),
-            None => Err(QueryPlannerError::CustomError(
-                "Left node is not set.".into(),
+            None => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("left node is not set.".into()),
             )),
         }
     }
@@ -178,13 +179,13 @@ impl SyntaxNodes {
     ///
     /// # Errors
     /// - sub-query in plan tree is invalid
-    fn add_sq(&mut self, rel: &Relational, id: usize) -> Result<usize, QueryPlannerError> {
+    fn add_sq(&mut self, rel: &Relational, id: usize) -> Result<usize, SbroadError> {
         if let Relational::ScanSubQuery {
             children, alias, ..
         } = rel
         {
             let right_id = *children.first().ok_or_else(|| {
-                QueryPlannerError::CustomError("Sub-query has no children.".into())
+                SbroadError::UnexpectedNumberOfValues("Sub-query has no children.".into())
             })?;
             let mut children: Vec<usize> = vec![
                 self.push_syntax_node(SyntaxNode::new_open()),
@@ -197,8 +198,9 @@ impl SyntaxNodes {
             let sn = SyntaxNode::new_pointer(id, None, children);
             Ok(self.push_syntax_node(sn))
         } else {
-            Err(QueryPlannerError::CustomError(
-                "Current node is not a sub-query".into(),
+            Err(SbroadError::Invalid(
+                Entity::SyntaxNode,
+                Some("current node is not a sub-query".into()),
             ))
         }
     }
@@ -206,12 +208,18 @@ impl SyntaxNodes {
     /// Construct syntax nodes from the YAML file.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the YAML nodes arena is invalid.
+    /// Returns `SbroadError` when the YAML nodes arena is invalid.
     #[allow(dead_code)]
-    pub fn from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+    pub fn from_yaml(s: &str) -> Result<Self, SbroadError> {
         let nodes: SyntaxNodes = match serde_yaml::from_str(s) {
             Ok(p) => p,
-            Err(_) => return Err(QueryPlannerError::Serialization),
+            Err(e) => {
+                return Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::SyntaxNodes),
+                    format!("{e:?}"),
+                ))
+            }
         };
         Ok(nodes)
     }
@@ -220,29 +228,34 @@ impl SyntaxNodes {
     ///
     /// # Errors
     /// - current node is invalid (doesn't exist in arena)
-    pub fn get_syntax_node(&self, id: usize) -> Result<&SyntaxNode, QueryPlannerError> {
-        self.arena.get(id).ok_or(QueryPlannerError::InvalidNode)
+    pub fn get_syntax_node(&self, id: usize) -> Result<&SyntaxNode, SbroadError> {
+        self.arena.get(id).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, format!("from arena with index {id}"))
+        })
     }
 
     /// Get a mutable syntax node from arena
     ///
     /// # Errors
     /// - current node is invalid (doesn't exist in arena)
-    pub fn get_mut_syntax_node(&mut self, id: usize) -> Result<&mut SyntaxNode, QueryPlannerError> {
-        self.arena.get_mut(id).ok_or(QueryPlannerError::InvalidNode)
+    pub fn get_mut_syntax_node(&mut self, id: usize) -> Result<&mut SyntaxNode, SbroadError> {
+        self.arena.get_mut(id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable) from arena with index {id}"),
+            )
+        })
     }
 
     /// Get syntax node id by the plan node's one
     ///
     /// # Errors
     /// - nothing was found
-    fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, QueryPlannerError> {
-        self.map.get(&plan_id).copied().ok_or_else(|| {
-            QueryPlannerError::CustomError(format!(
-                "Current plan node ({}) is absent in the map",
-                plan_id
-            ))
-        })
+    fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, SbroadError> {
+        self.map
+            .get(&plan_id)
+            .copied()
+            .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("({plan_id}) in the map")))
     }
 
     /// Push a new syntax node to arena
@@ -313,7 +326,7 @@ impl Select {
         parent: Option<usize>,
         branch: Option<Branch>,
         id: usize,
-    ) -> Result<Option<Select>, QueryPlannerError> {
+    ) -> Result<Option<Select>, SbroadError> {
         let sn = sp.nodes.get_syntax_node(id)?;
         // Expecting projection
         // projection -> ...
@@ -374,7 +387,13 @@ impl Select {
                         }));
                     }
                     _ => {
-                        return Err(QueryPlannerError::InvalidPlan);
+                        return Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(
+                                "current node must be InnerJoin, ScanSubQuery or ScanRelation"
+                                    .into(),
+                            ),
+                        ));
                     }
                 }
             }
@@ -414,9 +433,17 @@ impl Select {
                     return Ok(Some(select));
                 }
             }
-            _ => return Err(QueryPlannerError::InvalidPlan),
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some("current node must be Selection, ScanRelation, or InnerJoin".into()),
+                ))
+            }
         }
-        Err(QueryPlannerError::InvalidPlan)
+        Err(SbroadError::Invalid(
+            Entity::Plan,
+            Some("invalid combination of the select command".into()),
+        ))
     }
 }
 
@@ -438,7 +465,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - Failed to translate an IR plan node to a syntax node.
     #[allow(clippy::too_many_lines)]
-    pub fn add_plan_node(&mut self, id: usize) -> Result<usize, QueryPlannerError> {
+    pub fn add_plan_node(&mut self, id: usize) -> Result<usize, SbroadError> {
         let ir_plan = self.plan.get_ir_plan();
         let node = ir_plan.get_node(id)?;
         match node {
@@ -456,12 +483,13 @@ impl<'p> SyntaxPlan<'p> {
                     let row = ir_plan.get_expression_node(*output)?;
                     let aliases: &[usize] = row.get_row_list()?;
 
-                    let get_col_sn = |col_pos: &usize| -> Result<SyntaxNode, QueryPlannerError> {
+                    let get_col_sn = |col_pos: &usize| -> Result<SyntaxNode, SbroadError> {
                         let alias_id = *aliases.get(*col_pos).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to get insert output column at position {}",
-                                col_pos,
-                            ))
+                            SbroadError::FailedTo(
+                                Action::Get,
+                                None,
+                                format!("insert output column at position {col_pos}"),
+                            )
                         })?;
                         let alias = ir_plan.get_expression_node(alias_id)?;
                         if let Expression::Alias { child, .. } = alias {
@@ -469,13 +497,15 @@ impl<'p> SyntaxPlan<'p> {
                             if let Expression::Reference { .. } = col_ref {
                                 Ok(SyntaxNode::new_pointer(*child, None, vec![]))
                             } else {
-                                Err(QueryPlannerError::CustomError(
-                                    "Expected a reference expression".into(),
+                                Err(SbroadError::Invalid(
+                                    Entity::Expression,
+                                    Some("expected a reference expression".into()),
                                 ))
                             }
                         } else {
-                            Err(QueryPlannerError::CustomError(
-                                "Expected an alias expression".into(),
+                            Err(SbroadError::Invalid(
+                                Entity::Expression,
+                                Some("expected an alias expression".into()),
                             ))
                         }
                     };
@@ -492,8 +522,9 @@ impl<'p> SyntaxPlan<'p> {
                     }
 
                     if children.is_empty() {
-                        return Err(QueryPlannerError::CustomError(
-                            "Insert node has no children".into(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Node,
+                            Some("insert node has no children".into()),
                         ));
                     }
                     nodes.reserve(children.len());
@@ -509,13 +540,12 @@ impl<'p> SyntaxPlan<'p> {
                     ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Inner join doesn't have a left child.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Inner Join has no children.".into())
                     })?;
                     let right_id = *children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Inner join doesn't have a right child.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is Inner Join right child.".into(),
                         )
                     })?;
                     let condition_id = match self.snapshot {
@@ -541,7 +571,7 @@ impl<'p> SyntaxPlan<'p> {
                     children, output, ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Projection has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
                     })?;
                     // We don't need the row node itself, only its children.
                     // Otherwise we'll produce redundant parentheses between
@@ -564,14 +594,14 @@ impl<'p> SyntaxPlan<'p> {
                             return Ok(self.nodes.push_syntax_node(sn));
                         }
                     }
-                    Err(QueryPlannerError::InvalidPlan)
+                    Err(SbroadError::Invalid(Entity::Node, None))
                 }
                 Relational::ScanSubQuery { .. } => self.nodes.add_sq(rel, id),
                 Relational::Selection {
                     children, filter, ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Selection has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Selection has no children.".into())
                     })?;
                     let filter_id = match self.snapshot {
                         Snapshot::Latest => *filter,
@@ -589,13 +619,14 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::Except { children, .. } | Relational::UnionAll { children, .. } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Union/except doesn't have a left child.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Union/Except has no children.".into(),
                         )
                     })?;
                     let right_id = *children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Union/except doesn't have a right child.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is Union/Except right child.".into(),
                         )
                     })?;
                     let sn = SyntaxNode::new_pointer(
@@ -761,7 +792,7 @@ impl<'p> SyntaxPlan<'p> {
                         let sn = SyntaxNode::new_pointer(id, None, nodes);
                         return Ok(self.nodes.push_syntax_node(sn));
                     }
-                    Err(QueryPlannerError::InvalidRow)
+                    Err(SbroadError::Invalid(Entity::Expression, None))
                 }
                 Expression::Bool {
                     left, right, op, ..
@@ -819,7 +850,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - plan node is invalid
-    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<&Node>, QueryPlannerError> {
+    pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<&Node>, SbroadError> {
         if let SyntaxData::PlanId(id) = data {
             Ok(Some(self.plan.get_ir_plan().get_node(*id)?))
         } else {
@@ -832,16 +863,20 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - plan node is invalid
     /// - syntax tree node doesn't have a plan node
-    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<&Node, QueryPlannerError> {
-        self.get_plan_node(data)?
-            .ok_or_else(|| QueryPlannerError::CustomError("Plan node is not found.".into()))
+    pub fn plan_node_or_err(&self, data: &SyntaxData) -> Result<&Node, SbroadError> {
+        self.get_plan_node(data)?.ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some("Plan node is not found in syntax tree".into()),
+            )
+        })
     }
 
     /// Set top of the tree.
     ///
     /// # Errors
     /// - top is invalid node
-    pub fn set_top(&mut self, top: usize) -> Result<(), QueryPlannerError> {
+    pub fn set_top(&mut self, top: usize) -> Result<(), SbroadError> {
         self.nodes.get_syntax_node(top)?;
         self.top = Some(top);
         Ok(())
@@ -852,13 +887,14 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - top is not set
     /// - top is not a valid node
-    pub fn get_top(&self) -> Result<usize, QueryPlannerError> {
+    pub fn get_top(&self) -> Result<usize, SbroadError> {
         if let Some(top) = self.top {
             self.nodes.get_syntax_node(top)?;
             Ok(top)
         } else {
-            Err(QueryPlannerError::CustomError(
-                "Syntax tree has an invalid top.".into(),
+            Err(SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some("Syntax tree has an invalid top.".into()),
             ))
         }
     }
@@ -868,7 +904,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - got unexpected nodes under projection
-    fn gather_selects(&self) -> Result<Option<Vec<Select>>, QueryPlannerError> {
+    fn gather_selects(&self) -> Result<Option<Vec<Select>>, SbroadError> {
         let mut selects: Vec<Select> = Vec::new();
         let top = self.get_top()?;
         for (pos, node) in self.nodes.arena.iter().enumerate() {
@@ -903,7 +939,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - got unexpected nodes under some projection
-    fn move_proj_under_scan(&mut self) -> Result<(), QueryPlannerError> {
+    fn move_proj_under_scan(&mut self) -> Result<(), SbroadError> {
         let selects = self.gather_selects()?;
         if let Some(selects) = selects {
             for select in &selects {
@@ -933,7 +969,7 @@ impl<'p> SyntaxPlan<'p> {
         plan: &'p ExecutionPlan,
         top: usize,
         snapshot: Snapshot,
-    ) -> Result<Self, QueryPlannerError> {
+    ) -> Result<Self, SbroadError> {
         let mut sp = SyntaxPlan::empty(plan);
         sp.snapshot = snapshot.clone();
         let ir_plan = plan.get_ir_plan();
@@ -972,7 +1008,7 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - select nodes (parent, scan, projection, selection) are invalid
-    fn reorder(&mut self, select: &Select) -> Result<(), QueryPlannerError> {
+    fn reorder(&mut self, select: &Select) -> Result<(), SbroadError> {
         // Move projection under scan.
         let mut proj = self.nodes.get_mut_syntax_node(select.proj)?;
         proj.left = None;
@@ -1022,14 +1058,19 @@ impl<'p> SyntaxPlan<'p> {
                         }
                     }
                     if !found {
-                        return Err(QueryPlannerError::CustomError(
-                            "Parent node doesn't contain projection in its right children".into(),
+                        return Err(SbroadError::Invalid(
+                            Entity::SyntaxNode,
+                            Some(
+                                "Parent node doesn't contain projection in its right children"
+                                    .into(),
+                            ),
                         ));
                     }
                 }
                 None => {
-                    return Err(QueryPlannerError::CustomError(
-                        "Selection structure is in inconsistent state.".into(),
+                    return Err(SbroadError::Invalid(
+                        Entity::SyntaxNode,
+                        Some("Selection structure is in inconsistent state.".into()),
                     ))
                 }
             }
@@ -1056,16 +1097,14 @@ impl OrderedSyntaxNodes {
     ///
     /// # Errors
     /// - internal error (positions point to invalid nodes in the arena)
-    pub fn to_syntax_data(&self) -> Result<Vec<&SyntaxData>, QueryPlannerError> {
+    pub fn to_syntax_data(&self) -> Result<Vec<&SyntaxData>, SbroadError> {
         let mut result: Vec<&SyntaxData> = Vec::with_capacity(self.positions.len());
         for id in &self.positions {
             result.push(
                 &self
                     .arena
                     .get(*id)
-                    .ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!("Invalid syntax node id: {id}"))
-                    })?
+                    .ok_or_else(|| SbroadError::NotFound(Entity::SyntaxNode, format!("(id {id})")))?
                     .data,
             );
         }
@@ -1074,7 +1113,7 @@ impl OrderedSyntaxNodes {
 }
 
 impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     #[otm_child_span("syntax.ordered")]
     fn try_from(mut sp: SyntaxPlan) -> Result<Self, Self::Error> {

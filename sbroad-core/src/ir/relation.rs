@@ -8,7 +8,7 @@ use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::value::Value;
 
 use super::distribution::Key;
@@ -34,8 +34,8 @@ impl Type {
     /// Type constructor
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the input arguments are invalid.
-    pub fn new(s: &str) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the input arguments are invalid.
+    pub fn new(s: &str) -> Result<Self, SbroadError> {
         match s.to_string().to_lowercase().as_str() {
             "boolean" => Ok(Type::Boolean),
             "decimal" => Ok(Type::Decimal),
@@ -46,10 +46,7 @@ impl Type {
             "string" => Ok(Type::String),
             "unsigned" => Ok(Type::Unsigned),
             "array" => Ok(Type::Array),
-            v => Err(QueryPlannerError::CustomError(format!(
-                "type `{}` not implemented",
-                v
-            ))),
+            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
         }
     }
 }
@@ -199,12 +196,8 @@ impl Table {
     /// Table segment constructor.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the input arguments are invalid.
-    pub fn new_seg(
-        name: &str,
-        columns: Vec<Column>,
-        keys: &[&str],
-    ) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the input arguments are invalid.
+    pub fn new_seg(name: &str, columns: Vec<Column>, keys: &[&str]) -> Result<Self, SbroadError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
         let no_duplicates = &columns
             .iter()
@@ -212,7 +205,7 @@ impl Table {
             .all(|(pos, col)| matches!(pos_map.insert(&col.name, pos), None));
 
         if !no_duplicates {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::DuplicatedValue(
                 "Table has duplicated columns and couldn't be loaded".into(),
             ));
         }
@@ -221,7 +214,7 @@ impl Table {
             .iter()
             .map(|name| match pos_map.get(*name) {
                 Some(pos) => Ok(*pos),
-                None => Err(QueryPlannerError::InvalidShardingKey),
+                None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
             })
             .collect::<Result<Vec<usize>, _>>()?;
 
@@ -235,11 +228,17 @@ impl Table {
     /// Table segment from YAML.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the YAML-serialized table is invalid.
-    pub fn seg_from_yaml(s: &str) -> Result<Self, QueryPlannerError> {
+    /// Returns `SbroadError` when the YAML-serialized table is invalid.
+    pub fn seg_from_yaml(s: &str) -> Result<Self, SbroadError> {
         let ts: Table = match serde_yaml::from_str(s) {
             Ok(t) => t,
-            Err(_) => return Err(QueryPlannerError::Serialization),
+            Err(e) => {
+                return Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Table),
+                    format!("{e:?}"),
+                ))
+            }
         };
         let mut uniq_cols: HashSet<&str> = HashSet::new();
         let cols = ts.columns.clone();
@@ -247,7 +246,7 @@ impl Table {
         let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
 
         if !no_duplicates {
-            return Err(QueryPlannerError::CustomError(
+            return Err(SbroadError::DuplicatedValue(
                 "Table contains duplicate columns. Unable to convert to YAML.".into(),
             ));
         }
@@ -255,7 +254,10 @@ impl Table {
         let in_range = ts.key.positions.iter().all(|pos| *pos < cols.len());
 
         if !in_range {
-            return Err(QueryPlannerError::ValueOutOfRange);
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!("key positions must be less than {}", cols.len())),
+            ));
         }
 
         Ok(ts)
@@ -265,7 +267,7 @@ impl Table {
     ///
     /// # Errors
     /// - Table doesn't have an exactly one `bucket_id` column.
-    pub fn get_bucket_id_position(&self) -> Result<usize, QueryPlannerError> {
+    pub fn get_bucket_id_position(&self) -> Result<usize, SbroadError> {
         let positions: Vec<usize> = self
             .columns
             .iter()
@@ -275,10 +277,10 @@ impl Table {
             .collect();
         match positions.len().cmp(&1) {
             Ordering::Equal => Ok(positions[0]),
-            Ordering::Greater => Err(QueryPlannerError::CustomError(
+            Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
                 "Table has more than one bucket_id column".into(),
             )),
-            Ordering::Less => Err(QueryPlannerError::CustomError(
+            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(
                 "Table has no bucket_id columns".into(),
             )),
         }
@@ -288,17 +290,20 @@ impl Table {
     ///
     /// # Errors
     /// - Table internal inconsistency.
-    pub fn get_sharding_column_names(&self) -> Result<Vec<String>, QueryPlannerError> {
+    pub fn get_sharding_column_names(&self) -> Result<Vec<String>, SbroadError> {
         let mut names: Vec<String> = Vec::with_capacity(self.key.positions.len());
         for pos in &self.key.positions {
             names.push(
                 self.columns
                     .get(*pos)
                     .ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Table {} has no distribution column at position {}",
-                            self.name, *pos
-                        ))
+                        SbroadError::NotFound(
+                            Entity::Column,
+                            format!(
+                                "(distribution column) at position {} for Table {}",
+                                *pos, self.name
+                            ),
+                        )
                     })?
                     .name
                     .clone(),

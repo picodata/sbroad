@@ -6,7 +6,7 @@
 //! space.
 
 use crate::debug;
-use crate::errors::QueryPlannerError;
+use crate::errors::SbroadError;
 use crate::executor::lru::{Cache, LRUCache};
 use crate::otm::statistics::table::{TarantoolSpace, QUERY};
 use std::cell::RefCell;
@@ -19,12 +19,12 @@ pub struct TrackedQueries {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn remove_query(query_id: &mut String) -> Result<(), QueryPlannerError> {
+fn remove_query(query_id: &mut String) -> Result<(), SbroadError> {
     QUERY.with(|query_space| {
         let mut query_space = query_space.borrow_mut();
         debug!(
             Option::from("tracked queries"),
-            &format!("remove query: {}", query_id)
+            &format!("remove query: {query_id}")
         );
         let key = std::mem::take(query_id);
         query_space.delete(&(key,));
@@ -54,7 +54,7 @@ impl TrackedQueries {
     ///
     /// # Errors
     /// - Internal error in the eviction function.
-    pub fn push(&mut self, key: String) -> Result<(), QueryPlannerError> {
+    pub fn push(&mut self, key: String) -> Result<(), SbroadError> {
         self.queries.put(key.clone(), key)
     }
 }

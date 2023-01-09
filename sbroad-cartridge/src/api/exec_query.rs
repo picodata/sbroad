@@ -6,7 +6,7 @@ use crate::api::helper::load_config;
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
 use protocol::RequiredData;
 use sbroad::backend::sql::ir::PatternWithParams;
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::Query;
 use sbroad::log::tarantool_error;
 use sbroad::otm::{child_span, query_span};
@@ -88,34 +88,54 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
     )
 }
 
-fn decode_msgpack(args: FunctionArgs) -> Result<(Vec<u8>, Vec<u8>), QueryPlannerError> {
+fn decode_msgpack(args: FunctionArgs) -> Result<(Vec<u8>, Vec<u8>), SbroadError> {
     debug!(Option::from("decode_msgpack"), &format!("args: {args:?}"));
     let tuple_buf: Vec<u8> = TupleBuffer::from(Tuple::from(args)).into();
     let mut stream = rmp::decode::Bytes::from(tuple_buf.as_slice());
-    let array_len = rmp::decode::read_array_len(&mut stream)
-        .map_err(|e| QueryPlannerError::CustomError(format!("array length: {e:?}")))?
-        as usize;
+    let array_len = rmp::decode::read_array_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("array length: {e:?}"),
+        )
+    })? as usize;
     if array_len != 2 {
-        return Err(QueryPlannerError::CustomError(format!(
-            "Expected tuple of 2 elements, got {}",
-            array_len
-        )));
+        return Err(SbroadError::Invalid(
+            Entity::Tuple,
+            Some(format!("expected tuple of 2 elements, got {array_len}")),
+        ));
     }
-    let req_len = rmp::decode::read_str_len(&mut stream)
-        .map_err(|e| QueryPlannerError::CustomError(format!("read required data length: {e:?}")))?
-        as usize;
+    let req_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read required data length: {e:?}"),
+        )
+    })? as usize;
     let mut required: Vec<u8> = vec![0_u8; req_len];
-    stream
-        .read_exact_buf(&mut required)
-        .map_err(|e| QueryPlannerError::CustomError(format!("read required data: {e:?}")))?;
+    stream.read_exact_buf(&mut required).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read required data: {e:?}"),
+        )
+    })?;
 
     let opt_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
-        QueryPlannerError::CustomError(format!("read optional data string length: {e:?}"))
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read optional data string length: {e:?}"),
+        )
     })? as usize;
     let mut optional: Vec<u8> = vec![0_u8; opt_len];
-    stream
-        .read_exact_buf(&mut optional)
-        .map_err(|e| QueryPlannerError::CustomError(format!("read optional data: {e:?}")))?;
+    stream.read_exact_buf(&mut optional).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read optional data: {e:?}"),
+        )
+    })?;
 
     Ok((required, optional))
 }

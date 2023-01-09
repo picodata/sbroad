@@ -18,7 +18,7 @@ use crate::cartridge::config::RouterConfiguration;
 use crate::cartridge::update_tracing;
 
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     normalize_name_from_schema, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
@@ -65,7 +65,7 @@ impl Configuration for RouterRuntime {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
+    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
         if self.is_config_empty() {
             let lua = tarantool::lua_state();
 
@@ -74,7 +74,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting schema"), &format!("{e:?}"));
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -84,7 +84,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -94,7 +94,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -103,7 +103,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting waiting timeout"), &format!("{e:?}"));
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -113,10 +113,10 @@ impl Configuration for RouterRuntime {
                 Ok(capacity) => {
                     let val: u64 = capacity;
                     usize::try_from(val).map_err(|_| {
-                        QueryPlannerError::CustomError(format!(
-                            "Router cache capacity is too big: {}",
-                            capacity
-                        ))
+                        SbroadError::Invalid(
+                            Entity::Cache,
+                            Some(format!("router cache capacity is too big: {capacity}")),
+                        )
                     })?
                 }
                 Err(e) => {
@@ -124,7 +124,7 @@ impl Configuration for RouterRuntime {
                         Option::from("getting router cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -133,7 +133,7 @@ impl Configuration for RouterRuntime {
                 Ok(column) => column,
                 Err(e) => {
                     error!(Option::from("getting sharding column"), &format!("{e:?}"));
-                    return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
                 }
             };
 
@@ -164,9 +164,9 @@ impl Coordinator for RouterRuntime {
     type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
 
-    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError> {
+    fn clear_ir_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.try_borrow_mut().map_err(|e| {
-            QueryPlannerError::CustomError(format!("Failed to clear the cache: {e:?}"))
+            SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
         })? = Self::Cache::new(DEFAULT_CAPACITY, None)?;
         Ok(())
     }
@@ -182,7 +182,7 @@ impl Coordinator for RouterRuntime {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         debug!(
             Option::from("dispatch"),
             &format!("dispatching plan: {plan:?}")
@@ -211,28 +211,27 @@ impl Coordinator for RouterRuntime {
         let can_be_cached =
             |plan: &ExecutionPlan| plan.get_vtables().map_or(true, HashMap::is_empty);
 
-        let encode_plan =
-            |exec_plan: ExecutionPlan| -> Result<(Binary, Binary), QueryPlannerError> {
-                let sp_top_id = exec_plan.get_ir_plan().get_top()?;
-                let sp = SyntaxPlan::new(&exec_plan, sp_top_id, Snapshot::Oldest)?;
-                let ordered = OrderedSyntaxNodes::try_from(sp)?;
-                let nodes = ordered.to_syntax_data()?;
-                // Virtual tables in the plan must be already filtered, so we can use all buckets here.
-                let params = exec_plan.to_params(&nodes, &Buckets::All)?;
-                let query_type = exec_plan.query_type()?;
-                let required_data = RequiredData::new(
-                    sub_plan_id.clone(),
-                    params,
-                    query_type,
-                    can_be_cached(&exec_plan),
-                );
-                let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
-                let raw_required_data: Vec<u8> = encoded_required_data.into();
-                let optional_data = OptionalData::new(exec_plan, ordered);
-                let encoded_optional_data = EncodedOptionalData::try_from(optional_data)?;
-                let raw_optional_data: Vec<u8> = encoded_optional_data.into();
-                Ok((raw_required_data.into(), raw_optional_data.into()))
-            };
+        let encode_plan = |exec_plan: ExecutionPlan| -> Result<(Binary, Binary), SbroadError> {
+            let sp_top_id = exec_plan.get_ir_plan().get_top()?;
+            let sp = SyntaxPlan::new(&exec_plan, sp_top_id, Snapshot::Oldest)?;
+            let ordered = OrderedSyntaxNodes::try_from(sp)?;
+            let nodes = ordered.to_syntax_data()?;
+            // Virtual tables in the plan must be already filtered, so we can use all buckets here.
+            let params = exec_plan.to_params(&nodes, &Buckets::All)?;
+            let query_type = exec_plan.query_type()?;
+            let required_data = RequiredData::new(
+                sub_plan_id.clone(),
+                params,
+                query_type,
+                can_be_cached(&exec_plan),
+            );
+            let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
+            let raw_required_data: Vec<u8> = encoded_required_data.into();
+            let optional_data = OptionalData::new(exec_plan, ordered);
+            let encoded_optional_data = EncodedOptionalData::try_from(optional_data)?;
+            let raw_optional_data: Vec<u8> = encoded_optional_data.into();
+            Ok((raw_required_data.into(), raw_optional_data.into()))
+        };
 
         if let Buckets::Filtered(bucket_set) = buckets {
             let random_bucket = self.get_random_bucket();
@@ -252,8 +251,8 @@ impl Coordinator for RouterRuntime {
             let mut rs_ir: HashMap<String, Message> = HashMap::new();
             let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
             if rs_bucket_vec.is_empty() {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "No replica sets were found for the buckets {:?} to execute the query on",
+                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                    "no replica sets were found for the buckets {:?} to execute the query on",
                     buckets
                 )));
             }
@@ -277,15 +276,16 @@ impl Coordinator for RouterRuntime {
         self.exec_ir_on_all(required, optional, query_type, conn_type)
     }
 
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {
         let e = explain.lines().collect::<Vec<&str>>();
 
         match Tuple::new(&vec![e]) {
             Ok(t) => Ok(Box::new(t)),
-            Err(e) => Err(QueryPlannerError::CustomError(format!(
-                "Tuple creation error: {}",
-                e
-            ))),
+            Err(e) => Err(SbroadError::FailedTo(
+                Action::Create,
+                Some(Entity::Tuple),
+                format!("{e}"),
+            )),
         }
     }
 
@@ -296,7 +296,7 @@ impl Coordinator for RouterRuntime {
         plan: &mut ExecutionPlan,
         motion_node_id: usize,
         buckets: &Buckets,
-    ) -> Result<VirtualTable, QueryPlannerError> {
+    ) -> Result<VirtualTable, SbroadError> {
         let top_id = plan.get_motion_subtree_root(motion_node_id)?;
         // We should get a motion alias name before we take the subtree in dispatch.
         let alias = plan.get_motion_alias(motion_node_id)?.map(String::from);
@@ -305,18 +305,21 @@ impl Coordinator for RouterRuntime {
         plan.unlink_motion_subtree(motion_node_id)?;
         let mut vtable = if let Ok(tuple) = result.downcast::<Tuple>() {
             let data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
-                QueryPlannerError::CustomError(format!("Motion node {motion_node_id}. {e}"))
+                SbroadError::FailedTo(
+                    Action::Decode,
+                    Some(Entity::Tuple),
+                    format!("motion node {motion_node_id}. {e}"),
+                )
             })?;
             data.get(0)
                 .ok_or_else(|| {
-                    QueryPlannerError::CustomError(
-                        "Failed to retrieve producer result from the tuple".into(),
-                    )
+                    SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into())
                 })?
                 .as_virtual_table()?
         } else {
-            return Err(QueryPlannerError::CustomError(
-                "The result of the motion is not a tuple".to_string(),
+            return Err(SbroadError::Invalid(
+                Entity::Motion,
+                Some("the result of the motion is not a tuple".to_string()),
             ));
         };
         if let Some(name) = alias {
@@ -330,7 +333,7 @@ impl Coordinator for RouterRuntime {
         &'engine self,
         space: String,
         map: &'rec HashMap<String, Value>,
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_map(&self.metadata, &space, map)
     }
 
@@ -338,7 +341,7 @@ impl Coordinator for RouterRuntime {
         &'engine self,
         space: String,
         rec: &'rec [Value],
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(self.cached_config(), &space, rec)
     }
 
@@ -353,7 +356,7 @@ impl RouterRuntime {
     ///
     /// # Errors
     /// - Failed to detect the correct amount of buckets.
-    pub fn new() -> Result<Self, QueryPlannerError> {
+    pub fn new() -> Result<Self, SbroadError> {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None)?;
         let mut result = RouterRuntime {
             metadata: RouterConfiguration::new(),
@@ -375,7 +378,7 @@ impl RouterRuntime {
     }
 
     /// Function get summary count of bucket from `vshard`
-    fn set_bucket_count(&mut self) -> Result<(), QueryPlannerError> {
+    fn set_bucket_count(&mut self) -> Result<(), SbroadError> {
         let lua = tarantool::lua_state();
 
         let bucket_count_fn: LuaFunction<_> =
@@ -383,7 +386,7 @@ impl RouterRuntime {
                 Ok(v) => v,
                 Err(e) => {
                     error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-                    return Err(QueryPlannerError::LuaError(format!(
+                    return Err(SbroadError::LuaError(format!(
                         "Failed lua function load: {}",
                         e
                     )));
@@ -394,16 +397,17 @@ impl RouterRuntime {
             Ok(r) => r,
             Err(e) => {
                 error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-                return Err(QueryPlannerError::LuaError(e.to_string()));
+                return Err(SbroadError::LuaError(e.to_string()));
             }
         };
 
         self.bucket_count = match bucket_count.try_into() {
             Ok(v) => v,
             Err(_) => {
-                return Err(QueryPlannerError::CustomError(String::from(
-                    "Invalid bucket count",
-                )));
+                return Err(SbroadError::Invalid(
+                    Entity::Runtime,
+                    Some("invalid bucket count".into()),
+                ));
             }
         };
 
@@ -413,12 +417,12 @@ impl RouterRuntime {
     fn read_dql_on_some(
         &self,
         rs_ir: HashMap<String, Message>,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("read_dql_on_some").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `read_on_some` not found".into())
-        })?;
+        let exec_sql: LuaFunction<_> = lua
+            .get("read_dql_on_some")
+            .ok_or_else(|| SbroadError::LuaError("Lua function `read_on_some` not found".into()))?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
         match exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout)) {
@@ -431,7 +435,7 @@ impl RouterRuntime {
             }
             Err(e) => {
                 error!(Option::from("read_dql_on_some"), &format!("{e:?}"));
-                Err(QueryPlannerError::LuaError(format!(
+                Err(SbroadError::LuaError(format!(
                     "Lua error (IR dispatch): {:?}",
                     e
                 )))
@@ -442,11 +446,11 @@ impl RouterRuntime {
     fn write_dml_on_some(
         &self,
         rs_ir: HashMap<String, Message>,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("write_dml_on_some").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `write_dml_on_some` not found".into())
+            SbroadError::LuaError("Lua function `write_dml_on_some` not found".into())
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
@@ -454,7 +458,7 @@ impl RouterRuntime {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 error!(Option::from("write_on_some"), &format!("{e:?}"));
-                Err(QueryPlannerError::LuaError(format!(
+                Err(SbroadError::LuaError(format!(
                     "Lua error (IR dispatch): {:?}",
                     e
                 )))
@@ -468,14 +472,17 @@ impl RouterRuntime {
         rs_ir: HashMap<String, Message>,
         query_type: QueryType,
         conn_type: ConnectionType,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         match (&query_type, &conn_type) {
             (QueryType::DQL, ConnectionType::Read) => self.read_dql_on_some(rs_ir),
             (QueryType::DML, ConnectionType::Write) => self.write_dml_on_some(rs_ir),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "Unsupported combination of the query type: {:?} and connection type: {:?}",
-                query_type, conn_type
-            ))),
+            _ => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some(format!(
+                    "unsupported combination of the query type: {:?} and connection type: {:?}",
+                    query_type, conn_type
+                )),
+            )),
         }
     }
 
@@ -483,10 +490,10 @@ impl RouterRuntime {
         &self,
         required: Binary,
         optional: Binary,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
         let exec_sql: LuaFunction<_> = lua.get("read_dql_on_all").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `read_dql_on_all` not found".into())
+            SbroadError::LuaError("Lua function `read_dql_on_all` not found".into())
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
@@ -500,7 +507,7 @@ impl RouterRuntime {
             }
             Err(e) => {
                 error!(Option::from("read_dql_on_all"), &format!("{e:?}"));
-                Err(QueryPlannerError::LuaError(format!(
+                Err(SbroadError::LuaError(format!(
                     "Lua error (dispatch IR): {:?}",
                     e
                 )))
@@ -512,11 +519,11 @@ impl RouterRuntime {
         &self,
         required: Binary,
         optional: Binary,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua.get("write_dml_on_all").ok_or_else(|| {
-            QueryPlannerError::LuaError("Lua function `write_dml_on_all` not found".into())
+            SbroadError::LuaError("Lua function `write_dml_on_all` not found".into())
         })?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
@@ -524,7 +531,7 @@ impl RouterRuntime {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
                 error!(Option::from("write_dml_on_all"), &format!("{e:?}"));
-                Err(QueryPlannerError::LuaError(format!(
+                Err(SbroadError::LuaError(format!(
                     "Lua error (dispatch IR): {:?}",
                     e
                 )))
@@ -539,24 +546,28 @@ impl RouterRuntime {
         optional: Binary,
         query_type: QueryType,
         conn_type: ConnectionType,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         match (&query_type, &conn_type) {
             (QueryType::DQL, ConnectionType::Read) => self.read_dql_on_all(required, optional),
             (QueryType::DML, ConnectionType::Write) => self.write_dml_on_all(required, optional),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "Unsupported combination of the query type: {:?} and connection type: {:?}",
-                query_type, conn_type
-            ))),
+            _ => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some(format!(
+                    "unsupported combination of the query type: {:?} and connection type: {:?}",
+                    query_type, conn_type
+                )),
+            )),
         }
     }
 }
 
 #[otm_child_span("buckets.group")]
-fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, QueryPlannerError> {
+fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, SbroadError> {
     let lua_buckets: Vec<u64> = match buckets {
         Buckets::All => {
-            return Err(QueryPlannerError::CustomError(
-                "Grouping buckets is not supported for all buckets".into(),
+            return Err(SbroadError::Unsupported(
+                Entity::Buckets,
+                Some("grouping buckets is not supported for all buckets".into()),
             ))
         }
         Buckets::Filtered(list) => list.iter().copied().collect(),
@@ -565,14 +576,14 @@ fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, QueryPlannerErr
     let lua = tarantool::lua_state();
 
     let fn_group: LuaFunction<_> = lua.get("group_buckets_by_replicasets").ok_or_else(|| {
-        QueryPlannerError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
+        SbroadError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
     })?;
 
     let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
         Ok(v) => v,
         Err(e) => {
             error!(Option::from("buckets group"), &format!("{e:?}"));
-            return Err(QueryPlannerError::LuaError(format!("Lua error: {e:?}")));
+            return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
         }
     };
 

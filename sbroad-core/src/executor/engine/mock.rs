@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
@@ -34,25 +34,19 @@ pub struct RouterConfigurationMock {
 }
 
 impl CoordinatorMetadata for RouterConfigurationMock {
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
+    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
-            None => Err(QueryPlannerError::CustomError(format!(
-                "Space {} not found",
-                table_name
-            ))),
+            None => Err(SbroadError::NotFound(Entity::Space, table_name.to_string())),
         }
     }
 
-    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError> {
+    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
         let name = normalize_name_from_sql(fn_name);
         match self.functions.get(&name) {
             Some(v) => Ok(v),
-            None => Err(QueryPlannerError::CustomError(format!(
-                "Function {} not found",
-                name
-            ))),
+            None => Err(SbroadError::NotFound(Entity::SQLFunction, name)),
         }
     }
 
@@ -64,20 +58,17 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         self.sharding_column.as_str()
     }
 
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
         let table = self.get_table_segment(space)?;
         table.get_sharding_column_names()
     }
 
-    fn get_sharding_positions_by_space(
-        &self,
-        space: &str,
-    ) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
         let table = self.get_table_segment(space)?;
         Ok(table.get_sharding_positions().to_vec())
     }
 
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError> {
         let table = self.get_table_segment(space)?;
         Ok(table.columns.len())
     }
@@ -242,15 +233,16 @@ impl ProducerResult {
     ///
     ///  # Errors
     ///  - metadata isn't equal.
-    fn extend(&mut self, result: ProducerResult) -> Result<(), QueryPlannerError> {
+    fn extend(&mut self, result: ProducerResult) -> Result<(), SbroadError> {
         if self.metadata.is_empty() {
             self.metadata = result.clone().metadata;
         }
 
         if self.metadata != result.metadata {
-            return Err(QueryPlannerError::CustomError(String::from(
-                "Metadata mismatch. Producer results can't be extended",
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Metadata,
+                Some("Metadata mismatch. Producer results can't be extended".into()),
+            ));
         }
         self.rows.extend(result.rows);
         Ok(())
@@ -272,7 +264,7 @@ impl Configuration for RouterRuntimeMock {
         self.metadata.tables.is_empty()
     }
 
-    fn get_config(&self) -> Result<Option<Self::Configuration>, QueryPlannerError> {
+    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
         let config = RouterConfigurationMock::new();
         Ok(Some(config))
     }
@@ -286,7 +278,7 @@ impl Coordinator for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
 
-    fn clear_ir_cache(&self) -> Result<(), QueryPlannerError> {
+    fn clear_ir_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.borrow_mut() = Self::Cache::new(DEFAULT_CAPACITY, None)?;
         Ok(())
     }
@@ -300,14 +292,15 @@ impl Coordinator for RouterRuntimeMock {
         plan: &mut ExecutionPlan,
         motion_node_id: usize,
         _buckets: &Buckets,
-    ) -> Result<VirtualTable, QueryPlannerError> {
+    ) -> Result<VirtualTable, SbroadError> {
         plan.get_motion_subtree_root(motion_node_id)?;
 
         if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
             Ok(virtual_table.clone())
         } else {
-            Err(QueryPlannerError::CustomError(
-                "No virtual table found for motion node".to_string(),
+            Err(SbroadError::NotFound(
+                Entity::VirtualTable,
+                format!("for motion node {}", motion_node_id),
             ))
         }
     }
@@ -317,7 +310,7 @@ impl Coordinator for RouterRuntimeMock {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
-    ) -> Result<Box<dyn Any>, QueryPlannerError> {
+    ) -> Result<Box<dyn Any>, SbroadError> {
         let mut result = ProducerResult::new();
         let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
         let ordered = OrderedSyntaxNodes::try_from(sp)?;
@@ -343,7 +336,7 @@ impl Coordinator for RouterRuntimeMock {
         Ok(Box::new(result))
     }
 
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, QueryPlannerError> {
+    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {
         Ok(Box::new(explain))
     }
 
@@ -351,7 +344,7 @@ impl Coordinator for RouterRuntimeMock {
         &'engine self,
         space: String,
         args: &'rec HashMap<String, Value>,
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_map(&self.metadata, &space, args)
     }
 
@@ -359,7 +352,7 @@ impl Coordinator for RouterRuntimeMock {
         &'engine self,
         space: String,
         rec: &'rec [Value],
-    ) -> Result<Vec<&'rec Value>, QueryPlannerError> {
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(self.cached_config(), &space, rec)
     }
 

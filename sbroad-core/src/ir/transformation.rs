@@ -9,7 +9,7 @@ pub mod merge_tuples;
 pub mod redistribution;
 pub mod split_columns;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::Plan;
@@ -25,18 +25,24 @@ impl Plan {
         &mut self,
         left_expr_id: usize,
         right_expr_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         if !self.is_trivalent(left_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Left expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(left_expr_id)?
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!(
+                    "Left expression is not a boolean expression or NULL: {:?}",
+                    self.get_expression_node(left_expr_id)?
+                )),
+            ));
         }
         if !self.is_trivalent(right_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Right expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(right_expr_id)?
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!(
+                    "Right expression is not a boolean expression or NULL: {:?}",
+                    self.get_expression_node(right_expr_id)?
+                )),
+            ));
         }
         self.add_cond(left_expr_id, Bool::And, right_expr_id)
     }
@@ -49,18 +55,24 @@ impl Plan {
         &mut self,
         left_expr_id: usize,
         right_expr_id: usize,
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         if !self.is_trivalent(left_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Left expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(left_expr_id)?
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!(
+                    "left expression is not a boolean expression or NULL: {:?}",
+                    self.get_expression_node(left_expr_id)?
+                )),
+            ));
         }
         if !self.is_trivalent(right_expr_id)? {
-            return Err(QueryPlannerError::CustomError(format!(
-                "Right expression is not a boolean expression or NULL: {:?}",
-                self.get_expression_node(right_expr_id)?
-            )));
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!(
+                    "right expression is not a boolean expression or NULL: {:?}",
+                    self.get_expression_node(right_expr_id)?
+                )),
+            ));
         }
         self.add_cond(left_expr_id, Bool::Or, right_expr_id)
     }
@@ -75,8 +87,8 @@ impl Plan {
     /// - If failed to transform the expression subtree.
     pub fn transform_expr_trees(
         &mut self,
-        f: &dyn Fn(&mut Plan, usize) -> Result<usize, QueryPlannerError>,
-    ) -> Result<(), QueryPlannerError> {
+        f: &dyn Fn(&mut Plan, usize) -> Result<usize, SbroadError>,
+    ) -> Result<(), SbroadError> {
         let top_id = self.get_top()?;
         let ir_tree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
         let nodes: Vec<usize> = ir_tree.map(|(_, id)| *id).collect();
@@ -124,9 +136,9 @@ impl Plan {
     pub fn expr_tree_replace_bool(
         &mut self,
         top_id: usize,
-        f: &dyn Fn(&mut Plan, usize) -> Result<usize, QueryPlannerError>,
+        f: &dyn Fn(&mut Plan, usize) -> Result<usize, SbroadError>,
         ops: &[Bool],
-    ) -> Result<usize, QueryPlannerError> {
+    ) -> Result<usize, SbroadError> {
         let mut map: HashMap<usize, usize> = HashMap::new();
         let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
         let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();

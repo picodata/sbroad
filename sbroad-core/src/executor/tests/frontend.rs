@@ -19,8 +19,8 @@ fn front_ivalid_sql1() {
     let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
 
     assert_eq!(
-        QueryPlannerError::CustomError(
-            "Row can't be added because `\"sys_op\"` already has an alias".into()
+        SbroadError::DuplicatedValue(
+            "row can't be added because `\"sys_op\"` already has an alias".into()
         ),
         plan_err
     );
@@ -34,8 +34,8 @@ fn front_invalid_sql2() {
     let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
 
     assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 1 column(s)."#.into()
+        SbroadError::UnexpectedNumberOfValues(
+            r#"invalid number of values: 2. Table "t" expects 1 column(s)."#.into()
         ),
         plan_err
     );
@@ -49,8 +49,8 @@ fn front_invalid_sql3() {
     let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
 
     assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+        SbroadError::UnexpectedNumberOfValues(
+            r#"invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
         ),
         plan_err
     );
@@ -64,8 +64,8 @@ fn front_invalid_sql4() {
     let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
 
     assert_eq!(
-        QueryPlannerError::CustomError(
-            r#"Invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
+        SbroadError::UnexpectedNumberOfValues(
+            r#"invalid number of values: 2. Table "t" expects 4 column(s)."#.into()
         ),
         plan_err
     );

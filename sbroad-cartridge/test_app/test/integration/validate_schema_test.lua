@@ -73,5 +73,5 @@ g.test_schema_invalid = function ()
   local api = helper.cluster:server("api-1").net_box
 
   local _, err = api:call("sbroad.execute", { [[select * from "t"]], {}})
-  t.assert_str_contains(tostring(err), "Failed to get configuration: type `map` not implemented")
+  t.assert_str_contains(tostring(err), "Failed to get configuration: type map not implemented")
 end

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::os::raw::c_int;
 
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Entity, SbroadError};
 use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
 
 use serde::{de::Deserializer, Deserialize, Serialize};
@@ -88,7 +88,7 @@ enum Args {
 }
 
 impl TryFrom<FunctionArgs> for Args {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
         if let Ok(args) = Tuple::from(&value).decode::<ArgsString>() {
@@ -101,11 +101,14 @@ impl TryFrom<FunctionArgs> for Args {
             return Ok(Self::Map(args));
         }
 
-        Err(QueryPlannerError::CustomError(format!(
-            "Parsing args {:?} error, \
-            expected string, tuple with a space name, or map with a space name as an argument",
-            &value
-        )))
+        Err(SbroadError::ParsingError(
+            Entity::Args,
+            format!(
+                "expected string, tuple with a space name, or map with a space name as an argument, \
+                got args {:?}",
+                &value
+            ),
+        ))
     }
 }
 
@@ -160,7 +163,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
                 ctx.return_mp(&bucket_id).unwrap();
                 0
             }
-            Err(e) => tarantool_error(&format!("{e:?}")),
+            Err(e) => tarantool_error(&format!("{e}")),
         }
     })
 }

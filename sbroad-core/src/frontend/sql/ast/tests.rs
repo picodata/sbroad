@@ -18,6 +18,12 @@ fn ast() {
     let s = fs::read_to_string(path).unwrap();
     let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
     assert_eq!(expected, ast);
+
+    let empty_yaml = "";
+    assert_eq!(
+        SbroadError::FailedTo(Action::Serialize, Some(Entity::AST), "EndOfStream".into(),),
+        AbstractSyntaxTree::from_yaml(empty_yaml).unwrap_err()
+    );
 }
 
 #[test]
@@ -148,7 +154,7 @@ fn invalid_query() {
     let ast = AbstractSyntaxTree::new(query).unwrap_err();
     assert_eq!(
         format!(
-            r#"Parsing error:  --> 1:8
+            r#"rule parsing error:  --> 1:8
   |
 1 | select a frAm t
   |        ^---
@@ -166,13 +172,13 @@ fn invalid_condition() {
     let ast = AbstractSyntaxTree::new(query).unwrap_err();
     assert_eq!(
         format!(
-            r#"Parsing error:  --> 2:33
+            r#"rule parsing error:  --> 2:33
   |
 2 |     "identification_number" = 1 "product_code" = 2
   |                                 ^---
   |
   = expected EOI"#,
         ),
-        format!("{}", ast),
+        format!("{ast}"),
     )
 }

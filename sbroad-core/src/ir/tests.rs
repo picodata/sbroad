@@ -13,7 +13,7 @@ fn plan_no_top() {
         .join("plan_no_top.yaml");
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
-        QueryPlannerError::InvalidPlan,
+        SbroadError::Invalid(Entity::Plan, Some("plan tree top is None".into())),
         Plan::from_yaml(&s).unwrap_err()
     );
 }
@@ -27,7 +27,7 @@ fn plan_oor_top() {
         .join("plan_oor_top.yaml");
     let s = fs::read_to_string(path).unwrap();
     assert_eq!(
-        QueryPlannerError::ValueOutOfRange,
+        SbroadError::NotFound(Entity::Node, "from arena with index 42".into()),
         Plan::from_yaml(&s).unwrap_err()
     );
 }
@@ -59,7 +59,7 @@ fn get_node() {
 fn get_node_oor() {
     let plan = Plan::default();
     assert_eq!(
-        QueryPlannerError::ValueOutOfRange,
+        SbroadError::NotFound(Entity::Node, "from arena with index 42".into()),
         plan.get_node(42).unwrap_err()
     );
 }

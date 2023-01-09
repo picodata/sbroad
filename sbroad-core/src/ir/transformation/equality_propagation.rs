@@ -89,7 +89,7 @@
 //! 6. Finally, we transform the "AND"-ed chains into a plan subtree and attach them back
 //!    to the plan tree.
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
@@ -110,7 +110,7 @@ struct EqClassRef {
 }
 
 impl EqClassRef {
-    fn from_ref(expr: &Expression) -> Result<Self, QueryPlannerError> {
+    fn from_ref(expr: &Expression) -> Result<Self, SbroadError> {
         if let Expression::Reference {
             targets: expr_tgt,
             position: expr_pos,
@@ -123,7 +123,7 @@ impl EqClassRef {
                 parent: *expr_prt,
             });
         }
-        Err(QueryPlannerError::InvalidReference)
+        Err(SbroadError::Invalid(Entity::Expression, None))
     }
 
     fn to_single_col_row(&self, plan: &mut Plan) -> usize {
@@ -147,13 +147,16 @@ struct EqClassConst {
 impl Eq for EqClassConst {}
 
 impl EqClassConst {
-    fn from_const(expr: &Expression) -> Result<Self, QueryPlannerError> {
+    fn from_const(expr: &Expression) -> Result<Self, SbroadError> {
         if let Expression::Constant { value: expr_value } = expr {
             return Ok(EqClassConst {
                 value: expr_value.clone(),
             });
         }
-        Err(QueryPlannerError::InvalidConstant)
+        Err(SbroadError::Invalid(
+            Entity::Expression,
+            Some("invaid Constant".into()),
+        ))
     }
 
     fn to_const(&self, plan: &mut Plan) -> usize {
@@ -339,17 +342,14 @@ impl EqClassChain {
 }
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
-fn call_expr_tree_derive_equalities(
-    plan: &mut Plan,
-    top_id: usize,
-) -> Result<usize, QueryPlannerError> {
+fn call_expr_tree_derive_equalities(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
 fn call_build_and_chains(
     plan: &mut Plan,
     nodes: &[usize],
-) -> Result<HashMap<usize, Chain, RepeatableState>, QueryPlannerError> {
+) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
     let mut chains = plan.populate_and_chains(nodes)?;
     for chain in chains.values_mut() {
         chain.extend_equality_operator(plan)?;
@@ -357,19 +357,19 @@ fn call_build_and_chains(
     Ok(chains)
 }
 
-fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, SbroadError> {
     chain.as_plan_ecs(plan)
 }
 
 impl Chain {
-    fn extend_equality_operator(&mut self, plan: &mut Plan) -> Result<(), QueryPlannerError> {
+    fn extend_equality_operator(&mut self, plan: &mut Plan) -> Result<(), SbroadError> {
         if let Some((left_vec, right_vec)) = self.get_grouped().get(&Bool::Eq) {
             let mut eq_classes = EqClassChain::new();
 
             for (left_id, right_id) in left_vec.iter().zip(right_vec.iter()) {
                 let left_eqe = plan.try_to_eq_class_expr(*left_id);
                 let right_eqe = plan.try_to_eq_class_expr(*right_id);
-                if let (Err(QueryPlannerError::DoSkip), _) | (_, Err(QueryPlannerError::DoSkip)) =
+                if let (Err(SbroadError::DoSkip), _) | (_, Err(SbroadError::DoSkip)) =
                     (&left_eqe, &right_eqe)
                 {
                     continue;
@@ -397,7 +397,7 @@ impl Chain {
         Ok(())
     }
 
-    fn as_plan_ecs(&self, plan: &mut Plan) -> Result<usize, QueryPlannerError> {
+    fn as_plan_ecs(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
         let other_top_id = match self.get_other().split_first() {
             Some((first, other)) => {
                 let mut top_id = *first;
@@ -459,8 +459,8 @@ impl Chain {
             }
             (Some(grouped_top_id), None) => Ok(grouped_top_id),
             (None, Some(other_top_id)) => Ok(other_top_id),
-            (None, None) => Err(QueryPlannerError::CustomError(
-                "No expressions to merge".to_string(),
+            (None, None) => Err(SbroadError::UnexpectedNumberOfValues(
+                "no expressions to merge, expected one or two".to_string(),
             )),
         }
     }
@@ -469,7 +469,7 @@ impl Chain {
 impl Plan {
     // DoSkip is a special case of an error - nothing bad had happened, the target node doesn't contain
     // anything interesting for us, skip it without any serious error.
-    fn try_to_eq_class_expr(&self, expr_id: usize) -> Result<EqClassExpr, QueryPlannerError> {
+    fn try_to_eq_class_expr(&self, expr_id: usize) -> Result<EqClassExpr, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Constant { .. } => {
@@ -483,10 +483,10 @@ impl Plan {
                     self.try_to_eq_class_expr(*col_id)
                 } else {
                     // We don't support more than a single column in a row.
-                    Err(QueryPlannerError::DoSkip)
+                    Err(SbroadError::DoSkip)
                 }
             }
-            _ => Err(QueryPlannerError::DoSkip),
+            _ => Err(SbroadError::DoSkip),
         }
     }
 
@@ -495,7 +495,7 @@ impl Plan {
     /// # Errors
     /// - If the plan tree is invalid (doesn't contain correct nodes where we expect it to).
     #[otm_child_span("plan.transformation.derive_equalities")]
-    pub fn derive_equalities(&mut self) -> Result<(), QueryPlannerError> {
+    pub fn derive_equalities(&mut self) -> Result<(), SbroadError> {
         self.transform_expr_trees(&call_expr_tree_derive_equalities)
     }
 }

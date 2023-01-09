@@ -5,7 +5,7 @@ extern crate yaml_rust;
 use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use sbroad::errors::QueryPlannerError;
+use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::engine::CoordinatorMetadata;
 use sbroad::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
 use sbroad::executor::lru::DEFAULT_CAPACITY;
@@ -64,8 +64,8 @@ impl RouterConfiguration {
     /// Parse and load yaml cartridge schema to cache
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when process was terminated.
-    pub fn load_schema(&mut self, s: &str) -> Result<(), QueryPlannerError> {
+    /// Returns `SbroadError` when process was terminated.
+    pub fn load_schema(&mut self, s: &str) -> Result<(), SbroadError> {
         self.init_core_functions();
         if let Ok(docs) = YamlLoader::load_from_str(s) {
             if let Some(schema) = docs.get(0) {
@@ -74,7 +74,7 @@ impl RouterConfiguration {
             }
         }
 
-        Err(QueryPlannerError::InvalidClusterSchema)
+        Err(SbroadError::Invalid(Entity::ClusterSchema, None))
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -93,13 +93,18 @@ impl RouterConfiguration {
     /// Transform space information from schema to table segments
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when schema contains errors.
+    /// Returns `SbroadError` when schema contains errors.
     #[allow(clippy::too_many_lines)]
-    fn init_table_segments(&mut self, schema: &Yaml) -> Result<(), QueryPlannerError> {
+    fn init_table_segments(&mut self, schema: &Yaml) -> Result<(), SbroadError> {
         self.tables.clear();
         let spaces = match schema["spaces"].as_hash() {
             Some(v) => v,
-            None => return Err(QueryPlannerError::InvalidSchemaSpaces),
+            None => {
+                return Err(SbroadError::Invalid(
+                    Entity::ClusterSchema,
+                    Some("schema.spaces is invalid".into()),
+                ))
+            }
         };
 
         for (space_name, params) in spaces.iter() {
@@ -109,15 +114,25 @@ impl RouterConfiguration {
                     for val in fields {
                         let name: &str = match val["name"].as_str() {
                             Some(s) => s,
-                            None => return Err(QueryPlannerError::InvalidColumnName),
+                            None => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::ClusterSchema,
+                                    Some(format!(
+                                        "column name of table {current_space_name} is invalid"
+                                    )),
+                                ))
+                            }
                         };
                         let t = match val["type"].as_str() {
                             Some(t) => Type::new(t)?,
                             None => {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Type not found for columns {}",
-                                    name
-                                )))
+                                return Err(SbroadError::Invalid(
+                                    Entity::ClusterSchema,
+                                    Some(format!(
+                                        "Type not found for columns {} of table {}",
+                                        name, current_space_name
+                                    )),
+                                ))
                             }
                         };
                         let qualified_name = normalize_name_from_schema(name);
@@ -183,7 +198,10 @@ impl RouterConfiguration {
                 let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
                 self.tables.insert(table_name, t);
             } else {
-                return Err(QueryPlannerError::InvalidSpaceName);
+                return Err(SbroadError::Invalid(
+                    Entity::ClusterSchema,
+                    Some("space name is invalid".into()),
+                ));
             }
         }
 
@@ -232,27 +250,21 @@ impl CoordinatorMetadata for RouterConfiguration {
     /// Get table segment form cache by table name
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when table was not found.
+    /// Returns `SbroadError` when table was not found.
     #[allow(dead_code)]
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, QueryPlannerError> {
+    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
-            None => Err(QueryPlannerError::CustomError(format!(
-                "Space {} not found",
-                name
-            ))),
+            None => Err(SbroadError::NotFound(Entity::Space, name)),
         }
     }
 
-    fn get_function(&self, fn_name: &str) -> Result<&Function, QueryPlannerError> {
+    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
         let name = normalize_name_from_sql(fn_name);
         match self.functions.get(&name) {
             Some(v) => Ok(v),
-            None => Err(QueryPlannerError::CustomError(format!(
-                "Function {} not found",
-                name
-            ))),
+            None => Err(SbroadError::NotFound(Entity::SQLFunction, name)),
         }
     }
 
@@ -266,20 +278,17 @@ impl CoordinatorMetadata for RouterConfiguration {
     }
 
     /// Get sharding key's column names by a space name
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, QueryPlannerError> {
+    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
         let table = self.get_table_segment(space)?;
         table.get_sharding_column_names()
     }
 
-    fn get_sharding_positions_by_space(
-        &self,
-        space: &str,
-    ) -> Result<Vec<usize>, QueryPlannerError> {
+    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
         let table = self.get_table_segment(space)?;
         Ok(table.get_sharding_positions().to_vec())
     }
 
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, QueryPlannerError> {
+    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError> {
         let table = self.get_table_segment(space)?;
         Ok(table.columns.len())
     }

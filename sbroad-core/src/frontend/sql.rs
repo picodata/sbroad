@@ -7,7 +7,7 @@ use pest::Parser;
 use std::collections::{HashMap, HashSet};
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::{normalize_name_from_sql, CoordinatorMetadata};
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode, Type,
@@ -59,20 +59,15 @@ impl Ast for AbstractSyntaxTree {
     /// # Errors
     /// - Failed to parse an SQL query.
     #[otm_child_span("ast.parse")]
-    fn new(query: &str) -> Result<Self, QueryPlannerError> {
+    fn new(query: &str) -> Result<Self, SbroadError> {
         let mut ast = AbstractSyntaxTree::empty();
 
         let mut command_pair = match ParseTree::parse(Rule::Command, query) {
             Ok(p) => p,
-            Err(e) => {
-                return Err(QueryPlannerError::CustomError(format!(
-                    "Parsing error: {}",
-                    e
-                )))
-            }
+            Err(e) => return Err(SbroadError::ParsingError(Entity::Rule, format!("{e}"))),
         };
         let top_pair = command_pair.next().ok_or_else(|| {
-            QueryPlannerError::CustomError("No query found in the parse tree.".to_string())
+            SbroadError::UnexpectedNumberOfValues("no query found in the parse tree.".to_string())
         })?;
         let top = StackParseNode::new(top_pair, None);
 
@@ -118,7 +113,7 @@ impl Ast for AbstractSyntaxTree {
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("ast.resolve")]
-    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, QueryPlannerError>
+    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, SbroadError>
     where
         M: CoordinatorMetadata,
     {
@@ -126,7 +121,7 @@ impl Ast for AbstractSyntaxTree {
 
         let top = match self.top {
             Some(t) => t,
-            None => return Err(QueryPlannerError::InvalidAst),
+            None => return Err(SbroadError::Invalid(Entity::AST, None)),
         };
         let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
         let mut map = Translation::with_capacity(self.nodes.next_id());
@@ -140,8 +135,8 @@ impl Ast for AbstractSyntaxTree {
             match &node.rule {
                 Type::Scan => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Could not find child id in scan node".to_string(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "could not find child id in scan node".to_string(),
                         )
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
@@ -155,8 +150,9 @@ impl Ast for AbstractSyntaxTree {
                             let scan = plan.get_mut_relation_node(plan_child_id)?;
                             scan.set_scan_name(ast_scan_name)?;
                         } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "Expected scan name AST node.".into(),
+                            return Err(SbroadError::Invalid(
+                                Entity::Type,
+                                Some("expected scan name AST node.".into()),
                             ));
                         }
                     }
@@ -169,15 +165,16 @@ impl Ast for AbstractSyntaxTree {
                         let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
                         map.add(*id, scan_id);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Table name is not found.".into(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Type,
+                            Some("Table name is not found.".into()),
                         ));
                     }
                 }
                 Type::SubQuery => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Child node id is not found among sub-query children.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "child node id is not found among sub-query children.".into(),
                         )
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
@@ -186,10 +183,13 @@ impl Ast for AbstractSyntaxTree {
                         let ast_alias = self.nodes.get_node(*ast_name_id)?;
                         if let Type::SubQueryName = ast_alias.rule {
                         } else {
-                            return Err(QueryPlannerError::CustomError(format!(
-                                "Expected a sub-query name, got {:?}.",
-                                ast_alias.rule
-                            )));
+                            return Err(SbroadError::Invalid(
+                                Entity::Type,
+                                Some(format!(
+                                    "expected a sub-query name, got {:?}.",
+                                    ast_alias.rule
+                                )),
+                            ));
                         }
                         ast_alias.value.as_deref().map(normalize_name_from_sql)
                     } else {
@@ -206,25 +206,27 @@ impl Ast for AbstractSyntaxTree {
                         plan_rel_list.push(plan_id);
                     }
 
-                    let get_column_name = |ast_id: usize| -> Result<String, QueryPlannerError> {
+                    let get_column_name = |ast_id: usize| -> Result<String, SbroadError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
                         if let Type::ColumnName = ast_col_name.rule {
                             let name: Option<String> =
                                 ast_col_name.value.as_deref().map(normalize_name_from_sql);
                             Ok(name.ok_or_else(|| {
-                                QueryPlannerError::CustomError("Empty AST column name".into())
+                                SbroadError::Invalid(
+                                    Entity::Name,
+                                    Some("empty AST column name".into()),
+                                )
                             })?)
                         } else {
-                            Err(QueryPlannerError::CustomError(
-                                "Expected column name AST node.".into(),
+                            Err(SbroadError::Invalid(
+                                Entity::Type,
+                                Some("expected column name AST node.".into()),
                             ))
                         }
                     };
 
                     let get_scan_name =
-                        |col_name: &str,
-                         plan_id: usize|
-                         -> Result<Option<String>, QueryPlannerError> {
+                        |col_name: &str, plan_id: usize| -> Result<Option<String>, SbroadError> {
                             let child = plan.get_relation_node(plan_id)?;
                             let col_position = child
                                 .output_alias_position_map(&plan.nodes)?
@@ -269,10 +271,13 @@ impl Ast for AbstractSyntaxTree {
                                         rows.insert(ref_id);
                                         map.add(*id, ref_id);
                                     } else {
-                                        return Err(QueryPlannerError::CustomError(format!(
-                                            "Column '{}' not found in for the join left child '{:?}'.",
-                                            col_name, left_name
-                                        )));
+                                        return Err(SbroadError::NotFound(
+                                            Entity::Column,
+                                            format!(
+                                                "'{}' in the join left child '{:?}'",
+                                                col_name, left_name
+                                            ),
+                                        ));
                                     }
                                 } else if right_name == ast_scan_name {
                                     let right_col_map = plan
@@ -287,19 +292,24 @@ impl Ast for AbstractSyntaxTree {
                                         rows.insert(ref_id);
                                         map.add(*id, ref_id);
                                     } else {
-                                        return Err(QueryPlannerError::CustomError(format!(
-                                            "Column '{}' not found in for the join right child '{:?}'.",
-                                            col_name, right_name
-                                        )));
+                                        return Err(SbroadError::NotFound(
+                                            Entity::Column,
+                                            format!(
+                                                "'{}' in the join right child '{:?}'",
+                                                col_name, right_name
+                                            ),
+                                        ));
                                     }
                                 } else {
-                                    return Err(QueryPlannerError::CustomError(
-                                        format!("Left and right plan nodes do not match the AST scan name: {ast_scan_name:?}"),
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Plan,
+                                        Some(format!("left and right plan nodes do not match the AST scan name: {ast_scan_name:?}")),
                                     ));
                                 }
                             } else {
-                                return Err(QueryPlannerError::CustomError(
-                                    "Expected AST node to be a scan name.".into(),
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some("expected AST node to be a scan name.".into()),
                                 ));
                             }
                         } else if let (Some(ast_col_name_id), None) =
@@ -331,13 +341,13 @@ impl Ast for AbstractSyntaxTree {
                                 rows.insert(ref_id);
                                 map.add(*id, ref_id);
                             }
-                            return Err(QueryPlannerError::CustomError(format!(
-                                "Column '{}' not found in for the join left or right children.",
-                                col_name
-                            )));
+                            return Err(SbroadError::NotFound(
+                                Entity::Column,
+                                format!("'{}' for the join left or right children", col_name),
+                            ));
                         } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "Expected children nodes contain a column name.".into(),
+                            return Err(SbroadError::UnexpectedNumberOfValues(
+                                "expected children nodes contain a column name.".into(),
                             ));
                         };
 
@@ -355,22 +365,22 @@ impl Ast for AbstractSyntaxTree {
                             if let Type::ScanName = ast_scan.rule {
                                 let ast_scan_name = Some(normalize_name_from_sql(
                                     ast_scan.value.as_ref().ok_or_else(|| {
-                                        QueryPlannerError::CustomError(
-                                            "Expected AST node to have a non-empty scan name."
-                                                .into(),
+                                        SbroadError::UnexpectedNumberOfValues(
+                                            "empty scan name for AST node.".into(),
                                         )
                                     })?,
                                 ));
                                 let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
                                 if plan_scan_name != ast_scan_name {
-                                    return Err(QueryPlannerError::CustomError(
+                                    return Err(SbroadError::UnexpectedNumberOfValues(
                                             format!("Scan name for the column {:?} doesn't match: expected {plan_scan_name:?}, found {ast_scan_name:?}",
                                             get_column_name(*ast_col_id)
                                         )));
                                 }
                             } else {
-                                return Err(QueryPlannerError::CustomError(
-                                    "Expected AST node to be a scan name.".into(),
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some("expected AST node to be a scan name.".into()),
                                 ));
                             };
                             col_name
@@ -380,8 +390,8 @@ impl Ast for AbstractSyntaxTree {
                             // Get the column name.
                             get_column_name(*ast_col_id)?
                         } else {
-                            return Err(QueryPlannerError::CustomError(
-                                "No child node found in the AST reference.".into(),
+                            return Err(SbroadError::UnexpectedNumberOfValues(
+                                "no child node found in the AST reference.".into(),
                             ));
                         };
 
@@ -394,12 +404,14 @@ impl Ast for AbstractSyntaxTree {
                             true,
                         )?;
                         let ref_id = *ref_list.first().ok_or_else(|| {
-                            QueryPlannerError::CustomError("Referred column is not found.".into())
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Referred column is not found.".into(),
+                            )
                         })?;
                         map.add(*id, ref_id);
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Expected one or two referred relational nodes, got less or more."
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "expected one or two referred relational nodes, got less or more."
                                 .into(),
                         ));
                     }
@@ -427,13 +439,14 @@ impl Ast for AbstractSyntaxTree {
                         plan_rel_list.push(plan_id);
                     }
                     if plan_rel_list.len() > 1 {
-                        return Err(QueryPlannerError::CustomError(
-                            "Sub-queries in projections are not implemented yet.".into(),
+                        return Err(SbroadError::NotImplemented(
+                            Entity::SubQuery,
+                            "in projections".into(),
                         ));
                     }
                     let plan_rel_id = *plan_rel_list.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Referred relational node is not found.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "list of referred relational nodes is empty.".into(),
                         )
                     })?;
                     let plan_asterisk_id = plan.add_row_for_output(plan_rel_id, &[], false)?;
@@ -441,24 +454,21 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Alias => {
                     let ast_ref_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Reference node id is not found among alias children.".into(),
+                        SbroadError::UnexpectedNumberOfValues(
+                            "list of alias children is empty, Reference node id is not found."
+                                .into(),
                         )
                     })?;
                     let plan_ref_id = map.get(*ast_ref_id)?;
                     let ast_name_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Alias name node id is not found among alias children.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Node, "(Alias name) with index 1".into())
                     })?;
                     let name = self
                         .nodes
                         .get_node(*ast_name_id)?
                         .value
                         .as_ref()
-                        .ok_or_else(|| {
-                            QueryPlannerError::CustomError("Alias name is not found.".into())
-                        })?;
+                        .ok_or_else(|| SbroadError::NotFound(Entity::Name, "of Alias".into()))?;
                     let plan_alias_id = plan
                         .nodes
                         .add_alias(&normalize_name_from_sql(name), plan_ref_id)?;
@@ -466,7 +476,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Column => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Column has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Column has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
@@ -480,7 +490,7 @@ impl Ast for AbstractSyntaxTree {
                         let plan_id = if rows.get(&plan_child_id).is_some() {
                             let plan_inner_expr = plan.get_expression_node(plan_child_id)?;
                             *plan_inner_expr.get_row_list()?.first().ok_or_else(|| {
-                                QueryPlannerError::CustomError("Row is empty.".into())
+                                SbroadError::UnexpectedNumberOfValues("Row is empty.".into())
                             })?
                         } else {
                             plan_child_id
@@ -501,14 +511,13 @@ impl Ast for AbstractSyntaxTree {
                 | Type::NotEq
                 | Type::NotIn => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among comparison children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Comparison has no children.".into())
                     })?;
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among comparison children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is right node with index 1 among comparison children".into(),
                         )
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
@@ -518,7 +527,10 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::IsNull | Type::IsNotNull => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!("{:?} has no children.", &node.rule))
+                        SbroadError::UnexpectedNumberOfValues(format!(
+                            "{:?} has no children.",
+                            &node.rule
+                        ))
                     })?;
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
@@ -528,21 +540,18 @@ impl Ast for AbstractSyntaxTree {
                 Type::Between => {
                     // left BETWEEN center AND right
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among between children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Between has no children.".into())
                     })?;
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
                     let ast_center_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Center node id is not found among between children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(center) among between children".into(),
                         )
                     })?;
                     let plan_center_id = plan.as_row(map.get(*ast_center_id)?, &mut rows)?;
                     let ast_right_id = node.children.get(2).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among between children.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Node, "(right) among between children".into())
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
 
@@ -554,20 +563,22 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Cast => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Condition has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Condition has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let ast_type_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Cast type node id is not found among cast children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(Cast type) among cast children".into(),
                         )
                     })?;
                     let ast_type = self.nodes.get_node(*ast_type_id)?;
                     let cast_type = if ast_type.rule == Type::TypeVarchar {
                         // Get the length of the varchar.
                         let ast_len_id = ast_type.children.first().ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Cast type length node id is not found among cast children.".into(),
+                            SbroadError::UnexpectedNumberOfValues(
+                                "Cast has no children. Cast type length node id is not found."
+                                    .into(),
                             )
                         })?;
                         let ast_len = self.nodes.get_node(*ast_len_id)?;
@@ -575,14 +586,16 @@ impl Ast for AbstractSyntaxTree {
                             .value
                             .as_ref()
                             .ok_or_else(|| {
-                                QueryPlannerError::CustomError("Varchar length is empty".into())
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "Varchar length is empty".into(),
+                                )
                             })?
                             .parse::<usize>()
                             .map_err(|e| {
-                                QueryPlannerError::CustomError(format!(
-                                    "Failed to parse varchar length: {:?}",
-                                    e
-                                ))
+                                SbroadError::ParsingError(
+                                    Entity::Value,
+                                    format!("failed to parse varchar length: {e:?}"),
+                                )
                             })?;
                         Ok(CastType::Varchar(len))
                     } else {
@@ -593,15 +606,11 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Concat => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among concat children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Concat has no children.".into())
                     })?;
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among concat children.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Node, "(right) among concat children".into())
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let concat_id = plan.add_concat(plan_left_id, plan_right_id)?;
@@ -609,7 +618,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Condition => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Condition has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Condition has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(*id, plan_child_id);
@@ -623,7 +632,7 @@ impl Ast for AbstractSyntaxTree {
                         }
                         let function_name =
                             self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
-                                QueryPlannerError::CustomError("Function name is not found.".into())
+                                SbroadError::NotFound(Entity::Name, "of sql function".into())
                             })?;
                         let func = metadata.get_function(function_name)?;
                         if func.is_stable() {
@@ -632,33 +641,30 @@ impl Ast for AbstractSyntaxTree {
                         } else {
                             // At the moment we don't support any non-stable functions.
                             // Later this code block should handle other function behaviors.
-                            return Err(QueryPlannerError::CustomError(format!(
-                                "Function {} is not stable.",
-                                function_name
-                            )));
+                            return Err(SbroadError::Invalid(
+                                Entity::SQLFunction,
+                                Some(format!("function {function_name} is not stable.")),
+                            ));
                         }
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Function has no children.".into(),
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "function has no children.".into(),
                         ));
                     }
                 }
                 Type::InnerJoin => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among join children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Join has no children.".into())
                     })?;
                     let plan_left_id = map.get(*ast_left_id)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among join children.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Node, "(right) among Join children.".into())
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
                     let ast_cond_id = node.children.get(2).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Condition node id is not found among join children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(Condition) among Join children".into(),
                         )
                     })?;
                     let plan_cond_id = map.get(*ast_cond_id)?;
@@ -667,14 +673,13 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Selection => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Child node id is not found among selection children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Selection has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let ast_filter_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Filter node id is not found among selection children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(Filter) among Selection children".into(),
                         )
                     })?;
                     let plan_filter_id = map.get(*ast_filter_id)?;
@@ -683,9 +688,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Projection => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Child node id is not found among projection children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let mut columns: Vec<usize> = Vec::new();
@@ -695,9 +698,8 @@ impl Ast for AbstractSyntaxTree {
                             Type::Column => {
                                 let ast_alias_id =
                                     *ast_column.children.first().ok_or_else(|| {
-                                        QueryPlannerError::CustomError(
-                                            "Alias node id is not found among column children."
-                                                .into(),
+                                        SbroadError::UnexpectedNumberOfValues(
+                                            "Column has no children.".into(),
                                         )
                                     })?;
                                 let plan_alias_id = map.get(ast_alias_id)?;
@@ -712,17 +714,23 @@ impl Ast for AbstractSyntaxTree {
                                         columns.push(*row_id);
                                     }
                                 } else {
-                                    return Err(QueryPlannerError::CustomError(
-                                        "A plan node corresponding to asterisk is not a row."
-                                            .into(),
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some(
+                                            "a plan node corresponding to asterisk is not a Row."
+                                                .into(),
+                                        ),
                                     ));
                                 }
                             }
                             _ => {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Expected a column in projection, got {:?}.",
-                                    ast_column.rule
-                                )));
+                                return Err(SbroadError::Invalid(
+                                    Entity::Type,
+                                    Some(format!(
+                                        "expected a Column in projection, got {:?}.",
+                                        ast_column.rule
+                                    )),
+                                ));
                             }
                         }
                     }
@@ -731,15 +739,11 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Except => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among except children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Except has no children.".into())
                     })?;
                     let plan_left_id = map.get(*ast_left_id)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among except children.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Node, "(right) among Except children".into())
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
                     let plan_except_id = plan.add_except(plan_left_id, plan_right_id)?;
@@ -747,14 +751,13 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::UnionAll => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Left node id is not found among union all children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Union All has no children.".into())
                     })?;
                     let plan_left_id = map.get(*ast_left_id)?;
                     let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Right node id is not found among union all children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(right) among Union All children".into(),
                         )
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
@@ -763,7 +766,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::ValuesRow => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Values row has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Values Row has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let values_row_id = plan.add_values_row(plan_child_id, &mut col_idx)?;
@@ -780,27 +783,24 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Insert => {
                     let ast_table_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Table node id is not found among insert children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues("Insert has no children.".into())
                     })?;
                     let ast_table = self.nodes.get_node(*ast_table_id)?;
                     if let Type::Table = ast_table.rule {
                     } else {
-                        return Err(QueryPlannerError::CustomError(format!(
-                            "Expected a table in insert, got {:?}.",
-                            ast_table
-                        )));
+                        return Err(SbroadError::Invalid(
+                            Entity::Type,
+                            Some(format!("expected a Table in insert, got {ast_table:?}.",)),
+                        ));
                     }
                     let relation: &str = ast_table.value.as_ref().ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Table name was not found in the AST.".into(),
-                        )
+                        SbroadError::NotFound(Entity::Name, "of table in the AST".into())
                     })?;
 
                     let ast_child_id = node.children.get(1).ok_or_else(|| {
-                        QueryPlannerError::CustomError(
-                            "Second child is not found among insert children.".into(),
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "(second child) among insert children".into(),
                         )
                     })?;
                     let ast_child = self.nodes.get_node(*ast_child_id)?;
@@ -810,20 +810,23 @@ impl Ast for AbstractSyntaxTree {
                         for col_id in &ast_child.children {
                             let col = self.nodes.get_node(*col_id)?;
                             if let Type::ColumnName = col.rule {
-                                col_names.push(col.value.as_ref().ok_or_else(||
-                                        QueryPlannerError::CustomError(
-                                            "Column name was not found among the AST target columns (insert).".into(),
-                                    ))?);
+                                col_names.push(col.value.as_ref().ok_or_else(|| {
+                                    SbroadError::NotFound(
+                                        Entity::Name,
+                                        "of Column among the AST target columns (insert)".into(),
+                                    )
+                                })?);
                             } else {
-                                return Err(QueryPlannerError::CustomError(format!(
-                                    "Expected a column name in insert, got {:?}.",
-                                    col
-                                )));
+                                return Err(SbroadError::Invalid(
+                                    Entity::Type,
+                                    Some(format!("expected a Column name in insert, got {col:?}.")),
+                                ));
                             }
                         }
                         let ast_rel_child_id = node.children.get(2).ok_or_else(|| {
-                            QueryPlannerError::CustomError(
-                                "Third child is not found among insert children.".into(),
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "(third child) among Insert children".into(),
                             )
                         })?;
                         let plan_rel_child_id = map.get(*ast_rel_child_id)?;
@@ -839,7 +842,7 @@ impl Ast for AbstractSyntaxTree {
                     plan.mark_as_explain();
 
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        QueryPlannerError::CustomError("Explain has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues("Explain has no children.".into())
                     })?;
                     map.add(0, map.get(*ast_child_id)?);
                 }
@@ -863,19 +866,19 @@ impl Ast for AbstractSyntaxTree {
                 | Type::TypeUnsigned
                 | Type::TypeVarchar => {}
                 rule => {
-                    return Err(QueryPlannerError::CustomError(format!(
-                        "Not implements type: {:?}",
-                        rule
-                    )));
+                    return Err(SbroadError::NotImplemented(
+                        Entity::Type,
+                        format!("{rule:?}"),
+                    ));
                 }
             }
         }
 
         // get root node id
-        let plan_top_id = map.get(
-            self.top
-                .ok_or_else(|| QueryPlannerError::CustomError("No top in AST.".into()))?,
-        )?;
+        let plan_top_id = map
+            .get(self.top.ok_or_else(|| {
+                SbroadError::Invalid(Entity::AST, Some("no top in AST".into()))
+            })?)?;
         plan.set_top(plan_top_id)?;
         let replaces = plan.replace_sq_with_references()?;
         plan.fix_betweens(&betweens, &replaces)?;
@@ -886,11 +889,7 @@ impl Ast for AbstractSyntaxTree {
 
 impl Plan {
     /// Wrap references, constants, functions, concatenations and casts in the plan into rows.
-    fn as_row(
-        &mut self,
-        expr_id: usize,
-        rows: &mut HashSet<usize>,
-    ) -> Result<usize, QueryPlannerError> {
+    fn as_row(&mut self, expr_id: usize, rows: &mut HashSet<usize>) -> Result<usize, SbroadError> {
         if let Node::Expression(
             Expression::Reference { .. }
             | Expression::Constant { .. }

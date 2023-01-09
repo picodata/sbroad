@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use tarantool::decimal::Decimal;
 use traversal::DftPost;
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
@@ -19,9 +19,9 @@ impl Bool {
     /// Creates `Bool` from ast node type.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the operator is invalid.
+    /// Returns `SbroadError` when the operator is invalid.
     #[allow(dead_code)]
-    pub(super) fn from_node_type(s: &Type) -> Result<Self, QueryPlannerError> {
+    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
         match s {
             Type::And => Ok(Bool::And),
             Type::Or => Ok(Bool::Or),
@@ -33,7 +33,10 @@ impl Bool {
             Type::LtEq => Ok(Bool::LtEq),
             Type::NotEq => Ok(Bool::NotEq),
             Type::NotIn => Ok(Bool::NotIn),
-            _ => Err(QueryPlannerError::InvalidBool),
+            _ => Err(SbroadError::Invalid(
+                Entity::Operator,
+                Some(format!("bool operator: {s:?}")),
+            )),
         }
     }
 }
@@ -42,16 +45,16 @@ impl Unary {
     /// Creates `Unary` from ast node type.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the operator is invalid.
+    /// Returns `SbroadError` when the operator is invalid.
     #[allow(dead_code)]
-    pub(super) fn from_node_type(s: &Type) -> Result<Self, QueryPlannerError> {
+    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
         match s {
             Type::IsNull => Ok(Unary::IsNull),
             Type::IsNotNull => Ok(Unary::IsNotNull),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "Invalid unary operator: {:?}",
-                s
-            ))),
+            _ => Err(SbroadError::Invalid(
+                Entity::Operator,
+                Some(format!("unary operator: {s:?}")),
+            )),
         }
     }
 }
@@ -60,9 +63,9 @@ impl Value {
     /// Creates `Value` from ast node type and text.
     ///
     /// # Errors
-    /// Returns `QueryPlannerError` when the operator is invalid.
+    /// Returns `SbroadError` when the operator is invalid.
     #[allow(dead_code)]
-    pub(super) fn from_node(s: &ParseNode) -> Result<Self, QueryPlannerError> {
+    pub(super) fn from_node(s: &ParseNode) -> Result<Self, SbroadError> {
         let val = match &s.value {
             Some(v) => v.clone(),
             None => String::new(),
@@ -73,25 +76,34 @@ impl Value {
             Type::Null => Ok(Value::Null),
             Type::Integer => Ok(val
                 .parse::<i64>()
-                .map_err(|e| QueryPlannerError::CustomError(format!("i64 parsing error {e}")))?
+                .map_err(|e| {
+                    SbroadError::ParsingError(Entity::Value, format!("i64 parsing error {e}"))
+                })?
                 .into()),
             Type::Decimal => Ok(val
                 .parse::<Decimal>()
                 .map_err(|e| {
-                    QueryPlannerError::CustomError(format!("decimal parsing error {e:?}"))
+                    SbroadError::ParsingError(Entity::Value, format!("decimal parsing error {e:?}"))
                 })?
                 .into()),
             Type::Double => Ok(val
                 .parse::<Double>()
-                .map_err(|e| QueryPlannerError::CustomError(format!("double parsing error {e}")))?
+                .map_err(|e| {
+                    SbroadError::ParsingError(Entity::Value, format!("double parsing error {e}"))
+                })?
                 .into()),
             Type::Unsigned => Ok(val
                 .parse::<u64>()
-                .map_err(|e| QueryPlannerError::CustomError(format!("u64 parsing error {e}")))?
+                .map_err(|e| {
+                    SbroadError::ParsingError(Entity::Value, format!("u64 parsing error {e}"))
+                })?
                 .into()),
             Type::String => Ok(val.into()),
             Type::True => Ok(true.into()),
-            _ => Err(QueryPlannerError::UnsupportedValueType),
+            _ => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some("can not create Value from ParseNode".into()),
+            )),
         }
     }
 }
@@ -112,12 +124,12 @@ impl Translation {
         self.map.insert(parse_id, plan_id);
     }
 
-    pub(super) fn get(&self, old: usize) -> Result<usize, QueryPlannerError> {
+    pub(super) fn get(&self, old: usize) -> Result<usize, SbroadError> {
         self.map.get(&old).copied().ok_or_else(|| {
-            QueryPlannerError::CustomError(format!(
-                "Could not find parse node [{}] in translation map",
-                old
-            ))
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(parse node) [{}] in translation map", old),
+            )
         })
     }
 }
@@ -141,9 +153,7 @@ impl SubQuery {
 }
 
 impl Plan {
-    fn gather_sq_for_replacement(
-        &self,
-    ) -> Result<HashSet<SubQuery, RepeatableState>, QueryPlannerError> {
+    fn gather_sq_for_replacement(&self) -> Result<HashSet<SubQuery, RepeatableState>, SbroadError> {
         let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
         let top = self.get_top()?;
         let rel_post = DftPost::new(&top, |node| self.nodes.rel_iter(node));
@@ -182,7 +192,7 @@ impl Plan {
     /// Replace sub-queries with references to the sub-query.
     pub(super) fn replace_sq_with_references(
         &mut self,
-    ) -> Result<AHashMap<usize, usize>, QueryPlannerError> {
+    ) -> Result<AHashMap<usize, usize>, SbroadError> {
         let set = self.gather_sq_for_replacement()?;
         let mut replaces: AHashMap<usize, usize> = AHashMap::with_capacity(set.len());
         for sq in set {
@@ -197,8 +207,9 @@ impl Plan {
                     }
                 }
                 _ => {
-                    return Err(QueryPlannerError::CustomError(
-                        "Sub-query is not in selection or join node".into(),
+                    return Err(SbroadError::Invalid(
+                        Entity::Relational,
+                        Some("Sub-query is not in selection or join node".into()),
                     ))
                 }
             }
@@ -220,22 +231,26 @@ impl Plan {
                         // TODO: should we add current row_id to the set of the generated rows?
                         let position: usize =
                             children.iter().position(|&x| x == sq.sq).ok_or_else(|| {
-                                QueryPlannerError::CustomError(
-                                    "Failed to generate a reference to the sub-query".into(),
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    None,
+                                    "a reference to the sub-query".into(),
                                 )
                             })?;
                         let row_id = self.add_row_from_sub_query(&nodes, position, &names_str)?;
                         self.replace_parent_in_subtree(row_id, None, Some(sq.relational))?;
                         row_id
                     } else {
-                        return Err(QueryPlannerError::CustomError(
-                            "Sub-query output is not a row".into(),
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some("Sub-query output is not a row".into()),
                         ));
                     }
                 }
                 _ => {
-                    return Err(QueryPlannerError::CustomError(
-                        "Sub-query is not in selection or join node".into(),
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some("Sub-query is not in selection or join node".into()),
                     ))
                 }
             };
@@ -253,14 +268,16 @@ impl Plan {
                 } else if *right == sq.sq {
                     *right = row_id;
                 } else {
-                    return Err(QueryPlannerError::CustomError(
-                        "Sub-query is not a left or right operand".into(),
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some("Sub-query is not a left or right operand".into()),
                     ));
                 }
                 replaces.insert(sq.sq, row_id);
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Sub-query is not in a boolean expression".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some("Sub-query is not in a boolean expression".into()),
                 ));
             }
         }
@@ -281,7 +298,7 @@ impl Plan {
         &mut self,
         betweens: &[Between],
         replaces: &AHashMap<usize, usize>,
-    ) -> Result<(), QueryPlannerError> {
+    ) -> Result<(), SbroadError> {
         for between in betweens {
             let left_id: usize = if let Some(id) = replaces.get(&between.left_id) {
                 self.clone_expr_subtree(*id)?
@@ -292,15 +309,16 @@ impl Plan {
             if let Expression::Bool { ref mut left, .. } = less_eq_expr {
                 *left = left_id;
             } else {
-                return Err(QueryPlannerError::CustomError(
-                    "Expected a boolean expression".into(),
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some("expected a boolean Expression".into()),
                 ));
             }
         }
         Ok(())
     }
 
-    fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, QueryPlannerError> {
+    fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
         let nodes = subtree.map(|(_, node_id)| *node_id).collect::<Vec<_>>();
         let mut map = HashMap::new();
@@ -313,9 +331,7 @@ impl Plan {
                 | Expression::Cast { ref mut child, .. }
                 | Expression::Unary { ref mut child, .. } => {
                     *child = *map.get(child).ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Failed to clone expression subtree (id {id})"
-                        ))
+                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})"))
                     })?;
                 }
                 Expression::Bool {
@@ -329,14 +345,10 @@ impl Plan {
                     ..
                 } => {
                     *left = *map.get(left).ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Failed to clone expression subtree (id {id})"
-                        ))
+                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})"))
                     })?;
                     *right = *map.get(right).ok_or_else(|| {
-                        QueryPlannerError::CustomError(format!(
-                            "Failed to clone expression subtree (id {id})"
-                        ))
+                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})"))
                     })?;
                 }
                 Expression::Row {
@@ -348,9 +360,7 @@ impl Plan {
                 } => {
                     for child in children {
                         *child = *map.get(child).ok_or_else(|| {
-                            QueryPlannerError::CustomError(format!(
-                                "Failed to clone expression subtree (id {id})"
-                            ))
+                            SbroadError::NotFound(Entity::SubTree, format!("(id {id})"))
                         })?;
                     }
                 }

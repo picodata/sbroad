@@ -3,7 +3,7 @@ use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
 use tarantool::tlua::{self, LuaRead};
 
-use crate::errors::QueryPlannerError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::value::{EncodedValue, Value};
@@ -36,7 +36,7 @@ impl Serialize for MetadataColumn {
 }
 
 impl TryInto<Column> for &MetadataColumn {
-    type Error = QueryPlannerError;
+    type Error = SbroadError;
 
     fn try_into(self) -> Result<Column, Self::Error> {
         match self.r#type.as_str() {
@@ -50,10 +50,10 @@ impl TryInto<Column> for &MetadataColumn {
                 Ok(Column::new(&self.name, Type::String, ColumnRole::User))
             }
             "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, ColumnRole::User)),
-            _ => Err(QueryPlannerError::CustomError(format!(
-                "unsupported column type: {}",
-                self.r#type
-            ))),
+            _ => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some(format!("column type {}", self.r#type)),
+            )),
         }
     }
 }
@@ -87,7 +87,7 @@ impl ProducerResult {
     ///
     /// # Errors
     /// - convert to virtual table error
-    pub fn as_virtual_table(&self) -> Result<VirtualTable, QueryPlannerError> {
+    pub fn as_virtual_table(&self) -> Result<VirtualTable, SbroadError> {
         let mut result = VirtualTable::new();
 
         for col in &self.metadata {
