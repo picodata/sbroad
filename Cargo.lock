@@ -1161,7 +1161,6 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tarantool",
- "traversal",
  "uuid 1.2.2",
 ]
 
@@ -1438,12 +1437,6 @@ dependencies = [
  "quote 1.0.23",
  "syn 1.0.107",
 ]
-
-[[package]]
-name = "traversal"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0ec9745d7517c8b8e8c0a65cba2d84e42f95fd348a01693c5e4da1bc6d00c99"
 
 [[package]]
 name = "typenum"

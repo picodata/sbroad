@@ -563,7 +563,7 @@ impl Plan {
                         .ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Column,
-                                format!("at position {} in row list", position),
+                                format!("at position {position} in row list"),
                             )
                         })?;
 

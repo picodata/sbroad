@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use traversal::DftPost;
-
 use crate::executor::ir::ExecutionPlan;
 use crate::{
     errors::{SbroadError, Entity},
@@ -14,11 +12,11 @@ impl<'e> ExecutionPlan<'e> {
     fn get_bool_eq_with_rows(&self, top_node_id: usize) -> Vec<usize> {
         let mut nodes: Vec<usize> = Vec::new();
         let ir_plan = self.get_ir_plan();
-
-        let post_tree = DftPost::new(&top_node_id, |node| ir_plan.subtree_iter(node));
-        for (_, node_id) in post_tree {
-            if ir_plan.is_bool_eq_with_rows(*node_id) {
-                nodes.push(*node_id);
+        let capacity = ir_plan.next_id();
+        let post_tree = PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), capacity);
+        for (_, node_id) in post_tree.iter(top_node_id) {
+            if ir_plan.is_bool_eq_with_rows(node_id) {
+                nodes.push(node_id);
             }
         }
         nodes
@@ -36,10 +34,10 @@ impl<'e> ExecutionPlan<'e> {
         let mut result = HashSet::new();
 
         let ir_plan = self.get_ir_plan();
-        let post_tree = DftPost::new(&top_node_id, |node| ir_plan.nodes.rel_iter(node));
-        for (_, node) in post_tree {
-            if ir_plan.get_relation_node(*node)?.is_motion() {
-                let vtable = self.get_motion_vtable(*node)?;
+        let mut post_tree = PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), ir_plan.next_id());
+        for (_, id) in post_tree.iter(top_node_id) {
+            if ir_plan.get_relation_node(id)?.is_motion() {
+                let vtable = self.get_motion_vtable(id)?;
                 result.extend(&vtable.get_sharding_keys()?);
             }
         }

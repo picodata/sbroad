@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use traversal::DftPost;
-
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Coordinator;
 use crate::executor::Query;
@@ -10,6 +8,7 @@ use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
@@ -134,7 +133,7 @@ where
                                 *right_columns.get(*position).ok_or_else(|| {
                                     SbroadError::NotFound(
                                         Entity::Column,
-                                        format!("at position {} for right row", position),
+                                        format!("at position {position} for right row"),
                                     )
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;
@@ -204,11 +203,13 @@ where
         let ir_plan = self.exec_plan.get_ir_plan();
         // We use a `subtree_iter()` because we need DNF version of the filter/condition
         // expressions to determine buckets.
-        let tree = DftPost::new(&top_id, |node| ir_plan.subtree_iter(node));
+        let capacity = ir_plan.next_id();
+        let mut tree = PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), capacity);
         let nodes: Vec<usize> = tree
+            .iter(top_id)
             .filter_map(|(_, id)| {
-                if ir_plan.get_relation_node(*id).is_ok() {
-                    Some(*id)
+                if ir_plan.get_relation_node(id).is_ok() {
+                    Some(id)
                 } else {
                     None
                 }

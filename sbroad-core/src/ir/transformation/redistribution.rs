@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use traversal::{Bft, DftPost};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Column;
+use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
@@ -157,8 +157,9 @@ impl Plan {
     /// - plan doesn't contain the top node
     fn get_relational_nodes_dfs_post(&self) -> Result<Vec<usize>, SbroadError> {
         let top = self.get_top()?;
-        let post_tree = DftPost::new(&top, |node| self.nodes.rel_iter(node));
-        let nodes: Vec<usize> = post_tree.map(|(_, id)| *id).collect();
+        let mut post_tree =
+            PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
+        let nodes: Vec<usize> = post_tree.iter(top).map(|(_, id)| id).collect();
         Ok(nodes)
     }
 
@@ -172,10 +173,11 @@ impl Plan {
     ) -> Result<Vec<usize>, SbroadError> {
         let mut nodes: Vec<usize> = Vec::new();
 
-        let post_tree = DftPost::new(&top, |node| self.nodes.expr_iter(node, false));
-        for (_, node) in post_tree {
+        let mut post_tree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        for (_, id) in post_tree.iter(top) {
             // Append only booleans with row children.
-            if let Node::Expression(Expression::Bool { left, right, .. }) = self.get_node(*node)? {
+            if let Node::Expression(Expression::Bool { left, right, .. }) = self.get_node(id)? {
                 let left_is_row = matches!(
                     self.get_node(*left)?,
                     Node::Expression(Expression::Row { .. })
@@ -185,7 +187,7 @@ impl Plan {
                     Node::Expression(Expression::Row { .. })
                 );
                 if left_is_row && right_is_row {
-                    nodes.push(*node);
+                    nodes.push(id);
                 }
             }
         }
@@ -480,7 +482,7 @@ impl Plan {
         let mut children_set: HashSet<usize> = HashSet::new();
         for pos in &key.positions {
             let column_id = *row_map.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Column, format!("{} in row map {:?}", pos, row_map))
+                SbroadError::NotFound(Entity::Column, format!("{pos} in row map {row_map:?}"))
             })?;
             if let Expression::Reference { targets, .. } = self.get_expression_node(column_id)? {
                 if let Some(targets) = targets {
@@ -488,7 +490,7 @@ impl Plan {
                         let child_id = *join_children.get(*target).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Target,
-                                format!("{} in join children {:?}", target, join_children),
+                                format!("{target} in join children {join_children:?}"),
                             )
                         })?;
                         children_set.insert(child_id);
@@ -690,11 +692,12 @@ impl Plan {
         })?;
         let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
-        let expr_tree = DftPost::new(&expr_id, |node| self.nodes.expr_iter(node, true));
-        for (_, node_id) in expr_tree {
-            let expr = self.get_expression_node(*node_id)?;
+        let mut expr_tree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, true), EXPR_CAPACITY);
+        for (_, node_id) in expr_tree.iter(expr_id) {
+            let expr = self.get_expression_node(node_id)?;
             let bool_op = if let Expression::Bool { .. } = expr {
-                BoolOp::from_expr(self, *node_id)?
+                BoolOp::from_expr(self, node_id)?
             } else {
                 continue;
             };
@@ -702,7 +705,7 @@ impl Plan {
             // Try to improve full motion policy in the sub-queries.
             // We don't influence the inner child here, so the inner map is empty
             // for the current node id.
-            let sq_strategies = self.get_sq_node_strategies(rel_id, *node_id)?;
+            let sq_strategies = self.get_sq_node_strategies(rel_id, node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
                 strategy.insert(id, (policy, DataGeneration::None));
@@ -766,7 +769,7 @@ impl Plan {
                     ))
                 }
             };
-            inner_map.insert(*node_id, new_inner_policy.clone());
+            inner_map.insert(node_id, new_inner_policy.clone());
         }
         strategy.insert(inner_child, (new_inner_policy, DataGeneration::None));
         Ok(strategy)
@@ -1014,11 +1017,15 @@ impl Plan {
         // Gather motions (revert levels in bft)
         let mut motions: Vec<Vec<usize>> = Vec::new();
         let top = self.get_top()?;
-        let bft_tree = Bft::new(&top, |node| self.nodes.rel_iter(node));
+        let mut bft_tree = BreadthFirst::with_capacity(
+            |node| self.nodes.rel_iter(node),
+            REL_CAPACITY,
+            REL_CAPACITY,
+        );
         let mut map: HashMap<usize, usize> = HashMap::new();
         let mut max_level: usize = 0;
-        for (level, node) in bft_tree {
-            if let Node::Relational(Relational::Motion { .. }) = self.get_node(*node)? {
+        for (level, id) in bft_tree.iter(top) {
+            if let Node::Relational(Relational::Motion { .. }) = self.get_node(id)? {
                 let key: usize = match map.entry(level) {
                     Entry::Occupied(o) => *o.into_mut(),
                     Entry::Vacant(v) => {
@@ -1029,8 +1036,8 @@ impl Plan {
                     }
                 };
                 match motions.get_mut(key) {
-                    Some(list) => list.push(*node),
-                    None => motions.push(vec![*node]),
+                    Some(list) => list.push(id),
+                    None => motions.push(vec![id]),
                 }
             }
         }

@@ -13,13 +13,13 @@ trait AndTreeIterator<'nodes>: TreeIterator<'nodes> {}
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct AndIterator<'n> {
-    current: &'n usize,
+    current: usize,
     child: RefCell<usize>,
     nodes: &'n Nodes,
 }
 
 impl<'nodes> TreeIterator<'nodes> for AndIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -36,7 +36,7 @@ impl<'nodes> AndTreeIterator<'nodes> for AndIterator<'nodes> {}
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn and_iter(&'n self, current: &'n usize) -> AndIterator<'n> {
+    pub fn and_iter(&'n self, current: usize) -> AndIterator<'n> {
         AndIterator {
             current,
             child: RefCell::new(0),
@@ -46,15 +46,15 @@ impl<'n> Nodes {
 }
 
 impl<'n> Iterator for AndIterator<'n> {
-    type Item = &'n usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        and_next(self)
+        and_next(self).copied()
     }
 }
 
 fn and_next<'nodes>(iter: &mut impl AndTreeIterator<'nodes>) -> Option<&'nodes usize> {
-    let node = iter.get_nodes().arena.get(*iter.get_current());
+    let node = iter.get_nodes().arena.get(iter.get_current());
     if let Some(Node::Expression(Expression::Bool {
         left, op, right, ..
     })) = node

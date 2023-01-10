@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use ahash::AHashMap;
 use tarantool::decimal::Decimal;
-use traversal::DftPost;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational, Unary};
+use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -128,7 +128,7 @@ impl Translation {
         self.map.get(&old).copied().ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(parse node) [{}] in translation map", old),
+                format!("(parse node) [{old}] in translation map"),
             )
         })
     }
@@ -156,28 +156,32 @@ impl Plan {
     fn gather_sq_for_replacement(&self) -> Result<HashSet<SubQuery, RepeatableState>, SbroadError> {
         let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
         let top = self.get_top()?;
-        let rel_post = DftPost::new(&top, |node| self.nodes.rel_iter(node));
+        let mut rel_post = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
         // Traverse expression trees of the selection and join nodes.
         // Gather all sub-queries in the boolean expressions there.
-        for (_, rel_id) in rel_post {
-            match self.get_node(*rel_id)? {
+        for (_, rel_id) in rel_post.iter(top) {
+            match self.get_node(rel_id)? {
                 Node::Relational(
                     Relational::Selection { filter: tree, .. }
                     | Relational::InnerJoin {
                         condition: tree, ..
                     },
                 ) => {
-                    let expr_post = DftPost::new(tree, |node| self.nodes.expr_iter(node, false));
-                    for (_, id) in expr_post {
+                    let capacity = self.nodes.len();
+                    let mut expr_post = PostOrder::with_capacity(
+                        |node| self.nodes.expr_iter(node, false),
+                        capacity,
+                    );
+                    for (_, id) in expr_post.iter(*tree) {
                         if let Node::Expression(Expression::Bool { left, right, .. }) =
-                            self.get_node(*id)?
+                            self.get_node(id)?
                         {
                             let children = &[*left, *right];
                             for child in children {
                                 if let Node::Relational(Relational::ScanSubQuery { .. }) =
                                     self.get_node(*child)?
                                 {
-                                    set.insert(SubQuery::new(*rel_id, *id, *child));
+                                    set.insert(SubQuery::new(rel_id, id, *child));
                                 }
                             }
                         }
@@ -319,10 +323,12 @@ impl Plan {
     }
 
     fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
-        let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
-        let nodes = subtree.map(|(_, node_id)| *node_id).collect::<Vec<_>>();
         let mut map = HashMap::new();
-        for id in nodes {
+        let mut subtree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        subtree.populate_nodes(top_id);
+        let nodes = subtree.take_nodes();
+        for (_, id) in nodes {
             let next_id = self.nodes.next_id();
             let mut expr = self.get_expression_node(id)?.clone();
             match expr {

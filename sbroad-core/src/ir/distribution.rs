@@ -454,10 +454,7 @@ impl Plan {
         row_id: usize,
     ) -> Result<(), SbroadError> {
         let table: &Table = self.relations.get(table_name).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Table,
-                format!("{} among plan relations", table_name),
-            )
+            SbroadError::NotFound(Entity::Table, format!("{table_name} among plan relations"))
         })?;
         let mut new_key: Key = Key::new(Vec::new());
         let all_found = table.key.positions.iter().all(|pos| {

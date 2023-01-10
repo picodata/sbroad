@@ -169,7 +169,7 @@ pub fn sharding_keys_from_tuple<'rec>(
             let value = tuple.get(*position).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::ShardingKey,
-                    format!("position {:?} in the tuple {:?}", position, tuple),
+                    format!("position {position:?} in the tuple {tuple:?}"),
                 )
             })?;
             sharding_tuple.push(value);

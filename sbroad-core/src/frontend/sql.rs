@@ -5,7 +5,6 @@
 
 use pest::Parser;
 use std::collections::{HashMap, HashSet};
-use traversal::DftPost;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::{normalize_name_from_sql, CoordinatorMetadata};
@@ -17,6 +16,7 @@ use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Unary};
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
@@ -123,15 +123,16 @@ impl Ast for AbstractSyntaxTree {
             Some(t) => t,
             None => return Err(SbroadError::Invalid(Entity::AST, None)),
         };
-        let dft_post = DftPost::new(&top, |node| self.nodes.ast_iter(node));
+        let capacity = self.nodes.arena.len();
+        let mut dft_post = PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
         let mut map = Translation::with_capacity(self.nodes.next_id());
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
         let mut col_idx: usize = 0;
 
         let mut betweens: Vec<Between> = Vec::new();
 
-        for (_, id) in dft_post {
-            let node = self.nodes.get_node(*id)?;
+        for (_, id) in dft_post.iter(top) {
+            let node = self.nodes.get_node(id)?;
             match &node.rule {
                 Type::Scan => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -140,7 +141,7 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
-                    map.add(*id, plan_child_id);
+                    map.add(id, plan_child_id);
                     if let Some(ast_scan_id) = node.children.get(1) {
                         let ast_scan = self.nodes.get_node(*ast_scan_id)?;
                         if let Type::ScanName = ast_scan.rule {
@@ -163,7 +164,7 @@ impl Ast for AbstractSyntaxTree {
                         let t = metadata.get_table_segment(table)?;
                         plan.add_rel(t);
                         let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
-                        map.add(*id, scan_id);
+                        map.add(id, scan_id);
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Type,
@@ -196,10 +197,10 @@ impl Ast for AbstractSyntaxTree {
                         None
                     };
                     let plan_sq_id = plan.add_sub_query(plan_child_id, alias_name.as_deref())?;
-                    map.add(*id, plan_sq_id);
+                    map.add(id, plan_sq_id);
                 }
                 Type::Reference => {
-                    let ast_rel_list = self.get_referred_relational_nodes(*id)?;
+                    let ast_rel_list = self.get_referred_relational_nodes(id)?;
                     let mut plan_rel_list = Vec::new();
                     for ast_id in ast_rel_list {
                         let plan_id = map.get(ast_id)?;
@@ -269,7 +270,7 @@ impl Ast for AbstractSyntaxTree {
                                             &[&col_name],
                                         )?;
                                         rows.insert(ref_id);
-                                        map.add(*id, ref_id);
+                                        map.add(id, ref_id);
                                     } else {
                                         return Err(SbroadError::NotFound(
                                             Entity::Column,
@@ -290,7 +291,7 @@ impl Ast for AbstractSyntaxTree {
                                             &[&col_name],
                                         )?;
                                         rows.insert(ref_id);
-                                        map.add(*id, ref_id);
+                                        map.add(id, ref_id);
                                     } else {
                                         return Err(SbroadError::NotFound(
                                             Entity::Column,
@@ -327,7 +328,7 @@ impl Ast for AbstractSyntaxTree {
                                     &[&col_name],
                                 )?;
                                 rows.insert(ref_id);
-                                map.add(*id, ref_id);
+                                map.add(id, ref_id);
                             }
                             let right_col_map = plan
                                 .get_relation_node(*plan_right_id)?
@@ -339,11 +340,11 @@ impl Ast for AbstractSyntaxTree {
                                     &[&col_name],
                                 )?;
                                 rows.insert(ref_id);
-                                map.add(*id, ref_id);
+                                map.add(id, ref_id);
                             }
                             return Err(SbroadError::NotFound(
                                 Entity::Column,
-                                format!("'{}' for the join left or right children", col_name),
+                                format!("'{col_name}' for the join left or right children"),
                             ));
                         } else {
                             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -408,7 +409,7 @@ impl Ast for AbstractSyntaxTree {
                                 "Referred column is not found.".into(),
                             )
                         })?;
-                        map.add(*id, ref_id);
+                        map.add(id, ref_id);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
                             "expected one or two referred relational nodes, got less or more."
@@ -425,14 +426,14 @@ impl Ast for AbstractSyntaxTree {
                 | Type::True
                 | Type::False => {
                     let val = Value::from_node(node)?;
-                    map.add(*id, plan.add_const(val));
+                    map.add(id, plan.add_const(val));
                 }
                 Type::Parameter => {
-                    map.add(*id, plan.add_param());
+                    map.add(id, plan.add_param());
                 }
                 Type::Asterisk => {
                     // We can get an asterisk only in projection.
-                    let ast_rel_list = self.get_referred_relational_nodes(*id)?;
+                    let ast_rel_list = self.get_referred_relational_nodes(id)?;
                     let mut plan_rel_list = Vec::new();
                     for ast_id in ast_rel_list {
                         let plan_id = map.get(ast_id)?;
@@ -450,7 +451,7 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_asterisk_id = plan.add_row_for_output(plan_rel_id, &[], false)?;
-                    map.add(*id, plan_asterisk_id);
+                    map.add(id, plan_asterisk_id);
                 }
                 Type::Alias => {
                     let ast_ref_id = node.children.first().ok_or_else(|| {
@@ -472,14 +473,14 @@ impl Ast for AbstractSyntaxTree {
                     let plan_alias_id = plan
                         .nodes
                         .add_alias(&normalize_name_from_sql(name), plan_ref_id)?;
-                    map.add(*id, plan_alias_id);
+                    map.add(id, plan_alias_id);
                 }
                 Type::Column => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Column has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
-                    map.add(*id, plan_child_id);
+                    map.add(id, plan_child_id);
                 }
                 Type::Row => {
                     let mut plan_col_list = Vec::new();
@@ -498,7 +499,7 @@ impl Ast for AbstractSyntaxTree {
                         plan_col_list.push(plan_id);
                     }
                     let plan_row_id = plan.nodes.add_row(plan_col_list, None);
-                    map.add(*id, plan_row_id);
+                    map.add(id, plan_row_id);
                 }
                 Type::And
                 | Type::Or
@@ -523,7 +524,7 @@ impl Ast for AbstractSyntaxTree {
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let op = Bool::from_node_type(&node.rule)?;
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
-                    map.add(*id, cond_id);
+                    map.add(id, cond_id);
                 }
                 Type::IsNull | Type::IsNotNull => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -535,7 +536,7 @@ impl Ast for AbstractSyntaxTree {
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
                     let unary_id = plan.add_unary(op, plan_child_id)?;
-                    map.add(*id, unary_id);
+                    map.add(id, unary_id);
                 }
                 Type::Between => {
                     // left BETWEEN center AND right
@@ -558,7 +559,7 @@ impl Ast for AbstractSyntaxTree {
                     let greater_eq_id = plan.add_cond(plan_left_id, Bool::GtEq, plan_center_id)?;
                     let less_eq_id = plan.add_cond(plan_left_id, Bool::LtEq, plan_right_id)?;
                     let and_id = plan.add_cond(greater_eq_id, Bool::And, less_eq_id)?;
-                    map.add(*id, and_id);
+                    map.add(id, and_id);
                     betweens.push(Between::new(plan_left_id, less_eq_id));
                 }
                 Type::Cast => {
@@ -602,7 +603,7 @@ impl Ast for AbstractSyntaxTree {
                         CastType::try_from(&ast_type.rule)
                     }?;
                     let cast_id = plan.add_cast(plan_child_id, cast_type)?;
-                    map.add(*id, cast_id);
+                    map.add(id, cast_id);
                 }
                 Type::Concat => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
@@ -614,14 +615,14 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let concat_id = plan.add_concat(plan_left_id, plan_right_id)?;
-                    map.add(*id, concat_id);
+                    map.add(id, concat_id);
                 }
                 Type::Condition => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Condition has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
-                    map.add(*id, plan_child_id);
+                    map.add(id, plan_child_id);
                 }
                 Type::Function => {
                     if let Some((first, other)) = node.children.split_first() {
@@ -637,7 +638,7 @@ impl Ast for AbstractSyntaxTree {
                         let func = metadata.get_function(function_name)?;
                         if func.is_stable() {
                             let plan_func_id = plan.add_stable_function(func, plan_arg_list)?;
-                            map.add(*id, plan_func_id);
+                            map.add(id, plan_func_id);
                         } else {
                             // At the moment we don't support any non-stable functions.
                             // Later this code block should handle other function behaviors.
@@ -669,7 +670,7 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_cond_id = map.get(*ast_cond_id)?;
                     let plan_join_id = plan.add_join(plan_left_id, plan_right_id, plan_cond_id)?;
-                    map.add(*id, plan_join_id);
+                    map.add(id, plan_join_id);
                 }
                 Type::Selection => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -684,7 +685,7 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_filter_id = map.get(*ast_filter_id)?;
                     let plan_selection_id = plan.add_select(&[plan_child_id], plan_filter_id)?;
-                    map.add(*id, plan_selection_id);
+                    map.add(id, plan_selection_id);
                 }
                 Type::Projection => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -735,7 +736,7 @@ impl Ast for AbstractSyntaxTree {
                         }
                     }
                     let projection_id = plan.add_proj_internal(plan_child_id, &columns)?;
-                    map.add(*id, projection_id);
+                    map.add(id, projection_id);
                 }
                 Type::Except => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
@@ -747,7 +748,7 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
                     let plan_except_id = plan.add_except(plan_left_id, plan_right_id)?;
-                    map.add(*id, plan_except_id);
+                    map.add(id, plan_except_id);
                 }
                 Type::UnionAll => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
@@ -762,7 +763,7 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
                     let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
-                    map.add(*id, plan_union_all_id);
+                    map.add(id, plan_union_all_id);
                 }
                 Type::ValuesRow => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
@@ -770,7 +771,7 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let values_row_id = plan.add_values_row(plan_child_id, &mut col_idx)?;
-                    map.add(*id, values_row_id);
+                    map.add(id, values_row_id);
                 }
                 Type::Values => {
                     let mut plan_children_ids: Vec<usize> = Vec::with_capacity(node.children.len());
@@ -779,7 +780,7 @@ impl Ast for AbstractSyntaxTree {
                         plan_children_ids.push(plan_child_id);
                     }
                     let plan_values_id = plan.add_values(plan_children_ids)?;
-                    map.add(*id, plan_values_id);
+                    map.add(id, plan_values_id);
                 }
                 Type::Insert => {
                     let ast_table_id = node.children.first().ok_or_else(|| {
@@ -836,7 +837,7 @@ impl Ast for AbstractSyntaxTree {
                         let plan_child_id = map.get(*ast_child_id)?;
                         plan.add_insert(relation, plan_child_id, &[])?
                     };
-                    map.add(*id, plan_insert_id);
+                    map.add(id, plan_insert_id);
                 }
                 Type::Explain => {
                     plan.mark_as_explain();

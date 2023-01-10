@@ -14,7 +14,8 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::Plan;
 use std::collections::HashMap;
-use traversal::DftPost;
+
+use super::tree::traversal::{PostOrder, EXPR_CAPACITY};
 
 impl Plan {
     /// Concatenates trivalents (boolean or NULL expressions) to the AND node.
@@ -90,9 +91,10 @@ impl Plan {
         f: &dyn Fn(&mut Plan, usize) -> Result<usize, SbroadError>,
     ) -> Result<(), SbroadError> {
         let top_id = self.get_top()?;
-        let ir_tree = DftPost::new(&top_id, |node| self.nodes.rel_iter(node));
-        let nodes: Vec<usize> = ir_tree.map(|(_, id)| *id).collect();
-        for id in &nodes {
+        let mut ir_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), EXPR_CAPACITY);
+        ir_tree.populate_nodes(top_id);
+        let nodes = ir_tree.take_nodes();
+        for (_, id) in &nodes {
             let rel = self.get_relation_node(*id)?;
             let (new_tree_id, old_tree_id) = match rel {
                 Relational::Selection {
@@ -140,9 +142,11 @@ impl Plan {
         ops: &[Bool],
     ) -> Result<usize, SbroadError> {
         let mut map: HashMap<usize, usize> = HashMap::new();
-        let subtree = DftPost::new(&top_id, |node| self.nodes.expr_iter(node, false));
-        let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
-        for id in &nodes {
+        let mut subtree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        subtree.populate_nodes(top_id);
+        let nodes = subtree.take_nodes();
+        for (_, id) in &nodes {
             let expr = self.get_expression_node(*id)?;
             if let Expression::Bool { op, .. } = expr {
                 if ops.contains(op) || ops.is_empty() {
@@ -152,7 +156,7 @@ impl Plan {
             }
         }
         let mut new_top_id = top_id;
-        for id in &nodes {
+        for (_, id) in &nodes {
             let expr = self.get_mut_expression_node(*id)?;
             // For all expressions in the subtree tries to replace their children
             // with the new nodes from the map.

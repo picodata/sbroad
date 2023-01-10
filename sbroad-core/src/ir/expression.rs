@@ -9,12 +9,12 @@
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use traversal::DftPost;
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::operator::{Bool, Relational};
 
 use super::distribution::Distribution;
+use super::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use super::value::Value;
 use super::{operator, Node, Nodes, Plan};
 
@@ -247,7 +247,7 @@ impl Nodes {
     /// - name is empty
     pub fn add_alias(&mut self, name: &str, child: usize) -> Result<usize, SbroadError> {
         self.arena.get(child).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {}", child))
+            SbroadError::NotFound(Entity::Node, format!("from arena with index {child}"))
         })?;
         if name.is_empty() {
             return Err(SbroadError::Invalid(
@@ -332,7 +332,7 @@ impl Nodes {
                 self.arena.get(*alias_node).ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Node,
-                        format!("(Alias) from arena with index {}", alias_node),
+                        format!("(Alias) from arena with index {alias_node}"),
                     )
                 })?
             {
@@ -362,7 +362,7 @@ impl Nodes {
         child: usize,
     ) -> Result<usize, SbroadError> {
         self.arena.get(child).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {}", child))
+            SbroadError::NotFound(Entity::Node, format!("from arena with index {child}"))
         })?;
         Ok(self.push(Node::Expression(Expression::Unary { op, child })))
     }
@@ -431,7 +431,7 @@ impl Plan {
                 } else {
                     return Err(SbroadError::NotFound(
                         Entity::Node,
-                        format!("pointed by target child {}", target_child),
+                        format!("pointed by target child {target_child}"),
                     ));
                 };
                 let relational_op = self.get_relation_node(child_node)?;
@@ -479,7 +479,7 @@ impl Plan {
                             let table = self.get_relation(relation).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::Table,
-                                    format!("{} among the plan relations", relation),
+                                    format!("{relation} among the plan relations"),
                                 )
                             })?;
                             let sharding_column_pos = table.get_bucket_id_position()?;
@@ -599,7 +599,7 @@ impl Plan {
         if !all_found {
             return Err(SbroadError::NotFound(
                 Entity::Column,
-                format!("with name {:?}", col_names),
+                format!("with name {col_names:?}"),
             ));
         }
 
@@ -803,18 +803,21 @@ impl Plan {
         row_id: usize,
     ) -> Result<HashSet<usize, RandomState>, SbroadError> {
         let row = self.get_expression_node(row_id)?;
-        if let Expression::Row { .. } = row {
+        let capacity = if let Expression::Row { list, .. } = row {
+            list.len() * 2
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("Node is not a row".into()),
             ));
-        }
-        let post_tree = DftPost::new(&row_id, |node| self.nodes.expr_iter(node, false));
-        let nodes: Vec<usize> = post_tree.map(|(_, id)| *id).collect();
+        };
+        let mut post_tree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), capacity);
+        post_tree.populate_nodes(row_id);
+        let nodes = post_tree.take_nodes();
         let mut rel_nodes: HashSet<usize, RandomState> =
             HashSet::with_capacity_and_hasher(nodes.len(), RandomState::new());
-        for id in nodes {
+        for (_, id) in nodes {
             let reference = self.get_expression_node(id)?;
             if let Expression::Reference {
                 targets, parent, ..
@@ -951,10 +954,11 @@ impl Plan {
         to_id: Option<usize>,
     ) -> Result<(), SbroadError> {
         let mut references: Vec<usize> = Vec::new();
-        let subtree = DftPost::new(&node_id, |node| self.nodes.expr_iter(node, false));
-        for (_, id) in subtree {
-            if let Node::Expression(Expression::Reference { .. }) = self.get_node(*id)? {
-                references.push(*id);
+        let mut subtree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        for (_, id) in subtree.iter(node_id) {
+            if let Node::Expression(Expression::Reference { .. }) = self.get_node(id)? {
+                references.push(id);
             }
         }
         for id in references {

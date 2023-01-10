@@ -4,7 +4,7 @@ use super::{Nodes, Plan};
 use std::cell::RefCell;
 
 trait TreeIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize;
+    fn get_current(&self) -> usize;
     fn get_child(&self) -> &RefCell<usize>;
     fn get_nodes(&self) -> &'nodes Nodes;
 }
@@ -22,10 +22,10 @@ pub enum Snapshot {
 }
 
 pub mod and;
-pub mod eq_class;
 pub mod expression;
 pub mod relation;
 pub mod subtree;
+pub mod traversal;
 
 #[cfg(test)]
 mod tests;

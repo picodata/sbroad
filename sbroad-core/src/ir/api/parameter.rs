@@ -1,6 +1,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
@@ -8,7 +9,6 @@ use sbroad_proc::otm_child_span;
 
 use ahash::RandomState;
 use std::collections::{HashMap, HashSet};
-use traversal::DftPost;
 
 impl Plan {
     pub fn add_param(&mut self) -> usize {
@@ -47,9 +47,11 @@ impl Plan {
             return Ok(());
         }
 
+        let capacity = self.next_id();
+        let mut tree = PostOrder::with_capacity(|node| self.subtree_iter(node), capacity);
         let top_id = self.get_top()?;
-        let tree = DftPost::new(&top_id, |node| self.subtree_iter(node));
-        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
+        tree.populate_nodes(top_id);
+        let nodes = tree.take_nodes();
 
         // Transform parameters to values. The result values are stored in the
         // opposite to parameters order.
@@ -77,7 +79,7 @@ impl Plan {
 
         // Populate rows.
         let mut idx = value_ids.len();
-        for id in &nodes {
+        for (_, id) in &nodes {
             let node = self.get_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
@@ -160,7 +162,7 @@ impl Plan {
 
         // Replace parameters in the plan.
         idx = value_ids.len();
-        for id in &nodes {
+        for (_, id) in &nodes {
             let node = self.get_mut_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
@@ -240,7 +242,7 @@ impl Plan {
         }
 
         // Update values row output.
-        for id in nodes {
+        for (_, id) in nodes {
             if let Ok(Relational::ValuesRow { .. }) = self.get_relation_node(id) {
                 self.update_values_row(id)?;
             }

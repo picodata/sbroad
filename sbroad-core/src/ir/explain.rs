@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter, Write as _};
 
 use itertools::Itertools;
 use serde::Serialize;
-use traversal::DftPost;
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
@@ -15,6 +14,7 @@ use crate::ir::transformation::redistribution::{
 use crate::ir::Plan;
 
 use super::operator::{Bool, Unary};
+use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
 
 #[derive(Debug, Serialize)]
@@ -57,11 +57,12 @@ impl Default for ColExpr {
 impl ColExpr {
     #[allow(dead_code)]
     fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
-        let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, false));
         let mut stack: Vec<ColExpr> = Vec::new();
+        let mut dft_post =
+            PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
 
-        for (_, id) in dft_post {
-            let current_node = plan.get_expression_node(*id)?;
+        for (_, id) in dft_post.iter(subtree_top) {
+            let current_node = plan.get_expression_node(id)?;
 
             match &current_node {
                 Expression::Cast { to, .. } => {
@@ -76,7 +77,7 @@ impl ColExpr {
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
 
-                    let rel_id: usize = *plan.get_relational_from_reference_node(*id)?;
+                    let rel_id: usize = *plan.get_relational_from_reference_node(id)?;
                     let rel_node = plan.get_relation_node(rel_id)?;
 
                     if let Some(name) = rel_node.scan_name(plan, *position)? {
@@ -163,14 +164,15 @@ impl Col {
     fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
         let mut column = Col::default();
 
-        let dft_post = DftPost::new(&subtree_top, |node| plan.nodes.expr_iter(node, true));
-        for (_, id) in dft_post {
-            let current_node = plan.get_expression_node(*id)?;
+        let mut dft_post =
+            PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, true), EXPR_CAPACITY);
+        for (_, id) in dft_post.iter(subtree_top) {
+            let current_node = plan.get_expression_node(id)?;
 
             if let Expression::Alias { name, .. } = &current_node {
                 column.alias = Some(name.to_string());
             } else {
-                column.col = ColExpr::new(plan, *id)?;
+                column.col = ColExpr::new(plan, id)?;
             }
         }
 
@@ -669,10 +671,10 @@ impl FullExplain {
         let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
         let mut result = FullExplain::default();
 
-        let dft_post = DftPost::new(&top_id, |node| ir.nodes.rel_iter(node));
-        for (level, id) in dft_post {
+        let mut dft_post = PostOrder::with_capacity(|node| ir.nodes.rel_iter(node), REL_CAPACITY);
+        for (level, id) in dft_post.iter(top_id) {
             let mut current_node = ExplainTreePart::with_level(level);
-            let node = ir.get_relation_node(*id)?;
+            let node = ir.get_relation_node(id)?;
             current_node.current = match &node {
                 Relational::Except { .. } => {
                     if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
@@ -789,7 +791,7 @@ impl FullExplain {
                                         let col_id = *col_list.get(*pos).ok_or_else(|| {
                                             SbroadError::NotFound(
                                                 Entity::Target,
-                                                format!("reference with position {}", pos),
+                                                format!("reference with position {pos}"),
                                             )
                                         })?;
                                         let col_name = ir

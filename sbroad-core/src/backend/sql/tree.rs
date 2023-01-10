@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use std::mem::take;
 
 use serde::{Deserialize, Serialize};
-use traversal::DftPost;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
 use crate::ir::Node;
 use crate::otm::child_span;
@@ -975,23 +975,26 @@ impl<'p> SyntaxPlan<'p> {
         let ir_plan = plan.get_ir_plan();
 
         // Wrap plan's nodes and preserve their ids.
+        let capacity = ir_plan.next_id();
         match snapshot {
             Snapshot::Latest => {
-                let dft_post = DftPost::new(&top, |node| ir_plan.subtree_iter(node));
-                for (_, id) in dft_post {
+                let mut dft_post =
+                    PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), capacity);
+                for (_, id) in dft_post.iter(top) {
                     // it works only for post-order traversal
-                    let sn_id = sp.add_plan_node(*id)?;
-                    if *id == top {
+                    let sn_id = sp.add_plan_node(id)?;
+                    if id == top {
                         sp.set_top(sn_id)?;
                     }
                 }
             }
             Snapshot::Oldest => {
-                let dft_post = DftPost::new(&top, |node| ir_plan.flashback_subtree_iter(node));
-                for (_, id) in dft_post {
+                let mut dft_post =
+                    PostOrder::with_capacity(|node| ir_plan.flashback_subtree_iter(node), capacity);
+                for (_, id) in dft_post.iter(top) {
                     // it works only for post-order traversal
-                    let sn_id = sp.add_plan_node(*id)?;
-                    if *id == top {
+                    let sn_id = sp.add_plan_node(id)?;
+                    if id == top {
                         sp.set_top(sn_id)?;
                     }
                 }

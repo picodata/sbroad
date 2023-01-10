@@ -3,7 +3,6 @@ use crate::frontend::Ast;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
-use traversal::DftPost;
 
 #[test]
 fn ast() {
@@ -91,61 +90,62 @@ fn traversal() {
     let query = r#"select a from t where a = 1"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let top = ast.top.unwrap();
-    let mut dft_post = DftPost::new(&top, |node| ast.nodes.ast_iter(node));
+    let mut dft_post = PostOrder::with_capacity(|node| ast.nodes.ast_iter(node), 64);
+    let mut iter = dft_post.iter(top);
 
-    let (_, table_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*table_id).unwrap();
+    let (_, table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(table_id).unwrap();
     assert_eq!(node.rule, Type::Table);
 
-    let (_, scan_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*scan_id).unwrap();
+    let (_, scan_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
 
-    let (_, sel_name_a_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*sel_name_a_id).unwrap();
+    let (_, sel_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_a_id).unwrap();
     assert_eq!(node.rule, Type::ColumnName);
 
-    let (_, a_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*a_id).unwrap();
+    let (_, a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(a_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, num_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*num_id).unwrap();
+    let (_, num_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(num_id).unwrap();
     assert_eq!(node.rule, Type::Unsigned);
 
-    let (_, eq_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*eq_id).unwrap();
+    let (_, eq_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(eq_id).unwrap();
     assert_eq!(node.rule, Type::Eq);
 
-    let (_, selection_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*selection_id).unwrap();
+    let (_, selection_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(selection_id).unwrap();
     assert_eq!(node.rule, Type::Selection);
 
-    let (_, prj_name_a_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*prj_name_a_id).unwrap();
+    let (_, prj_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(prj_name_a_id).unwrap();
     assert_eq!(node.rule, Type::ColumnName);
 
-    let (_, str_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*str_id).unwrap();
+    let (_, str_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(str_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, alias_name_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*alias_name_id).unwrap();
+    let (_, alias_name_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(alias_name_id).unwrap();
     assert_eq!(node.rule, Type::AliasName);
 
-    let (_, alias_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*alias_id).unwrap();
+    let (_, alias_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(alias_id).unwrap();
     assert_eq!(node.rule, Type::Alias);
 
-    let (_, col_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*col_id).unwrap();
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
     assert_eq!(node.rule, Type::Column);
 
-    let (_, projection_id) = dft_post.next().unwrap();
-    let node = ast.nodes.get_node(*projection_id).unwrap();
+    let (_, projection_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
-    assert_eq!(None, dft_post.next());
+    assert_eq!(None, iter.next());
 }
 
 #[test]

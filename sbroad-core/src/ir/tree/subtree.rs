@@ -15,13 +15,13 @@ trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct SubtreeIterator<'plan> {
-    current: &'plan usize,
+    current: usize,
     child: RefCell<usize>,
     plan: &'plan Plan,
 }
 
 impl<'nodes> TreeIterator<'nodes> for SubtreeIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -51,16 +51,16 @@ impl<'plan> SubtreePlanIterator<'plan> for SubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for SubtreeIterator<'plan> {
-    type Item = &'plan usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        subtree_next(self, &Snapshot::Latest)
+        subtree_next(self, &Snapshot::Latest).copied()
     }
 }
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn subtree_iter(&'plan self, current: &'plan usize) -> SubtreeIterator<'plan> {
+    pub fn subtree_iter(&'plan self, current: usize) -> SubtreeIterator<'plan> {
         SubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -75,13 +75,13 @@ impl<'plan> Plan {
 /// at the moment).
 #[derive(Debug)]
 pub struct FlashbackSubtreeIterator<'plan> {
-    current: &'plan usize,
+    current: usize,
     child: RefCell<usize>,
     plan: &'plan Plan,
 }
 
 impl<'nodes> TreeIterator<'nodes> for FlashbackSubtreeIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -111,19 +111,16 @@ impl<'plan> SubtreePlanIterator<'plan> for FlashbackSubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for FlashbackSubtreeIterator<'plan> {
-    type Item = &'plan usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        subtree_next(self, &Snapshot::Oldest)
+        subtree_next(self, &Snapshot::Oldest).copied()
     }
 }
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn flashback_subtree_iter(
-        &'plan self,
-        current: &'plan usize,
-    ) -> FlashbackSubtreeIterator<'plan> {
+    pub fn flashback_subtree_iter(&'plan self, current: usize) -> FlashbackSubtreeIterator<'plan> {
         FlashbackSubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -135,13 +132,13 @@ impl<'plan> Plan {
 /// An iterator used while copying and execution plan subtree.
 #[derive(Debug)]
 pub struct ExecPlanSubtreeIterator<'plan> {
-    current: &'plan usize,
+    current: usize,
     child: RefCell<usize>,
     plan: &'plan Plan,
 }
 
 impl<'nodes> TreeIterator<'nodes> for ExecPlanSubtreeIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -171,19 +168,16 @@ impl<'plan> SubtreePlanIterator<'plan> for ExecPlanSubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for ExecPlanSubtreeIterator<'plan> {
-    type Item = &'plan usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        subtree_next(self, &Snapshot::Oldest)
+        subtree_next(self, &Snapshot::Oldest).copied()
     }
 }
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn exec_plan_subtree_iter(
-        &'plan self,
-        current: &'plan usize,
-    ) -> ExecPlanSubtreeIterator<'plan> {
+    pub fn exec_plan_subtree_iter(&'plan self, current: usize) -> ExecPlanSubtreeIterator<'plan> {
         ExecPlanSubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -197,7 +191,7 @@ fn subtree_next<'plan>(
     iter: &mut impl SubtreePlanIterator<'plan>,
     snapshot: &Snapshot,
 ) -> Option<&'plan usize> {
-    if let Some(child) = iter.get_nodes().arena.get(*iter.get_current()) {
+    if let Some(child) = iter.get_nodes().arena.get(iter.get_current()) {
         return match child {
             Node::Parameter => None,
             Node::Expression(exp) => match exp {
@@ -249,7 +243,7 @@ fn subtree_next<'plan>(
                         };
                         if let Ok(rel_id) = iter
                             .get_plan()
-                            .get_relational_from_reference_node(*iter.get_current())
+                            .get_relational_from_reference_node(iter.get_current())
                         {
                             match iter.get_plan().get_relation_node(*rel_id) {
                                 Ok(rel_node) if rel_node.is_subquery() || rel_node.is_motion() => {

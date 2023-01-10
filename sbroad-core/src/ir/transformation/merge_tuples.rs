@@ -14,11 +14,12 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
+use crate::ir::tree::traversal::BreadthFirst;
+use crate::ir::tree::traversal::EXPR_CAPACITY;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
-use traversal::Bft;
 
 fn call_expr_tree_merge_tuples(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
@@ -216,8 +217,12 @@ impl Plan {
             }
             visited.insert(*id);
 
-            let tree_and = Bft::new(id, |node| self.nodes.and_iter(node));
-            let nodes_and: Vec<usize> = tree_and.map(|(_, id)| *id).collect();
+            let mut tree_and = BreadthFirst::with_capacity(
+                |node| self.nodes.and_iter(node),
+                EXPR_CAPACITY,
+                EXPR_CAPACITY,
+            );
+            let nodes_and: Vec<usize> = tree_and.iter(*id).map(|(_, id)| id).collect();
             let mut nodes_for_chain: Vec<usize> = Vec::with_capacity(nodes_and.len());
             for and_id in nodes_and {
                 let expr = self.get_expression_node(and_id)?;
@@ -273,8 +278,12 @@ impl Plan {
             -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError>,
         f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, SbroadError>,
     ) -> Result<usize, SbroadError> {
-        let tree = Bft::new(&expr_id, |node| self.nodes.expr_iter(node, false));
-        let nodes: Vec<usize> = tree.map(|(_, id)| *id).collect();
+        let mut tree = BreadthFirst::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            EXPR_CAPACITY,
+        );
+        let nodes: Vec<usize> = tree.iter(expr_id).map(|(_, id)| id).collect();
         let chains = f_build_chains(self, &nodes)?;
 
         // Replace nodes' children with the merged tuples.

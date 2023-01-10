@@ -4,7 +4,6 @@
 
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
-use serde_yaml::mapping::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
@@ -12,11 +11,11 @@ use crate::errors::{Action, Entity, SbroadError};
 
 use super::expression::Expression;
 use super::transformation::redistribution::{DataGeneration, MotionPolicy};
+use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
 use crate::collection;
 use crate::ir::distribution::{Distribution, KeySet};
 use crate::ir::relation::ColumnRole;
-use traversal::Bft;
 
 /// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
@@ -467,10 +466,7 @@ impl Relational {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Column,
-                        format!("at position {} of Row", position),
-                    )
+                    SbroadError::NotFound(Entity::Column, format!("at position {position} of Row"))
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
                 if let Expression::Alias { child, .. } = col_node {
@@ -670,7 +666,7 @@ impl Plan {
         }
         Err(SbroadError::NotFound(
             Entity::Table,
-            format!("{} among the plan relations", table),
+            format!("{table} among the plan relations"),
         ))
     }
 
@@ -709,10 +705,7 @@ impl Plan {
             {
                 // We'll need it later to update the condition expression (borrow checker).
                 let table = self.get_relation(relation).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Table,
-                        format!("{} among plan relations", relation),
-                    )
+                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
                 })?;
                 let sharding_column_pos = table.get_bucket_id_position()?;
 
@@ -727,12 +720,17 @@ impl Plan {
                 children.push(sq_id);
 
                 // Update references to the sub-query's output in the condition.
-                let condition_iter = Bft::new(&condition, |node| self.nodes.expr_iter(node, false));
-                let refs = condition_iter
+                let mut condition_tree = BreadthFirst::with_capacity(
+                    |node| self.nodes.expr_iter(node, false),
+                    EXPR_CAPACITY,
+                    EXPR_CAPACITY,
+                );
+                let refs = condition_tree
+                    .iter(condition)
                     .filter_map(|(_, id)| {
-                        let expr = self.get_expression_node(*id).ok();
+                        let expr = self.get_expression_node(id).ok();
                         if let Some(Expression::Reference { .. }) = expr {
-                            Some(*id)
+                            Some(id)
                         } else {
                             None
                         }
@@ -1141,9 +1139,13 @@ impl Plan {
     /// - Node returned by the relational iterator is not relational (bug)
     pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
-        let rel_tree = Bft::new(&top_id, |node| self.nodes.rel_iter(node));
-        for (_, id) in rel_tree {
-            let rel = self.get_relation_node(*id)?;
+        let mut rel_tree = BreadthFirst::with_capacity(
+            |node| self.nodes.rel_iter(node),
+            REL_CAPACITY,
+            REL_CAPACITY,
+        );
+        for (_, id) in rel_tree.iter(top_id) {
+            let rel = self.get_relation_node(id)?;
             match rel {
                 Relational::Selection { children, .. } => {
                     if children.iter().skip(1).any(|&c| c == node_id) {

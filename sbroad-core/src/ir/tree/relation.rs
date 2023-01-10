@@ -11,14 +11,14 @@ trait RelationalTreeIterator<'nodes>: TreeIterator<'nodes> {}
 /// The iterator returns the next relational node in the plan tree.
 #[derive(Debug)]
 pub struct RelationalIterator<'n> {
-    current: &'n usize,
+    current: usize,
     child: RefCell<usize>,
     nodes: &'n Nodes,
 }
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn rel_iter(&'n self, current: &'n usize) -> RelationalIterator<'n> {
+    pub fn rel_iter(&'n self, current: usize) -> RelationalIterator<'n> {
         RelationalIterator {
             current,
             child: RefCell::new(0),
@@ -28,7 +28,7 @@ impl<'n> Nodes {
 }
 
 impl<'nodes> TreeIterator<'nodes> for RelationalIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -44,17 +44,17 @@ impl<'nodes> TreeIterator<'nodes> for RelationalIterator<'nodes> {
 impl<'nodes> RelationalTreeIterator<'nodes> for RelationalIterator<'nodes> {}
 
 impl<'n> Iterator for RelationalIterator<'n> {
-    type Item = &'n usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        relational_next(self)
+        relational_next(self).copied()
     }
 }
 
 fn relational_next<'nodes>(
     iter: &mut impl RelationalTreeIterator<'nodes>,
 ) -> Option<&'nodes usize> {
-    match iter.get_nodes().arena.get(*iter.get_current()) {
+    match iter.get_nodes().arena.get(iter.get_current()) {
         Some(Node::Relational(
             Relational::Except { children, .. }
             | Relational::InnerJoin { children, .. }

@@ -15,7 +15,7 @@ trait ExpressionTreeIterator<'nodes>: TreeIterator<'nodes> {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct ExpressionIterator<'n> {
-    current: &'n usize,
+    current: usize,
     child: RefCell<usize>,
     nodes: &'n Nodes,
     make_row_leaf: bool,
@@ -23,7 +23,7 @@ pub struct ExpressionIterator<'n> {
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn expr_iter(&'n self, current: &'n usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
+    pub fn expr_iter(&'n self, current: usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
         ExpressionIterator {
             current,
             child: RefCell::new(0),
@@ -34,7 +34,7 @@ impl<'n> Nodes {
 }
 
 impl<'nodes> TreeIterator<'nodes> for ExpressionIterator<'nodes> {
-    fn get_current(&self) -> &'nodes usize {
+    fn get_current(&self) -> usize {
         self.current
     }
 
@@ -54,17 +54,17 @@ impl<'nodes> ExpressionTreeIterator<'nodes> for ExpressionIterator<'nodes> {
 }
 
 impl<'n> Iterator for ExpressionIterator<'n> {
-    type Item = &'n usize;
+    type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        expression_next(self)
+        expression_next(self).copied()
     }
 }
 
 fn expression_next<'nodes>(
     iter: &mut impl ExpressionTreeIterator<'nodes>,
 ) -> Option<&'nodes usize> {
-    match iter.get_nodes().arena.get(*iter.get_current()) {
+    match iter.get_nodes().arena.get(iter.get_current()) {
         Some(Node::Expression(
             Expression::Alias { child, .. }
             | Expression::Cast { child, .. }

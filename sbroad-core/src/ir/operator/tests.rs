@@ -115,7 +115,7 @@ fn projection() {
 
     // Try to build projection from the non-existing node
     assert_eq!(
-        SbroadError::NotFound(Entity::Node, format!("from arena with index 42")),
+        SbroadError::NotFound(Entity::Node, "from arena with index 42".to_string()),
         plan.add_proj(42, &["a"]).unwrap_err()
     );
 }

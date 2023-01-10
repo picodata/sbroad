@@ -300,7 +300,7 @@ impl Coordinator for RouterRuntimeMock {
         } else {
             Err(SbroadError::NotFound(
                 Entity::VirtualTable,
-                format!("for motion node {}", motion_node_id),
+                format!("for motion node {motion_node_id}"),
             ))
         }
     }

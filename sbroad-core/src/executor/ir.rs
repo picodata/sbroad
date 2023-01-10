@@ -3,13 +3,13 @@ use std::rc::Rc;
 
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
-use traversal::DftPost;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::{Node, Plan};
 
 /// Query type (used to parse the returned results).
@@ -243,11 +243,13 @@ impl ExecutionPlan {
             HashMap::with_capacity(vtables_capacity);
         let mut new_plan = Plan::new();
         new_plan.nodes.reserve(nodes_capacity);
-        let subtree = DftPost::new(&top_id, |node| {
-            self.get_ir_plan().exec_plan_subtree_iter(node)
-        });
-        let nodes: Vec<usize> = subtree.map(|(_, id)| *id).collect();
-        for node_id in nodes {
+        let mut subtree = PostOrder::with_capacity(
+            |node| self.get_ir_plan().exec_plan_subtree_iter(node),
+            self.get_ir_plan().next_id(),
+        );
+        subtree.populate_nodes(top_id);
+        let nodes = subtree.take_nodes();
+        for (_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN can be referred twice).
             if translation.contains_key(&node_id) {
                 continue;
