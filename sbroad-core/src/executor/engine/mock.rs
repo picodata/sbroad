@@ -19,7 +19,7 @@ use crate::executor::{Cache, CoordinatorMetadata};
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::{EncodedValue, Value};
 use crate::ir::Plan;
@@ -105,23 +105,47 @@ impl RouterConfigurationMock {
         let sharding_key = vec!["\"identification_number\"", "\"product_code\""];
         tables.insert(
             "\"hash_testing\"".to_string(),
-            Table::new_seg("\"hash_testing\"", columns.clone(), &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"hash_testing\"",
+                columns.clone(),
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         tables.insert(
             "\"hash_testing_hist\"".to_string(),
-            Table::new_seg("\"hash_testing_hist\"", columns.clone(), &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"hash_testing_hist\"",
+                columns.clone(),
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let sharding_key = vec!["\"identification_number\""];
         tables.insert(
             "\"hash_single_testing\"".to_string(),
-            Table::new_seg("\"hash_single_testing\"", columns.clone(), &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"hash_single_testing\"",
+                columns.clone(),
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         tables.insert(
             "\"hash_single_testing_hist\"".to_string(),
-            Table::new_seg("\"hash_single_testing_hist\"", columns, &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"hash_single_testing_hist\"",
+                columns,
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -135,12 +159,24 @@ impl RouterConfigurationMock {
 
         tables.insert(
             "\"test_space\"".to_string(),
-            Table::new_seg("\"test_space\"", columns.clone(), &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"test_space\"",
+                columns.clone(),
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         tables.insert(
             "\"test_space_hist\"".to_string(),
-            Table::new_seg("\"test_space_hist\"", columns, &sharding_key).unwrap(),
+            Table::new_seg(
+                "\"test_space_hist\"",
+                columns,
+                &sharding_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -150,7 +186,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
-            Table::new_seg("\"history\"", columns, sharding_key).unwrap(),
+            Table::new_seg("\"history\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
         );
 
         let columns = vec![
@@ -163,7 +199,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t\"".to_string(),
-            Table::new_seg("\"t\"", columns, sharding_key).unwrap(),
+            Table::new_seg("\"t\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
         );
 
         let columns = vec![
@@ -174,7 +210,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t1\"".to_string(),
-            Table::new_seg("\"t1\"", columns, sharding_key).unwrap(),
+            Table::new_seg("\"t1\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
         );
 
         let columns = vec![
@@ -187,7 +223,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"e\"", "\"f\""];
         tables.insert(
             "\"t2\"".to_string(),
-            Table::new_seg("\"t2\"", columns, sharding_key).unwrap(),
+            Table::new_seg("\"t2\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
         );
 
         let columns = vec![
@@ -198,7 +234,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\""];
         tables.insert(
             "\"t3\"".to_string(),
-            Table::new_seg("\"t3\"", columns, sharding_key).unwrap(),
+            Table::new_seg("\"t3\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
         );
 
         RouterConfigurationMock {
@@ -318,13 +354,13 @@ impl Coordinator for RouterRuntimeMock {
 
         match buckets {
             Buckets::All => {
-                let sql = plan.to_sql(&nodes, buckets)?;
+                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
-                    let sql = plan.to_sql(&nodes, &Buckets::Filtered(bucket_set))?;
+                    let (sql, _) = plan.to_sql(&nodes, &Buckets::Filtered(bucket_set), "test")?;
                     let temp_result = exec_on_some(*bucket, String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }

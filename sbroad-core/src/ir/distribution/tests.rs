@@ -1,5 +1,5 @@
 use super::*;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -18,6 +18,7 @@ fn proj_preserve_dist_key() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);

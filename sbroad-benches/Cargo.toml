@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 sbroad-core = { path = "../sbroad-core", version = "0.1", features = ["mock"] }
+tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git", features = ["picodata", "schema"] }
 
 [dev-dependencies]
 criterion = "0.3"

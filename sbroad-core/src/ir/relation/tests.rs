@@ -28,6 +28,7 @@ fn table_seg() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
 
@@ -42,6 +43,7 @@ fn table_seg_name() {
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     assert_eq!("t", t.name());
@@ -59,6 +61,7 @@ fn table_seg_duplicate_columns() {
                 Column::new("a", Type::String, ColumnRole::User),
             ],
             &["b", "a"],
+            SpaceEngine::Memtx,
         )
         .unwrap_err(),
         SbroadError::DuplicatedValue("Table has duplicated columns and couldn't be loaded".into())
@@ -75,6 +78,7 @@ fn table_seg_dno_bucket_id_column() {
             Column::new("c", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
 
@@ -93,6 +97,7 @@ fn table_seg_dno_bucket_id_column() {
             Column::new("bucket_id2", Type::String, ColumnRole::Sharding),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
 
@@ -114,6 +119,7 @@ fn table_seg_wrong_key() {
                 Column::new("d", Type::String, ColumnRole::User),
             ],
             &["a", "e"],
+            SpaceEngine::Memtx,
         )
         .unwrap_err(),
         SbroadError::Invalid(Entity::ShardingKey, None)
@@ -133,6 +139,7 @@ fn table_seg_serialized() {
             Column::new("f", Type::Unsigned, ColumnRole::User),
         ],
         &["a", "d"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     let path = Path::new("")
@@ -322,6 +329,7 @@ fn table_converting() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
 

@@ -1116,6 +1116,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "sbroad-core",
+ "tarantool",
 ]
 
 [[package]]
@@ -1136,6 +1137,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tarantool",
+ "uuid 1.2.2",
  "yaml-rust",
 ]
 

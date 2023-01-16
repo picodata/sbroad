@@ -3,3 +3,4 @@ name: t
 key:
   positions:
     - 0
+engine: Memtx

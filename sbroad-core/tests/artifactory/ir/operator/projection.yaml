@@ -72,6 +72,7 @@ relations:
         positions:
           - 1
       name: t
+      engine: Memtx
 slices:
   slices: []
 top: 9

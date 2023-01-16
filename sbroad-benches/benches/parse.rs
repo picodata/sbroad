@@ -254,7 +254,7 @@ fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    plan.to_sql(&nodes, &buckets).unwrap();
+    plan.to_sql(&nodes, &buckets, "").unwrap();
 }
 
 fn bench_ir_build(c: &mut Criterion) {

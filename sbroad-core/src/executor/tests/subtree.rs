@@ -43,7 +43,7 @@ fn exec_plan_subtree_test() {
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let sql = subplan1.to_sql(&nodes, &Buckets::All).unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -57,11 +57,11 @@ fn exec_plan_subtree_test() {
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let sql = subplan2.to_sql(&nodes, &Buckets::All).unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "test_space"."FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") in (SELECT COLUMN_2 as "identification_number" FROM (VALUES (?),(?)))"#.to_string(),
-            vec![Value::from(2_u64), Value::from(3_u64)]
+            r#"SELECT "test_space"."FIRST_NAME" FROM "test_space" WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_20")"#.to_string(),
+            vec![]
         ));
 }

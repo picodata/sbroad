@@ -42,6 +42,7 @@ relations:
       positions:
         - 0
     name: t
+    engine: Memtx
 slices: ~
 top: 5
 undo: {}

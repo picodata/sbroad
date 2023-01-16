@@ -217,8 +217,12 @@ impl StorageRuntime {
         let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
         optional.exec_plan.get_mut_ir_plan().restore_constants()?;
         let nodes = optional.ordered.to_syntax_data()?;
-        let pattern_with_params = optional.exec_plan.to_sql(&nodes, &buckets)?;
-        match prepare(&pattern_with_params.pattern) {
+        let (pattern_with_params, tmp_spaces) = optional.exec_plan.to_sql(
+            &nodes,
+            &buckets,
+            &uuid::Uuid::new_v4().as_simple().to_string(),
+        )?;
+        let result = match prepare(&pattern_with_params.pattern) {
             Ok(stmt) => {
                 let stmt_id = stmt.id()?;
                 debug!(
@@ -247,17 +251,18 @@ impl StorageRuntime {
                     &format!("Execute prepared statement {stmt_id}"),
                 );
                 if required.query_type == QueryType::DML {
-                    return write_prepared(
+                    write_prepared(
                         stmt_id,
                         &pattern_with_params.pattern,
                         &pattern_with_params.params,
-                    );
+                    )
+                } else {
+                    read_prepared(
+                        stmt_id,
+                        &pattern_with_params.pattern,
+                        &pattern_with_params.params,
+                    )
                 }
-                read_prepared(
-                    stmt_id,
-                    &pattern_with_params.pattern,
-                    &pattern_with_params.params,
-                )
             }
             Err(e) => {
                 // Possibly the statement is correct, but doesn't fit into
@@ -278,7 +283,11 @@ impl StorageRuntime {
                 }
                 read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
             }
+        };
+        for space in tmp_spaces {
+            drop(space);
         }
+        result
     }
 }
 

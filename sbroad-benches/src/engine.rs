@@ -16,7 +16,7 @@ use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::ir::function::Function;
-use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
+use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
 use sbroad::ir::Plan;
@@ -327,6 +327,7 @@ impl RouterConfigurationMock {
                 "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
                 columns.clone(),
                 sharding_key,
+                SpaceEngine::Memtx,
             )
             .unwrap(),
         );
@@ -337,6 +338,7 @@ impl RouterConfigurationMock {
                 "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
                 columns,
                 sharding_key,
+                SpaceEngine::Memtx,
             )
             .unwrap(),
         );
@@ -430,7 +432,7 @@ impl Coordinator for RouterRuntimeMock {
         let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
         let ordered = OrderedSyntaxNodes::try_from(sp)?;
         let nodes = ordered.to_syntax_data()?;
-        plan.to_sql(&nodes, buckets)?;
+        plan.to_sql(&nodes, buckets, "")?;
 
         Ok(Box::new(result))
     }

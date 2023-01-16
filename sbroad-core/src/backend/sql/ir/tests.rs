@@ -26,7 +26,7 @@ fn check_sql_with_snapshot(query: &str, expected: PatternWithParams, snapshot: S
     let sp = SyntaxPlan::new(&ex_plan, top_id, snapshot).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let sql = ex_plan.to_sql(&nodes, &Buckets::All).unwrap();
+    let (sql, _) = ex_plan.to_sql(&nodes, &Buckets::All, "test").unwrap();
 
     assert_eq!(expected, sql,);
 }

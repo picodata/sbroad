@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::Bool;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 use crate::ir::Plan;
@@ -21,6 +21,7 @@ fn sql_order_selection() {
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);

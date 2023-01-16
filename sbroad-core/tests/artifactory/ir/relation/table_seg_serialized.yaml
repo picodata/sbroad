@@ -16,3 +16,4 @@ key:
   positions:
     - 0
     - 3
+engine: Memtx

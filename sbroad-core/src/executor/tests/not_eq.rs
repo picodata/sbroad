@@ -96,11 +96,9 @@ fn not_eq2_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE ("t"."identification_number") <> (SELECT COLUMN_1 as "id" FROM (VALUES (?)))"#,
+                r#"WHERE ("t"."identification_number") <> (SELECT "id" FROM "TMP_test_79")"#,
             ),
-            vec![
-                Value::from(3_u64),
-            ],
+            vec![],
         ))),
     ]]);
     assert_eq!(expected, result);

@@ -5,3 +5,4 @@ name: t
 key:
   positions:
     - 10
+engine: Memtx

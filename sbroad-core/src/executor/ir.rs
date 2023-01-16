@@ -8,6 +8,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
+use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::{Node, Plan};
@@ -448,12 +449,54 @@ impl ExecutionPlan {
         }
     }
 
+    pub fn vtables_empty(&self) -> bool {
+        self.get_vtables().map_or(true, HashMap::is_empty)
+    }
+
+    /// Calculates an engine for the virtual tables in the plan.
+    /// The main problem is that we can't use different engines
+    /// for an SQL statement within transaction.
+    ///
+    /// # Errors
+    /// - execution plan is invalid
+    /// - multiple engines are used in the plan
+    pub fn vtable_engine(&self) -> Result<SpaceEngine, SbroadError> {
+        let query_type = self.query_type()?;
+        if query_type == QueryType::DQL {
+            return Ok(SpaceEngine::Memtx);
+        }
+
+        let mut engine: Option<SpaceEngine> = None;
+        for table in self.get_ir_plan().relations.tables.values() {
+            let table_engine = table.engine.clone();
+            if engine.is_none() {
+                engine = Some(table_engine);
+            } else if engine != Some(table_engine) {
+                return Err(SbroadError::FailedTo(
+                    Action::Build,
+                    Some(Entity::Plan),
+                    format!(
+                        "cannot build execution plan for DML query with multiple engines: {:?}",
+                        self.get_ir_plan().relations.tables
+                    ),
+                ));
+            }
+        }
+        Ok(engine.map_or_else(|| SpaceEngine::Memtx, |e| e))
+    }
+
     /// # Errors
     /// - execution plan is invalid
     pub fn connection_type(&self) -> Result<ConnectionType, SbroadError> {
         match self.query_type()? {
             QueryType::DML => Ok(ConnectionType::Write),
-            QueryType::DQL => Ok(ConnectionType::Read),
+            QueryType::DQL => {
+                if self.vtables_empty() {
+                    Ok(ConnectionType::Read)
+                } else {
+                    Ok(ConnectionType::Write)
+                }
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::value::Value;
 use crate::ir::{Plan, SbroadError};
 
@@ -30,6 +30,7 @@ fn rel_nodes_from_reference_in_scan() {
         "t",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -50,6 +51,7 @@ fn rel_nodes_from_reference_in_proj() {
         "t",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);

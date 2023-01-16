@@ -3,6 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
+use tarantool::space::{Field, SpaceEngineType};
 
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
@@ -69,6 +70,23 @@ pub struct Column {
     pub r#type: Type,
     /// Column role.
     pub role: ColumnRole,
+}
+
+impl From<Column> for Field {
+    fn from(column: Column) -> Self {
+        let field = match column.r#type {
+            Type::Boolean => Field::boolean(column.name),
+            Type::Decimal => Field::decimal(column.name),
+            Type::Double => Field::double(column.name),
+            Type::Integer => Field::integer(column.name),
+            Type::Number => Field::number(column.name),
+            Type::Scalar => Field::scalar(column.name),
+            Type::String => Field::string(column.name),
+            Type::Unsigned => Field::unsigned(column.name),
+            Type::Array => Field::array(column.name),
+        };
+        field.is_nullable(true)
+    }
 }
 
 impl Column {
@@ -174,6 +192,69 @@ impl Column {
     }
 }
 
+/// Space engine type.
+/// Duplicates tarantool module's `SpaceEngine` enum.
+/// The reasol for duplication - `SpaceEngine` can't be
+/// deserialized with `serde_yaml` crate as it doesn't support
+/// borrowed strings.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum SpaceEngine {
+    Memtx,
+    Vinyl,
+}
+
+impl From<SpaceEngineType> for SpaceEngine {
+    fn from(engine_type: SpaceEngineType) -> Self {
+        match engine_type {
+            SpaceEngineType::Memtx => SpaceEngine::Memtx,
+            SpaceEngineType::Vinyl => SpaceEngine::Vinyl,
+        }
+    }
+}
+
+impl From<&SpaceEngineType> for SpaceEngine {
+    fn from(engine_type: &SpaceEngineType) -> Self {
+        match engine_type {
+            SpaceEngineType::Memtx => SpaceEngine::Memtx,
+            SpaceEngineType::Vinyl => SpaceEngine::Vinyl,
+        }
+    }
+}
+
+impl From<SpaceEngine> for SpaceEngineType {
+    fn from(space_type: SpaceEngine) -> Self {
+        match space_type {
+            SpaceEngine::Memtx => SpaceEngineType::Memtx,
+            SpaceEngine::Vinyl => SpaceEngineType::Vinyl,
+        }
+    }
+}
+
+impl From<&SpaceEngine> for SpaceEngineType {
+    fn from(space_type: &SpaceEngine) -> Self {
+        match space_type {
+            SpaceEngine::Memtx => SpaceEngineType::Memtx,
+            SpaceEngine::Vinyl => SpaceEngineType::Vinyl,
+        }
+    }
+}
+
+impl TryFrom<&str> for SpaceEngine {
+    type Error = SbroadError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "memtx" => Ok(SpaceEngine::Memtx),
+            "vinyl" => Ok(SpaceEngine::Vinyl),
+            _ => Err(SbroadError::FailedTo(
+                Action::Deserialize,
+                Some(Entity::SpaceEngine),
+                format!("unsupported space engine type: {value}"),
+            )),
+        }
+    }
+}
+
 /// Table is a tuple storage in the cluster.
 ///
 /// Tables are tuple storages in the cluster.
@@ -185,6 +266,8 @@ pub struct Table {
     pub key: Key,
     /// Unique table name.
     name: String,
+    /// Table engine.
+    pub engine: SpaceEngine,
 }
 
 impl Table {
@@ -197,7 +280,12 @@ impl Table {
     ///
     /// # Errors
     /// Returns `SbroadError` when the input arguments are invalid.
-    pub fn new_seg(name: &str, columns: Vec<Column>, keys: &[&str]) -> Result<Self, SbroadError> {
+    pub fn new_seg(
+        name: &str,
+        columns: Vec<Column>,
+        keys: &[&str],
+        engine: SpaceEngine,
+    ) -> Result<Self, SbroadError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
         let no_duplicates = &columns
             .iter()
@@ -222,6 +310,7 @@ impl Table {
             name: name.into(),
             columns,
             key: Key::new(positions),
+            engine,
         })
     }
 
@@ -320,7 +409,7 @@ impl Table {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Relations {
-    tables: HashMap<String, Table>,
+    pub tables: HashMap<String, Table>,
 }
 
 impl Default for Relations {

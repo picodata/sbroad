@@ -197,7 +197,10 @@ g.test_except = function()
     local r, err = api:call("sbroad.execute", {
         [[insert into "t" ("id", "a") values (?, ?), (?, ?), (?, ?)]],
         {
-            3, 777,
+            -- After migration to the virtual tables in the executor
+            -- we can't mix types in the same number column (as we don't
+            -- cast types while population of the virtual tables).
+            3, require('decimal').new(777),
             1000001, require('decimal').new(6.66),
             1000002, require('decimal').new(6.66)
         }

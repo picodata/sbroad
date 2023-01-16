@@ -6,7 +6,7 @@ use pretty_assertions::assert_eq;
 use crate::collection;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
@@ -25,6 +25,7 @@ fn scan_rel() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -61,6 +62,7 @@ fn scan_rel_serialized() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -95,6 +97,7 @@ fn projection() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -147,6 +150,7 @@ fn selection() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -204,6 +208,7 @@ fn except() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     let t1_copy = t1.clone();
@@ -214,6 +219,7 @@ fn except() {
         "t2",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     valid_plan.add_rel(t2);
@@ -234,6 +240,7 @@ fn except() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     invalid_plan.add_rel(t3);
@@ -256,6 +263,7 @@ fn insert() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
 
@@ -270,6 +278,7 @@ fn insert() {
             Column::new("c", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -307,6 +316,7 @@ fn union_all() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -316,6 +326,7 @@ fn union_all() {
         "t2",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -335,6 +346,7 @@ fn union_all_col_amount_mismatch() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -346,6 +358,7 @@ fn union_all_col_amount_mismatch() {
         "t2",
         vec![Column::new("b", Type::Unsigned, ColumnRole::User)],
         &["b"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -371,6 +384,7 @@ fn sub_query() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);
@@ -418,6 +432,7 @@ fn selection_with_sub_query() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -428,6 +443,7 @@ fn selection_with_sub_query() {
         "t2",
         vec![Column::new("b", Type::Integer, ColumnRole::User)],
         &["b"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -474,6 +490,7 @@ fn join() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -487,6 +504,7 @@ fn join() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["d"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -529,6 +547,7 @@ fn join_duplicate_columns() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -542,6 +561,7 @@ fn join_duplicate_columns() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["d"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);

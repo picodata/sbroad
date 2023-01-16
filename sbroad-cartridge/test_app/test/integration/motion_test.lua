@@ -147,7 +147,7 @@ g.test_join_motion_query = function()
         metadata = {
             {name = "t3.id", type = "integer"},
             {name = "t3.name", type = "string"},
-            {name = "t8.product_units", type = "any"},
+            {name = "t8.product_units", type = "integer"},
         },
         rows = {
             { 1, "ok", 5 },

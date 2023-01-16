@@ -208,8 +208,7 @@ impl Coordinator for RouterRuntime {
         // We should not use the cache on the storage if the plan contains virtual tables,
         // as they can contain different amount of tuples that are not taken into account
         // when calculating the cache key.
-        let can_be_cached =
-            |plan: &ExecutionPlan| plan.get_vtables().map_or(true, HashMap::is_empty);
+        let can_be_cached = plan.vtables_empty();
 
         let encode_plan = |exec_plan: ExecutionPlan| -> Result<(Binary, Binary), SbroadError> {
             let sp_top_id = exec_plan.get_ir_plan().get_top()?;
@@ -219,12 +218,8 @@ impl Coordinator for RouterRuntime {
             // Virtual tables in the plan must be already filtered, so we can use all buckets here.
             let params = exec_plan.to_params(&nodes, &Buckets::All)?;
             let query_type = exec_plan.query_type()?;
-            let required_data = RequiredData::new(
-                sub_plan_id.clone(),
-                params,
-                query_type,
-                can_be_cached(&exec_plan),
-            );
+            let required_data =
+                RequiredData::new(sub_plan_id.clone(), params, query_type, can_be_cached);
             let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
             let raw_required_data: Vec<u8> = encoded_required_data.into();
             let optional_data = OptionalData::new(exec_plan, ordered);
@@ -414,27 +409,25 @@ impl RouterRuntime {
         Ok(())
     }
 
-    fn read_dql_on_some(
+    fn dql_on_some(
         &self,
         rs_ir: HashMap<String, Message>,
+        is_readonly: bool,
     ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
         let exec_sql: LuaFunction<_> = lua
-            .get("read_dql_on_some")
-            .ok_or_else(|| SbroadError::LuaError("Lua function `read_on_some` not found".into()))?;
+            .get("dql_on_some")
+            .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_some` not found".into()))?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
             Ok(v) => {
-                debug!(
-                    Option::from("read_dql_on_some"),
-                    &format!("Result: {:?}", &v)
-                );
+                debug!(Option::from("dql_on_some"), &format!("Result: {:?}", &v));
                 Ok(Box::new(v))
             }
             Err(e) => {
-                error!(Option::from("read_dql_on_some"), &format!("{e:?}"));
+                error!(Option::from("dql_on_some"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
                     "Lua error (IR dispatch): {:?}",
                     e
@@ -443,21 +436,22 @@ impl RouterRuntime {
         }
     }
 
-    fn write_dml_on_some(
+    fn dml_on_some(
         &self,
         rs_ir: HashMap<String, Message>,
+        is_readonly: bool,
     ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("write_dml_on_some").ok_or_else(|| {
-            SbroadError::LuaError("Lua function `write_dml_on_some` not found".into())
-        })?;
+        let exec_sql: LuaFunction<_> = lua
+            .get("dml_on_some")
+            .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_some` not found".into()))?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                error!(Option::from("write_on_some"), &format!("{e:?}"));
+                error!(Option::from("dml_on_some"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
                     "Lua error (IR dispatch): {:?}",
                     e
@@ -473,40 +467,40 @@ impl RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        match (&query_type, &conn_type) {
-            (QueryType::DQL, ConnectionType::Read) => self.read_dql_on_some(rs_ir),
-            (QueryType::DML, ConnectionType::Write) => self.write_dml_on_some(rs_ir),
-            _ => Err(SbroadError::Unsupported(
-                Entity::Type,
-                Some(format!(
-                    "unsupported combination of the query type: {:?} and connection type: {:?}",
-                    query_type, conn_type
-                )),
-            )),
+        let is_readonly = match &conn_type {
+            ConnectionType::Read => true,
+            ConnectionType::Write => false,
+        };
+        match &query_type {
+            QueryType::DQL => self.dql_on_some(rs_ir, is_readonly),
+            QueryType::DML => self.dml_on_some(rs_ir, is_readonly),
         }
     }
 
-    fn read_dql_on_all(
+    fn dql_on_all(
         &self,
         required: Binary,
         optional: Binary,
+        is_readonly: bool,
     ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
-        let exec_sql: LuaFunction<_> = lua.get("read_dql_on_all").ok_or_else(|| {
-            SbroadError::LuaError("Lua function `read_dql_on_all` not found".into())
-        })?;
+        let exec_sql: LuaFunction<_> = lua
+            .get("dql_on_all")
+            .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_all` not found".into()))?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<Tuple, _>((required, optional, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((
+            required,
+            optional,
+            is_readonly,
+            waiting_timeout,
+        )) {
             Ok(v) => {
-                debug!(
-                    Option::from("read_dql_on_all"),
-                    &format!("Result: {:?}", &v)
-                );
+                debug!(Option::from("dql_on_all"), &format!("Result: {:?}", &v));
                 Ok(Box::new(v))
             }
             Err(e) => {
-                error!(Option::from("read_dql_on_all"), &format!("{e:?}"));
+                error!(Option::from("dql_on_all"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
                     "Lua error (dispatch IR): {:?}",
                     e
@@ -515,22 +509,28 @@ impl RouterRuntime {
         }
     }
 
-    fn write_dml_on_all(
+    fn dml_on_all(
         &self,
         required: Binary,
         optional: Binary,
+        is_readonly: bool,
     ) -> Result<Box<dyn Any>, SbroadError> {
         let lua = tarantool::lua_state();
 
-        let exec_sql: LuaFunction<_> = lua.get("write_dml_on_all").ok_or_else(|| {
-            SbroadError::LuaError("Lua function `write_dml_on_all` not found".into())
-        })?;
+        let exec_sql: LuaFunction<_> = lua
+            .get("dml_on_all")
+            .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_all` not found".into()))?;
 
         let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
-        match exec_sql.call_with_args::<Tuple, _>((required, optional, waiting_timeout)) {
+        match exec_sql.call_with_args::<Tuple, _>((
+            required,
+            optional,
+            is_readonly,
+            waiting_timeout,
+        )) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
-                error!(Option::from("write_dml_on_all"), &format!("{e:?}"));
+                error!(Option::from("dml_on_all"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
                     "Lua error (dispatch IR): {:?}",
                     e
@@ -547,16 +547,13 @@ impl RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        match (&query_type, &conn_type) {
-            (QueryType::DQL, ConnectionType::Read) => self.read_dql_on_all(required, optional),
-            (QueryType::DML, ConnectionType::Write) => self.write_dml_on_all(required, optional),
-            _ => Err(SbroadError::Unsupported(
-                Entity::Type,
-                Some(format!(
-                    "unsupported combination of the query type: {:?} and connection type: {:?}",
-                    query_type, conn_type
-                )),
-            )),
+        let is_readonly = match &conn_type {
+            ConnectionType::Read => true,
+            ConnectionType::Write => false,
+        };
+        match &query_type {
+            QueryType::DQL => self.dql_on_all(required, optional, is_readonly),
+            QueryType::DML => self.dml_on_all(required, optional, is_readonly),
         }
     }
 }

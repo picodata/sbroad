@@ -1,5 +1,5 @@
 use crate::ir::operator::Bool;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Expression, Plan};
@@ -57,6 +57,7 @@ fn relational_post() {
         "t1",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -66,6 +67,7 @@ fn relational_post() {
         "t2",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -117,6 +119,7 @@ fn selection_subquery_dfs_post() {
         "t1",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -130,6 +133,7 @@ fn selection_subquery_dfs_post() {
             Column::new("c", Type::Boolean, ColumnRole::User),
         ],
         &["b"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -203,6 +207,7 @@ fn subtree_dfs_post() {
             Column::new("c", Type::Boolean, ColumnRole::User),
         ],
         &["a", "c"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t1);

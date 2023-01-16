@@ -3,3 +3,4 @@ columns:
     type: Boolean
 name: t
 key: ~
+engine: Memtx

@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +19,7 @@ use crate::otm::{
     QueryTracer,
 };
 
+use super::space::TmpSpace;
 use super::tree::SyntaxData;
 
 #[derive(Debug, Eq, Deserialize, Serialize, Push)]
@@ -136,6 +137,57 @@ impl From<PatternWithParams> for String {
     }
 }
 
+pub struct TmpSpaceList {
+    index: AHashMap<String, usize>,
+    spaces: Vec<TmpSpace>,
+}
+
+impl Iterator for TmpSpaceList {
+    type Item = TmpSpace;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.spaces.pop()
+    }
+}
+
+impl TmpSpaceList {
+    fn with_capacity(capacity: usize) -> Self {
+        TmpSpaceList {
+            index: AHashMap::with_capacity(capacity),
+            spaces: Vec::with_capacity(capacity),
+        }
+    }
+
+    fn get(&self, name: &str) -> Result<Option<&TmpSpace>, SbroadError> {
+        match self.index.get(name) {
+            Some(index) => {
+                let space = self.spaces.get(*index).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Space,
+                        format!("in the temporary space list ({name})"),
+                    )
+                })?;
+                Ok(Some(space))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn insert(&mut self, name: String, space: TmpSpace) -> Result<(), SbroadError> {
+        if self.index.contains_key(&name) {
+            return Err(SbroadError::FailedTo(
+                Action::Insert,
+                Some(Entity::Space),
+                format!("in the temporary space list ({name})"),
+            ));
+        }
+        let index = self.spaces.len();
+        self.index.insert(name, index);
+        self.spaces.push(space);
+        Ok(())
+    }
+}
+
 impl ExecutionPlan {
     /// # Errors
     /// - IR plan is invalid
@@ -185,7 +237,11 @@ impl ExecutionPlan {
         &self,
         nodes: &[&SyntaxData],
         buckets: &Buckets,
-    ) -> Result<PatternWithParams, SbroadError> {
+        name_base: &str,
+    ) -> Result<(PatternWithParams, TmpSpaceList), SbroadError> {
+        let vtable_engine = self.vtable_engine()?;
+        let capacity = self.get_vtables().map_or(1, HashMap::len);
+        let mut tmp_spaces = TmpSpaceList::with_capacity(capacity);
         let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
@@ -216,7 +272,6 @@ impl ExecutionPlan {
             // the global counter with the columns that need an auto-generated name.
             // As a result each such column would be named like "COLUMN_%d", where "%d"
             // is the new global counter value.
-            let mut anonymous_col_idx_base = 0;
             for (id, data) in nodes.iter().enumerate() {
                 if let Some(' ' | '(') = sql.chars().last() {
                 } else if need_delim_after(id) {
@@ -349,66 +404,31 @@ impl ExecutionPlan {
                         }
                     }
                     SyntaxData::VTable(motion_id) => {
+                        let name = TmpSpace::generate_space_name(name_base, *motion_id);
                         let vtable = self.get_motion_vtable(*motion_id)?;
-                        let cols_count = vtable.get_columns().len();
-
-                        let cols = |base_idx: &mut usize| {
-                            vtable
-                                .get_columns()
-                                .iter()
-                                .map(|c| {
-                                    *base_idx += 1;
-                                    format!("COLUMN_{base_idx} as \"{}\"", c.name)
-                                })
-                                .collect::<Vec<String>>()
-                                .join(",")
-                        };
-
-                        let tuples = (*vtable).get_tuples_with_buckets(buckets);
-
-                        if tuples.is_empty() {
-                            let values = (0..cols_count)
-                                .map(|_| "null")
-                                .collect::<Vec<&str>>()
-                                .join(",");
-
-                            write!(
-                                sql,
-                                "SELECT {} FROM (VALUES ({})) WHERE FALSE",
-                                cols(&mut anonymous_col_idx_base),
-                                values
+                        let col_names = vtable
+                            .get_columns()
+                            .iter()
+                            .map(|c| format!("\"{}\"", c.name))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        write!(sql, "SELECT {col_names} FROM \"{name}\"").map_err(|e| {
+                            SbroadError::FailedTo(
+                                Action::Serialize,
+                                Some(Entity::VirtualTable),
+                                format!("SQL builder: {e}"),
                             )
-                            .map_err(|e| {
-                                SbroadError::Invalid(Entity::VirtualTable, Some(e.to_string()))
-                            })?;
-                        } else {
-                            let values = tuples
-                                .iter()
-                                .map(|t| format!("({})", (t.iter().map(|_| "?")).join(",")))
-                                .collect::<Vec<String>>()
-                                .join(",");
-
-                            anonymous_col_idx_base += cols_count * (tuples.len() - 1);
-
-                            write!(
-                                sql,
-                                "SELECT {} FROM (VALUES {})",
-                                cols(&mut anonymous_col_idx_base),
-                                values
-                            )
-                            .map_err(|e| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    None,
-                                    format!("SQL for VTable: {e}"),
-                                )
-                            })?;
-
-                            for t in tuples {
-                                for v in t.iter() {
-                                    params.push(v.clone());
-                                }
-                            }
+                        })?;
+                        // BETWEEN can refer to the same virtual table multiple times.
+                        if tmp_spaces.get(&name)?.is_none() {
+                            let space = TmpSpace::initialize(
+                                self,
+                                name_base,
+                                *motion_id,
+                                buckets,
+                                &vtable_engine,
+                            )?;
+                            tmp_spaces.insert(name, space)?;
                         }
                     }
                 }
@@ -416,7 +436,7 @@ impl ExecutionPlan {
             Ok((sql, params))
         })?;
         // MUST be constructed out of the `syntax.ordered.sql` context scope.
-        Ok(PatternWithParams::new(sql, params))
+        Ok((PatternWithParams::new(sql, params), tmp_spaces))
     }
 
     /// Checks if the given query subtree modifies data or not.

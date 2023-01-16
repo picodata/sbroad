@@ -206,6 +206,7 @@ relations:
         positions:
           - 0
       name: t1
+      engine: Vinyl
     t2:
       columns:
         - name: a
@@ -214,6 +215,7 @@ relations:
         positions:
           - 0
       name: t2
+      engine: Vinyl
 slices: 
   slices:
     - slice:

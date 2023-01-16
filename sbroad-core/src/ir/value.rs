@@ -342,10 +342,9 @@ impl ToHashString for Value {
 pub enum EncodedValue {
     Boolean(bool),
     Decimal(Decimal),
-    Double(Double),
+    Double(f64),
     Integer(i64),
     Unsigned(u64),
-    Float(f64),
     String(String),
     Tuple(Tuple),
     Null(()),
@@ -356,10 +355,9 @@ impl fmt::Display for EncodedValue {
         match self {
             EncodedValue::Boolean(v) => write!(f, "{v}"),
             EncodedValue::Decimal(v) => fmt::Display::fmt(v, f),
-            EncodedValue::Double(v) => fmt::Display::fmt(&v, f),
+            EncodedValue::Double(v) => write!(f, "{v}"),
             EncodedValue::Integer(v) => write!(f, "{v}"),
             EncodedValue::Unsigned(v) => write!(f, "{v}"),
-            EncodedValue::Float(v) => write!(f, "{v}"),
             EncodedValue::String(v) => write!(f, "'{v}'"),
             EncodedValue::Tuple(v) => write!(f, "{v}"),
             EncodedValue::Null(_) => write!(f, "NULL"),
@@ -372,7 +370,7 @@ impl From<Value> for EncodedValue {
         match value {
             Value::Boolean(v) => EncodedValue::Boolean(v),
             Value::Decimal(v) => EncodedValue::Decimal(v),
-            Value::Double(v) => EncodedValue::Double(v),
+            Value::Double(v) => EncodedValue::Double(v.value),
             Value::Integer(v) => EncodedValue::Integer(v),
             Value::Null => EncodedValue::Null(()),
             Value::String(v) => EncodedValue::String(v),
@@ -383,22 +381,23 @@ impl From<Value> for EncodedValue {
 }
 
 impl From<EncodedValue> for Value {
+    #[allow(clippy::cast_possible_truncation)]
     fn from(value: EncodedValue) -> Self {
         match value {
             EncodedValue::Unsigned(v) => Value::Unsigned(v),
             EncodedValue::Integer(v) => Value::Integer(v),
             EncodedValue::Decimal(v) => Value::Decimal(v),
             EncodedValue::Double(v) => {
-                if v.value.is_nan() {
-                    return Value::Null;
-                }
-                Value::Double(v)
-            }
-            EncodedValue::Float(v) => {
                 if v.is_nan() {
-                    return Value::Null;
+                    Value::Null
+                } else if v.is_subnormal()
+                    || v.is_infinite()
+                    || v.is_finite() && v.fract().abs() >= std::f64::EPSILON
+                {
+                    Value::Double(Double::from(v))
+                } else {
+                    Value::Integer(v as i64)
                 }
-                Value::Double(Double::from(v))
             }
             EncodedValue::Boolean(v) => Value::Boolean(v),
             EncodedValue::String(v) => Value::String(v),

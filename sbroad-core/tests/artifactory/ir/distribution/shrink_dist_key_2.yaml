@@ -86,6 +86,7 @@ relations:
           - 1
           - 0
       name: t
+      engine: Memtx
 slices:
   slices: []
 top: 13

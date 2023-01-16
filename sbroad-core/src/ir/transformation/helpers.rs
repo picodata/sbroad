@@ -53,5 +53,6 @@ pub fn check_transformation(
     let sp = SyntaxPlan::new(&ex_plan, top_id, Snapshot::Latest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    ex_plan.to_sql(&nodes, &Buckets::All).unwrap()
+    let (sql, _) = ex_plan.to_sql(&nodes, &Buckets::All, "").unwrap();
+    sql
 }

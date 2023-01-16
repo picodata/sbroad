@@ -1,5 +1,5 @@
 use super::*;
-use crate::ir::relation::{Column, ColumnRole, Table, Type};
+use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
@@ -40,6 +40,7 @@ fn get_node() {
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        SpaceEngine::Memtx,
     )
     .unwrap();
     plan.add_rel(t);

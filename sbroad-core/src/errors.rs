@@ -12,6 +12,8 @@ pub enum Entity {
     AST,
     /// corresponding to struct Buckets
     Buckets,
+    /// raw bytes
+    Bytes,
     /// general variant for cache
     Cache,
     /// corresponding to struct Chain
@@ -26,6 +28,8 @@ pub enum Entity {
     DistributionKey,
     /// corresponds to enum Expression
     Expression,
+    /// tarantool index
+    Index,
     /// corresponds to metadata field of struct ProducerResult
     Metadata,
     /// corresponds to enum MotionPolicy
@@ -58,6 +62,8 @@ pub enum Entity {
     ShardingKey,
     /// tarantool space
     Space,
+    // tarantool space engine type
+    SpaceEngine,
     /// corresponds to Function structs
     SQLFunction,
     /// corresponds to struct Statement
@@ -92,6 +98,7 @@ impl fmt::Display for Entity {
             Entity::Args => "args".to_string(),
             Entity::AST => "AST".to_string(),
             Entity::Buckets => "buckets".to_string(),
+            Entity::Bytes => "bytes".to_string(),
             Entity::Cache => "cache".to_string(),
             Entity::Chain => "chain".to_string(),
             Entity::ClusterSchema => "cluster schema".to_string(),
@@ -99,6 +106,7 @@ impl fmt::Display for Entity {
             Entity::Distribution => "distribution".to_string(),
             Entity::DistributionKey => "distribution key".to_string(),
             Entity::Expression => "expression".to_string(),
+            Entity::Index => "index".to_string(),
             Entity::Metadata => "metadata".to_string(),
             Entity::Motion => "motion".to_string(),
             Entity::MsgPack => "msgpack".to_string(),
@@ -115,6 +123,7 @@ impl fmt::Display for Entity {
             Entity::Runtime => "runtime".to_string(),
             Entity::ShardingKey => "sharding key".to_string(),
             Entity::Space => "space".to_string(),
+            Entity::SpaceEngine => "space engine".to_string(),
             Entity::SQLFunction => "SQL function".to_string(),
             Entity::Statement => "statement".to_string(),
             Entity::SubQuery => "sub-query plan subtree".to_string(),
@@ -143,6 +152,8 @@ pub enum Action {
     Create,
     Decode,
     Deserialize,
+    Drop,
+    Find,
     Get,
     Insert,
     Put,
@@ -159,6 +170,8 @@ impl fmt::Display for Action {
             Action::Clear => "clear".to_string(),
             Action::Create => "create".to_string(),
             Action::Decode => "decode".to_string(),
+            Action::Drop => "drop".to_string(),
+            Action::Find => "find".to_string(),
             Action::Deserialize => "deserialize".to_string(),
             Action::Get => "get".to_string(),
             Action::Insert => "insert".to_string(),

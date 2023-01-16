@@ -58,11 +58,9 @@ fn not_in1_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE ("t"."identification_number") not in (SELECT COLUMN_1 as "id" FROM (VALUES (?)))"#,
+                r#"WHERE ("t"."identification_number") not in (SELECT "id" FROM "TMP_test_76")"#,
             ),
-            vec![
-                Value::from(3_u64),
-            ],
+            vec![],
         ))),
     ]]);
     assert_eq!(expected, result);

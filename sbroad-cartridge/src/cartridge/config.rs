@@ -10,7 +10,7 @@ use sbroad::executor::engine::CoordinatorMetadata;
 use sbroad::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
-use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
+use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use sbroad::{debug, warn};
 
 /// Cluster metadata information
@@ -186,6 +186,27 @@ impl RouterConfiguration {
                     continue;
                 };
 
+                let engine: SpaceEngine = if let Some(engine) = params["engine"].as_str() {
+                    if let Ok(v) = SpaceEngine::try_from(engine) {
+                        v
+                    } else {
+                        warn!(
+                            Option::from("configuration parsing"),
+                            &format!(
+                                "Skip space {current_space_name}: unknown engine {}.",
+                                engine
+                            ),
+                        );
+                        continue;
+                    }
+                } else {
+                    warn!(
+                        Option::from("configuration parsing"),
+                        &format!("Skip space {current_space_name}: engine not found."),
+                    );
+                    continue;
+                };
+
                 let table_name: String = normalize_name_from_schema(current_space_name);
                 debug!(
                     Option::from("configuration parsing"),
@@ -195,7 +216,7 @@ impl RouterConfiguration {
                     ),
                 );
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
-                let t = Table::new_seg(&table_name, fields, keys_str.as_slice())?;
+                let t = Table::new_seg(&table_name, fields, keys_str.as_slice(), engine)?;
                 self.tables.insert(table_name, t);
             } else {
                 return Err(SbroadError::Invalid(

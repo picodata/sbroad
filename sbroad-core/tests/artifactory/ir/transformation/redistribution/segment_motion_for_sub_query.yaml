@@ -192,6 +192,7 @@ relations:
         positions:
           - 0
       name: t1
+      engine: Memtx
     t2:
       columns:
         - name: a
@@ -202,6 +203,7 @@ relations:
         positions:
           - 0
       name: t2
+      engine: Memtx
 slices:
   slices:
     - slice:
