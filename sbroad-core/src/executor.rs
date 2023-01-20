@@ -111,7 +111,8 @@ where
         }
         if plan.is_empty() {
             let ast = C::ParseTree::new(sql)?;
-            plan = ast.resolve_metadata(coordinator.cached_config())?;
+            let metadata = &*coordinator.cached_config()?;
+            plan = ast.resolve_metadata(metadata)?;
             cache.put(key, plan.clone())?;
         }
         plan.bind_params(params)?;

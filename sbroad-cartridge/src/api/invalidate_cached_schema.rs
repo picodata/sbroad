@@ -9,9 +9,14 @@ use sbroad::log::tarantool_error;
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
 #[no_mangle]
 pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
-    COORDINATOR_ENGINE.with(|runtime| match runtime.try_borrow_mut() {
-        Ok(mut runtime) => {
-            runtime.clear_config();
+    COORDINATOR_ENGINE.with(|runtime| match runtime.try_borrow() {
+        Ok(runtime) => {
+            if let Err(e) = runtime.clear_config() {
+                return tarantool_error(&format!(
+                    "Failed to clear the configuration in the coordinator runtime during cache invalidation: {}",
+                    e
+                ));
+            }
             if let Err(e) = runtime.clear_ir_cache() {
                 return tarantool_error(&format!(
                     "Failed to clear the IR cache on router: {:?}",
@@ -32,9 +37,14 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
 #[no_mangle]
 pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
-    SEGMENT_ENGINE.with(|runtime| match runtime.try_borrow_mut() {
-        Ok(mut runtime) => {
-            runtime.clear_config();
+    SEGMENT_ENGINE.with(|runtime| match runtime.try_borrow() {
+        Ok(runtime) => {
+            if let Err(e) = runtime.clear_config() {
+                return tarantool_error(&format!(
+                    "Failed to clear the configuration on segment during cache invalidation: {:?}",
+                    e
+                ));
+            }
             ctx.return_mp(&true).unwrap();
             0
         }

@@ -3,7 +3,7 @@
 use rand::prelude::*;
 
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::rc::Rc;
@@ -44,7 +44,7 @@ type GroupedBuckets = HashMap<String, Vec<u64>>;
 /// The runtime (cluster configuration, buckets, IR cache) of the dispatcher node.
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntime {
-    metadata: RouterConfiguration,
+    metadata: RefCell<RouterConfiguration>,
     bucket_count: usize,
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
@@ -52,21 +52,30 @@ pub struct RouterRuntime {
 impl Configuration for RouterRuntime {
     type Configuration = RouterConfiguration;
 
-    fn cached_config(&self) -> &Self::Configuration {
-        &self.metadata
+    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
+        self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+        })
     }
 
-    fn clear_config(&mut self) {
-        self.metadata = Self::Configuration::new();
+    fn clear_config(&self) -> Result<(), SbroadError> {
+        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+        })?;
+        *metadata = Self::Configuration::new();
+        Ok(())
     }
 
-    fn is_config_empty(&self) -> bool {
-        self.metadata.is_empty()
+    fn is_config_empty(&self) -> Result<bool, SbroadError> {
+        let metadata = self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+        })?;
+        Ok(metadata.is_empty())
     }
 
     #[allow(clippy::too_many_lines)]
     fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
-        if self.is_config_empty() {
+        if self.is_config_empty()? {
             let lua = tarantool::lua_state();
 
             let get_schema: LuaFunction<_> = lua.eval("return get_schema;").unwrap();
@@ -155,8 +164,12 @@ impl Configuration for RouterRuntime {
         Ok(None)
     }
 
-    fn update_config(&mut self, metadata: Self::Configuration) {
-        self.metadata = metadata;
+    fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError> {
+        let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+        })?;
+        *cached_metadata = metadata;
+        Ok(())
     }
 }
 
@@ -329,7 +342,10 @@ impl Coordinator for RouterRuntime {
         space: String,
         map: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_map(&self.metadata, &space, map)
+        let metadata = self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        sharding_keys_from_map(&*metadata, &space, map)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -337,7 +353,7 @@ impl Coordinator for RouterRuntime {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_tuple(self.cached_config(), &space, rec)
+        sharding_keys_from_tuple(&*self.cached_config()?, &space, rec)
     }
 
     /// Calculate bucket for a key.
@@ -354,7 +370,7 @@ impl RouterRuntime {
     pub fn new() -> Result<Self, SbroadError> {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None)?;
         let mut result = RouterRuntime {
-            metadata: RouterConfiguration::new(),
+            metadata: RefCell::new(RouterConfiguration::new()),
             bucket_count: 0,
             ir_cache: RefCell::new(cache),
         };
@@ -420,7 +436,7 @@ impl RouterRuntime {
             .get("dql_on_some")
             .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_some` not found".into()))?;
 
-        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config()?.get_exec_waiting_timeout();
         match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
             Ok(v) => {
                 debug!(Option::from("dql_on_some"), &format!("Result: {:?}", &v));
@@ -447,7 +463,7 @@ impl RouterRuntime {
             .get("dml_on_some")
             .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_some` not found".into()))?;
 
-        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config()?.get_exec_waiting_timeout();
         match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
             Ok(v) => Ok(Box::new(v)),
             Err(e) => {
@@ -484,7 +500,7 @@ impl RouterRuntime {
             .get("dql_on_all")
             .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_all` not found".into()))?;
 
-        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config()?.get_exec_waiting_timeout();
         match exec_sql.call_with_args::<Tuple, _>((
             required,
             optional,
@@ -517,7 +533,7 @@ impl RouterRuntime {
             .get("dml_on_all")
             .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_all` not found".into()))?;
 
-        let waiting_timeout = &self.cached_config().get_exec_waiting_timeout();
+        let waiting_timeout = &self.cached_config()?.get_exec_waiting_timeout();
         match exec_sql.call_with_args::<Tuple, _>((
             required,
             optional,

@@ -42,7 +42,7 @@ where
     // a mutable reference to the engine.
     if let Some(config) = config {
         code = (*engine).with(|runtime| {
-            let mut runtime = match runtime.try_borrow_mut() {
+            let runtime = match runtime.try_borrow() {
                 Ok(runtime) => runtime,
                 Err(e) => {
                     return tarantool_error(&format!(
@@ -51,7 +51,12 @@ where
                     ));
                 }
             };
-            runtime.update_config(config);
+            if let Err(e) = runtime.update_config(config) {
+                return tarantool_error(&format!(
+                    "Failed to update the configuration in the runtime during configuration loading: {}",
+                    e
+                ));
+            }
             0
         });
     }

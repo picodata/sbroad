@@ -1,10 +1,10 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
-use crate::errors::{Entity, SbroadError};
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
@@ -248,7 +248,7 @@ impl RouterConfigurationMock {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntimeMock {
-    metadata: RouterConfigurationMock,
+    metadata: RefCell<RouterConfigurationMock>,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
@@ -288,16 +288,25 @@ impl ProducerResult {
 impl Configuration for RouterRuntimeMock {
     type Configuration = RouterConfigurationMock;
 
-    fn cached_config(&self) -> &Self::Configuration {
-        &self.metadata
+    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
+        self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })
     }
 
-    fn clear_config(&mut self) {
-        self.metadata.tables.clear();
+    fn clear_config(&self) -> Result<(), SbroadError> {
+        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        metadata.tables.clear();
+        Ok(())
     }
 
-    fn is_config_empty(&self) -> bool {
-        self.metadata.tables.is_empty()
+    fn is_config_empty(&self) -> Result<bool, SbroadError> {
+        let metadata = self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        Ok(metadata.tables.is_empty())
     }
 
     fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
@@ -305,8 +314,9 @@ impl Configuration for RouterRuntimeMock {
         Ok(Some(config))
     }
 
-    fn update_config(&mut self, _config: Self::Configuration) {
-        self.metadata = RouterConfigurationMock::new();
+    fn update_config(&self, _config: Self::Configuration) -> Result<(), SbroadError> {
+        *self.metadata.borrow_mut() = RouterConfigurationMock::new();
+        Ok(())
     }
 }
 
@@ -381,7 +391,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_map(&self.metadata, &space, args)
+        sharding_keys_from_map(&*self.metadata.borrow(), &space, args)
     }
 
     fn extract_sharding_keys_from_tuple<'engine, 'rec>(
@@ -389,11 +399,11 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_tuple(self.cached_config(), &space, rec)
+        sharding_keys_from_tuple(&*self.metadata.borrow(), &space, rec)
     }
 
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.metadata.bucket_count)
+        bucket_id_by_tuple(s, self.metadata.borrow().bucket_count)
     }
 }
 
@@ -410,7 +420,7 @@ impl RouterRuntimeMock {
     pub fn new() -> Self {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
         RouterRuntimeMock {
-            metadata: RouterConfigurationMock::new(),
+            metadata: RefCell::new(RouterConfigurationMock::new()),
             virtual_tables: RefCell::new(HashMap::new()),
             ir_cache: RefCell::new(cache),
         }

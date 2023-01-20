@@ -11,7 +11,7 @@ use sbroad::otm::child_span;
 use sbroad::{debug, error, warn};
 use sbroad_proc::otm_child_span;
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::fmt::Display;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
@@ -59,27 +59,36 @@ impl std::fmt::Debug for PreparedStmt {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
-    metadata: StorageConfiguration,
+    metadata: RefCell<StorageConfiguration>,
     cache: RefCell<LRUCache<String, PreparedStmt>>,
 }
 
 impl Configuration for StorageRuntime {
     type Configuration = StorageConfiguration;
 
-    fn cached_config(&self) -> &Self::Configuration {
-        &self.metadata
+    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
+        self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })
     }
 
-    fn clear_config(&mut self) {
-        self.metadata = StorageConfiguration::default();
+    fn clear_config(&self) -> Result<(), SbroadError> {
+        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        *metadata = StorageConfiguration::default();
+        Ok(())
     }
 
-    fn is_config_empty(&self) -> bool {
-        self.metadata.is_empty()
+    fn is_config_empty(&self) -> Result<bool, SbroadError> {
+        let metadata = self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        Ok(metadata.is_empty())
     }
 
     fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
-        if self.is_config_empty() {
+        if self.is_config_empty()? {
             let lua = tarantool::lua_state();
 
             let storage_cache_capacity: LuaFunction<_> =
@@ -144,9 +153,14 @@ impl Configuration for StorageRuntime {
         Ok(None)
     }
 
-    fn update_config(&mut self, metadata: Self::Configuration) {
-        self.metadata = metadata;
-        update_box_param("sql_cache_size", self.metadata.storage_size_bytes);
+    fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError> {
+        let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })?;
+        let storage_size_bytes = metadata.storage_size_bytes;
+        *cached_metadata = metadata;
+        update_box_param("sql_cache_size", storage_size_bytes);
+        Ok(())
     }
 }
 
@@ -159,7 +173,7 @@ impl StorageRuntime {
         let cache: LRUCache<String, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
-            metadata: StorageConfiguration::new(),
+            metadata: RefCell::new(StorageConfiguration::new()),
             cache: RefCell::new(cache),
         };
 

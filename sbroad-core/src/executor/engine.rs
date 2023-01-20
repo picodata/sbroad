@@ -3,7 +3,7 @@
 //! Traits that define an execution engine interface.
 
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -61,13 +61,22 @@ pub trait Configuration: Sized {
     type Configuration;
 
     /// Return a cached cluster configuration from the Rust memory.
-    fn cached_config(&self) -> &Self::Configuration;
+    ///
+    /// # Errors
+    /// - Failed to get a configuration from the coordinator runtime.
+    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError>;
 
     /// Clear the cached cluster configuration in the Rust memory.
-    fn clear_config(&mut self);
+    ///
+    /// # Errors
+    /// - Failed to clear the cached configuration.
+    fn clear_config(&self) -> Result<(), SbroadError>;
 
     /// Check if the cached cluster configuration is empty.
-    fn is_config_empty(&self) -> bool;
+    ///
+    /// # Errors
+    /// - Failed to get the cached configuration.
+    fn is_config_empty(&self) -> Result<bool, SbroadError>;
 
     /// Retrieve cluster configuration from the Lua memory.
     ///
@@ -79,7 +88,10 @@ pub trait Configuration: Sized {
     fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError>;
 
     /// Update cached cluster configuration.
-    fn update_config(&mut self, metadata: Self::Configuration);
+    ///
+    /// # Errors
+    /// - Failed to update the configuration.
+    fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError>;
 }
 
 /// A coordinator trait.
