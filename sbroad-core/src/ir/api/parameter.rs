@@ -67,7 +67,8 @@ impl Plan {
             HashMap::with_hasher(RandomState::new());
 
         // Gather all parameter nodes from the tree to a hash set.
-        let param_set = self.get_param_set();
+        let mut param_set_values = self.get_param_set();
+        let mut param_set_params = param_set_values.clone();
 
         // Closure to retrieve a corresponding value for a parameter node.
         let get_value = |pos: usize| -> Result<usize, SbroadError> {
@@ -95,7 +96,7 @@ impl Plan {
                         output: ref param_id,
                         ..
                     } => {
-                        if param_set.contains(param_id) {
+                        if param_set_values.take(param_id).is_some() {
                             idx -= 1;
                             let val_id = get_value(idx)?;
                             row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
@@ -116,7 +117,7 @@ impl Plan {
                         child: ref param_id,
                         ..
                     } => {
-                        if param_set.contains(param_id) {
+                        if param_set_values.take(param_id).is_some() {
                             idx -= 1;
                         }
                     }
@@ -130,7 +131,7 @@ impl Plan {
                         ref right,
                     } => {
                         for param_id in &[*left, *right] {
-                            if param_set.contains(param_id) {
+                            if param_set_values.take(param_id).is_some() {
                                 idx -= 1;
                                 let val_id = get_value(idx)?;
                                 row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
@@ -142,7 +143,7 @@ impl Plan {
                         children: ref list, ..
                     } => {
                         for param_id in list {
-                            if param_set.contains(param_id) {
+                            if param_set_values.take(param_id).is_some() {
                                 idx -= 1;
                             }
                         }
@@ -178,7 +179,7 @@ impl Plan {
                         output: ref mut param_id,
                         ..
                     } => {
-                        if param_set.contains(param_id) {
+                        if param_set_params.take(param_id).is_some() {
                             idx -= 1;
                             let row_id = get_row(idx)?;
                             *param_id = row_id;
@@ -199,7 +200,7 @@ impl Plan {
                         child: ref mut param_id,
                         ..
                     } => {
-                        if param_set.contains(param_id) {
+                        if param_set_params.take(param_id).is_some() {
                             idx -= 1;
                             let val_id = get_value(idx)?;
                             *param_id = val_id;
@@ -215,7 +216,7 @@ impl Plan {
                         ref mut right,
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
-                            if param_set.contains(param_id) {
+                            if param_set_params.take(param_id).is_some() {
                                 idx -= 1;
                                 let row_id = get_row(idx)?;
                                 **param_id = row_id;
@@ -228,7 +229,7 @@ impl Plan {
                         ..
                     } => {
                         for param_id in list {
-                            if param_set.contains(param_id) {
+                            if param_set_params.take(param_id).is_some() {
                                 idx -= 1;
                                 let val_id = get_value(idx)?;
                                 *param_id = val_id;

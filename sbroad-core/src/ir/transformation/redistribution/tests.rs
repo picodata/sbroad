@@ -79,7 +79,6 @@ fn segment_motion_for_sub_query() {
 
     // Check the modified plan
     plan.derive_equalities().unwrap();
-    println!("{}", serde_yaml::to_string(&plan).unwrap());
     let path = Path::new("")
         .join("tests")
         .join("artifactory")

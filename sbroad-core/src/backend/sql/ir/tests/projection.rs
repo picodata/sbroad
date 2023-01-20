@@ -18,7 +18,7 @@ fn projection1_latest() {
         ),
         vec![Value::from(1_u64)],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn projection1_oldest() {
         ),
         vec![Value::from(1_u64)],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn projection2_latest() {
         ),
         vec![Value::from(1_u64)],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -75,5 +75,5 @@ fn projection2_oldest() {
         ),
         vec![Value::from(1_u64)],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }

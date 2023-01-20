@@ -23,7 +23,7 @@ fn union_all1_latest() {
         ),
         vec![Value::from(1_u64), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -47,5 +47,5 @@ fn union_all1_oldest() {
         ),
         vec![Value::from(1_u64), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }

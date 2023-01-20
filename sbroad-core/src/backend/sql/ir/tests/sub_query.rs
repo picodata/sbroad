@@ -20,7 +20,7 @@ fn sub_query1_latest() {
         ),
         vec![Value::from(1_u64), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn sub_query1_oldest() {
         ),
         vec![Value::from(1_u64), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn sub_query2_latest() {
         ),
         vec![Value::from(1_u64), Value::from("a"), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -97,5 +97,45 @@ fn sub_query2_oldest() {
         ),
         vec![Value::from(1_u64), Value::from("a"), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
+}
+
+#[test]
+fn sub_query3_latest() {
+    let query = r#"SELECT "a", "b" FROM "t"
+    WHERE "a" <= ? and "b" >= ? and "b" <= ?
+    AND ("a", "b") NOT IN (
+        SELECT "a", "b" FROM "t"
+        WHERE "b" >= ?
+        UNION ALL
+        SELECT "a", "b" FROM "t1"
+        WHERE "a" <= ?
+    )"#;
+    let params = vec![
+        Value::from(1_u64),
+        Value::from(2_u64),
+        Value::from(3_u64),
+        Value::from(4_u64),
+        Value::from(5_u64),
+        Value::from(6_u64),
+    ];
+
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {} {} {} {}",
+            r#"SELECT "t"."a", "t"."b" FROM "t""#,
+            r#"WHERE ("t"."b") >= (?) and ("t"."a") <= (?) and ("t"."b") <= (?)"#,
+            r#"and ("t"."a", "t"."b") not in"#,
+            r#"(SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."b") >= (?)"#,
+            r#"UNION ALL SELECT "t1"."a", "t1"."b" FROM "t1" WHERE ("t1"."a") <= (?))"#,
+        ),
+        vec![
+            Value::from(2_u64),
+            Value::from(1_u64),
+            Value::from(3_u64),
+            Value::from(4_u64),
+            Value::from(5_u64),
+        ],
+    );
+    check_sql_with_snapshot(query, params, expected, Snapshot::Latest);
 }

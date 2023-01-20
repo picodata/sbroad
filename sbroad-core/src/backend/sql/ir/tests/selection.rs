@@ -19,7 +19,7 @@ fn selection1_latest() {
         ),
         vec![Value::from("a"), Value::from("b")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn selection1_oldest() {
         ),
         vec![Value::from("b"), Value::from("a")],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn selection2_latest() {
             Value::from(9_557_717_u64),
         ],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Latest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
 }
 
 #[test]
@@ -596,5 +596,5 @@ fn selection2_oldest() {
             Value::from(9_557_717_u64),
         ],
     );
-    check_sql_with_snapshot(query, expected, Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
 }

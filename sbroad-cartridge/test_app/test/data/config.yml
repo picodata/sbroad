@@ -867,4 +867,120 @@ schema:
           is_nullable: true
         name: bucket_id
         type: TREE
+    dtm__marketing__sales_and_stores_history:
+      format:
+      - type: integer
+        name: id
+        is_nullable: false
+      - type: string
+        name: region
+        is_nullable: false
+      - type: unsigned
+        name: bucket_id
+        is_nullable: false
+      - type: number
+        name: sys_from
+        is_nullable: false
+      - type: number
+        name: sys_to
+        is_nullable: true
+      - type: number
+        name: sys_op
+        is_nullable: false
+      temporary: false
+      indexes:
+      - unique: true
+        parts:
+        - path: id
+          is_nullable: false
+          type: integer
+        - path: region
+          is_nullable: false
+          type: string
+        - path: sys_from
+          is_nullable: false
+          type: number
+        type: TREE
+        name: id
+      - unique: false
+        parts:
+        - path: sys_from
+          is_nullable: false
+          type: number
+        type: TREE
+        name: x_sys_from
+      - unique: false
+        parts:
+        - path: sys_to
+          is_nullable: true
+          type: number
+        - path: sys_op
+          is_nullable: false
+          type: number
+        type: TREE
+        name: x_sys_to
+      - unique: false
+        parts:
+        - path: bucket_id
+          is_nullable: false
+          type: unsigned
+        type: TREE
+        name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+      - id
+    dtm__marketing__sales_and_stores_actual:
+      format:
+      - type: integer
+        name: id
+        is_nullable: false
+      - type: string
+        name: region
+        is_nullable: false
+      - type: unsigned
+        name: bucket_id
+        is_nullable: false
+      - type: number
+        name: sys_from
+        is_nullable: false
+      - type: number
+        name: sys_to
+        is_nullable: true
+      - type: number
+        name: sys_op
+        is_nullable: false
+      temporary: false
+      indexes:
+      - unique: true
+        parts:
+        - path: id
+          is_nullable: false
+          type: integer
+        - path: region
+          is_nullable: false
+          type: string
+        - path: sys_from
+          is_nullable: false
+          type: number
+        type: TREE
+        name: id
+      - unique: false
+        parts:
+        - path: sys_from
+          is_nullable: false
+          type: number
+        type: TREE
+        name: x_sys_from
+      - unique: false
+        parts:
+        - path: bucket_id
+          is_nullable: false
+          type: unsigned
+        type: TREE
+        name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+      - id
 

@@ -10,11 +10,16 @@ use crate::ir::tree::Snapshot;
 
 use super::*;
 
-fn check_sql_with_snapshot(query: &str, expected: PatternWithParams, snapshot: Snapshot) {
+fn check_sql_with_snapshot(
+    query: &str,
+    params: Vec<Value>,
+    expected: PatternWithParams,
+    snapshot: Snapshot,
+) {
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(vec![]).unwrap();
+    plan.bind_params(params).unwrap();
     plan.replace_in_operator().unwrap();
     plan.split_columns().unwrap();
     plan.set_dnf().unwrap();
