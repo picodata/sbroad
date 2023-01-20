@@ -157,13 +157,13 @@ impl Drop for TmpSpace {
                 if let Err(e) = space.drop() {
                     error!(
                         Option::from("Temporary space"),
-                        &format!("Failed to drop {}: {e}", self.name)
+                        &format!("Failed to drop {} space: {e}", self.name)
                     );
                 }
             } else {
                 error!(
                     Option::from("Temporary space"),
-                    &format!("Failed to find {}", self.name)
+                    &format!("Failed to find {} space for drop", self.name)
                 );
             }
         }
