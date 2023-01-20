@@ -467,13 +467,9 @@ impl RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        let is_readonly = match &conn_type {
-            ConnectionType::Read => true,
-            ConnectionType::Write => false,
-        };
         match &query_type {
-            QueryType::DQL => self.dql_on_some(rs_ir, is_readonly),
-            QueryType::DML => self.dml_on_some(rs_ir, is_readonly),
+            QueryType::DQL => self.dql_on_some(rs_ir, conn_type.is_readonly()),
+            QueryType::DML => self.dml_on_some(rs_ir, conn_type.is_readonly()),
         }
     }
 
@@ -547,13 +543,9 @@ impl RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        let is_readonly = match &conn_type {
-            ConnectionType::Read => true,
-            ConnectionType::Write => false,
-        };
         match &query_type {
-            QueryType::DQL => self.dql_on_all(required, optional, is_readonly),
-            QueryType::DML => self.dml_on_all(required, optional, is_readonly),
+            QueryType::DQL => self.dql_on_all(required, optional, conn_type.is_readonly()),
+            QueryType::DML => self.dml_on_all(required, optional, conn_type.is_readonly()),
         }
     }
 }

@@ -29,6 +29,16 @@ pub enum ConnectionType {
     Write,
 }
 
+impl ConnectionType {
+    #[must_use]
+    pub fn is_readonly(&self) -> bool {
+        match self {
+            ConnectionType::Read => true,
+            ConnectionType::Write => false,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ExecutionPlan {
     plan: Plan,
