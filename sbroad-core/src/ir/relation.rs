@@ -194,7 +194,7 @@ impl Column {
 
 /// Space engine type.
 /// Duplicates tarantool module's `SpaceEngine` enum.
-/// The reasol for duplication - `SpaceEngine` can't be
+/// The reason for duplication - `SpaceEngine` can't be
 /// deserialized with `serde_yaml` crate as it doesn't support
 /// borrowed strings.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
