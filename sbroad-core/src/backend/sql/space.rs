@@ -73,18 +73,19 @@ impl TmpSpace {
             let space = Space::create(&name, &options).map_err(|e| {
                 SbroadError::FailedTo(Action::Create, Some(Entity::Space), format!("{name}: {e}"))
             })?;
+            let cleanup = |space: Space| match space.drop() {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(
+                        Option::from("Temporary space"),
+                        &format!("Failed to drop {}: {e}", name)
+                    );
+                }
+            };
             match space.create_index(&pk_name, &pk) {
                 Ok(_) => {}
                 Err(e) => {
-                    match space.drop() {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!(
-                                Option::from("Temporary space"),
-                                &format!("Failed to drop {}: {e}", name)
-                            );
-                        }
-                    }
+                    cleanup(space);
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::Index),
@@ -102,15 +103,7 @@ impl TmpSpace {
                 let data = match rmp_serde::to_vec(&extended_value) {
                     Ok(data) => data,
                     Err(e) => {
-                        match space.drop() {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(
-                                    Option::from("Temporary space"),
-                                    &format!("Failed to drop {}: {e}", name)
-                                );
-                            }
-                        }
+                        cleanup(space);
                         return Err(SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Value),
@@ -121,15 +114,7 @@ impl TmpSpace {
                 let tuple = match Tuple::try_from_slice(data.as_slice()) {
                     Ok(tuple) => tuple,
                     Err(e) => {
-                        match space.drop() {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(
-                                    Option::from("Temporary space"),
-                                    &format!("Failed to drop {}: {e}", name)
-                                );
-                            }
-                        }
+                        cleanup(space);
                         return Err(SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Bytes),
@@ -140,15 +125,7 @@ impl TmpSpace {
                 match space.insert(&tuple) {
                     Ok(_) => {}
                     Err(e) => {
-                        match space.drop() {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!(
-                                    Option::from("Temporary space"),
-                                    &format!("Failed to drop {}: {e}", name)
-                                );
-                            }
-                        }
+                        cleanup(space);
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Tuple),

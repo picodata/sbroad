@@ -32,8 +32,8 @@ pub mod statistics;
 
 #[cfg(not(feature = "mock"))]
 mod prod_imports {
-    pub use crate::warn;
     pub use crate::otm::fiber::fiber_id;
+    pub use crate::warn;
     pub use tarantool::error::Error as TntError;
     pub use tarantool::transaction::start_transaction;
 }
