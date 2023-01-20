@@ -48,6 +48,7 @@ impl TmpSpace {
             let pk_name = TmpSpace::generate_pk_name(base, motion_id);
             fields.push(Field::unsigned(pk_name.clone()));
             let fields_len = fields.len() as u32;
+            // Vinyl engine does not support temporary spaces.
             let is_temporary = match engine {
                 SpaceEngine::Memtx => true,
                 SpaceEngine::Vinyl => false,
