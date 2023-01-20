@@ -27,17 +27,19 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-mod fiber;
+pub mod fiber;
 pub mod statistics;
 
 #[cfg(not(feature = "mock"))]
-use crate::warn;
+mod prod_imports {
+    pub use crate::warn;
+    pub use crate::otm::fiber::fiber_id;
+    pub use tarantool::error::Error as TntError;
+    pub use tarantool::transaction::start_transaction;
+}
+
 #[cfg(not(feature = "mock"))]
-use fiber::fiber_id;
-#[cfg(not(feature = "mock"))]
-use tarantool::error::Error as TntError;
-#[cfg(not(feature = "mock"))]
-use tarantool::transaction::start_transaction;
+use prod_imports::*;
 
 static TRACER_NAME: &str = "libsbroad";
 static RATIO: f64 = 0.01;

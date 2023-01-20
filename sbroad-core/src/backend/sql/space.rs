@@ -4,17 +4,17 @@ use crate::executor::ir::ExecutionPlan;
 use crate::ir::relation::SpaceEngine;
 
 #[cfg(not(feature = "mock"))]
-use crate::error;
+mod prod_imports {
+    pub use crate::error;
+    pub use crate::errors::{Action, Entity};
+    pub use crate::ir::value::EncodedValue;
+    pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
+    pub use tarantool::space::{Field, Space, SpaceCreateOptions};
+    pub use tarantool::tuple::Tuple;
+}
+
 #[cfg(not(feature = "mock"))]
-use crate::errors::{Action, Entity};
-#[cfg(not(feature = "mock"))]
-use crate::ir::value::EncodedValue;
-#[cfg(not(feature = "mock"))]
-use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
-#[cfg(not(feature = "mock"))]
-use tarantool::space::{Field, Space, SpaceCreateOptions};
-#[cfg(not(feature = "mock"))]
-use tarantool::tuple::Tuple;
+use prod_imports::*;
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Hash, Eq, PartialEq, Debug)]
