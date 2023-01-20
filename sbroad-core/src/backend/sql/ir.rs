@@ -137,53 +137,38 @@ impl From<PatternWithParams> for String {
     }
 }
 
-pub struct TmpSpaceList {
-    index: AHashMap<String, usize>,
-    spaces: Vec<TmpSpace>,
+pub struct TmpSpaceMap {
+    inner: AHashMap<String, TmpSpace>,
 }
 
-impl Iterator for TmpSpaceList {
+impl Iterator for TmpSpaceMap {
     type Item = TmpSpace;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.spaces.pop()
+        self.inner.drain().next().map(|(_, v)| v)
     }
 }
 
-impl TmpSpaceList {
+impl TmpSpaceMap {
     fn with_capacity(capacity: usize) -> Self {
-        TmpSpaceList {
-            index: AHashMap::with_capacity(capacity),
-            spaces: Vec::with_capacity(capacity),
+        TmpSpaceMap {
+            inner: AHashMap::with_capacity(capacity),
         }
     }
 
-    fn get(&self, name: &str) -> Result<Option<&TmpSpace>, SbroadError> {
-        match self.index.get(name) {
-            Some(index) => {
-                let space = self.spaces.get(*index).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Space,
-                        format!("in the temporary space list ({name})"),
-                    )
-                })?;
-                Ok(Some(space))
-            }
-            None => Ok(None),
-        }
+    fn get(&self, name: &str) -> Option<&TmpSpace> {
+        self.inner.get(name)
     }
 
     fn insert(&mut self, name: String, space: TmpSpace) -> Result<(), SbroadError> {
-        if self.index.contains_key(&name) {
+        if self.inner.contains_key(&name) {
             return Err(SbroadError::FailedTo(
                 Action::Insert,
                 Some(Entity::Space),
-                format!("in the temporary space list ({name})"),
+                format!("in the temporary space map ({name})"),
             ));
         }
-        let index = self.spaces.len();
-        self.index.insert(name, index);
-        self.spaces.push(space);
+        self.inner.insert(name, space);
         Ok(())
     }
 }
@@ -238,10 +223,10 @@ impl ExecutionPlan {
         nodes: &[&SyntaxData],
         buckets: &Buckets,
         name_base: &str,
-    ) -> Result<(PatternWithParams, TmpSpaceList), SbroadError> {
+    ) -> Result<(PatternWithParams, TmpSpaceMap), SbroadError> {
         let vtable_engine = self.vtable_engine()?;
         let capacity = self.get_vtables().map_or(1, HashMap::len);
-        let mut tmp_spaces = TmpSpaceList::with_capacity(capacity);
+        let mut tmp_spaces = TmpSpaceMap::with_capacity(capacity);
         let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
@@ -420,7 +405,7 @@ impl ExecutionPlan {
                             )
                         })?;
                         // BETWEEN can refer to the same virtual table multiple times.
-                        if tmp_spaces.get(&name)?.is_none() {
+                        if tmp_spaces.get(&name).is_none() {
                             let space = TmpSpace::initialize(
                                 self,
                                 name_base,
