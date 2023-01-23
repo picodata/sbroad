@@ -88,7 +88,7 @@ pub fn tarantool_error(message: &str) -> c_int {
     {
         use tarantool::error::TarantoolErrorCode;
 
-        return tarantool::set_error!(TarantoolErrorCode::ProcC, "{:?}", message);
+        return tarantool::set_error!(TarantoolErrorCode::ProcC, "Sbroad Error: {}", message);
     }
     -1
 }

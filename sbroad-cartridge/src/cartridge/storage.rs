@@ -91,7 +91,7 @@ impl Configuration for StorageRuntime {
                         Option::from("getting storage cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
             let storage_capacity = usize::try_from(capacity)
@@ -106,7 +106,7 @@ impl Configuration for StorageRuntime {
                         Option::from("getting storage cache size bytes"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
             let storage_size_bytes = usize::try_from(cache_size_bytes)
@@ -118,7 +118,7 @@ impl Configuration for StorageRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -128,7 +128,7 @@ impl Configuration for StorageRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -309,7 +309,7 @@ fn prepare(pattern: &str) -> Result<PreparedStmt, SbroadError> {
         }
         Err(e) => {
             error!(Option::from("prepare"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }
@@ -326,7 +326,7 @@ fn unprepare(stmt: &mut PreparedStmt) -> Result<(), SbroadError> {
         Ok(_) => Ok(()),
         Err(e) => {
             error!(Option::from("unprepare"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }
@@ -343,7 +343,7 @@ fn read_prepared(stmt_id: u32, stmt: &str, params: &[Value]) -> Result<Box<dyn A
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_prepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }
@@ -360,7 +360,7 @@ fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadE
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_unprepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }
@@ -377,7 +377,7 @@ fn write_prepared(stmt_id: u32, stmt: &str, params: &[Value]) -> Result<Box<dyn 
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_prepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }
@@ -394,7 +394,7 @@ fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, Sbroad
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_unprepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("Lua error: {e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}")))
         }
     }
 }

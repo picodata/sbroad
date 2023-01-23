@@ -74,7 +74,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting schema"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -84,7 +84,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -94,7 +94,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -103,7 +103,7 @@ impl Configuration for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting waiting timeout"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -124,7 +124,7 @@ impl Configuration for RouterRuntime {
                         Option::from("getting router cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -133,7 +133,7 @@ impl Configuration for RouterRuntime {
                 Ok(column) => column,
                 Err(e) => {
                     error!(Option::from("getting sharding column"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}")));
                 }
             };
 
@@ -572,7 +572,7 @@ fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, SbroadError> {
         Ok(v) => v,
         Err(e) => {
             error!(Option::from("buckets group"), &format!("{e:?}"));
-            return Err(SbroadError::LuaError(format!("Lua error: {e:?}")));
+            return Err(SbroadError::LuaError(format!("{e:?}")));
         }
     };
 

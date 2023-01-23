@@ -171,7 +171,7 @@ g.test_bucket_id_calculation = function()
     t.assert_equals(r, nil)
     t.assert_equals(
         tostring(err),
-        [["sharding key (quoted) column \"\\\"name\\\"\" in the quoted map {\"\\\"id\\\"\": \"id\"} (original map: {\"id\": Integer(1)}) not found"]]
+        [[Sbroad Error: sharding key (quoted) column "\"name\"" in the quoted map {"\"id\"": "id"} (original map: {"id": Integer(1)}) not found]]
     )
 
     r, err = api:call("sbroad.calculate_bucket_id", { { id = 1, "123" }, "testing_space" })
@@ -194,11 +194,11 @@ g.test_query_errored = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "NotFoundSpace"]], {} })
-    t.assert_str_contains(tostring(err), "\"space \\\"NotFoundSpace\\\" not found\"")
+    t.assert_equals(tostring(err), "Sbroad Error: space \"NotFoundSpace\" not found")
 
     -- luacheck: max line length 140
     local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })
-    t.assert_equals(tostring(err), [["column with name [\"\\\"NotFoundColumn\\\"\"] not found"]])
+    t.assert_equals(tostring(err), "Sbroad Error: column with name [\"\\\"NotFoundColumn\\\"\"] not found")
 
     local invalid_type_param = datetime.new{
         nsec = 123456789,
@@ -213,15 +213,15 @@ g.test_query_errored = function()
 
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {invalid_type_param} })
     t.assert_equals(
-        tostring(err),
-        "\"pattern with parameters parsing error: Decode(Syntax(\\\"data did not match any variant of untagged enum EncodedValue\\\"))\""
+        tostring(err), "Sbroad Error: pattern with parameters parsing error: " ..
+        [[Decode(Syntax("data did not match any variant of untagged enum EncodedValue"))]]
     )
 
     -- check err when params lenght is less then amount of sign `?`
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {} })
     t.assert_equals(
         tostring(err),
-        "\"invalid node: parameter node does not refer to an expression\""
+        "Sbroad Error: invalid node: parameter node does not refer to an expression"
     )
 end
 
