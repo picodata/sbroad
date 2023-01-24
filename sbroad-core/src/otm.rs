@@ -35,7 +35,6 @@ mod prod_imports {
     pub use crate::otm::fiber::fiber_id;
     pub use crate::warn;
     pub use tarantool::error::Error as TntError;
-    pub use tarantool::transaction::start_transaction;
 }
 
 #[cfg(not(feature = "mock"))]
@@ -168,14 +167,11 @@ where
     {
         let fid = fiber_id();
         let id = current_id();
-        let old_ti = start_transaction(|| -> Result<TraceInfo, TntError> {
-            Ok(TRACE_MANAGER.with(|tm| {
-                tm.borrow_mut()
-                    .remove(fid)
-                    .map_or(TraceInfo::empty(), |ti| ti)
-            }))
-        })
-        .unwrap();
+        let old_ti = TRACE_MANAGER.with(|tm| {
+            tm.borrow_mut()
+                .remove(fid)
+                .map_or(TraceInfo::empty(), |ti| ti)
+        });
         let ctx = build_ctx(
             old_ti.tracer(),
             SpanBuilder::from_name(name)
@@ -184,53 +180,46 @@ where
             old_ti.context(),
         );
         let ti = TraceInfo::new(old_ti.tracer().clone(), ctx, id);
-        start_transaction(|| -> Result<(), TntError> {
-            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
-                Ok(mut mut_tm) => {
-                    debug!(
-                        Option::from("child span"),
-                        &format!(
-                            "fiber {}, child span {}: insert trace info {:?}",
-                            fid, name, ti
-                        ),
-                    );
-                    mut_tm.insert(fid, ti);
-                }
-                Err(_e) => {
-                    warn!(
-                        Option::from("query span"),
-                        &format!(
+        TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+            Ok(mut mut_tm) => {
+                debug!(
+                    Option::from("child span"),
+                    &format!(
+                        "fiber {}, child span {}: insert trace info {:?}",
+                        fid, name, ti
+                    ),
+                );
+                mut_tm.insert(fid, ti);
+            }
+            Err(_e) => {
+                warn!(
+                    Option::from("query span"),
+                    &format!(
                         "fiber {}, child span {}: failed to insert trace info {:?}, error: {:?}",
                         fid, name, ti, _e
                     ),
-                    );
-                }
-            });
-            Ok(())
-        })
-        .unwrap();
+                );
+            }
+        });
         let result = f();
-        start_transaction(|| -> Result<(), TntError> {
-            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
-                Ok(mut mut_tm) => {
-                    debug!(
-                        Option::from("child span"),
-                        &format!("fiber {}, child span {}: restore old trace info {:?}", fid, name, old_ti),
-                    );
-                    mut_tm.insert(fid, old_ti);
-                }
-                Err(_e) => {
-                    warn!(
-                        Option::from("query span"),
-                        &format!(
-                            "fiber {}, child span {}: failed to restore old trace info {:?}, error: {:?}",
-                            fid, name, old_ti, _e
-                        ),
-                    );
-                }
-            });
-            Ok(())
-        }).unwrap();
+        TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+            Ok(mut mut_tm) => {
+                debug!(
+                    Option::from("child span"),
+                    &format!("fiber {}, child span {}: restore old trace info {:?}", fid, name, old_ti),
+                );
+                mut_tm.insert(fid, old_ti);
+            }
+            Err(_e) => {
+                warn!(
+                    Option::from("query span"),
+                    &format!(
+                        "fiber {}, child span {}: failed to restore old trace info {:?}, error: {:?}",
+                        fid, name, old_ti, _e
+                    ),
+                );
+            }
+        });
         return result;
     }
     f()
@@ -273,53 +262,46 @@ where
         );
         let ti = TraceInfo::new(tracer.clone(), ctx, id.to_string());
 
-        start_transaction(|| -> Result<(), TntError> {
-            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
-                Ok(mut mut_tm) => {
-                    debug!(
-                        Option::from("query span"),
-                        &format!(
-                            "fiber {}, query span {}: insert trace info {:?}",
-                            fid, name, ti
-                        ),
-                    );
-                    mut_tm.insert(fid, ti);
-                }
-                Err(_e) => {
-                    warn!(
-                        Option::from("query span"),
-                        &format!(
-                            "fiber {}, query span {}: failed to insert trace info {:?}, error: {:?}",
-                            fid, name, ti, _e
-                        ),
-                    );
-                }
-            });
-            Ok(())
-        }).unwrap();
+        TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+            Ok(mut mut_tm) => {
+                debug!(
+                    Option::from("query span"),
+                    &format!(
+                        "fiber {}, query span {}: insert trace info {:?}",
+                        fid, name, ti
+                    ),
+                );
+                mut_tm.insert(fid, ti);
+            }
+            Err(_e) => {
+                warn!(
+                    Option::from("query span"),
+                    &format!(
+                        "fiber {}, query span {}: failed to insert trace info {:?}, error: {:?}",
+                        fid, name, ti, _e
+                    ),
+                );
+            }
+        });
         let result = f();
-        start_transaction(|| -> Result<(), TntError> {
-            TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
-                Ok(mut mut_tm) => {
-                    debug!(
-                        Option::from("query span"),
-                        &format!("fiber {}, query span {}: remove trace info", fid, name),
-                    );
-                    mut_tm.remove(fid);
-                }
-                Err(_e) => {
-                    warn!(
-                        Option::from("query span"),
-                        &format!(
-                            "fiber {}, query span {}: failed to remove trace info, error: {:?}",
-                            fid, name, _e
-                        ),
-                    );
-                }
-            });
-            Ok(())
-        })
-        .unwrap();
+        TRACE_MANAGER.with(|tm| match tm.try_borrow_mut() {
+            Ok(mut mut_tm) => {
+                debug!(
+                    Option::from("query span"),
+                    &format!("fiber {}, query span {}: remove trace info", fid, name),
+                );
+                mut_tm.remove(fid);
+            }
+            Err(_e) => {
+                warn!(
+                    Option::from("query span"),
+                    &format!(
+                        "fiber {}, query span {}: failed to remove trace info, error: {:?}",
+                        fid, name, _e
+                    ),
+                );
+            }
+        });
         return result;
     }
     f()
