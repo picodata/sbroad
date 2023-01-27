@@ -7,6 +7,116 @@ jaeger_agent_port: 6831
 storage_cache_size_bytes: 204800
 schema:
   spaces:
+    arithmetic_space:
+      format:
+      - type: integer
+        name: id
+        is_nullable: false
+      - type: integer
+        name: a
+        is_nullable: false
+      - type: integer
+        name: b
+        is_nullable: false
+      - type: integer
+        name: c
+        is_nullable: false
+      - type: integer
+        name: d
+        is_nullable: false
+      - type: integer
+        name: e
+        is_nullable: false
+      - type: integer
+        name: f
+        is_nullable: false
+      - type: boolean
+        name: boolean_col
+        is_nullable: false
+      - type: string
+        name: string_col
+        is_nullable: false
+      - type: number
+        name: number_col
+        is_nullable: false
+      - type: unsigned
+        name: bucket_id
+        is_nullable: true
+      temporary: false
+      engine: memtx
+      is_local: false
+      sharding_key:
+      - id
+      indexes:
+      - unique: true
+        parts:
+        - path: id
+          type: integer
+          is_nullable: false
+        name: id
+        type: TREE
+      - unique: false
+        parts:
+        - path: bucket_id
+          type: unsigned
+          is_nullable: true
+        name: bucket_id
+        type: TREE
+    arithmetic_space2:
+      format:
+      - type: integer
+        name: id
+        is_nullable: false
+      - type: integer
+        name: a
+        is_nullable: false
+      - type: integer
+        name: b
+        is_nullable: false
+      - type: integer
+        name: c
+        is_nullable: false
+      - type: integer
+        name: d
+        is_nullable: false
+      - type: integer
+        name: e
+        is_nullable: false
+      - type: integer
+        name: f
+        is_nullable: false
+      - type: boolean
+        name: boolean_col
+        is_nullable: false
+      - type: string
+        name: string_col
+        is_nullable: false
+      - type: number
+        name: number_col
+        is_nullable: false
+      - type: unsigned
+        name: bucket_id
+        is_nullable: true
+      temporary: false
+      engine: memtx
+      is_local: false
+      sharding_key:
+      - id
+      indexes:
+      - unique: true
+        parts:
+        - path: id
+          type: integer
+          is_nullable: false
+        name: id
+        type: TREE
+      - unique: false
+        parts:
+        - path: bucket_id
+          type: unsigned
+          is_nullable: true
+        name: bucket_id
+        type: TREE
     broken_hot:
       format:
       - is_nullable: false

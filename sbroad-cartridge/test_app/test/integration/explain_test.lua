@@ -50,6 +50,28 @@ g.before_each(
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
+
+        r, err = api:call("sbroad.execute", {
+            [[
+                insert into "arithmetic_space"
+                ("id", "a", "b", "c", "d", "e", "f", "boolean_col", "string_col", "number_col")
+                values (?,?,?,?,?,?,?,?,?,?)
+            ]],
+            {1, 1, 1, 1, 1, 1, 1, true, "123", 1},
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
+
+        r, err = api:call("sbroad.execute", {
+            [[
+                insert into "arithmetic_space2"
+                ("id", "a", "b", "c", "d", "e", "f", "boolean_col", "string_col", "number_col")
+                values (?,?,?,?,?,?,?,?,?,?)
+            ]],
+            {1, 1, 1, 1, 1, 1, 1, false, "123", 1},
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 1})
     end
 )
 
@@ -60,12 +82,16 @@ g.after_each(
         storage1:call("box.execute", { [[truncate table "testing_space_hist"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
+        storage1:call("box.execute", { [[truncate table "arithmetic_space"]] })
+        storage1:call("box.execute", { [[truncate table "arithmetic_space2"]] })
 
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "testing_space"]] })
         storage2:call("box.execute", { [[truncate table "testing_space_hist"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
+        storage2:call("box.execute", { [[truncate table "arithmetic_space"]] })
+        storage2:call("box.execute", { [[truncate table "arithmetic_space2"]] })
     end
 )
 
@@ -157,6 +183,110 @@ g.test_valid_explain = function()
             "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
             "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
             "                        scan \"space_simple_shard_key_hist\"",
+        }
+    )
+end
+
+g.test_explain_arithmetic_selection = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[EXPLAIN select "id" from "arithmetic_space" where "a" + "b" = "b" + "a"]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 210
+        {
+            "projection (\"arithmetic_space\".\"id\" -> \"id\")",
+            "    selection ROW(\"arithmetic_space\".\"a\") + ROW(\"arithmetic_space\".\"b\") = ROW(\"arithmetic_space\".\"b\") + ROW(\"arithmetic_space\".\"a\")",
+            "        scan \"arithmetic_space\"",
+        }
+    )
+
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN select "id" from "arithmetic_space" where "a" + "b" > 0 and "b" * "a" = 5]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 210
+        {
+            "projection (\"arithmetic_space\".\"id\" -> \"id\")",
+            "    selection ROW(\"arithmetic_space\".\"a\") + ROW(\"arithmetic_space\".\"b\") > ROW(0) and ROW(\"arithmetic_space\".\"b\") * ROW(\"arithmetic_space\".\"a\") = ROW(5)",
+            "        scan \"arithmetic_space\"",
+        }
+    )
+
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN SELECT *
+FROM
+    (SELECT "id", "a" FROM "arithmetic_space" WHERE "c" < 0
+    UNION ALL
+    SELECT "id", "a" FROM "arithmetic_space" WHERE "c" > 0) AS "t3"
+INNER JOIN
+    (SELECT "id" as "id1" FROM "arithmetic_space2" WHERE "c" < 0) AS "t8"
+ON "t3"."id" + "t3"."a" * 2 = "t8"."id1" + 4
+WHERE "t3"."id" = 2
+
+]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 210
+        {
+            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"a\" -> \"a\", \"t8\".\"id1\" -> \"id1\")",
+            "    selection ROW(\"t3\".\"id\") = ROW(2)",
+            "        join on ROW(\"t3\".\"id\") + ROW(\"t3\".\"a\") * ROW(2) = ROW(\"t8\".\"id1\") + ROW(4)",
+            "            scan \"t3\"",
+            "                union all",
+            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\") < ROW(0)",
+            "                            scan \"arithmetic_space\"",
+            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\") > ROW(0)",
+            "                            scan \"arithmetic_space\"",
+            "            motion [policy: full, generation: none]",
+            "                scan \"t8\"",
+            "                    projection (\"arithmetic_space2\".\"id\" -> \"id1\")",
+            "                        selection ROW(\"arithmetic_space2\".\"c\") < ROW(0)",
+            "                            scan \"arithmetic_space2\"",
+        }
+    )
+
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN SELECT *
+FROM
+    (SELECT "id", "a" FROM "arithmetic_space" WHERE "c" + "a" < 0
+    UNION ALL
+    SELECT "id", "a" FROM "arithmetic_space" WHERE "c" > 0) AS "t3"
+INNER JOIN
+    (SELECT "id" as "id1" FROM "arithmetic_space2" WHERE "c" < 0) AS "t8"
+ON "t3"."id" + "t3"."a" * 2 = "t8"."id1" + 4
+WHERE "t3"."id" = 2
+
+]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 210
+        {
+            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"a\" -> \"a\", \"t8\".\"id1\" -> \"id1\")",
+            "    selection ROW(\"t3\".\"id\") = ROW(2)",
+            "        join on ROW(\"t3\".\"id\") + ROW(\"t3\".\"a\") * ROW(2) = ROW(\"t8\".\"id1\") + ROW(4)",
+            "            scan \"t3\"",
+            "                union all",
+            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\") + ROW(\"arithmetic_space\".\"a\") < ROW(0)",
+            "                            scan \"arithmetic_space\"",
+            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\") > ROW(0)",
+            "                            scan \"arithmetic_space\"",
+            "            motion [policy: full, generation: none]",
+            "                scan \"t8\"",
+            "                    projection (\"arithmetic_space2\".\"id\" -> \"id1\")",
+            "                        selection ROW(\"arithmetic_space2\".\"c\") < ROW(0)",
+            "                            scan \"arithmetic_space2\"",
         }
     )
 end
