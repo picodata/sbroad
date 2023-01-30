@@ -95,6 +95,12 @@ impl ExecutionPlan {
         ))
     }
 
+    pub fn has_segmented_tables(&self) -> bool {
+        self.vtables.as_ref().map_or(false, |vtable_map| {
+            vtable_map.map().values().any(|t| !t.get_index().is_empty())
+        })
+    }
+
     /// Extract policy from motion node
     ///
     /// # Errors
