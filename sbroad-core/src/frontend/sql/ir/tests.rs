@@ -359,5 +359,33 @@ fn front_sql20() {
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_sql_nested_subqueries() {
+    let input = r#"SELECT "a" FROM "t"
+        WHERE "a" in (SELECT "a" FROM "t1" WHERE "a" in (SELECT "b" FROM "t1"))"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."a" -> "a")
+    selection ROW("t"."a") in ROW($1)
+        scan "t"
+subquery $0:
+motion [policy: full, generation: none]
+                            scan
+                                projection ("t1"."b" -> "b")
+                                    scan "t1"
+subquery $1:
+motion [policy: full, generation: none]
+            scan
+                projection ("t1"."a" -> "a")
+                    selection ROW("t1"."a") in ROW($0)
+                        scan "t1"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod params;

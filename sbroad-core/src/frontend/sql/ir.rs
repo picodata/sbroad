@@ -155,12 +155,10 @@ impl SubQuery {
 impl Plan {
     fn gather_sq_for_replacement(&self) -> Result<HashSet<SubQuery, RepeatableState>, SbroadError> {
         let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
-        let top = self.get_top()?;
-        let mut rel_post = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
         // Traverse expression trees of the selection and join nodes.
         // Gather all sub-queries in the boolean expressions there.
-        for (_, rel_id) in rel_post.iter(top) {
-            match self.get_node(rel_id)? {
+        for (id, node) in self.nodes.iter().enumerate() {
+            match node {
                 Node::Relational(
                     Relational::Selection { filter: tree, .. }
                     | Relational::InnerJoin {
@@ -172,16 +170,16 @@ impl Plan {
                         |node| self.nodes.expr_iter(node, false),
                         capacity,
                     );
-                    for (_, id) in expr_post.iter(*tree) {
+                    for (_, op_id) in expr_post.iter(*tree) {
                         if let Node::Expression(Expression::Bool { left, right, .. }) =
-                            self.get_node(id)?
+                            self.get_node(op_id)?
                         {
                             let children = &[*left, *right];
                             for child in children {
                                 if let Node::Relational(Relational::ScanSubQuery { .. }) =
                                     self.get_node(*child)?
                                 {
-                                    set.insert(SubQuery::new(rel_id, id, *child));
+                                    set.insert(SubQuery::new(id, op_id, *child));
                                 }
                             }
                         }

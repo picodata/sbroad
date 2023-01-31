@@ -4,6 +4,7 @@
 
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
+use std::slice::Iter;
 
 use expression::Expression;
 use operator::Relational;
@@ -83,6 +84,10 @@ impl Nodes {
     #[must_use]
     pub fn len(&self) -> usize {
         self.arena.len()
+    }
+
+    pub fn iter(&self) -> Iter<'_, Node> {
+        self.arena.iter()
     }
 
     /// Add new node to arena.
