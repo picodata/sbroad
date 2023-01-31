@@ -9,7 +9,7 @@
    ```bash
       cartridge replicasets setup --file replicasets.yml --bootstrap-vshard
    ```
-1. Generate test data and define the number of records:
+1. Open a folder with a stress test. Generate data and define the number of records:
     ```bash
     ./data_generator.lua 1000
     ```
