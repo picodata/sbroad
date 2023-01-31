@@ -177,7 +177,7 @@ fn invalid_condition() {
 2 |     "identification_number" = 1 "product_code" = 2
   |                                 ^---
   |
-  = expected EOI"#,
+  = expected EOI, Multiply, Divide, Add, or Subtract"#,
         ),
         format!("{ast}"),
     )

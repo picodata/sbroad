@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::slice::Iter;
 
 use expression::Expression;
-use operator::Relational;
+use operator::{Arithmetic, Relational};
 use relation::Table;
 
 use crate::errors::{Action, Entity, SbroadError};
@@ -389,6 +389,21 @@ impl Plan {
         right: usize,
     ) -> Result<usize, SbroadError> {
         self.nodes.add_bool(left, op, right)
+    }
+
+    /// Add rithmetic node to the plan.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the condition node can't append'.
+    pub fn add_arithmetic_to_plan(
+        &mut self,
+        left: usize,
+        op: Arithmetic,
+        right: usize,
+        with_parentheses: bool,
+    ) -> Result<usize, SbroadError> {
+        self.nodes
+            .add_arithmetic_node(left, op, right, with_parentheses)
     }
 
     /// Add unary operator node to the plan.

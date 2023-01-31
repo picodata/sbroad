@@ -84,6 +84,16 @@ impl Chain {
                         _ => (*left, *right, op.clone()),
                     };
 
+                if let Ok(Expression::Arithmetic { .. }) = plan.get_expression_node(left_id) {
+                    self.other.push(expr_id);
+                    return Ok(());
+                }
+
+                if let Ok(Expression::Arithmetic { .. }) = plan.get_expression_node(right_id) {
+                    self.other.push(expr_id);
+                    return Ok(());
+                }
+
                 // If boolean expression contains a reference to an additional
                 //  sub-query, it should be added to the "other" list.
                 let left_sq = plan.get_sub_query_from_row_node(left_id)?;
@@ -267,7 +277,7 @@ impl Plan {
     /// # Errors
     /// - Failed to build an expression subtree for some chain.
     /// - The plan is invalid (some bugs).
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::too_many_lines)]
     pub fn expr_tree_modify_and_chains(
         &mut self,
         expr_id: usize,
@@ -331,6 +341,33 @@ impl Plan {
                                 return Err(SbroadError::Invalid(
                                     Entity::Expression,
                                     Some(format!("expected boolean expression: {expr_mut:?}")),
+                                ));
+                            }
+                        }
+                    }
+                }
+                Expression::Arithmetic { left, right, .. } => {
+                    let children = vec![*left, *right];
+                    for (pos, child) in children.iter().enumerate() {
+                        let chain = chains.get(child);
+                        if let Some(chain) = chain {
+                            let new_child_id = f_to_plan(chain, self)?;
+                            let expr_mut = self.get_mut_expression_node(id)?;
+                            if let Expression::Arithmetic {
+                                left: ref mut left_id,
+                                right: ref mut right_id,
+                                ..
+                            } = expr_mut
+                            {
+                                if pos == 0 {
+                                    *left_id = new_child_id;
+                                } else {
+                                    *right_id = new_child_id;
+                                }
+                            } else {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Expression,
+                                    Some(format!("expected Arithmetic expression: {expr_mut:?}")),
                                 ));
                             }
                         }

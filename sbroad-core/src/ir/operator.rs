@@ -84,6 +84,48 @@ impl Display for Bool {
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum Arithmetic {
+    /// `*`
+    Multiply,
+    /// `/`
+    Divide,
+    /// `+`
+    Add,
+    /// `-`
+    Subtract,
+}
+
+impl Arithmetic {
+    /// Creates `Arithmetic` from the operator string.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the operator is invalid.
+    pub fn from(s: &str) -> Result<Self, SbroadError> {
+        match s.to_lowercase().as_str() {
+            "*" => Ok(Arithmetic::Multiply),
+            "/" => Ok(Arithmetic::Divide),
+            "+" => Ok(Arithmetic::Add),
+            "-" => Ok(Arithmetic::Subtract),
+            _ => Err(SbroadError::Unsupported(Entity::Operator, None)),
+        }
+    }
+}
+
+impl Display for Arithmetic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let op = match &self {
+            Arithmetic::Multiply => "*",
+            Arithmetic::Divide => "/",
+            Arithmetic::Add => "+",
+            Arithmetic::Subtract => "-",
+        };
+
+        write!(f, "{op}")
+    }
+}
+
 /// Unary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
 #[serde(rename_all = "lowercase")]

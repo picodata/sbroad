@@ -7,7 +7,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Bool, Relational, Unary};
+use crate::ir::operator::{Arithmetic, Bool, Relational, Unary};
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
@@ -36,6 +36,26 @@ impl Bool {
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!("bool operator: {s:?}")),
+            )),
+        }
+    }
+}
+
+impl Arithmetic {
+    /// Creates `Arithmetic` from ast node type.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the operator is invalid.
+    #[allow(dead_code)]
+    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
+        match s {
+            Type::Multiply => Ok(Arithmetic::Multiply),
+            Type::Add => Ok(Arithmetic::Add),
+            Type::Divide => Ok(Arithmetic::Divide),
+            Type::Subtract => Ok(Arithmetic::Subtract),
+            _ => Err(SbroadError::Invalid(
+                Entity::Operator,
+                Some(format!("Arithmetic: {s:?}")),
             )),
         }
     }
@@ -320,6 +340,18 @@ impl Plan {
         Ok(())
     }
 
+    // It is necessary to keep parentheses from original sql query
+    // We mark this arithmetic expressions to add in the future `()` as a part of SyntaxData
+    pub(super) fn fix_arithmetic_parentheses(
+        &mut self,
+        arithmetic_expression_ids: &[usize],
+    ) -> Result<(), SbroadError> {
+        for id in arithmetic_expression_ids {
+            self.nodes.set_arithmetic_node_parentheses(*id, true)?;
+        }
+        Ok(())
+    }
+
     fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let mut map = HashMap::new();
         let mut subtree =
@@ -339,6 +371,11 @@ impl Plan {
                     })?;
                 }
                 Expression::Bool {
+                    ref mut left,
+                    ref mut right,
+                    ..
+                }
+                | Expression::Arithmetic {
                     ref mut left,
                     ref mut right,
                     ..

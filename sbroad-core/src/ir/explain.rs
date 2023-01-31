@@ -13,7 +13,7 @@ use crate::ir::transformation::redistribution::{
 };
 use crate::ir::Plan;
 
-use super::operator::{Bool, Unary};
+use super::operator::{Arithmetic, Bool, Unary};
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
 
@@ -133,7 +133,10 @@ impl ColExpr {
                     let row_expr = ColExpr::Row(row);
                     stack.push(row_expr);
                 }
-                Expression::Alias { .. } | Expression::Bool { .. } | Expression::Unary { .. } => {
+                Expression::Alias { .. }
+                | Expression::Bool { .. }
+                | Expression::Arithmetic { .. }
+                | Expression::Unary { .. } => {
                     return Err(SbroadError::Unsupported(
                         Entity::Expression,
                         Some(format!(
@@ -351,6 +354,7 @@ impl Row {
                     }
                 }
                 Expression::Bool { .. }
+                | Expression::Arithmetic { .. }
                 | Expression::Cast { .. }
                 | Expression::Concat { .. }
                 | Expression::StableFunction { .. }
@@ -380,13 +384,18 @@ impl Display for Row {
     }
 }
 
+#[derive(Debug, Serialize)]
+enum BinaryOp {
+    ArithOp(Arithmetic),
+    BoolOp(Bool),
+}
 /// Recursive type which describe `WHERE` cause in explain
 #[derive(Debug, Serialize)]
 enum Selection {
     Row(Row),
     BinaryOp {
         left: Box<Selection>,
-        op: Bool,
+        op: BinaryOp,
         right: Box<Selection>,
     },
     UnaryOp {
@@ -407,7 +416,14 @@ impl Selection {
         let result = match current_node {
             Expression::Bool { left, op, right } => Selection::BinaryOp {
                 left: Box::new(Selection::new(plan, *left, ref_map)?),
-                op: op.clone(),
+                op: BinaryOp::BoolOp(op.clone()),
+                right: Box::new(Selection::new(plan, *right, ref_map)?),
+            },
+            Expression::Arithmetic {
+                left, op, right, ..
+            } => Selection::BinaryOp {
+                left: Box::new(Selection::new(plan, *left, ref_map)?),
+                op: BinaryOp::ArithOp(op.clone()),
                 right: Box::new(Selection::new(plan, *right, ref_map)?),
             },
             Expression::Row { list, .. } => {
@@ -430,6 +446,17 @@ impl Selection {
         };
 
         Ok(result)
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match &self {
+            BinaryOp::ArithOp(a) => a.to_string(),
+            BinaryOp::BoolOp(b) => b.to_string(),
+        };
+
+        write!(f, "{s}")
     }
 }
 

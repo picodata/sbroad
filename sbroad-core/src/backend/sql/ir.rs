@@ -311,6 +311,7 @@ impl ExecutionPlan {
                                 match expr {
                                     Expression::Alias { .. }
                                     | Expression::Bool { .. }
+                                    | Expression::Arithmetic { .. }
                                     | Expression::Cast { .. }
                                     | Expression::Concat { .. }
                                     | Expression::Row { .. }

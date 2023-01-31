@@ -166,7 +166,8 @@ impl Plan {
                         *child = *new_id;
                     }
                 }
-                Expression::Bool { left, right, .. } => {
+                Expression::Bool { left, right, .. }
+                | Expression::Arithmetic { left, right, .. } => {
                     if let Some(new_id) = map.get(left) {
                         *left = *new_id;
                     }

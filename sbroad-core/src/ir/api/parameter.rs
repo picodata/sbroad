@@ -126,6 +126,11 @@ impl Plan {
                         ref right,
                         ..
                     }
+                    | Expression::Arithmetic {
+                        ref left,
+                        ref right,
+                        ..
+                    }
                     | Expression::Concat {
                         ref left,
                         ref right,
@@ -207,6 +212,11 @@ impl Plan {
                         }
                     }
                     Expression::Bool {
+                        ref mut left,
+                        ref mut right,
+                        ..
+                    }
+                    | Expression::Arithmetic {
                         ref mut left,
                         ref mut right,
                         ..

@@ -205,7 +205,9 @@ fn subtree_next<'plan>(
                     }
                     None
                 }
-                Expression::Bool { left, right, .. } | Expression::Concat { left, right } => {
+                Expression::Bool { left, right, .. }
+                | Expression::Arithmetic { left, right, .. }
+                | Expression::Concat { left, right } => {
                     let child_step = *iter.get_child().borrow();
                     if child_step == 0 {
                         *iter.get_child().borrow_mut() += 1;

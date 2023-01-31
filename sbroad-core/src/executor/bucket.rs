@@ -77,6 +77,7 @@ where
         let mut buckets: Vec<Buckets> = Vec::new();
         let ir_plan = self.exec_plan.get_ir_plan();
         let expr = ir_plan.get_expression_node(expr_id)?;
+
         if let Expression::Bool {
             op: Bool::Eq | Bool::In,
             left,
@@ -87,22 +88,30 @@ where
             let pairs = vec![(*left, *right), (*right, *left)];
             for (left_id, right_id) in pairs {
                 let left_expr = ir_plan.get_expression_node(left_id)?;
+
+                if left_expr.is_arithmetic() {
+                    return Ok(Buckets::new_all());
+                }
                 if !left_expr.is_row() {
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
                         Some(format!(
-                            "left side of equality expression is not a row: {left_expr:?}"
+                            "left side of equality expression is not a row or arithmetic: {left_expr:?}"
                         )),
                     ));
                 }
+
                 let right_expr = ir_plan.get_expression_node(right_id)?;
+                if right_expr.is_arithmetic() {
+                    return Ok(Buckets::new_all());
+                }
                 let right_columns = if let Expression::Row { list, .. } = right_expr {
                     list.clone()
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
                         Some(format!(
-                            "right side of equality expression is not a row: {right_expr:?}"
+                            "right side of equality expression is not a row or arithmetic: {right_expr:?}"
                         )),
                     ));
                 };

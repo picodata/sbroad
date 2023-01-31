@@ -657,6 +657,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Failed to set row distribution in the join condition tree.
+    #[allow(clippy::too_many_lines)]
     fn resolve_join_conflicts(
         &mut self,
         rel_id: usize,
@@ -719,6 +720,9 @@ impl Plan {
             let left_expr = self.get_expression_node(bool_op.left)?;
             let right_expr = self.get_expression_node(bool_op.right)?;
             new_inner_policy = match (left_expr, right_expr) {
+                (Expression::Arithmetic { .. }, _) | (_, Expression::Arithmetic { .. }) => {
+                    MotionPolicy::Full
+                }
                 (Expression::Bool { .. }, Expression::Bool { .. }) => {
                     let left_policy = inner_map
                         .get(&bool_op.left)

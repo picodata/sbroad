@@ -386,6 +386,11 @@ impl ExecutionPlan {
                         ref mut right,
                         ..
                     }
+                    | Expression::Arithmetic {
+                        ref mut left,
+                        ref mut right,
+                        ..
+                    }
                     | Expression::Concat {
                         ref mut left,
                         ref mut right,

@@ -54,6 +54,23 @@ pub enum Expression {
         /// Right branch expression node index in the plan node arena.
         right: usize,
     },
+    /// Binary expression returning row result.
+    ///
+    /// Example: `a + b > 42`, `a + b < c + 1`, `1 + 2 != 2 * 2`.
+    Arithmetic {
+        /// Left branch expression node index in the plan node arena.
+        left: usize,
+        /// Arithmetic operator.
+        op: operator::Arithmetic,
+        /// Right branch expression node index in the plan node arena.
+        right: usize,
+        /// Has expr parentheses or not. Important to keep this information
+        /// because we can not add parentheses for all exprs: we parse query
+        /// from the depth and from left to the right and not all arithmetic
+        /// operations are associative, example:
+        /// `(6 - 2) - 1 != 6 - (2 - 1)`, `(8 / 4) / 2 != 8 / (4 / 2))`.
+        with_parentheses: bool,
+    },
     /// Type cast expression.
     ///
     /// Example: `cast(a as text)`.
@@ -228,6 +245,10 @@ impl Expression {
     pub fn is_row(&self) -> bool {
         matches!(self, Expression::Row { .. })
     }
+    #[must_use]
+    pub fn is_arithmetic(&self) -> bool {
+        matches!(self, Expression::Arithmetic { .. })
+    }
 
     /// Replaces parent in the reference node with the new one.
     pub fn replace_parent_in_reference(&mut self, from_id: Option<usize>, to_id: Option<usize>) {
@@ -291,6 +312,73 @@ impl Nodes {
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
+    }
+
+    /// Adds arithmetic node.
+    ///
+    /// # Errors
+    /// - when left or right nodes are invalid
+    pub fn add_arithmetic_node(
+        &mut self,
+        left: usize,
+        op: operator::Arithmetic,
+        right: usize,
+        with_parentheses: bool,
+    ) -> Result<usize, SbroadError> {
+        self.arena.get(left).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!(
+                    "(left child of Arithmetic node) from arena with index {}",
+                    left
+                ),
+            )
+        })?;
+        self.arena.get(right).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!(
+                    "(right child of Arithmetic node) from arena with index {}",
+                    right
+                ),
+            )
+        })?;
+        Ok(self.push(Node::Expression(Expression::Arithmetic {
+            left,
+            op,
+            right,
+            with_parentheses,
+        })))
+    }
+
+    /// Set `with_parentheses` for arithmetic node.
+    ///
+    /// # Errors
+    /// - when left or right nodes are invalid
+    pub fn set_arithmetic_node_parentheses(
+        &mut self,
+        node_id: usize,
+        parentheses_to_set: bool,
+    ) -> Result<(), SbroadError> {
+        let arith_node = self.arena.get_mut(node_id).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(Arithmetic node) from arena with index {node_id}"),
+            )
+        })?;
+
+        if let Node::Expression(Expression::Arithmetic {
+            with_parentheses, ..
+        }) = arith_node
+        {
+            *with_parentheses = parentheses_to_set;
+            Ok(())
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("expected Arithmetic with index {node_id}")),
+            ))
+        }
     }
 
     /// Adds reference node.
@@ -881,6 +969,7 @@ impl Plan {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Bool { .. }
+            | Expression::Arithmetic { .. }
             | Expression::Unary { .. }
             | Expression::Constant {
                 value: Value::Boolean(_) | Value::Null,

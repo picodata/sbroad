@@ -15,7 +15,7 @@ use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Unary};
+use crate::ir::operator::{Arithmetic, Bool, Unary};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -130,6 +130,7 @@ impl Ast for AbstractSyntaxTree {
         let mut col_idx: usize = 0;
 
         let mut betweens: Vec<Between> = Vec::new();
+        let mut arithmetic_expression_ids: Vec<usize> = Vec::new();
 
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
@@ -304,7 +305,7 @@ impl Ast for AbstractSyntaxTree {
                                 } else {
                                     return Err(SbroadError::Invalid(
                                         Entity::Plan,
-                                        Some(format!("left and right plan nodes do not match the AST scan name: {ast_scan_name:?}")),
+                                        Some(format!("left {left_name:?} and right {right_name:?} plan nodes do not match the AST scan name: {ast_scan_name:?}")),
                                     ));
                                 }
                             } else {
@@ -738,6 +739,68 @@ impl Ast for AbstractSyntaxTree {
                     let projection_id = plan.add_proj_internal(plan_child_id, &columns)?;
                     map.add(id, projection_id);
                 }
+                Type::Multiplication | Type::Addition => {
+                    let plan_left_id: usize;
+                    let plan_right_id: usize;
+
+                    let ast_left_id = node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Multiplication or Addition has no children.".into(),
+                        )
+                    })?;
+
+                    // if left child of current multiplication or addition is `(expr)` then
+                    // we need to get expr that is child of `()` and add it to the plan
+                    // also we will mark this expr to add in the future `()`
+                    let ar_left = self.nodes.get_node(*ast_left_id)?;
+                    if ar_left.rule == Type::ArithParentheses {
+                        let arithmetic_id = ar_left.children.first().ok_or_else(|| {
+                            SbroadError::UnexpectedNumberOfValues(
+                                "ArithParentheses  has no children.".into(),
+                            )
+                        })?;
+                        plan_left_id = plan.as_row(map.get(*arithmetic_id)?, &mut rows)?;
+                        arithmetic_expression_ids.push(plan_left_id);
+                    } else {
+                        plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
+                    }
+
+                    let ast_right_id = node.children.get(2).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is right node with index 2 among Multiplication or Addition children".into(),
+                        )
+                    })?;
+
+                    // if left child of current multiplication or addition is `(expr)` then
+                    // we need to get expr that is child of `()` and add it to the plan
+                    // also we will mark this expr to add in the future `()`
+                    let ar_right = self.nodes.get_node(*ast_right_id)?;
+                    if ar_right.rule == Type::ArithParentheses {
+                        let arithmetic_id = ar_right.children.first().ok_or_else(|| {
+                            SbroadError::UnexpectedNumberOfValues(
+                                "ArithParentheses  has no children.".into(),
+                            )
+                        })?;
+                        plan_right_id = plan.as_row(map.get(*arithmetic_id)?, &mut rows)?;
+                        arithmetic_expression_ids.push(plan_right_id);
+                    } else {
+                        plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
+                    }
+
+                    let ast_op_id = node.children.get(1).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is center node (operator) with index 1 among Multiplication or Addition children".into(),
+                        )
+                    })?;
+                    let op_node = self.nodes.get_node(*ast_op_id)?;
+
+                    let op = Arithmetic::from_node_type(&op_node.rule)?;
+                    let cond_id =
+                        plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
+                    map.add(id, cond_id);
+                }
                 Type::Except => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Except has no children.".into())
@@ -848,12 +911,17 @@ impl Ast for AbstractSyntaxTree {
                     map.add(0, map.get(*ast_child_id)?);
                 }
                 Type::AliasName
+                | Type::Add
+                | Type::ArithParentheses
                 | Type::ColumnName
+                | Type::Divide
                 | Type::FunctionName
                 | Type::Length
+                | Type::Multiply
                 | Type::ScanName
                 | Type::Select
                 | Type::SubQueryName
+                | Type::Subtract
                 | Type::TargetColumns
                 | Type::TypeAny
                 | Type::TypeBool
@@ -883,7 +951,7 @@ impl Ast for AbstractSyntaxTree {
         plan.set_top(plan_top_id)?;
         let replaces = plan.replace_sq_with_references()?;
         plan.fix_betweens(&betweens, &replaces)?;
-
+        plan.fix_arithmetic_parentheses(&arithmetic_expression_ids)?;
         Ok(plan)
     }
 }

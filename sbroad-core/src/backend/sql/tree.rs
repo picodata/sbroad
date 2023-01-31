@@ -822,6 +822,38 @@ impl<'p> SyntaxPlan<'p> {
                     };
                     Ok(self.nodes.push_syntax_node(sn))
                 }
+                Expression::Arithmetic {
+                    left,
+                    right,
+                    op,
+                    with_parentheses,
+                } => {
+                    let sn = if *with_parentheses {
+                        SyntaxNode::new_pointer(
+                            id,
+                            Some(self.nodes.push_syntax_node(SyntaxNode::new_open())),
+                            vec![
+                                self.nodes.get_syntax_node_id(*left)?,
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
+                                self.nodes.get_syntax_node_id(*right)?,
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ],
+                        )
+                    } else {
+                        SyntaxNode::new_pointer(
+                            id,
+                            Some(self.nodes.get_syntax_node_id(*left)?),
+                            vec![
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
+                                self.nodes.get_syntax_node_id(*right)?,
+                            ],
+                        )
+                    };
+
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
                 Expression::Unary { child, op, .. } => {
                     let sn = SyntaxNode::new_pointer(
                         id,
