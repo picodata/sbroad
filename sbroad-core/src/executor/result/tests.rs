@@ -1,4 +1,5 @@
 use pretty_assertions::{assert_eq, assert_ne};
+use serde::de::IntoDeserializer;
 use tarantool::decimal;
 
 use super::*;
@@ -48,12 +49,13 @@ fn box_execute_result_serialize() {
 
 #[test]
 fn convert_to_vtable() {
+    let col_names = ["id", "name", "count", "price"];
     let r = ProducerResult {
         metadata: vec![
-            MetadataColumn::new("id".into(), "integer".into()),
-            MetadataColumn::new("name".into(), "string".into()),
-            MetadataColumn::new("count".into(), "unsigned".into()),
-            MetadataColumn::new("price".into(), "decimal".into()),
+            MetadataColumn::new(col_names[0].into(), "integer".into()),
+            MetadataColumn::new(col_names[1].into(), "string".into()),
+            MetadataColumn::new(col_names[2].into(), "unsigned".into()),
+            MetadataColumn::new(col_names[3].into(), "decimal".into()),
         ],
         rows: vec![
             vec![
@@ -74,23 +76,23 @@ fn convert_to_vtable() {
     let mut excepted = VirtualTable::new();
 
     excepted.add_column(Column {
-        name: "id".into(),
+        name: col_names[0].into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
     excepted.add_column(Column {
-        name: "name".into(),
+        name: col_names[1].into(),
         r#type: Type::String,
         role: ColumnRole::User,
     });
     excepted.add_column(Column {
-        name: "count".into(),
+        name: col_names[2].into(),
         r#type: Type::Unsigned,
         role: ColumnRole::User,
     });
 
     excepted.add_column(Column {
-        name: "price".into(),
+        name: col_names[3].into(),
         r#type: Type::Decimal,
         role: ColumnRole::User,
     });
@@ -109,5 +111,9 @@ fn convert_to_vtable() {
         Value::from(decimal!(2.0)),
     ]);
 
-    assert_eq!(excepted, r.as_virtual_table().unwrap());
+    assert_eq!(
+        excepted,
+        r.as_virtual_table(col_names.into_iter().map(|s| s.to_string()).collect())
+            .unwrap()
+    );
 }

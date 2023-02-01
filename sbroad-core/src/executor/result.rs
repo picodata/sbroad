@@ -1,12 +1,15 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
+use std::collections::HashSet;
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::vtable::VirtualTable;
+use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::value::{EncodedValue, Value};
+use crate::ir::Plan;
 
 type ExecutorTuple = Vec<EncodedValue>;
 
@@ -87,11 +90,29 @@ impl ProducerResult {
     ///
     /// # Errors
     /// - convert to virtual table error
-    pub fn as_virtual_table(&self) -> Result<VirtualTable, SbroadError> {
-        let mut result = VirtualTable::new();
+    pub fn as_virtual_table(&self, column_names: Vec<String>) -> Result<VirtualTable, SbroadError> {
+        let mut vtable = VirtualTable::new();
 
         for col in &self.metadata {
-            result.add_column(col.try_into()?);
+            vtable.add_column(col.try_into()?);
+        }
+
+        for (vcol, name) in vtable
+            .get_mut_columns()
+            .iter_mut()
+            .zip(column_names.into_iter().map(|qsq| {
+                if let Some(qs) = qsq.strip_suffix('"') {
+                    if let Some(s) = qs.strip_prefix('"') {
+                        s.to_string()
+                    } else {
+                        qsq
+                    }
+                } else {
+                    qsq
+                }
+            }))
+        {
+            vcol.name = name;
         }
 
         for encoded_tuple in &self.rows {
@@ -99,10 +120,10 @@ impl ProducerResult {
                 .iter()
                 .map(|v| Value::from(v.clone()))
                 .collect();
-            result.add_tuple(tuple);
+            vtable.add_tuple(tuple);
         }
 
-        Ok(result)
+        Ok(vtable)
     }
 }
 

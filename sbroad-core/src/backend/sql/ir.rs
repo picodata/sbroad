@@ -1,7 +1,7 @@
 use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use tarantool::tlua::{self, Push};
 use tarantool::tuple::{FunctionArgs, Tuple};
@@ -22,7 +22,7 @@ use crate::otm::{
 use super::space::TmpSpace;
 use super::tree::SyntaxData;
 
-#[derive(Debug, Eq, Deserialize, Serialize, Push)]
+#[derive(Debug, Eq, Deserialize, Serialize, Push, Clone)]
 pub struct PatternWithParams {
     pub pattern: String,
     pub params: Vec<Value>,
@@ -395,7 +395,15 @@ impl ExecutionPlan {
                         let col_names = vtable
                             .get_columns()
                             .iter()
-                            .map(|c| format!("\"{}\"", c.name))
+                            .map(|c| {
+                                if let (Some('"'), Some('"')) =
+                                    (c.name.chars().next(), c.name.chars().last())
+                                {
+                                    c.name.clone()
+                                } else {
+                                    format!("\"{}\"", c.name)
+                                }
+                            })
                             .collect::<Vec<_>>()
                             .join(",");
                         write!(sql, "SELECT {col_names} FROM \"{name}\"").map_err(|e| {
@@ -423,6 +431,65 @@ impl ExecutionPlan {
         })?;
         // MUST be constructed out of the `syntax.ordered.sql` context scope.
         Ok((PatternWithParams::new(sql, params), tmp_spaces))
+    }
+
+    // column names are from tarantool instance output, it can happen that
+    // column name is different from motion output, for example in query like this:
+    // select s."b" from (select "t.b" from TMP_SPACE) as s
+    // where TMP_SPACE is output from `select "t"."b" from "t"`
+    // in this case we must alias column name to output name.
+    // Because we support only column names like this: scan_name.col_name
+    // where scan_name and col_name do not contain dots (.), we can assume that
+    // column name != output_alias => column_name = X.output_alias, where X is some string
+    // and we also can assume that there are no columns: Y.output_alias and X.output_alias in VTable
+    // because we ensure that output row aliases are unique (see `add_row_of_aliases`).
+    fn construct_proj_cols(&self, vtable: &SyntaxData) -> Result<Vec<String>, SbroadError> {
+        let (vtable, motion_id) = if let SyntaxData::VTable(motion_id) = vtable {
+            (self.get_motion_vtable(*motion_id)?, motion_id)
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::SyntaxNode,
+                Some("Expected VTable!".into()),
+            ));
+        };
+        let plan = self.get_ir_plan();
+        let nodes = &plan.nodes;
+        let aliases = plan
+            .get_relation_node(*motion_id)?
+            .output_alias_position_map(nodes)?
+            .into_keys()
+            .collect::<HashSet<&str>>();
+        let mut proj_cols: Vec<String> = Vec::with_capacity(vtable.get_columns().len());
+        for vcol in vtable.get_columns() {
+            let vcol_q = format!("\"{}\"", vcol.name);
+            // currently if we generate bucket_id for vtable, we do not specify it in the output of motion
+            if vcol.name == "bucket_id" {
+                proj_cols.push(vcol_q);
+                continue;
+            }
+            // aliases can be surrounded by " or not
+            if aliases.contains(vcol_q.as_str()) || aliases.contains(vcol.name.as_str()) {
+                proj_cols.push(vcol_q);
+                continue;
+            } else if vcol.name.contains('.') {
+                if let Some(c) = vcol.name.split('.').last() {
+                    let c_q = format!("\"{c}\"");
+                    if aliases.contains(c_q.as_str()) || aliases.contains(c) {
+                        proj_cols.push(format!("{vcol_q} as {c_q}"));
+                        continue;
+                    }
+                }
+            }
+            return Err(SbroadError::Invalid(
+                Entity::SyntaxNode,
+                Some(format!(
+                    "VTable column with name {} is not found in motion output: {aliases:?}!",
+                    vcol.name
+                )),
+            ));
+        }
+
+        Ok(proj_cols)
     }
 
     /// Checks if the given query subtree modifies data or not.

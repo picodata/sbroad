@@ -31,6 +31,7 @@ use sbroad::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
+use sbroad::ir::expression::Expression;
 use sbroad::ir::helpers::RepeatableState;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
@@ -330,6 +331,7 @@ impl Coordinator for RouterRuntime {
         buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
         let top_id = plan.get_motion_subtree_root(motion_node_id)?;
+        let column_names = plan.get_ir_plan().get_relational_aliases(top_id)?;
         // We should get a motion alias name before we take the subtree in dispatch.
         let alias = plan.get_motion_alias(motion_node_id)?.map(String::from);
         let result = self.dispatch(plan, top_id, buckets)?;
@@ -347,7 +349,7 @@ impl Coordinator for RouterRuntime {
                 .ok_or_else(|| {
                     SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into())
                 })?
-                .as_virtual_table()?
+                .as_virtual_table(column_names)?
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Motion,

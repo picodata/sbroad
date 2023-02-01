@@ -202,3 +202,22 @@ g.test_empty_motion_result = function()
         },
     })
 end
+
+g.test_motion_dotted_name = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[SELECT "sysOp", "product_units" FROM "testing_space"
+    INNER JOIN (SELECT "sysOp" FROM (SELECT "product_units" from "testing_space_hist") as r
+    INNER JOIN "space_simple_shard_key"
+    on r."product_units" = "space_simple_shard_key"."sysOp") as q
+    on q."sysOp" = "testing_space"."product_units"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "Q.sysOp", type = "integer"},
+            {name = "testing_space.product_units", type = "integer"},
+        },
+        rows = {},
+    })
+end

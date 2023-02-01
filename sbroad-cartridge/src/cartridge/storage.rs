@@ -208,6 +208,7 @@ impl StorageRuntime {
         }
 
         let (pattern_with_params, tmp_spaces) = compile_encoded_optional(raw_optional)?;
+        println!("{}", String::from(pattern_with_params.clone()));
         debug!(
             Option::from("execute"),
             &format!(
@@ -273,6 +274,7 @@ impl StorageRuntime {
         );
 
         let (pattern_with_params, tmp_spaces) = compile_encoded_optional(raw_optional)?;
+        println!("{}", String::from(pattern_with_params.clone()));
         let result = match prepare(&pattern_with_params.pattern) {
             Ok(stmt) => {
                 let stmt_id = stmt.id()?;

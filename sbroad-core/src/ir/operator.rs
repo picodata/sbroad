@@ -1096,6 +1096,32 @@ impl Plan {
         }
     }
 
+    /// Gets list of aliases in output tuple of rel_id
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - output is not Expression::Row
+    /// - any node in the output tuple is not Expression::Alias
+    pub fn get_relational_aliases(&self, rel_id: usize) -> Result<Vec<String>, SbroadError> {
+        let output = self.get_relational_output(rel_id)?;
+        if let Expression::Row { list, .. } = self.get_expression_node(output)? {
+            return list
+                .iter()
+                .map(|alias_id| {
+                    self.get_expression_node(*alias_id)?
+                        .get_alias_name()
+                        .map(|a| a.to_string())
+                })
+                .collect::<Result<Vec<String>, SbroadError>>();
+        }
+        return Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!(
+                "expected output of Relational node {rel_id} to be Row"
+            )),
+        ));
+    }
+
     /// Gets children from relational node.
     ///
     /// # Errors

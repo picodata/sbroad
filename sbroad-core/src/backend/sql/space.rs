@@ -45,6 +45,9 @@ impl TmpSpace {
                 .iter()
                 .map(|c| Field::from(c.clone()))
                 .collect();
+
+            println!("cols: {:?}", vtable.get_columns());
+            println!("fields: {fields:?}");
             let pk_name = TmpSpace::generate_pk_name(base, motion_id);
             fields.push(Field::unsigned(pk_name.clone()));
             let fields_len = fields.len() as u32;

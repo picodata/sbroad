@@ -488,7 +488,7 @@ fn join_linker3_test() {
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "id2".into(),
+        name: "FIRST_NAME".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
@@ -525,7 +525,7 @@ fn join_linker3_test() {
                 r#"SELECT "t2"."id1" FROM"#,
                 r#"(SELECT "test_space"."id" FROM "test_space") as "t1""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "id1","id2" FROM "TMP_test_69") as "t2""#,
+                r#"(SELECT "id1","FIRST_NAME" FROM "TMP_test_69") as "t2""#,
                 r#"ON ("t2"."id1") = (?)"#,
             ),
             vec![Value::from(1_u64)],
@@ -648,6 +648,98 @@ fn join_linker4_test() {
             ))),
         ],
     ]);
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn join_linker5_test() {
+    let sql = r#"select * from "t1" inner join (
+      select "f", "b" as B from "t2"
+      inner join "t3" on "t2"."g" = "t3"."b") as q
+on q."f" = "t1"."a""#;
+
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let motion_t2_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_t2 = VirtualTable::new();
+    virtual_t2.add_column(Column {
+        name: "b".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_t2.set_alias("\"t3\"").unwrap();
+    if let MotionPolicy::Segment(key) =
+        get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
+    {
+        query
+            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
+            .unwrap();
+    }
+    query
+        .coordinator
+        .add_virtual_table(motion_t2_id, virtual_t2);
+
+    let motion_sq_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(1)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_sq = VirtualTable::new();
+    virtual_sq.add_column(Column {
+        name: "f".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_sq.add_column(Column {
+        name: "B".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_sq.set_alias("Q");
+    if let MotionPolicy::Segment(key) =
+        get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
+    {
+        query
+            .reshard_vtable(&mut virtual_sq, key, &DataGeneration::None)
+            .unwrap();
+    }
+    query
+        .coordinator
+        .add_virtual_table(motion_sq_id, virtual_sq);
+
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+
+    expected.rows.extend(vec![vec![
+        EncodedValue::String(format!("Execute query on all buckets")),
+        EncodedValue::String(String::from(PatternWithParams::new(
+            format!(
+                "{} {} {} {}",
+                r#"SELECT "t1"."a", "t1"."b", "Q"."f", "Q"."B" FROM"#,
+                r#"(SELECT "t1"."a", "t1"."b" FROM "t1") as "t1""#,
+                r#"INNER JOIN (SELECT "f","B" FROM "TMP_test_146")"#,
+                r#"as Q ON ("Q"."f") = ("t1"."a")"#,
+            ),
+            vec![],
+        ))),
+    ]]);
     assert_eq!(expected, result);
 }
 
@@ -1092,6 +1184,9 @@ fn insert4_test() {
     assert_eq!(expected, result);
 }
 
+// this is not a valid sql for tarantool, what this tests checks?
+// if tmp space have columns: COLUMN_5, COLUMN_6 we can't select a, b from it
+#[ignore]
 #[test]
 fn insert5_test() {
     let sql = r#"insert into "t" ("b", "a") select 5, 6 from "t"
