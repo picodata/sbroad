@@ -182,3 +182,107 @@ fn invalid_condition() {
         format!("{ast}"),
     )
 }
+
+#[test]
+fn sql_arithmetic_ast() {
+    let ast = AbstractSyntaxTree::new("select a from t where a + b = 1").unwrap();
+
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("arithmetic_ast.yaml");
+
+    let s = fs::read_to_string(path).unwrap();
+    let expected_ast = AbstractSyntaxTree::from_yaml(&s).unwrap();
+
+    assert_eq!(expected_ast, ast);
+
+    let top = ast.top.unwrap();
+    let mut dft_post = PostOrder::with_capacity(|node| ast.nodes.ast_iter(node), 64);
+    let mut iter = dft_post.iter(top);
+
+    let (_, table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(table_id).unwrap();
+    assert_eq!(node.rule, Type::Table);
+    assert_eq!(node.value, Some("t".to_string()));
+
+    let (_, scan_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_id).unwrap();
+    assert_eq!(node.rule, Type::Scan);
+
+    let (_, sel_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("a".to_string()));
+
+    let (_, a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(a_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
+    assert_eq!(node.rule, Type::Column);
+
+    let (_, add_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(add_id).unwrap();
+    assert_eq!(node.rule, Type::Add);
+
+    let (_, sel_name_b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_b_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("b".to_string()));
+
+    let (_, b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(b_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
+    assert_eq!(node.rule, Type::Column);
+
+    let (_, addition_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(addition_id).unwrap();
+    assert_eq!(node.rule, Type::Addition);
+
+    let (_, num_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(num_id).unwrap();
+    assert_eq!(node.rule, Type::Unsigned);
+    assert_eq!(node.value, Some("1".to_string()));
+
+    let (_, eq_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(eq_id).unwrap();
+    assert_eq!(node.rule, Type::Eq);
+
+    let (_, selection_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(selection_id).unwrap();
+    assert_eq!(node.rule, Type::Selection);
+
+    let (_, sel_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("a".to_string()));
+
+    let (_, str_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(str_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, alias_name_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(alias_name_id).unwrap();
+    assert_eq!(node.rule, Type::AliasName);
+
+    let (_, alias_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(alias_id).unwrap();
+    assert_eq!(node.rule, Type::Alias);
+
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
+    assert_eq!(node.rule, Type::Column);
+
+    let (_, projection_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(projection_id).unwrap();
+    assert_eq!(node.rule, Type::Projection);
+
+    assert_eq!(None, iter.next());
+}
