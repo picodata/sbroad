@@ -81,8 +81,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
                     Some(format!(
-                        "Restoring parameters filed: node {:?} (id: {}) is not of a constant type",
-                        const_node, id
+                        "Restoring parameters filed: node {const_node:?} (id: {id}) is not of a constant type"
                     )),
                 ));
             }

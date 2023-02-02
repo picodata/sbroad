@@ -8,7 +8,7 @@ use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Arithmetic, Bool, Relational, Unary};
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
+use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};

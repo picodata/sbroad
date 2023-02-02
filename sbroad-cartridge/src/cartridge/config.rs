@@ -97,14 +97,11 @@ impl RouterConfiguration {
     #[allow(clippy::too_many_lines)]
     fn init_table_segments(&mut self, schema: &Yaml) -> Result<(), SbroadError> {
         self.tables.clear();
-        let spaces = match schema["spaces"].as_hash() {
-            Some(v) => v,
-            None => {
-                return Err(SbroadError::Invalid(
-                    Entity::ClusterSchema,
-                    Some("schema.spaces is invalid".into()),
-                ))
-            }
+        let Some(spaces) = schema["spaces"].as_hash() else {
+            return Err(SbroadError::Invalid(
+                Entity::ClusterSchema,
+                Some("schema.spaces is invalid".into()),
+            ))
         };
 
         for (space_name, params) in spaces.iter() {
@@ -129,8 +126,7 @@ impl RouterConfiguration {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
                                     Some(format!(
-                                        "Type not found for columns {} of table {}",
-                                        name, current_space_name
+                                        "Type not found for columns {name} of table {current_space_name}"
                                     )),
                                 ))
                             }
@@ -139,8 +135,7 @@ impl RouterConfiguration {
                         debug!(
                             Option::from("configuration parsing"),
                             &format!(
-                                "Column's original name: {}, qualified name {}",
-                                name, qualified_name
+                                "Column's original name: {name}, qualified name {qualified_name}"
                             ),
                         );
                         let role = if self.get_sharding_column().eq(&qualified_name) {
@@ -169,8 +164,7 @@ impl RouterConfiguration {
                             warn!(
                                 Option::from("configuration parsing"),
                                 &format!(
-                                    "Skip space {}: failed to convert key {:?} to string.",
-                                    current_space_name, k
+                                    "Skip space {current_space_name}: failed to convert key {k:?} to string."
                                 ),
                             );
                             continue;
@@ -192,10 +186,7 @@ impl RouterConfiguration {
                     } else {
                         warn!(
                             Option::from("configuration parsing"),
-                            &format!(
-                                "Skip space {current_space_name}: unknown engine {}.",
-                                engine
-                            ),
+                            &format!("Skip space {current_space_name}: unknown engine {engine}."),
                         );
                         continue;
                     }
@@ -211,8 +202,7 @@ impl RouterConfiguration {
                 debug!(
                     Option::from("configuration parsing"),
                     &format!(
-                        "Table's original name: {}, qualified name {}",
-                        current_space_name, table_name
+                        "Table's original name: {current_space_name}, qualified name {table_name}"
                     ),
                 );
                 let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();

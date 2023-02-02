@@ -511,9 +511,8 @@ where
             Ok(v) => return Ok(Self::Tuple(v)),
             Err(lua) => lua,
         };
-        let lua = match tlua::Null::lua_read_at_position(lua, index) {
-            Ok(_) => return Ok(Self::Null),
-            Err(lua) => lua,
+        let Err(lua) = tlua::Null::lua_read_at_position(lua, index) else {
+            return Ok(Self::Null)
         };
 
         Err(lua)

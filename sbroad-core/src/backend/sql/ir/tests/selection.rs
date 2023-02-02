@@ -43,6 +43,7 @@ fn selection1_oldest() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn selection2_latest() {
     let query = r#"SELECT "product_code" FROM "hash_testing"
         WHERE "identification_number" IN (6659253, -21, 5933116, 8257405, 3676468, 6580234, 9557717)

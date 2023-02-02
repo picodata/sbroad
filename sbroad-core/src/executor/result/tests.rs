@@ -1,5 +1,4 @@
 use pretty_assertions::{assert_eq, assert_ne};
-use serde::de::IntoDeserializer;
 use tarantool::decimal;
 
 use super::*;
@@ -113,7 +112,12 @@ fn convert_to_vtable() {
 
     assert_eq!(
         excepted,
-        r.as_virtual_table(col_names.into_iter().map(|s| s.to_string()).collect())
-            .unwrap()
+        r.as_virtual_table(
+            col_names
+                .into_iter()
+                .map(std::string::ToString::to_string)
+                .collect()
+        )
+        .unwrap()
     );
 }

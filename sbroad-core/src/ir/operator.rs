@@ -287,8 +287,8 @@ impl Relational {
     ///
     /// # Errors
     /// Returns `SbroadError` when the output tuple is invalid.
-    pub fn output_alias_position_map<'rel_op, 'nodes>(
-        &'rel_op self,
+    pub fn output_alias_position_map<'nodes>(
+        &self,
         nodes: &'nodes Nodes,
     ) -> Result<HashMap<&'nodes str, usize, RandomState>, SbroadError> {
         if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
@@ -518,8 +518,7 @@ impl Relational {
                         let rel_node = plan.get_relation_node(rel_id)?;
                         if rel_node == self {
                             return Err(SbroadError::DuplicatedValue(format!(
-                                "Reference to the same node {:?} at position {}",
-                                rel_node, position
+                                "Reference to the same node {rel_node:?} at position {position}"
                             )));
                         }
                         return rel_node.scan_name(plan, *pos);
@@ -581,8 +580,7 @@ impl Plan {
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
             return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "children tuples have mismatching amount of columns in except node: left {}, right {}",
-                left_row_len, right_row_len
+                "children tuples have mismatching amount of columns in except node: left {left_row_len}, right {right_row_len}"
             )));
         }
 
@@ -976,8 +974,7 @@ impl Plan {
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
             return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "children tuples have mismatching amount of columns in union all node: left {}, right {}",
-                left_row_len, right_row_len
+                "children tuples have mismatching amount of columns in union all node: left {left_row_len}, right {right_row_len}"
             )));
         }
 
@@ -1096,12 +1093,12 @@ impl Plan {
         }
     }
 
-    /// Gets list of aliases in output tuple of rel_id
+    /// Gets list of aliases in output tuple of `rel_id`
     ///
     /// # Errors
     /// - node is not relational
-    /// - output is not Expression::Row
-    /// - any node in the output tuple is not Expression::Alias
+    /// - output is not `Expression::Row`
+    /// - any node in the output tuple is not `Expression::Alias`
     pub fn get_relational_aliases(&self, rel_id: usize) -> Result<Vec<String>, SbroadError> {
         let output = self.get_relational_output(rel_id)?;
         if let Expression::Row { list, .. } = self.get_expression_node(output)? {
@@ -1110,7 +1107,7 @@ impl Plan {
                 .map(|alias_id| {
                     self.get_expression_node(*alias_id)?
                         .get_alias_name()
-                        .map(|a| a.to_string())
+                        .map(std::string::ToString::to_string)
                 })
                 .collect::<Result<Vec<String>, SbroadError>>();
         }
@@ -1240,9 +1237,7 @@ impl Plan {
         rel_id: usize,
         sq_id: usize,
     ) -> Result<bool, SbroadError> {
-        let children = if let Some(children) = self.get_relational_children(rel_id)? {
-            children
-        } else {
+        let Some(children) = self.get_relational_children(rel_id)? else {
             return Ok(false);
         };
         match self.get_relation_node(rel_id)? {

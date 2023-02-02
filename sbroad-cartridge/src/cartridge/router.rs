@@ -31,7 +31,6 @@ use sbroad::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
-use sbroad::ir::expression::Expression;
 use sbroad::ir::helpers::RepeatableState;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
@@ -175,7 +174,7 @@ impl Configuration for RouterRuntime {
 }
 
 impl RouterRuntime {
-    fn filter_vtable(&self, plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
+    fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
         if let Some(vtables) = plan.get_mut_vtables() {
             for rc_vtable in vtables.values_mut() {
                 // If the virtual table id hashed by the bucket_id, we can filter its tuples.
@@ -187,7 +186,7 @@ impl RouterRuntime {
         }
     }
 
-    fn encode_plan(&self, exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
+    fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
         // We should not use the cache on the storage if the plan contains virtual tables,
         // as they can contain different amount of tuples that are not taken into account
         // when calculating the cache key.
@@ -216,9 +215,7 @@ impl RouterRuntime {
     ) -> Result<Box<dyn Any>, SbroadError> {
         let query_type = sub_plan.query_type()?;
         let conn_type = sub_plan.connection_type()?;
-        let bucket_set = if let Buckets::Filtered(bucket_set) = buckets {
-            bucket_set
-        } else {
+        let Buckets::Filtered(bucket_set) = buckets else {
             return Err(SbroadError::Invalid(
                 Entity::Buckets,
                 Some(format!("Expected Buckets::Filtered, got {buckets:?}")),
@@ -250,13 +247,19 @@ impl RouterRuntime {
         if let Some((last, other)) = rs_bucket_vec.split_last() {
             for (rs, bucket_ids) in other {
                 let mut rs_plan = sub_plan.clone();
-                self.filter_vtable(&mut rs_plan, bucket_ids);
-                rs_ir.insert(rs.clone(), Message::from(self.encode_plan(rs_plan)?));
+                RouterRuntime::filter_vtable(&mut rs_plan, bucket_ids);
+                rs_ir.insert(
+                    rs.clone(),
+                    Message::from(RouterRuntime::encode_plan(rs_plan)?),
+                );
             }
 
             let (rs, bucket_ids) = last;
-            self.filter_vtable(&mut sub_plan, bucket_ids);
-            rs_ir.insert(rs.clone(), Message::from(self.encode_plan(sub_plan)?));
+            RouterRuntime::filter_vtable(&mut sub_plan, bucket_ids);
+            rs_ir.insert(
+                rs.clone(),
+                Message::from(RouterRuntime::encode_plan(sub_plan)?),
+            );
         }
         self.exec_ir_on_some(rs_ir, query_type, conn_type)
     }
@@ -303,7 +306,7 @@ impl Coordinator for RouterRuntime {
                     let all_buckets = Buckets::new_filtered(bucket_set);
                     return self.exec_with_filtered_buckets(sub_plan, &all_buckets);
                 }
-                let (required, optional) = self.encode_plan(sub_plan)?;
+                let (required, optional) = RouterRuntime::encode_plan(sub_plan)?;
                 self.exec_ir_on_all(required, optional, query_type, conn_type)
             }
         }
@@ -363,8 +366,8 @@ impl Coordinator for RouterRuntime {
         Ok(vtable)
     }
 
-    fn extract_sharding_keys_from_map<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_map<'rec>(
+        &self,
         space: String,
         map: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
@@ -374,8 +377,8 @@ impl Coordinator for RouterRuntime {
         sharding_keys_from_map(&*metadata, &space, map)
     }
 
-    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_tuple<'rec>(
+        &self,
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
@@ -424,8 +427,7 @@ impl RouterRuntime {
                 Err(e) => {
                     error!(Option::from("set_bucket_count"), &format!("{e:?}"));
                     return Err(SbroadError::LuaError(format!(
-                        "Failed lua function load: {}",
-                        e
+                        "Failed lua function load: {e}"
                     )));
                 }
             };
@@ -471,8 +473,7 @@ impl RouterRuntime {
             Err(e) => {
                 error!(Option::from("dql_on_some"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
-                    "Lua error (IR dispatch): {:?}",
-                    e
+                    "Lua error (IR dispatch): {e:?}"
                 )))
             }
         }
@@ -495,8 +496,7 @@ impl RouterRuntime {
             Err(e) => {
                 error!(Option::from("dml_on_some"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
-                    "Lua error (IR dispatch): {:?}",
-                    e
+                    "Lua error (IR dispatch): {e:?}"
                 )))
             }
         }
@@ -540,8 +540,7 @@ impl RouterRuntime {
             Err(e) => {
                 error!(Option::from("dql_on_all"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
-                    "Lua error (dispatch IR): {:?}",
-                    e
+                    "Lua error (dispatch IR): {e:?}"
                 )))
             }
         }
@@ -570,8 +569,7 @@ impl RouterRuntime {
             Err(e) => {
                 error!(Option::from("dml_on_all"), &format!("{e:?}"));
                 Err(SbroadError::LuaError(format!(
-                    "Lua error (dispatch IR): {:?}",
-                    e
+                    "Lua error (dispatch IR): {e:?}"
                 )))
             }
         }

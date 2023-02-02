@@ -264,8 +264,7 @@ where
                             SbroadError::NotFound(
                                 Entity::DistributionKey,
                                 format!(
-                                "failed to find a distribution key column {} in the tuple {:?}.",
-                                pos, tuple
+                                "failed to find a distribution key column {pos} in the tuple {tuple:?}."
                             ),
                             )
                         })?;

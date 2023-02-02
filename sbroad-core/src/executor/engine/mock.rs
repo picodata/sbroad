@@ -386,16 +386,16 @@ impl Coordinator for RouterRuntimeMock {
         Ok(Box::new(explain))
     }
 
-    fn extract_sharding_keys_from_map<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_map<'rec>(
+        &self,
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_map(&*self.metadata.borrow(), &space, args)
     }
 
-    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_tuple<'rec>(
+        &self,
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {

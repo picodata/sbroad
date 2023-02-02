@@ -141,8 +141,8 @@ pub trait Coordinator: Configuration {
     ///
     /// # Errors
     /// - Columns are not present in the sharding key of the space.
-    fn extract_sharding_keys_from_map<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_map<'rec>(
+        &self,
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError>;
@@ -151,8 +151,8 @@ pub trait Coordinator: Configuration {
     ///
     /// # Errors
     /// - Internal error in the table (should never happen, but we recheck).
-    fn extract_sharding_keys_from_tuple<'engine, 'rec>(
-        &'engine self,
+    fn extract_sharding_keys_from_tuple<'rec>(
+        &self,
         space: String,
         args: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError>;
@@ -204,8 +204,7 @@ pub fn sharding_keys_from_tuple<'rec>(
                     return Err(SbroadError::Invalid(
                         Entity::Tuple,
                         Some(format!(
-                            r#"the tuple {:?} contains a "bucket_id" position {} in a sharding key {:?}"#,
-                            tuple, position, sharding_positions
+                            r#"the tuple {tuple:?} contains a "bucket_id" position {position} in a sharding key {sharding_positions:?}"#
                         )),
                     ))
                 }

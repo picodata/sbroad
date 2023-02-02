@@ -535,6 +535,7 @@ fn join_linker3_test() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn join_linker4_test() {
     let sql = r#"SELECT t1."id" FROM "test_space" as t1 JOIN
     (SELECT "FIRST_NAME" as "r_id" FROM "test_space") as t2
@@ -707,7 +708,7 @@ on q."f" = "t1"."a""#;
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    virtual_sq.set_alias("Q");
+    virtual_sq.set_alias("Q").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
@@ -728,7 +729,7 @@ on q."f" = "t1"."a""#;
     let mut expected = ProducerResult::new();
 
     expected.rows.extend(vec![vec![
-        EncodedValue::String(format!("Execute query on all buckets")),
+        EncodedValue::String("Execute query on all buckets".to_string()),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {} {}",
@@ -1184,9 +1185,6 @@ fn insert4_test() {
     assert_eq!(expected, result);
 }
 
-// this is not a valid sql for tarantool, what this tests checks?
-// if tmp space have columns: COLUMN_5, COLUMN_6 we can't select a, b from it
-#[ignore]
 #[test]
 fn insert5_test() {
     let sql = r#"insert into "t" ("b", "a") select 5, 6 from "t"

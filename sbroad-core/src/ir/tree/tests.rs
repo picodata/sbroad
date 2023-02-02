@@ -229,12 +229,9 @@ fn subtree_dfs_post() {
         .clone_row_list()
         .unwrap();
     let alias_id = row_children.first().unwrap();
-    let c_ref_id =
-        if let Expression::Alias { child, .. } = plan.get_expression_node(*alias_id).unwrap() {
-            child
-        } else {
-            panic!("invalid child in the row");
-        };
+    let Expression::Alias { child: c_ref_id, .. } = plan.get_expression_node(*alias_id).unwrap() else {
+        panic!("invalid child in the row");
+    };
 
     // Traverse relational nodes in the plan tree
     let mut dft_post = PostOrder::with_capacity(|node| plan.subtree_iter(node), plan.next_id());

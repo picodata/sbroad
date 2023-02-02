@@ -72,8 +72,7 @@ impl Plan {
         {
             if left_list.len() != right_list.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                    "left and right rows have different number of columns: {:?}, {:?}",
-                    left_expr, right_expr
+                    "left and right rows have different number of columns: {left_expr:?}, {right_expr:?}"
                 )));
             }
             let pairs = left_list

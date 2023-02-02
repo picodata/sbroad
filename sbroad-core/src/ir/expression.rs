@@ -158,14 +158,11 @@ impl Expression {
     /// other than `Row` or a node doesn't know its distribution yet.
     pub fn distribution(&self) -> Result<&Distribution, SbroadError> {
         if let Expression::Row { distribution, .. } = self {
-            let dist = match distribution {
-                Some(d) => d,
-                None => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Distribution,
-                        Some("distribution is uninitialized".into()),
-                    ))
-                }
+            let Some(dist) = distribution else {
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some("distribution is uninitialized".into()),
+                ))
             };
             return Ok(dist);
         }
@@ -296,19 +293,13 @@ impl Nodes {
         self.arena.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!(
-                    "(left child of boolean node) from arena with index {}",
-                    left
-                ),
+                format!("(left child of boolean node) from arena with index {left}"),
             )
         })?;
         self.arena.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!(
-                    "(right child of boolean node) from arena with index {}",
-                    right
-                ),
+                format!("(right child of boolean node) from arena with index {right}"),
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
@@ -328,19 +319,13 @@ impl Nodes {
         self.arena.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!(
-                    "(left child of Arithmetic node) from arena with index {}",
-                    left
-                ),
+                format!("(left child of Arithmetic node) from arena with index {left}"),
             )
         })?;
         self.arena.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!(
-                    "(right child of Arithmetic node) from arena with index {}",
-                    right
-                ),
+                format!("(right child of Arithmetic node) from arena with index {right}"),
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Arithmetic {
@@ -426,8 +411,7 @@ impl Nodes {
             {
                 if !names.insert(String::from(name)) {
                     return Err(SbroadError::DuplicatedValue(format!(
-                        "row can't be added because `{}` already has an alias",
-                        name
+                        "row can't be added because `{name}` already has an alias"
                     )));
                 }
             } else {
@@ -549,8 +533,7 @@ impl Plan {
                                     *sel_child_id
                                 } else {
                                     return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                                        "Selection node has invalid children: {:?}",
-                                        sel_child_ids
+                                        "Selection node has invalid children: {sel_child_ids:?}"
                                     )));
                                 };
                                 let sel_child = self.get_relation_node(sel_child_id)?;
@@ -664,8 +647,7 @@ impl Plan {
                 }
                 if map.insert(name, pos).is_some() {
                     return Err(SbroadError::DuplicatedValue(format!(
-                        "Duplicate column name {} at position {}",
-                        name, pos
+                        "Duplicate column name {name} at position {pos}"
                     )));
                 }
             }
@@ -831,9 +813,7 @@ impl Plan {
             targets, parent, ..
         }) = self.get_node(ref_id)?
         {
-            let referred_rel_id = if let Some(parent) = parent {
-                parent
-            } else {
+            let Some(referred_rel_id) = parent else {
                 return Err(SbroadError::NotFound(
                     Entity::Node,
                     "that is Reference parent".into(),
@@ -863,8 +843,7 @@ impl Plan {
                                 return Ok(referred_rel_id);
                             }
                             return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                                "Relational node {:?} has no children",
-                                rel
+                                "Relational node {rel:?} has no children"
                             )));
                         }
                         _ => {
@@ -934,23 +913,20 @@ impl Plan {
     /// Check that the node is a boolean equality and its children are both rows.
     #[must_use]
     pub fn is_bool_eq_with_rows(&self, node_id: usize) -> bool {
-        let node = match self.get_expression_node(node_id) {
-            Ok(e) => e,
-            Err(_) => return false,
+        let Ok(node) = self.get_expression_node(node_id) else {
+            return false
         };
         if let Expression::Bool { left, op, right } = node {
             if *op != Bool::Eq {
                 return false;
             }
 
-            let left_node = match self.get_expression_node(*left) {
-                Ok(e) => e,
-                Err(_) => return false,
+            let Ok(left_node) = self.get_expression_node(*left) else {
+                return false
             };
 
-            let right_node = match self.get_expression_node(*right) {
-                Ok(e) => e,
-                Err(_) => return false,
+            let Ok(right_node) = self.get_expression_node(*right) else {
+                return false
             };
 
             if left_node.is_row() && right_node.is_row() {

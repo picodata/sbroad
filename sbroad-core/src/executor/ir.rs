@@ -95,6 +95,7 @@ impl ExecutionPlan {
         ))
     }
 
+    #[must_use]
     pub fn has_segmented_tables(&self) -> bool {
         self.vtables.as_ref().map_or(false, |vtable_map| {
             vtable_map.map().values().any(|t| !t.get_index().is_empty())
@@ -341,8 +342,7 @@ impl ExecutionPlan {
                                 Action::Build,
                                 Some(Entity::SubTree),
                                 format!(
-                                    "could not find filter/condition node id {} in the map",
-                                    undo_expr_id
+                                    "could not find filter/condition node id {undo_expr_id} in the map"
                                 ),
                             )
                         })?;
@@ -360,8 +360,7 @@ impl ExecutionPlan {
                                     Action::Build,
                                     Some(Entity::SubTree),
                                     format!(
-                                        "could not find relation {} in the original plan",
-                                        relation
+                                        "could not find relation {relation} in the original plan"
                                     ),
                                 )
                             })?

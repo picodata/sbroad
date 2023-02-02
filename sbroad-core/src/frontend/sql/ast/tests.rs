@@ -180,10 +180,11 @@ fn invalid_condition() {
   = expected EOI, Multiply, Divide, Add, or Subtract"#,
         ),
         format!("{ast}"),
-    )
+    );
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn sql_arithmetic_ast() {
     let ast = AbstractSyntaxTree::new("select a from t where a + b = 1").unwrap();
 

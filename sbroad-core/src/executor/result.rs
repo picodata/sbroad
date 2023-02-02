@@ -1,15 +1,12 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
-use std::collections::HashSet;
 use tarantool::tlua::{self, LuaRead};
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::vtable::VirtualTable;
-use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::value::{EncodedValue, Value};
-use crate::ir::Plan;
 
 type ExecutorTuple = Vec<EncodedValue>;
 

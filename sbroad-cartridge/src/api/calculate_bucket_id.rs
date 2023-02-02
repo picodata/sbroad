@@ -124,8 +124,7 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
             Ok(runtime) => runtime,
             Err(e) => {
                 return tarantool_error(&format!(
-                    "Failed to borrow the runtime while calculating a bucket id: {:?}",
-                    e,
+                    "Failed to borrow the runtime while calculating a bucket id: {e:?}",
                 ));
             }
         };

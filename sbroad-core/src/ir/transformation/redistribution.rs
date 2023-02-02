@@ -223,16 +223,14 @@ impl Plan {
             Ordering::Equal => sq_set.iter().next().map_or_else(
                 || {
                     Err(SbroadError::UnexpectedNumberOfValues(format!(
-                        "Failed to get the first sub-query node from the list of relational nodes: {:?}.",
-                        rel_nodes
+                        "Failed to get the first sub-query node from the list of relational nodes: {rel_nodes:?}."
                     )))
                 },
                 |sq_id| Ok(Some(*sq_id)),
             ),
             Ordering::Less => Ok(None),
             Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "Found multiple sub-queries in a list of relational nodes: {:?}.",
-                rel_nodes
+                "Found multiple sub-queries in a list of relational nodes: {rel_nodes:?}."
             ))),
         }
     }
@@ -799,12 +797,7 @@ impl Plan {
                 };
                 let child_rel = self.get_relation_node(child)?;
                 let child_row = self.get_expression_node(child_rel.output())?;
-                let (list, distribution) = if let Expression::Row {
-                    list, distribution, ..
-                } = child_row
-                {
-                    (list, distribution)
-                } else {
+                let Expression::Row { list, distribution } = child_row else {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
                         Some(

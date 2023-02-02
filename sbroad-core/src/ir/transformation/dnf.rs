@@ -188,9 +188,7 @@ impl Plan {
         stack.push(top_chain);
 
         while let Some(mut chain) = stack.pop() {
-            let expr_id = if let Some(expr_id) = chain.pop_back(self)? {
-                expr_id
-            } else {
+            let Some(expr_id) = chain.pop_back(self)? else {
                 result.push_back(chain);
                 continue;
             };

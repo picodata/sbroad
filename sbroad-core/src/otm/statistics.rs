@@ -67,9 +67,8 @@ impl Default for StatCollector {
 
 impl SpanProcessor for StatCollector {
     fn on_start(&self, span: &mut Span, _cx: &Context) {
-        let span_data = match span.exported_data() {
-            Some(span_data) => span_data,
-            None => return,
+        let Some(span_data) = span.exported_data() else {
+            return
         };
 
         let id: String = match span_data.attributes.get(&"id".into()) {

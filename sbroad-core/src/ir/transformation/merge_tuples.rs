@@ -385,8 +385,7 @@ impl Plan {
                                     *child_id = new_child_id;
                                 } else {
                                     return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                                        "expected a column at position {} in the row {:?}",
-                                        pos, expr_mut
+                                        "expected a column at position {pos} in the row {expr_mut:?}"
                                     )));
                                 }
                             } else {

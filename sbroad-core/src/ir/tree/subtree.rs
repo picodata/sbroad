@@ -239,9 +239,8 @@ fn subtree_next<'plan>(
                         // for selection filter or a join condition, we need to check whether
                         // the reference points to an **additional** sub-query and then traverse
                         // into it. Otherwise, stop traversal.
-                        let parent_id = match exp.get_parent() {
-                            Ok(parent_id) => parent_id,
-                            Err(_) => return None,
+                        let Ok(parent_id) = exp.get_parent() else {
+                            return None
                         };
                         if let Ok(rel_id) = iter
                             .get_plan()

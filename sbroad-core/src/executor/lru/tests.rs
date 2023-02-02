@@ -27,8 +27,7 @@ fn lru3() {
         let value_old = value.clone();
         value.push_str("_old");
         Err(SbroadError::UnexpectedNumberOfValues(format!(
-            "changed {} to {} during cache eviction",
-            value_old, value
+            "changed {value_old} to {value} during cache eviction"
         )))
     });
     let mut cache: LRUCache<usize, String> = LRUCache::new(1, Some(evict_fn)).unwrap();

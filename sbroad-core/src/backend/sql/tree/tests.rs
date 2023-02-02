@@ -91,6 +91,7 @@ fn sql_order_selection() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn sql_arithmetic_plan() {
     // select a from t where a + (b/c + d*e) * f - b = 1
     let mut plan = Plan::default();
@@ -145,12 +146,12 @@ fn sql_arithmetic_plan() {
         .add_arithmetic_to_plan(arith_addition_id2, Arithmetic::Subtract, b_id, false)
         .unwrap();
     // a + (b/c + d*e) * f - b = 1
-    let eq_id = plan
+    let equal_id = plan
         .nodes
         .add_bool(arith_subract_id, Bool::Eq, const_row)
         .unwrap();
     // where a + (b/c + d*e) * f - b = 1
-    let select_id = plan.add_select(&[scan_id], eq_id).unwrap();
+    let select_id = plan.add_select(&[scan_id], equal_id).unwrap();
 
     let proj_id = plan.add_proj(select_id, &["a"]).unwrap();
     plan.set_top(proj_id).unwrap();

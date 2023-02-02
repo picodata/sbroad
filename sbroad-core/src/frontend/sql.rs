@@ -119,9 +119,8 @@ impl Ast for AbstractSyntaxTree {
     {
         let mut plan = Plan::default();
 
-        let top = match self.top {
-            Some(t) => t,
-            None => return Err(SbroadError::Invalid(Entity::AST, None)),
+        let Some(top) = self.top else {
+            return Err(SbroadError::Invalid(Entity::AST, None))
         };
         let capacity = self.nodes.arena.len();
         let mut dft_post = PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
@@ -276,8 +275,7 @@ impl Ast for AbstractSyntaxTree {
                                         return Err(SbroadError::NotFound(
                                             Entity::Column,
                                             format!(
-                                                "'{}' in the join left child '{:?}'",
-                                                col_name, left_name
+                                                "'{col_name}' in the join left child '{left_name:?}'"
                                             ),
                                         ));
                                     }
@@ -297,8 +295,7 @@ impl Ast for AbstractSyntaxTree {
                                         return Err(SbroadError::NotFound(
                                             Entity::Column,
                                             format!(
-                                                "'{}' in the join right child '{:?}'",
-                                                col_name, right_name
+                                                "'{col_name}' in the join right child '{right_name:?}'"
                                             ),
                                         ));
                                     }

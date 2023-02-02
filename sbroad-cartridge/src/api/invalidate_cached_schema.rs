@@ -13,22 +13,19 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
         Ok(runtime) => {
             if let Err(e) = runtime.clear_config() {
                 return tarantool_error(&format!(
-                    "Failed to clear the configuration in the coordinator runtime during cache invalidation: {}",
-                    e
+                    "Failed to clear the configuration in the coordinator runtime during cache invalidation: {e}"
                 ));
             }
             if let Err(e) = runtime.clear_ir_cache() {
                 return tarantool_error(&format!(
-                    "Failed to clear the IR cache on router: {:?}",
-                    e
+                    "Failed to clear the IR cache on router: {e:?}"
                 ));
             }
             ctx.return_mp(&true).unwrap();
             0
         }
         Err(e) => tarantool_error(&format!(
-            "Failed to borrow the runtime while clearing cached configuration on router: {}",
-            e
+            "Failed to borrow the runtime while clearing cached configuration on router: {e}"
         )),
     })
 }
@@ -41,16 +38,14 @@ pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) ->
         Ok(runtime) => {
             if let Err(e) = runtime.clear_config() {
                 return tarantool_error(&format!(
-                    "Failed to clear the configuration on segment during cache invalidation: {:?}",
-                    e
+                    "Failed to clear the configuration on segment during cache invalidation: {e:?}"
                 ));
             }
             ctx.return_mp(&true).unwrap();
             0
         }
         Err(e) => tarantool_error(&format!(
-            "Failed to borrow the runtime while clearing cached configuration on a storage: {}",
-            e
+            "Failed to borrow the runtime while clearing cached configuration on a storage: {e}"
         )),
     })
 }

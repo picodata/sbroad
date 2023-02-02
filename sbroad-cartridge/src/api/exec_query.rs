@@ -50,8 +50,7 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                     Ok(runtime) => runtime,
                     Err(e) => {
                         return tarantool_error(&format!(
-                            "Failed to borrow the runtime while dispatching the query: {}",
-                            e
+                            "Failed to borrow the runtime while dispatching the query: {e}"
                         ));
                     }
                 };
@@ -175,8 +174,7 @@ pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                 Ok(runtime) => runtime,
                 Err(e) => {
                     return tarantool_error(&format!(
-                        "Failed to borrow the runtime while executing the query: {}",
-                        e
+                        "Failed to borrow the runtime while executing the query: {e}"
                     ));
                 }
             };

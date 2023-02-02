@@ -17,8 +17,7 @@ where
             Ok(runtime) => runtime,
             Err(e) => {
                 return tarantool_error(&format!(
-                    "Failed to borrow the runtime while loading configuration: {}",
-                    e
+                    "Failed to borrow the runtime while loading configuration: {e}"
                 ));
             }
         };
@@ -46,15 +45,13 @@ where
                 Ok(runtime) => runtime,
                 Err(e) => {
                     return tarantool_error(&format!(
-                        "Failed to borrow the runtime while updating configuration: {}",
-                        e
+                        "Failed to borrow the runtime while updating configuration: {e}"
                     ));
                 }
             };
             if let Err(e) = runtime.update_config(config) {
                 return tarantool_error(&format!(
-                    "Failed to update the configuration in the runtime during configuration loading: {}",
-                    e
+                    "Failed to update the configuration in the runtime during configuration loading: {e}"
                 ));
             }
             0
