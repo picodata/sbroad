@@ -9,7 +9,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
         ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
-        Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))*? }
+        Projection = { (Asterisk | ArithmeticExpr | Column) ~ ("," ~ (Asterisk | ArithmeticExpr | Column))*? }
             Column = { Alias | Value }
                 Alias = {Value ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }

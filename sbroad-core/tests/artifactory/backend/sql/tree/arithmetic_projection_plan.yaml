@@ -1,0 +1,259 @@
+nodes:
+  arena:
+    # 0
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 0
+    # 1
+    - Expression:
+        Alias:
+          name: a
+          child: 0
+    # 2
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 1
+    # 3
+    - Expression:
+        Alias:
+          name: b
+          child: 2
+    # 4
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 2
+    # 5
+    - Expression:
+        Alias:
+          name: c
+          child: 4
+    # 6
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 3
+    # 7
+    - Expression:
+        Alias:
+          name: d
+          child: 6
+    # 8
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 4
+    # 9
+    - Expression:
+        Alias:
+          name: e
+          child: 8
+    # 10
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 5
+    # 11
+    - Expression:
+        Alias:
+          name: f
+          child: 10
+    # 12
+    - Expression:
+        Reference:
+          parent: 15
+          targets: ~
+          position: 6
+    # 13
+    - Expression:
+        Alias:
+          name: bucket_id
+          child: 12
+    # 14
+    - Expression:
+        Row:
+          list:
+          - 1
+          - 3
+          - 5
+          - 7
+          - 9
+          - 11
+          - 13
+          distribution: ~
+    # 15
+    - Relational:
+        ScanRelation:
+          output: 14
+          relation: t
+    # 16
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 0
+    # 17
+    - Expression:
+        Row:
+          list:
+            - 16
+          distribution: ~
+    # 18
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 1
+    # 19
+    - Expression:
+        Row:
+          list:
+            - 18
+          distribution: ~
+    # 20
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 2
+    # 21
+    - Expression:
+        Row:
+          list:
+            - 20
+          distribution: ~
+    # 22
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 3
+    # 23
+    - Expression:
+        Row:
+          list:
+            - 22
+          distribution: ~
+    # 24
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 4
+    # 25
+    - Expression:
+        Row:
+          list:
+            - 24
+          distribution: ~
+    # 26
+    - Expression:
+        Reference:
+          parent: 35
+          targets: [0]
+          position: 5
+    # 27
+    - Expression:
+        Row:
+          list:
+            - 26
+          distribution: ~
+    # 28
+    - Expression:
+        Arithmetic:
+          left: 19
+          op: divide
+          right: 21
+          with_parentheses: false
+    # 29
+    - Expression:
+        Arithmetic:
+          left: 23
+          op: multiply
+          right: 25
+          with_parentheses: false
+    # 30
+    - Expression:
+        Arithmetic:
+          left: 28
+          op: add
+          right: 29
+          with_parentheses: true
+    # 31
+    - Expression:
+        Arithmetic:
+          left: 30
+          op: multiply
+          right: 27
+          with_parentheses: false
+    # 32
+    - Expression:
+        Arithmetic:
+          left: 17
+          op: add
+          right: 31
+          with_parentheses: false
+    # 33
+    - Expression:
+        Arithmetic:
+          left: 32
+          op: subtract
+          right: 19
+          with_parentheses: false
+    # 34
+    - Expression:
+        Row:
+          list:
+            - 33
+          distribution: ~
+    # 35
+    - Relational:
+        Projection:
+          children:
+            - 15
+          output: 34
+relations:
+  tables:
+    t:
+      columns:
+        - name: a
+          type: Integer
+          role: User
+        - name: b
+          type: Integer
+          role: User
+        - name: c
+          type: Integer
+          role: User
+        - name: d
+          type: Integer
+          role: User
+        - name: e
+          type: Integer
+          role: User
+        - name: f
+          type: Integer
+          role: User
+        - name: bucket_id
+          type: Unsigned
+          role: Sharding
+      key:
+        positions:
+          - 0
+      name: t
+      engine: Memtx
+slices:
+  slices: []
+top: 35
+is_explain: false
+undo:
+  log: {}
+constants: {}

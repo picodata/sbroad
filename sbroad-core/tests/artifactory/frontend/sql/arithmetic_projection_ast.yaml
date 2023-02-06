@@ -1,0 +1,56 @@
+---
+nodes:
+  arena:
+    - children:
+        - 3
+      rule: Select
+      value: ~
+    - children:
+        - 2
+      rule: Scan
+      value: ~
+    - children: []
+      rule: Table
+      value: t
+    - children:
+        - 1
+        - 4
+      rule: Projection
+      value: ~
+    - children:
+        - 9
+        - 8
+        - 5
+      rule: Addition
+      value: ~
+    - children:
+        - 6
+      rule: Column
+      value: ~
+    - children:
+        - 7
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "b"
+    - children: []
+      rule: Add
+      value: "+"
+    - children:
+        - 10
+      rule: Column
+      value: ~
+    - children:
+        - 11
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "a"
+top: 3
+map:
+  10:
+    - 1
+  6:
+    - 1

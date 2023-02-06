@@ -154,12 +154,12 @@ fn invalid_query() {
     let ast = AbstractSyntaxTree::new(query).unwrap_err();
     assert_eq!(
         format!(
-            r#"rule parsing error:  --> 1:8
+            r#"rule parsing error:  --> 1:10
   |
 1 | select a frAm t
-  |        ^---
+  |          ^---
   |
-  = expected Alias, Asterisk, Function, Cast, Concat, True, False, Null, Decimal, Double, Integer, Unsigned, Row, or Parameter"#,
+  = expected Multiply, Divide, Add, or Subtract"#,
         ),
         format!("{ast}"),
     );
@@ -185,7 +185,7 @@ fn invalid_condition() {
 
 #[test]
 #[allow(clippy::similar_names)]
-fn sql_arithmetic_ast() {
+fn sql_arithmetic_selection_ast() {
     let ast = AbstractSyntaxTree::new("select a from t where a + b = 1").unwrap();
 
     let path = Path::new("")
@@ -193,7 +193,7 @@ fn sql_arithmetic_ast() {
         .join("artifactory")
         .join("frontend")
         .join("sql")
-        .join("arithmetic_ast.yaml");
+        .join("arithmetic_selection_ast.yaml");
 
     let s = fs::read_to_string(path).unwrap();
     let expected_ast = AbstractSyntaxTree::from_yaml(&s).unwrap();
@@ -283,6 +283,77 @@ fn sql_arithmetic_ast() {
 
     let (_, projection_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(projection_id).unwrap();
+    assert_eq!(node.rule, Type::Projection);
+
+    assert_eq!(None, iter.next());
+}
+
+#[test]
+fn sql_arithmetic_projection_ast() {
+    let ast = AbstractSyntaxTree::new("select a + b from t").unwrap();
+
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("arithmetic_projection_ast.yaml");
+
+    let s = fs::read_to_string(path).unwrap();
+    let expected_ast = AbstractSyntaxTree::from_yaml(&s).unwrap();
+
+    assert_eq!(expected_ast, ast);
+
+    // note there is no AliasName or Alias type
+    let top = ast.top.unwrap();
+    let mut dft_post = PostOrder::with_capacity(|node| ast.nodes.ast_iter(node), 64);
+    let mut iter = dft_post.iter(top);
+
+    let (_, table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(table_id).unwrap();
+    assert_eq!(node.rule, Type::Table);
+    assert_eq!(node.value, Some("t".to_string()));
+
+    let (_, scan_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_id).unwrap();
+    assert_eq!(node.rule, Type::Scan);
+
+    let (_, sel_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("a".to_string()));
+
+    let (_, a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(a_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
+    assert_eq!(node.rule, Type::Column);
+
+    let (_, add_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(add_id).unwrap();
+    assert_eq!(node.rule, Type::Add);
+
+    let (_, sel_name_b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_b_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("b".to_string()));
+
+    let (_, b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(b_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, col_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(col_id).unwrap();
+    assert_eq!(node.rule, Type::Column);
+
+    let (_, addition_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(addition_id).unwrap();
+    assert_eq!(node.rule, Type::Addition);
+
+    let (_, proj_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
     assert_eq!(None, iter.next());

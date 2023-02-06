@@ -400,25 +400,29 @@ impl Nodes {
     ) -> Result<usize, SbroadError> {
         let mut names: HashSet<String> = HashSet::with_capacity(list.len());
 
-        for alias_node in &list {
-            if let Node::Expression(Expression::Alias { name, .. }) =
-                self.arena.get(*alias_node).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Node,
-                        format!("(Alias) from arena with index {alias_node}"),
-                    )
-                })?
-            {
-                if !names.insert(String::from(name)) {
-                    return Err(SbroadError::DuplicatedValue(format!(
-                        "row can't be added because `{name}` already has an alias"
-                    )));
-                }
-            } else {
-                return Err(SbroadError::Invalid(
+        for node_id in &list {
+            let node = self.arena.get(*node_id).ok_or_else(|| {
+                SbroadError::NotFound(
                     Entity::Node,
-                    Some("node is not Alias type".into()),
-                ));
+                    format!("(Alias or Arithmetic) from arena with index {node_id}"),
+                )
+            })?;
+
+            match node {
+                Node::Expression(Expression::Alias { name, .. }) => {
+                    if !names.insert(String::from(name)) {
+                        return Err(SbroadError::DuplicatedValue(format!(
+                            "row can't be added because `{name}` already has an alias",
+                        )));
+                    }
+                }
+                Node::Expression(Expression::Arithmetic { .. }) => {}
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some("node is not Alias or Arithmetic type".into()),
+                    ));
+                }
             }
         }
         Ok(self.add_row(list, distribution))

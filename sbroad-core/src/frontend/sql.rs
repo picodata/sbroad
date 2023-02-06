@@ -131,6 +131,81 @@ impl Ast for AbstractSyntaxTree {
         let mut betweens: Vec<Between> = Vec::new();
         let mut arithmetic_expression_ids: Vec<usize> = Vec::new();
 
+        let get_arithmetic_plan_id = |plan: &mut Plan,
+                                      map: &Translation,
+                                      arithmetic_expression_ids: &mut Vec<usize>,
+                                      rows: &mut HashSet<usize>,
+                                      ast_id: usize| {
+            let plan_id;
+            // if child of current multiplication or addition is `(expr)` then
+            // we need to get expr that is child of `()` and add it to the plan
+            // also we will mark this expr to add in the future `()`
+            let arithmetic_parse_node = self.nodes.get_node(ast_id)?;
+            if arithmetic_parse_node.rule == Type::ArithParentheses {
+                let arithmetic_id = arithmetic_parse_node.children.first().ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(
+                        "ArithParentheses has no children.".into(),
+                    )
+                })?;
+                plan_id = plan.as_row(map.get(*arithmetic_id)?, rows)?;
+                arithmetic_expression_ids.push(plan_id);
+            } else {
+                plan_id = plan.as_row(map.get(ast_id)?, rows)?;
+            }
+
+            Ok(plan_id)
+        };
+
+        let get_arithmetic_cond_id =
+            |plan: &mut Plan,
+             current_node: &ParseNode,
+             map: &Translation,
+             arithmetic_expression_ids: &mut Vec<usize>,
+             rows: &mut HashSet<usize>| {
+                let ast_left_id = current_node.children.first().ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(
+                        "Multiplication or Addition has no children.".into(),
+                    )
+                })?;
+                let plan_left_id = get_arithmetic_plan_id(
+                    plan,
+                    map,
+                    arithmetic_expression_ids,
+                    rows,
+                    *ast_left_id,
+                )?;
+
+                let ast_right_id = current_node.children.get(2).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Node,
+                        "that is right node with index 2 among Multiplication or Addition children"
+                            .into(),
+                    )
+                })?;
+                let plan_right_id = get_arithmetic_plan_id(
+                    plan,
+                    map,
+                    arithmetic_expression_ids,
+                    rows,
+                    *ast_right_id,
+                )?;
+
+                let ast_op_id = current_node.children.get(1).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Node,
+                        "that is center node (operator) with index 1 among Multiplication or Addition children"
+                            .into(),
+                    )
+                })?;
+
+                let op_node = self.nodes.get_node(*ast_op_id)?;
+                let op = Arithmetic::from_node_type(&op_node.rule)?;
+
+                let cond_id =
+                    plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
+                Ok(cond_id)
+            };
+
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
             match &node.rule {
@@ -722,11 +797,21 @@ impl Ast for AbstractSyntaxTree {
                                     ));
                                 }
                             }
+                            Type::Multiplication | Type::Addition => {
+                                let cond_id = get_arithmetic_cond_id(
+                                    &mut plan,
+                                    ast_column,
+                                    &map,
+                                    &mut arithmetic_expression_ids,
+                                    &mut rows,
+                                )?;
+                                columns.push(cond_id);
+                            }
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Type,
                                     Some(format!(
-                                        "expected a Column in projection, got {:?}.",
+                                        "expected a Column, Asterisk, Multiplication or Addition in projection, got {:?}.",
                                         ast_column.rule
                                     )),
                                 ));
@@ -737,65 +822,13 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, projection_id);
                 }
                 Type::Multiplication | Type::Addition => {
-                    let plan_left_id: usize;
-                    let plan_right_id: usize;
-
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Multiplication or Addition has no children.".into(),
-                        )
-                    })?;
-
-                    // if left child of current multiplication or addition is `(expr)` then
-                    // we need to get expr that is child of `()` and add it to the plan
-                    // also we will mark this expr to add in the future `()`
-                    let ar_left = self.nodes.get_node(*ast_left_id)?;
-                    if ar_left.rule == Type::ArithParentheses {
-                        let arithmetic_id = ar_left.children.first().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "ArithParentheses  has no children.".into(),
-                            )
-                        })?;
-                        plan_left_id = plan.as_row(map.get(*arithmetic_id)?, &mut rows)?;
-                        arithmetic_expression_ids.push(plan_left_id);
-                    } else {
-                        plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    }
-
-                    let ast_right_id = node.children.get(2).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is right node with index 2 among Multiplication or Addition children".into(),
-                        )
-                    })?;
-
-                    // if left child of current multiplication or addition is `(expr)` then
-                    // we need to get expr that is child of `()` and add it to the plan
-                    // also we will mark this expr to add in the future `()`
-                    let ar_right = self.nodes.get_node(*ast_right_id)?;
-                    if ar_right.rule == Type::ArithParentheses {
-                        let arithmetic_id = ar_right.children.first().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "ArithParentheses  has no children.".into(),
-                            )
-                        })?;
-                        plan_right_id = plan.as_row(map.get(*arithmetic_id)?, &mut rows)?;
-                        arithmetic_expression_ids.push(plan_right_id);
-                    } else {
-                        plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
-                    }
-
-                    let ast_op_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is center node (operator) with index 1 among Multiplication or Addition children".into(),
-                        )
-                    })?;
-                    let op_node = self.nodes.get_node(*ast_op_id)?;
-
-                    let op = Arithmetic::from_node_type(&op_node.rule)?;
-                    let cond_id =
-                        plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
+                    let cond_id = get_arithmetic_cond_id(
+                        &mut plan,
+                        node,
+                        &map,
+                        &mut arithmetic_expression_ids,
+                        &mut rows,
+                    )?;
                     map.add(id, cond_id);
                 }
                 Type::Except => {
