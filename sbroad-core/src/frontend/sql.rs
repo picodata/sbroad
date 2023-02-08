@@ -797,21 +797,63 @@ impl Ast for AbstractSyntaxTree {
                                     ));
                                 }
                             }
-                            Type::Multiplication | Type::Addition => {
+                            Type::ArithmeticExprAlias => {
+                                // left child is Addition, Multiplication or ArithParentheses
+                                let ast_left_id = ast_column.children.first().ok_or_else(|| {
+                                    SbroadError::UnexpectedNumberOfValues(
+                                        "ArithmeticExprAlias has no children.".into(),
+                                    )
+                                })?;
+
+                                let arithmetic_parse_node = self.nodes.get_node(*ast_left_id)?;
+                                if arithmetic_parse_node.rule != Type::Multiplication
+                                    && arithmetic_parse_node.rule != Type::Addition
+                                {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some(format!("expected Multiplication or Addition as the first child of ArithmeticExprAlias, got {}",
+                                        arithmetic_parse_node.rule)),
+                                    ));
+                                }
+
                                 let cond_id = get_arithmetic_cond_id(
                                     &mut plan,
-                                    ast_column,
+                                    arithmetic_parse_node,
                                     &map,
                                     &mut arithmetic_expression_ids,
                                     &mut rows,
                                 )?;
-                                columns.push(cond_id);
+
+                                // right child is AliasName if exists
+                                // else means that arithmetic expression does not have an alias
+                                match ast_column.children.get(1).ok_or_else(|| {
+                                    SbroadError::NotFound(
+                                        Entity::Node,
+                                        "that is right node with index 1 among ArithmeticExprAlias children"
+                                            .into(),
+                                    )
+                                }) {
+                                    Ok(ast_name_id) => {
+                                        let name = self
+                                            .nodes
+                                            .get_node(*ast_name_id)?
+                                            .value
+                                            .as_ref()
+                                            .ok_or_else(|| SbroadError::NotFound(Entity::Name, "of Alias".into()))?;
+
+                                        let plan_alias_id = plan
+                                            .nodes
+                                            .add_alias(&normalize_name_from_sql(name), cond_id)?;
+                                        columns.push(plan_alias_id);
+                                    },
+                                    Err(_) => { columns.push(cond_id); },
+                                }
                             }
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Type,
                                     Some(format!(
-                                        "expected a Column, Asterisk, Multiplication or Addition in projection, got {:?}.",
+                                        "expected a Column, Asterisk, ArithmeticExprAlias in projection, got {:?}.",
                                         ast_column.rule
                                     )),
                                 ));
@@ -942,6 +984,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::AliasName
                 | Type::Add
+                | Type::ArithmeticExprAlias
                 | Type::ArithParentheses
                 | Type::ColumnName
                 | Type::Divide

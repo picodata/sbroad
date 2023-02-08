@@ -222,10 +222,6 @@ fn sql_arithmetic_selection_ast() {
     let node = ast.nodes.get_node(a_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, col_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(col_id).unwrap();
-    assert_eq!(node.rule, Type::Column);
-
     let (_, add_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(add_id).unwrap();
     assert_eq!(node.rule, Type::Add);
@@ -238,10 +234,6 @@ fn sql_arithmetic_selection_ast() {
     let (_, b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(b_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
-
-    let (_, col_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(col_id).unwrap();
-    assert_eq!(node.rule, Type::Column);
 
     let (_, addition_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(addition_id).unwrap();
@@ -327,9 +319,72 @@ fn sql_arithmetic_projection_ast() {
     let node = ast.nodes.get_node(a_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, col_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(col_id).unwrap();
-    assert_eq!(node.rule, Type::Column);
+    let (_, add_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(add_id).unwrap();
+    assert_eq!(node.rule, Type::Add);
+
+    let (_, sel_name_b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_b_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("b".to_string()));
+
+    let (_, b_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(b_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
+
+    let (_, addition_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(addition_id).unwrap();
+    assert_eq!(node.rule, Type::Addition);
+
+    let (_, arithm_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(arithm_id).unwrap();
+    assert_eq!(node.rule, Type::ArithmeticExprAlias);
+
+    let (_, proj_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(proj_id).unwrap();
+    assert_eq!(node.rule, Type::Projection);
+
+    assert_eq!(None, iter.next());
+}
+
+#[test]
+fn sql_arithmetic_projection_alias_ast() {
+    let ast = AbstractSyntaxTree::new("select a as alias1 + b as alias2 from t").unwrap_err();
+    assert_eq!(
+        format!(
+            r#"rule parsing error:  --> 1:10
+  |
+1 | select a as alias1 + b as alias2 from t
+  |          ^---
+  |
+  = expected Multiply, Divide, Add, or Subtract"#,
+        ),
+        format!("{ast}"),
+    );
+
+    let ast = AbstractSyntaxTree::new("select a + b as sum from t").unwrap();
+
+    let top = ast.top.unwrap();
+    let mut dft_post = PostOrder::with_capacity(|node| ast.nodes.ast_iter(node), 64);
+    let mut iter = dft_post.iter(top);
+
+    let (_, table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(table_id).unwrap();
+    assert_eq!(node.rule, Type::Table);
+    assert_eq!(node.value, Some("t".to_string()));
+
+    let (_, scan_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_id).unwrap();
+    assert_eq!(node.rule, Type::Scan);
+
+    let (_, sel_name_a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(sel_name_a_id).unwrap();
+    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.value, Some("a".to_string()));
+
+    let (_, a_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(a_id).unwrap();
+    assert_eq!(node.rule, Type::Reference);
 
     let (_, add_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(add_id).unwrap();
@@ -346,11 +401,16 @@ fn sql_arithmetic_projection_ast() {
 
     let (_, col_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(col_id).unwrap();
-    assert_eq!(node.rule, Type::Column);
-
-    let (_, addition_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(addition_id).unwrap();
     assert_eq!(node.rule, Type::Addition);
+
+    let (_, alias_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(alias_id).unwrap();
+    assert_eq!(node.rule, Type::AliasName);
+    assert_eq!(node.value, Some("sum".into()));
+
+    let (_, arithm_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(arithm_id).unwrap();
+    assert_eq!(node.rule, Type::ArithmeticExprAlias);
 
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();

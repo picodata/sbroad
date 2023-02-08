@@ -6,6 +6,7 @@
 extern crate pest;
 
 use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::fmt;
 use std::mem::swap;
 
 use pest::iterators::Pair;
@@ -30,6 +31,7 @@ pub enum Type {
     AliasName,
     And,
     ArithmeticExpr,
+    ArithmeticExprAlias,
     ArithParentheses,
     Asterisk,
     Between,
@@ -110,6 +112,7 @@ impl Type {
             Rule::AliasName => Ok(Type::AliasName),
             Rule::And => Ok(Type::And),
             Rule::ArithmeticExpr => Ok(Type::ArithmeticExpr),
+            Rule::ArithmeticExprAlias => Ok(Type::ArithmeticExprAlias),
             Rule::ArithParentheses => Ok(Type::ArithParentheses),
             Rule::Asterisk => Ok(Type::Asterisk),
             Rule::Between => Ok(Type::Between),
@@ -182,6 +185,89 @@ impl Type {
                 Some("got unexpected rule".into()),
             )),
         }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let p = match self {
+            Type::Add => "Add".to_string(),
+            Type::Addition => "Addition".to_string(),
+            Type::Alias => "Alias".to_string(),
+            Type::AliasName => "AliasName".to_string(),
+            Type::And => "And".to_string(),
+            Type::ArithmeticExpr => "ArithmeticExpr".to_string(),
+            Type::ArithmeticExprAlias => "ArithmeticExprAlias".to_string(),
+            Type::ArithParentheses => "ArithParentheses".to_string(),
+            Type::Asterisk => "Asterisk".to_string(),
+            Type::Between => "Between".to_string(),
+            Type::Cast => "Cast".to_string(),
+            Type::Column => "Column".to_string(),
+            Type::ColumnName => "ColumnName".to_string(),
+            Type::Concat => "Concat".to_string(),
+            Type::Condition => "Condition".to_string(),
+            Type::Decimal => "Decimal".to_string(),
+            Type::Divide => "Divide".to_string(),
+            Type::Double => "Double".to_string(),
+            Type::Eq => "Eq".to_string(),
+            Type::Except => "Except".to_string(),
+            Type::Explain => "Explain".to_string(),
+            Type::False => "False".to_string(),
+            Type::Function => "Function".to_string(),
+            Type::FunctionName => "FunctionName".to_string(),
+            Type::Gt => "Gt".to_string(),
+            Type::GtEq => "GtEq".to_string(),
+            Type::In => "In".to_string(),
+            Type::InnerJoin => "InnerJoin".to_string(),
+            Type::Insert => "Insert".to_string(),
+            Type::Integer => "Integer".to_string(),
+            Type::IsNotNull => "IsNotNull".to_string(),
+            Type::IsNull => "IsNull".to_string(),
+            Type::Length => "Length".to_string(),
+            Type::Lt => "Lt".to_string(),
+            Type::LtEq => "LtEq".to_string(),
+            Type::Multiplication => "Multiplication".to_string(),
+            Type::Multiply => "Multiply".to_string(),
+            Type::Name => "Name".to_string(),
+            Type::NotEq => "NotEq".to_string(),
+            Type::NotIn => "NotIn".to_string(),
+            Type::Null => "Null".to_string(),
+            Type::Or => "Or".to_string(),
+            Type::Parameter => "Parameter".to_string(),
+            Type::Parentheses => "Parentheses".to_string(),
+            Type::Primary => "Primary".to_string(),
+            Type::Projection => "Projection".to_string(),
+            Type::Reference => "Reference".to_string(),
+            Type::Row => "Row".to_string(),
+            Type::Scan => "Scan".to_string(),
+            Type::ScanName => "ScanName".to_string(),
+            Type::Select => "Select".to_string(),
+            Type::Selection => "Selection".to_string(),
+            Type::String => "String".to_string(),
+            Type::SubQuery => "SubQuery".to_string(),
+            Type::SubQueryName => "SubQueryName".to_string(),
+            Type::Subtract => "Subtract".to_string(),
+            Type::Table => "Table".to_string(),
+            Type::TargetColumns => "TargetColumns".to_string(),
+            Type::True => "True".to_string(),
+            Type::TypeAny => "TypeAny".to_string(),
+            Type::TypeBool => "TypeBool".to_string(),
+            Type::TypeDecimal => "TypeDecimal".to_string(),
+            Type::TypeDouble => "TypeDouble".to_string(),
+            Type::TypeInt => "TypeInt".to_string(),
+            Type::TypeNumber => "TypeNumber".to_string(),
+            Type::TypeScalar => "TypeScalar".to_string(),
+            Type::TypeString => "TypeString".to_string(),
+            Type::TypeText => "TypeText".to_string(),
+            Type::TypeUnsigned => "TypeUnsigned".to_string(),
+            Type::TypeVarchar => "TypeVarchar".to_string(),
+            Type::UnionAll => "UnionAll".to_string(),
+            Type::Unsigned => "Unsigned".to_string(),
+            Type::Value => "Value".to_string(),
+            Type::Values => "Values".to_string(),
+            Type::ValuesRow => "ValuesRow".to_string(),
+        };
+        write!(f, "{p}")
     }
 }
 

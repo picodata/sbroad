@@ -218,6 +218,16 @@ end
 g2.test_arithmetic_invalid = function()
     local api = cluster:server("api-1").net_box
 
+    local _, err = api:call("sbroad.execute", {
+        [[select "id" as "alias1" + "a" as "alias2" from "arithmetic_space"]], {}
+    })
+    t.assert_str_contains(tostring(err), "rule parsing error")
+
+    local _, err = api:call("sbroad.execute", {
+        [[select ("id" + "a") as "alias1" + "b" as "alias2" from "arithmetic_space"]], {}
+    })
+    t.assert_str_contains(tostring(err), "rule parsing error")
+
     local _, err = api:call("sbroad.execute", { [[select "id" % 2 from "arithmetic_space"]], {} })
     t.assert_str_contains(tostring(err), "rule parsing error")
 

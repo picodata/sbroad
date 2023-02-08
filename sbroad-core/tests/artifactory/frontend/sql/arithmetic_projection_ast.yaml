@@ -18,14 +18,14 @@ nodes:
       rule: Projection
       value: ~
     - children:
-        - 9
-        - 8
-        - 5
-      rule: Addition
+      - 5
+      rule: ArithmeticExprAlias
       value: ~
     - children:
+        - 9
+        - 8
         - 6
-      rule: Column
+      rule: Addition
       value: ~
     - children:
         - 7
@@ -39,10 +39,6 @@ nodes:
       value: "+"
     - children:
         - 10
-      rule: Column
-      value: ~
-    - children:
-        - 11
       rule: Reference
       value: ~
     - children: []
@@ -50,7 +46,7 @@ nodes:
       value: "a"
 top: 3
 map:
-  10:
-    - 1
   6:
+    - 1
+  9:
     - 1

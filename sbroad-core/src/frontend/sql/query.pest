@@ -9,9 +9,10 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
         ^"on" ~ Condition)? ~ (^"where" ~ Selection)?
     }
-        Projection = { (Asterisk | ArithmeticExpr | Column) ~ ("," ~ (Asterisk | ArithmeticExpr | Column))*? }
+        Projection = { (Asterisk | ArithmeticExprAlias | Column) ~ ("," ~ (Asterisk | ArithmeticExprAlias | Column))*? }
             Column = { Alias | Value }
                 Alias = {Value ~ ^"as" ~ AliasName }
+                ArithmeticExprAlias = { ArithmeticExpr ~ (^"as" ~ AliasName)? }
                 AliasName = @{ Name }
                 Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
                     ColumnName = @{ Name }
@@ -33,7 +34,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
 
 ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
     ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
-    ArithELeft = _{ ArithParentheses | Column }
+    ArithELeft = _{ ArithParentheses | Value }
     Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
         MultiplicationRight = _{ Multiplication | ArithELeft }
     Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
