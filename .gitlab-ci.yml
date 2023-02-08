@@ -48,8 +48,6 @@ bench:
 
 deploy-luarocks:
     stage: deploy
-    tags:
-        - shell
     only:
         - web
         - tags
