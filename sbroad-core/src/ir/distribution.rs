@@ -1,6 +1,6 @@
 //! Tuple distribution module.
 
-use ahash::RandomState;
+use ahash::{AHashMap, RandomState};
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -215,6 +215,27 @@ impl Iterator for ReferredNodes {
     }
 }
 
+/// Helper structure to get the column position
+/// in the child node.
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct ChildColumnReference {
+    /// Child node id.
+    node_id: usize,
+    /// Column position in the child node.
+    column_position: usize,
+}
+
+impl From<(usize, usize)> for ChildColumnReference {
+    fn from((node_id, column_position): (usize, usize)) -> Self {
+        ChildColumnReference {
+            node_id,
+            column_position,
+        }
+    }
+}
+
+type ParentColumnPosition = usize;
+
 impl Plan {
     /// Calculate and set tuple distribution.
     ///
@@ -257,10 +278,10 @@ impl Plan {
         if let Some(parent_children) = parent.children() {
             // Set of the referred relational nodes in the row.
             let mut ref_nodes = ReferredNodes::new();
-            // Mapping for the referred columns in the row.
-            let mut ref_map: HashMap<(usize, usize), usize, RandomState> =
-                HashMap::with_hasher(RandomState::new());
-            for (pos, id) in row_children.iter().enumerate() {
+            // Child node columns referred by the parent node columns in its output tuple.
+            // We'll need it later to deal with the `Segment` distribution.
+            let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
+            for (parent_column_pos, id) in row_children.iter().enumerate() {
                 let child_id = row_child_id(*id)?;
                 if let Expression::Reference {
                     targets, position, ..
@@ -282,7 +303,7 @@ impl Plan {
                             )
                         })?;
                         ref_nodes.append(referred_id);
-                        ref_map.insert((referred_id, *position), pos);
+                        ref_map.insert((referred_id, *position).into(), parent_column_pos);
                     }
                 }
             }
@@ -378,7 +399,7 @@ impl Plan {
     fn dist_from_child(
         &self,
         child_rel_node: usize,
-        child_pos_map: &HashMap<(usize, usize), usize, RandomState>,
+        child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
     ) -> Result<Distribution, SbroadError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
             if let Node::Expression(Expression::Row {
@@ -400,12 +421,13 @@ impl Plan {
                         for key in keys.iter() {
                             let mut new_key: Key = Key::new(Vec::new());
                             let all_found = key.positions.iter().all(|pos| {
-                                child_pos_map
-                                    .get(&(child_rel_node, *pos))
-                                    .map_or(false, |v| {
+                                child_pos_map.get(&(child_rel_node, *pos).into()).map_or(
+                                    false,
+                                    |v| {
                                         new_key.positions.push(*v);
                                         true
-                                    })
+                                    },
+                                )
                             });
 
                             if all_found {
@@ -478,7 +500,7 @@ impl Plan {
 
     fn set_two_children_node_dist(
         &mut self,
-        child_pos_map: &HashMap<(usize, usize), usize, RandomState>,
+        child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
         left_id: usize,
         right_id: usize,
         parent_id: usize,
