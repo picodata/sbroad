@@ -9,9 +9,9 @@
    ```bash
       cartridge replicasets setup --file replicasets.yml --bootstrap-vshard
    ```
-1. Open a folder with a stress test. Generate data and define the number of records:
+1. Open a folder with a stress test. Initialize the schema and (optionally) populate the data with a define the number of records:
     ```bash
-    ./data_generator.lua 1000
+    ./init.lua 1000
     ```
 1. Clone `asbest` repository to an arbitrary local directory
    ```

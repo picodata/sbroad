@@ -12,13 +12,21 @@ if #params ~= 1 then
     os.exit(1)
 end
 
+local function fail_if_error(err, msg)
+    if err ~= nil then
+        error(msg .. ": " .. err)
+        os.exit(1)
+    end
+end
+
 local start_time = clock.time();
 
 local record_count = params[1]
 
 local api = nb.connect("admin:app-cluster-cookie@localhost:3301")
 
-api:eval("function set_schema(s) local cartridge = require('cartridge'); cartridge.set_schema(s) end")
+local _, err = api:eval("function set_schema(s) local cartridge = require('cartridge'); cartridge.set_schema(s) end")
+fail_if_error(err, "Failed to create set_schema function")
 
 local config = {
     spaces = {
@@ -1285,22 +1293,24 @@ local config = {
     }
 }
 
-local _, err = api:call("set_schema", { yaml.encode(config) })
-if err ~= nil then
-    print(err)
-end
-print("table was created")
+_, err = api:call("set_schema", { yaml.encode(config) })
+fail_if_error(err, "Failed to set schema")
+print("Initialized the schema")
 
-fiber.sleep(3)
-print("data loading started")
+fiber.sleep(1)
+print("Start data loading")
 
 local storage1 = nb.connect("admin:app-cluster-cookie@localhost:3302")
 local storage2 = nb.connect("admin:app-cluster-cookie@localhost:3304")
 
-storage1:eval("return box.space.vehicle_actual:truncate();")
-storage1:eval("return box.space.vehicle_history:truncate();")
-storage2:eval("return box.space.vehicle_actual:truncate();")
-storage2:eval("return box.space.vehicle_history:truncate();")
+_, err = storage1:eval("return box.space.vehicle_actual:truncate();")
+fail_if_error(err, "Failed to truncate vehicle_actual on storage1")
+_, err = storage1:eval("return box.space.vehicle_history:truncate();")
+fail_if_error(err, "Failed to truncate vehicle_history on storage1")
+_, err = storage2:eval("return box.space.vehicle_actual:truncate();")
+fail_if_error(err, "Failed to truncate vehicle_actual on storage2")
+_, err = storage2:eval("return box.space.vehicle_history:truncate();")
+fail_if_error(err, "Failed to truncate vehicle_history on storage2")
 
 local pattern = [[
 insert into "%s" (
@@ -1440,9 +1450,7 @@ for i = 1, record_count, 1 do
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",
             332, 332, 0
         } })
-    if err then
-        print(err)
-    end
+        fail_if_error(err, "Failed to insert record into vehicle_actual")
 
     local pattern_vehicle_history = string.format(pattern, "vehicle_history")
     _, err = api:call("sbroad.execute", {
@@ -1460,14 +1468,12 @@ for i = 1, record_count, 1 do
             "1", "1", "1", "1", "1", "1", "1", "1", "1", "1",
             332, 332, 0
         } })
-    if err then
-        print(err)
-    end
+        fail_if_error(err, "Failed to insert record into vehicle_history")
 end
 api:close()
 
-print("data loading finished")
-fiber.sleep(3)
+print("Finish data loading")
+fiber.sleep(1)
 
 print(
         string.format(
