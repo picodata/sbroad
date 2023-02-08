@@ -18,17 +18,29 @@ nodes:
       rule: Projection
       value: ~
     - children:
-      - 12
+      - 15
       rule: Column
       value: ~
     - children:
-        - 9
         - 8
         - 6
-      rule: Addition
+      rule: Gt
       value: ~
     - children:
         - 7
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "c"
+    - children:
+        - 12
+        - 11
+        - 9
+      rule: Addition
+      value: ~
+    - children:
+        - 10
       rule: Reference
       value: ~
     - children: []
@@ -38,7 +50,7 @@ nodes:
       rule: Add
       value: "+"
     - children:
-        - 10
+        - 13
       rule: Reference
       value: ~
     - children: []
@@ -49,7 +61,7 @@ nodes:
       value: "COLUMN_1"
     - children:
         - 5
-        - 11
+        - 14
       rule: Alias
       value: ~
 top: 3
@@ -57,4 +69,6 @@ map:
   6:
     - 1
   9:
+    - 1
+  12:
     - 1

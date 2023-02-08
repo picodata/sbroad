@@ -290,3 +290,63 @@ WHERE "t3"."id" = 2
         }
     )
 end
+
+g.test_explain_arithmetic_projection = function()
+    local api = cluster:server("api-1").net_box
+
+    -- projection of arithmetic expr with column and constant as operands
+    local r, err = api:call("sbroad.execute", {
+        [[EXPLAIN select "id" + 2 from "arithmetic_space"]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        {
+            "projection ((\"arithmetic_space\".\"id\") + (2) -> \"COLUMN_1\")",
+            "    scan \"arithmetic_space\"",
+        }
+    )
+
+    -- projection of arithmetic expr with columns as operands
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN select "a" + "b" * "c" from "arithmetic_space"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 140
+        {
+            "projection ((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\") * (\"arithmetic_space\".\"c\") -> \"COLUMN_1\")",
+            "    scan \"arithmetic_space\"",
+        }
+    )
+
+    -- projection of arithmetic expr with parentheses
+    local r, err = api:call("sbroad.execute", { [[EXPLAIN select ("a" + "b") * "c" from "arithmetic_space"]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 140
+        {
+            "projection (((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\")) * (\"arithmetic_space\".\"c\") -> \"COLUMN_1\")",
+            "    scan \"arithmetic_space\"",
+        }
+    )
+end
+
+g.test_explain_arbitrary_projection = function()
+    local api = cluster:server("api-1").net_box
+
+    -- currently explain does not support projection with bool and unary expressions
+
+    -- arbitraty expression consisted of bool
+    local _, err = api:call("sbroad.execute", {
+        [[EXPLAIN select "a" > "b" from "arithmetic_space"]], {}
+    })
+    t.assert_str_contains(tostring(err), "is not supported for yet")
+
+    -- arbitraty expression consisted of unary
+    local _, err = api:call("sbroad.execute", { [[EXPLAIN select "a" is null from "arithmetic_space"]], {} })
+    t.assert_str_contains(tostring(err), "is not supported for yet")
+end

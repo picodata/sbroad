@@ -416,11 +416,15 @@ impl Nodes {
                         )));
                     }
                 }
-                Node::Expression(Expression::Arithmetic { .. }) => {}
+                Node::Expression(
+                    Expression::Arithmetic { .. }
+                    | Expression::Bool { .. }
+                    | Expression::Unary { .. },
+                ) => {}
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
-                        Some("node is not Alias or Arithmetic type".into()),
+                        Some("node is not Alias, Arithmetic, Bool or Unary Expression type".into()),
                     ));
                 }
             }

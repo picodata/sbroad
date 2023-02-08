@@ -10,10 +10,9 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         ^"on" ~ Condition)? ~ (^"where" ~ Selection)? ~
         (^"group" ~ ^"by" ~ GroupBy)?
     }
-        Projection = { (Asterisk | ArithmeticExprAlias | Column) ~ ("," ~ (Asterisk | ArithmeticExprAlias | Column))*? }
-            Column = { Alias | Value }
-                Alias = {Value ~ ^"as" ~ AliasName }
-                ArithmeticExprAlias = { ArithmeticExpr ~ (^"as" ~ AliasName)? }
+        Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))*? }
+            Column = { Alias | Expr | ArithmeticExpr | Value }
+                Alias = {(Expr | Expr | ArithmeticExpr | Value) ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }
                 Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
                     ColumnName = @{ Name }

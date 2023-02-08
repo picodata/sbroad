@@ -4,7 +4,7 @@ use std::path::Path;
 use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use crate::ir::operator::{Arithmetic, Bool};
+use crate::ir::operator::{Arithmetic, Bool, Unary};
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
@@ -456,6 +456,132 @@ fn sql_arithmetic_projection_plan() {
     assert_eq!(Some(&SyntaxData::From), nodes_iter.next());
     // scan
     assert_eq!(Some(&SyntaxData::PlanId(15)), nodes_iter.next());
+
+    assert_eq!(None, nodes_iter.next());
+}
+
+#[test]
+fn sql_arbitrary_projection_plan() {
+    // select a + b > c and d is not null from t
+    let mut plan = Plan::default();
+    let t = Table::new_seg(
+        "t",
+        vec![
+            Column::new("a", Type::Integer, ColumnRole::User),
+            Column::new("b", Type::Integer, ColumnRole::User),
+            Column::new("c", Type::Integer, ColumnRole::User),
+            Column::new("d", Type::Integer, ColumnRole::User),
+            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+        ],
+        &["a"],
+        SpaceEngine::Memtx,
+    )
+    .unwrap();
+    plan.add_rel(t);
+    let scan_id = plan.add_scan("t", None).unwrap();
+    let a_id = plan.add_row_from_child(scan_id, &["a"]).unwrap();
+    let b_id = plan.add_row_from_child(scan_id, &["b"]).unwrap();
+    let c_id = plan.add_row_from_child(scan_id, &["c"]).unwrap();
+    let d_id = plan.add_row_from_child(scan_id, &["d"]).unwrap();
+
+    // a + b
+    let arith_addition_id = plan
+        .add_arithmetic_to_plan(a_id, Arithmetic::Add, b_id, false)
+        .unwrap();
+
+    // a + b > c
+    let gt_id = plan
+        .nodes
+        .add_bool(arith_addition_id, Bool::Gt, c_id)
+        .unwrap();
+
+    // d is not null
+    let unary_id = plan.nodes.add_unary_bool(Unary::IsNotNull, d_id).unwrap();
+
+    // a + b > c and d is not null
+    let and_id = plan.nodes.add_bool(gt_id, Bool::And, unary_id).unwrap();
+
+    let proj_id = plan.add_proj_internal(scan_id, &[and_id]).unwrap();
+    plan.set_top(proj_id).unwrap();
+
+    // check the plan
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("backend")
+        .join("sql")
+        .join("tree")
+        .join("arbitrary_projection_plan.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected_plan = Plan::from_yaml(&s).unwrap();
+    assert_eq!(expected_plan, plan);
+
+    let exec_plan = ExecutionPlan::from(plan.clone());
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+
+    // get nodes in the sql-convenient order
+    let sp = SyntaxPlan::new(&exec_plan, top_id, Snapshot::Latest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let mut nodes_iter = nodes.into_iter();
+
+    // projection
+    assert_eq!(Some(&SyntaxData::PlanId(25)), nodes_iter.next());
+    // row 12
+    assert_eq!(Some(&SyntaxData::PlanId(13)), nodes_iter.next());
+    // (
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next());
+    // ref a
+    assert_eq!(Some(&SyntaxData::PlanId(12)), nodes_iter.next());
+    // )
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
+    // arithmetic expression: [a] + [b]
+    assert_eq!(Some(&SyntaxData::PlanId(20)), nodes_iter.next());
+    // arithmetic operator Add (+)
+    assert_eq!(Some(&SyntaxData::Operator("+".into())), nodes_iter.next());
+    // row
+    assert_eq!(Some(&SyntaxData::PlanId(15)), nodes_iter.next());
+    // (
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next());
+    // ref b
+    assert_eq!(Some(&SyntaxData::PlanId(14)), nodes_iter.next());
+    // )
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
+    // bool expression gt: [a + b] > [c]
+    assert_eq!(Some(&SyntaxData::PlanId(21)), nodes_iter.next());
+    // bool operator Gt (>)
+    assert_eq!(Some(&SyntaxData::Operator(">".into())), nodes_iter.next());
+    // row
+    assert_eq!(Some(&SyntaxData::PlanId(17)), nodes_iter.next());
+    // (
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next());
+    // ref c
+    assert_eq!(Some(&SyntaxData::PlanId(16)), nodes_iter.next());
+    // )
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
+    // bool expression and: [a + b > c] and [d is not null]
+    assert_eq!(Some(&SyntaxData::PlanId(23)), nodes_iter.next());
+    // bool operator And (and)
+    assert_eq!(Some(&SyntaxData::Operator("and".into())), nodes_iter.next());
+    // row
+    assert_eq!(Some(&SyntaxData::PlanId(19)), nodes_iter.next());
+    // (
+    assert_eq!(Some(&SyntaxData::OpenParenthesis), nodes_iter.next());
+    // ref d
+    assert_eq!(Some(&SyntaxData::PlanId(18)), nodes_iter.next());
+    // )
+    assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
+    // unary expression is not null: [d] is not null 19
+    assert_eq!(Some(&SyntaxData::PlanId(22)), nodes_iter.next());
+    // unary operator IsNotNull (is not null)
+    assert_eq!(
+        Some(&SyntaxData::Operator("is not null".into())),
+        nodes_iter.next()
+    );
+    // from
+    assert_eq!(Some(&SyntaxData::From), nodes_iter.next());
+    // scan
+    assert_eq!(Some(&SyntaxData::PlanId(11)), nodes_iter.next());
 
     assert_eq!(None, nodes_iter.next());
 }

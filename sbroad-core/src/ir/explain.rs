@@ -19,6 +19,7 @@ use super::value::Value;
 
 #[derive(Debug, Serialize)]
 enum ColExpr {
+    Arithmetic(Box<ColExpr>, BinaryOp, Box<ColExpr>, bool),
     Column(String),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
@@ -30,6 +31,10 @@ enum ColExpr {
 impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ColExpr::Arithmetic(left, op, right, with_parentheses) => match with_parentheses {
+                false => format!("{left} {op} {right}"),
+                true => format!("({left} {op} {right})"),
+            },
             ColExpr::Column(c) => c.to_string(),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
@@ -55,7 +60,7 @@ impl Default for ColExpr {
 }
 
 impl ColExpr {
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::too_many_lines)]
     fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
         let mut stack: Vec<ColExpr> = Vec::new();
         let mut dft_post =
@@ -133,10 +138,34 @@ impl ColExpr {
                     let row_expr = ColExpr::Row(row);
                     stack.push(row_expr);
                 }
-                Expression::Alias { .. }
-                | Expression::Bool { .. }
-                | Expression::Arithmetic { .. }
-                | Expression::Unary { .. } => {
+                Expression::Arithmetic {
+                    left: _,
+                    op,
+                    right: _,
+                    with_parentheses,
+                } => {
+                    let right = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing ARITHMETIC expression".to_string(),
+                        )
+                    })?;
+
+                    let left = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing ARITHMETIC expression".to_string(),
+                        )
+                    })?;
+
+                    let ar_expr = ColExpr::Arithmetic(
+                        Box::new(left),
+                        BinaryOp::ArithOp(op.clone()),
+                        Box::new(right),
+                        *with_parentheses,
+                    );
+
+                    stack.push(ar_expr);
+                }
+                Expression::Alias { .. } | Expression::Bool { .. } | Expression::Unary { .. } => {
                     return Err(SbroadError::Unsupported(
                         Entity::Expression,
                         Some(format!(
