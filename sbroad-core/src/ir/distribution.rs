@@ -30,6 +30,11 @@ impl Key {
     pub fn new(positions: Vec<usize>) -> Self {
         Key { positions }
     }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.positions.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

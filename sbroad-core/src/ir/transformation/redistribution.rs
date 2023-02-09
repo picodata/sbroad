@@ -1,13 +1,13 @@
 //! Resolve distribution conflicts and insert motion nodes to IR.
 
-use ahash::RandomState;
+use ahash::{AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::ir::distribution::{Distribution, Key, KeySet};
+use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Column;
@@ -570,6 +570,104 @@ impl Plan {
         Ok((outer_keys, inner_keys))
     }
 
+    /// The join condition row can contain arbitrary expressions inside (constants,
+    /// arithmetic operations, references to inner and outer children, etc.).
+    /// This function extracts only the positions of the references to the inner child.
+    fn get_inner_positions_from_condition_row(
+        &self,
+        row_map: &HashMap<usize, usize>,
+    ) -> Result<AHashSet<usize>, SbroadError> {
+        let mut inner_positions: AHashSet<usize> = AHashSet::with_capacity(row_map.len());
+        for (pos, col) in row_map {
+            let expression = self.get_expression_node(*col)?;
+            if let Expression::Reference {
+                targets: Some(targets),
+                ..
+            } = expression
+            {
+                // Inner child of the join node is always the second one.
+                if targets == &[1; 1] {
+                    inner_positions.insert(*pos);
+                }
+            }
+        }
+        Ok(inner_positions)
+    }
+
+    // Take the positions of the columns in the join condition row
+    // and return the positions of the columns in the inner child row.
+    fn get_referred_inner_child_column_positions(
+        &self,
+        column_positions: &[usize],
+        condition_row_map: &HashMap<usize, usize>,
+    ) -> Result<Vec<usize>, SbroadError> {
+        let mut referred_column_positions: Vec<usize> = Vec::with_capacity(column_positions.len());
+        for pos in column_positions {
+            let column_id = *condition_row_map.get(pos).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Column,
+                    format!("{pos} in row map {condition_row_map:?}"),
+                )
+            })?;
+            if let Expression::Reference {
+                targets, position, ..
+            } = self.get_expression_node(column_id)?
+            {
+                if let Some(targets) = targets {
+                    // Inner child of the join node is always the second one.
+                    if targets == &[1; 1] {
+                        referred_column_positions.push(*position);
+                    }
+                }
+            } else {
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some("Row column is not a reference.".into()),
+                ));
+            }
+        }
+        Ok(referred_column_positions)
+    }
+
+    /// This is a helper function used to determine the policy of the inner child motion node in the join.
+    /// For this purpose we inspect the join equality condition expression. It has the left and the right
+    /// sides, both of which can either point to the inner and outer children of the join.
+    /// If one of the sides has a `Segment` distribution and its keys point to the outer join child, then
+    /// we try to calculate the possible motion policy of the inner child (it can be `Segment` or `Full`).
+    /// To deal with it we also need the inner row map that maps the positions of the columns in the condition
+    /// row to the `Reference` ids in that row. These references point to the inner child row.
+    fn get_inner_policy_by_outer_segment(
+        &self,
+        outer_keys: &[Key],
+        inner_row_map: &HashMap<usize, usize>,
+    ) -> Result<MotionPolicy, SbroadError> {
+        let inner_position_map = self.get_inner_positions_from_condition_row(inner_row_map)?;
+        for outer_key in outer_keys {
+            if outer_key
+                .positions
+                .iter()
+                .all(|pos| inner_position_map.contains(pos))
+            {
+                let mut matched_inner_positions: Vec<usize> =
+                    Vec::with_capacity(outer_key.positions.len());
+                for pos in &outer_key.positions {
+                    let pos = match inner_position_map.get(pos) {
+                        Some(pos) => *pos,
+                        None => continue,
+                    };
+                    matched_inner_positions.push(pos);
+                }
+                let inner_child_positions = self.get_referred_inner_child_column_positions(
+                    &matched_inner_positions,
+                    inner_row_map,
+                )?;
+                let inner_key = Key::new(inner_child_positions);
+                return Ok(MotionPolicy::Segment(inner_key.into()));
+            }
+        }
+        Ok(MotionPolicy::Full)
+    }
+
     /// Derive the motion policy in the boolean node with equality operator.
     ///
     /// # Errors
@@ -584,19 +682,8 @@ impl Plan {
     ) -> Result<MotionPolicy, SbroadError> {
         let left_dist = self.get_distribution(left_row_id)?;
         let right_dist = self.get_distribution(right_row_id)?;
-
-        let get_policy_for_one_side_segment = |row_map: &HashMap<usize, usize>,
-                                               keys_set: &KeySet|
-         -> Result<MotionPolicy, SbroadError> {
-            let keys = keys_set.iter().map(Clone::clone).collect::<Vec<_>>();
-            let (outer_keys, _) =
-                self.split_join_keys_to_inner_and_outer(join_id, &keys, row_map)?;
-            if let Some(outer_key) = outer_keys.get(0) {
-                Ok(MotionPolicy::Segment(outer_key.into()))
-            } else {
-                Ok(MotionPolicy::Full)
-            }
-        };
+        let row_map_left = self.build_row_map(left_row_id)?;
+        let row_map_right = self.build_row_map(right_row_id)?;
 
         match (left_dist, right_dist) {
             (
@@ -607,45 +694,61 @@ impl Plan {
                     keys: keys_right_set,
                 },
             ) => {
-                let mut first_outer_key = None;
                 let keys_left = keys_left_set.iter().map(Clone::clone).collect::<Vec<_>>();
-                let row_map_left = self.build_row_map(left_row_id)?;
                 let keys_right = keys_right_set.iter().map(Clone::clone).collect::<Vec<_>>();
-                let row_map_right = self.build_row_map(right_row_id)?;
                 let (left_outer_keys, left_inner_keys) =
                     self.split_join_keys_to_inner_and_outer(join_id, &keys_left, &row_map_left)?;
                 let (right_outer_keys, right_inner_keys) =
                     self.split_join_keys_to_inner_and_outer(join_id, &keys_right, &row_map_right)?;
+
+                // Can we join locally?
                 let pairs = &[
-                    (left_outer_keys, right_inner_keys),
-                    (right_outer_keys, left_inner_keys),
+                    (&left_outer_keys, &right_inner_keys),
+                    (&right_outer_keys, &left_inner_keys),
                 ];
+                // We don't care about O(n^2) here, because the number of keys is usually small.
                 for (outer_keys, inner_keys) in pairs {
-                    for outer_key in outer_keys {
-                        if first_outer_key.is_none() {
-                            first_outer_key = Some(outer_key);
-                        }
-                        for inner_key in inner_keys {
+                    for outer_key in *outer_keys {
+                        for inner_key in *inner_keys {
                             if outer_key == inner_key {
                                 return Ok(MotionPolicy::Local);
                             }
                         }
                     }
                 }
-                if let Some(outer_key) = first_outer_key {
-                    // Choose the first of the outer keys for the segment motion policy.
-                    Ok(MotionPolicy::Segment(outer_key.into()))
-                } else {
-                    Ok(MotionPolicy::Full)
+                // Example:
+                //
+                // t1 (a, b, c): key(c, b)
+                // t2 (d, e): key(d)
+                // select * from t1 join t2 on (t1.b, t1.c) = (t2.d, t2.e);
+                // (t1.b, t1.c): segment[1, 0]
+                // (t2.d, t2.e): segment[0]
+                //
+                // We take the first left outer key - (t1.b, t1.c) with positions 1 and 0 - and
+                // check if on the right side of equality operator we have references to the inner
+                // child at these positions. In our case, we have t2.e at positions 1 and t2.d at
+                // 0 that refers to the inner child t2. So, we should reshard the inner child t2 by
+                // (t2.e, t2.d). The motion node would have a distribution segment[0, 1] as t2.e is
+                // at position 0 and t2.d is at position 1 in the inner child t2.
+
+                if let MotionPolicy::Segment(inner_key) =
+                    self.get_inner_policy_by_outer_segment(&left_outer_keys, &row_map_right)?
+                {
+                    return Ok(MotionPolicy::Segment(inner_key));
                 }
+                self.get_inner_policy_by_outer_segment(&right_outer_keys, &row_map_left)
             }
             (Distribution::Segment { keys: keys_set }, _) => {
-                let row_map = self.build_row_map(left_row_id)?;
-                get_policy_for_one_side_segment(&row_map, keys_set)
+                let keys_left = keys_set.iter().map(Clone::clone).collect::<Vec<_>>();
+                let (left_outer_keys, _) =
+                    self.split_join_keys_to_inner_and_outer(join_id, &keys_left, &row_map_left)?;
+                self.get_inner_policy_by_outer_segment(&left_outer_keys, &row_map_right)
             }
             (_, Distribution::Segment { keys: keys_set }) => {
-                let row_map = self.build_row_map(right_row_id)?;
-                get_policy_for_one_side_segment(&row_map, keys_set)
+                let keys_right = keys_set.iter().map(Clone::clone).collect::<Vec<_>>();
+                let (right_outer_keys, _) =
+                    self.split_join_keys_to_inner_and_outer(join_id, &keys_right, &row_map_right)?;
+                self.get_inner_policy_by_outer_segment(&right_outer_keys, &row_map_left)
             }
             _ => Ok(MotionPolicy::Full),
         }

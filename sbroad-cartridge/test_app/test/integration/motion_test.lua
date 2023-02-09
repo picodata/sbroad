@@ -221,3 +221,39 @@ g.test_motion_dotted_name = function()
         rows = {},
     })
 end
+
+g.test_join_segment_motion = function()
+    local api = cluster:server("api-1").net_box
+
+    -- Add new rows to the "space_simple_shard_key" space with equivalent "id" and "sysOp" values.
+    -- We need it to get more then a single row in result from a self join on "id" = "sysOp".
+    local r, err = api:call("sbroad.execute", {
+        [[insert into "space_simple_shard_key" ("id", "name", "sysOp") values (?, ?, ?), (?, ?, ?)]],
+        {2, "222", 2, 3, "333", 3}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    r, err = api:call("sbroad.execute",
+    { [[
+        SELECT "t1"."id" FROM (
+            SELECT "id" FROM "space_simple_shard_key"
+        ) as "t1"
+        JOIN (
+            SELECT "sysOp" FROM "space_simple_shard_key"
+        ) as "t2"
+        ON "t1"."id" = "t2"."sysOp"
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "t1.id", type = "integer"},
+        },
+        rows = {
+            { 1 },
+            { 3 },
+            { 2 },
+        },
+    })
+end
