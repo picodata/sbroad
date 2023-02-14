@@ -246,14 +246,14 @@ g.test_join_segment_motion = function()
     ]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
+    t.assert_equals(r.metadata, {
             {name = "t1.id", type = "integer"},
-        },
-        rows = {
+        })
+    t.assert_items_equals(r.rows,
+        {
             { 1 },
             { 3 },
             { 2 },
-        },
-    })
+        }
+    )
 end

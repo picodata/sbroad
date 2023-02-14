@@ -1,6 +1,5 @@
 local t = require('luatest')
 local groupby_queries = t.group('groupby_queries')
-
 local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
@@ -328,7 +327,7 @@ groupby_queries.test_with_selection = function ()
     })
 end
 
-groupby_queries.test_with_JOIN = function ()
+groupby_queries.test_with_join = function ()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", { [[
@@ -442,7 +441,7 @@ groupby_queries.test_with_join3 = function ()
 end
 
 
-groupby_queries.test_with_UNION = function ()
+groupby_queries.test_with_union = function ()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", {
         [[SELECT "a" FROM "arithmetic_space" GROUP BY "a" UNION ALL SELECT "a" FROM "arithmetic_space2"]], {}
@@ -499,7 +498,7 @@ groupby_queries.test_with_UNION = function ()
     })
 end
 
-groupby_queries.test_with_EXCEPT = function ()
+groupby_queries.test_with_except = function ()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", {
         [[
