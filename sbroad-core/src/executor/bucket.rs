@@ -45,7 +45,7 @@ impl Buckets {
 
     /// Disjunction of two sets of buckets.
     #[must_use]
-    pub fn disjunct(&self, buckets: &Buckets) -> Buckets {
+    pub fn conjuct(&self, buckets: &Buckets) -> Buckets {
         match (self, buckets) {
             (Buckets::All, Buckets::All) => Buckets::All,
             (Buckets::Filtered(b), Buckets::All) | (Buckets::All, Buckets::Filtered(b)) => {
@@ -59,7 +59,7 @@ impl Buckets {
 
     /// Conjunction of two sets of buckets.
     #[must_use]
-    pub fn conjunct(&self, buckets: &Buckets) -> Buckets {
+    pub fn disjunct(&self, buckets: &Buckets) -> Buckets {
         match (self, buckets) {
             (Buckets::All, _) | (_, Buckets::All) => Buckets::All,
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
@@ -170,7 +170,7 @@ where
         } else {
             Ok(buckets
                 .into_iter()
-                .fold(Buckets::new_all(), |a, b| a.disjunct(&b)))
+                .fold(Buckets::new_all(), |a, b| a.conjuct(&b)))
         }
     }
 
@@ -185,14 +185,14 @@ where
             // We need to pop back the chain to get nodes in the bottom-up order.
             while let Some(node_id) = nodes.pop_back() {
                 let node_buckets = self.get_buckets_from_expr(node_id)?;
-                chain_buckets = chain_buckets.disjunct(&node_buckets);
+                chain_buckets = chain_buckets.conjuct(&node_buckets);
             }
             result.push(chain_buckets);
         }
 
         if let Some((first, other)) = result.split_first_mut() {
             for buckets in other {
-                *first = first.conjunct(buckets);
+                *first = first.disjunct(buckets);
             }
             return Ok(first.clone());
         }
@@ -345,7 +345,7 @@ where
                                         .to_string(),
                                 )
                             })?;
-                        let buckets = first_buckets.conjunct(second_buckets);
+                        let buckets = first_buckets.disjunct(second_buckets);
                         self.bucket_map.insert(*output, buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
@@ -382,7 +382,7 @@ where
                     let filter_id = *filter;
                     let filter_buckets = self.get_expression_tree_buckets(filter_id)?;
                     self.bucket_map
-                        .insert(output_id, child_buckets.disjunct(&filter_buckets));
+                        .insert(output_id, child_buckets.conjuct(&filter_buckets));
                 }
                 Relational::InnerJoin {
                     children,
@@ -423,8 +423,8 @@ where
                         self.bucket_map.insert(
                             output_id,
                             inner_buckets
-                                .conjunct(&outer_buckets)
-                                .disjunct(&filter_buckets),
+                                .disjunct(&outer_buckets)
+                                .conjuct(&filter_buckets),
                         );
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
