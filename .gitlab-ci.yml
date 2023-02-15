@@ -40,6 +40,10 @@ integration:
     stage: test
     script:
         - make test_integration
+    artifacts:
+      paths:
+        - sbroad-cartridge/test_app/tmp/tarantool.log
+      expire_in: 1 week
 
 bench:
     stage: test
