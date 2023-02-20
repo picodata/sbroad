@@ -797,8 +797,8 @@ g2.test_alias = function()
     t.assert_equals(err, nil)
     t.assert_equals(res.metadata, {
         {name = "id", type = "integer"},
-        {name = "COLUMN_1", type = "integer"},
-        {name = "COLUMN_2", type = "integer"},
+        {name = "COL_1", type = "integer"},
+        {name = "COL_2", type = "integer"},
         {name = "a", type = "integer"},
     })
 

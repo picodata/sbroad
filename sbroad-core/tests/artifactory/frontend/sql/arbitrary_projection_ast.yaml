@@ -58,7 +58,7 @@ nodes:
       value: "a"
     - children: []
       rule: AliasName
-      value: "COLUMN_1"
+      value: "COL_1"
     - children:
         - 5
         - 14

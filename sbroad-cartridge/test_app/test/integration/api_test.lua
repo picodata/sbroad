@@ -449,7 +449,7 @@ g.test_bucket_id_function = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COLUMN_1", type = "unsigned"},
+            {name = "COL_1", type = "unsigned"},
         },
         rows = {
             { 13352 },

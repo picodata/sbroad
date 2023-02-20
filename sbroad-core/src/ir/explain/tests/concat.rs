@@ -6,7 +6,7 @@ fn concat1_test() {
         r#"SELECT CAST('1' as string) || 'hello' FROM "t1""#,
         &format!(
             "{}\n{}\n",
-            r#"projection (('1'::string) || ('hello') -> "COLUMN_1")"#, r#"    scan "t1""#,
+            r#"projection (('1'::string) || ('hello') -> "COL_1")"#, r#"    scan "t1""#,
         ),
     );
 }

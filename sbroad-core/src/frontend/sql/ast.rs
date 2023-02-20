@@ -801,7 +801,7 @@ impl AbstractSyntaxTree {
                             }
                             _ => {
                                 pos += 1;
-                                columns.push((*child_id, Some(format!("COLUMN_{pos}"))));
+                                columns.push((*child_id, Some(format!("COL_{pos}"))));
                             }
                         }
                     }

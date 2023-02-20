@@ -1291,6 +1291,7 @@ impl Plan {
         for col_id in columns {
             // Generate a row of aliases for the incoming row.
             *col_idx += 1;
+            // The column names are generated according to tarantool naming of anonymous columns
             let name = format!("COLUMN_{col_idx}");
             let alias_id = self.nodes.add_alias(&name, col_id)?;
             aliases.push(alias_id);

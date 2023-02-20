@@ -303,7 +303,7 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(
         r,
         {
-            "projection ((\"arithmetic_space\".\"id\") + (2) -> \"COLUMN_1\")",
+            "projection ((\"arithmetic_space\".\"id\") + (2) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )
@@ -316,7 +316,7 @@ g.test_explain_arithmetic_projection = function()
         r,
         -- luacheck: max line length 140
         {
-            "projection ((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\") * (\"arithmetic_space\".\"c\") -> \"COLUMN_1\")",
+            "projection ((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\") * (\"arithmetic_space\".\"c\") -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )
@@ -329,7 +329,7 @@ g.test_explain_arithmetic_projection = function()
         r,
         -- luacheck: max line length 140
         {
-            "projection (((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\")) * (\"arithmetic_space\".\"c\") -> \"COLUMN_1\")",
+            "projection (((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\")) * (\"arithmetic_space\".\"c\") -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )

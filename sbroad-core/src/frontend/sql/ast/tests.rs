@@ -398,7 +398,7 @@ fn sql_arithmetic_projection_ast() {
     let (_, alias_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_name_id).unwrap();
     assert_eq!(node.rule, Type::AliasName);
-    assert_eq!(node.value, Some(String::from("COLUMN_1")));
+    assert_eq!(node.value, Some(String::from("COL_1")));
 
     let (_, alias_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_id).unwrap();
@@ -561,7 +561,7 @@ fn sql_arbitrary_projection_ast() {
     let (_, alias_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_name_id).unwrap();
     assert_eq!(node.rule, Type::AliasName);
-    assert_eq!(node.value, Some(String::from("COLUMN_1")));
+    assert_eq!(node.value, Some(String::from("COL_1")));
 
     let (_, alias_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_id).unwrap();

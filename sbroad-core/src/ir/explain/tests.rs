@@ -440,7 +440,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("BUCKET_ID"("test_space"."id")::string -> "COLUMN_1")
+        r#"projection ("BUCKET_ID"("test_space"."id")::string -> "COL_1")
     scan "test_space"
 "#,
     );
