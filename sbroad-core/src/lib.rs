@@ -7,6 +7,7 @@ extern crate pest_derive;
 extern crate core;
 
 pub mod backend;
+pub mod cbo;
 pub mod errors;
 pub mod executor;
 pub mod frontend;

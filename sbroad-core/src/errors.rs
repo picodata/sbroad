@@ -28,6 +28,8 @@ pub enum Entity {
     DistributionKey,
     /// corresponds to enum Expression
     Expression,
+    /// corresponds to struct Histogram
+    Histogram,
     /// tarantool index
     Index,
     /// corresponds to metadata field of struct ProducerResult
@@ -68,6 +70,8 @@ pub enum Entity {
     SQLFunction,
     /// corresponds to struct Statement
     Statement,
+    /// corresponds to CBO statistics
+    Statistics,
     /// SQL sub-query
     SubQuery,
     /// sub-tree of the Plan
@@ -106,6 +110,7 @@ impl fmt::Display for Entity {
             Entity::Distribution => "distribution".to_string(),
             Entity::DistributionKey => "distribution key".to_string(),
             Entity::Expression => "expression".to_string(),
+            Entity::Histogram => "histogram".to_string(),
             Entity::Index => "index".to_string(),
             Entity::Metadata => "metadata".to_string(),
             Entity::Motion => "motion".to_string(),
@@ -126,6 +131,7 @@ impl fmt::Display for Entity {
             Entity::SpaceEngine => "space engine".to_string(),
             Entity::SQLFunction => "SQL function".to_string(),
             Entity::Statement => "statement".to_string(),
+            Entity::Statistics => "statistics".to_string(),
             Entity::SubQuery => "sub-query plan subtree".to_string(),
             Entity::SubTree => "execution plan subtree".to_string(),
             Entity::SyntaxNode => "syntax node".to_string(),
