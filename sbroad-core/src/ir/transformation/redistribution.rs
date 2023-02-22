@@ -4,19 +4,19 @@ use ahash::{AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
-use std::fmt::{Display, Formatter};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
-use crate::ir::relation::Column;
 
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+
+pub(crate) mod insert;
 
 /// Redistribution key targets (columns or values of the key).
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone)]
@@ -73,27 +73,6 @@ pub enum MotionPolicy {
     Local,
 }
 
-/// Determine what portion of data to generate during motion.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DataGeneration {
-    /// Nothing to generate.
-    None,
-    /// Generate a sharding column (`bucket_id` in terms of Tarantool).
-    ShardingColumn,
-}
-
-impl Display for DataGeneration {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        let op = match &self {
-            DataGeneration::None => "none",
-            DataGeneration::ShardingColumn => "sharding_column",
-        };
-
-        write!(f, "{op}")
-    }
-}
-
 struct BoolOp {
     left: usize,
     op: Bool,
@@ -117,7 +96,26 @@ impl BoolOp {
     }
 }
 
-type Strategy = HashMap<usize, (MotionPolicy, DataGeneration)>;
+type ChildId = usize;
+
+#[derive(Debug)]
+struct Strategy {
+    parent_id: usize,
+    children_policy: HashMap<ChildId, MotionPolicy>,
+}
+
+impl Strategy {
+    fn new(parent_id: usize) -> Self {
+        Self {
+            parent_id,
+            children_policy: HashMap::new(),
+        }
+    }
+
+    fn add_child(&mut self, child_id: usize, policy: MotionPolicy) {
+        self.children_policy.insert(child_id, policy);
+    }
+}
 
 /// Choose a policy for the inner join child (a policy with the largest motion of data wins).
 fn join_policy_for_or(left_policy: &MotionPolicy, right_policy: &MotionPolicy) -> MotionPolicy {
@@ -321,24 +319,23 @@ impl Plan {
     }
 
     /// Create Motions from the strategy map.
-    fn create_motion_nodes(
-        &mut self,
-        rel_id: usize,
-        strategy: &Strategy,
-    ) -> Result<(), SbroadError> {
-        let children: Vec<usize> = if let Some(children) = self.get_relational_children(rel_id)? {
-            children.to_vec()
-        } else {
-            return Err(SbroadError::FailedTo(
-                Action::Add,
-                Some(Entity::Motion),
-                "trying to add motions under the leaf relational node".into(),
-            ));
-        };
+    fn create_motion_nodes(&mut self, strategy: &Strategy) -> Result<(), SbroadError> {
+        let parent_id = strategy.parent_id;
+        let children: Vec<usize> =
+            if let Some(children) = self.get_relational_children(parent_id)? {
+                children.to_vec()
+            } else {
+                return Err(SbroadError::FailedTo(
+                    Action::Add,
+                    Some(Entity::Motion),
+                    "trying to add motions under the leaf relational node".into(),
+                ));
+            };
 
         // Check that all children we need to add motions exist in the current relational node.
         let children_set: HashSet<usize> = children.iter().copied().collect();
         if let false = strategy
+            .children_policy
             .iter()
             .all(|(node, _)| children_set.get(node).is_some())
         {
@@ -352,17 +349,17 @@ impl Plan {
         // Add motions.
         let mut children_with_motions: Vec<usize> = Vec::new();
         for child in children {
-            if let Some((policy, data_gen)) = strategy.get(&child) {
+            if let Some(policy) = strategy.children_policy.get(&child) {
                 if let MotionPolicy::Local = policy {
                     children_with_motions.push(child);
                 } else {
-                    children_with_motions.push(self.add_motion(child, policy, data_gen)?);
+                    children_with_motions.push(self.add_motion(child, policy)?);
                 }
             } else {
                 children_with_motions.push(child);
             }
         }
-        self.set_relational_children(rel_id, children_with_motions)?;
+        self.set_relational_children(parent_id, children_with_motions)?;
         Ok(())
     }
 
@@ -441,11 +438,11 @@ impl Plan {
             self.set_distribution(bool_op.right)?;
         }
 
-        let mut strategy: Strategy = HashMap::new();
+        let mut strategy = Strategy::new(rel_id);
         for node in &nodes {
             let strategies = self.get_sq_node_strategies(rel_id, *node)?;
             for (id, policy) in strategies {
-                strategy.insert(id, (policy, DataGeneration::None));
+                strategy.add_child(id, policy);
             }
         }
         Ok(strategy)
@@ -755,31 +752,6 @@ impl Plan {
         }
     }
 
-    #[allow(clippy::unused_self)]
-    #[must_use]
-    pub fn resolve_groupby_conflicts(
-        &self,
-        children: &[usize],
-        grouping_cols: &[usize],
-    ) -> Strategy {
-        let mut strategy: Strategy = HashMap::new();
-
-        // first columns of groupby output are grouping columns
-        let mut targets: Vec<Target> = Vec::with_capacity(grouping_cols.len());
-        for pos in 0..grouping_cols.len() {
-            targets.push(Target::Reference(pos));
-        }
-
-        strategy.insert(
-            children[0],
-            (
-                MotionPolicy::Segment(MotionKey { targets }),
-                DataGeneration::None,
-            ),
-        );
-        strategy
-    }
-
     /// Derive the motion policy for the inner child and sub-queries in the join node.
     ///
     /// # Errors
@@ -802,10 +774,10 @@ impl Plan {
 
         // Init the strategy (motion policy map) for all the join children except the outer child.
         let join_children = self.get_join_children(rel_id)?;
-        let mut strategy: Strategy = HashMap::new();
+        let mut strategy = Strategy::new(rel_id);
         if let Some((_, children)) = join_children.split_first() {
             for child_id in children {
-                strategy.insert(*child_id, (MotionPolicy::Full, DataGeneration::None));
+                strategy.add_child(*child_id, MotionPolicy::Full);
             }
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -838,7 +810,7 @@ impl Plan {
             let sq_strategies = self.get_sq_node_strategies(rel_id, node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
-                strategy.insert(id, (policy, DataGeneration::None));
+                strategy.add_child(id, policy);
             }
             if sq_strategies_len > 0 {
                 continue;
@@ -904,131 +876,86 @@ impl Plan {
             };
             inner_map.insert(node_id, new_inner_policy.clone());
         }
-        strategy.insert(inner_child, (new_inner_policy, DataGeneration::None));
+        strategy.add_child(inner_child, new_inner_policy);
         Ok(strategy)
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// Returns the strategy for the insert node. Also it
+    /// wraps the child node with nested sub-queries that:
+    ///
+    /// - cast expression types
+    /// - calculate `bucket_id`
+    ///
+    /// Full key example:
+    /// ```text
+    /// insert into t1 (a, b) values (1, 2)
+    ///   =>
+    /// insert into t1 (a, b, bucket_id)
+    /// select COL_1, COL_2, bucket_id(coalesce(cast(COL_2 as string), '') || coalesce(cast(COL_1 as string), '')) from (
+    ///   select
+    ///     cast(COLUMN_1 as integer) as COL_1, cast(COLUMN_2 as unsigned) as COL_2
+    ///   from (values (1, 2))
+    /// )
+    /// ```
+    ///
+    /// Trimmed key example:
+    /// ```text
+    /// insert into t1 (a) select c from t2
+    ///   =>
+    /// insert into t1 (a, bucket_id)
+    /// select COL_1, bucket_id(coalesce(cast(NULL as string), '') || coalesce(cast(COL_1 as string), '')) from (
+    ///   select
+    ///     cast(c as integer) as COL_1
+    ///   from (select c from t2)
+    /// )
+    /// ```
     fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
-        let mut map: Strategy = HashMap::new();
-        match self.get_relation_node(rel_id)? {
-            Relational::Insert {
-                relation,
-                columns,
-                children,
-                ..
-            } => {
-                let child: usize = if let (Some(child), None) = (children.first(), children.get(1))
-                {
-                    *child
-                } else {
-                    return Err(SbroadError::UnexpectedNumberOfValues(
-                        "Insert node doesn't have exactly a single child.".into(),
-                    ));
-                };
-                let child_rel = self.get_relation_node(child)?;
-                let child_row = self.get_expression_node(child_rel.output())?;
-                let Expression::Row { list, distribution } = child_row else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some(
-                            "Insert child node has an invalid node instead of the output row"
-                                .into(),
-                        ),
-                    ));
-                };
-                if list.len() != columns.len() {
-                    return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                        "Insert node expects {} columns instead of {}",
-                        list.len(),
-                        columns.len()
-                    )));
-                }
-                let columns_map: HashMap<usize, usize> = columns
-                    .iter()
-                    .enumerate()
-                    .map(|(pos, id)| (*id, pos))
-                    .collect::<HashMap<_, _>>();
-                let mut motion_key: MotionKey = MotionKey::new();
-                let rel = self.get_relation(relation).ok_or_else(|| {
-                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
-                })?;
-                for pos in &rel.key.positions {
-                    if let Some(child_pos) = columns_map.get(pos) {
-                        // We can use insert column's position instead of
-                        // the position in the child node as their lengths
-                        // are the same.
-                        motion_key.targets.push(Target::Reference(*child_pos));
-                    } else {
-                        // Check that the column exists on the requested position.
-                        rel.columns.get(*pos).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Column,
-                                format!("{pos} in relation {relation}"),
-                            )
-                        })?;
-                        // We need a default value for the key column.
-                        motion_key
-                            .targets
-                            .push(Target::Value(Column::default_value()));
-                    }
-                }
-                if distribution.is_none() {
-                    return Err(SbroadError::Invalid(
-                        Entity::Distribution,
-                        Some(format!("Insert node child {child} has no distribution")),
-                    ));
-                }
+        // Get the original INSERT child node id.
+        let orig_child_id = self.insert_child_id(rel_id)?;
+        self.replace_insert_child_with_cast_types_sq(rel_id)?;
 
-                // At the moment we always add a segment motion policy under the
-                // insertion node, even if the the data can be transferred locally.
-                // The reason is in the sharding column (`bucket_id` field in terms
-                // of Tarantool) that should be recalculated for each row. At the
-                // moment we can perform calculations only on the coordinator node,
-                // so we need to always deliver the data to coordinator's virtual
-                // table.
-                map.insert(
-                    child,
-                    (
-                        MotionPolicy::Segment(motion_key),
-                        DataGeneration::ShardingColumn,
-                    ),
-                );
-            }
-            _ => {
-                return Err(SbroadError::Invalid(
-                    Entity::Relational,
-                    Some("expected insert node".into()),
-                ))
+        // Get a new parent node id for the original INSERT child.
+        let proj_id = self.insert_child_id(rel_id)?;
+        let proj = self.get_relation_node(proj_id)?;
+
+        // We have generated this projection in `replace_insert_child_with_cast_types_sq()`
+        // method and we are sure, that there is exactly a single child in it.
+        let new_parent_id = *proj
+            .children()
+            .ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(
+                    "expected non-empty amount of children in the projection node".to_string(),
+                )
+            })?
+            .first()
+            .ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(
+                    "expected at least a single child in projection node".to_string(),
+                )
+            })?;
+        let motion_key = self.insert_child_motion_key(rel_id)?;
+        self.replace_insert_child_with_bucket_id_sq(rel_id, &motion_key)?;
+
+        let mut map = Strategy::new(new_parent_id);
+        let orig_child_output_id = self.get_relation_node(orig_child_id)?.output();
+        let orig_child_dist = self.get_distribution(orig_child_output_id)?;
+        if let Distribution::Segment { keys } = orig_child_dist {
+            for key in keys.iter() {
+                let insert_mkey = MotionKey::from(key);
+                if insert_mkey == motion_key {
+                    map.add_child(orig_child_id, MotionPolicy::Local);
+                    return Ok(map);
+                }
             }
         }
 
-        // We also need to add a sharding column to the end of the insert
-        // column list.
-        let sharding_pos =
-            if let Relational::Insert { relation, .. } = self.get_relation_node(rel_id)? {
-                let rel = self.get_relation(relation).ok_or_else(|| {
-                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
-                })?;
-                rel.get_bucket_id_position()?
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Relational,
-                    Some("expected insert node".into()),
-                ));
-            };
-        if let Relational::Insert {
-            ref mut columns, ..
-        } = self.get_mut_relation_node(rel_id)?
-        {
-            columns.push(sharding_pos);
-        }
+        map.add_child(orig_child_id, MotionPolicy::Segment(motion_key));
 
         Ok(map)
     }
 
     fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
-        let mut map: Strategy = HashMap::new();
+        let mut map = Strategy::new(rel_id);
         match self.get_relation_node(rel_id)? {
             Relational::Except { children, .. } => {
                 if let (Some(left), Some(right), None) =
@@ -1066,13 +993,10 @@ impl Plan {
                                 Entity::Distribution,
                                 Some("left child's segment distribution is invalid: no keys found in the set".into())
                             ))?;
-                            map.insert(
-                                *right,
-                                (MotionPolicy::Segment(key.into()), DataGeneration::None),
-                            );
+                            map.add_child(*right, MotionPolicy::Segment(key.into()));
                         }
                         _ => {
-                            map.insert(*right, (MotionPolicy::Full, DataGeneration::None));
+                            map.add_child(*right, MotionPolicy::Full);
                         }
                     }
                     return Ok(map);
@@ -1120,7 +1044,7 @@ impl Plan {
                 Relational::Selection { output, filter, .. } => {
                     self.set_distribution(output)?;
                     let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
-                    self.create_motion_nodes(*id, &strategy)?;
+                    self.create_motion_nodes(&strategy)?;
                 }
                 Relational::GroupBy {
                     output,
@@ -1130,25 +1054,41 @@ impl Plan {
                 } => {
                     self.set_distribution(output)?;
                     if is_final {
-                        let strategy = self.resolve_groupby_conflicts(&children, &gr_cols);
-                        self.create_motion_nodes(*id, &strategy)?;
+                        let mut strategy = Strategy::new(*id);
+
+                        // Use group by columns as the motion key.
+                        let mut targets: Vec<Target> = Vec::with_capacity(gr_cols.len());
+                        for pos in 0..gr_cols.len() {
+                            targets.push(Target::Reference(pos));
+                        }
+
+                        let child_id = *children.first().ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::Relational,
+                                Some("GroupBy node doesn't have any children".into()),
+                            )
+                        })?;
+
+                        strategy.add_child(child_id, MotionPolicy::Segment(MotionKey { targets }));
+
+                        self.create_motion_nodes(&strategy)?;
                     }
                 }
                 Relational::InnerJoin {
                     output, condition, ..
                 } => {
                     let strategy = self.resolve_join_conflicts(*id, condition)?;
-                    self.create_motion_nodes(*id, &strategy)?;
+                    self.create_motion_nodes(&strategy)?;
                     self.set_distribution(output)?;
                 }
                 Relational::Insert { .. } => {
                     // Insert output tuple already has relation's distribution.
                     let strategy = self.resolve_insert_conflicts(*id)?;
-                    self.create_motion_nodes(*id, &strategy)?;
+                    self.create_motion_nodes(&strategy)?;
                 }
                 Relational::Except { output, .. } => {
                     let strategy = self.resolve_except_conflicts(*id)?;
-                    self.create_motion_nodes(*id, &strategy)?;
+                    self.create_motion_nodes(&strategy)?;
                     self.set_distribution(output)?;
                 }
             }

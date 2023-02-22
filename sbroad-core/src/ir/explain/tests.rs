@@ -159,7 +159,7 @@ fn explain_except1() {
         r#"except"#,
         r#"    projection ("t"."product_code" -> "pc")"#,
         r#"        scan "hash_testing" -> "t""#,
-        r#"    motion [policy: full, generation: none]"#,
+        r#"    motion [policy: full]"#,
         r#"        projection ("hash_testing_hist"."identification_number" -> "identification_number")"#,
         r#"            scan "hash_testing_hist""#,
     );
@@ -212,7 +212,7 @@ scan
                                 selection ROW("test_space_hist"."sys_op") < ROW(0)
                                     scan "test_space_hist"
 subquery $1:
-motion [policy: segment([ref("identification_number")]), generation: none]
+motion [policy: segment([ref("identification_number")])]
             scan
                 projection ("hash_testing"."identification_number" -> "identification_number")
                     selection ROW("hash_testing"."identification_number") = ROW(5) and ROW("hash_testing"."product_code") = ROW('123')
@@ -242,7 +242,7 @@ WHERE "t2"."product_code" = '123'"#;
                 projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
                     selection ROW("test_space"."id") = ROW(3)
                         scan "test_space"
-            motion [policy: segment([ref("identification_number")]), generation: none]
+            motion [policy: segment([ref("identification_number")])]
                 scan "t2"
                     projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
                         scan "hash_testing"
@@ -269,12 +269,12 @@ FROM (SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "id" = 3) as "t1"
             projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
                 selection ROW("test_space"."id") = ROW(3)
                     scan "test_space"
-        motion [policy: full, generation: none]
+        motion [policy: full]
             scan "hash_testing"
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
                     scan "hash_testing"
 subquery $0:
-motion [policy: segment([ref("identification_number")]), generation: none]
+motion [policy: segment([ref("identification_number")])]
             scan
                 projection ("hash_testing"."identification_number" -> "identification_number")
                     scan "hash_testing"
@@ -315,9 +315,13 @@ fn insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    motion [policy: segment([ref(COLUMN_1)]), generation: sharding_column]
-        values
-            value row (data=ROW(1, '123'))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+        scan
+            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::string -> COL_1)
+                scan
+                    motion [policy: segment([ref(COLUMN_1)])]
+                        values
+                            value row (data=ROW(1, '123'))
 "#,
     );
 
@@ -336,11 +340,15 @@ fn multiply_insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    motion [policy: segment([ref(COLUMN_5)]), generation: sharding_column]
-        values
-            value row (data=ROW(1, '123'))
-            value row (data=ROW(2, '456'))
-            value row (data=ROW(3, '789'))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+        scan
+            projection (COLUMN_5::unsigned -> COL_0, COLUMN_6::string -> COL_1)
+                scan
+                    motion [policy: segment([ref(COLUMN_5)])]
+                        values
+                            value row (data=ROW(1, '123'))
+                            value row (data=ROW(2, '456'))
+                            value row (data=ROW(3, '789'))
 "#,
     );
 
@@ -360,9 +368,13 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    motion [policy: segment([ref("identification_number")]), generation: sharding_column]
-        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
-            scan "hash_testing"
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+        scan
+            projection ("hash_testing"."identification_number"::unsigned -> COL_0, "hash_testing"."product_code"::string -> COL_1)
+                scan
+                    motion [policy: segment([ref("identification_number")])]
+                        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                            scan "hash_testing"
 "#,
     );
 
@@ -440,7 +452,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("BUCKET_ID"("test_space"."id")::string -> "COL_1")
+        r#"projection ("BUCKET_ID"(("test_space"."id"))::string -> "COL_1")
     scan "test_space"
 "#,
     );
@@ -460,7 +472,7 @@ fn select_cast_plan_nested_where() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("BUCKET_ID"("test_space"."id")::string) = ROW(1)
+    selection ROW("BUCKET_ID"(("test_space"."id"))::string) = ROW(1)
         scan "test_space"
 "#,
     );
@@ -480,7 +492,7 @@ fn select_cast_plan_nested_where2() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("BUCKET_ID"(42::string)) = ROW(1)
+    selection ROW("BUCKET_ID"((42::string))) = ROW(1)
         scan "test_space"
 "#,
     );

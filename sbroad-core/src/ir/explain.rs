@@ -9,7 +9,7 @@ use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::{
-    DataGeneration, MotionPolicy as IrMotionPolicy, Target as IrTarget,
+    MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
 use crate::ir::Plan;
 
@@ -19,6 +19,7 @@ use super::value::Value;
 
 #[derive(Debug, Serialize)]
 enum ColExpr {
+    Alias(Box<ColExpr>, String),
     Arithmetic(Box<ColExpr>, BinaryOp, Box<ColExpr>, bool),
     Column(String),
     Cast(Box<ColExpr>, CastType),
@@ -31,6 +32,7 @@ enum ColExpr {
 impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ColExpr::Alias(expr, name) => format!("({expr} -> {name})"),
             ColExpr::Arithmetic(left, op, right, with_parentheses) => match with_parentheses {
                 false => format!("{left} {op} {right}"),
                 true => format!("({left} {op} {right})"),
@@ -113,14 +115,20 @@ impl ColExpr {
                     let expr = ColExpr::Column(value.to_string());
                     stack.push(expr);
                 }
-                Expression::StableFunction { name, .. } => {
-                    let expr = stack.pop().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing STABLE FUNCTION expression"
-                                .to_string(),
-                        )
-                    })?;
-                    let func_expr = ColExpr::StableFunction(name.clone(), Box::new(expr));
+                Expression::StableFunction { name, children } => {
+                    let mut len = children.len();
+                    let mut args: Vec<ColExpr> = Vec::with_capacity(len);
+                    while len > 0 {
+                        let arg = stack.pop().ok_or_else(|| {
+                            SbroadError::UnexpectedNumberOfValues(
+                                format!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression"),
+                            )
+                        })?;
+                        args.push(arg);
+                        len -= 1;
+                    }
+                    let args_expr = ColExpr::Row(args);
+                    let func_expr = ColExpr::StableFunction(name.clone(), Box::new(args_expr));
                     stack.push(func_expr);
                 }
                 Expression::Row { list, .. } => {
@@ -165,7 +173,16 @@ impl ColExpr {
 
                     stack.push(ar_expr);
                 }
-                Expression::Alias { .. } | Expression::Bool { .. } | Expression::Unary { .. } => {
+                Expression::Alias { name, .. } => {
+                    let expr = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing ALIAS expression".to_string(),
+                        )
+                    })?;
+                    let alias_expr = ColExpr::Alias(Box::new(expr), name.clone());
+                    stack.push(alias_expr);
+                }
+                Expression::Bool { .. } | Expression::Unary { .. } => {
                     return Err(SbroadError::Unsupported(
                         Entity::Expression,
                         Some(format!(
@@ -584,22 +601,17 @@ impl Display for SubQuery {
 #[derive(Debug, Serialize)]
 struct Motion {
     policy: MotionPolicy,
-    generation: DataGeneration,
 }
 
 impl Motion {
-    fn new(policy: MotionPolicy, generation: DataGeneration) -> Self {
-        Motion { policy, generation }
+    fn new(policy: MotionPolicy) -> Self {
+        Motion { policy }
     }
 }
 
 impl Display for Motion {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "motion [policy: {}, generation: {}]",
-            &self.policy, &self.generation
-        )
+        write!(f, "motion [policy: {}]", &self.policy)
     }
 }
 
@@ -882,10 +894,7 @@ impl FullExplain {
                     Some(ExplainNode::SubQuery(s))
                 }
                 Relational::Motion {
-                    children,
-                    policy,
-                    generation,
-                    ..
+                    children, policy, ..
                 } => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
@@ -932,7 +941,7 @@ impl FullExplain {
                         IrMotionPolicy::Full => MotionPolicy::Full,
                         IrMotionPolicy::Local => MotionPolicy::Local,
                     };
-                    let m = Motion::new(p, generation.clone());
+                    let m = Motion::new(p);
 
                     Some(ExplainNode::Motion(m))
                 }

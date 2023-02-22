@@ -261,3 +261,102 @@ g.test_insert_7 = function()
         },
     })
 end
+
+-- check type derivation for null column in the first row of the VALUES operator
+g.test_insert_8 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[VALUES (?, ?, ?), (?, ?, ?)]], { 8, 8, box.NULL, 9, 9, 'hello' } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COLUMN_4", type = "integer"},
+            {name = "COLUMN_5", type = "integer"},
+            {name = "COLUMN_6", type = "boolean"},
+        },
+        rows = {
+            { 8, 8, box.NULL },
+            { 9, 9, 'hello' }
+        },
+    })
+
+    r, err = api:call("sbroad.execute", { [[VALUES (?, ?, ?), (?, ?, ?)]], { 9, 9, 'hello', 8, 8, box.NULL } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COLUMN_4", type = "integer"},
+            {name = "COLUMN_5", type = "integer"},
+            {name = "COLUMN_6", type = "text"},
+        },
+        rows = {
+            { 9, 9, 'hello' },
+            { 8, 8, box.NULL }
+        },
+    })
+
+    r, err = api:call("sbroad.execute", { [[VALUES (8, 8, null), (9, 9, 'hello')]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COLUMN_4", type = "integer"},
+            {name = "COLUMN_5", type = "integer"},
+            {name = "COLUMN_6", type = "boolean"},
+        },
+        rows = {
+            { 8, 8, box.NULL },
+            { 9, 9, 'hello' }
+        },
+    })
+
+    r, err = api:call("sbroad.execute", { [[VALUES (9, 9, 'hello'), (8, 8, null)]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COLUMN_4", type = "integer"},
+            {name = "COLUMN_5", type = "integer"},
+            {name = "COLUMN_6", type = "text"},
+        },
+        rows = {
+            { 9, 9, 'hello' },
+            { 8, 8, box.NULL }
+        },
+    })
+
+    r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (?, ?, ?), (?, ?, ?)]], { 8, 8, box.NULL, 9, 9, 'hello' } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (20, 20, null), (21, 21, 'hello')]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (?, ?, ?)]], { 22, 22, box.NULL } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    ("sysOp", "id", "name") VALUES (23, 23, null)]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("sbroad.execute", { [[
+            insert into "arithmetic_space"
+            ("id", "a", "b", "c", "d", "e", "f", "boolean_col", "string_col", "number_col")
+            values (?,?,?,?,?,?,?,?,?,?),
+            (?,?,?,?,?,?,?,?,?,?),
+            (?,?,?,?,?,?,?,?,?,?),
+            (?,?,?,?,?,?,?,?,?,?)
+        ]],
+        {
+            1, 1, 1, 1, 1, 2, 2, true, "a", 3.14,
+            2, 1, 2, 1, 2, 2, 2, true, "a", 3,
+            3, 2, 3, 1, 2, 2, 2, true, "c", 3.14,
+            4, 2, 3, 1, 1, 2, 2, true, "c", 3.1475
+        }
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 4})
+end

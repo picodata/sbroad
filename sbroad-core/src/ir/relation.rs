@@ -17,25 +17,25 @@ use super::distribution::Key;
 const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
-/// This `Type` doesn't have any relation with `Type` from IR.
+/// This `Type` is derived from the result's metadata.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
 pub enum Type {
+    Array,
     Boolean,
     Decimal,
     Double,
     Integer,
-    Number,
     Scalar,
     String,
+    Number,
     Unsigned,
-    Array,
 }
 
 impl Type {
     /// Type constructor
     ///
     /// # Errors
-    /// Returns `SbroadError` when the input arguments are invalid.
+    /// - Invalid type name.
     pub fn new(s: &str) -> Result<Self, SbroadError> {
         match s.to_string().to_lowercase().as_str() {
             "boolean" => Ok(Type::Boolean),
@@ -44,8 +44,22 @@ impl Type {
             "integer" => Ok(Type::Integer),
             "number" => Ok(Type::Number),
             "scalar" => Ok(Type::Scalar),
-            "string" => Ok(Type::String),
+            "string" | "text" => Ok(Type::String),
             "unsigned" => Ok(Type::Unsigned),
+            "array" => Ok(Type::Array),
+            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
+        }
+    }
+
+    /// Type constructor (in a case of the possibly incorrect input -
+    /// VALUES with the first NULL row can return incorrect type in the metadata).
+    ///
+    /// # Errors
+    /// - Invalid type name.
+    pub fn new_from_possibly_incorrect(s: &str) -> Result<Self, SbroadError> {
+        match s.to_string().to_lowercase().as_str() {
+            "boolean" | "decimal" | "double" | "integer" | "number" | "numeric" | "scalar"
+            | "string" | "text" | "unsigned" => Ok(Type::Scalar),
             "array" => Ok(Type::Array),
             v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
         }

@@ -338,6 +338,11 @@ impl Coordinator for RouterRuntime {
         let column_names = plan.get_ir_plan().get_relational_aliases(top_id)?;
         // We should get a motion alias name before we take the subtree in dispatch.
         let alias = plan.get_motion_alias(motion_node_id)?.map(String::from);
+        // We also need to find out, if the motion subtree contains values node (as a result we can retrieve
+        // incorrect types from the result metadata).
+        let possibly_incorrect_types =
+            plan.get_ir_plan().subtree_contains_values(motion_node_id)?;
+        // Dispatch the motion subtree (it will be replaced with invalid values).
         let result = self.dispatch(plan, top_id, buckets)?;
         // Unlink motion node's child sub tree (it is already replaced with invalid values).
         plan.unlink_motion_subtree(motion_node_id)?;
@@ -353,7 +358,7 @@ impl Coordinator for RouterRuntime {
                 .ok_or_else(|| {
                     SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into())
                 })?
-                .as_virtual_table(column_names)?
+                .as_virtual_table(column_names, possibly_incorrect_types)?
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Motion,

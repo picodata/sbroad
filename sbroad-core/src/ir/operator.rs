@@ -11,7 +11,7 @@ use std::fmt::{Display, Formatter};
 use crate::errors::{Action, Entity, SbroadError};
 
 use super::expression::Expression;
-use super::transformation::redistribution::{DataGeneration, MotionPolicy};
+use super::transformation::redistribution::MotionPolicy;
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
 use crate::collection;
@@ -212,8 +212,6 @@ pub enum Relational {
         children: Vec<usize>,
         /// Motion policy - the amount of data to be moved.
         policy: MotionPolicy,
-        /// Data generation strategy - what data to be generated.
-        generation: DataGeneration,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
@@ -845,7 +843,6 @@ impl Plan {
         &mut self,
         child_id: usize,
         policy: &MotionPolicy,
-        generation: &DataGeneration,
     ) -> Result<usize, SbroadError> {
         let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
             rel.scan_name(self, 0)?.map(String::from)
@@ -859,7 +856,6 @@ impl Plan {
             alias,
             children: vec![child_id],
             policy: policy.clone(),
-            generation: generation.clone(),
             output,
         };
         let motion_id = self.nodes.push(Node::Relational(motion));

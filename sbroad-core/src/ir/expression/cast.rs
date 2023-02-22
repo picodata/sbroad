@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use crate::errors::{Entity, SbroadError};
 use crate::frontend::sql::ast::Type as AstType;
 use crate::ir::expression::Expression;
+use crate::ir::relation::Type as RelationType;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,27 @@ impl TryFrom<&AstType> for Type {
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some(format!("{ast_type:?}")),
+            )),
+        }
+    }
+}
+
+impl TryFrom<&RelationType> for Type {
+    type Error = SbroadError;
+
+    fn try_from(relational_type: &RelationType) -> Result<Self, Self::Error> {
+        match relational_type {
+            RelationType::Boolean => Ok(Type::Boolean),
+            RelationType::Decimal => Ok(Type::Decimal),
+            RelationType::Double => Ok(Type::Double),
+            RelationType::Integer => Ok(Type::Integer),
+            RelationType::Scalar => Ok(Type::Scalar),
+            RelationType::String => Ok(Type::String),
+            RelationType::Number => Ok(Type::Number),
+            RelationType::Unsigned => Ok(Type::Unsigned),
+            RelationType::Array => Err(SbroadError::Unsupported(
+                Entity::Type,
+                Some("array int the cast operation".to_string()),
             )),
         }
     }

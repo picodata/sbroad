@@ -3,10 +3,14 @@ use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
 use tarantool::tlua::{self, LuaRead};
 
+use crate::debug;
 use crate::errors::{Entity, SbroadError};
 use crate::executor::vtable::VirtualTable;
+use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
+use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
 use crate::ir::value::{EncodedValue, Value};
+use crate::ir::Plan;
 
 type ExecutorTuple = Vec<EncodedValue>;
 
@@ -87,12 +91,34 @@ impl ProducerResult {
     ///
     /// # Errors
     /// - convert to virtual table error
-    pub fn as_virtual_table(&self, column_names: Vec<String>) -> Result<VirtualTable, SbroadError> {
+    pub fn as_virtual_table(
+        &self,
+        column_names: Vec<String>,
+        possibly_incorrect_types: bool,
+    ) -> Result<VirtualTable, SbroadError> {
         let mut vtable = VirtualTable::new();
 
-        for col in &self.metadata {
-            vtable.add_column(col.try_into()?);
+        for encoded_tuple in &self.rows {
+            let tuple: Vec<Value> = encoded_tuple
+                .iter()
+                .map(|v| Value::from(v.clone()))
+                .collect();
+            vtable.add_tuple(tuple);
         }
+
+        for col in &self.metadata {
+            let column: Column = if possibly_incorrect_types {
+                let column_type = Type::new_from_possibly_incorrect(&col.r#type)?;
+                Column::new(&col.name, column_type, ColumnRole::User)
+            } else {
+                col.try_into()?
+            };
+            vtable.add_column(column);
+        }
+        debug!(
+            Option::from("as_virtual_table"),
+            &format!("virtual table columns: {:?}", vtable.get_columns())
+        );
 
         for (vcol, name) in vtable
             .get_mut_columns()
@@ -110,14 +136,6 @@ impl ProducerResult {
             }))
         {
             vcol.name = name;
-        }
-
-        for encoded_tuple in &self.rows {
-            let tuple = encoded_tuple
-                .iter()
-                .map(|v| Value::from(v.clone()))
-                .collect();
-            vtable.add_tuple(tuple);
         }
 
         Ok(vtable)
@@ -166,6 +184,24 @@ impl Serialize for ConsumerResult {
         let mut map = serializer.serialize_map(Some(1))?;
         map.serialize_entry("row_count", &self.row_count)?;
         map.end()
+    }
+}
+
+impl Plan {
+    /// Checks if the plan contains a `Values` node.
+    ///
+    /// # Errors
+    /// - If relational iterator fails to return a correct node.
+    pub fn subtree_contains_values(&self, top_id: usize) -> Result<bool, SbroadError> {
+        let mut rel_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
+        let nodes: Vec<usize> = rel_tree.iter(top_id).map(|(_, id)| id).collect();
+        for node_id in nodes {
+            let rel = self.get_relation_node(node_id)?;
+            if let Relational::Values { .. } = rel {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 

@@ -5,7 +5,7 @@ use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
-use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
+use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{EncodedValue, Value};
 
 use super::*;
@@ -34,9 +34,7 @@ fn empty_motion1_test() {
     let mut virtual_t1 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t1, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t1, key).unwrap();
     }
     query.coordinator.add_virtual_table(motion1_id, virtual_t1);
     let motion2_id = *query
@@ -50,9 +48,7 @@ fn empty_motion1_test() {
     let mut virtual_t2 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
     }
     query.coordinator.add_virtual_table(motion2_id, virtual_t2);
 

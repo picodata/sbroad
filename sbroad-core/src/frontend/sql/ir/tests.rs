@@ -118,7 +118,7 @@ fn front_sql5() {
     selection ROW("hash_testing"."identification_number") in ROW($0)
         scan "hash_testing"
 subquery $0:
-motion [policy: full, generation: none]
+motion [policy: full]
             scan
                 projection ("hash_testing_hist"."identification_number" -> "identification_number")
                     selection ROW("hash_testing_hist"."product_code") = ROW('a')
@@ -145,7 +145,7 @@ fn front_sql6() {
             scan "hash_testing"
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
                     scan "hash_testing"
-            motion [policy: full, generation: none]
+            motion [policy: full]
                 scan "T"
                     projection ("test_space"."id" -> "id")
                         scan "test_space"
@@ -209,7 +209,7 @@ fn front_sql9() {
                     projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
                         selection ROW("test_space_hist"."sysFrom") <= ROW(0)
                             scan "test_space_hist"
-            motion [policy: segment([ref("identification_number")]), generation: none]
+            motion [policy: segment([ref("identification_number")])]
                 scan "t8"
                     union all
                         projection ("hash_testing_hist"."identification_number" -> "identification_number", "hash_testing_hist"."product_code" -> "product_code")
@@ -232,9 +232,13 @@ fn front_sql10() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    motion [policy: segment([ref(COLUMN_1), ref(COLUMN_2)]), generation: sharding_column]
-        values
-            value row (data=ROW(1, 2, 3, 4))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, COL_2 -> COL_2, COL_3 -> COL_3, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', COL_1::string)))))
+        scan
+            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1, COLUMN_3::unsigned -> COL_2, COLUMN_4::unsigned -> COL_3)
+                scan
+                    motion [policy: segment([ref(COLUMN_1), ref(COLUMN_2)])]
+                        values
+                            value row (data=ROW(1, 2, 3, 4))
 "#,
     );
 
@@ -249,9 +253,13 @@ fn front_sql11() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    motion [policy: segment([ref(COLUMN_1), value(NULL)]), generation: sharding_column]
-        values
-            value row (data=ROW(1, 2))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+        scan
+            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1)
+                scan
+                    motion [policy: segment([ref(COLUMN_1), value(NULL)])]
+                        values
+                            value row (data=ROW(1, 2))
 "#,
     );
 
@@ -266,9 +274,13 @@ fn front_sql14() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    motion [policy: segment([ref("b"), value(NULL)]), generation: sharding_column]
-        projection ("t"."b" -> "b", "t"."d" -> "d")
-            scan "t"
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+        scan
+            projection ("t"."b"::unsigned -> COL_0, "t"."d"::unsigned -> COL_1)
+                scan
+                    motion [policy: segment([ref("b"), value(NULL)])]
+                        projection ("t"."b" -> "b", "t"."d" -> "d")
+                            scan "t"
 "#,
     );
 
@@ -370,7 +382,7 @@ fn front_sql_groupby() {
     let expected_explain = String::from(
         r#"projection ("identification_number" -> "identification_number", "product_code" -> "product_code")
     group by ("hash_testing"."identification_number", "hash_testing"."product_code") output: ("identification_number" -> "identification_number", "product_code" -> "product_code")
-        motion [policy: segment([ref("identification_number"), ref("product_code")]), generation: none]
+        motion [policy: segment([ref("identification_number"), ref("product_code")])]
             scan 
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
                     group by ("hash_testing"."identification_number", "hash_testing"."product_code") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
@@ -393,7 +405,7 @@ fn front_sql_groupby_less_cols_in_proj() {
     let expected_explain = String::from(
         r#"projection ("identification_number" -> "identification_number")
     group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("identification_number" -> "identification_number", "product_units" -> "product_units")
-        motion [policy: segment([ref("identification_number"), ref("product_units")]), generation: none]
+        motion [policy: segment([ref("identification_number"), ref("product_units")])]
             scan 
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_units" -> "product_units")
                     group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
@@ -417,7 +429,7 @@ fn front_sql_groupby_union_1() {
         r#"union all
     projection ("identification_number" -> "identification_number")
         group by ("hash_testing"."identification_number") output: ("identification_number" -> "identification_number")
-            motion [policy: segment([ref("identification_number")]), generation: none]
+            motion [policy: segment([ref("identification_number")])]
                 scan 
                     projection ("hash_testing"."identification_number" -> "identification_number")
                         group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
@@ -449,7 +461,7 @@ fn front_sql_groupby_union_2() {
             union all
                 projection ("identification_number" -> "identification_number")
                     group by ("hash_testing"."identification_number") output: ("identification_number" -> "identification_number")
-                        motion [policy: segment([ref("identification_number")]), generation: none]
+                        motion [policy: segment([ref("identification_number")])]
                             scan 
                                 projection ("hash_testing"."identification_number" -> "identification_number")
                                     group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
@@ -476,7 +488,7 @@ fn front_sql_groupby_join_1() {
     let expected_explain = String::from(
         r#"projection ("product_code" -> "product_code", "product_units" -> "product_units")
     group by ("T2"."product_code", "T2"."product_units") output: ("product_code" -> "product_code", "product_units" -> "product_units")
-        motion [policy: segment([ref("product_code"), ref("product_units")]), generation: none]
+        motion [policy: segment([ref("product_code"), ref("product_units")])]
             scan 
                 projection ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
                     group by ("T2"."product_code", "T2"."product_units") output: ("T2"."product_units" -> "product_units", "T2"."product_code" -> "product_code", "T2"."identification_number" -> "identification_number", "T"."id" -> "id")
@@ -484,7 +496,7 @@ fn front_sql_groupby_join_1() {
                             scan "T2"
                                 projection ("hash_testing"."product_units" -> "product_units", "hash_testing"."product_code" -> "product_code", "hash_testing"."identification_number" -> "identification_number")
                                     scan "hash_testing"
-                            motion [policy: full, generation: none]
+                            motion [policy: full]
                                 scan "T"
                                     projection ("test_space"."id" -> "id")
                                         scan "test_space"
@@ -501,14 +513,18 @@ fn front_sql_groupby_insert() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    motion [policy: segment([ref("b"), value(NULL)]), generation: sharding_column]
-        projection ("b" -> "b", "d" -> "d")
-            group by ("t"."b", "t"."d") output: ("b" -> "b", "d" -> "d")
-                motion [policy: segment([ref("b"), ref("d")]), generation: none]
-                    scan 
-                        projection ("t"."b" -> "b", "t"."d" -> "d")
-                            group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
-                                scan "t"
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+        scan
+            projection ("b"::unsigned -> COL_0, "d"::unsigned -> COL_1)
+                scan
+                    motion [policy: segment([ref("b"), value(NULL)])]
+                        projection ("b" -> "b", "d" -> "d")
+                            group by ("t"."b", "t"."d") output: ("b" -> "b", "d" -> "d")
+                                motion [policy: segment([ref("b"), ref("d")])]
+                                    scan 
+                                        projection ("t"."b" -> "b", "t"."d" -> "d")
+                                            group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                                                scan "t"
 "#,
     );
 
@@ -534,11 +550,11 @@ fn front_sql_aggregates() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("b" -> "b", (sum("count_28")) + (sum("count_30")) -> "COL_1")
+        r#"projection ("b" -> "b", (sum(("count_28"))) + (sum(("count_30"))) -> "COL_1")
     group by ("t"."b") output: ("b" -> "b", "count_28" -> "count_28", "count_30" -> "count_30")
-        motion [policy: segment([ref("b")]), generation: none]
+        motion [policy: segment([ref("b")])]
             scan 
-                projection ("t"."b" -> "b", count("t"."a") -> "count_28", count("t"."b") -> "count_30")
+                projection ("t"."b" -> "b", count(("t"."a")) -> "count_28", count(("t"."b")) -> "count_30")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
@@ -555,11 +571,11 @@ fn front_sql_aggregates_with_subexpressions() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("b" -> "b", sum("count_35") -> "COL_1", sum("count_39") -> "COL_2")
+        r#"projection ("b" -> "b", sum(("count_35")) -> "COL_1", sum(("count_39")) -> "COL_2")
     group by ("t"."b") output: ("b" -> "b", "count_35" -> "count_35", "count_39" -> "count_39")
-        motion [policy: segment([ref("b")]), generation: none]
+        motion [policy: segment([ref("b")])]
             scan 
-                projection ("t"."b" -> "b", count(("t"."a") * ("t"."b") + (1)) -> "count_35", count("BUCKET_ID"("t"."a")) -> "count_39")
+                projection ("t"."b" -> "b", count((("t"."a") * ("t"."b") + (1))) -> "count_35", count(("BUCKET_ID"(("t"."a")))) -> "count_39")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
@@ -591,12 +607,12 @@ fn front_sql_nested_subqueries() {
     selection ROW("t"."a") in ROW($1)
         scan "t"
 subquery $0:
-motion [policy: full, generation: none]
+motion [policy: full]
                             scan
                                 projection ("t1"."b" -> "b")
                                     scan "t1"
 subquery $1:
-motion [policy: full, generation: none]
+motion [policy: full]
             scan
                 projection ("t1"."a" -> "a")
                     selection ROW("t1"."a") in ROW($0)

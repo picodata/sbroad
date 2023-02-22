@@ -18,7 +18,7 @@ fn concat2_test() {
         &format!(
             "{}\n{}\n{}\n",
             r#"projection ("t1"."a" -> "a")"#,
-            r#"    selection ROW(('1'::string) || (("BUCKET_ID"('hello')) || ('2'))) = ROW(42)"#,
+            r#"    selection ROW(('1'::string) || (("BUCKET_ID"(('hello'))) || ('2'))) = ROW(42)"#,
             r#"        scan "t1""#,
         ),
     );

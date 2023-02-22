@@ -7,7 +7,7 @@ use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
-use crate::ir::transformation::redistribution::{DataGeneration, MotionPolicy};
+use crate::ir::transformation::redistribution::MotionPolicy;
 
 use crate::ir::value::{EncodedValue, Value};
 
@@ -144,9 +144,7 @@ fn linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query
-            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
     }
     query
         .coordinator
@@ -230,9 +228,7 @@ fn union_linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query
-            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
     }
     query
         .coordinator
@@ -336,9 +332,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     virtual_table.set_alias("\"t8\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query
-            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
     }
     query
         .coordinator
@@ -425,9 +419,7 @@ fn join_linker2_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query
-            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
     }
 
     query
@@ -499,9 +491,7 @@ fn join_linker3_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query
-            .reshard_vtable(&mut virtual_table, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
     }
 
     query
@@ -568,9 +558,7 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
     }
     query
         .coordinator
@@ -595,9 +583,7 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
-        query
-            .reshard_vtable(&mut virtual_sq, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_sq, key).unwrap();
     }
     query
         .coordinator
@@ -683,9 +669,7 @@ on q."f" = "t1"."a""#;
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
     }
     query
         .coordinator
@@ -714,9 +698,7 @@ on q."f" = "t1"."a""#;
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
-        query
-            .reshard_vtable(&mut virtual_sq, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_sq, key).unwrap();
     }
     query
         .coordinator
@@ -767,9 +749,7 @@ fn anonymous_col_index_test() {
     let mut virtual_t1 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t1, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t1, key).unwrap();
     }
     query
         .coordinator
@@ -785,9 +765,7 @@ fn anonymous_col_index_test() {
     let mut virtual_t2 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
-        query
-            .reshard_vtable(&mut virtual_t2, key, &DataGeneration::None)
-            .unwrap();
+        query.reshard_vtable(&mut virtual_t2, key).unwrap();
     }
     query
         .coordinator
@@ -936,6 +914,7 @@ fn insert1_test() {
     });
     virtual_table.add_tuple(vec![Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
+    virtual_table.set_alias("\"t\"").unwrap();
 
     query
         .coordinator
@@ -962,22 +941,24 @@ fn insert1_test() {
             EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {}",
+                    "{} {} {}",
                     r#"INSERT INTO "t" ("b", "bucket_id")"#,
-                    r#"SELECT "a","bucket_id" FROM "TMP_test_113""#,
+                    r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::Null, Value::String("".into()), Value::String("".into())],
             ))),
         ],
         vec![
             EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {}",
+                    "{} {} {}",
                     r#"INSERT INTO "t" ("b", "bucket_id")"#,
-                    r#"SELECT "a","bucket_id" FROM "TMP_test_113""#,
+                    r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::Null, Value::String("".into()), Value::String("".into())],
             ))),
         ],
     ]);
@@ -991,35 +972,6 @@ fn insert2_test() {
 
     let coordinator = RouterRuntimeMock::new();
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-
-    // Though projection row has the same distribution key as
-    // the target table, we still add a motion and collect a
-    // virtual table for it on coordinator to recalculate
-    // a "bucket_id" field for "t".
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
-    let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
-
-    query
-        .coordinator
-        .add_virtual_table(motion_id, virtual_table);
 
     let result = *query
         .dispatch()
@@ -1037,11 +989,13 @@ fn insert2_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {}",
+                "{} {} {} {}",
                 r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                r#"SELECT "a","b","bucket_id" FROM "TMP_test_87""#,
+                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
+                r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
+                r#"(SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
             ),
-            vec![],
+            vec![Value::from(""), Value::from(""), Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1077,6 +1031,7 @@ fn insert3_test() {
     });
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
+    virtual_table.set_alias("\"t\"").unwrap();
 
     query
         .coordinator
@@ -1103,22 +1058,26 @@ fn insert3_test() {
             EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {}",
+                    "{} {} {} {}",
                     r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                    r#"SELECT "a","b","bucket_id" FROM "TMP_test_117""#,
+                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
+                    r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::from(""), Value::from("")],
             ))),
         ],
         vec![
             EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {}",
+                    "{} {} {} {}",
                     r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                    r#"SELECT "a","b","bucket_id" FROM "TMP_test_117""#,
+                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
+                    r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::from(""), Value::from("")],
             ))),
         ],
     ]);
@@ -1133,33 +1092,6 @@ fn insert4_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-
-    // Though data allows to be inserted locally still gather it on the
-    // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
-    let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(1_u64)]);
-
-    query
-        .coordinator
-        .add_virtual_table(motion_id, virtual_table);
 
     let result = *query
         .dispatch()
@@ -1177,11 +1109,13 @@ fn insert4_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {}",
+                "{} {} {} {}",
                 r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                r#"SELECT "b","a","bucket_id" FROM "TMP_test_87""#,
+                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                r#"(SELECT CAST ("t"."b" as unsigned) as COL_0, CAST ("t"."a" as unsigned) as COL_1 FROM"#,
+                r#"(SELECT "t"."b", "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
             ),
-            vec![],
+            vec![Value::from(""), Value::from(""), Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1206,17 +1140,18 @@ fn insert5_test() {
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
-        name: "a".into(),
+        name: "COL_1".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "b".into(),
+        name: "COL_2".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
     virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
     virtual_table.add_tuple(vec![Value::from(5_u64), Value::from(6_u64)]);
+    virtual_table.set_alias("\"t\"").unwrap();
 
     query
         .coordinator
@@ -1238,11 +1173,13 @@ fn insert5_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {}",
+                "{} {} {} {}",
                 r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                r#"SELECT "a","b","bucket_id" FROM "TMP_test_87""#,
+                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
+                r#"(SELECT CAST ("COL_1" as unsigned) as COL_0, CAST ("COL_2" as unsigned) as COL_1 FROM"#,
+                r#"((SELECT "COL_1","COL_2" FROM "TMP_test_125") as "t"))"#,
             ),
-            vec![],
+            vec![Value::from(""), Value::from("")],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1278,6 +1215,7 @@ fn insert6_test() {
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
+    virtual_table.set_alias("\"t\"").unwrap();
 
     query
         .coordinator
@@ -1303,24 +1241,26 @@ fn insert6_test() {
             EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {}",
+                    "{} {} {} {}",
                     r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                    r#"SELECT "COLUMN_5","COLUMN_6","bucket_id""#,
-                    r#"FROM "TMP_test_56""#,
+                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
+                    r#"(SELECT CAST (COLUMN_5 as unsigned) as COL_0, CAST (COLUMN_6 as unsigned) as COL_1 FROM"#,
+                    r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::from(""), Value::from("")],
             ))),
         ],
         vec![
             EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {}",
+                    "{} {} {} {}",
                     r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                    r#"SELECT "COLUMN_5","COLUMN_6","bucket_id""#,
-                    r#"FROM "TMP_test_56""#,
+                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
+                    r#"(SELECT CAST (COLUMN_5 as unsigned) as COL_0, CAST (COLUMN_6 as unsigned) as COL_1 FROM"#,
+                    r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
                 ),
-                vec![],
+                vec![Value::from(""), Value::from("")],
             ))),
         ],
     ]);
@@ -1379,6 +1319,7 @@ fn insert8_test() {
         Value::from(true),
         Value::from(4_u64),
     ]);
+    virtual_table.set_alias("\"hash_single_testing\"").unwrap();
 
     query
         .coordinator
@@ -1400,11 +1341,13 @@ fn insert8_test() {
             String::from(
                 PatternWithParams::new(
                     format!(
-                    "{} {}{}",
+                    "{} {} {} {} {}",
                     r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op", "bucket_id")"#,
-                    r#"SELECT "identification_number","product_code","product_units","#,
-                    r#""sys_op","bucket_id" FROM "TMP_test_56""#,
-                    ), vec![],
+                    r#"SELECT COL_0, COL_1, COL_2, COL_3, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
+                    r#"(SELECT CAST ("hash_single_testing"."identification_number" as int) as COL_0, CAST ("hash_single_testing"."product_code" as string) as COL_1,"#,
+                    r#"CAST ("hash_single_testing"."product_units" as bool) as COL_2, CAST ("hash_single_testing"."sys_op" as unsigned) as COL_3 FROM"#,
+                    r#"((SELECT "identification_number","product_code","product_units","sys_op" FROM "TMP_test_114") as "hash_single_testing"))"#,
+                    ), vec![Value::from(""), Value::from("")],
                 )
             )
         ),
@@ -1445,6 +1388,7 @@ fn insert9_test() {
         role: ColumnRole::User,
     });
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    virtual_table.set_alias("\"t\"").unwrap();
 
     query
         .coordinator
@@ -1467,10 +1411,10 @@ fn insert9_test() {
             format!(
                 "{} {} {}",
                 r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                r#"SELECT "COLUMN_1","COLUMN_2","bucket_id""#,
-                r#"FROM "TMP_test_44""#,
+                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
+                r#"(SELECT CAST (COLUMN_1 as unsigned) as COL_0, CAST (COLUMN_2 as unsigned) as COL_1 FROM ((SELECT "COLUMN_1","COLUMN_2" FROM "TMP_test_82") as "t"))"#,
             ),
-            vec![],
+            vec![Value::from(""), Value::from("")],
         ))),
     ]]);
     assert_eq!(expected, result);

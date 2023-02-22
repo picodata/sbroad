@@ -252,23 +252,7 @@ fn insert2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    // Though data allows to be inserted locally still gather it on the
-    // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
-    let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(
-            *policy,
-            MotionPolicy::Segment(
-                (Key {
-                    positions: vec![0, 1]
-                })
-                .into()
-            )
-        );
-    } else {
-        panic!("Expected a motion node");
-    }
+    assert_eq!(plan.slices.slices().is_empty(), true);
 }
 
 #[test]
@@ -277,23 +261,7 @@ fn insert3() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    // Though data allows to be inserted locally still gather it on the
-    // coordinator to recalculate a "bucket_id" field for "t".
-    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
-    let motion = plan.get_relation_node(motion_id).unwrap();
-    if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(
-            *policy,
-            MotionPolicy::Segment(
-                (Key {
-                    positions: vec![0, 1]
-                })
-                .into()
-            )
-        );
-    } else {
-        panic!("Expected a motion node");
-    }
+    assert_eq!(plan.slices.slices().is_empty(), true);
 }
 
 #[test]

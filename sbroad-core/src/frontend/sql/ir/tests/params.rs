@@ -92,7 +92,7 @@ fn front_params5() {
     selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") in ROW($0)
         scan "test_space"
 subquery $0:
-motion [policy: segment([ref("sysFrom")]), generation: none]
+motion [policy: segment([ref("sysFrom")])]
             scan
                 projection ("test_space_hist"."sysFrom" -> "sysFrom")
                     selection ROW("test_space_hist"."sys_op") = ROW(1)

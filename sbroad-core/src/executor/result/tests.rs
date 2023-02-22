@@ -116,7 +116,8 @@ fn convert_to_vtable() {
             col_names
                 .into_iter()
                 .map(std::string::ToString::to_string)
-                .collect()
+                .collect(),
+            false
         )
         .unwrap()
     );

@@ -972,8 +972,12 @@ impl<'p> SyntaxPlan<'p> {
                 Expression::StableFunction { children, .. } => {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    for child in children {
-                        nodes.push(self.nodes.get_syntax_node_id(*child)?);
+                    if let Some((last, others)) = children.split_last() {
+                        for child in others {
+                            nodes.push(self.nodes.get_syntax_node_id(*child)?);
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                        }
+                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
                     }
                     nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
                     let sn = SyntaxNode::new_pointer(id, None, nodes);
