@@ -91,7 +91,7 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
 Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
     FunctionName = @{ Name }
     FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
-    FunctionExpr = _{ Primary | Parentheses }
+    FunctionExpr = _{ Parentheses | Primary }
 
 Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
     Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::errors::{Entity, SbroadError};
+use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
 
 use super::distribution::Distribution;
@@ -180,6 +181,20 @@ impl Expression {
                 Entity::Expression,
                 Some("node isn't Row type".into()),
             )),
+        }
+    }
+
+    #[must_use]
+    pub fn is_aggregate_name(name: &str) -> bool {
+        // currently we support only simple aggregates
+        AggregateKind::new(name).is_some()
+    }
+
+    #[must_use]
+    pub fn is_aggregate_fun(&self) -> bool {
+        match self {
+            Expression::StableFunction { name, .. } => Expression::is_aggregate_name(name),
+            _ => false,
         }
     }
 

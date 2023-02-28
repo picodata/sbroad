@@ -265,20 +265,26 @@ impl Display for Projection {
 #[derive(Debug, Serialize)]
 struct GroupBy {
     /// List of colums in sql query
-    cols: Vec<Col>,
+    gr_cols: Vec<Col>,
+    output_cols: Vec<Col>,
 }
 
 impl GroupBy {
     #[allow(dead_code)]
-    fn new(plan: &Plan, output_id: usize) -> Result<Self, SbroadError> {
-        let mut result = GroupBy { cols: vec![] };
+    fn new(plan: &Plan, gr_cols: &Vec<usize>, output_id: usize) -> Result<Self, SbroadError> {
+        let mut result = GroupBy {
+            gr_cols: vec![],
+            output_cols: vec![],
+        };
 
+        for col_node_id in gr_cols {
+            let col = Col::new(plan, *col_node_id)?;
+            result.gr_cols.push(col);
+        }
         let alias_list = plan.get_expression_node(output_id)?;
-
         for col_node_id in alias_list.get_row_list()? {
             let col = Col::new(plan, *col_node_id)?;
-
-            result.cols.push(col);
+            result.output_cols.push(col);
         }
         Ok(result)
     }
@@ -288,14 +294,22 @@ impl Display for GroupBy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = "group by ".to_string();
 
-        let cols = &self
-            .cols
+        let gr_cols = &self
+            .gr_cols
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<String>>()
             .join(", ");
 
-        write!(s, "({cols})")?;
+        let output_cols = &self
+            .output_cols
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        write!(s, "({gr_cols})")?;
+        write!(s, " output: ({output_cols})")?;
         write!(f, "{s}")
     }
 }
@@ -783,14 +797,16 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Except)
                 }
-                Relational::GroupBy { output, .. } => {
+                Relational::GroupBy {
+                    gr_cols, output, ..
+                } => {
                     let child = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Groupby node must have at least one child".into(),
                         )
                     })?;
                     current_node.children.push(child);
-                    let p = GroupBy::new(ir, *output)?;
+                    let p = GroupBy::new(ir, gr_cols, *output)?;
                     Some(ExplainNode::GroupBy(p))
                 }
                 Relational::Projection { output, .. } => {

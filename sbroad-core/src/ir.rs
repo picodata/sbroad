@@ -17,6 +17,7 @@ use crate::ir::undo::TransformationLog;
 use self::parameters::Parameters;
 use self::relation::Relations;
 
+pub mod aggregates;
 pub mod distribution;
 pub mod expression;
 pub mod function;

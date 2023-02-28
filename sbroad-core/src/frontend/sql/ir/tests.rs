@@ -369,11 +369,11 @@ fn front_sql_groupby() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("identification_number" -> "identification_number", "product_code" -> "product_code")
-    group by ("identification_number" -> "identification_number", "product_code" -> "product_code")
+    group by ("hash_testing"."identification_number", "hash_testing"."product_code") output: ("identification_number" -> "identification_number", "product_code" -> "product_code")
         motion [policy: segment([ref("identification_number"), ref("product_code")]), generation: none]
             scan 
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
-                    group by ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                    group by ("hash_testing"."identification_number", "hash_testing"."product_code") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                         scan "hash_testing"
 "#,
     );
@@ -392,11 +392,11 @@ fn front_sql_groupby_less_cols_in_proj() {
 
     let expected_explain = String::from(
         r#"projection ("identification_number" -> "identification_number")
-    group by ("identification_number" -> "identification_number", "product_units" -> "product_units")
+    group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("identification_number" -> "identification_number", "product_units" -> "product_units")
         motion [policy: segment([ref("identification_number"), ref("product_units")]), generation: none]
             scan 
                 projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_units" -> "product_units")
-                    group by ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_units" -> "product_units")
+                    group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                         scan "hash_testing"
 "#,
     );
@@ -416,11 +416,11 @@ fn front_sql_groupby_union_1() {
     let expected_explain = String::from(
         r#"union all
     projection ("identification_number" -> "identification_number")
-        group by ("identification_number" -> "identification_number")
+        group by ("hash_testing"."identification_number") output: ("identification_number" -> "identification_number")
             motion [policy: segment([ref("identification_number")]), generation: none]
                 scan 
                     projection ("hash_testing"."identification_number" -> "identification_number")
-                        group by ("hash_testing"."identification_number" -> "identification_number")
+                        group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                             scan "hash_testing"
     projection ("hash_testing"."identification_number" -> "identification_number")
         scan "hash_testing"
@@ -448,11 +448,11 @@ fn front_sql_groupby_union_2() {
         scan
             union all
                 projection ("identification_number" -> "identification_number")
-                    group by ("identification_number" -> "identification_number")
+                    group by ("hash_testing"."identification_number") output: ("identification_number" -> "identification_number")
                         motion [policy: segment([ref("identification_number")]), generation: none]
                             scan 
                                 projection ("hash_testing"."identification_number" -> "identification_number")
-                                    group by ("hash_testing"."identification_number" -> "identification_number")
+                                    group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                                         scan "hash_testing"
                 projection ("hash_testing"."identification_number" -> "identification_number")
                     scan "hash_testing"
@@ -475,11 +475,11 @@ fn front_sql_groupby_join_1() {
 
     let expected_explain = String::from(
         r#"projection ("product_code" -> "product_code", "product_units" -> "product_units")
-    group by ("product_code" -> "product_code", "product_units" -> "product_units")
+    group by ("T2"."product_code", "T2"."product_units") output: ("product_code" -> "product_code", "product_units" -> "product_units")
         motion [policy: segment([ref("product_code"), ref("product_units")]), generation: none]
             scan 
                 projection ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
-                    group by ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
+                    group by ("T2"."product_code", "T2"."product_units") output: ("T2"."product_units" -> "product_units", "T2"."product_code" -> "product_code", "T2"."identification_number" -> "identification_number", "T"."id" -> "id")
                         join on ROW("T2"."identification_number") = ROW("T"."id")
                             scan "T2"
                                 projection ("hash_testing"."product_units" -> "product_units", "hash_testing"."product_code" -> "product_code", "hash_testing"."identification_number" -> "identification_number")
@@ -503,11 +503,11 @@ fn front_sql_groupby_insert() {
         r#"insert "t"
     motion [policy: segment([ref("b"), value(NULL)]), generation: sharding_column]
         projection ("b" -> "b", "d" -> "d")
-            group by ("b" -> "b", "d" -> "d")
+            group by ("t"."b", "t"."d") output: ("b" -> "b", "d" -> "d")
                 motion [policy: segment([ref("b"), ref("d")]), generation: none]
                     scan 
                         projection ("t"."b" -> "b", "t"."d" -> "d")
-                            group by ("t"."b" -> "b", "t"."d" -> "d")
+                            group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                                 scan "t"
 "#,
     );
@@ -524,6 +524,59 @@ fn front_sql_groupby_invalid() {
     let plan = ast.resolve_metadata(metadata);
 
     assert_eq!(true, plan.is_err());
+}
+
+#[test]
+fn front_sql_aggregates() {
+    let input = r#"SELECT "b", count("a") + count("b") FROM "t"
+        group by "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("b" -> "b", (sum("count_28")) + (sum("count_30")) -> "COL_1")
+    group by ("t"."b") output: ("b" -> "b", "count_28" -> "count_28", "count_30" -> "count_30")
+        motion [policy: segment([ref("b")]), generation: none]
+            scan 
+                projection ("t"."b" -> "b", count("t"."a") -> "count_28", count("t"."b") -> "count_30")
+                    group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_aggregates_with_subexpressions() {
+    let input = r#"SELECT "b", count("a" * "b" + 1), count(bucket_id("a")) FROM "t"
+        group by "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("b" -> "b", sum("count_35") -> "COL_1", sum("count_39") -> "COL_2")
+    group by ("t"."b") output: ("b" -> "b", "count_35" -> "count_35", "count_39" -> "count_39")
+        motion [policy: segment([ref("b")]), generation: none]
+            scan 
+                projection ("t"."b" -> "b", count(("t"."a") * ("t"."b") + (1)) -> "count_35", count("BUCKET_ID"("t"."a")) -> "count_39")
+                    group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_aggregate_inside_aggregate() {
+    let input = r#"select "b", count(sum("a")) from "t" group by "b""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!("invalid query: aggregate function inside aggregate function is not allowed. Got `sum` inside `count`", err.to_string());
 }
 
 #[test]

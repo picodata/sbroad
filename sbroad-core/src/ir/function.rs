@@ -60,4 +60,16 @@ impl Plan {
         let func_id = self.nodes.push(Node::Expression(func_expr));
         Ok(func_id)
     }
+
+    /// Add aggregate function to plan
+    ///
+    /// # Errors
+    /// -
+    pub fn add_aggregate_function(&mut self, function: &str, child: usize) -> usize {
+        let func_expr = Expression::StableFunction {
+            name: function.to_lowercase(),
+            children: vec![child],
+        };
+        self.nodes.push(Node::Expression(func_expr))
+    }
 }

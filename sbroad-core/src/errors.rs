@@ -10,6 +10,8 @@ pub enum Entity {
     Args,
     /// corresponding to struct AbstractSyntaxTree
     AST,
+    /// corresponding to trait Aggregate
+    Aggregate,
     /// corresponding to struct Buckets
     Buckets,
     /// raw bytes
@@ -101,6 +103,7 @@ impl fmt::Display for Entity {
         let p = match self {
             Entity::Args => "args".to_string(),
             Entity::AST => "AST".to_string(),
+            Entity::Aggregate => "aggregate".to_string(),
             Entity::Buckets => "buckets".to_string(),
             Entity::Bytes => "bytes".to_string(),
             Entity::Cache => "cache".to_string(),

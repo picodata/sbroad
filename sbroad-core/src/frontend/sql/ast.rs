@@ -184,7 +184,7 @@ impl Type {
             Rule::ValuesRow => Ok(Type::ValuesRow),
             _ => Err(SbroadError::Invalid(
                 Entity::AST,
-                Some("got unexpected rule".into()),
+                Some(format!("got unexpected rule: {rule:?}")),
             )),
         }
     }

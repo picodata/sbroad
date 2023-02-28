@@ -16,11 +16,13 @@ use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Arithmetic, Bool, Unary};
-use crate::ir::tree::traversal::PostOrder;
+use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 
+use crate::ir::aggregates::SimpleAggregate;
+use crate::ir::expression::Expression::StableFunction;
 use sbroad_proc::otm_child_span;
 
 /// Helper structure to fix the double linking
@@ -32,6 +34,11 @@ struct Between {
     left_id: usize,
     /// Less or equal node id (`left <= right`)
     less_eq_id: usize,
+}
+
+pub struct AggregateInfo {
+    pub expression_top: usize,
+    pub aggregate: SimpleAggregate,
 }
 
 impl Between {
@@ -716,6 +723,30 @@ impl Ast for AbstractSyntaxTree {
                             self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
                                 SbroadError::NotFound(Entity::Name, "of sql function".into())
                             })?;
+
+                        if Expression::is_aggregate_name(function_name) {
+                            if plan_arg_list.len() != 1 {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Query,
+                                    Some(format!(
+                                        "Expected one argument for aggregate: {function_name}."
+                                    )),
+                                ));
+                            }
+                            let argument = *plan_arg_list.first().ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::Query,
+                                    Some(format!(
+                                        "aggregate function {function_name} has no arguments!"
+                                    )),
+                                )
+                            })?;
+                            let plan_id =
+                                plan.add_aggregate_function(&function_name.to_string(), argument);
+                            map.add(id, plan_id);
+                            continue;
+                        }
+
                         let func = metadata.get_function(function_name)?;
                         if func.is_stable() {
                             let plan_func_id = plan.add_stable_function(func, plan_arg_list)?;
@@ -788,7 +819,11 @@ impl Ast for AbstractSyntaxTree {
                         SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
-                    let mut columns: Vec<usize> = Vec::new();
+                    let mut proj_columns: Vec<usize> = Vec::with_capacity(node.children.len());
+                    let mut aggregates: Vec<AggregateInfo> =
+                        Vec::with_capacity(node.children.len());
+                    let mut columns_with_aggregates: HashSet<usize> =
+                        HashSet::with_capacity(node.children.len());
                     for ast_column_id in node.children.iter().skip(1) {
                         let ast_column = self.nodes.get_node(*ast_column_id)?;
                         match ast_column.rule {
@@ -800,7 +835,29 @@ impl Ast for AbstractSyntaxTree {
                                         )
                                     })?;
                                 let plan_alias_id = map.get(ast_alias_id)?;
-                                columns.push(plan_alias_id);
+                                // Collect aggregate functions inside column expression
+                                let mut dfs = BreadthFirst::with_capacity(
+                                    |x| plan.nodes.aggregate_iter(x, false),
+                                    EXPR_CAPACITY,
+                                    EXPR_CAPACITY,
+                                );
+                                for (_, id) in dfs.iter(plan_alias_id) {
+                                    // we can't use get_expression_node, because parameters are not
+                                    // bound yet
+                                    let expr = plan.get_node(id)?;
+                                    if let Node::Expression(StableFunction { name, .. }) = expr {
+                                        let Some(aggr) = SimpleAggregate::new(name, id) else {
+                                            continue
+                                        };
+                                        let info = AggregateInfo {
+                                            aggregate: aggr,
+                                            expression_top: plan_alias_id,
+                                        };
+                                        aggregates.push(info);
+                                        columns_with_aggregates.insert(plan_alias_id);
+                                    }
+                                }
+                                proj_columns.push(plan_alias_id);
                             }
                             Type::Asterisk => {
                                 let plan_asterisk_id = map.get(*ast_column_id)?;
@@ -808,7 +865,7 @@ impl Ast for AbstractSyntaxTree {
                                     plan.get_node(plan_asterisk_id)?
                                 {
                                     for row_id in list {
-                                        columns.push(*row_id);
+                                        proj_columns.push(*row_id);
                                     }
                                 } else {
                                     return Err(SbroadError::Invalid(
@@ -831,10 +888,21 @@ impl Ast for AbstractSyntaxTree {
                             }
                         }
                     }
-                    let projection_id = plan.add_proj_internal(plan_child_id, &columns)?;
                     if let Some(groupby_id) = groupby_nodes.pop() {
-                        plan.add_two_stage_aggregation(groupby_id)?;
+                        plan.add_two_stage_aggregation(
+                            groupby_id,
+                            &proj_columns,
+                            &columns_with_aggregates,
+                            &aggregates,
+                        )?;
+                    } else if !aggregates.is_empty() {
+                        return Err(SbroadError::Unsupported(
+                            Entity::Query,
+                            Some("Aggregates without group by clause are not supported yet".into()),
+                        ));
                     }
+
+                    let projection_id = plan.add_proj_internal(plan_child_id, &proj_columns)?;
                     map.add(id, projection_id);
                 }
                 Type::Multiplication | Type::Addition => {

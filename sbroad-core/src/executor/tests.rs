@@ -1580,7 +1580,7 @@ fn groupby_linker_test() {
                 format!(
                     "{} {} {}",
                     r#"SELECT "id" as "ii" FROM (SELECT"#,
-                    r#""id" FROM "TMP_test_37")"#,
+                    r#""id" FROM "TMP_test_56")"#,
                     r#"GROUP BY "T1"."id""#,
                 ),
                 vec![],

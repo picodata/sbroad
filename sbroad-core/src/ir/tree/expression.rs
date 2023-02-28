@@ -21,6 +21,11 @@ pub struct ExpressionIterator<'n> {
     make_row_leaf: bool,
 }
 
+pub struct AggregateIterator<'p> {
+    inner: ExpressionIterator<'p>,
+    must_stop: bool,
+}
+
 impl<'n> Nodes {
     #[must_use]
     pub fn expr_iter(&'n self, current: usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
@@ -29,6 +34,26 @@ impl<'n> Nodes {
             child: RefCell::new(0),
             nodes: self,
             make_row_leaf,
+        }
+    }
+
+    #[must_use]
+    pub fn aggregate_iter(&'n self, current: usize, make_row_leaf: bool) -> AggregateIterator<'n> {
+        let must_stop = if let Some(Node::Expression(Expression::StableFunction { name, .. })) =
+            self.arena.get(current)
+        {
+            Expression::is_aggregate_name(name)
+        } else {
+            false
+        };
+        AggregateIterator {
+            inner: ExpressionIterator {
+                current,
+                child: RefCell::new(0),
+                nodes: self,
+                make_row_leaf,
+            },
+            must_stop,
         }
     }
 }
@@ -58,6 +83,24 @@ impl<'n> Iterator for ExpressionIterator<'n> {
 
     fn next(&mut self) -> Option<Self::Item> {
         expression_next(self).copied()
+    }
+}
+
+impl<'n> Iterator for AggregateIterator<'n> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.must_stop {
+            return None;
+        }
+        expression_next(&mut self.inner).copied().map(|v| {
+            if let Some(Node::Expression(Expression::StableFunction { ref name, .. })) =
+                self.inner.get_nodes().arena.get(v)
+            {
+                self.must_stop = Expression::is_aggregate_name(name);
+            }
+            v
+        })
     }
 }
 

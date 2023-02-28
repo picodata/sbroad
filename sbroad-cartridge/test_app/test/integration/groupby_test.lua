@@ -757,3 +757,181 @@ groupby_queries.test_complex_2 = function ()
     })
 end
 
+groupby_queries.test_count_works = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "d", "e" from "arithmetic_space"
+        ]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "e" , type = "integer" }
+    })
+
+    -- So if group by "d" in each group there will be two values
+    t.assert_items_equals(r.rows, {
+        { 1, 2, },
+        { 2, 2 },
+        { 2, 2 },
+        { 1, 2 },
+    })
+    r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "d", count("e") from "arithmetic_space"
+        group by "d"
+        ]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1" , type = "decimal" }
+    })
+
+    t.assert_items_equals(r.rows, {
+        { 1, 2, },
+        { 2, 2 },
+    })
+end
+
+-- todo: this test fails if we remove the devision by 8, see issue 351
+groupby_queries.test_count = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[
+        select cs, count("d") from (
+            SELECT "d", cast(count("e") + count("e" + "d") as double) / 8 as cs from "arithmetic_space"
+            group by "d"
+        ) as t
+        where t."d" > 1
+        group by cs
+        ]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "CS", type = "double" },
+        { name = "COL_1" , type = "decimal" }
+    })
+
+    t.assert_items_equals(r.rows, {
+        {0.5, 1}
+    })
+end
+
+groupby_queries.test_aggr_invalid = function()
+    local api = cluster:server("api-1").net_box
+
+    -- Currently only aggregates with groupby clause are supported
+    local _, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count("e" + "d") from "arithmetic_space"]], {}
+    })
+    t.assert_str_contains(tostring(err), "not supported")
+
+    -- Aggregate function inside aggregate function makes no sense
+    local _, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count(sum("e")) from "arithmetic_space" group by "d"]], {}
+    })
+    t.assert_str_contains(tostring(err), "aggregate function inside aggregate function")
+end
+
+
+groupby_queries.test_aggr_valid = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count("e" + "d") from "arithmetic_space" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2},
+        {2, 2},
+    })
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", couNT ("e") from "arithmetic_space" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2},
+        {2, 2},
+    })
+
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count("e" * 10 + "a") from "arithmetic_space2" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 3},
+        {3, 1},
+    })
+
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", sum("e") = sum("b"), sum("e") != sum("a"), sum("e") > count("a"),
+        (sum("e") > count("a")) or (sum("e") = sum("b")) from "arithmetic_space2" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "boolean" },
+        { name = "COL_2", type = "boolean" },
+        { name = "COL_3", type = "boolean" },
+        { name = "COL_4", type = "boolean" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, false, true, true, true},
+        {3, true, false, true, true},
+    })
+
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", sum(("d" + "c")) from "arithmetic_space2" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 6},
+        {3, 4},
+    })
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count(("d" < "id")) from "arithmetic_space" group by "d"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2},
+        {2, 2},
+    })
+    r, err = api:call("sbroad.execute", {
+        [[ SELECT "c", count(("b" in ("id"))) as ss from "arithmetic_space2" group by "c"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "c", type = "integer" },
+        { name = "SS", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 4},
+    })
+end
+

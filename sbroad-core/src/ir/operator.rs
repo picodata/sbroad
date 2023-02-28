@@ -15,8 +15,10 @@ use super::transformation::redistribution::{DataGeneration, MotionPolicy};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
 use crate::collection;
+use crate::frontend::sql::AggregateInfo;
 use crate::ir::distribution::{Distribution, KeySet};
 use crate::ir::relation::ColumnRole;
+use crate::ir::tree::traversal::PostOrder;
 
 /// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
@@ -527,7 +529,10 @@ impl Relational {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
-                    SbroadError::NotFound(Entity::Column, format!("at position {position} of Row"))
+                    SbroadError::NotFound(
+                        Entity::Column,
+                        format!("at position {position} of Row, {self:?}"),
+                    )
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
                 if let Expression::Alias { child, .. } = col_node {
@@ -940,6 +945,7 @@ impl Plan {
             let new_col = self.clone_expr_subtree(*col)?;
             local_cols.push(new_col);
         }
+
         let local_output = self.clone_expr_subtree(final_output)?;
         let local_id = self.nodes.next_id();
         for col in &local_cols {
@@ -961,17 +967,15 @@ impl Plan {
         new_child_id: usize,
         groupby_id: usize,
     ) -> Result<(), SbroadError> {
-        let (gr_cols_len, output) = if let Relational::GroupBy {
-            gr_cols, output, ..
-        } = self.get_relation_node(groupby_id)?
-        {
-            (gr_cols.len(), *output)
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("change_groupby_child: expected GroupBy node".into()),
-            ));
-        };
+        let gr_cols_len =
+            if let Relational::GroupBy { gr_cols, .. } = self.get_relation_node(groupby_id)? {
+                gr_cols.len()
+            } else {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some("change_groupby_child: expected GroupBy node".into()),
+                ));
+            };
         let map = self
             .get_relation_node(new_child_id)?
             .output_alias_position_map(&self.nodes)?
@@ -1000,28 +1004,13 @@ impl Plan {
             }
         }
         // Update output
-        for i in 0..self.get_row_list(output)?.len() {
-            let alias_id = self.get_row_list(output)?.get(i).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues("row list's size has changed!".into())
-            })?;
-            let (child, name) =
-                if let Expression::Alias { child, name } = self.get_expression_node(*alias_id)? {
-                    (*child, name.clone())
-                } else {
-                    return Err(SbroadError::Invalid(Entity::Node, None));
-                };
-            let new_pos = map
-                .get(name.as_str())
-                .ok_or_else(|| SbroadError::NotFound(Entity::Node, String::new()))?;
-            if let Expression::Reference { position, .. } = self.get_mut_expression_node(child)? {
-                *position = *new_pos;
-            } else {
-                return Err(SbroadError::NotFound(
-                    Entity::Expression,
-                    "Reference node".into(),
-                ));
-            }
-        }
+        *self.get_mut_relation_node(groupby_id)?.mut_output() =
+            self.add_row_for_output(new_child_id, &[], false)?;
+        self.replace_parent_in_subtree(
+            self.get_relational_output(groupby_id)?,
+            None,
+            Some(groupby_id),
+        )?;
         // Update children list
         if let Relational::GroupBy { children, .. } = self.get_mut_relation_node(groupby_id)? {
             children[0] = new_child_id;
@@ -1029,7 +1018,11 @@ impl Plan {
         Ok(())
     }
 
-    fn add_local_projection(&mut self, local_groupby_id: usize) -> Result<usize, SbroadError> {
+    fn add_local_projection(
+        &mut self,
+        local_groupby_id: usize,
+        infos: &Vec<AggregateInfo>,
+    ) -> Result<usize, SbroadError> {
         {
             // Check input node
             let node = self.get_relation_node(local_groupby_id)?;
@@ -1039,39 +1032,174 @@ impl Plan {
             }
         }
 
-        let local_output = self.get_relational_output(local_groupby_id)?;
-        let proj_output = self.clone_expr_subtree(local_output)?;
+        let gr_cols_len = if let Relational::GroupBy { gr_cols, .. } =
+            self.get_relation_node(local_groupby_id)?
+        {
+            gr_cols.len()
+        } else {
+            return Err(SbroadError::Invalid(Entity::Node, None));
+        };
+        let mut proj_output_cols: Vec<usize> = Vec::with_capacity(gr_cols_len + infos.len());
+        let alias_to_pos_map = self
+            .get_relation_node(local_groupby_id)?
+            .output_alias_position_map(&self.nodes)?
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, usize>>();
+        for col_idx in 0..gr_cols_len {
+            let new_col =
+                self.clone_expr_subtree(self.get_groupby_col(local_groupby_id, col_idx)?)?;
+            let alias = self
+                .get_alias_from_reference_node(self.get_expression_node(new_col)?)?
+                .to_string();
+            let new_pos = *alias_to_pos_map.get(&alias).ok_or_else(|| SbroadError::Invalid(Entity::Column, Some(
+                    format!("could find column with name {alias} in local group by output!: {alias_to_pos_map:?}")
+                )))?;
+            let new_alias = self.nodes.add_alias(&alias, new_col)?;
+            if let Expression::Reference { position, .. } = self.get_mut_expression_node(new_col)? {
+                *position = new_pos;
+            }
+            proj_output_cols.push(new_alias);
+        }
+        for info in infos {
+            // we take whole expression tree inside aggregate function and reuse it here, the
+            // References' positions are valid because local and final GroupBy have the same
+            // output
+            let locals = info.aggregate.create_columns_for_local_projection(self)?;
+            proj_output_cols.extend(locals.into_iter());
+        }
+        let proj_output = self.nodes.add_row(proj_output_cols, None);
         let proj = Relational::Projection {
             output: proj_output,
             children: vec![local_groupby_id],
         };
         let proj_id = self.nodes.push(Node::Relational(proj));
         self.replace_parent_in_subtree(proj_output, Some(local_groupby_id), Some(proj_id))?;
-        // Because the local group by is a child of a projection,
-        // position in parent's output reference is the same as index in the row list.
-        for pos in 0..self.get_row_list(proj_output)?.len() {
-            let alias_id = self.get_row_list(proj_output)?.get(pos).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues("row list's size has changed!".into())
-            })?;
-            let alias_node = self.get_expression_node(*alias_id)?;
-            let ref_id = if let Expression::Alias { child: ref_id, .. } = alias_node {
-                *ref_id
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format!("add_local_proj: expected projection output ({proj_output}) to consist of aliases. Got id: {alias_id}, {alias_node:?}"))
-                ));
-            };
-            let ref_node = self.get_mut_expression_node(ref_id)?;
-            if let Expression::Reference { position, .. } = ref_node {
-                *position = pos;
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format!("add_local_proj: expected projection output alias to have Reference child ({ref_id}), got: {ref_node:?}"))));
+        for info in infos {
+            self.replace_parent_in_subtree(info.aggregate.fun_id, None, Some(proj_id))?;
+        }
+        // when we added grouping cols to proj, we copied them from group by, must change parent!
+        self.replace_parent_in_subtree(proj_output, Some(local_groupby_id), Some(proj_id))?;
+        Ok(proj_id)
+    }
+
+    fn update_final_proj_columns(
+        &mut self,
+        final_id: usize,
+        columns_with_aggregates: &HashSet<usize>,
+        infos: &Vec<AggregateInfo>,
+    ) -> Result<(), SbroadError> {
+        // Maps previous aggregate top to new top in final stage of aggregation
+        let mut top_to_final_aggr: HashMap<usize, usize> = HashMap::with_capacity(infos.len());
+        let alias_to_pos_map = self
+            .get_relation_node(final_id)?
+            .output_alias_position_map(&self.nodes)?
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, usize>>();
+        for info in infos {
+            let final_aggr_id = info
+                .aggregate
+                .create_column_for_final_projection(self, &alias_to_pos_map)?;
+            top_to_final_aggr.insert(info.aggregate.fun_id, final_aggr_id);
+        }
+
+        // Add final aggregate expressions inside expression trees with aggregates
+        for column_top in columns_with_aggregates {
+            let mut dfs = BreadthFirst::with_capacity(
+                |x| self.nodes.aggregate_iter(x, false),
+                EXPR_CAPACITY,
+                EXPR_CAPACITY,
+            );
+            dfs.populate_nodes(*column_top);
+            let nodes = dfs.take_nodes();
+            for (_, n_id) in nodes {
+                let expr = self.get_mut_expression_node(n_id)?;
+                match expr {
+                    Expression::Cast { child, .. }
+                    | Expression::Unary { child, .. }
+                    | Expression::Alias { child, .. } => {
+                        if let Some(new_top) = top_to_final_aggr.get(child) {
+                            *child = *new_top;
+                        }
+                    }
+                    Expression::Bool { left, right, .. }
+                    | Expression::Concat { left, right, .. } => {
+                        if let Some(new_top) = top_to_final_aggr.get(left) {
+                            *left = *new_top;
+                        }
+                        if let Some(new_top) = top_to_final_aggr.get(right) {
+                            *right = *new_top;
+                        }
+                    }
+                    Expression::Row { list, .. }
+                    | Expression::StableFunction { children: list, .. } => {
+                        for child in list {
+                            if let Some(new_top) = top_to_final_aggr.get(child) {
+                                *child = *new_top;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
-        Ok(proj_id)
+        Ok(())
+    }
+
+    /// When we added two-stage aggregation, we changed output of final `GroupBy`
+    /// and all references except ones inside aggregate functions became invalid.
+    ///
+    /// This function fixes positions inside `References` to valid ones
+    fn fix_references_in_final_proj(
+        &mut self,
+        final_id: usize,
+        proj_cols: &[usize],
+        ref_to_alias: &HashMap<usize, String>,
+    ) -> Result<(), SbroadError> {
+        let alias_to_pos_map = self
+            .get_relation_node(final_id)?
+            .output_alias_position_map(&self.nodes)?
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, usize>>();
+        for col in proj_cols.iter() {
+            let mut references: Vec<usize> = Vec::new();
+            let mut subtree = BreadthFirst::with_capacity(
+                |node| self.nodes.aggregate_iter(node, false),
+                EXPR_CAPACITY,
+                EXPR_CAPACITY,
+            );
+            for (_, id) in subtree.iter(*col) {
+                if let Node::Expression(Expression::Reference { .. }) = self.get_node(id)? {
+                    references.push(id);
+                }
+            }
+            for id in references {
+                let node = self.get_mut_expression_node(id)?;
+                let alias = ref_to_alias.get(&id).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Name,
+                        format!("Could not find Reference's alias. {node:?}. id: {id}"),
+                    )
+                })?;
+                let new_pos = *alias_to_pos_map.get(alias).ok_or_else(|| {
+                    SbroadError::NotFound(
+                        Entity::Name,
+                        format!("Could not find alias position in child output. Alias: {alias}"),
+                    )
+                })?;
+                if let Expression::Reference { position, .. } = node {
+                    *position = new_pos;
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!("Expected reference on id: {id}. Got: {node:?}")),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Adds local stage for aggregation
@@ -1081,63 +1209,70 @@ impl Plan {
     /// - failed to create local `Projection` node
     /// - failed to create `SQ` node
     /// - failed to change final `GroupBy` child to `SQ`
-    pub fn add_two_stage_aggregation(&mut self, final_id: usize) -> Result<(), SbroadError> {
+    /// - failed to update expressions in final `Projection`
+    pub fn add_two_stage_aggregation(
+        &mut self,
+        final_id: usize,
+        proj_cols: &Vec<usize>,
+        columns_with_aggregates: &HashSet<usize>,
+        infos: &Vec<AggregateInfo>,
+    ) -> Result<(), SbroadError> {
+        // Check that we don't have aggregates inside aggregates:
+        // count(sum(b)) - makes no sense
+        for info in infos {
+            let top = info.aggregate.fun_id;
+            let mut dfs =
+                PostOrder::with_capacity(|x| self.nodes.expr_iter(x, false), EXPR_CAPACITY);
+            for (_, id) in dfs.iter(top) {
+                if id == top {
+                    continue;
+                }
+                if let Node::Expression(Expression::StableFunction { name, .. }) =
+                    self.get_node(id)?
+                {
+                    if Expression::is_aggregate_name(name) {
+                        return Err(SbroadError::Invalid(
+                            Entity::Query,
+                            Some(format!("aggregate function inside aggregate function is not allowed. Got `{name}` inside `{}`", info.aggregate.kind))
+                        ));
+                    }
+                }
+            }
+        }
+
+        // After we change final GroupBy output, references in proj columns will
+        // become invalid, to update references we need to know
+        // which alias this reference had before
+        let mut ref_to_alias: HashMap<usize, String> =
+            HashMap::with_capacity(columns_with_aggregates.len());
+        for col in proj_cols {
+            let mut dfs =
+                PostOrder::with_capacity(|x| self.nodes.expr_iter(x, false), EXPR_CAPACITY);
+            for (_, expr_id) in dfs.iter(*col) {
+                let node = self.get_expression_node(expr_id)?;
+                if let Expression::Reference { position, .. } = node {
+                    let alias: String = self.get_relational_aliases(final_id)?
+                        .get(*position)
+                        .ok_or_else(|| SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!("Reference in projection column has invalid position. {node:?}, id: {expr_id}"))))?.clone();
+                    ref_to_alias.insert(expr_id, alias);
+                }
+            }
+        }
+
         let local_id = self.add_local_groupby(final_id)?;
-        let proj_id = self.add_local_projection(local_id)?;
+        let proj_id = self.add_local_projection(local_id, infos)?;
         // If we generate an alias using uuid (like we do for tmp spaces) the penalty would be  redundant
         // verbosity in the column names. We can't set an alias `None` here as well, because then the frontend
         // would not generate parentheses for a subquery while building sql.
         let sq_id = self.add_sub_query(proj_id, Some(""))?;
         self.change_groupby_child_to(sq_id, final_id)?;
+
+        self.update_final_proj_columns(final_id, columns_with_aggregates, infos)?;
+        self.fix_references_in_final_proj(final_id, proj_cols, &ref_to_alias)?;
+
         Ok(())
-    }
-
-    /// Creates output `Row` for final `GroupBy` node
-    ///
-    /// # Errors
-    /// - child node output is not `Row`
-    /// - expressions used in group by are not column references
-    /// - column references are invalid
-    pub fn add_output_groupby(
-        &mut self,
-        child_id: usize,
-        cols_ids: &[usize],
-    ) -> Result<usize, SbroadError> {
-        // For each reference we will need an alias
-        let mut row_list: Vec<usize> = Vec::with_capacity(cols_ids.len());
-        for col_id in cols_ids {
-            let child_output = self.get_row_list(self.get_relational_output(child_id)?)?;
-            let column_name = if let Expression::Reference { position, .. } =
-                self.get_expression_node(*col_id)?
-            {
-                let alias_id = *child_output.get(*position).ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Node,
-                        Some("Reference have invalid position".into()),
-                    )
-                })?;
-                if let Expression::Alias { name, .. } = self.get_expression_node(alias_id)? {
-                    name.clone()
-                } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some(format!("Expected alias on id: {alias_id}")),
-                    ));
-                }
-            } else {
-                return Err(SbroadError::FailedTo(
-                    Action::Create,
-                    Some(Entity::Node),
-                    "output for groupby".into(),
-                ));
-            };
-            let ref_node = self.get_node(*col_id)?;
-            let output_ref_id = self.nodes.push(ref_node.clone());
-            row_list.push(self.nodes.add_alias(&column_name, output_ref_id)?);
-        }
-        let output = self.nodes.add_row_of_aliases(row_list, None)?;
-
-        Ok(output)
     }
 
     /// Adds final `GroupBy` node to `Plan`
@@ -1156,7 +1291,8 @@ impl Plan {
         let Some((first_child, other)) = children.split_first() else {
             return Err(SbroadError::UnexpectedNumberOfValues("GroupBy ast has no children".into()))
         };
-        let final_output = self.add_output_groupby(*first_child, other)?;
+
+        let final_output = self.add_row_for_output(*first_child, &[], true)?;
         let groupby = Relational::GroupBy {
             children: [*first_child].to_vec(),
             gr_cols: other.to_vec(),
