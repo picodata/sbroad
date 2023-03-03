@@ -1,0 +1,49 @@
+Query       ::= Select | Select 'union all' Select | Select ('except' | 'except distinct') Select | Values | Insert
+Select      ::= 'select' (Column (',' Column)*) 'from' (Table | Select) ('as' Alias)? ( ('inner')? 'join' (Table | Select) ('as' Alias)? 'on' Expression )? ( 'group by' GroupBy )? ( 'where' Expression )?
+Column      ::= '*' | Table '.' '*' | Expression | Expression 'as' Alias
+Expression  ::= Expression 'or' Expression
+               | Expression 'and' Expression
+               | Expression '*' Expression
+               | Expression '/' Expression
+               | Expression '+' Expression
+               | Expression '-' Expression
+               | Expression '=' Expression
+               | Expression '>' Expression
+               | Expression '>=' Expression
+               | Expression '<' Expression
+               | Expression '<=' Expression
+               | Expression ('<>' | '!=') Expression
+               | Expression 'is null'
+               | Expression 'is not null'
+               | Expression 'between' Expression 'and' Expression
+               | Reference
+               | Select
+               | Value
+GroupBy     ::= Concat | Cast | Function | Reference
+Reference   ::= ((Table | '"' Table '"') '.')? (Alias | '"' Alias '"')
+Value       ::= 'true'
+                | 'false'
+                | 'null'
+                | '?'
+                | Integer
+                | Unsigned
+                | Double
+                | Decimal
+                | String
+                | Row
+Cast        ::= 'cast' '(' Expression 'as' Type ')'
+Type        ::= 'any'
+                | 'bool'
+                | 'boolean'
+                | 'decimal'
+                | 'double'
+                | 'int'
+                | 'integer'
+                | 'number'
+                | 'scalar'
+                | 'string'
+                | 'text'
+                | 'unsigned'
+                | 'varchar' ('(' Length ')')?
+Insert      ::= 'insert into' Table ('(' Reference (',' Reference)* ')')? (Select | Values)
+Values      ::= 'values' '(' (Value (',' Value)*) ')' (',' '(' (Value (',' Value)*) ')')*
