@@ -60,6 +60,12 @@ arbitrary_projection.test_arbitrary_invalid = function()
         select "a" + "b" and true from "arithmetic_space"
     ]], {} })
     t.assert_str_contains(tostring(err), "Type mismatch: can not convert integer(3) to boolean")
+
+    -- projection consisted of arithmetic, bool and cast (function)
+    local _, err = api:call("sbroad.execute", { [[
+        select cast("id" * 2 > 0 as boolean), cast("id" * 2 > 0 as boolean) as "cast" from "arithmetic_space"
+    ]], {} })
+    t.assert_str_contains(tostring(err), "rule parsing error")
 end
 
 arbitrary_projection.test_arbitrary_valid = function()
@@ -145,12 +151,4 @@ arbitrary_projection.test_arbitrary_valid = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.rows, all_true)
-
-    -- projection consisted of arithmetic, bool and cast (function)
-    local r, err = api:call("sbroad.execute", { [[
-        select cast("id" * 2 > 0 as boolean), cast("id" * 2 > 0 as boolean) as "cast" from "arithmetic_space"
-    ]], {} })
-    t.assert_equals(err, nil)
-    t.assert_equals(r.rows, all_true)
-
 end

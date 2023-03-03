@@ -93,7 +93,8 @@ Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
     FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
     FunctionExpr = _{ Parentheses | Primary }
 
-Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
+Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
+    CastExpr = _{ FunctionExpr | Cast }
     Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble
              | TypeInt | TypeNumber | TypeScalar | TypeString
              | TypeText | TypeUnsigned | TypeVarchar }
@@ -111,7 +112,7 @@ Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ Type ~ ")" }
         Length = @{ Unsigned }
 
 Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
-    ConcatLeft = _{ SingleQuotedString | Cast | Function | Reference }
+    ConcatLeft = _{ Cast | Function | Reference | SingleQuotedString }
     ConcatRight = _{ Concat | ConcatLeft }
 
 GroupingElement = _{ Concat | Cast | Function | Reference }
