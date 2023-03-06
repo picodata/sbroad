@@ -9,7 +9,7 @@ use crate::errors::{Entity, SbroadError};
 use serde::{Deserialize, Serialize};
 use tarantool::tlua;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Debug, Clone)]
 pub struct Double {
     pub value: f64,
 }

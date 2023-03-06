@@ -1,5 +1,6 @@
 //! Value module.
 
+use std::cmp::Ordering;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::num::NonZeroI32;
@@ -129,6 +130,44 @@ pub enum Value {
     Tuple(Tuple),
 }
 
+/// Custom Ordering using Trivalent instead of simple Equal.
+/// We cannot even derive `PartialOrd` for Values because of Doubles.
+#[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum TrivalentOrdering {
+    Less,
+    Equal,
+    Greater,
+    Unknown,
+}
+
+impl From<Ordering> for TrivalentOrdering {
+    fn from(value: Ordering) -> Self {
+        match value {
+            Ordering::Less => TrivalentOrdering::Less,
+            Ordering::Equal => TrivalentOrdering::Equal,
+            Ordering::Greater => TrivalentOrdering::Greater,
+        }
+    }
+}
+
+impl TrivalentOrdering {
+    /// Transforms `TrivalentOrdering` to Ordering.
+    ///
+    /// # Errors
+    /// Unacceptable `TrivalentOrdering` to transform
+    pub fn to_ordering(&self) -> Result<Ordering, SbroadError> {
+        match self {
+            Self::Less => Ok(Ordering::Less),
+            Self::Equal => Ok(Ordering::Equal),
+            Self::Greater => Ok(Ordering::Greater),
+            Self::Unknown => Err(SbroadError::Invalid(
+                Entity::Value,
+                Some("Can not cast Unknown to Ordering".to_string()),
+            )),
+        }
+    }
+}
+
 /// As a side effect, `NaN == NaN` is true.
 /// We should manually care about this case in the code.
 impl Eq for Value {}
@@ -234,7 +273,155 @@ impl From<Trivalent> for Value {
     }
 }
 
+/// Helper function to extract inner numerical value from `value` and cast it to `Decimal`.
+///
+/// # Errors
+/// - Inner `value` field is not numerical.
+#[allow(dead_code)]
+fn value_to_decimal_or_error(value: &Value) -> Result<Decimal, SbroadError> {
+    match value {
+        Value::Integer(s) => Ok(Decimal::from(*s)),
+        Value::Unsigned(s) => Ok(Decimal::from(*s)),
+        Value::Double(s) => {
+            let from_string_cast = Decimal::from_str(&format!("{s}"));
+            if let Ok(d) = from_string_cast {
+                Ok(d)
+            } else {
+                Err(SbroadError::Invalid(
+                    Entity::Value,
+                    Some(format!("Can't cast {value:?} to decimal")),
+                ))
+            }
+        }
+        Value::Decimal(s) => Ok(*s),
+        _ => Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!("{value:?} must be numerical")),
+        )),
+    }
+}
+
 impl Value {
+    /// Adding. Applicable only to numerical values.
+    ///
+    /// # Errors
+    /// - Passed values are not numerical.
+    #[allow(dead_code)]
+    fn add(&self, other: &Value) -> Result<Value, SbroadError> {
+        let self_decimal = value_to_decimal_or_error(self)?;
+        let other_decimal = value_to_decimal_or_error(other)?;
+
+        Ok(Value::from(self_decimal + other_decimal))
+    }
+
+    /// Subtraction. Applicable only to numerical values.
+    ///
+    /// # Errors
+    /// - Passed values are not numerical.
+    #[allow(dead_code)]
+    fn sub(&self, other: &Value) -> Result<Value, SbroadError> {
+        let self_decimal = value_to_decimal_or_error(self)?;
+        let other_decimal = value_to_decimal_or_error(other)?;
+
+        Ok(Value::from(self_decimal - other_decimal))
+    }
+
+    /// Multiplication. Applicable only to numerical values.
+    ///
+    /// # Errors
+    /// - Passed values are not numerical.
+    #[allow(dead_code)]
+    fn mult(&self, other: &Value) -> Result<Value, SbroadError> {
+        let self_decimal = value_to_decimal_or_error(self)?;
+        let other_decimal = value_to_decimal_or_error(other)?;
+
+        Ok(Value::from(self_decimal * other_decimal))
+    }
+
+    /// Division. Applicable only to numerical values.
+    ///
+    /// # Errors
+    /// - Passed values are not numerical.
+    #[allow(dead_code)]
+    fn div(&self, other: &Value) -> Result<Value, SbroadError> {
+        let self_decimal = value_to_decimal_or_error(self)?;
+        let other_decimal = value_to_decimal_or_error(other)?;
+
+        if other_decimal == 0 {
+            Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!("Can not divide {self:?} by zero {other:?}")),
+            ))
+        } else {
+            Ok(Value::from(self_decimal / other_decimal))
+        }
+    }
+
+    /// Negation. Applicable only to numerical values.
+    ///
+    /// # Errors
+    /// - Passed value is not numerical.
+    #[allow(dead_code)]
+    fn negate(&self) -> Result<Value, SbroadError> {
+        let self_decimal = value_to_decimal_or_error(self)?;
+
+        Ok(Value::from(-self_decimal))
+    }
+
+    /// Concatenation. Applicable only to `Value::String`.
+    ///
+    /// # Errors
+    /// - Passed values are not `Value::String`.
+    #[allow(dead_code)]
+    fn concat(&self, other: &Value) -> Result<Value, SbroadError> {
+        let (Value::String(s), Value::String(o)) = (self, other) else {
+            return Err(
+                SbroadError::Invalid(
+                    Entity::Value,
+                    Some(format!("{self:?} and {other:?} must be strings to be concatenated"))
+                )
+            )
+        };
+
+        Ok(Value::from(format!("{s}{o}")))
+    }
+
+    /// Logical AND. Applicable only to `Value::Boolean`.
+    ///
+    /// # Errors
+    /// - Passed values are not `Value::Boolean`.
+    #[allow(dead_code)]
+    fn and(&self, other: &Value) -> Result<Value, SbroadError> {
+        let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
+            return Err(
+                SbroadError::Invalid(
+                    Entity::Value,
+                    Some(format!("{self:?} and {other:?} must be booleans to be applied to AND operation"))
+                )
+            )
+        };
+
+        Ok(Value::from(*s && *o))
+    }
+
+    /// Logical OR. Applicable only to `Value::Boolean`.
+    ///
+    /// # Errors
+    /// - Passed values are not `Value::Boolean`.
+    #[allow(dead_code)]
+    fn or(&self, other: &Value) -> Result<Value, SbroadError> {
+        let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
+            return Err(
+                SbroadError::Invalid(
+                    Entity::Value,
+                    Some(format!("{self:?} and {other:?} must be booleans to be applied to OR operation"))
+                )
+            )
+        };
+
+        Ok(Value::from(*s || *o))
+    }
+
     /// Checks equality of the two values.
     /// The result uses three-valued logic.
     #[must_use]
@@ -313,6 +500,135 @@ impl Value {
                 | Value::String(_)
                 | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
+            },
+        }
+    }
+
+    /// Compares two values.
+    /// The result uses four-valued logic (standard `Ordering` variants and
+    /// `Unknown` in case `Null` was met).
+    ///
+    /// Returns `None` in case of
+    /// * String casting Error or types mismatch.
+    /// * Float `NaN` comparison occured.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn partial_cmp(&self, other: &Value) -> Option<TrivalentOrdering> {
+        match self {
+            Value::Boolean(s) => match other {
+                Value::Boolean(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Unsigned(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::String(_)
+                | Value::Tuple(_) => None,
+            },
+            Value::Null => TrivalentOrdering::Unknown.into(),
+            Value::Integer(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                Value::Decimal(o) => TrivalentOrdering::from(Decimal::from(*s).cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to integer.
+                Value::Double(o) => {
+                    let self_converted = Decimal::from_str(&format!("{s}"));
+                    let other_converted = Decimal::from_str(&format!("{o}"));
+                    match (self_converted, other_converted) {
+                        (Ok(d1), Ok(d2)) => TrivalentOrdering::from(d1.cmp(&d2)).into(),
+                        _ => None,
+                    }
+                }
+                Value::Unsigned(o) => {
+                    TrivalentOrdering::from(Decimal::from(*s).cmp(&Decimal::from(*o))).into()
+                }
+            },
+            Value::Double(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => {
+                    if let Some(ord) = s.partial_cmp(&Double::from(*o)) {
+                        TrivalentOrdering::from(ord).into()
+                    } else {
+                        None
+                    }
+                }
+                // If double can't be converted to decimal without error then it is not equal to decimal.
+                Value::Decimal(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{s}")) {
+                        TrivalentOrdering::from(d.cmp(o)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Double(o) => {
+                    if let Some(ord) = s.partial_cmp(o) {
+                        TrivalentOrdering::from(ord).into()
+                    } else {
+                        None
+                    }
+                }
+                // If double can't be converted to decimal without error then it is not equal to unsigned.
+                Value::Unsigned(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{s}")) {
+                        TrivalentOrdering::from(d.cmp(&Decimal::from(*o))).into()
+                    } else {
+                        None
+                    }
+                }
+            },
+            Value::Decimal(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => TrivalentOrdering::from(s.cmp(&Decimal::from(*o))).into(),
+                Value::Decimal(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to decimal.
+                Value::Double(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{o}")) {
+                        TrivalentOrdering::from(s.cmp(&d)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Unsigned(o) => TrivalentOrdering::from(s.cmp(&Decimal::from(*o))).into(),
+            },
+            Value::Unsigned(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => {
+                    TrivalentOrdering::from(Decimal::from(*s).cmp(&Decimal::from(*o))).into()
+                }
+                Value::Decimal(o) => TrivalentOrdering::from(Decimal::from(*s).cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to unsigned.
+                Value::Double(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{o}")) {
+                        TrivalentOrdering::from(Decimal::from(*s).cmp(&d)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Unsigned(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+            },
+            Value::String(s) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::String(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+            },
+            Value::Tuple(_) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::String(_)
+                | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
             },
         }
     }

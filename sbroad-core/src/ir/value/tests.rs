@@ -222,6 +222,369 @@ fn equivalence() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
+fn partial_comparing() {
+    // Boolean
+    assert_eq!(
+        TrivalentOrdering::Greater,
+        Value::Boolean(true)
+            .partial_cmp(&Value::Boolean(false))
+            .unwrap()
+    );
+    assert_eq!(
+        None,
+        Value::Boolean(true).partial_cmp(&Value::from(Double::from(1e0_f64)))
+    );
+    assert_eq!(
+        None,
+        Value::Boolean(true).partial_cmp(&Value::from(decimal!(1e0)))
+    );
+    assert_eq!(None, Value::Boolean(false).partial_cmp(&Value::from(0_u64)));
+    assert_eq!(None, Value::Boolean(true).partial_cmp(&Value::from(1_i64)));
+    assert_eq!(None, Value::Boolean(false).partial_cmp(&Value::from("")));
+    assert_eq!(
+        None,
+        Value::Boolean(true).partial_cmp(&Value::from("hello"))
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Boolean(true)
+            .partial_cmp(&Value::Boolean(true))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Boolean(true).partial_cmp(&Value::Null).unwrap()
+    );
+
+    // Decimal
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::from(0_u64))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::from(decimal!(0)))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::from(0_u64))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::from(0_i64))
+            .unwrap()
+    );
+    assert_eq!(
+        None,
+        Value::Decimal(decimal!(0.000)).partial_cmp(&Value::from(false))
+    );
+    assert_eq!(
+        None,
+        Value::Decimal(decimal!(0.000)).partial_cmp(&Value::from(""))
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::Null)
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Less,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::Decimal(decimal!(1.000)))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Less,
+        Value::Decimal(decimal!(0.000))
+            .partial_cmp(&Value::Unsigned(1))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Greater,
+        Value::Decimal(decimal!(1.000))
+            .partial_cmp(&Value::Unsigned(0))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Greater,
+        Value::Decimal(decimal!(1.000))
+            .partial_cmp(&Value::Double(Double { value: 0.0 }))
+            .unwrap()
+    );
+
+    // Double
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Double(Double::from(0.000_f64))
+            .partial_cmp(&Value::from(0_u64))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Double(Double::from(0.000_f64))
+            .partial_cmp(&Value::from(0_i64))
+            .unwrap()
+    );
+    assert_eq!(
+        None,
+        Value::Double(Double::from(0.000_f64)).partial_cmp(&Value::from(false))
+    );
+    assert_eq!(
+        None,
+        Value::Double(Double::from(0.000_f64)).partial_cmp(&Value::from(""))
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Double(Double::from(0.000_f64))
+            .partial_cmp(&Value::Null)
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Double(Double::from(f64::INFINITY))
+            .partial_cmp(&Value::from(f64::INFINITY))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::Double(Double::from(f64::NEG_INFINITY))
+            .partial_cmp(&Value::from(f64::NEG_INFINITY))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Double(Double::from(f64::NAN))
+            .partial_cmp(&Value::from(f64::NAN))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Less,
+        Value::Double(Double::from(0.0))
+            .partial_cmp(&Value::from(1))
+            .unwrap()
+    );
+    assert_eq!(
+        None,
+        Value::Double(Double::from(f64::NAN)).partial_cmp(&Value::Double(Double::from(1.0)))
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Double(Double::from(1.0))
+            .partial_cmp(&Value::from(f64::NAN))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Greater,
+        Value::Double(Double::from(1.0))
+            .partial_cmp(&Value::from(0.5))
+            .unwrap()
+    );
+
+    // Null
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Null.partial_cmp(&Value::Null).unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Null.partial_cmp(&Value::Boolean(false)).unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Null
+            .partial_cmp(&Value::Double(f64::NAN.into()))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::Null.partial_cmp(&Value::from("")).unwrap()
+    );
+
+    // String
+    assert_eq!(
+        TrivalentOrdering::Less,
+        Value::from("hello")
+            .partial_cmp(&Value::from("hello "))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Equal,
+        Value::from("hello")
+            .partial_cmp(&Value::from("hello".to_string()))
+            .unwrap()
+    );
+    assert_eq!(
+        TrivalentOrdering::Unknown,
+        Value::from("hello").partial_cmp(&Value::Null).unwrap()
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn arithmetic() {
+    // Add
+    assert_eq!(
+        Value::Decimal(decimal!(1.000)),
+        Value::Decimal(decimal!(0.000))
+            .add(&Value::from(1.000))
+            .unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(1.000)),
+        Value::Decimal(decimal!(0.000))
+            .add(&Value::Double(Double { value: 1.0 }))
+            .unwrap()
+    );
+    assert_eq!(
+        Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!(
+                "Can't cast Double(Double {{ value: NaN }}) to decimal"
+            )),
+        )),
+        Value::Double(Double::from(f64::NAN)).add(&Value::Integer(1))
+    );
+
+    // Sub
+    assert_eq!(
+        Value::Decimal(decimal!(1.000)),
+        Value::Decimal(decimal!(2.000))
+            .sub(&Value::Double(Double { value: 1.0 }))
+            .unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(5.500)),
+        Value::Decimal(decimal!(8.000))
+            .sub(&Value::from(2.500))
+            .unwrap()
+    );
+
+    // Mult
+    assert_eq!(
+        Value::Decimal(decimal!(8.000)),
+        Value::Decimal(decimal!(2.000))
+            .mult(&Value::from(4))
+            .unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(3.999)),
+        Value::from(3).mult(&Value::from(1.333)).unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(555)),
+        Value::from(5.0).mult(&Value::Unsigned(111)).unwrap()
+    );
+
+    // Div
+    assert_eq!(
+        Value::Decimal(decimal!(3)),
+        Value::from(9.0).div(&Value::Unsigned(3)).unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(1)),
+        Value::Integer(2).div(&Value::Unsigned(2)).unwrap()
+    );
+    assert_eq!(
+        Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!("String(\"\") must be numerical"))
+        )),
+        Value::from("").div(&Value::Unsigned(2))
+    );
+    assert_eq!(
+        Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!("Can not divide Integer(1) by zero Integer(0)"))
+        )),
+        Value::Integer(1).div(&Value::Integer(0))
+    );
+
+    // Negate
+    assert_eq!(
+        Value::Decimal(decimal!(-3)),
+        Value::from(3.0).negate().unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(-1)),
+        Value::Integer(1).negate().unwrap()
+    );
+    assert_eq!(
+        Value::Decimal(decimal!(0)),
+        Value::Double(Double::from(0.0)).negate().unwrap()
+    );
+}
+
+#[test]
+fn concatenation() {
+    assert_eq!(
+        Value::from("hello"),
+        Value::from("").concat(&Value::from("hello")).unwrap()
+    );
+    assert_eq!(
+        Value::from("ab"),
+        Value::from("a").concat(&Value::from("b")).unwrap()
+    );
+    assert_eq!(
+        Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!(
+                "Integer(1) and String(\"b\") must be strings to be concatenated"
+            ))
+        )),
+        Value::Integer(1).concat(&Value::from("b"))
+    )
+}
+
+#[test]
+fn and_or() {
+    // And
+    assert_eq!(
+        Value::from(true),
+        Value::from(true).and(&Value::from(true)).unwrap()
+    );
+    assert_eq!(
+        Value::from(false),
+        Value::from(false).and(&Value::from(true)).unwrap()
+    );
+    assert_eq!(
+        Value::from(false),
+        Value::from(true).and(&Value::from(false)).unwrap()
+    );
+    assert_eq!(
+        Value::from(false),
+        Value::from(false).and(&Value::from(false)).unwrap()
+    );
+
+    // Or
+    assert_eq!(
+        Value::from(true),
+        Value::from(true).or(&Value::from(false)).unwrap()
+    );
+    assert_eq!(
+        Value::from(false),
+        Value::from(false).or(&Value::from(false)).unwrap()
+    );
+    assert_eq!(
+        Err(SbroadError::Invalid(
+            Entity::Value,
+            Some(format!(
+                "Integer(1) and Boolean(false) must be booleans to be applied to OR operation"
+            ))
+        )),
+        Value::Integer(1).or(&Value::from(false))
+    );
+}
+
+#[test]
 fn trivalent() {
     assert_eq!(
         Trivalent::False,
@@ -236,4 +599,17 @@ fn trivalent() {
         Value::from(Trivalent::False).eq(&Value::Null)
     );
     assert_eq!(Trivalent::Unknown, Value::Null.eq(&Value::Null));
+}
+
+#[test]
+fn trivalent_ordering() {
+    assert_eq!(
+        TrivalentOrdering::Less,
+        TrivalentOrdering::from(false.cmp(&true))
+    );
+    assert_eq!(TrivalentOrdering::Equal, TrivalentOrdering::from(1.cmp(&1)));
+    assert_eq!(
+        TrivalentOrdering::Greater,
+        TrivalentOrdering::from("b".cmp(""))
+    );
 }
