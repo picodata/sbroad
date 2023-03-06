@@ -7,6 +7,7 @@ use crate::ir::relation::SpaceEngine;
 mod prod_imports {
     pub use crate::error;
     pub use crate::errors::{Action, Entity};
+    pub use crate::ir::relation::Column;
     pub use crate::ir::value::EncodedValue;
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
     pub use tarantool::space::{Field, Space, SpaceCreateOptions};
@@ -96,12 +97,12 @@ impl TmpSpace {
                 }
             }
             for (idx, values) in vtable.get_tuples_with_buckets(buckets).iter().enumerate() {
-                let extended_value = values
-                    .iter()
-                    .cloned()
-                    .map(EncodedValue::from)
-                    .chain(std::iter::once(EncodedValue::Unsigned(idx as u64)))
-                    .collect::<Vec<EncodedValue>>();
+                let mut extended_value: Vec<EncodedValue> = Vec::with_capacity(values.len() + 1);
+                for (v, c) in values.iter().zip(vtable.get_columns().iter()) {
+                    let casted_value = v.cast(&c.r#type)?;
+                    extended_value.push(EncodedValue::from(casted_value));
+                }
+                extended_value.push(EncodedValue::Unsigned(idx as u64));
                 let data = match rmp_serde::to_vec(&extended_value) {
                     Ok(data) => data,
                     Err(e) => {

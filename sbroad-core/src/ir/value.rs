@@ -10,7 +10,9 @@ use tarantool::decimal::Decimal;
 use tarantool::tlua::{self, LuaRead};
 
 use crate::error;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::hash::ToHashString;
+use crate::ir::relation::Type;
 use crate::ir::value::double::Double;
 
 #[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
@@ -311,6 +313,141 @@ impl Value {
                 | Value::String(_)
                 | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
+            },
+        }
+    }
+
+    pub fn cast(&self, column_type: &Type) -> Result<Value, SbroadError> {
+        match column_type {
+            Type::Array => match self {
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into array"),
+                )),
+            },
+            Type::Boolean => match self {
+                Value::Boolean(_) => Ok(self.clone()),
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into boolean"),
+                )),
+            },
+            Type::Decimal => match self {
+                Value::Decimal(_) => Ok(self.clone()),
+                Value::Double(v) => Ok(Value::Decimal(
+                    Decimal::from_str(&format!("{v}")).map_err(|e| {
+                        SbroadError::FailedTo(
+                            Action::Serialize,
+                            Some(Entity::Value),
+                            format!("{e:?}"),
+                        )
+                    })?,
+                )),
+                Value::Integer(v) => Ok(Value::Decimal(Decimal::from(*v))),
+                Value::Unsigned(v) => Ok(Value::Decimal(Decimal::from(*v))),
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into decimal"),
+                )),
+            },
+            Type::Double => match self {
+                Value::Double(_) => Ok(self.clone()),
+                Value::Decimal(v) => Ok(Value::Double(Double::from_str(&format!("{v}"))?)),
+                Value::Integer(v) => Ok(Value::Double(Double::from(*v))),
+                Value::Unsigned(v) => Ok(Value::Double(Double::from(*v))),
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into double"),
+                )),
+            },
+            Type::Integer => match self {
+                Value::Integer(_) => Ok(self.clone()),
+                Value::Decimal(v) => Ok(Value::Integer(v.to_i64().ok_or_else(|| {
+                    SbroadError::FailedTo(
+                        Action::Serialize,
+                        Some(Entity::Value),
+                        format!("{self:?} into integer"),
+                    )
+                })?)),
+                Value::Double(v) => v
+                    .to_string()
+                    .parse::<i64>()
+                    .map(Value::Integer)
+                    .map_err(|e| {
+                        SbroadError::FailedTo(Action::Serialize, Some(Entity::Value), e.to_string())
+                    }),
+                Value::Unsigned(v) => Ok(Value::Integer(*v as i64)),
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into integer"),
+                )),
+            },
+            Type::Scalar => match self {
+                Value::Tuple(_) => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into scalar"),
+                )),
+                _ => Ok(self.clone()),
+            },
+            Type::String => match self {
+                Value::String(_) => Ok(self.clone()),
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into string"),
+                )),
+            },
+            Type::Number => match self {
+                Value::Integer(_) | Value::Decimal(_) | Value::Double(_) | Value::Unsigned(_) => {
+                    Ok(self.clone())
+                }
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into number"),
+                )),
+            },
+            Type::Unsigned => match self {
+                Value::Unsigned(_) => Ok(self.clone()),
+                Value::Integer(v) => Ok(Value::Unsigned(*v as u64)),
+                Value::Decimal(v) => Ok(Value::Unsigned(v.to_u64().ok_or_else(|| {
+                    SbroadError::FailedTo(
+                        Action::Serialize,
+                        Some(Entity::Value),
+                        format!("{self:?} into unsigned"),
+                    )
+                })?)),
+                Value::Double(v) => {
+                    v.to_string()
+                        .parse::<u64>()
+                        .map(Value::Unsigned)
+                        .map_err(|_| {
+                            SbroadError::FailedTo(
+                                Action::Serialize,
+                                Some(Entity::Value),
+                                format!("{self:?} into unsigned"),
+                            )
+                        })
+                }
+                Value::Null => Ok(Value::Null),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into unsigned"),
+                )),
             },
         }
     }

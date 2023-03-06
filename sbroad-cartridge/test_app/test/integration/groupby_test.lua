@@ -798,13 +798,12 @@ groupby_queries.test_count_works = function()
     })
 end
 
--- todo: this test fails if we remove the devision by 8, see issue 351
 groupby_queries.test_count = function()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", {
         [[
         select cs, count("d") from (
-            SELECT "d", cast(count("e") + count("e" + "d") as double) / 8 as cs from "arithmetic_space"
+            SELECT "d", count("e") + count("e" + "d") as cs from "arithmetic_space"
             group by "d"
         ) as t
         where t."d" > 1
@@ -814,12 +813,12 @@ groupby_queries.test_count = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "CS", type = "double" },
+        { name = "CS", type = "decimal" },
         { name = "COL_1" , type = "decimal" }
     })
 
     t.assert_items_equals(r.rows, {
-        {0.5, 1}
+        {4, 1}
     })
 end
 
