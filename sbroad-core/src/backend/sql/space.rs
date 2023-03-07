@@ -96,9 +96,9 @@ impl TmpSpace {
                     ));
                 }
             }
-            for (idx, values) in vtable.get_tuples_with_buckets(buckets).iter().enumerate() {
-                let mut extended_value: Vec<EncodedValue> = Vec::with_capacity(values.len() + 1);
-                for (v, c) in values.iter().zip(vtable.get_columns().iter()) {
+            for (idx, tuples) in vtable.get_tuples_with_buckets(buckets).iter().enumerate() {
+                let mut extended_value: Vec<EncodedValue> = Vec::with_capacity(tuples.len() + 1);
+                for (v, c) in tuples.iter().zip(vtable.get_columns().iter()) {
                     let casted_value = v.cast(&c.r#type)?;
                     extended_value.push(EncodedValue::from(casted_value));
                 }

@@ -232,7 +232,7 @@ fn front_sql10() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, COL_2 -> COL_2, COL_3 -> COL_3, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', COL_1::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, COL_2 -> COL_2, COL_3 -> COL_3, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', COL_1::string)))))
         scan
             projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1, COLUMN_3::unsigned -> COL_2, COLUMN_4::unsigned -> COL_3)
                 scan
@@ -253,7 +253,7 @@ fn front_sql11() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
         scan
             projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1)
                 scan
@@ -274,7 +274,7 @@ fn front_sql14() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
         scan
             projection ("t"."b"::unsigned -> COL_0, "t"."d"::unsigned -> COL_1)
                 scan
@@ -513,7 +513,7 @@ fn front_sql_groupby_insert() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)) || coalesce(('', NULL::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
         scan
             projection ("b"::unsigned -> COL_0, "d"::unsigned -> COL_1)
                 scan

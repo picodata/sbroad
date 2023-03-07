@@ -315,7 +315,7 @@ fn insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
         scan
             projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::string -> COL_1)
                 scan
@@ -340,7 +340,7 @@ fn multiply_insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
         scan
             projection (COLUMN_5::unsigned -> COL_0, COLUMN_6::string -> COL_1)
                 scan
@@ -368,7 +368,7 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('', COL_0::string)))))
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
         scan
             projection ("hash_testing"."identification_number"::unsigned -> COL_0, "hash_testing"."product_code"::string -> COL_1)
                 scan

@@ -212,6 +212,20 @@ impl Expression {
         }
     }
 
+    /// Get a mutable reference to the row children list.
+    ///
+    /// # Errors
+    /// - node isn't `Row`
+    pub fn get_row_list_mut(&mut self) -> Result<&mut Vec<usize>, SbroadError> {
+        match self {
+            Expression::Row { ref mut list, .. } => Ok(list),
+            _ => Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("node isn't Row type".into()),
+            )),
+        }
+    }
+
     /// Gets alias node name.
     ///
     /// # Errors
@@ -268,6 +282,13 @@ impl Expression {
             if *parent == from_id {
                 *parent = to_id;
             }
+        }
+    }
+
+    /// Flushes parent in the reference node.
+    pub fn flush_parent_in_reference(&mut self) {
+        if let Expression::Reference { parent, .. } = self {
+            *parent = None;
         }
     }
 }
@@ -1048,6 +1069,27 @@ impl Plan {
         for id in references {
             let node = self.get_mut_expression_node(id)?;
             node.replace_parent_in_reference(from_id, to_id);
+        }
+        Ok(())
+    }
+
+    /// Flush parent to `None` for all references in the expression subtree of the current node.
+    ///
+    /// # Errors
+    /// - node is invalid
+    /// - node is not an expression
+    pub fn flush_parent_in_subtree(&mut self, node_id: usize) -> Result<(), SbroadError> {
+        let mut references: Vec<usize> = Vec::new();
+        let mut subtree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        for (_, id) in subtree.iter(node_id) {
+            if let Node::Expression(Expression::Reference { .. }) = self.get_node(id)? {
+                references.push(id);
+            }
+        }
+        for id in references {
+            let node = self.get_mut_expression_node(id)?;
+            node.flush_parent_in_reference();
         }
         Ok(())
     }

@@ -1,4 +1,7 @@
+use std::mem::take;
+
 use crate::errors::{Entity, SbroadError};
+use crate::executor::hash::ToHashString;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::function::{Behavior, Function};
@@ -109,19 +112,13 @@ impl Plan {
         ))
     }
 
-    pub(crate) fn set_insert_columns(
+    pub(crate) fn insert_columns_mut(
         &mut self,
         insert_id: usize,
-        columns: Vec<usize>,
-    ) -> Result<(), SbroadError> {
-        let insert = self.get_mut_relation_node(insert_id).unwrap();
-        if let Relational::Insert {
-            columns: old_columns,
-            ..
-        } = insert
-        {
-            *old_columns = columns;
-            return Ok(());
+    ) -> Result<&mut Vec<usize>, SbroadError> {
+        let insert = self.get_mut_relation_node(insert_id)?;
+        if let Relational::Insert { columns, .. } = insert {
+            return Ok(columns);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
@@ -220,7 +217,7 @@ impl Plan {
     /// insert into t1 (a, bucket_id)
     /// select
     ///   c,
-    ///   bucket_id(coalesce(cast(NULL as string), '') || coalesce(cast(c as string), ''))
+    ///   bucket_id(coalesce(cast(NULL as string), 'NULL') || coalesce(cast(c as string), 'NULL'))
     /// from (select c from t2)
     /// ```
     pub(crate) fn replace_insert_child_with_bucket_id_sq(
@@ -236,10 +233,14 @@ impl Plan {
 
         // Create a new row for the bucket_id projection.
         let proj_output_id = self.clone_expr_subtree(sq_output_id)?;
-        let mut new_row = self.get_expression_node(proj_output_id)?.clone_row_list()?;
+        self.flush_parent_in_subtree(proj_output_id)?;
+        let mut new_row = take(
+            self.get_mut_expression_node(proj_output_id)?
+                .get_row_list_mut()?,
+        );
 
         // Create the string concatenation node:
-        // coalesce(cast(NULL as string), '') || coalesce(cast(c as string), '')
+        // coalesce(cast(NULL as string), 'NULL') || coalesce(cast(c as string), 'NULL')
         let mut columns_to_concat: Vec<usize> = Vec::with_capacity(child_motion_key.targets.len());
         for target in &child_motion_key.targets {
             let alias_id = match target {
@@ -258,10 +259,10 @@ impl Plan {
                 alias_id
             };
             let cast_id = self.add_cast(col_id, CastType::String)?;
-            let empty_string_id = self.add_const(Value::String(String::new()));
+            let null_string_id = self.add_const(Value::String(Value::Null.to_hash_string()));
             let fn_coalesce = Function::new("coalesce".to_string(), Behavior::Stable);
             let coalesce_id: usize =
-                self.add_stable_function(&fn_coalesce, vec![cast_id, empty_string_id])?;
+                self.add_stable_function(&fn_coalesce, vec![cast_id, null_string_id])?;
             columns_to_concat.push(coalesce_id);
         }
         let concat_id = if let Some((first, others)) = columns_to_concat.split_first() {
@@ -283,10 +284,10 @@ impl Plan {
         let bucket_id_id: usize = self.add_stable_function(&fn_bucket_id, vec![concat_id])?;
 
         // Push the bucket_id column to the end of the INSERT columns' row.
-        let mut columns = self.insert_columns(insert_id)?.to_vec();
         let table = self.insert_table(insert_id)?;
-        columns.push(table.get_bucket_id_position()?);
-        self.set_insert_columns(insert_id, columns)?;
+        let bucket_id_pos = table.get_bucket_id_position()?;
+        let columns = self.insert_columns_mut(insert_id)?;
+        columns.push(bucket_id_pos);
 
         // Push the bucket_id column to the end of projection row.
         new_row.push(bucket_id_id);

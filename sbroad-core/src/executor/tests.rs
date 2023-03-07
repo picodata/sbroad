@@ -946,7 +946,7 @@ fn insert1_test() {
                     r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
                     r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
                 ),
-                vec![Value::Null, Value::String("".into()), Value::String("".into())],
+                vec![Value::Null, Value::String("NULL".into()), Value::String("NULL".into())],
             ))),
         ],
         vec![
@@ -958,7 +958,7 @@ fn insert1_test() {
                     r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
                     r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
                 ),
-                vec![Value::Null, Value::String("".into()), Value::String("".into())],
+                vec![Value::Null, Value::String("NULL".into()), Value::String("NULL".into())],
             ))),
         ],
     ]);
@@ -995,7 +995,7 @@ fn insert2_test() {
                 r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
                 r#"(SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
             ),
-            vec![Value::from(""), Value::from(""), Value::from(1_u64), Value::from(2_u64)],
+            vec![Value::from("NULL"), Value::from("NULL"), Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1064,7 +1064,7 @@ fn insert3_test() {
                     r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
                     r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
                 ),
-                vec![Value::from(""), Value::from("")],
+                vec![Value::from("NULL"), Value::from("NULL")],
             ))),
         ],
         vec![
@@ -1077,7 +1077,7 @@ fn insert3_test() {
                     r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
                     r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
                 ),
-                vec![Value::from(""), Value::from("")],
+                vec![Value::from("NULL"), Value::from("NULL")],
             ))),
         ],
     ]);
@@ -1115,7 +1115,7 @@ fn insert4_test() {
                 r#"(SELECT CAST ("t"."b" as unsigned) as COL_0, CAST ("t"."a" as unsigned) as COL_1 FROM"#,
                 r#"(SELECT "t"."b", "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
             ),
-            vec![Value::from(""), Value::from(""), Value::from(1_u64), Value::from(2_u64)],
+            vec![Value::from("NULL"), Value::from("NULL"), Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1179,7 +1179,7 @@ fn insert5_test() {
                 r#"(SELECT CAST ("COL_1" as unsigned) as COL_0, CAST ("COL_2" as unsigned) as COL_1 FROM"#,
                 r#"((SELECT "COL_1","COL_2" FROM "TMP_test_125") as "t"))"#,
             ),
-            vec![Value::from(""), Value::from("")],
+            vec![Value::from("NULL"), Value::from("NULL")],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1247,7 +1247,7 @@ fn insert6_test() {
                     r#"(SELECT CAST (COLUMN_5 as unsigned) as COL_0, CAST (COLUMN_6 as unsigned) as COL_1 FROM"#,
                     r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
                 ),
-                vec![Value::from(""), Value::from("")],
+                vec![Value::from("NULL"), Value::from("NULL")],
             ))),
         ],
         vec![
@@ -1260,7 +1260,7 @@ fn insert6_test() {
                     r#"(SELECT CAST (COLUMN_5 as unsigned) as COL_0, CAST (COLUMN_6 as unsigned) as COL_1 FROM"#,
                     r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
                 ),
-                vec![Value::from(""), Value::from("")],
+                vec![Value::from("NULL"), Value::from("NULL")],
             ))),
         ],
     ]);
@@ -1347,7 +1347,7 @@ fn insert8_test() {
                     r#"(SELECT CAST ("hash_single_testing"."identification_number" as int) as COL_0, CAST ("hash_single_testing"."product_code" as string) as COL_1,"#,
                     r#"CAST ("hash_single_testing"."product_units" as bool) as COL_2, CAST ("hash_single_testing"."sys_op" as unsigned) as COL_3 FROM"#,
                     r#"((SELECT "identification_number","product_code","product_units","sys_op" FROM "TMP_test_114") as "hash_single_testing"))"#,
-                    ), vec![Value::from(""), Value::from("")],
+                    ), vec![Value::from("NULL"), Value::from("NULL")],
                 )
             )
         ),
@@ -1414,7 +1414,7 @@ fn insert9_test() {
                 r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
                 r#"(SELECT CAST (COLUMN_1 as unsigned) as COL_0, CAST (COLUMN_2 as unsigned) as COL_1 FROM ((SELECT "COLUMN_1","COLUMN_2" FROM "TMP_test_82") as "t"))"#,
             ),
-            vec![Value::from(""), Value::from("")],
+            vec![Value::from("NULL"), Value::from("NULL")],
         ))),
     ]]);
     assert_eq!(expected, result);

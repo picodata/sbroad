@@ -317,6 +317,11 @@ impl Value {
         }
     }
 
+    /// Cast a value to a different type.
+    ///
+    /// # Errors
+    /// - the value cannot be cast to the given type.
+    #[allow(clippy::too_many_lines)]
     pub fn cast(&self, column_type: &Type) -> Result<Value, SbroadError> {
         match column_type {
             Type::Array => match self {
@@ -384,7 +389,13 @@ impl Value {
                     .map_err(|e| {
                         SbroadError::FailedTo(Action::Serialize, Some(Entity::Value), e.to_string())
                     }),
-                Value::Unsigned(v) => Ok(Value::Integer(*v as i64)),
+                Value::Unsigned(v) => Ok(Value::Integer(i64::try_from(*v).map_err(|e| {
+                    SbroadError::FailedTo(
+                        Action::Serialize,
+                        Some(Entity::Value),
+                        format!("u64 {v} into i64: {e}"),
+                    )
+                })?)),
                 Value::Null => Ok(Value::Null),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
@@ -422,7 +433,13 @@ impl Value {
             },
             Type::Unsigned => match self {
                 Value::Unsigned(_) => Ok(self.clone()),
-                Value::Integer(v) => Ok(Value::Unsigned(*v as u64)),
+                Value::Integer(v) => Ok(Value::Unsigned(u64::try_from(*v).map_err(|e| {
+                    SbroadError::FailedTo(
+                        Action::Serialize,
+                        Some(Entity::Value),
+                        format!("i64 {v} into u64: {e}"),
+                    )
+                })?)),
                 Value::Decimal(v) => Ok(Value::Unsigned(v.to_u64().ok_or_else(|| {
                     SbroadError::FailedTo(
                         Action::Serialize,

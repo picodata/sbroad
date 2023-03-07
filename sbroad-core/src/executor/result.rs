@@ -194,8 +194,7 @@ impl Plan {
     /// - If relational iterator fails to return a correct node.
     pub fn subtree_contains_values(&self, top_id: usize) -> Result<bool, SbroadError> {
         let mut rel_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
-        let nodes: Vec<usize> = rel_tree.iter(top_id).map(|(_, id)| id).collect();
-        for node_id in nodes {
+        for (_, node_id) in rel_tree.iter(top_id) {
             let rel = self.get_relation_node(node_id)?;
             if let Relational::Values { .. } = rel {
                 return Ok(true);
