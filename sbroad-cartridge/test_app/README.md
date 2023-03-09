@@ -18,46 +18,52 @@ The application was created for integration testing of the `sbroad` library. It 
 cd .. && make build_integration
 ```
 
-## <a name="run-tests"></a>Run test application
+## <a name="run-tests"></a>Run test application and bootstrap shards
 
 ```bash
-cartridge start
+cartridge start -d
+cartridge replicasets setup --bootstrap-vshard
  ```
+Before proceding with queries, make sure you have applied a valid schema for your application. A working example is [provided](https://git.picodata.io/picodata/picodata/sbroad/-/blob/main/sbroad-cartridge/test_app/test/data/config.yml) with this test app.
 
 ## <a name="architecture"></a>Architecture
 
 The application includes two roles:
 
-- `api`
-- `storage`
+- `api` (includes `sbroad-router` and enables these functions: `sbroad.calculate_bucket_id`, `sbroad.execute`, `sbroad.trace`)
+- `storage` (includes `sbroad-storage` and enables the `sbroad.calculate_bucket_id` function)
 
 Notice that sbroad function are placed into global [_G](https://www.lua.org/pil/14.html), so you can call sbroad functions at any place of app. Let's have a look at sbroad functions:
 
-### <a name="sbroad-execute"></a>`sbroad.execute(sql_query,{params})`
+### <a name="sbroad-execute"></a>`sbroad.execute(sql_query,params)`
 execute the parametrized sql query. Currently query supports only _SELECT_, _INSERT_ and _EXPLAIN_ statements. For details see [SQL feature taxonomy](https://git.picodata.io/picodata/picodata/sbroad/-/blob/main/doc/sql/feature_taxonomy.md).
 
 **Parameters**:
 * sql_query (string) -- sql query to execute on cluster
 * params (array) -- params for sql query. The number and order of the arguments correspond to the `?` signs inside `sql_query`.
 
+Note that the use of parameters is obligatory. If you don't have any, use the `, {}` stub.
+
 **Return**:
 * result of query (table|nil)
 * error
 
-**Example**:
+**Examples**:
+
+
 ```
 sbroad.execute([[insert into "testing_space" ("id", "name") values (?, ?), (?, ?)]], {1, "123", 2, "123"})
 ---
 - {row_count = 2}
 - null
 ...
-sbroad.execute([[insert into "testing_space" ("id", "name") values (3, '123'), (4, '123')]])
+sbroad.execute([[insert into "testing_space" ("id", "name") values (3, '123'), (4, '123')]], {})
 ---
 - {row_count = 2}
 - null
 ...
 
-sbroad.execute([[select "name" from "testing_space" where "id" = 2]])
+sbroad.execute([[select "name" from "testing_space" where "id" = 2]], {})
 ---
 - {{{metadata = {name = 'id', type = 'integer'}, {name = 'name', type = 'string'}}, {rows = {2, "123"}}}
 - null
@@ -73,7 +79,7 @@ sbroad.execute([[EXPLAIN SELECT * FROM (
     UNION ALL
     SELECT "f1", "f2" FROM "space_2" WHERE "f3" > 0
     ) as "t1"
-    WHERE "f1" = 1 ]]
+    WHERE "f1" = 1 ]], {}
 )
 ---
 - "projection (\"t1\".\"f1\" -> \"f1\", \"t1\".\"f2\" -> \"f2\")",

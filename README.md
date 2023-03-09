@@ -8,15 +8,20 @@ You can download it [here](https://picodata.io/download)
 
 ## Getting started
 
-First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools installed and available in your environment. 
+First you need to have `rust`, `tarantool` and `cartridge-cli` CLI tools
+installed and available in your environment, plus some other development
+packages Sbroad depends on, including `openssl`, `libicu` and
+`libreadline`
 
 An example of the `sbroad` integration with Tarantool can be found in the `test_app` folder.
+Check out the separate [README.md](test_app/README.md) for using Sbroad with the test Cartridge application.
 
 ### Install as lua module
 
 ```bash
 tarantoolctl rocks --only-server https://download.picodata.io/luarocks/ install sbroad <version>
 ```
+(use one of the version numbers in [Tags](https://git.picodata.io/picodata/picodata/sbroad/-/tags))
 
 For a [Cartridge](https://github.com/tarantool/cartridge) application add the command above into `cartridge.pre-build` file and [sbroad roles](#cartridge-roles) into your role's dependencies (for example see [test_app](test_app/)) 
 
@@ -70,15 +75,19 @@ The executor is located on the coordinator node in the `vshard` cluster. It coll
 1. The executor collects all the motion nodes from the bottom layer. In theory all the motions in the same layer can be executed in parallel (this feature is yet to come).
 1. For every motion the executor:
    - inspects the IR sub-tree and detects the buckets to execute the query for.
-   - builds a valid SQL query from the IR sub-tree.
-   - performs map-reduce for that SQL query (we send it to the shards deduced from the buckets).
+   - performs map-reduce for that IR subtree (we send it to the shards deduced from the buckets):
+     - serialize IR subtree to send with message pack
+     - deserialize it on the executor and build a valid SQL
+     - execute SQL and return results
    - builds a virtual table with query results that correspond to the original motion.
 1. Moves to the next motion layer in the IR tree.
 1. For every motion the executor then:
    - links the virtual table results of the motion from the previous layer we depend on.
    - inspects the IR sub-tree and detects the buckets to execute the query.
-   - builds a valid SQL query from the IR sub-tree (the virtual table is serialized as `VALUES (), .., ()`).
-   - performs map-reduce for that SQL query.
+   - performs map-reduce for that IR sub-tree
+     - on the map stage we use virtual table to build a temporary space (and populate it with dispatched virtual table's data)
+     - build and execute a valid SQL from IR sub-tree and this new temporary space
+     - remove temporary space
    - builds a virtual table with query results that correspond to the original motion.
 1. Repeats step 3 till we are done with motion layers.
 1. Executes the final IR top subtree and returns the final result to the user.
