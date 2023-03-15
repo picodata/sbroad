@@ -1,7 +1,7 @@
 local t = require('luatest')
 local g = t.group('configuration.sql_cache')
 
-local helper = require('test.helper.cluster_async_replication')
+local helper = require('test.helper.cluster_sync_replication')
 local cluster = nil
 
 g.before_all(
@@ -10,9 +10,10 @@ g.before_all(
         cluster = helper.cluster
 
         local storage1 = cluster:server("storage-1-1").net_box
-        storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
-
         local storage2 = cluster:server("storage-2-1").net_box
+
+        storage1:call("box.space.space_for_breake_cache:alter", { {is_sync = true}})
+        storage1:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
         storage2:call("box.execute", { [[truncate table "space_for_breake_cache"]] })
     end
 )

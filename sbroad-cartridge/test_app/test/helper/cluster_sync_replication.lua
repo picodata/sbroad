@@ -2,6 +2,7 @@
 -- Add common configuration here.
 
 local fio = require('fio')
+local fiber = require("fiber")
 local t = require('luatest')
 local cartridge_helpers = require('cartridge.test-helpers')
 local config_handler = require('test.helper.config_handler')
@@ -56,6 +57,39 @@ helper.start_test_cluster = function (cfg)
     })
 
     helper.cluster:start()
+
+    local storage11 = helper.cluster:server("storage-1-1").net_box
+    local storage12 = helper.cluster:server("storage-1-2").net_box
+
+    -- storage master
+    storage11:eval("box.cfg{election_mode='candidate'}")
+    -- storage replica
+    storage12:eval("box.cfg{election_mode='voter'}")
+
+    local WAITING_TIMEOUT = 20
+    local fiber_sleep = 0.01
+    local wait_start = fiber.clock()
+
+    local s11_ro = storage11:eval("return box.info.ro")
+    local s12_ro = storage12:eval("return box.info.ro")
+
+    -- wait until new replicaset configuration finishes
+    -- when it happens, master will be readable/writable while replica will be only readable
+    while s11_ro do
+        fiber.sleep(fiber_sleep)
+        s11_ro = storage11:eval("return box.info.ro")
+        s12_ro = storage12:eval("return box.info.ro")
+
+        local current_time = fiber.clock()
+        if current_time > wait_start + WAITING_TIMEOUT then
+            t.fail("timeout exceed waiting replication")
+        end
+    end
+    t.assert_equals({s11_ro, s12_ro}, {false, true})
+
+    -- replicaset has master and one replica
+    storage11:eval("box.cfg{replication_synchro_quorum=2}")
+
     helper.cluster:upload_config(cfg)
 end
 
