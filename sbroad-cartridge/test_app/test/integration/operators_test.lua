@@ -132,6 +132,61 @@ g.test_not_eq = function()
     })
 end
 
+g.test_not_eq2 = function()
+    -- "t" contains:
+    -- [1, 4.2]
+    -- [2, decimal(6.66)]
+    -- [3, 0.0]
+    -- [4, 0.0]
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[insert into "t" ("id", "a") values (?, ?), (?, ?)]],
+        {3, 0.0, 4, 0.0}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    -- make sure table is located on both storages, not only on one storage
+    local storage1 = cluster:server("storage-1-1").net_box
+    r, err = storage1:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+    local storage2 = cluster:server("storage-2-1").net_box
+    r, err = storage2:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+    r, err = api:call(
+            "sbroad.execute",
+            {
+                [[
+                    SELECT "id", u FROM "t" join
+                    (select "id" as u from "t") as q
+                    on "t"."id" <> q.u
+                ]],
+                {}
+            }
+    )
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r, {
+        metadata = {
+            {name = "t.id", type = "integer"},
+            {name = "Q.U", type = "integer"}
+        },
+        rows = {
+            {1, 2}, {1, 3}, {1, 4},
+            {2, 1}, {2, 3}, {2, 4},
+            {3, 1}, {3, 2}, {3, 4},
+            {4, 1}, {4, 2}, {4, 3},
+        },
+    })
+end
+
 g.test_simple_shard_key_union_query = function()
     local api = cluster:server("api-1").net_box
 

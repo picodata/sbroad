@@ -126,14 +126,15 @@ fn front_params6() {
     selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") not in ROW($0)
         scan "test_space"
 subquery $0:
-scan
-            union all
-                projection ("test_space"."id" -> "id")
-                    selection ROW("test_space"."sys_op") = ROW(1)
-                        scan "test_space"
-                projection ("test_space"."id" -> "id")
-                    selection ROW("test_space"."sys_op") = ROW(2)
-                        scan "test_space"
+motion [policy: full]
+            scan
+                union all
+                    projection ("test_space"."id" -> "id")
+                        selection ROW("test_space"."sys_op") = ROW(1)
+                            scan "test_space"
+                    projection ("test_space"."id" -> "id")
+                        selection ROW("test_space"."sys_op") = ROW(2)
+                            scan "test_space"
 "#,
     );
 

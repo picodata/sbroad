@@ -2,7 +2,7 @@ use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::{Key, MotionPolicy};
-use crate::ir::Slices;
+use crate::ir::{Slice, Slices};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -28,7 +28,7 @@ fn not_in2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    assert_eq!(Slices::empty(), plan.slices);
+    assert_eq!(Slices::from(vec![Slice { slice: vec![64] }]), plan.slices);
 }
 
 #[test]
@@ -41,15 +41,7 @@ fn not_in3() {
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(
-            *policy,
-            MotionPolicy::Segment(
-                (Key {
-                    positions: vec![0, 1]
-                })
-                .into()
-            )
-        );
+        assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
     }
@@ -65,15 +57,7 @@ fn not_in4() {
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(
-            *policy,
-            MotionPolicy::Segment(
-                (Key {
-                    positions: vec![1, 0]
-                })
-                .into()
-            )
-        );
+        assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
     }
@@ -89,15 +73,7 @@ fn not_in5() {
     let motion_id = *get_motion_id(&plan, 0, 0).unwrap();
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
-        assert_eq!(
-            *policy,
-            MotionPolicy::Segment(
-                (Key {
-                    positions: vec![0, 1]
-                })
-                .into()
-            )
-        );
+        assert_eq!(*policy, MotionPolicy::Full);
     } else {
         panic!("Expected a motion node");
     }
