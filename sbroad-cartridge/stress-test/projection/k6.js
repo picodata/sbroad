@@ -1,7 +1,8 @@
 import tarantool from "k6/x/tarantool";
 import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
+import { updateSuccessRate } from '../metrics.js';
 
-const client = tarantool.connect("localhost:3301", {"user": "admin", pass: "app-cluster-cookie"})
+const client = tarantool.connect(["localhost:3301"], {"user": "admin", pass: "app-cluster-cookie"})
 
 let ids = Array.from(
     {
@@ -23,5 +24,6 @@ let pattern = `SELECT *
     WHERE "id" = ?`
 
 export default () => {
-    tarantool.call(client, "sbroad.execute", [pattern, [randomItem(ids)]]);
+    var resp = tarantool.call(client, "sbroad.execute", [pattern, [randomItem(ids)]]);
+    updateSuccessRate(resp);
 }
