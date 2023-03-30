@@ -4,34 +4,66 @@
 //! CBO algorithms.
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::value::{value_to_decimal_or_error, Value};
+use crate::ir::value::{value_to_decimal_or_error, TrivalentOrdering, Value};
 use itertools::enumerate;
+use std::fmt::Debug;
 use std::str::FromStr;
 
 /// Helper structure that represents pair of most common value in the column and its frequency.
 #[derive(Debug, PartialEq, Clone)]
-struct MostCommonValueWithFrequency {
+pub struct MostCommonValueWithFrequency {
     value: Value,
     frequency: f64,
 }
 
 impl MostCommonValueWithFrequency {
     #[allow(dead_code)]
-    fn new(value: Value, frequency: f64) -> Self {
+    pub(crate) fn new(value: Value, frequency: f64) -> Self {
         MostCommonValueWithFrequency { value, frequency }
     }
 }
 
 /// Representation of histogram bucket.
-#[derive(Clone, Debug, PartialEq)]
-struct Bucket<'bucket> {
-    /// From (left border) value of the bucket (not inclusive, except for the first bucket)
-    pub from: &'bucket Value,
-    /// To (right order) value of the bucket (inclusive)
-    pub to: &'bucket Value,
-    /// Bucket frequency.
-    /// Represents the number of elements stored in the bucket.
-    pub frequency: usize,
+/// Fields:
+/// `from` -- left border value of the bucket.
+/// `to` -- right border value of the bucket (always inclusive).
+/// `frequency` -- number of elements stored in the bucket.
+#[derive(PartialEq, Debug, Clone)]
+#[allow(dead_code)]
+enum Bucket<'bucket> {
+    /// Representation of the first histogram bucket with inclusive `from` edge.
+    First {
+        from: &'bucket Value,
+        to: &'bucket Value,
+        frequency: usize,
+    },
+    /// Representation of a non-first histogram bucket with non-inclusive `from` edge.
+    NonFirst {
+        from: &'bucket Value,
+        to: &'bucket Value,
+        frequency: usize,
+    },
+}
+
+/// Checks whether given value falls into the bucket.
+///
+/// Returns `None` in case inner call to `partial_cmp` resulted to None.
+#[allow(dead_code)]
+fn value_falls_into_bucket(bucket: &Bucket, value: &Value) -> Option<bool> {
+    let (from, to, is_first) = match bucket {
+        Bucket::First { from, to, .. } => (from, to, true),
+        Bucket::NonFirst { from, to, .. } => (from, to, false),
+    };
+    let from_partial_cmp = value.partial_cmp(from)?;
+    let to_partial_cmp = value.partial_cmp(to)?;
+    if (TrivalentOrdering::Greater == from_partial_cmp
+        || (is_first && TrivalentOrdering::Equal == from_partial_cmp))
+        && (TrivalentOrdering::Less == to_partial_cmp || TrivalentOrdering::Equal == to_partial_cmp)
+    {
+        Some(true)
+    } else {
+        Some(false)
+    }
 }
 
 /// Representation of equi-height histogram.
@@ -39,12 +71,9 @@ struct Bucket<'bucket> {
 /// It's assumed that if the histogram is present, then all
 /// its fields are filled.
 ///
-/// As soon as the biggest part of the logic is taken from
-/// `PostgreSQL` implementation, you may see `PostgreSQL lines` comments
-/// in some places. It means you can find
-/// implementation of `PostgreSQL` logic by searching the provided text.
-///
-/// `PostgreSQL` version: `REL_15_2`
+/// **Note**: We don't keep the number of rows stored in the corresponding column during the process
+/// of histogram creation in order to support cases of table size change. We always take the
+/// information about `rows_number` from `ColumnStats` of corresponding column.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Histogram<'histogram> {
     // Most common values and their frequencies.
@@ -59,20 +88,15 @@ pub struct Histogram<'histogram> {
     /// * ...
     /// * i = n -> (b_(n-2); b_(n-1)]
     buckets: Vec<Bucket<'histogram>>,
-    /// Fraction of NULL values among all column values.
+    /// Fraction of NULL values among all column rows.
+    /// Always positive value from 0 to 1.
     null_fraction: f64,
-    /// Number of distinct values for the whole histogram.
+    /// Number of distinct values divided by the number of rows.
+    /// Always positive value from 0 to 1.
     ///
-    /// **Note**: It is easy during the histogram calculation
-    /// phase to calculate ndv as soon as the elements have to be sorted
-    /// in order to construct bucket_bounds Vec.
-    ndv: usize,
-    /// Number of elements added into histogram.
-    ///
-    /// **Note**: the number of values added into histogram don't
-    /// have to be equal to the number of rows in the table as soon as
-    /// some rows might have been added after the histogram was created.
-    elements_count: usize,
+    /// **Note**: in order to calculate `number_of_distinct_values` (absolute value) we must
+    /// use formula `rows_number * (1 - null_fraction) * distinct_values_fraction`
+    distinct_values_fraction: f64,
 }
 
 /// Helper structure that represents `String` char sequence.

@@ -109,8 +109,8 @@ where
             plan = cached_plan.clone();
         }
         if plan.is_empty() {
-            let ast = C::ParseTree::new(sql)?;
             let metadata = &*coordinator.cached_config()?;
+            let ast = C::ParseTree::new(sql)?;
             plan = ast.resolve_metadata(metadata)?;
             cache.put(key, plan.clone())?;
         }

@@ -1,14 +1,17 @@
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use crate::cbo::histogram::MostCommonValueWithFrequency;
+use crate::cbo::{TableColumnPair, TableStats};
 use crate::collection;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator,
+    Coordinator, InitialBucket, InitialColumnStats, InitialHistogram, Statistics,
 };
 use crate::executor::hash::bucket_id_by_tuple;
 use crate::executor::ir::ExecutionPlan;
@@ -251,6 +254,8 @@ pub struct RouterRuntimeMock {
     metadata: RefCell<RouterConfigurationMock>,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
     ir_cache: RefCell<LRUCache<String, Plan>>,
+    table_statistics_cache: RefCell<HashMap<String, Rc<TableStats>>>,
+    initial_column_statistics_cache: RefCell<HashMap<TableColumnPair, Rc<InitialColumnStats>>>,
 }
 
 impl std::fmt::Debug for RouterRuntimeMock {
@@ -258,6 +263,8 @@ impl std::fmt::Debug for RouterRuntimeMock {
         f.debug_tuple("")
             .field(&self.metadata)
             .field(&self.virtual_tables)
+            .field(&self.table_statistics_cache)
+            .field(&self.initial_column_statistics_cache)
             .finish()
     }
 }
@@ -317,6 +324,277 @@ impl Configuration for RouterRuntimeMock {
     fn update_config(&self, _config: Self::Configuration) -> Result<(), SbroadError> {
         *self.metadata.borrow_mut() = RouterConfigurationMock::new();
         Ok(())
+    }
+}
+
+impl Default for RouterRuntimeMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RouterRuntimeMock {
+    #[allow(dead_code)]
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn new() -> Self {
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
+
+        let mut table_statistics_cache = HashMap::new();
+        table_statistics_cache.insert(
+            "\"hash_testing_hist\"".to_string(),
+            Rc::new(TableStats::new(
+                "hash_testing_hist".to_string(),
+                100,
+                2100,
+                1000,
+                2000,
+            )),
+        );
+        table_statistics_cache.insert(
+            "\"hash_testing\"".to_string(),
+            Rc::new(TableStats::new(
+                "hash_testing".to_string(),
+                1000,
+                1200,
+                300,
+                200,
+            )),
+        );
+        table_statistics_cache.insert(
+            "\"test_space\"".to_string(),
+            Rc::new(TableStats::new(
+                "test_space".to_string(),
+                2500,
+                3000,
+                1000,
+                500,
+            )),
+        );
+
+        // Note that `rows_number` field in inserted column statistics must be equal to the
+        // `rows_number` field in the corresponding table.
+        let mut column_statistics_cache = HashMap::new();
+        // Column statistics with empty histogram.
+        //
+        // * rows_number: 100
+        // * min_value: 1
+        // * max_value: 50
+        // * avg_size: 4
+        // * histogram:
+        //   - null_fraction: 0.0
+        //   - most_common: []
+        //   - ndv (absolute value): 0
+        //   - buckets_count: 0
+        //   - buckets_frequency: 0
+        //   - buckets_boundaries: []
+        column_statistics_cache.insert(
+            TableColumnPair::new("\"hash_testing_hist\"".to_string(), 0),
+            Rc::new(InitialColumnStats {
+                min_value: Value::Integer(1),
+                max_value: Value::Integer(50),
+                avg_size: 4,
+                histogram: InitialHistogram {
+                    most_common: vec![],
+                    buckets: vec![],
+                    null_fraction: 0.0,
+                    distinct_values_fraction: 0.0,
+                },
+            }),
+        );
+
+        // Casual column statistics.
+        //
+        // Values `min_value` and `max_value` of `ColumnStats` structure are in fact
+        // displaying MIN and MAX values of `Histogram` structure (that is seen from its
+        // `most_common` and `buckets_boundaries` fields).
+        // An example of statistics, where general column statistics and histogram statistics conform.
+        //
+        // * rows_number: 1000
+        // * min_value: 0
+        // * max_value: 15
+        // * avg_size: 8
+        // * histogram:
+        //   - null_fraction: 0.1 (100)
+        //   - most_common:
+        //     [0 -> 100,
+        //      1 -> 100,
+        //      2 -> 50,
+        //      3 -> 50,
+        //      4 -> 100]
+        //   - ndv (absolute value): 15 (only 10 in buckets)
+        //   - buckets_count: 5
+        //   - buckets_frequency: 100 (as only 500 elements are stored in buckets)
+        //   - buckets_boundaries: [5, 7, 9, 11, 13, 15]
+        column_statistics_cache.insert(
+            TableColumnPair::new("\"hash_testing\"".to_string(), 0),
+            Rc::new(InitialColumnStats {
+                min_value: Value::Integer(0),
+                max_value: Value::Integer(15),
+                avg_size: 8,
+                histogram: InitialHistogram {
+                    most_common: vec![
+                        MostCommonValueWithFrequency::new(Value::Integer(0), 100.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(1), 100.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(2), 50.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(3), 50.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(4), 100.0),
+                    ],
+                    buckets: vec![
+                        InitialBucket::First {
+                            from: Value::Integer(5),
+                            to: Value::Integer(7),
+                            frequency: 100,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(7),
+                            to: Value::Integer(9),
+                            frequency: 100,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(9),
+                            to: Value::Integer(11),
+                            frequency: 100,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(11),
+                            to: Value::Integer(13),
+                            frequency: 100,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(13),
+                            to: Value::Integer(15),
+                            frequency: 100,
+                        },
+                    ],
+                    null_fraction: 0.1,
+                    // 15 / (1000 * (1 -  0.1)) ~ 15
+                    distinct_values_fraction: 0.01666,
+                },
+            }),
+        );
+        // Column statistics with unique values.
+        // Note that it's also a column statistics with no `most_common` values.
+        //
+        // * rows_number: 1000
+        // * min_value: 1
+        // * max_value: 90
+        // * avg_size: 4
+        // * histogram:
+        //   - null_fraction: 0.1 (100)
+        //   - most_common: []
+        //   - ndv (absolute value): 900
+        //   - buckets_count: 3
+        //   - buckets_frequency: 300 (as all 900 left elements are stored in buckets)
+        //   - buckets_boundaries: [1, 40, 65, 90]
+        column_statistics_cache.insert(
+            TableColumnPair::new("\"hash_testing\"".to_string(), 1),
+            Rc::new(InitialColumnStats {
+                min_value: Value::Integer(1),
+                max_value: Value::Integer(900),
+                avg_size: 4,
+                histogram: InitialHistogram {
+                    most_common: vec![],
+                    buckets: vec![
+                        InitialBucket::First {
+                            from: Value::Integer(1),
+                            to: Value::Integer(40),
+                            frequency: 300,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(40),
+                            to: Value::Integer(65),
+                            frequency: 300,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(65),
+                            to: Value::Integer(90),
+                            frequency: 300,
+                        },
+                    ],
+                    null_fraction: 0.1,
+                    // 900 / (1000 * (1 -  0.1)) = 1
+                    distinct_values_fraction: 1.0,
+                },
+            }),
+        );
+        // Casual column statistics, but for different column in different table.
+        //
+        // Values `min_value` and `max_value` of `ColumnStats` structure differ
+        // from MIN and MAX values that we can get from `Histogram` structure (that is seen from its
+        // `most_common` and `buckets_boundaries` fields).
+        // An example of statistics, where general column statistics and histogram statistics
+        // do NOT conform. That means histogram was gathered before updates to the corresponding table were made.
+        //
+        // * rows_number: 2500
+        // * min_value: 1
+        // * max_value: 2000
+        // * avg_size: 8
+        // * histogram:
+        //   - null_fraction: 0.2 (500)
+        //   - most_common:
+        //     [3 -> 250,
+        //      4 -> 50,
+        //      5 -> 50,
+        //      6 -> 150]
+        //   - ndv: 104 (only 100 in buckets)
+        //   - buckets_count: 4
+        //   - buckets_frequency: 375 (as only 1500 elements are stored in buckets)
+        //   - buckets_boundaries: [0, 78, 200, 780, 1800]
+        column_statistics_cache.insert(
+            TableColumnPair::new("\"test_space\"".to_string(), 0),
+            Rc::new(InitialColumnStats {
+                min_value: Value::Integer(1),
+                max_value: Value::Integer(2000),
+                avg_size: 8,
+                histogram: InitialHistogram {
+                    most_common: vec![
+                        MostCommonValueWithFrequency::new(Value::Integer(3), 150.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(4), 50.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(5), 50.0),
+                        MostCommonValueWithFrequency::new(Value::Integer(6), 150.0),
+                    ],
+                    buckets: vec![
+                        InitialBucket::First {
+                            from: Value::Integer(0),
+                            to: Value::Integer(78),
+                            frequency: 375,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(78),
+                            to: Value::Integer(200),
+                            frequency: 375,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(200),
+                            to: Value::Integer(780),
+                            frequency: 375,
+                        },
+                        InitialBucket::NonFirst {
+                            from: Value::Integer(780),
+                            to: Value::Integer(1800),
+                            frequency: 375,
+                        },
+                    ],
+                    null_fraction: 0.2,
+                    // 104 / (2500 * (1 -  0.2)) = 0.052
+                    distinct_values_fraction: 0.052,
+                },
+            }),
+        );
+
+        RouterRuntimeMock {
+            metadata: RefCell::new(RouterConfigurationMock::new()),
+            virtual_tables: RefCell::new(HashMap::new()),
+            ir_cache: RefCell::new(cache),
+            table_statistics_cache: RefCell::new(table_statistics_cache),
+            initial_column_statistics_cache: RefCell::new(column_statistics_cache),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn add_virtual_table(&self, id: usize, table: VirtualTable) {
+        self.virtual_tables.borrow_mut().insert(id, table);
     }
 }
 
@@ -407,28 +685,88 @@ impl Coordinator for RouterRuntimeMock {
     }
 }
 
-impl Default for RouterRuntimeMock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RouterRuntimeMock {
-    #[allow(dead_code)]
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn new() -> Self {
-        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
-        RouterRuntimeMock {
-            metadata: RefCell::new(RouterConfigurationMock::new()),
-            virtual_tables: RefCell::new(HashMap::new()),
-            ir_cache: RefCell::new(cache),
+impl Statistics for RouterRuntimeMock {
+    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
+        if let Ok(borrow_res) = self.table_statistics_cache.try_borrow() {
+            if let Some(value) = borrow_res.get(table_name.as_str()) {
+                Ok(value.clone())
+            } else {
+                Err(SbroadError::NotFound(
+                    Entity::Statistics,
+                    String::from("Mocked statistics for table {table_name} wasn't found"),
+                ))
+            }
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Couldn't borrow table statistics")),
+            ))
         }
     }
 
-    #[allow(dead_code)]
-    pub fn add_virtual_table(&self, id: usize, table: VirtualTable) {
-        self.virtual_tables.borrow_mut().insert(id, table);
+    fn get_initial_column_stats(
+        &self,
+        table_column_pair: TableColumnPair,
+    ) -> Result<Rc<InitialColumnStats>, SbroadError> {
+        if let Ok(borrow_res) = self.initial_column_statistics_cache.try_borrow() {
+            if let Some(value) = borrow_res.get(&table_column_pair) {
+                Ok(value.clone())
+            } else {
+                Err(SbroadError::NotFound(
+                    Entity::Statistics,
+                    String::from(
+                        "Mocked statistics for table/column pair {table_column_paid} wasn't found",
+                    ),
+                ))
+            }
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Couldn't borrow initial column statistics")),
+            ))
+        }
+    }
+
+    fn update_table_stats_cache(
+        &mut self,
+        table_name: String,
+        table_stats: TableStats,
+    ) -> Result<(), SbroadError> {
+        if let Ok(mut borrow_res) = self.table_statistics_cache.try_borrow_mut() {
+            let value = borrow_res.get_mut(table_name.as_str());
+            if let Some(value) = value {
+                *value = Rc::new(table_stats)
+            } else {
+                borrow_res.insert(table_name, Rc::new(table_stats));
+            }
+            Ok(())
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Couldn't borrow table statistics")),
+            ))
+        }
+    }
+
+    fn update_column_initial_stats_cache(
+        &self,
+        table_column_pair: TableColumnPair,
+        initial_column_stats: InitialColumnStats,
+    ) -> Result<(), SbroadError> {
+        if let Ok(mut borrow_res) = self.initial_column_statistics_cache.try_borrow_mut() {
+            let value = borrow_res.get_mut(&table_column_pair);
+            if let Some(value) = value {
+                *value = Rc::new(initial_column_stats)
+            } else {
+                borrow_res.insert(table_column_pair, Rc::new(initial_column_stats));
+            }
+            Ok(())
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Couldn't borrow initial column statistics")),
+            ))
+        }
     }
 }
 

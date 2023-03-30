@@ -1,6 +1,11 @@
 //! Cost Based Optimizer.
 //!
 //! Module used to optimize IR tree using statistics and plan cost calculation algorithms.
+//!
+//! As soon as the biggest part of the logic is taken from
+//! `PostgreSQL` implementation, you may see `PostgreSQL lines` comments
+//! in some places with indication of function names and corresponding lines of code.
+//! `PostgreSQL` version: `REL_15_2`.
 
 use crate::cbo::histogram::Histogram;
 use crate::errors::{Entity, SbroadError};
@@ -9,7 +14,7 @@ use std::collections::HashMap;
 
 /// Struct representing statistics for the whole table.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct TableStats {
+pub struct TableStats {
     /// Table name.
     table_name: String,
     /// Number of rows in the table.
@@ -24,6 +29,25 @@ pub(crate) struct TableStats {
     insert_counter: u32,
     update_counter: u32,
     remove_counter: u32,
+}
+
+impl TableStats {
+    #[must_use]
+    pub fn new(
+        table_name: String,
+        rows_number: u64,
+        insert_counter: u32,
+        update_counter: u32,
+        remove_counter: u32,
+    ) -> Self {
+        Self {
+            table_name,
+            rows_number,
+            insert_counter,
+            update_counter,
+            remove_counter,
+        }
+    }
 }
 
 /// Struct representing statistics for column.
@@ -44,18 +68,49 @@ pub(crate) struct ColumnStats<'col_stats> {
     /// Number of elements in the column.
     ///
     /// Note, that the field is filled only ofter `TableStats` for the column table is retrieved.
-    elements_count: usize,
+    rows_number: usize,
     /// Min value in the column.
     min_value: &'col_stats Value,
     /// Max value in the column.
     max_value: &'col_stats Value,
     /// Average size of column row in bytes.
-    avg_value_size: u64,
+    avg_size: u64,
     /// Compressed histogram (equi-height histogram with mcv array).
     ///
     /// May have no values inside (`elements_count` field equal to 0)
     /// it's always presented in `ColumnStats` structure.
     histogram: &'col_stats Histogram<'col_stats>,
+}
+
+#[allow(dead_code)]
+impl<'column_stats> ColumnStats<'column_stats> {
+    #[must_use]
+    pub fn new(
+        elements_count: usize,
+        min_value: &'column_stats Value,
+        max_value: &'column_stats Value,
+        avg_value_size: u64,
+        histogram: &'column_stats Histogram,
+    ) -> Self {
+        Self {
+            rows_number: elements_count,
+            min_value,
+            max_value,
+            avg_size: avg_value_size,
+            histogram,
+        }
+    }
+}
+
+// Alias for pair of table name and column id in the table.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TableColumnPair(String, usize);
+
+#[allow(dead_code)]
+impl TableColumnPair {
+    pub(crate) fn new(table_name: String, column_id: usize) -> Self {
+        Self(table_name, column_id)
+    }
 }
 
 /// Structure for global optimizations
@@ -69,7 +124,7 @@ pub(crate) struct CostBasedOptimizer<'cbo> {
     /// that originates from `Scan` nodes during traversal of IR relational operators tree.
     /// Used in `calculate_cost` function in the `Scan` node in order to retrieve stats for
     /// requested columns.
-    initial_column_stats: HashMap<(String, String), ColumnStats<'cbo>>,
+    initial_column_stats: HashMap<TableColumnPair, ColumnStats<'cbo>>,
     /// Vector of `Histogram` structures.
     /// Initially it's filled with histograms gathered from storages.
     /// It's updated with new histograms during the statistics transformation process:
@@ -95,19 +150,19 @@ impl<'cbo> CostBasedOptimizer<'cbo> {
 
     /// Get `initial_column_stats` map.
     #[cfg(test)]
-    fn get_initial_column_stats(&self) -> &HashMap<(String, String), ColumnStats> {
+    fn get_initial_column_stats(&self) -> &HashMap<TableColumnPair, ColumnStats> {
         &self.initial_column_stats
     }
 
     /// Get value from `initial_column_stats` map by `key`
-    fn get_from_initial_column_stats(&self, key: &(String, String)) -> Option<&ColumnStats> {
+    fn get_from_initial_column_stats(&self, key: &TableColumnPair) -> Option<&ColumnStats> {
         self.initial_column_stats.get(key)
     }
 
     /// Add new initial column stats to the `initial_column_stats` map.
     fn update_initial_column_stats(
         &'cbo mut self,
-        key: (String, String),
+        key: TableColumnPair,
         stats: ColumnStats<'cbo>,
     ) -> Option<ColumnStats> {
         self.initial_column_stats.insert(key, stats)
@@ -141,4 +196,4 @@ impl<'cbo> CostBasedOptimizer<'cbo> {
     }
 }
 
-mod histogram;
+pub mod histogram;

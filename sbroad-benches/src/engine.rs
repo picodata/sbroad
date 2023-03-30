@@ -1,13 +1,15 @@
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::cbo::{TableColumnPair, TableStats};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator, CoordinatorMetadata,
+    Coordinator, CoordinatorMetadata, InitialColumnStats, Statistics,
 };
 use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::ExecutionPlan;
@@ -31,13 +33,6 @@ pub struct RouterConfigurationMock {
 }
 
 impl CoordinatorMetadata for RouterConfigurationMock {
-    /// Get Table by its name that contains:
-    /// * list of the columns,
-    /// * distribution key of the output tuples (column positions),
-    /// * table name.
-    ///
-    /// # Errors
-    /// - Failed to get table by name from the metadata.
     fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
@@ -406,9 +401,34 @@ impl Configuration for RouterRuntimeMock {
     }
 }
 
+impl Default for RouterRuntimeMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RouterRuntimeMock {
+    #[allow(dead_code)]
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn new() -> Self {
+        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
+        RouterRuntimeMock {
+            metadata: RefCell::new(RouterConfigurationMock::new()),
+            virtual_tables: HashMap::new(),
+            ir_cache: RefCell::new(cache),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
+        self.virtual_tables.insert(id, table);
+    }
+}
+
 impl Coordinator for RouterRuntimeMock {
-    type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
+    type ParseTree = AbstractSyntaxTree;
 
     fn clear_ir_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.borrow_mut() = Self::Cache::new(DEFAULT_CAPACITY, None)?;
@@ -475,27 +495,39 @@ impl Coordinator for RouterRuntimeMock {
     }
 }
 
-impl Default for RouterRuntimeMock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RouterRuntimeMock {
-    #[allow(dead_code)]
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn new() -> Self {
-        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
-        RouterRuntimeMock {
-            metadata: RefCell::new(RouterConfigurationMock::new()),
-            virtual_tables: HashMap::new(),
-            ir_cache: RefCell::new(cache),
-        }
+impl Statistics for RouterRuntimeMock {
+    #[allow(unused_variables)]
+    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
+        // Will be added later.
+        todo!()
     }
 
-    #[allow(dead_code)]
-    pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
-        self.virtual_tables.insert(id, table);
+    #[allow(unused_variables)]
+    fn get_initial_column_stats(
+        &self,
+        table_column_pair: TableColumnPair,
+    ) -> Result<Rc<InitialColumnStats>, SbroadError> {
+        // Will be added later.
+        todo!()
+    }
+
+    #[allow(unused_variables)]
+    fn update_table_stats_cache(
+        &mut self,
+        table_name: String,
+        table_stats: TableStats,
+    ) -> Result<(), SbroadError> {
+        // Will be added later.
+        todo!()
+    }
+
+    #[allow(unused_variables)]
+    fn update_column_initial_stats_cache(
+        &self,
+        table_column_pair: TableColumnPair,
+        initial_column_stats: InitialColumnStats,
+    ) -> Result<(), SbroadError> {
+        // Will be added later.
+        todo!()
     }
 }

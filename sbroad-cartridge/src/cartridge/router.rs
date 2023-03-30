@@ -19,11 +19,12 @@ use crate::cartridge::config::RouterConfiguration;
 use crate::cartridge::update_tracing;
 
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::cbo::{TableColumnPair, TableStats};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     normalize_name_from_schema, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator, CoordinatorMetadata,
+    Coordinator, CoordinatorMetadata, InitialColumnStats, Statistics,
 };
 use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
@@ -267,8 +268,8 @@ impl RouterRuntime {
 }
 
 impl Coordinator for RouterRuntime {
-    type ParseTree = AbstractSyntaxTree;
     type Cache = LRUCache<String, Plan>;
+    type ParseTree = AbstractSyntaxTree;
 
     fn clear_ir_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.try_borrow_mut().map_err(|e| {
@@ -394,6 +395,43 @@ impl Coordinator for RouterRuntime {
     /// Calculate bucket for a key.
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.bucket_count)
+    }
+}
+
+impl Statistics for RouterRuntime {
+    #[allow(unused_variables)]
+    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
+        // Will be added later.
+        todo!()
+    }
+
+    #[allow(unused_variables)]
+    fn get_initial_column_stats(
+        &self,
+        table_column_pair: TableColumnPair,
+    ) -> Result<Rc<InitialColumnStats>, SbroadError> {
+        // Will be added later.
+        todo!()
+    }
+
+    #[allow(unused_variables)]
+    fn update_table_stats_cache(
+        &mut self,
+        table_name: String,
+        table_stats: TableStats,
+    ) -> Result<(), SbroadError> {
+        // Will be added later.
+        todo!()
+    }
+
+    #[allow(unused_variables)]
+    fn update_column_initial_stats_cache(
+        &self,
+        table_column_pair: TableColumnPair,
+        initial_column_stats: InitialColumnStats,
+    ) -> Result<(), SbroadError> {
+        // Will be added later.
+        todo!()
     }
 }
 

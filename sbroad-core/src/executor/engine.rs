@@ -2,10 +2,13 @@
 //!
 //! Traits that define an execution engine interface.
 
+use crate::cbo::histogram::MostCommonValueWithFrequency;
+use crate::cbo::{TableColumnPair, TableStats};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
@@ -159,6 +162,88 @@ pub trait Coordinator: Configuration {
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &[&Value]) -> u64;
+}
+
+/// Enum that represents initial bucket gathered from storages.
+/// It copies `Bucket` enum, where all field are represented by value and not by reference.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+enum InitialBucket {
+    /// Representation of the first histogram bucket with inclusive `from` edge.
+    First {
+        from: Value,
+        to: Value,
+        frequency: usize,
+    },
+    /// Representation of a non-first histogram bucket with non-inclusive `from` edge.
+    NonFirst {
+        from: Value,
+        to: Value,
+        frequency: usize,
+    },
+}
+
+/// Struct that represents initial histogram gathered from storages.
+/// It copies `Histogram` structure, where all field are represented by value and not by reference.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct InitialHistogram {
+    most_common: Vec<MostCommonValueWithFrequency>,
+    buckets: Vec<InitialBucket>,
+    null_fraction: f64,
+    distinct_values_fraction: f64,
+}
+
+/// Struct that represents initial statistics gathered from storages.
+/// It copies `ColumnStats` structure, where all fields are represented by value and not by reference.
+///
+/// **Note**: `rows_number` field is missing, because during `ColumnStats`
+/// structure initialization this information will be passed from `TableStats`.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct InitialColumnStats {
+    min_value: Value,
+    max_value: Value,
+    avg_size: u64,
+    histogram: InitialHistogram,
+}
+
+/// A `CostBased` statistics trait.
+pub trait Statistics {
+    /// Get `TableStats` for table by its name from storages.
+    ///
+    /// # Errors
+    /// - Table statistics can not be gathered neither from the cache nor from the storages.
+    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError>;
+
+    /// Get `InitialColumnStats` for column by its table name and column name from storages.
+    ///
+    /// # Errors
+    /// - Initial column statistics can not be gathered neither from the cache nor from the storages.
+    fn get_initial_column_stats(
+        &self,
+        table_column_pair: TableColumnPair,
+    ) -> Result<Rc<InitialColumnStats>, SbroadError>;
+
+    /// Update `TableStats` cache with given table statistics.
+    ///
+    /// # Errors
+    /// - Table statistics couldn't be mutually borrowed.
+    fn update_table_stats_cache(
+        &mut self,
+        table_name: String,
+        table_stats: TableStats,
+    ) -> Result<(), SbroadError>;
+
+    /// Update `InitialColumnStats` cache with given initial column statistics.
+    ///
+    /// # Errors
+    /// - Initial column statistics couldn't be mutually borrowed.
+    fn update_column_initial_stats_cache(
+        &self,
+        table_column_pair: TableColumnPair,
+        initial_column_stats: InitialColumnStats,
+    ) -> Result<(), SbroadError>;
 }
 
 /// A common function for all engines to calculate the sharding key value from a tuple.
