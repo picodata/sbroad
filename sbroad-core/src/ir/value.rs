@@ -278,7 +278,7 @@ impl From<Trivalent> for Value {
 /// # Errors
 /// - Inner `value` field is not numerical.
 #[allow(dead_code)]
-fn value_to_decimal_or_error(value: &Value) -> Result<Decimal, SbroadError> {
+pub(crate) fn value_to_decimal_or_error(value: &Value) -> Result<Decimal, SbroadError> {
     match value {
         Value::Integer(s) => Ok(Decimal::from(*s)),
         Value::Unsigned(s) => Ok(Decimal::from(*s)),
