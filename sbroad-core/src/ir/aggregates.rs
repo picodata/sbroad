@@ -93,8 +93,8 @@ impl SimpleAggregate {
             return Err(SbroadError::Invalid(
                 Entity::Aggregate,
                 Some(format!(
-                    "invalid fun_id ({}), expected function got: {:?}",
-                    &self.fun_id, fun_expr
+                    "invalid fun_id ({}), expected function got: {fun_expr:?}",
+                    &self.fun_id
                 )),
             ));
         }

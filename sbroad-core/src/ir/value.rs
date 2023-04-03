@@ -81,7 +81,7 @@ impl<L> tlua::LuaRead<L> for Tuple
 where
     L: tlua::AsLua,
 {
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Tuple, L> {
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Tuple, (L, tlua::WrongType)> {
         match Vec::lua_read_at_position(lua, index) {
             Ok(v) => Ok(Tuple::from(v)),
             Err(lua) => Err(lua),
@@ -935,7 +935,7 @@ impl<L> tlua::LuaRead<L> for Value
 where
     L: tlua::AsLua,
 {
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Value, L> {
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Value, (L, tlua::WrongType)> {
         // At the moment Tarantool module can't distinguish between
         // double and integer/unsigned. So we have to do it manually.
         if let Ok(v) = f64::lua_read_at_position(&lua, index) {
@@ -949,43 +949,46 @@ where
         }
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Unsigned(v)),
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Integer(v)),
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => {
                 let value: Decimal = v;
                 return Ok(Self::Decimal(value));
             }
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => {
                 let value: Double = v;
                 return Ok(Self::Double(value));
             }
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Boolean(v)),
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::String(v)),
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Tuple(v)),
-            Err(lua) => lua,
+            Err((lua, _)) => lua,
         };
-        let Err(lua) = tlua::Null::lua_read_at_position(lua, index) else {
+        let Err((lua, _)) = tlua::Null::lua_read_at_position(lua, index) else {
             return Ok(Self::Null)
         };
 
-        Err(lua)
+        let err = tlua::WrongType::info("reading value from Lua")
+            .expected("Lua type that can be casted to sbroad value")
+            .actual("unsupported Lua type");
+        Err((lua, err))
     }
 }
 

@@ -966,9 +966,10 @@ impl Ast for AbstractSyntaxTree {
                             Some(format!("expected a Table in insert, got {ast_table:?}.",)),
                         ));
                     }
-                    let relation: &str = ast_table.value.as_ref().ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Name, "of table in the AST".into())
-                    })?;
+                    let relation =
+                        normalize_name_from_sql(ast_table.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(Entity::Name, "of table in the AST".into())
+                        })?);
 
                     let ast_child_id = node.children.get(1).ok_or_else(|| {
                         SbroadError::NotFound(
@@ -1003,11 +1004,11 @@ impl Ast for AbstractSyntaxTree {
                             )
                         })?;
                         let plan_rel_child_id = map.get(*ast_rel_child_id)?;
-                        plan.add_insert(relation, plan_rel_child_id, &col_names)?
+                        plan.add_insert(&relation, plan_rel_child_id, &col_names)?
                     } else {
                         // insert into t ...
                         let plan_child_id = map.get(*ast_child_id)?;
-                        plan.add_insert(relation, plan_child_id, &[])?
+                        plan.add_insert(&relation, plan_child_id, &[])?
                     };
                     map.add(id, plan_insert_id);
                 }

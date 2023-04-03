@@ -1,8 +1,3 @@
-_G.fiber_id = function ()
-    local fiber = require('fiber')
-    return fiber.id()
-end
-
 local function init_bucket_id()
     box.schema.func.create(
         'libsbroad.calculate_bucket_id',

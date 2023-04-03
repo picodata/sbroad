@@ -86,7 +86,7 @@ impl<L> tlua::LuaRead<L> for Double
 where
     L: tlua::AsLua,
 {
-    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Double, L> {
+    fn lua_read_at_position(lua: L, index: NonZeroI32) -> Result<Double, (L, tlua::WrongType)> {
         let val: Result<tlua::UserdataOnStack<f64, _>, _> =
             tlua::LuaRead::lua_read_at_position(lua, index);
         match val {

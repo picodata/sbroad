@@ -11,7 +11,10 @@ use tarantool::tuple::{
 };
 
 use crate::{
-    backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan},
+    backend::sql::{
+        ir::{PatternWithParams, TmpSpaceMap},
+        tree::{OrderedSyntaxNodes, SyntaxPlan},
+    },
     debug,
     errors::{Action, Entity, SbroadError},
     executor::{
@@ -26,6 +29,7 @@ use crate::{
 
 use super::{Metadata, Router, Vshard};
 
+pub mod storage;
 pub mod vshard;
 
 #[must_use]
@@ -123,6 +127,31 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
     })?;
 
     Ok((required, optional))
+}
+
+/// Decode dispatched optional data (execution plan, etc.) from msgpack
+/// and compile it into a pattern with parameters and temporary space map.
+///
+/// # Errors
+/// - Failed to decode or compile optional data.
+pub fn compile_encoded_optional(
+    raw_optional: &mut Vec<u8>,
+) -> Result<(PatternWithParams, TmpSpaceMap), SbroadError> {
+    // Use all buckets as we don't want to filter any data from the execution plan
+    // (this work has already been done on the coordinator).
+    let buckets = Buckets::All;
+
+    // Find a statement in the Tarantool's cache or prepare it
+    // (i.e. compile and put into the cache).
+    let data = std::mem::take(raw_optional);
+    let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
+    optional.exec_plan.get_mut_ir_plan().restore_constants()?;
+    let nodes = optional.ordered.to_syntax_data()?;
+    optional.exec_plan.to_sql(
+        &nodes,
+        &buckets,
+        &uuid::Uuid::new_v4().as_simple().to_string(),
+    )
 }
 
 /// Format explain output into a tuple.

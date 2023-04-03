@@ -57,7 +57,7 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
 }
 
 #[derive(Deserialize, Serialize)]
-struct EncodedPatternWithParams(
+pub struct EncodedPatternWithParams(
     String,
     Vec<EncodedValue>,
     Option<HashMap<String, String>>,
