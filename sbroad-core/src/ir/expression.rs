@@ -140,6 +140,8 @@ pub enum Expression {
         name: String,
         /// Function arguments.
         children: Vec<usize>,
+        /// If this function is an aggregate function: whether it is marked DISTINCT or not
+        is_distinct: bool,
     },
     /// Unary expression returning boolean result.
     Unary {

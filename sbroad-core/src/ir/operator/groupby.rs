@@ -156,7 +156,11 @@ impl Plan {
             // we take whole expression tree inside aggregate function and reuse it here, the
             // References' positions are valid because local and final GroupBy have the same
             // output
-            let locals = info.aggregate.create_columns_for_local_projection(self)?;
+            let locals = info.aggregate.create_columns_for_local_projection(
+                self,
+                local_groupby_id,
+                info.is_distinct,
+            )?;
             proj_output_cols.extend(locals.into_iter());
         }
         let proj_output = self.nodes.add_row(proj_output_cols, None);
@@ -189,9 +193,11 @@ impl Plan {
             .map(|(k, v)| (k.to_string(), v))
             .collect::<HashMap<String, usize>>();
         for info in infos {
-            let final_aggr_id = info
-                .aggregate
-                .create_column_for_final_projection(self, &alias_to_pos_map)?;
+            let final_aggr_id = info.aggregate.create_column_for_final_projection(
+                self,
+                &alias_to_pos_map,
+                info.is_distinct,
+            )?;
             top_to_final_aggr.insert(info.aggregate.fun_id, final_aggr_id);
         }
 
@@ -455,13 +461,16 @@ impl Plan {
                     Expression::StableFunction {
                         name: name_left,
                         children: children_left,
+                        is_distinct: distinct_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
+                            is_distinct: distinct_right,
                         } = right
                         {
                             return Ok(name_left == name_right
+                                && distinct_left == distinct_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| {
                                         self.are_subtrees_equal(*l, *r, left_child_id)

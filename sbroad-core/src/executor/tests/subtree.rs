@@ -214,10 +214,15 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
 
 #[test]
 fn exec_plan_subtree_aggregates() {
-    let sql = r#"SELECT t1."sys_op" || t1."sys_op", t1."sys_op"*2 + count(t1."sysFrom"), sum(t1."id") FROM "test_space" as t1 group by t1."sys_op""#;
+    let sql = format!(
+        "{} {} {}",
+        r#"SELECT t1."sys_op" || t1."sys_op", t1."sys_op"*2 + count(t1."sysFrom"),"#,
+        r#"sum(t1."id"), sum(distinct t1."id"*t1."sys_op") / count(distinct "id")"#,
+        r#"FROM "test_space" as t1 group by t1."sys_op""#
+    );
     let coordinator = RouterRuntimeMock::new();
 
-    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let mut query = Query::new(&coordinator, sql.as_str(), vec![]).unwrap();
     let motion_id = *query
         .exec_plan
         .get_ir_plan()
@@ -233,12 +238,22 @@ fn exec_plan_subtree_aggregates() {
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "sum_31".into(),
+        name: "sum_42".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "count_28".into(),
+        name: "count_37".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "sum_49".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "count_51".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
@@ -270,9 +285,15 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "T1"."sys_op" as "column_12", count ("T1"."sysFrom") as "count_37", sum ("T1"."id") as "sum_42" FROM "test_space" as "T1" GROUP BY "T1"."sys_op""#.to_string(),
+            format!(
+                "{} {} {}",
+                r#"SELECT "T1"."sys_op" as "column_12", count ("T1"."sysFrom") as "count_37", sum ("T1"."id") as "sum_42","#,
+                r#"("T1"."id") * ("T1"."sys_op") as "sum_49", "T1"."id" as "count_51" FROM "test_space" as "T1""#,
+                r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
+            ),
             vec![]
-        ));
+        )
+    );
 
     // Check main query
     let subplan2 = exec_plan.take_subtree(top_id).unwrap();
@@ -284,7 +305,14 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT ("column_12") || ("column_12") as "COL_1", ("column_12") * (?) + (sum ("count_37")) as "COL_2", sum ("sum_42") as "COL_3" FROM (SELECT "sys_op","sum_31","count_28" FROM "TMP_test_27") GROUP BY "column_12""#.to_string(),
+            format!(
+                "{} {} {} {}",
+                r#"SELECT ("column_12") || ("column_12") as "COL_1", ("column_12") * (?) + (sum ("count_37")) as "COL_2","#,
+                r#"sum ("sum_42") as "COL_3", (sum (DISTINCT "sum_49")) / (count (DISTINCT "count_51")) as "COL_4""#,
+                r#"FROM (SELECT "sys_op","sum_42","count_37","sum_49","count_51" FROM "TMP_test_39")"#,
+                r#"GROUP BY "column_12""#
+            ),
             vec![Value::Unsigned(2)]
-        ));
+        )
+    );
 }

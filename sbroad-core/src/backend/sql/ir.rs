@@ -278,6 +278,7 @@ impl ExecutionPlan {
                     SyntaxData::Concat => sql.push_str("||"),
                     SyntaxData::Comma => sql.push(','),
                     SyntaxData::Condition => sql.push_str("ON"),
+                    SyntaxData::Distinct => sql.push_str("DISTINCT"),
                     SyntaxData::From => sql.push_str("FROM"),
                     SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                     SyntaxData::OpenParenthesis => sql.push('('),

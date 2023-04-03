@@ -543,6 +543,22 @@ fn front_sql_groupby_invalid() {
 }
 
 #[test]
+fn front_sql_distinct_invalid() {
+    let input = r#"select "b", bucket_id(distinct cast("a" as string)) from "t" group by "b", bucket_id(distinct cast("a" as string))"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let plan = ast.resolve_metadata(metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("DISTINCT modifier is allowed only for aggregate functions")
+    );
+}
+
+#[test]
 fn front_sql_aggregates() {
     let input = r#"SELECT "b", count("a") + count("b") FROM "t"
         group by "b""#;
@@ -577,6 +593,48 @@ fn front_sql_aggregates_with_subexpressions() {
             scan 
                 projection ("t"."b" -> "column_12", count((("t"."a") * ("t"."b") + (1))) -> "count_35", count(("BUCKET_ID"(("t"."a")))) -> "count_39")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_aggregates_with_distinct1() {
+    let input = r#"SELECT "b", count(distinct "a") FROM "t"
+        group by "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "b", count(distinct ("count_28")) -> "COL_1")
+    group by ("column_12") output: ("column_12" -> "column_12", "count_28" -> "count_28")
+        motion [policy: segment([ref("column_12")])]
+            scan 
+                projection ("t"."b" -> "column_12", "t"."a" -> "count_28")
+                    group by ("t"."b", "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_aggregates_with_distinct2() {
+    let input = r#"SELECT "b", sum(distinct "a" + "b" + 3) FROM "t"
+        group by "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "b", sum(distinct ("sum_35")) -> "COL_1")
+    group by ("column_12") output: ("column_12" -> "column_12", "sum_35" -> "sum_35")
+        motion [policy: segment([ref("column_12")])]
+            scan 
+                projection ("t"."b" -> "column_12", ("t"."a") + ("t"."b") + (3) -> "sum_35")
+                    group by ("t"."b", ("t"."a") + ("t"."b") + (3)) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
     );

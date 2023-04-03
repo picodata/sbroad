@@ -24,7 +24,7 @@ enum ColExpr {
     Column(String),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(String, Box<ColExpr>),
+    StableFunction(String, Box<ColExpr>, bool),
     Row(Vec<ColExpr>),
     None,
 }
@@ -40,7 +40,10 @@ impl Display for ColExpr {
             ColExpr::Column(c) => c.to_string(),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
-            ColExpr::StableFunction(name, arg) => format!("{name}({arg})"),
+            ColExpr::StableFunction(name, arg, is_distinct) => format!(
+                "{name}({}{arg})",
+                if *is_distinct { "distinct " } else { "" }
+            ),
             ColExpr::Row(list) => format!("({})", list.iter().format(", ")),
             ColExpr::None => String::new(),
         };
@@ -115,7 +118,11 @@ impl ColExpr {
                     let expr = ColExpr::Column(value.to_string());
                     stack.push(expr);
                 }
-                Expression::StableFunction { name, children } => {
+                Expression::StableFunction {
+                    name,
+                    children,
+                    is_distinct,
+                } => {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
                     while len > 0 {
@@ -128,7 +135,8 @@ impl ColExpr {
                         len -= 1;
                     }
                     let args_expr = ColExpr::Row(args);
-                    let func_expr = ColExpr::StableFunction(name.clone(), Box::new(args_expr));
+                    let func_expr =
+                        ColExpr::StableFunction(name.clone(), Box::new(args_expr), *is_distinct);
                     stack.push(func_expr);
                 }
                 Expression::Row { list, .. } => {

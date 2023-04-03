@@ -88,10 +88,12 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-Function = { FunctionName ~ ("(" ~ FunctionArgs ~ ")") }
+Function = { FunctionName ~ ("(" ~ Distinct? ~  FunctionArgs ~ ")") }
     FunctionName = @{ Name }
     FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
     FunctionExpr = _{ Parentheses | Primary }
+
+Distinct = { ^"distinct" }
 
 Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
     CastExpr = _{ FunctionExpr | Cast }
@@ -120,7 +122,7 @@ GroupingElement = _{ Expr }
 NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_") }
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
-Keyword = { ^"except" | ^"union" | ^"where" }
+Keyword = { ^"except" | ^"union" | ^"where" | ^"distinct" }
 Character = _{ LETTER | NUMBER | Other | OTHER_ALPHABETIC| Punctuation | SYMBOL }
 Punctuation = _{
     CONNECTOR_PUNCTUATION

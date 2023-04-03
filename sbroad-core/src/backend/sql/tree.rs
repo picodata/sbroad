@@ -29,6 +29,8 @@ pub enum SyntaxData {
     Comma,
     /// "on"
     Condition,
+    /// "distinct"
+    Distinct,
     /// "from"
     From,
     /// "("
@@ -103,6 +105,14 @@ impl SyntaxNode {
     fn new_condition() -> Self {
         SyntaxNode {
             data: SyntaxData::Condition,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_distinct() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Distinct,
             left: None,
             right: Vec::new(),
         }
@@ -969,9 +979,16 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Expression::StableFunction { children, .. } => {
+                Expression::StableFunction {
+                    children,
+                    is_distinct,
+                    ..
+                } => {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
+                    if *is_distinct {
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
+                    }
                     if let Some((last, others)) = children.split_last() {
                         for child in others {
                             nodes.push(self.nodes.get_syntax_node_id(*child)?);

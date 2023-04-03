@@ -1023,3 +1023,25 @@ groupby_queries.test_aggr_valid = function()
     })
 end
 
+groupby_queries.test_aggr_distinct = function()
+    local api = cluster:server("api-1").net_box
+
+    -- "d" has two groups: 1 and 2, each group contains only one value of "e"
+    -- "e" + "a" has two unique values in each group of "d"
+    local r, err = api:call("sbroad.execute", {
+        [[ SELECT "d", count(distinct "e"), count(distinct "e"+"a"), count(distinct "e"+"a") + sum(distinct "d"),
+           sum("d") from "arithmetic_space" group by "d" ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "d", type = "integer" },
+        { name = "COL_1", type = "integer" },
+        { name = "COL_2", type = "integer" },
+        { name = "COL_3", type = "decimal" },
+        { name = "COL_4", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1, 2, 3, 2},
+        {2, 1, 2, 4, 4},
+    })
+end

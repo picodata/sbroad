@@ -39,6 +39,7 @@ struct Between {
 pub struct AggregateInfo {
     pub expression_top: usize,
     pub aggregate: SimpleAggregate,
+    pub is_distinct: bool,
 }
 
 impl Between {
@@ -713,7 +714,19 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_child_id);
                 }
                 Type::Function => {
-                    if let Some((first, other)) = node.children.split_first() {
+                    if let Some((first, mut other)) = node.children.split_first() {
+                        let mut is_distinct = false;
+                        if let Some(first_id) = other.first() {
+                            if let Type::Distinct = self.nodes.get_node(*first_id)?.rule {
+                                is_distinct = true;
+                                let Some((_, args)) = other.split_first() else {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::AST,
+                                        Some("function ast has no arguments".into())))
+                                };
+                                other = args;
+                            }
+                        }
                         let mut plan_arg_list = Vec::new();
                         for ast_child_id in other {
                             let plan_child_id = map.get(*ast_child_id)?;
@@ -741,10 +754,21 @@ impl Ast for AbstractSyntaxTree {
                                     )),
                                 )
                             })?;
-                            let plan_id =
-                                plan.add_aggregate_function(&function_name.to_string(), argument);
+                            let plan_id = plan.add_aggregate_function(
+                                &function_name.to_string(),
+                                argument,
+                                is_distinct,
+                            );
                             map.add(id, plan_id);
                             continue;
+                        } else if is_distinct {
+                            return Err(SbroadError::Invalid(
+                                Entity::Query,
+                                Some(
+                                    "DISTINCT modifier is allowed only for aggregate functions"
+                                        .into(),
+                                ),
+                            ));
                         }
 
                         let func = metadata.function(function_name)?;
@@ -845,13 +869,19 @@ impl Ast for AbstractSyntaxTree {
                                     // we can't use get_expression_node, because parameters are not
                                     // bound yet
                                     let expr = plan.get_node(id)?;
-                                    if let Node::Expression(StableFunction { name, .. }) = expr {
+                                    if let Node::Expression(StableFunction {
+                                        name,
+                                        is_distinct,
+                                        ..
+                                    }) = expr
+                                    {
                                         let Some(aggr) = SimpleAggregate::new(name, id) else {
                                                 continue
                                             };
                                         let info = AggregateInfo {
                                             aggregate: aggr,
                                             expression_top: plan_alias_id,
+                                            is_distinct: *is_distinct,
                                         };
                                         aggregates.push(info);
                                         columns_with_aggregates.insert(plan_alias_id);
@@ -1029,6 +1059,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ArithParentheses
                 | Type::ColumnName
                 | Type::Divide
+                | Type::Distinct
                 | Type::FunctionName
                 | Type::Length
                 | Type::Multiply

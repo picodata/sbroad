@@ -2,6 +2,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::function::{Behavior, Function};
+use crate::ir::operator::Relational;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -13,6 +14,11 @@ use std::fmt::{Display, Formatter};
 pub enum AggregateKind {
     COUNT,
     SUM,
+}
+
+pub enum LocalAggrs {
+    Aggregates(Vec<String>),
+    GroupingExpressions(Vec<usize>),
 }
 
 impl Display for AggregateKind {
@@ -75,6 +81,27 @@ fn generate_local_alias(kind: &AggregateKind, suffix: &str) -> String {
 }
 
 impl SimpleAggregate {
+    fn get_local_aggregates(
+        &self,
+        plan: &Plan,
+        is_distinct: bool,
+    ) -> Result<LocalAggrs, SbroadError> {
+        if is_distinct {
+            let fun_expr = plan.get_expression_node(self.fun_id)?;
+            if let Expression::StableFunction { children, .. } = fun_expr {
+                return Ok(LocalAggrs::GroupingExpressions(children.clone()));
+            }
+            return Err(SbroadError::Invalid(
+                Entity::Aggregate,
+                Some(format!(
+                    "invalid fun_id ({}), expected function got: {:?}",
+                    &self.fun_id, fun_expr
+                )),
+            ));
+        }
+        Ok(LocalAggrs::Aggregates(self.kind.get_local_aggregates()))
+    }
+
     #[must_use]
     pub fn new(name: &str, fun_id: usize) -> Option<SimpleAggregate> {
         let Some(kind) = AggregateKind::new(name) else {
@@ -103,6 +130,8 @@ impl SimpleAggregate {
     pub fn create_columns_for_local_projection(
         &self,
         plan: &mut Plan,
+        local_groupby_id: usize,
+        is_distinct: bool,
     ) -> Result<Vec<usize>, SbroadError> {
         let local_aggregates = self.kind.get_local_aggregates();
         let mut local_proj_cols: Vec<usize> = Vec::with_capacity(local_aggregates.len());
@@ -122,19 +151,38 @@ impl SimpleAggregate {
         } else {
             return Err(SbroadError::Invalid(Entity::Aggregate, Some(format!("expected StableFunction as top of aggregate expression! Got: {aggr_fun:?}. Self: {self:?}"))));
         };
-        for (pos, aggr) in local_aggregates.into_iter().enumerate() {
-            let fun = Function {
-                name: aggr,
-                behavior: Behavior::Stable,
-            };
-            // We can reuse `aggregate_expression` between local aggregates, because
-            // all local aggregates are located inside the same motion subtree and we
-            // assume that each local aggregate does not need to modify its expression
-            let local_fun_id = plan.add_stable_function(&fun, vec![aggregate_expression])?;
-            let alias_id = plan
-                .nodes
-                .add_alias(self.local_aliases[pos].as_str(), local_fun_id)?;
-            local_proj_cols.push(alias_id);
+        match self.get_local_aggregates(plan, is_distinct)? {
+            LocalAggrs::Aggregates(agg_names) => {
+                for (pos, aggr) in agg_names.into_iter().enumerate() {
+                    let fun = Function {
+                        name: aggr,
+                        behavior: Behavior::Stable,
+                    };
+                    // We can reuse `aggregate_expression` between local aggregates, because
+                    // all local aggregates are located inside the same motion subtree and we
+                    // assume that each local aggregate does not need to modify its expression
+                    let local_fun_id =
+                        plan.add_stable_function(&fun, vec![aggregate_expression])?;
+                    let alias_id = plan
+                        .nodes
+                        .add_alias(self.local_aliases[pos].as_str(), local_fun_id)?;
+                    local_proj_cols.push(alias_id);
+                }
+            }
+            LocalAggrs::GroupingExpressions(expr_ids) => {
+                for (pos, expr_id) in expr_ids.iter().enumerate() {
+                    let alias_id = plan
+                        .nodes
+                        .add_alias(self.local_aliases[pos].as_str(), *expr_id)?;
+                    local_proj_cols.push(alias_id);
+                }
+                if let Relational::GroupBy {
+                    ref mut gr_cols, ..
+                } = plan.get_mut_relation_node(local_groupby_id)?
+                {
+                    gr_cols.extend(expr_ids.into_iter());
+                }
+            }
         }
         Ok(local_proj_cols)
     }
@@ -149,9 +197,14 @@ impl SimpleAggregate {
         &self,
         plan: &mut Plan,
         alias_to_pos: &HashMap<String, usize>,
+        is_distinct: bool,
     ) -> Result<usize, SbroadError> {
-        let final_aggregate_name = match self.kind {
-            AggregateKind::COUNT | AggregateKind::SUM => "sum".to_string(),
+        let final_aggregate_name = if is_distinct {
+            self.kind.to_string()
+        } else {
+            match self.kind {
+                AggregateKind::COUNT | AggregateKind::SUM => "sum".to_string(),
+            }
         };
         let local_alias = self.local_aliases.first().ok_or_else(|| {
             SbroadError::Invalid(
@@ -174,6 +227,7 @@ impl SimpleAggregate {
         let final_aggr = StableFunction {
             name: final_aggregate_name,
             children: vec![ref_id],
+            is_distinct,
         };
         let final_aggr_id = plan.nodes.push(Node::Expression(final_aggr));
         Ok(final_aggr_id)
