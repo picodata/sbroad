@@ -5,7 +5,10 @@ use std::{
     rc::Rc,
 };
 
-use tarantool::tuple::Tuple;
+use tarantool::tuple::{
+    rmp::{self, decode::RmpRead},
+    Tuple,
+};
 
 use crate::{
     backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan},
@@ -64,6 +67,62 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
     let encoded_optional_data = EncodedOptionalData::try_from(optional_data)?;
     let raw_optional_data: Vec<u8> = encoded_optional_data.into();
     Ok((raw_required_data.into(), raw_optional_data.into()))
+}
+
+/// Decode the execution plan from msgpack into a pair of binary data:
+/// * required data (plan id, parameters, etc.)
+/// * optional data (execution plan, etc.)
+///
+/// # Errors
+/// - Failed to decode the execution plan.
+pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadError> {
+    let mut stream = rmp::decode::Bytes::from(tuple_buf);
+    let array_len = rmp::decode::read_array_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("array length: {e:?}"),
+        )
+    })? as usize;
+    if array_len != 2 {
+        return Err(SbroadError::Invalid(
+            Entity::Tuple,
+            Some(format!("expected tuple of 2 elements, got {array_len}")),
+        ));
+    }
+    let req_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read required data length: {e:?}"),
+        )
+    })? as usize;
+    let mut required: Vec<u8> = vec![0_u8; req_len];
+    stream.read_exact_buf(&mut required).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read required data: {e:?}"),
+        )
+    })?;
+
+    let opt_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read optional data string length: {e:?}"),
+        )
+    })? as usize;
+    let mut optional: Vec<u8> = vec![0_u8; opt_len];
+    stream.read_exact_buf(&mut optional).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format!("read optional data: {e:?}"),
+        )
+    })?;
+
+    Ok((required, optional))
 }
 
 /// Format explain output into a tuple.
