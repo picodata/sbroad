@@ -1,5 +1,5 @@
 Query       ::= Select | Select 'union all' Select | Select ('except' | 'except distinct') Select | Values | Insert
-Select      ::= 'select' (Column (',' Column)*) 'from' (Table | Select) ('as' Alias)? ( ('inner')? 'join' (Table | Select) ('as' Alias)? 'on' Expression )? ( 'group by' GroupBy )? ( 'where' Expression )?
+Select      ::= 'select' (Column (',' Column)*) 'from' (Table | Select) ('as' Alias)? ( ('inner')? 'join' (Table | Select) ('as' Alias)? 'on' Expression )? ( 'where' Expression )? ( 'group by' GroupBy )?
 Column      ::= '*' | Table '.' '*' | Expression | Expression 'as' Alias
 Expression  ::= Expression 'or' Expression
                | Expression 'and' Expression
