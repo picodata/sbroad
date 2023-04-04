@@ -1,10 +1,10 @@
 jaeger_agent_host: "127.0.0.1"
-storage_cache_capacity: 200
+storage_cache_capacity: 20000
 executor_sharding_column: "bucket_id"
 router_cache_capacity: 50
 executor_waiting_timeout: 200
 jaeger_agent_port: 6831
-storage_cache_size_bytes: 204800
+storage_cache_size_bytes: 20480000
 schema:
   spaces:
     arithmetic_space:

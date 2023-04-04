@@ -93,14 +93,7 @@ impl<'n> Iterator for AggregateIterator<'n> {
         if self.must_stop {
             return None;
         }
-        expression_next(&mut self.inner).copied().map(|v| {
-            if let Some(Node::Expression(Expression::StableFunction { ref name, .. })) =
-                self.inner.get_nodes().arena.get(v)
-            {
-                self.must_stop = Expression::is_aggregate_name(name);
-            }
-            v
-        })
+        expression_next(&mut self.inner).copied()
     }
 }
 

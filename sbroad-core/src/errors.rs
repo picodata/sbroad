@@ -30,6 +30,8 @@ pub enum Entity {
     DistributionKey,
     /// corresponds to enum Expression
     Expression,
+    /// corresponds to struct ExpressionMapper
+    ExpressionMapper,
     /// corresponds to struct Histogram
     Histogram,
     /// tarantool index
@@ -113,6 +115,7 @@ impl fmt::Display for Entity {
             Entity::Distribution => "distribution".to_string(),
             Entity::DistributionKey => "distribution key".to_string(),
             Entity::Expression => "expression".to_string(),
+            Entity::ExpressionMapper => "expression mapper".to_string(),
             Entity::Histogram => "histogram".to_string(),
             Entity::Index => "index".to_string(),
             Entity::Metadata => "metadata".to_string(),

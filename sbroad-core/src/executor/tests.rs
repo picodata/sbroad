@@ -1523,9 +1523,9 @@ fn groupby_linker_test() {
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
                     "{} {} {}",
-                    r#"SELECT "id" as "ii" FROM (SELECT"#,
-                    r#""id" FROM "TMP_test_56")"#,
-                    r#"GROUP BY "T1"."id""#,
+                    r#"SELECT "column_12" as "ii" FROM"#,
+                    r#"(SELECT "id" FROM "TMP_test_45")"#,
+                    r#"GROUP BY "column_12""#,
                 ),
                 vec![],
             ))),

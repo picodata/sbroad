@@ -114,7 +114,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "T1"."FIRST_NAME" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
+            r#"SELECT "T1"."FIRST_NAME" as "column_12" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME""#
                 .to_string(),
             vec![]
         )
@@ -130,14 +130,14 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "FIRST_NAME" FROM (SELECT "FIRST_NAME" FROM "TMP_test_6") GROUP BY "FIRST_NAME""#.to_string(),
+            r#"SELECT "column_12" as "FIRST_NAME" FROM (SELECT "FIRST_NAME" FROM "TMP_test_6") GROUP BY "column_12""#.to_string(),
             vec![]
         ));
 }
 
 #[test]
 fn exec_plan_subtree_two_stage_groupby_test_2() {
-    let sql = r#"SELECT t1."FIRST_NAME" as i1, t1."sys_op" as i2 FROM "test_space" as t1 group by t1."FIRST_NAME", t1."sys_op", t1."sysFrom""#;
+    let sql = r#"SELECT t1."FIRST_NAME", t1."sys_op", t1."sysFrom" FROM "test_space" as t1 GROUP BY t1."FIRST_NAME", t1."sys_op", t1."sysFrom""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -151,17 +151,17 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         .unwrap();
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(Column {
-        name: "FIRST_NAME".into(),
+        name: "column_12".into(),
         r#type: Type::String,
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "sys_op".into(),
+        name: "column_13".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
     virtual_table.add_column(Column {
-        name: "sysFrom".into(),
+        name: "column_14".into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
@@ -193,7 +193,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
          sql,
          PatternWithParams::new(
-             r#"SELECT "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#.to_string(),
+             r#"SELECT "T1"."FIRST_NAME" as "column_12", "T1"."sys_op" as "column_13", "T1"."sysFrom" as "column_14" FROM "test_space" as "T1" GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#.to_string(),
              vec![]
          ));
 
@@ -207,14 +207,14 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "FIRST_NAME" as "I1", "sys_op" as "I2" FROM (SELECT "FIRST_NAME","sys_op","sysFrom" FROM "TMP_test_12") GROUP BY "FIRST_NAME", "sys_op", "sysFrom""#.to_string(),
+            r#"SELECT "column_12" as "FIRST_NAME", "column_13" as "sys_op", "column_14" as "sysFrom" FROM (SELECT "column_12","column_13","column_14" FROM "TMP_test_14") GROUP BY "column_12", "column_13", "column_14""#.to_string(),
             vec![]
         ));
 }
 
 #[test]
 fn exec_plan_subtree_aggregates() {
-    let sql = r#"SELECT t1."sys_op", count(t1."sysFrom"), sum(t1."id") FROM "test_space" as t1 group by t1."sys_op""#;
+    let sql = r#"SELECT t1."sys_op" || t1."sys_op", t1."sys_op"*2 + count(t1."sysFrom"), sum(t1."id") FROM "test_space" as t1 group by t1."sys_op""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -270,7 +270,7 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "T1"."sys_op", count ("T1"."sysFrom") as "count_28", sum ("T1"."id") as "sum_31" FROM "test_space" as "T1" GROUP BY "T1"."sys_op""#.to_string(),
+            r#"SELECT "T1"."sys_op" as "column_12", count ("T1"."sysFrom") as "count_37", sum ("T1"."id") as "sum_42" FROM "test_space" as "T1" GROUP BY "T1"."sys_op""#.to_string(),
             vec![]
         ));
 
@@ -284,7 +284,7 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            r#"SELECT "sys_op", sum ("count_28") as "COL_1", sum ("sum_31") as "COL_2" FROM (SELECT "sys_op","sum_31","count_28" FROM "TMP_test_16") GROUP BY "sys_op""#.to_string(),
-            vec![]
+            r#"SELECT ("column_12") || ("column_12") as "COL_1", ("column_12") * (?) + (sum ("count_37")) as "COL_2", sum ("sum_42") as "COL_3" FROM (SELECT "sys_op","sum_31","count_28" FROM "TMP_test_27") GROUP BY "column_12""#.to_string(),
+            vec![Value::Unsigned(2)]
         ));
 }

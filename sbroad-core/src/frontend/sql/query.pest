@@ -115,7 +115,7 @@ Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
     ConcatLeft = _{ Cast | Function | Reference | SingleQuotedString }
     ConcatRight = _{ Concat | ConcatLeft }
 
-GroupingElement = _{ Concat | Cast | Function | Reference }
+GroupingElement = _{ Expr }
 
 NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_") }
 NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }

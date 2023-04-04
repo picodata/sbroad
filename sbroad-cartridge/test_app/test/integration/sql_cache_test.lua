@@ -41,7 +41,7 @@ g.test_change_cache_by_config_replica = function()
 
     local c = cluster:download_config()
     local cache_before_config = c["storage_cache_size_bytes"]
-    t.assert_equals(204800, cache_before_config)
+    t.assert_equals(20480000, cache_before_config)
 
     -- here we check that storage-1-1 is master and that its config isn't updated
     t.assert_equals(false, storage11:eval("return box.info.ro"))

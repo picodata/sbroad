@@ -238,15 +238,29 @@ groupby_queries.invalid = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("sbroad.execute", { [[
-        SELECT "name" FROM "testing_space" groupBY "name"
-    ]], {} })
-    t.assert_str_contains(tostring(err), "rule parsing error")
-
-    local _, err = api:call("sbroad.execute", { [[
         SELECT "id" + "product_units" FROM "testing_space" GROUP BY "id"
     ]], {} })
     t.assert_str_contains(tostring(err), "Invalid projection with GROUP BY clause")
 
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "testing_space" GROUP BY 1
+    ]], {} })
+    t.assert_str_contains(tostring(err), "grouping expression must contain at least one column")
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "testing_space" GROUP BY "id" + 1
+    ]], {} })
+    t.assert_str_contains(tostring(err), "Invalid projection with GROUP BY clause")
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT ("c"*"b"*"a")*count("c")/(("b"*"a"*"c")*count("c")) as u
+        from "arithmetic_space"
+        group by "a"*"b"*"c"
+    ]], {} })
+    t.assert_str_contains(tostring(err), "Invalid projection with GROUP BY clause")
+
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT "id" + count("id") FROM "testing_space" GROUP BY "id" + count("id")
+    ]], {} })
+    t.assert_str_contains(tostring(err), "aggregate functions are not allowed inside grouping expression")
     local _, err = api:call("sbroad.execute", { [[
         SELECT "name", "product_units" FROM "testing_space" GROUP BY "name"
     ]], {} })
@@ -401,7 +415,7 @@ groupby_queries.test_with_join3 = function ()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", { [[
     SELECT r."i", q."b"
-    FROM (SELECT "a" AS "i" FROM "arithmetic_space2" GROUP BY "a") AS r
+    FROM (SELECT "a" + "b" AS "i" FROM "arithmetic_space2" GROUP BY "a"+"b") AS r
     INNER JOIN
         (SELECT "c", "b" FROM "arithmetic_space" GROUP BY "c", "b") AS q
     ON r."i" = q."b"
@@ -415,8 +429,8 @@ groupby_queries.test_with_join3 = function ()
     })
 
     t.assert_items_equals(r.rows, {
-        { 1, 1 },
         { 2, 2 },
+        { 3, 3 },
     })
 
     -- without GROUP BY
@@ -836,6 +850,81 @@ groupby_queries.test_aggr_invalid = function()
         [[ SELECT "d", count(sum("e")) from "arithmetic_space" group by "d"]], {}
     })
     t.assert_str_contains(tostring(err), "aggregate function inside aggregate function")
+end
+
+groupby_queries.test_groupby_arith_expression = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[ SELECT ("a"*"b"*"c")*count("c")/(("a"*"b"*"c")*count("c")) as u from "arithmetic_space"
+        group by "a"*"b"*"c"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "U", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1}, {1}, {1},
+    })
+end
+
+groupby_queries.test_grouping_by_concat = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "string_col2" || "string_col" as u from
+        (select "id" as "i", "string_col" as "string_col2" from "arithmetic_space") as "t1"
+        join "arithmetic_space2" on "t1"."i" = "arithmetic_space2"."id"
+        group by "string_col2" || "string_col"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "U", type = "string" },
+    })
+    t.assert_items_equals(r.rows, {
+        {"aa"}, {"cb"},
+    })
+end
+
+groupby_queries.test_groupby_bool_expr = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "b1" and "b1" as "c1", "boolean_col" or "b1" as "c2" from
+        (select "id" as "i", "boolean_col" as "b1" from "arithmetic_space") as "t1"
+        join "arithmetic_space2" on "t1"."i" = "arithmetic_space2"."id"
+        group by "b1" and "b1", "boolean_col" or "b1"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        {name = "c1", type = "boolean"},
+        {name = "c2", type = "boolean"},
+    })
+    t.assert_items_equals(r.rows, {
+        {true, true},
+    })
+end
+
+groupby_queries.test_grouping_by_cast_expr = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT cast("number_col" as double) from "arithmetic_space"
+        group by cast("number_col" as double)
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        {name = "COL_1", type = "double"},
+    })
+    t.assert_items_equals(r.rows, {
+        {3.14}, {2}, {2.14}
+    })
 end
 
 

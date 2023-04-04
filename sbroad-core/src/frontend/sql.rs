@@ -818,7 +818,7 @@ impl Ast for AbstractSyntaxTree {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
                     })?;
-                    let plan_child_id = map.get(*ast_child_id)?;
+                    let mut plan_child_id = map.get(*ast_child_id)?;
                     let mut proj_columns: Vec<usize> = Vec::with_capacity(node.children.len());
                     let mut aggregates: Vec<AggregateInfo> =
                         Vec::with_capacity(node.children.len());
@@ -836,19 +836,19 @@ impl Ast for AbstractSyntaxTree {
                                     })?;
                                 let plan_alias_id = map.get(ast_alias_id)?;
                                 // Collect aggregate functions inside column expression
-                                let mut dfs = BreadthFirst::with_capacity(
+                                let mut bfs = BreadthFirst::with_capacity(
                                     |x| plan.nodes.aggregate_iter(x, false),
                                     EXPR_CAPACITY,
                                     EXPR_CAPACITY,
                                 );
-                                for (_, id) in dfs.iter(plan_alias_id) {
+                                for (_, id) in bfs.iter(plan_alias_id) {
                                     // we can't use get_expression_node, because parameters are not
                                     // bound yet
                                     let expr = plan.get_node(id)?;
                                     if let Node::Expression(StableFunction { name, .. }) = expr {
                                         let Some(aggr) = SimpleAggregate::new(name, id) else {
-                                            continue
-                                        };
+                                                continue
+                                            };
                                         let info = AggregateInfo {
                                             aggregate: aggr,
                                             expression_top: plan_alias_id,
@@ -889,7 +889,7 @@ impl Ast for AbstractSyntaxTree {
                         }
                     }
                     if let Some(groupby_id) = groupby_nodes.pop() {
-                        plan.add_two_stage_aggregation(
+                        plan_child_id = plan.add_two_stage_aggregation(
                             groupby_id,
                             &proj_columns,
                             &columns_with_aggregates,
