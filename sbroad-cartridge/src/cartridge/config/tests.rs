@@ -87,7 +87,7 @@ fn test_yaml_schema_parser() {
     s.load_schema(test_schema).unwrap();
 
     let expected_keys = vec!["\"identification_number\"", "\"product_code\""];
-    let actual_keys = s.get_sharding_key_by_space("\"hash_testing\"").unwrap();
+    let actual_keys = s.sharding_key_by_space("\"hash_testing\"").unwrap();
     assert_eq!(actual_keys, expected_keys);
 }
 
@@ -156,10 +156,10 @@ fn test_getting_table_segment() {
     .unwrap();
 
     assert_eq!(
-        s.get_table_segment("invalid_table").unwrap_err(),
+        s.table("invalid_table").unwrap_err(),
         SbroadError::NotFound(Entity::Space, r#""INVALID_TABLE""#.into())
     );
-    assert_eq!(s.get_table_segment("\"hash_testing\"").unwrap(), expected);
+    assert_eq!(s.table("\"hash_testing\"").unwrap(), expected);
 }
 
 #[test]
@@ -167,9 +167,9 @@ fn test_waiting_timeout() {
     let mut s = RouterConfiguration::new();
     s.set_waiting_timeout(200);
 
-    assert_ne!(s.get_exec_waiting_timeout(), 360);
+    assert_ne!(s.waiting_timeout(), 360);
 
-    assert_eq!(s.get_exec_waiting_timeout(), 200);
+    assert_eq!(s.waiting_timeout(), 200);
 }
 
 #[test]

@@ -1,12 +1,12 @@
-use crate::api::exec_query::protocol::{EncodedOptionalData, OptionalData, RequiredData};
 use crate::cartridge::config::StorageConfiguration;
 use crate::cartridge::update_tracing;
 use sbroad::backend::sql::ir::{PatternWithParams, TmpSpaceMap};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
-use sbroad::executor::engine::Configuration;
+use sbroad::executor::engine::QueryCache;
 use sbroad::executor::ir::QueryType;
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
+use sbroad::executor::protocol::{EncodedOptionalData, OptionalData, RequiredData};
 use sbroad::ir::value::Value;
 use sbroad::otm::child_span;
 use sbroad::{debug, error, warn};
@@ -17,13 +17,15 @@ use std::fmt::Display;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
+use super::Configuration;
+
 struct Statement {
     id: u32,
     pattern: String,
 }
 
 #[derive(Default)]
-struct PreparedStmt(Option<Statement>);
+pub struct PreparedStmt(Option<Statement>);
 
 impl PreparedStmt {
     /// Extract prepared statement from the cache.
@@ -64,20 +66,45 @@ pub struct StorageRuntime {
     cache: RefCell<LRUCache<String, PreparedStmt>>,
 }
 
+impl QueryCache for StorageRuntime {
+    type Cache = LRUCache<String, PreparedStmt>;
+
+    fn cache(&self) -> &RefCell<Self::Cache> {
+        &self.cache
+    }
+
+    fn cache_capacity(&self) -> Result<usize, SbroadError> {
+        Ok(self
+            .cache()
+            .try_borrow()
+            .map_err(|e| {
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
+            })?
+            .capacity())
+    }
+
+    fn clear_cache(&self) -> Result<(), SbroadError> {
+        *self.cache.try_borrow_mut().map_err(|e| {
+            SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
+        })? = Self::Cache::new(DEFAULT_CAPACITY, None)?;
+        Ok(())
+    }
+}
+
 impl Configuration for StorageRuntime {
     type Configuration = StorageConfiguration;
 
     fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
         self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
         })
     }
 
     fn clear_config(&self) -> Result<(), SbroadError> {
         let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
         })?;
-        *metadata = StorageConfiguration::default();
+        *metadata = Self::Configuration::new();
         Ok(())
     }
 
@@ -88,7 +115,7 @@ impl Configuration for StorageRuntime {
         Ok(metadata.is_empty())
     }
 
-    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
+    fn retrieve_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
         if self.is_config_empty()? {
             let lua = tarantool::lua_state();
 

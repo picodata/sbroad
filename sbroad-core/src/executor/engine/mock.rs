@@ -10,15 +10,15 @@ use crate::collection;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
-    normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator, InitialBucket, InitialColumnStats, InitialHistogram, Statistics,
+    helpers::{sharding_keys_from_map, sharding_keys_from_tuple},
+    InitialBucket, InitialColumnStats, InitialHistogram, Router, Statistics,
 };
 use crate::executor::hash::bucket_id_by_tuple;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::executor::{Cache, CoordinatorMetadata};
+use crate::executor::Cache;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
@@ -26,6 +26,9 @@ use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::{EncodedValue, Value};
 use crate::ir::Plan;
+
+use super::helpers::normalize_name_from_sql;
+use super::{Metadata, QueryCache};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -36,8 +39,8 @@ pub struct RouterConfigurationMock {
     sharding_column: String,
 }
 
-impl CoordinatorMetadata for RouterConfigurationMock {
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
+impl Metadata for RouterConfigurationMock {
+    fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
@@ -45,7 +48,7 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         }
     }
 
-    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
+    fn function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
         let name = normalize_name_from_sql(fn_name);
         match self.functions.get(&name) {
             Some(v) => Ok(v),
@@ -53,27 +56,22 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         }
     }
 
-    fn get_exec_waiting_timeout(&self) -> u64 {
+    fn waiting_timeout(&self) -> u64 {
         0
     }
 
-    fn get_sharding_column(&self) -> &str {
+    fn sharding_column(&self) -> &str {
         self.sharding_column.as_str()
     }
 
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
+        let table = self.table(space)?;
         table.get_sharding_column_names()
     }
 
-    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
+        let table = self.table(space)?;
         Ok(table.get_sharding_positions().to_vec())
-    }
-
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError> {
-        let table = self.get_table_segment(space)?;
-        Ok(table.columns.len())
     }
 }
 
@@ -292,38 +290,26 @@ impl ProducerResult {
     }
 }
 
-impl Configuration for RouterRuntimeMock {
-    type Configuration = RouterConfigurationMock;
+impl QueryCache for RouterRuntimeMock {
+    type Cache = LRUCache<String, Plan>;
 
-    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
-        self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })
-    }
-
-    fn clear_config(&self) -> Result<(), SbroadError> {
-        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })?;
-        metadata.tables.clear();
+    fn clear_cache(&self) -> Result<(), SbroadError> {
+        *self.ir_cache.borrow_mut() = LRUCache::new(self.cache_capacity()?, None)?;
         Ok(())
     }
 
-    fn is_config_empty(&self) -> Result<bool, SbroadError> {
-        let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })?;
-        Ok(metadata.tables.is_empty())
+    fn cache(&self) -> &RefCell<Self::Cache> {
+        &self.ir_cache
     }
 
-    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
-        let config = RouterConfigurationMock::new();
-        Ok(Some(config))
-    }
-
-    fn update_config(&self, _config: Self::Configuration) -> Result<(), SbroadError> {
-        *self.metadata.borrow_mut() = RouterConfigurationMock::new();
-        Ok(())
+    fn cache_capacity(&self) -> Result<usize, SbroadError> {
+        Ok(self
+            .cache()
+            .try_borrow()
+            .map_err(|e| {
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
+            })?
+            .capacity())
     }
 }
 
@@ -598,17 +584,14 @@ impl RouterRuntimeMock {
     }
 }
 
-impl Coordinator for RouterRuntimeMock {
+impl Router for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
-    type Cache = LRUCache<String, Plan>;
+    type MetadataProvider = RouterConfigurationMock;
 
-    fn clear_ir_cache(&self) -> Result<(), SbroadError> {
-        *self.ir_cache.borrow_mut() = Self::Cache::new(DEFAULT_CAPACITY, None)?;
-        Ok(())
-    }
-
-    fn ir_cache(&self) -> &RefCell<Self::Cache> {
-        &self.ir_cache
+    fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError> {
+        self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })
     }
 
     fn materialize_motion(

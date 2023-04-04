@@ -184,6 +184,11 @@ where
         }
         Ok(())
     }
+
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
 }
 
 impl<Key, Value> Cache<Key, Value> for LRUCache<Key, Value>

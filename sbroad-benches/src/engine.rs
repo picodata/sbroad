@@ -1,15 +1,14 @@
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use sbroad::cbo::{TableColumnPair, TableStats};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
+use sbroad::executor::engine::QueryCache;
 use sbroad::executor::engine::{
-    normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple, Configuration,
-    Coordinator, CoordinatorMetadata, InitialColumnStats, Statistics,
+    helpers::{normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple},
+    Metadata, Router,
 };
 use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::ExecutionPlan;
@@ -32,8 +31,15 @@ pub struct RouterConfigurationMock {
     sharding_column: String,
 }
 
-impl CoordinatorMetadata for RouterConfigurationMock {
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
+impl Metadata for RouterConfigurationMock {
+    /// Get Table by its name that contains:
+    /// * list of the columns,
+    /// * distribution key of the output tuples (column positions),
+    /// * table name.
+    ///
+    /// # Errors
+    /// - Failed to get table by name from the metadata.
+    fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
@@ -44,7 +50,7 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         }
     }
 
-    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
+    fn function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
         let name = normalize_name_from_sql(fn_name);
         match self.functions.get(&name) {
             Some(v) => Ok(v),
@@ -52,27 +58,22 @@ impl CoordinatorMetadata for RouterConfigurationMock {
         }
     }
 
-    fn get_exec_waiting_timeout(&self) -> u64 {
+    fn waiting_timeout(&self) -> u64 {
         0
     }
 
-    fn get_sharding_column(&self) -> &str {
+    fn sharding_column(&self) -> &str {
         self.sharding_column.as_str()
     }
 
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
+        let table = self.table(space)?;
         table.get_sharding_column_names()
     }
 
-    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
+        let table = self.table(space)?;
         Ok(table.get_sharding_positions().to_vec())
-    }
-
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError> {
-        let table = self.get_table_segment(space)?;
-        Ok(table.columns.len())
     }
 }
 
@@ -363,41 +364,20 @@ impl std::fmt::Debug for RouterRuntimeMock {
     }
 }
 
-impl Configuration for RouterRuntimeMock {
-    type Configuration = RouterConfigurationMock;
+impl QueryCache for RouterRuntimeMock {
+    type Cache = LRUCache<String, Plan>;
 
-    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
-        self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })
-    }
-
-    fn clear_config(&self) -> Result<(), SbroadError> {
-        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })?;
-        metadata.tables.clear();
+    fn clear_cache(&self) -> Result<(), SbroadError> {
+        *self.ir_cache.borrow_mut() = Self::Cache::new(self.cache_capacity()?, None)?;
         Ok(())
     }
 
-    fn is_config_empty(&self) -> Result<bool, SbroadError> {
-        let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })?;
-        Ok(metadata.tables.is_empty())
+    fn cache(&self) -> &RefCell<Self::Cache> {
+        &self.ir_cache
     }
 
-    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError> {
-        let config = RouterConfigurationMock::new();
-        Ok(Some(config))
-    }
-
-    fn update_config(&self, _config: Self::Configuration) -> Result<(), SbroadError> {
-        let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
-        })?;
-        *cached_metadata = RouterConfigurationMock::new();
-        Ok(())
+    fn cache_capacity(&self) -> Result<usize, SbroadError> {
+        Ok(self.ir_cache.borrow().capacity())
     }
 }
 
@@ -419,24 +399,16 @@ impl RouterRuntimeMock {
             ir_cache: RefCell::new(cache),
         }
     }
-
-    #[allow(dead_code)]
-    pub fn add_virtual_table(&mut self, id: usize, table: VirtualTable) {
-        self.virtual_tables.insert(id, table);
-    }
 }
 
-impl Coordinator for RouterRuntimeMock {
-    type Cache = LRUCache<String, Plan>;
+impl Router for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
+    type MetadataProvider = RouterConfigurationMock;
 
-    fn clear_ir_cache(&self) -> Result<(), SbroadError> {
-        *self.ir_cache.borrow_mut() = Self::Cache::new(DEFAULT_CAPACITY, None)?;
-        Ok(())
-    }
-
-    fn ir_cache(&self) -> &RefCell<Self::Cache> {
-        &self.ir_cache
+    fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError> {
+        self.metadata.try_borrow().map_err(|e| {
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+        })
     }
 
     fn materialize_motion(
@@ -479,7 +451,7 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         args: &'rec HashMap<String, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_map(&*self.cached_config()?, &space, args)
+        sharding_keys_from_map(&*self.metadata()?, &space, args)
     }
 
     fn extract_sharding_keys_from_tuple<'rec>(
@@ -487,47 +459,10 @@ impl Coordinator for RouterRuntimeMock {
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_tuple(&*self.cached_config()?, &space, rec)
+        sharding_keys_from_tuple(&*self.metadata()?, &space, rec)
     }
 
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
         bucket_id_by_tuple(s, self.metadata.borrow().bucket_count)
-    }
-}
-
-impl Statistics for RouterRuntimeMock {
-    #[allow(unused_variables)]
-    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
-        // Will be added later.
-        todo!()
-    }
-
-    #[allow(unused_variables)]
-    fn get_initial_column_stats(
-        &self,
-        table_column_pair: TableColumnPair,
-    ) -> Result<Rc<InitialColumnStats>, SbroadError> {
-        // Will be added later.
-        todo!()
-    }
-
-    #[allow(unused_variables)]
-    fn update_table_stats_cache(
-        &mut self,
-        table_name: String,
-        table_stats: TableStats,
-    ) -> Result<(), SbroadError> {
-        // Will be added later.
-        todo!()
-    }
-
-    #[allow(unused_variables)]
-    fn update_column_initial_stats_cache(
-        &self,
-        table_column_pair: TableColumnPair,
-        initial_column_stats: InitialColumnStats,
-    ) -> Result<(), SbroadError> {
-        // Will be added later.
-        todo!()
     }
 }

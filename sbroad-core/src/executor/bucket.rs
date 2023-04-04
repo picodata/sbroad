@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::executor::engine::Coordinator;
+use crate::executor::engine::Router;
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
@@ -71,7 +71,7 @@ impl Buckets {
 
 impl<'a, T> Query<'a, T>
 where
-    T: Coordinator,
+    T: Router,
 {
     fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
         let mut buckets: Vec<Buckets> = Vec::new();

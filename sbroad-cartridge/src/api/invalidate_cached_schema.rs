@@ -1,9 +1,11 @@
 use std::os::raw::c_int;
 use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
-use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
-use sbroad::executor::engine::{Configuration, Coordinator};
-use sbroad::log::tarantool_error;
+use crate::{
+    api::{COORDINATOR_ENGINE, SEGMENT_ENGINE},
+    cartridge::Configuration,
+};
+use sbroad::{executor::engine::QueryCache, log::tarantool_error};
 
 /// Flush cached configuration in the Rust memory of the coordinator runtime.
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
@@ -16,7 +18,7 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
                     "Failed to clear the configuration in the coordinator runtime during cache invalidation: {e}"
                 ));
             }
-            if let Err(e) = runtime.clear_ir_cache() {
+            if let Err(e) = runtime.clear_cache() {
                 return tarantool_error(&format!(
                     "Failed to clear the IR cache on router: {e:?}"
                 ));

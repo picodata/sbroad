@@ -7,7 +7,7 @@ use pest::Parser;
 use std::collections::{HashMap, HashSet};
 
 use crate::errors::{Entity, SbroadError};
-use crate::executor::engine::{normalize_name_from_sql, CoordinatorMetadata};
+use crate::executor::engine::{helpers::normalize_name_from_sql, Metadata};
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode, Type,
 };
@@ -123,7 +123,7 @@ impl Ast for AbstractSyntaxTree {
     #[otm_child_span("ast.resolve")]
     fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, SbroadError>
     where
-        M: CoordinatorMetadata,
+        M: Metadata,
     {
         let mut plan = Plan::default();
 
@@ -249,7 +249,7 @@ impl Ast for AbstractSyntaxTree {
                 Type::Table => {
                     if let Some(node_val) = &node.value {
                         let table = node_val.as_str();
-                        let t = metadata.get_table_segment(table)?;
+                        let t = metadata.table(table)?;
                         plan.add_rel(t);
                         let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
                         scan_nodes.push(scan_id);
@@ -747,7 +747,7 @@ impl Ast for AbstractSyntaxTree {
                             continue;
                         }
 
-                        let func = metadata.get_function(function_name)?;
+                        let func = metadata.function(function_name)?;
                         if func.is_stable() {
                             let plan_func_id = plan.add_stable_function(func, plan_arg_list)?;
                             map.add(id, plan_func_id);

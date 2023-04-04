@@ -1,9 +1,10 @@
 use sbroad::error;
-use sbroad::executor::engine::Configuration;
 use sbroad::log::tarantool_error;
 use std::cell::RefCell;
 use std::os::raw::c_int;
 use std::thread::LocalKey;
+
+use crate::cartridge::Configuration;
 
 pub fn load_config<Runtime>(engine: &'static LocalKey<RefCell<Runtime>>) -> c_int
 where
@@ -21,7 +22,7 @@ where
                 ));
             }
         };
-        match runtime.get_config() {
+        match runtime.retrieve_config() {
             Ok(conf) => {
                 config = conf;
                 0

@@ -70,6 +70,8 @@ pub enum Entity {
     Space,
     // tarantool space engine type
     SpaceEngine,
+    /// tarantool space metadata
+    SpaceMetadata,
     /// corresponds to Function structs
     SQLFunction,
     /// corresponds to struct Statement
@@ -135,6 +137,7 @@ impl fmt::Display for Entity {
             Entity::ShardingKey => "sharding key".to_string(),
             Entity::Space => "space".to_string(),
             Entity::SpaceEngine => "space engine".to_string(),
+            Entity::SpaceMetadata => "space metadata".to_string(),
             Entity::SQLFunction => "SQL function".to_string(),
             Entity::Statement => "statement".to_string(),
             Entity::Statistics => "statistics".to_string(),

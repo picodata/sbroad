@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
 use sbroad::errors::{Entity, SbroadError};
-use sbroad::executor::engine::CoordinatorMetadata;
-use sbroad::executor::engine::{normalize_name_from_schema, normalize_name_from_sql};
+use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_name_from_sql};
+use sbroad::executor::engine::Metadata;
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
@@ -138,7 +138,7 @@ impl RouterConfiguration {
                                 "Column's original name: {name}, qualified name {qualified_name}"
                             ),
                         );
-                        let role = if self.get_sharding_column().eq(&qualified_name) {
+                        let role = if self.sharding_column().eq(&qualified_name) {
                             ColumnRole::Sharding
                         } else {
                             ColumnRole::User
@@ -257,13 +257,13 @@ impl RouterConfiguration {
     }
 }
 
-impl CoordinatorMetadata for RouterConfiguration {
+impl Metadata for RouterConfiguration {
     /// Get table segment form cache by table name
     ///
     /// # Errors
     /// Returns `SbroadError` when table was not found.
     #[allow(dead_code)]
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError> {
+    fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
@@ -271,7 +271,7 @@ impl CoordinatorMetadata for RouterConfiguration {
         }
     }
 
-    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
+    fn function(&self, fn_name: &str) -> Result<&Function, SbroadError> {
         let name = normalize_name_from_sql(fn_name);
         match self.functions.get(&name) {
             Some(v) => Ok(v),
@@ -280,28 +280,23 @@ impl CoordinatorMetadata for RouterConfiguration {
     }
 
     /// Get response waiting timeout for executor
-    fn get_exec_waiting_timeout(&self) -> u64 {
+    fn waiting_timeout(&self) -> u64 {
         self.waiting_timeout
     }
 
-    fn get_sharding_column(&self) -> &str {
+    fn sharding_column(&self) -> &str {
         self.sharding_column.as_str()
     }
 
     /// Get sharding key's column names by a space name
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
+        let table = self.table(space)?;
         table.get_sharding_column_names()
     }
 
-    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
-        let table = self.get_table_segment(space)?;
+    fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
+        let table = self.table(space)?;
         Ok(table.get_sharding_positions().to_vec())
-    }
-
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError> {
-        let table = self.get_table_segment(space)?;
-        Ok(table.columns.len())
     }
 }
 

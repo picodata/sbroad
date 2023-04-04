@@ -4,17 +4,13 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple, TupleBuffer};
 
 use crate::api::helper::load_config;
 use crate::api::{COORDINATOR_ENGINE, SEGMENT_ENGINE};
-use protocol::RequiredData;
 use sbroad::backend::sql::ir::PatternWithParams;
 use sbroad::errors::{Action, Entity, SbroadError};
+use sbroad::executor::protocol::{EncodedRequiredData, RequiredData};
 use sbroad::executor::Query;
 use sbroad::log::tarantool_error;
 use sbroad::otm::{child_span, query_span};
 use sbroad::{debug, error};
-
-use self::protocol::EncodedRequiredData;
-
-pub mod protocol;
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]

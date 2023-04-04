@@ -29,8 +29,7 @@ use std::rc::Rc;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::Coordinator;
-use crate::executor::engine::CoordinatorMetadata;
+use crate::executor::engine::Router;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
 use crate::executor::vtable::VirtualTable;
@@ -48,6 +47,7 @@ pub mod engine;
 pub mod hash;
 pub mod ir;
 pub mod lru;
+pub mod protocol;
 pub mod result;
 pub mod vtable;
 
@@ -68,7 +68,7 @@ impl Plan {
 #[derive(Debug)]
 pub struct Query<'a, C>
 where
-    C: Coordinator,
+    C: Router,
 {
     /// Explain flag
     is_explain: bool,
@@ -82,7 +82,7 @@ where
 
 impl<'a, C> Query<'a, C>
 where
-    C: Coordinator,
+    C: Router,
 {
     /// Create a new query.
     ///
@@ -94,12 +94,11 @@ where
     #[otm_child_span("query.new")]
     pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, SbroadError>
     where
-        C::Configuration: CoordinatorMetadata,
         C::Cache: Cache<String, Plan>,
         C::ParseTree: Ast,
     {
         let key = query_id(sql);
-        let ir_cache = coordinator.ir_cache();
+        let ir_cache = coordinator.cache();
 
         let mut plan = Plan::new();
         let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
@@ -109,8 +108,8 @@ where
             plan = cached_plan.clone();
         }
         if plan.is_empty() {
-            let metadata = &*coordinator.cached_config()?;
             let ast = C::ParseTree::new(sql)?;
+            let metadata = &*coordinator.metadata()?;
             plan = ast.resolve_metadata(metadata)?;
             cache.put(key, plan.clone())?;
         }

@@ -6,11 +6,10 @@ use crate::cbo::histogram::MostCommonValueWithFrequency;
 use crate::cbo::{TableColumnPair, TableStats};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::errors::{Entity, SbroadError};
+use crate::errors::SbroadError;
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::vtable::VirtualTable;
@@ -18,8 +17,15 @@ use crate::ir::function::Function;
 use crate::ir::relation::Table;
 use crate::ir::value::Value;
 
-/// A metadata storage trait of the cluster.
-pub trait CoordinatorMetadata {
+use super::ir::{ConnectionType, QueryType};
+use super::protocol::{Binary, Message};
+
+pub mod helpers;
+#[cfg(test)]
+pub mod mock;
+
+/// A metadata trait of the cluster (getters for tables, functions, etc.).
+pub trait Metadata: Sized {
     /// Get a table by name that contains:
     /// * list of the columns,
     /// * distribution key of the output tuples (column positions),
@@ -27,112 +33,68 @@ pub trait CoordinatorMetadata {
     ///
     /// # Errors
     /// - Failed to get table by name from the metadata.
-    fn get_table_segment(&self, table_name: &str) -> Result<Table, SbroadError>;
+    fn table(&self, table_name: &str) -> Result<Table, SbroadError>;
 
     /// Lookup for a function in the metadata cache.
     ///
     /// # Errors
     /// - Failed to get function by name from the metadata.
-    fn get_function(&self, fn_name: &str) -> Result<&Function, SbroadError>;
+    fn function(&self, fn_name: &str) -> Result<&Function, SbroadError>;
 
-    fn get_exec_waiting_timeout(&self) -> u64;
+    /// Get the wait timeout for the query execution.
+    fn waiting_timeout(&self) -> u64;
 
-    fn get_sharding_column(&self) -> &str;
+    /// Get the name of the sharding column (usually it is `bucket_id`).
+    fn sharding_column(&self) -> &str;
 
     /// Provides vector of the sharding key column names or an error
     ///
     /// # Errors
     /// - Metadata does not contain space
     /// - Metadata contains incorrect sharding keys format
-    fn get_sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError>;
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError>;
 
     /// Provides vector of the sharding key column positions in a tuple or an error
     ///
     /// # Errors
     /// - Metadata does not contain space
-    fn get_sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError>;
-
-    /// Provides amlount of table columns
-    ///
-    /// # Errors
-    /// - Metadata does not contain space
-    fn get_fields_amount_by_space(&self, space: &str) -> Result<usize, SbroadError>;
+    fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError>;
 }
 
-/// Cluster configuration.
-pub trait Configuration: Sized {
-    type Configuration;
-
-    /// Return a cached cluster configuration from the Rust memory.
-    ///
-    /// # Errors
-    /// - Failed to get a configuration from the coordinator runtime.
-    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError>;
-
-    /// Clear the cached cluster configuration in the Rust memory.
-    ///
-    /// # Errors
-    /// - Failed to clear the cached configuration.
-    fn clear_config(&self) -> Result<(), SbroadError>;
-
-    /// Check if the cached cluster configuration is empty.
-    ///
-    /// # Errors
-    /// - Failed to get the cached configuration.
-    fn is_config_empty(&self) -> Result<bool, SbroadError>;
-
-    /// Retrieve cluster configuration from the Lua memory.
-    ///
-    /// If the configuration is already cached, return None,
-    /// otherwise return Some(config).
-    ///
-    /// # Errors
-    /// - Internal error.
-    fn get_config(&self) -> Result<Option<Self::Configuration>, SbroadError>;
-
-    /// Update cached cluster configuration.
-    ///
-    /// # Errors
-    /// - Failed to update the configuration.
-    fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError>;
-}
-
-/// A coordinator trait.
-pub trait Coordinator: Configuration {
+pub trait QueryCache {
     type Cache;
-    type ParseTree;
 
-    /// Flush the coordinator's IR cache.
+    /// Get the cache.
     ///
     /// # Errors
-    /// - Invalid capacity (zero).
-    fn clear_ir_cache(&self) -> Result<(), SbroadError>;
-
-    fn ir_cache(&self) -> &RefCell<Self::Cache>
+    /// - Failed to get the cache.
+    fn cache(&self) -> &RefCell<Self::Cache>
     where
         Self: Sized;
 
-    /// Materialize result motion node to virtual table
+    /// Get the cache capacity.
     ///
     /// # Errors
-    /// - internal executor errors
-    fn materialize_motion(
-        &self,
-        plan: &mut ExecutionPlan,
-        motion_node_id: usize,
-        buckets: &Buckets,
-    ) -> Result<VirtualTable, SbroadError>;
+    /// - Failed to get the cache capacity.
+    fn cache_capacity(&self) -> Result<usize, SbroadError>;
 
-    /// Dispatch a sql query to the shards in cluster and get the results.
+    /// Clear the cache.
     ///
     /// # Errors
-    /// - internal executor errors
-    fn dispatch(
-        &self,
-        plan: &mut ExecutionPlan,
-        top_id: usize,
-        buckets: &Buckets,
-    ) -> Result<Box<dyn Any>, SbroadError>;
+    /// - Failed to clear the cache.
+    fn clear_cache(&self) -> Result<(), SbroadError>;
+}
+
+/// A router trait.
+pub trait Router: QueryCache {
+    type ParseTree;
+    type MetadataProvider: Metadata;
+
+    /// Get the metadata provider (tables, functions, etc.).
+    ///
+    /// # Errors
+    /// - Internal runtime error.
+    fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError>;
 
     /// Setup output format of query explain
     ///
@@ -162,6 +124,28 @@ pub trait Coordinator: Configuration {
 
     /// Determine shard for query execution by sharding key value
     fn determine_bucket_id(&self, s: &[&Value]) -> u64;
+
+    /// Dispatch a sql query to the shards in cluster and get the results.
+    ///
+    /// # Errors
+    /// - internal executor errors
+    fn dispatch(
+        &self,
+        plan: &mut ExecutionPlan,
+        top_id: usize,
+        buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError>;
+
+    /// Materialize result motion node to virtual table
+    ///
+    /// # Errors
+    /// - internal executor errors
+    fn materialize_motion(
+        &self,
+        plan: &mut ExecutionPlan,
+        motion_node_id: usize,
+        buckets: &Buckets,
+    ) -> Result<VirtualTable, SbroadError>;
 }
 
 /// Enum that represents initial bucket gathered from storages.
@@ -246,126 +230,32 @@ pub trait Statistics {
     ) -> Result<(), SbroadError>;
 }
 
-/// A common function for all engines to calculate the sharding key value from a tuple.
-///
-/// # Errors
-/// - The space was not found in the metadata.
-/// - The sharding keys are not present in the space.
-pub fn sharding_keys_from_tuple<'rec>(
-    conf: &impl CoordinatorMetadata,
-    space: &str,
-    tuple: &'rec [Value],
-) -> Result<Vec<&'rec Value>, SbroadError> {
-    let quoted_space = normalize_name_from_schema(space);
-    let sharding_positions = conf.get_sharding_positions_by_space(&quoted_space)?;
-    let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());
-    let table_col_amount = conf.get_fields_amount_by_space(&quoted_space)?;
-    if table_col_amount == tuple.len() {
-        // The tuple contains a "bucket_id" column.
-        for position in &sharding_positions {
-            let value = tuple.get(*position).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::ShardingKey,
-                    format!("position {position:?} in the tuple {tuple:?}"),
-                )
-            })?;
-            sharding_tuple.push(value);
-        }
-        Ok(sharding_tuple)
-    } else if table_col_amount == tuple.len() + 1 {
-        // The tuple doesn't contain the "bucket_id" column.
-        let table = conf.get_table_segment(&quoted_space)?;
-        let bucket_position = table.get_bucket_id_position()?;
+pub trait Vshard {
+    /// Execute a query on all the shards in the cluster.
+    ///
+    /// # Errors
+    /// - Execution errors
+    fn exec_ir_on_all(
+        &self,
+        required: Binary,
+        optional: Binary,
+        query_type: QueryType,
+        conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError>;
 
-        // If the "bucket_id" splits the sharding key, we need to shift the sharding
-        // key positions of the right part by one.
-        // For example, we have a table with columns a, bucket_id, b, and the sharding
-        // key is (a, b). Then the sharding key positions are (0, 2).
-        // If someone gives us a tuple (42, 666) we should tread is as (42, null, 666).
-        for position in &sharding_positions {
-            let corrected_pos = match position.cmp(&bucket_position) {
-                Ordering::Less => *position,
-                Ordering::Equal => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Tuple,
-                        Some(format!(
-                            r#"the tuple {tuple:?} contains a "bucket_id" position {position} in a sharding key {sharding_positions:?}"#
-                        )),
-                    ))
-                }
-                Ordering::Greater => *position - 1,
-            };
-            let value = tuple.get(corrected_pos).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::ShardingKey,
-                    format!("position {corrected_pos:?} in the tuple {tuple:?}"),
-                )
-            })?;
-            sharding_tuple.push(value);
-        }
-        Ok(sharding_tuple)
-    } else {
-        Err(SbroadError::Invalid(
-            Entity::Tuple,
-            Some(format!(
-                "the tuple {:?} was expected to have {} filed(s), got {}.",
-                tuple,
-                table_col_amount - 1,
-                tuple.len()
-            )),
-        ))
-    }
+    /// Execute a query on a some of the shards in the cluster.
+    ///
+    /// # Errors
+    /// - Execution errors
+    fn exec_ir_on_some(
+        &self,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError>;
+
+    /// Get the amount of buckets in the cluster.
+    fn bucket_count(&self) -> u64;
+
+    /// Get a random bucket from the cluster.
+    fn get_random_bucket(&self) -> Buckets;
 }
-
-/// A common function for all engines to calculate the sharding key value from a map.
-///
-/// # Errors
-/// - The space was not found in the metadata.
-/// - The sharding keys are not present in the space.
-pub fn sharding_keys_from_map<'rec, S: ::std::hash::BuildHasher>(
-    conf: &impl CoordinatorMetadata,
-    space: &str,
-    map: &'rec HashMap<String, Value, S>,
-) -> Result<Vec<&'rec Value>, SbroadError> {
-    let quoted_space = normalize_name_from_schema(space);
-    let sharding_key = conf.get_sharding_key_by_space(&quoted_space)?;
-    let quoted_map = map
-        .iter()
-        .map(|(k, _)| (normalize_name_from_schema(k), k.as_str()))
-        .collect::<HashMap<String, &str>>();
-    let mut tuple = Vec::with_capacity(sharding_key.len());
-    for quoted_column in &sharding_key {
-        if let Some(column) = quoted_map.get(quoted_column) {
-            let value = map.get(*column).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::ShardingKey,
-                    format!("column {column:?} in the map {map:?}"),
-                )
-            })?;
-            tuple.push(value);
-        } else {
-            return Err(SbroadError::NotFound(
-                Entity::ShardingKey,
-                format!(
-                "(quoted) column {quoted_column:?} in the quoted map {quoted_map:?} (original map: {map:?})"
-            )));
-        }
-    }
-    Ok(tuple)
-}
-
-#[must_use]
-pub fn normalize_name_from_schema(s: &str) -> String {
-    format!("\"{s}\"")
-}
-
-#[must_use]
-pub fn normalize_name_from_sql(s: &str) -> String {
-    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return s.to_string();
-    }
-    format!("\"{}\"", s.to_uppercase())
-}
-
-#[cfg(test)]
-pub mod mock;
