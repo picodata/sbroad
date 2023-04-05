@@ -1,17 +1,12 @@
 import tarantool from "k6/x/tarantool";
 import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
-import { callTarantool } from '../metrics.js';
-
-let host = "localhost";
-if (__ENV.HOST) {
-    host = __ENV.HOST;
-}
+import { callTarantool, HOST } from '../metrics.js';
 
 const clients = [
-    tarantool.connect([host + ":3301"], {"user": "admin", pass: "app-cluster-cookie"}),
-    tarantool.connect([host + ":3306"], {"user": "admin", pass: "app-cluster-cookie"}),
-    tarantool.connect([host + ":3307"], {"user": "admin", pass: "app-cluster-cookie"}),
-    tarantool.connect([host + ":3308"], {"user": "admin", pass: "app-cluster-cookie"})
+    tarantool.connect([HOST + ":3301"], {"user": "admin", pass: "app-cluster-cookie"}),
+    tarantool.connect([HOST + ":3306"], {"user": "admin", pass: "app-cluster-cookie"}),
+    tarantool.connect([HOST + ":3307"], {"user": "admin", pass: "app-cluster-cookie"}),
+    tarantool.connect([HOST + ":3308"], {"user": "admin", pass: "app-cluster-cookie"})
 ]
 
 export let current_server = 0

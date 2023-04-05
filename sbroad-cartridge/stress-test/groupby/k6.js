@@ -1,13 +1,8 @@
 import tarantool from "k6/x/tarantool";
-import { callTarantool } from '../metrics.js';
-
-let host = "localhost";
-if (__ENV.HOST) {
-    host = __ENV.HOST;
-}
+import { callTarantool, HOST } from '../metrics.js';
 
 const clients = [
-    tarantool.connect([host + ":3301"], {"user": "admin", pass: "app-cluster-cookie"}),
+    tarantool.connect([HOST + ":3301"], {"user": "admin", pass: "app-cluster-cookie"}),
 ]
 
 const pattern = `SELECT "a0"+"a1"+"a2", "a1", "a1"+"a2", "a3", "a4", "a5" + "a1", "a1"+"a6", "a7"*"a9", "a8", "a9"

@@ -54,3 +54,15 @@ release_rock:
 	&& tarantoolctl rocks pack sbroad-${CI_COMMIT_TAG}-1.rockspec \
 	&& mv sbroad*rock .. \
 	&& rm -rf sbroad-${CI_COMMIT_TAG}-1.rockspec
+
+stress:
+	test=$(test) docker-compose -f docker-compose.yml down
+	test=$(test) docker-compose -f docker-compose.yml up --abort-on-container-exit --exit-code-from k6
+	test=$(test) docker-compose -f docker-compose.yml down
+
+stress_all:
+	$(MAKE) stress test=projection
+	$(MAKE) stress test=projection_wide
+	$(MAKE) stress test=insert
+	$(MAKE) stress test=groupby
+

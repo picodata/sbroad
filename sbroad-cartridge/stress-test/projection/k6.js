@@ -1,13 +1,8 @@
 import tarantool from "k6/x/tarantool";
 import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
-import { callTarantool } from '../metrics.js';
+import { callTarantool, HOST } from '../metrics.js';
 
-let host = "localhost";
-if (__ENV.HOST) {
-    host = __ENV.HOST;
-}
-
-const client = tarantool.connect([host + ":3301"], {"user": "admin", pass: "app-cluster-cookie"})
+const client = tarantool.connect([HOST + ":3301"], {"user": "admin", pass: "app-cluster-cookie"})
 
 let ids = Array.from(
     {

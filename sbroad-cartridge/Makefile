@@ -13,6 +13,8 @@ TARGET_ROOT?=../target
 CARTRIDGE_MODULE?=.
 CORE_MODULE=$(CARTRIDGE_MODULE)/../sbroad-core
 TEST_APP=$(CARTRIDGE_MODULE)/test_app
+STRESS_TEST=$(CARTRIDGE_MODULE)/stress-test
+K6_PATH=$(STRESS_TEST)/k6
 
 build_cartridge_engine:
 	cargo build -p sbroad-cartridge --release
@@ -42,3 +44,36 @@ install_release:
 
 test_integration:
 	$(MAKE) build_integration && $(MAKE) run_integration
+
+clean_integration:
+	$(MAKE) stop
+	rm -rf $(TEST_APP)/.rocks
+	rm -rf $(TEST_APP)/tmp
+
+setup:
+	cd $(TEST_APP) && cartridge replicasets setup --bootstrap-vshard && cd ..
+
+start:
+	$(MAKE) clean_integration
+	$(MAKE) build_integration && cd $(TEST_APP) && cartridge start -d
+	$(MAKE) setup
+
+stop:
+	cd $(TEST_APP) && cartridge stop &&  while  cartridge status 2>&1 | grep "RUNNING" -q; do sleep 1; done
+
+stress_init:
+	@if [ -z "${test}" ]; then echo "test variable must be set"; exit 1; fi
+	tarantool $(CARTRIDGE_MODULE)/stress-test/$(test)/init.lua 1000
+
+stress_local:
+	@if [ -z "${test}" ]; then echo "test variable must be set"; exit 1; fi
+	$(MAKE) start
+	$(MAKE) stress_init test=$(test)
+	$(K6_PATH) run -u 10 -d 1m $(STRESS_TEST)/$(test)/k6.js --summary-export $(STRESS_TEST)/$(test)/k6_summary_local.json
+	$(MAKE) stop
+
+stress_all_local:
+	$(MAKE) stress_local test=projection
+	$(MAKE) stress_local test=projection_wide
+	$(MAKE) stress_local test=insert
+	$(MAKE) stress_local test=groupby

@@ -2,10 +2,12 @@
 variables:
     GIT_SUBMODULE_STRATEGY: none
     SBROAD_DEV_IMAGE: docker-public.binary.picodata.io/sbroad-builder:0.7.0
+    CACHE_ARCHIVE: /data/gitlab-runner/shared-storage/sbroad
 
 stages:
     - build
     - test
+    - stress-test
     - deploy
 
 cache:
@@ -44,6 +46,61 @@ integration:
       paths:
         - sbroad-cartridge/test_app/tmp/tarantool.log
       expire_in: 1 week
+
+.stress:
+    tags:
+        - shell_sbrd
+    image: docker/compose
+    stage: stress-test
+    when:
+        manual
+    resource_group: stress
+    before_script:
+        - test=$STRESS_TEST docker-compose down
+    script:
+        - make stress test=$STRESS_TEST
+        - >
+            if [ $CI_PIPELINE_SOURCE == "main" ]; then
+                mkdir -p $CACHE_ARCHIVE/$STRESS_TEST/$CI_COMMIT_SHORT_SHA
+                mkdir -p $CACHE_ARCHIVE/$STRESS_TEST/main
+                cp $PWD/sbroad-cartridge/stress-test/$STRESS_TEST/k6_summary.json $CACHE_ARCHIVE/$STRESS_TEST/$CI_COMMIT_SHORT_SHA/k6_summary.json
+                cp $PWD/sbroad-cartridge/stress-test/$STRESS_TEST/k6_summary.json $CACHE_ARCHIVE/$STRESS_TEST/main/k6_summary.json
+            else
+                docker run --rm \
+                -v $PWD/sbroad-cartridge/stress-test/compare.lua:/tmp/compare.lua \
+                -v $CACHE_ARCHIVE/$STRESS_TEST/main/k6_summary.json:/tmp/left.json \
+                -v $PWD/sbroad-cartridge/stress-test/$STRESS_TEST/k6_summary.json:/tmp/right.json \
+                ${SBROAD_DEV_IMAGE} \
+                bash -c "tarantool /tmp/compare.lua /tmp/left.json /tmp/right.json"
+            fi
+    after_script:
+        - test=$STRESS_TEST docker-compose down
+    artifacts:
+      paths:
+        - sbroad-cartridge/test_app/tmp/log/*
+        - sbroad-cartridge/stress-test/$STRESS_TEST/k6_summary.json
+      expire_in: 1 week
+      when: always
+
+stress_projection:
+    extends: .stress
+    variables:
+        STRESS_TEST: projection
+
+stress_projection_wide:
+    extends: .stress
+    variables:
+        STRESS_TEST: projection_wide
+
+stress_groupby:
+    extends: .stress
+    variables:
+        STRESS_TEST: groupby
+
+stress_insert:
+    extends: .stress
+    variables:
+        STRESS_TEST: insert
 
 bench:
     stage: test
