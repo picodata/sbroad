@@ -2,7 +2,12 @@ import tarantool from "k6/x/tarantool";
 import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
 import { updateSuccessRate } from '../metrics.js';
 
-const client = tarantool.connect(["localhost:3301"], {"user": "admin", pass: "app-cluster-cookie"})
+let host = "localhost";
+if (__ENV.HOST) {
+    host = __ENV.HOST;
+}
+
+const client = tarantool.connect([host + ":3301"], {"user": "admin", pass: "app-cluster-cookie"})
 
 let ids = Array.from(
     {
