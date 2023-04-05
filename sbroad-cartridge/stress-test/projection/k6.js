@@ -1,6 +1,6 @@
 import tarantool from "k6/x/tarantool";
 import {randomItem} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
-import { updateSuccessRate } from '../metrics.js';
+import { callTarantool } from '../metrics.js';
 
 let host = "localhost";
 if (__ENV.HOST) {
@@ -29,6 +29,5 @@ let pattern = `SELECT *
     WHERE "id" = ?`
 
 export default () => {
-    var resp = tarantool.call(client, "sbroad.execute", [pattern, [randomItem(ids)]]);
-    updateSuccessRate(resp);
+    callTarantool(client, "sbroad.execute", [pattern, [randomItem(ids)]]);
 }

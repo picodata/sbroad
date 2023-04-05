@@ -1,6 +1,6 @@
 import tarantool from "k6/x/tarantool";
 import {uuidv4} from 'https://jslib.k6.io/k6-utils/1.1.0/index.js';
-import { updateSuccessRate } from '../metrics.js';
+import { callTarantool } from '../metrics.js';
 
 let host = "localhost";
 if (__ENV.HOST) {
@@ -28,6 +28,5 @@ function get_client() {
 let pattern = `INSERT INTO "t" ("id", "name", "product_units") VALUES (?, ?, ?)`
 
 export default () => {
-    var resp = tarantool.call(get_client(), "sbroad.execute", [pattern, [uuidv4(), "123", 1]]);
-    updateSuccessRate(resp);
+    callTarantool(get_client(), "sbroad.execute", [pattern, [uuidv4(), "123", 1]]);
 }

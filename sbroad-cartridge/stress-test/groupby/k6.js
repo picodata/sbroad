@@ -1,5 +1,5 @@
 import tarantool from "k6/x/tarantool";
-import { updateSuccessRate } from '../metrics.js';
+import { callTarantool } from '../metrics.js';
 
 let host = "localhost";
 if (__ENV.HOST) {
@@ -16,6 +16,5 @@ const pattern = `SELECT "a0"+"a1"+"a2", "a1", "a1"+"a2", "a3", "a4", "a5" + "a1"
 `
 
 export default () => {
-    var resp = tarantool.call(clients[0], "sbroad.execute", [pattern, []]);
-    updateSuccessRate(resp);
+    callTarantool(clients[0], "sbroad.execute", [pattern, []]);
 }
