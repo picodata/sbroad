@@ -3,7 +3,7 @@ use tarantool::tuple::{FunctionArgs, FunctionCtx};
 
 use crate::{
     api::{COORDINATOR_ENGINE, SEGMENT_ENGINE},
-    cartridge::Configuration,
+    cartridge::ConfigurationProvider,
 };
 use sbroad::{executor::engine::QueryCache, log::tarantool_error};
 

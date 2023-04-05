@@ -38,6 +38,12 @@ pub fn normalize_name_from_sql(s: &str) -> String {
     format!("\"{}\"", s.to_uppercase())
 }
 
+/// A helper function to encode the execution plan into a pair of binary data:
+/// * required data (plan id, parameters, etc.)
+/// * optional data (execution plan, etc.)
+///
+/// # Errors
+/// - Failed to encode the execution plan.
 pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
     // We should not use the cache on the storage if the plan contains virtual tables,
     // as they can contain different amount of tuples that are not taken into account
@@ -60,7 +66,11 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
     Ok((raw_required_data.into(), raw_optional_data.into()))
 }
 
-pub fn explain_format(explain: String) -> Result<Box<dyn Any>, SbroadError> {
+/// Format explain output into a tuple.
+///
+/// # Errors
+/// - Failed to create a tuple.
+pub fn explain_format(explain: &str) -> Result<Box<dyn Any>, SbroadError> {
     let e = explain.lines().collect::<Vec<&str>>();
 
     match Tuple::new(&vec![e]) {
@@ -78,7 +88,7 @@ pub fn explain_format(explain: String) -> Result<Box<dyn Any>, SbroadError> {
 /// # Errors
 /// - Internal errors during the execution.
 pub fn dispatch(
-    runtime: &(impl Router + Vshard),
+    runtime: &impl Vshard,
     plan: &mut ExecutionPlan,
     top_id: usize,
     buckets: &Buckets,
@@ -169,11 +179,11 @@ pub fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
 /// # Errors
 /// - The space was not found in the metadata.
 /// - The sharding keys are not present in the space.
-pub fn sharding_keys_from_tuple<'rec>(
+pub fn sharding_keys_from_tuple<'tuple>(
     conf: &impl Metadata,
     space: &str,
-    tuple: &'rec [Value],
-) -> Result<Vec<&'rec Value>, SbroadError> {
+    tuple: &'tuple [Value],
+) -> Result<Vec<&'tuple Value>, SbroadError> {
     let quoted_space = normalize_name_from_schema(space);
     let sharding_positions = conf.sharding_positions_by_space(&quoted_space)?;
     let mut sharding_tuple = Vec::with_capacity(sharding_positions.len());

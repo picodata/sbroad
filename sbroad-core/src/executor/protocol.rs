@@ -1,4 +1,4 @@
-use opentelemetry::{trace::TraceContextExt, Context};
+use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
@@ -11,6 +11,9 @@ use crate::ir::value::Value;
 use crate::otm::{
     current_id, extract_context, force_trace, get_tracer, inject_context, QueryTracer,
 };
+
+#[cfg(not(feature = "mock"))]
+use opentelemetry::trace::TraceContextExt;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Binary(Vec<u8>);

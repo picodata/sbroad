@@ -39,7 +39,7 @@ use sbroad::ir::Plan;
 use sbroad::otm::child_span;
 use sbroad_proc::otm_child_span;
 
-use super::Configuration;
+use super::ConfigurationProvider;
 
 /// The runtime (cluster configuration, buckets, IR cache) of the dispatcher node.
 #[allow(clippy::module_name_repetitions)]
@@ -49,7 +49,7 @@ pub struct RouterRuntime {
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
 
-impl Configuration for RouterRuntime {
+impl ConfigurationProvider for RouterRuntime {
     type Configuration = RouterConfiguration;
 
     fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
@@ -226,7 +226,7 @@ impl Router for RouterRuntime {
     }
 
     fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {
-        explain_format(explain)
+        explain_format(&explain)
     }
 
     /// Transform sub query results into a virtual table.

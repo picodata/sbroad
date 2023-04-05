@@ -4,11 +4,11 @@ use std::cell::RefCell;
 use std::os::raw::c_int;
 use std::thread::LocalKey;
 
-use crate::cartridge::Configuration;
+use crate::cartridge::ConfigurationProvider;
 
 pub fn load_config<Runtime>(engine: &'static LocalKey<RefCell<Runtime>>) -> c_int
 where
-    Runtime: Configuration,
+    Runtime: ConfigurationProvider,
 {
     // Tarantool can yield in the middle of a current closure,
     // so we can hold only an immutable reference to the engine.

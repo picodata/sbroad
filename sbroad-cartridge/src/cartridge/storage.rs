@@ -17,7 +17,7 @@ use std::fmt::Display;
 use tarantool::tlua::LuaFunction;
 use tarantool::tuple::Tuple;
 
-use super::Configuration;
+use super::ConfigurationProvider;
 
 struct Statement {
     id: u32,
@@ -91,7 +91,7 @@ impl QueryCache for StorageRuntime {
     }
 }
 
-impl Configuration for StorageRuntime {
+impl ConfigurationProvider for StorageRuntime {
     type Configuration = StorageConfiguration;
 
     fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {

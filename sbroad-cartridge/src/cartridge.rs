@@ -36,8 +36,8 @@ pub fn update_tracing(host: &str, port: u16) -> Result<(), SbroadError> {
     Ok(())
 }
 
-/// Cartridge cluster configuration.
-pub trait Configuration: Sized {
+/// Cartridge cluster configuration provider.
+pub trait ConfigurationProvider: Sized {
     type Configuration;
 
     /// Return a cached cluster configuration from the Rust memory.

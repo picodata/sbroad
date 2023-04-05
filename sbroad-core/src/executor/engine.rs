@@ -18,7 +18,7 @@ use crate::ir::relation::Table;
 use crate::ir::value::Value;
 
 use super::ir::{ConnectionType, QueryType};
-use super::protocol::{Binary, Message};
+use super::protocol::Binary;
 
 pub mod helpers;
 #[cfg(test)]
@@ -93,13 +93,15 @@ pub trait Router: QueryCache {
     /// Get the metadata provider (tables, functions, etc.).
     ///
     /// # Errors
-    /// - Internal runtime error.
+    /// - Internal error. Under normal conditions we should always return
+    ///   metadata successfully.
     fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError>;
 
     /// Setup output format of query explain
     ///
     /// # Errors
-    /// - internal executor errors
+    /// - Internal error. Under normal conditions we should always return
+    ///   formatted explain successfully.
     fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Extract a list of the sharding keys from a map for the given space.
