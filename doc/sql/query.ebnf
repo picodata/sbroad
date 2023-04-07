@@ -1,49 +1,43 @@
-Query       ::= Select | Select 'union all' Select | Select ('except' | 'except distinct') Select | Values | Insert
-Select      ::= 'select' (Column (',' Column)*) 'from' (Table | Select) ('as' Alias)? ( ('inner')? 'join' (Table | Select) ('as' Alias)? 'on' Expression )? ( 'where' Expression )? ( 'group by' GroupBy )?
-Column      ::= '*' | Table '.' '*' | Expression | Expression 'as' Alias
-Expression  ::= Expression 'or' Expression
-               | Expression 'and' Expression
-               | Expression '*' Expression
-               | Expression '/' Expression
-               | Expression '+' Expression
-               | Expression '-' Expression
-               | Expression '=' Expression
-               | Expression '>' Expression
-               | Expression '>=' Expression
-               | Expression '<' Expression
-               | Expression '<=' Expression
-               | Expression ('<>' | '!=') Expression
-               | Expression 'is null'
-               | Expression 'is not null'
-               | Expression 'between' Expression 'and' Expression
-               | Reference
-               | Select
-               | Value
-GroupBy     ::= Concat | Cast | Function | Reference
-Reference   ::= ((Table | '"' Table '"') '.')? (Alias | '"' Alias '"')
-Value       ::= 'true'
-                | 'false'
-                | 'null'
+Query       ::= EXPLAIN* (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' | 'EXCEPT DISTINCT') SELECT  | INSERT)
+EXPLAIN     ::= 'SELECT'| 'INSERT'
+SELECT      ::= 'SELECT' (column (',' column)*) 'FROM' (table (',' table)* | SELECT) ('AS' alias)? ( ('INNER')? 'JOIN' (table | SELECT | VALUES) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' groupby )?
+VALUES      ::= 'VALUES' '(' (row (',' row)*) ')' 
+ROW         ::= '(' (value (',' value)*) ')' 
+COLUMN      ::= '*' | table '.' '*' | expression | expression 'AS' alias
+EXPRESSION  ::= expression 'OR' expression
+               | expression 'AND' expression
+               | expression ('* | / | + | -| = | > | >= | < | <= | <> | <= | <> | != | IS NULL | IS NOT NULL') expression
+               | expression 'BETWEEN' expression 'AND' expression
+               | reference
+               | SELECT
+               | VALUE
+GROUPBY     ::= concat | cast | function | reference
+REFERENCE   ::= ((table | '"' table '"') '.')? (alias | '"' alias '"')
+VALUE       ::= 'TRUE'
+                | 'FALSE'
+                | 'NULL'
                 | '?'
-                | Integer
-                | Unsigned
-                | Double
-                | Decimal
-                | String
-                | Row
-Cast        ::= 'cast' '(' Expression 'as' Type ')'
-Type        ::= 'any'
-                | 'bool'
-                | 'boolean'
-                | 'decimal'
-                | 'double'
-                | 'int'
-                | 'integer'
-                | 'number'
-                | 'scalar'
-                | 'string'
-                | 'text'
-                | 'unsigned'
-                | 'varchar' ('(' Length ')')?
-Insert      ::= 'insert into' Table ('(' Reference (',' Reference)* ')')? (Select | Values)
-Values      ::= 'values' '(' (Value (',' Value)*) ')' (',' '(' (Value (',' Value)*) ')')*
+                | INTEGER
+                | UNSIGNED
+                | DOUBLE
+                | DECIMAL
+                | STRING
+                | ROW
+CAST        ::= 'CAST' '(' expression 'AS' type ')'
+TYPE        ::= 'ANY'
+                | 'BOOL'
+                | 'BOOLEAN'
+                | 'DECIMAL'
+                | 'DOUBLE'
+                | 'INT'
+                | 'INTEGER'
+                | 'NUMBER'
+                | 'SCALAR'
+                | 'STRING'
+                | 'TEXT'
+                | 'UNSIGNED'
+                | 'VARCHAR' ('(' length ')')?
+INSERT      ::= 'INSERT' 'INTO' (table (',' table)*) ('(' reference (',' reference)* ')')?  VALUES '(' row ')'
+
+
+
