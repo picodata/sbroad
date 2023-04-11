@@ -1,19 +1,18 @@
 Query       ::= EXPLAIN* (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' | 'EXCEPT DISTINCT') SELECT  | INSERT)
 EXPLAIN     ::= 'SELECT'| 'INSERT'
-SELECT      ::= 'SELECT' (column (',' column)*) 'FROM' (table (',' table)* | SELECT) ('AS' alias)? ( ('INNER')? 'JOIN' (table | SELECT | VALUES) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' groupby )?
-VALUES      ::= 'VALUES' '(' (row (',' row)*) ')' 
-ROW         ::= '(' (value (',' value)*) ')' 
-COLUMN      ::= '*' | table '.' '*' | expression | expression 'AS' alias
-EXPRESSION  ::= expression 'OR' expression
+SELECT      ::= 'SELECT' ((column (',' column)*) | cast ) 'FROM' (table (',' table)* | SELECT) ('AS' alias)? ( ('INNER')? 'JOIN' (table | SELECT | VALUES) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression )?
+VALUES      ::= '(' (row (',' row)*) ')' 
+row         ::= '(' (value (',' value)*) ')' 
+column      ::= '*' | table '.' '*' | expression | expression 'AS' alias
+expression  ::= expression 'OR' expression
                | expression 'AND' expression
                | expression ('* | / | + | -| = | > | >= | < | <= | <> | <= | <> | != | IS NULL | IS NOT NULL') expression
                | expression 'BETWEEN' expression 'AND' expression
                | reference
                | SELECT
-               | VALUE
-GROUPBY     ::= concat | cast | function | reference
-REFERENCE   ::= ((table | '"' table '"') '.')? (alias | '"' alias '"')
-VALUE       ::= 'TRUE'
+               | value
+reference   ::= ((table | '"' table '"') '.')? (alias | '"' alias '"')
+value       ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
                 | '?'
@@ -22,9 +21,9 @@ VALUE       ::= 'TRUE'
                 | DOUBLE
                 | DECIMAL
                 | STRING
-                | ROW
-CAST        ::= 'CAST' '(' expression 'AS' type ')'
-TYPE        ::= 'ANY'
+                | row
+cast        ::= 'CAST' '(' expression 'AS' type ')'
+type        ::= 'ANY'
                 | 'BOOL'
                 | 'BOOLEAN'
                 | 'DECIMAL'
