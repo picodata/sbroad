@@ -1,17 +1,16 @@
-Query       ::= EXPLAIN* (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' | 'EXCEPT DISTINCT') SELECT  | INSERT)
-EXPLAIN     ::= 'SELECT'| 'INSERT'
-SELECT      ::= 'SELECT' ((column (',' column)*) | cast ) 'FROM' (table (',' table)* | SELECT) ('AS' alias)? ( ('INNER')? 'JOIN' (table | SELECT | VALUES) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression )?
-VALUES      ::= '(' (row (',' row)*) ')' 
-row         ::= '(' (value (',' value)*) ')' 
-column      ::= '*' | table '.' '*' | expression | expression 'AS' alias
-expression  ::= expression 'OR' expression
-               | expression 'AND' expression
-               | expression ('* | / | + | -| = | > | >= | < | <= | <> | <= | <> | != | IS NULL | IS NOT NULL') expression
+Query       ::= 'EXPLAIN'* ('SELECT' | 'SELECT' 'UNION ALL' 'SELECT' | 'SELECT' ('EXCEPT' | 'EXCEPT DISTINCT') 'SELECT'  | 'INSERT')
+SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table (',' table)* | 'SELECT') ('AS' alias)? ( ('INNER')? 'JOIN' (table | 'SELECT' | 'VALUES' row (',' row)*) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+row         ::= '(' (value (',' value)*) ')'
+column      ::= '*' | ('table' '.')? 'column_name' ('AS' alias)? |  'table' '.' '*' | expression ('AS' alias)?
+expression  ::= column_name
+               | 'CAST' '(' expression 'AS' type ')'
+               | expression ('IS NULL' | 'IS NOT NULL')
+               | expression ('OR | AND | * | / | + | -| = | > | >= | < | <= | <> | <= | <> | != ') expression
                | expression 'BETWEEN' expression 'AND' expression
                | reference
-               | SELECT
+               | 'SELECT'
                | value
-reference   ::= ((table | '"' table '"') '.')? (alias | '"' alias '"')
+reference   ::= (table '.')? (alias)
 value       ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
@@ -22,7 +21,6 @@ value       ::= 'TRUE'
                 | DECIMAL
                 | STRING
                 | row
-cast        ::= 'CAST' '(' expression 'AS' type ')'
 type        ::= 'ANY'
                 | 'BOOL'
                 | 'BOOLEAN'
@@ -36,7 +34,4 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
-INSERT      ::= 'INSERT' 'INTO' (table (',' table)*) ('(' reference (',' reference)* ')')?  VALUES '(' row ')'
-
-
-
+INSERT      ::= 'INSERT' 'INTO' table ('(' reference (',' reference)* ')')?  'VALUES' row
