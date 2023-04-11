@@ -627,6 +627,30 @@ g.test_distributivity = function()
     t.assert_not_equals(res.rows, res_all.rows)
 end
 
+g.test_arithmetic_in_parens = function()
+    local api = cluster:server("api-1").net_box
+
+    local without_parens, err = api:call("sbroad.execute", { [[
+        select "c" from "arithmetic_space" where "a" + "b" > 1
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            without_parens.metadata,
+            { {name = "c", type = "integer"} }
+    )
+
+    local with_parens, err = api:call("sbroad.execute", { [[
+        select "c" from "arithmetic_space" where ("a" + "b" > 1)
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            with_parens.metadata,
+            { {name = "c", type = "integer"} }
+    )
+
+    t.assert_items_equals(with_parens.rows, without_parens.rows)
+end
+
 g1.test_join_simple_arithmetic = function()
     local api = cluster:server("api-1").net_box
 
@@ -786,6 +810,40 @@ g1.test_projection_selection_join = function()
             r.rows[i][4]
         )
     end
+end
+
+g1.test_arithmetic_in_parens = function()
+    local api = cluster:server("api-1").net_box
+
+    local without_parens, err = api:call("sbroad.execute", { [[
+        select t1.a1, t2.a2 from (select "a" as a1 from "arithmetic_space") as t1
+        inner join (select "c" as a2 from "arithmetic_space2") as t2
+        on t1.a1 = t2.a2 * 2
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            without_parens.metadata,
+            {
+                {name = "T1.A1", type = "integer"},
+                {name = "T2.A2", type = "integer"},
+            }
+    )
+
+    local with_parens, err = api:call("sbroad.execute", { [[
+        select t1.a1, t2.a2 from (select "a" as a1 from "arithmetic_space") as t1
+        inner join (select "c" as a2 from "arithmetic_space2") as t2
+        on (t1.a1 = t2.a2 * 2)
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            with_parens.metadata,
+            {
+                {name = "T1.A1", type = "integer"},
+                {name = "T2.A2", type = "integer"},
+            }
+    )
+
+    t.assert_items_equals(with_parens.rows, without_parens.rows)
 end
 
 g2.test_alias = function()
@@ -1008,4 +1066,22 @@ g2.test_distributivity = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_not_equals(res_div.rows, res_div2.rows)
+end
+
+g2.test_arithmetic_in_parens = function()
+    local api = cluster:server("api-1").net_box
+
+    local without_parens, err = api:call("sbroad.execute", { [[select "a"+"b" from "arithmetic_space"]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            without_parens.metadata,
+            { {name = "COL_1", type = "integer"} }
+    )
+    local with_parens, err = api:call("sbroad.execute", { [[select ("a"+"b") from "arithmetic_space"]], {} })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+            with_parens.metadata,
+            { {name = "COL_1", type = "integer"} }
+    )
+    t.assert_items_equals(with_parens.rows, without_parens.rows)
 end

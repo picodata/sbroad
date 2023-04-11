@@ -857,7 +857,7 @@ groupby_queries.test_groupby_arith_expression = function()
 
     local r, err = api:call("sbroad.execute", {
         [[ SELECT ("a"*"b"*"c")*count("c")/(("a"*"b"*"c")*count("c")) as u from "arithmetic_space"
-        group by "a"*"b"*"c"]], {}
+        group by ("a"*"b"*"c")]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {

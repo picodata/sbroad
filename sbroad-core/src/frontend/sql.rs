@@ -945,6 +945,16 @@ impl Ast for AbstractSyntaxTree {
                     )?;
                     map.add(id, cond_id);
                 }
+                Type::ArithParentheses => {
+                    let ast_child_id = *node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::AST,
+                            Some(format!("ArithParentheses ({id}) have no child!")),
+                        )
+                    })?;
+                    let plan_child_id = map.get(ast_child_id)?;
+                    map.add(id, plan_child_id);
+                }
                 Type::Except => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Except has no children.".into())
@@ -1056,7 +1066,6 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::AliasName
                 | Type::Add
-                | Type::ArithParentheses
                 | Type::ColumnName
                 | Type::Divide
                 | Type::Distinct
