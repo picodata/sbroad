@@ -34,4 +34,4 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
-INSERT      ::= 'INSERT' 'INTO' table ('(' reference (',' reference)* ')')?  'VALUES' row
+INSERT      ::= 'INSERT' 'INTO' table ('(' column_name (',' column_name)* ')')?  'VALUES' row
