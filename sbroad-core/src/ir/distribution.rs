@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::collection;
-use crate::errors::{Entity, SbroadError};
+use crate::errors::{Action, Entity, SbroadError};
+use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::expression::Expression;
 use super::operator::Relational;
@@ -39,6 +40,27 @@ impl Key {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct KeySet(HashSet<Key>);
+
+impl TryFrom<&MotionKey> for KeySet {
+    type Error = SbroadError;
+
+    fn try_from(value: &MotionKey) -> Result<Self, Self::Error> {
+        let mut positions: Vec<usize> = Vec::with_capacity(value.targets.len());
+        for t in &value.targets {
+            match t {
+                Target::Reference(pos) => positions.push(*pos),
+                Target::Value(v) => {
+                    return Err(SbroadError::FailedTo(
+                        Action::Create,
+                        Some(Entity::DistributionKey),
+                        format!("found value target in motion key: {v}"),
+                    ))
+                }
+            }
+        }
+        Ok(HashSet::<Key>::from([Key::new(positions)]).into())
+    }
+}
 
 impl KeySet {
     pub fn iter(&self) -> impl Iterator<Item = &Key> {

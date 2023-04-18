@@ -148,6 +148,20 @@ fn inner_join2() {
 
 #[test]
 fn inner_join3() {
+    /*
+       test_space is sharded by ("id") pos: (0)
+       hash_testing & hash_testing_hist have the same columns and sharded
+       by (indentification_number, product_code) pos: (0, 1)
+
+       outer join child will have distribution Segment(0)
+       inner join child will have distribution Any
+       Motion for inner child will have policy Segment(0)
+       and motion distribution will be Segment(0)
+       then for join distribution we will have 2 keys:
+       outer child gives Key(0)
+       inner child gives Key(2) (shifted first column of inner child:
+       outer child have two columns)
+    */
     let query = r#"SELECT *
         FROM
             (SELECT "id", "FIRST_NAME"
@@ -194,7 +208,7 @@ fn inner_join3() {
     }
     let join = join_node.unwrap();
     let dist = plan.get_distribution(join.output()).unwrap();
-    let keys: HashSet<_> = collection! { Key::new(vec![0]) };
+    let keys: HashSet<_> = collection! { Key::new(vec![0]), Key::new(vec![2]) };
     assert_eq!(&Distribution::Segment { keys: keys.into() }, dist,);
 }
 

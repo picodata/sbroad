@@ -170,7 +170,11 @@ nodes:
         Row:
           list:
             - 28
-          distribution: Replicated
+          distribution:
+            Segment:
+              keys:
+                - positions:
+                    - 0
     - Relational:
         Motion:
           children:

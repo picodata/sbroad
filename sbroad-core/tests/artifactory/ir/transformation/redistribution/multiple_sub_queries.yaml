@@ -311,7 +311,11 @@ nodes:
         Row:
           list:
             - 52
-          distribution: Replicated
+          distribution:
+            Segment:
+              keys:
+                - positions:
+                    - 0
     - Relational:
         Motion:
           children:

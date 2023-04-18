@@ -849,6 +849,26 @@ impl Plan {
         };
 
         let output = self.add_row_for_output(child_id, &[], true)?;
+        match policy {
+            MotionPolicy::Local => {
+                return Err(SbroadError::Invalid(
+                    Entity::Motion,
+                    Some(format!(
+                        "add_motion: got MotionPolicy::Local for child_id: {child_id}"
+                    )),
+                ))
+            }
+            MotionPolicy::Segment(key) => {
+                if let Ok(keyset) = KeySet::try_from(key) {
+                    self.set_dist(output, Distribution::Segment { keys: keyset })?;
+                } else {
+                    self.set_dist(output, Distribution::Any)?;
+                }
+            }
+            MotionPolicy::Full => {
+                self.set_const_dist(output)?;
+            }
+        }
         self.set_const_dist(output)?;
         let motion = Relational::Motion {
             alias,

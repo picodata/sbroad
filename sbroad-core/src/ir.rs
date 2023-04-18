@@ -345,6 +345,18 @@ impl Plan {
         Ok(plan)
     }
 
+    /// Helper function for writing tests with yaml
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when serde failed to serialize the plan.
+    pub fn to_yaml(&self) -> Result<String, SbroadError> {
+        let s = match serde_yaml::to_string(self) {
+            Ok(s) => s,
+            Err(e) => return Err(SbroadError::Invalid(Entity::Plan, Some(e.to_string()))),
+        };
+        Ok(s)
+    }
+
     /// Get relational node and produce a new row without aliases from its output (row with aliases).
     ///
     /// # Errors
