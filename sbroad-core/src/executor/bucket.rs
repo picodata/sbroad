@@ -22,6 +22,8 @@ pub enum Buckets {
     All,
     // A filtered set of buckets.
     Filtered(HashSet<u64, RepeatableState>),
+    // Execute query only on a single node
+    Single,
 }
 
 impl Buckets {
@@ -43,10 +45,20 @@ impl Buckets {
         Buckets::Filtered(buckets)
     }
 
-    /// Disjunction of two sets of buckets.
-    #[must_use]
-    pub fn conjuct(&self, buckets: &Buckets) -> Buckets {
-        match (self, buckets) {
+    /// Conjuction of two sets of buckets.
+    ///
+    /// # Errors
+    /// - Buckets that can't be conjucted
+    pub fn conjuct(&self, buckets: &Buckets) -> Result<Buckets, SbroadError> {
+        let buckets = match (self, buckets) {
+            // We have Buckets::Single only for motion subtree root, we do not have any leafs
+            // or internal nodes that produce Buckets::Single
+            (Buckets::Single, _) | (_, Buckets::Single) => {
+                return Err(SbroadError::Unsupported(
+                    Entity::Buckets,
+                    Some("can't conjuct Buckets::Single".into()),
+                ))
+            }
             (Buckets::All, Buckets::All) => Buckets::All,
             (Buckets::Filtered(b), Buckets::All) | (Buckets::All, Buckets::Filtered(b)) => {
                 Buckets::Filtered(b.clone())
@@ -54,18 +66,30 @@ impl Buckets {
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
                 Buckets::Filtered(a.intersection(b).copied().collect())
             }
-        }
+        };
+        Ok(buckets)
     }
 
-    /// Conjunction of two sets of buckets.
-    #[must_use]
-    pub fn disjunct(&self, buckets: &Buckets) -> Buckets {
-        match (self, buckets) {
+    /// Disjunction of two sets of buckets.
+    ///
+    /// # Errors
+    /// - Buckets that can't be disjuncted
+    pub fn disjunct(&self, buckets: &Buckets) -> Result<Buckets, SbroadError> {
+        let buckets = match (self, buckets) {
+            // Buckets::Single is only possible for a motion subtree root, we don't have leafs
+            // or any internal nodes that produce Buckets::Single
+            (Buckets::Single, _) | (_, Buckets::Single) => {
+                return Err(SbroadError::Unsupported(
+                    Entity::Buckets,
+                    Some("can't disjunct Buckets::Single".into()),
+                ))
+            }
             (Buckets::All, _) | (_, Buckets::All) => Buckets::All,
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
                 Buckets::Filtered(a.union(b).copied().collect())
             }
-        }
+        };
+        Ok(buckets)
     }
 }
 
@@ -170,7 +194,7 @@ where
         } else {
             Ok(buckets
                 .into_iter()
-                .fold(Buckets::new_all(), |a, b| a.conjuct(&b)))
+                .fold(Ok(Buckets::new_all()), |a, b| a?.conjuct(&b)))?
         }
     }
 
@@ -185,14 +209,14 @@ where
             // We need to pop back the chain to get nodes in the bottom-up order.
             while let Some(node_id) = nodes.pop_back() {
                 let node_buckets = self.get_buckets_from_expr(node_id)?;
-                chain_buckets = chain_buckets.conjuct(&node_buckets);
+                chain_buckets = chain_buckets.conjuct(&node_buckets)?;
             }
             result.push(chain_buckets);
         }
 
         if let Some((first, other)) = result.split_first_mut() {
             for buckets in other {
-                *first = first.disjunct(buckets);
+                *first = first.disjunct(buckets)?;
             }
             return Ok(first.clone());
         }
@@ -209,6 +233,22 @@ where
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("query.bucket.discovery")]
     pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, SbroadError> {
+        // if top's output has Distribution::Single then the whole subtree must executed only on
+        // a single node, no need to traverse the subtree
+        let top_output_id = self.exec_plan.get_ir_plan().get_relational_output(top_id)?;
+        if let Expression::Row {
+            distribution: Some(dist),
+            ..
+        } = self
+            .exec_plan
+            .get_ir_plan()
+            .get_expression_node(top_output_id)?
+        {
+            if *dist == Distribution::Single {
+                return Ok(Buckets::Single);
+            }
+        }
+
         let ir_plan = self.exec_plan.get_ir_plan();
         // We use a `subtree_iter()` because we need DNF version of the filter/condition
         // expressions to determine buckets.
@@ -345,7 +385,7 @@ where
                                         .to_string(),
                                 )
                             })?;
-                        let buckets = first_buckets.disjunct(second_buckets);
+                        let buckets = first_buckets.disjunct(second_buckets)?;
                         self.bucket_map.insert(*output, buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
@@ -382,7 +422,7 @@ where
                     let filter_id = *filter;
                     let filter_buckets = self.get_expression_tree_buckets(filter_id)?;
                     self.bucket_map
-                        .insert(output_id, child_buckets.conjuct(&filter_buckets));
+                        .insert(output_id, child_buckets.conjuct(&filter_buckets)?);
                 }
                 Relational::InnerJoin {
                     children,
@@ -423,8 +463,8 @@ where
                         self.bucket_map.insert(
                             output_id,
                             inner_buckets
-                                .disjunct(&outer_buckets)
-                                .conjuct(&filter_buckets),
+                                .disjunct(&outer_buckets)?
+                                .conjuct(&filter_buckets)?,
                         );
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(

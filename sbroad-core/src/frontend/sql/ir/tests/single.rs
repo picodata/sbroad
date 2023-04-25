@@ -1,0 +1,364 @@
+use crate::ir::operator::Relational;
+use crate::ir::transformation::helpers::sql_to_optimized_ir;
+use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
+use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
+use crate::ir::Plan;
+
+/// Helper struct equivalent to `MotionPolicy`
+/// that allows to be created more easily with more readability.
+///
+/// It is intended only for testing purposes.
+#[derive(PartialEq, Eq, Debug)]
+enum Policy {
+    Local,
+    Full,
+    Segment(Vec<String>),
+}
+
+impl Policy {
+    fn new_seg(targets: &[&str]) -> Policy {
+        Policy::Segment(
+            targets
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>(),
+        )
+    }
+}
+
+impl Plan {
+    fn to_test_motion(&self, node_id: usize) -> Policy {
+        let node = self.get_relation_node(node_id).unwrap();
+        let policy = match node {
+            Relational::Motion { policy, .. } => match policy {
+                MotionPolicy::Full => Policy::Full,
+                MotionPolicy::Local => Policy::Local,
+                MotionPolicy::Segment(MotionKey { targets }) => {
+                    let mut new_targets: Vec<String> = Vec::with_capacity(targets.len());
+                    let aliases = self.get_relational_aliases(node_id).unwrap();
+                    for t in targets {
+                        match t {
+                            Target::Reference(position) => {
+                                let a = aliases.get(*position).unwrap();
+                                let striped_alias = if let Some(s) = a.strip_prefix("\"") {
+                                    if let Some(ss) = s.strip_suffix("\"") {
+                                        ss.to_string()
+                                    } else {
+                                        a.to_string()
+                                    }
+                                } else {
+                                    a.to_string()
+                                };
+                                new_targets.push(striped_alias);
+                            }
+                            Target::Value(value) => new_targets.push(value.to_string()),
+                        }
+                    }
+                    Policy::Segment(new_targets)
+                }
+            },
+            _ => Policy::Local,
+        };
+        policy
+    }
+}
+
+fn check_join_motions(
+    sql: &str,
+    left_expected: Policy,
+    right_expected: Policy,
+    sq_policies: Option<Vec<Policy>>,
+) {
+    let plan = sql_to_optimized_ir(sql, vec![]);
+    let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), REL_CAPACITY);
+    let (_, join_id) = dfs
+        .iter(plan.get_top().unwrap())
+        .find(|(_, n)| -> bool {
+            let rel = plan.get_relation_node(*n).unwrap();
+            matches!(rel, Relational::InnerJoin { .. })
+        })
+        .unwrap();
+    let (left_id, right_id, sq_nodes_ids) = {
+        let children = plan.get_relational_children(join_id).unwrap().unwrap();
+        (children[0], children[1], children.split_at(2).1)
+    };
+    let (left_actual, right_actual) = (plan.to_test_motion(left_id), plan.to_test_motion(right_id));
+    assert_eq!(left_expected, left_actual);
+    assert_eq!(right_expected, right_actual);
+    if let Some(expected_sq_policies) = sq_policies {
+        let actual_sq_policies = sq_nodes_ids
+            .iter()
+            .map(|x| plan.to_test_motion(*x))
+            .collect::<Vec<Policy>>();
+        assert_eq!(expected_sq_policies, actual_sq_policies);
+    }
+}
+
+#[test]
+fn front_sql_join_single_both_1() {
+    let input = r#"SELECT * from (select sum("a") as a from "t") as o 
+        inner join (select count("b") as b from "t") as i
+        on o.a = i.b
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["B"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_2() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and o.b = i.c
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_3() {
+    let inputs = [
+        r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and o.b = i.d"#,
+        r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, o.b) = (i.c, i.d)"#,
+        r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, i.d) = (i.c, o.b)"#,
+    ];
+
+    for input in inputs {
+        check_join_motions(
+            input,
+            Policy::new_seg(&["A", "B"]),
+            Policy::new_seg(&["C", "D"]),
+            None,
+        );
+    }
+}
+
+#[test]
+fn front_sql_join_single_both_4() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and o.b < i.d
+    "#;
+
+    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+}
+
+#[test]
+fn front_sql_join_single_both_5() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on cast(o.a as number) = i.c
+    "#;
+
+    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+}
+
+#[test]
+fn front_sql_join_single_both_6() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and i.c = 1
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_7() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and i.c + i.d = 2
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_8() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c and i.c < 2
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_9() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on o.a = i.c or i.c < 2
+    "#;
+
+    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+}
+
+#[test]
+fn front_sql_join_single_both_10() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, o.a) = (i.c, i.d)
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_11() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, o.a) = (i.c, i.d)
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::new_seg(&["C"]),
+        None,
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_12() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, o.a) = (i.c, i.d) or i.c in (select "a" as q from "t")
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::Full,
+        Policy::new_seg(&["C"]),
+        Some(vec![Policy::Full]),
+    );
+}
+
+#[test]
+fn front_sql_join_single_both_13() {
+    let input = r#"
+            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, "d" + 4 as d from "t") as i
+            inner join (select sum("a") as a, count("b") as b from "t") as o
+            on o.a = i.d or o.b = i.c and i.c in (select "a" from "t")
+            where o.a > 5
+    "#;
+
+    check_join_motions(input, Policy::Local, Policy::Full, Some(vec![Policy::Full]));
+}
+
+#[test]
+fn front_sql_join_single_both_14() {
+    let input = r#"
+            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, "d" + 4 as d from "t") as i
+            inner join (select sum("a") as a, count("b") as b from "t") as o
+            on o.a = i.d or o.b = i.c and i.c in (select sum("a") from "t")
+    "#;
+
+    check_join_motions(input, Policy::Local, Policy::Full, Some(vec![Policy::Full]));
+}
+
+#[test]
+fn front_sql_join_single_left_1() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select "b" as c, "d" as d from "t") as i
+        on (o.a, o.a) = (i.c, i.d)
+    "#;
+
+    check_join_motions(input, Policy::Full, Policy::Local, None);
+}
+
+#[test]
+fn front_sql_join_single_left_2() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select "a" as c, "b" as d from "t") as i
+        on (o.a, o.b) = (i.c, i.d)
+    "#;
+
+    check_join_motions(input, Policy::new_seg(&["A", "B"]), Policy::Local, None);
+}
+
+#[test]
+fn front_sql_join_single_left_3() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select "a" as c, "b" as d from "t") as i
+        on (o.a, o.b) = (cast(i.c as number), i.d)
+    "#;
+
+    check_join_motions(input, Policy::Full, Policy::Local, None);
+}
+
+#[test]
+fn front_sql_join_single_left_4() {
+    // Inner child here will have distribution Segment, while outer child will have
+    // Distribution::Single
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select "a" as c, "b" as d from "t" group by "a", "b") as i
+        on (o.a, o.b) = (i.c, i.d) and o.a in (select "a" from "t")
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A", "B"]),
+        Policy::Local,
+        Some(vec![Policy::Full]),
+    );
+}
+
+#[test]
+fn front_sql_join_single_left_5() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join "test_space" as i
+        on o.a = i."id" and (i."sysFrom" = i."sys_op" and o.a = cast(o.a as number) + 1)
+    "#;
+
+    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Local, None);
+}
+
+#[test]
+fn front_sql_join_single_left_6() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join "test_space" as i
+        on o.a = i."id" and o.a in (select sum("a") from "t")
+    "#;
+
+    check_join_motions(
+        input,
+        Policy::new_seg(&["A"]),
+        Policy::Local,
+        Some(vec![Policy::Full]),
+    );
+}

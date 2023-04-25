@@ -148,7 +148,7 @@ impl VirtualTable {
     #[must_use]
     pub fn get_tuples_with_buckets(&self, buckets: &Buckets) -> Vec<&VTableTuple> {
         let tuples: Vec<&VTableTuple> = match buckets {
-            Buckets::All => self.get_tuples().iter().collect(),
+            Buckets::All | Buckets::Single => self.get_tuples().iter().collect(),
             Buckets::Filtered(bucket_ids) => {
                 if self.get_index().is_empty() {
                     // TODO: Implement selection push-down (join_linker3_test).

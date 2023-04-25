@@ -112,7 +112,10 @@ fn projection() {
 
     // Expression node instead of relational one
     assert_eq!(
-        SbroadError::Invalid(Entity::Node, Some("node is not Relational type".into())),
+        SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not Relational type: Expression(Alias { name: \"a\", child: 0 })".into())
+        ),
         plan.add_proj(1, &["a"]).unwrap_err()
     );
 
@@ -395,7 +398,10 @@ fn sub_query() {
     // Non-relational child node
     let a = 1;
     assert_eq!(
-        SbroadError::Invalid(Entity::Node, Some("node is not Relational type".into())),
+        SbroadError::Invalid(
+            Entity::Node,
+            Some("node is not Relational type: Expression(Alias { name: \"a\", child: 0 })".into())
+        ),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
 }

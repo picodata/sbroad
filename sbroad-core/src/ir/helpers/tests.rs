@@ -146,7 +146,7 @@ fn simple_join() {
 		Child_id = 19
 		Child_id = 61
 	Output_id: 49
-		[id: 49] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }, Key { positions: [1] }}) })]
+		[id: 49] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [1] }, Key { positions: [0] }}) })]
 			List:
 				[id: 46] expression: Alias [name = "id", child = Reference { parent: Some(50), targets: Some([0]), position: 0 }]
 				[id: 48] expression: Alias [name = "identification_number", child = Reference { parent: Some(50), targets: Some([1]), position: 0 }]
@@ -267,51 +267,51 @@ fn simple_aggregation_with_group_by() {
 				[id: 22] expression: Alias [name = "bucket_id", child = Reference { parent: Some(24), targets: Some([0]), position: 4 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 29] relation: Projection
+[id: 31] relation: Projection
 	Children:
 		Child_id = 24
-	Output_id: 28
-		[id: 28] expression: Row [distribution = Some(Any)]
+	Output_id: 30
+		[id: 30] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 27] expression: Alias [name = "column_12", child = Reference { parent: Some(24), targets: Some([0]), position: 1 }]
+				[id: 29] expression: Alias [name = "column_12", child = Reference { parent: Some(24), targets: Some([0]), position: 1 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 33] relation: ScanSubQuery
+[id: 35] relation: ScanSubQuery
 	Children:
-		Child_id = 29
-	Output_id: 32
-		[id: 32] expression: Row [distribution = Some(Any)]
+		Child_id = 31
+	Output_id: 34
+		[id: 34] expression: Row [distribution = Some(Any)]
 			List:
-				[id: 31] expression: Alias [name = "column_12", child = Reference { parent: Some(33), targets: Some([0]), position: 0 }]
+				[id: 33] expression: Alias [name = "column_12", child = Reference { parent: Some(35), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 45] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
+[id: 44] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
 	Children:
-		Child_id = 33
-	Output_id: 44
-		[id: 44] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
+		Child_id = 35
+	Output_id: 43
+		[id: 43] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 43] expression: Alias [name = "column_12", child = Reference { parent: Some(45), targets: Some([0]), position: 0 }]
+				[id: 42] expression: Alias [name = "column_12", child = Reference { parent: Some(44), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 38] relation: GroupBy [is_final = true]
+[id: 40] relation: GroupBy [is_final = true]
 	Gr_cols:
-		Gr_col: Reference { parent: Some(38), targets: Some([0]), position: 0 }
+		Gr_col: Reference { parent: Some(40), targets: Some([0]), position: 0 }
 	Children:
-		Child_id = 45
-	Output_id: 37
-		[id: 37] expression: Row [distribution = Some(Any)]
+		Child_id = 44
+	Output_id: 39
+		[id: 39] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 36] expression: Alias [name = "column_12", child = Reference { parent: Some(38), targets: Some([0]), position: 0 }]
+				[id: 38] expression: Alias [name = "column_12", child = Reference { parent: Some(40), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 41] relation: Projection
+[id: 28] relation: Projection
 	Children:
-		Child_id = 38
-	Output_id: 40
-		[id: 40] expression: Row [distribution = Some(Any)]
+		Child_id = 40
+	Output_id: 27
+		[id: 27] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 26] expression: Alias [name = "product_code", child = Reference { parent: Some(41), targets: Some([0]), position: 0 }]
+				[id: 26] expression: Alias [name = "product_code", child = Reference { parent: Some(28), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 "#);
 

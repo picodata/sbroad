@@ -1,5 +1,7 @@
 use super::*;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::transformation::helpers::sql_to_optimized_ir;
+use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -149,6 +151,44 @@ fn proj_shrink_dist_key_2() {
     assert_eq!(
         &Distribution::Any,
         plan.get_distribution(proj_output).unwrap()
+    );
+}
+
+#[test]
+fn projection_any_dist_for_expr() {
+    let input = r#"select count("id") FROM "test_space""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    // check explain first
+    let expected_explain = String::from(
+        r#"projection (sum(("count_13")) -> "COL_1")
+    motion [policy: full]
+        scan 
+            projection (count(("test_space"."id")) -> "count_13")
+                scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+
+    // check that local Projection has Distribution::Any
+    let local_proj_id = {
+        let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), REL_CAPACITY);
+        dfs.iter(plan.top.unwrap())
+            .find(|(_, x)| {
+                matches!(
+                    plan.get_relation_node(*x).unwrap(),
+                    Relational::Projection { .. }
+                )
+            })
+            .unwrap()
+            .1
+    };
+    assert_eq!(
+        &Distribution::Any,
+        plan.get_distribution(plan.get_relational_output(local_proj_id).unwrap())
+            .unwrap()
     );
 }
 

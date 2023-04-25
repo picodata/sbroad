@@ -163,6 +163,21 @@ pub fn dispatch(
 
     match buckets {
         Buckets::Filtered(_) => runtime.exec_ir_on_some(sub_plan, buckets),
+        Buckets::Single => {
+            // Check that all vtables don't have index. Because if they do,
+            // they will be filtered later by filter_vtable
+            if let Some(vtables) = &sub_plan.vtables {
+                for (motion_id, vtable) in vtables.map() {
+                    if !vtable.get_index().is_empty() {
+                        return Err(SbroadError::Invalid(
+                                Entity::Motion,
+                                Some(format!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!"))
+                            ));
+                    }
+                }
+            }
+            runtime.exec_ir_on_some(sub_plan, &runtime.get_random_bucket())
+        }
         Buckets::All => {
             if sub_plan.has_segmented_tables() {
                 let bucket_set: HashSet<u64, RepeatableState> =

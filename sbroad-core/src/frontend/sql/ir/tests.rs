@@ -404,10 +404,10 @@ fn front_sql_groupby_less_cols_in_proj() {
 
     let expected_explain = String::from(
         r#"projection ("column_12" -> "identification_number")
-    group by ("column_12") output: ("column_12" -> "column_12")
-        motion [policy: segment([ref("column_12")])]
+    group by ("column_12", "column_13") output: ("column_12" -> "column_12", "column_13" -> "column_13")
+        motion [policy: segment([ref("column_12"), ref("column_13")])]
             scan 
-                projection ("hash_testing"."identification_number" -> "column_12")
+                projection ("hash_testing"."identification_number" -> "column_12", "hash_testing"."product_units" -> "column_13")
                     group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                         scan "hash_testing"
 "#,
@@ -537,9 +537,10 @@ fn front_sql_groupby_invalid() {
 
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(input).unwrap();
-    let plan = ast.resolve_metadata(metadata);
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    let res = plan.optimize();
 
-    assert_eq!(true, plan.is_err());
+    assert_eq!(true, res.is_err());
 }
 
 #[test]
@@ -643,14 +644,282 @@ fn front_sql_aggregates_with_distinct2() {
 }
 
 #[test]
+fn front_sql_aggregates_with_distinct3() {
+    let input = r#"SELECT sum(distinct "a" + "b" + 3) FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (sum(distinct ("sum_20")) -> "COL_1")
+    motion [policy: full]
+        scan 
+            projection (("t"."a") + ("t"."b") + (3) -> "sum_20")
+                group by (("t"."a") + ("t"."b") + (3)) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_aggregate_inside_aggregate() {
     let input = r#"select "b", count(sum("a")) from "t" group by "b""#;
 
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast.resolve_metadata(metadata).unwrap_err();
+    let err = ast
+        .resolve_metadata(metadata)
+        .unwrap()
+        .optimize()
+        .unwrap_err();
 
     assert_eq!("invalid query: aggregate function inside aggregate function is not allowed. Got `sum` inside `count`", err.to_string());
+}
+
+#[test]
+fn front_sql_aggregate_without_groupby() {
+    let input = r#"SELECT sum("a" * "b" + 1) FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (sum(("sum_20")) -> "COL_1")
+    motion [policy: full]
+        scan 
+            projection (sum((("t"."a") * ("t"."b") + (1))) -> "sum_20")
+                scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_aggregate_without_groupby2() {
+    let input = r#"SELECT * FROM (SELECT count("id") FROM "test_space") as "t1""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t1"."COL_1" -> "COL_1")
+    scan "t1"
+        projection (sum(("count_13")) -> "COL_1")
+            motion [policy: full]
+                scan 
+                    projection (count(("test_space"."id")) -> "count_13")
+                        scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_union_single_left() {
+    let input = r#"
+        SELECT "a" FROM "t"
+        UNION ALL
+        SELECT sum("a") FROM "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"union all
+    projection ("t"."a" -> "a")
+        scan "t"
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_29")) -> "COL_1")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_29")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_union_single_right() {
+    let input = r#"
+        SELECT sum("a") FROM "t"
+        UNION ALL
+        SELECT "a" FROM "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"union all
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_13")) -> "COL_1")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_13")
+                        scan "t"
+    projection ("t"."a" -> "a")
+        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_union_single_both() {
+    let input = r#"
+        SELECT sum("a") FROM "t"
+        UNION ALL
+        SELECT sum("a") FROM "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"union all
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_13")) -> "COL_1")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_13")
+                        scan "t"
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_30")) -> "COL_1")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_30")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_single() {
+    let input = r#"INSERT INTO "t" ("a", "c") SELECT sum("b"), count("d") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"insert "t"
+    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
+        scan
+            projection ("COL_1"::unsigned -> COL_0, "COL_2"::unsigned -> COL_1)
+                scan
+                    motion [policy: segment([ref("COL_1"), value(NULL)])]
+                        projection (sum(("sum_25")) -> "COL_1", sum(("count_28")) -> "COL_2")
+                            motion [policy: full]
+                                scan 
+                                    projection (sum(("t"."b")) -> "sum_25", count(("t"."d")) -> "count_28")
+                                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_except_single_right() {
+    let input = r#"SELECT "a", "b" from "t" 
+        EXCEPT
+        SELECT sum("a"), count("b") from "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("t"."a" -> "a", "t"."b" -> "b")
+        scan "t"
+    motion [policy: segment([ref("COL_1"), ref("COL_2")])]
+        projection (sum(("sum_31")) -> "COL_1", sum(("count_34")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_31", count(("t"."b")) -> "count_34")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+
+    let input = r#"SELECT "b", "a" from "t" 
+        EXCEPT
+        SELECT sum("a"), count("b") from "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("t"."b" -> "b", "t"."a" -> "a")
+        scan "t"
+    motion [policy: segment([ref("COL_2"), ref("COL_1")])]
+        projection (sum(("sum_31")) -> "COL_1", sum(("count_34")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_31", count(("t"."b")) -> "count_34")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_except_single_left() {
+    let input = r#"SELECT sum("a"), count("b") from "t" 
+        EXCEPT
+        SELECT "a", "b" from "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    motion [policy: segment([ref("COL_1"), ref("COL_2")])]
+        projection (sum(("sum_13")) -> "COL_1", sum(("count_16")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_13", count(("t"."b")) -> "count_16")
+                        scan "t"
+    projection ("t"."a" -> "a", "t"."b" -> "b")
+        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_except_single_both() {
+    let input = r#"SELECT sum("a"), count("b") from "t" 
+        EXCEPT
+        SELECT sum("a"), sum("b") from "t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_13")) -> "COL_1", sum(("count_16")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_13", count(("t"."b")) -> "count_16")
+                        scan "t"
+    motion [policy: segment([ref("COL_1")])]
+        projection (sum(("sum_33")) -> "COL_1", sum(("sum_36")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."a")) -> "sum_33", sum(("t"."b")) -> "sum_36")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
 #[test]
@@ -677,7 +946,7 @@ fn front_sql_groupby_expression() {
 #[test]
 fn front_sql_groupby_expression2() {
     let input = r#"SELECT ("a"+"b") + count("a") FROM "t"
-        group by "a"+"b""#;
+        group by ("a"+"b")"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
@@ -686,8 +955,8 @@ fn front_sql_groupby_expression2() {
     group by ("column_16") output: ("column_16" -> "column_16", "count_35" -> "count_35")
         motion [policy: segment([ref("column_16")])]
             scan 
-                projection (("t"."a") + ("t"."b") -> "column_16", count(("t"."a")) -> "count_35")
-                    group by (("t"."a") + ("t"."b")) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                projection ((("t"."a") + ("t"."b")) -> "column_16", count(("t"."a")) -> "count_35")
+                    group by ((("t"."a") + ("t"."b"))) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
     );
@@ -698,17 +967,18 @@ fn front_sql_groupby_expression2() {
 #[test]
 fn front_sql_groupby_expression3() {
     let input = r#"SELECT "a"+"b", ("c"*"d")*sum("c"*"d")/count("a"*"b") FROM "t"
-        group by "a"+"b", "a"+"b", "c"*"d""#;
+        group by "a"+"b", "a"+"b", ("c"*"d")"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
+    // todo(ars): remove duplicate grouping expressions
     let expected_explain = String::from(
         r#"projection ("column_16" -> "COL_1", "column_26" * (sum(("sum_55"))) / (sum(("count_61"))) -> "COL_2")
-    group by ("column_16", "column_26") output: ("column_16" -> "column_16", "column_26" -> "column_26", "sum_55" -> "sum_55", "count_61" -> "count_61")
-        motion [policy: segment([ref("column_16"), ref("column_26")])]
+    group by ("column_16", "column_21", "column_26") output: ("column_16" -> "column_16", "column_21" -> "column_21", "column_26" -> "column_26", "sum_55" -> "sum_55", "count_61" -> "count_61")
+        motion [policy: segment([ref("column_16"), ref("column_21"), ref("column_26")])]
             scan 
-                projection (("t"."a") + ("t"."b") -> "column_16", ("t"."c") * ("t"."d") -> "column_26", sum((("t"."c") * ("t"."d"))) -> "sum_55", count((("t"."a") * ("t"."b"))) -> "count_61")
-                    group by (("t"."a") + ("t"."b"), ("t"."a") + ("t"."b"), ("t"."c") * ("t"."d")) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                projection (("t"."a") + ("t"."b") -> "column_16", ("t"."a") + ("t"."b") -> "column_21", (("t"."c") * ("t"."d")) -> "column_26", sum((("t"."c") * ("t"."d"))) -> "sum_55", count((("t"."a") * ("t"."b"))) -> "count_61")
+                    group by (("t"."a") + ("t"."b"), ("t"."a") + ("t"."b"), (("t"."c") * ("t"."d"))) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
     );
@@ -730,6 +1000,73 @@ fn front_sql_groupby_expression4() {
                 projection (("t"."a") + ("t"."b") -> "column_16", "t"."a" -> "column_17")
                     group by (("t"."a") + ("t"."b"), "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_with_aggregates() {
+    let input = r#"
+        select * from (select "a", "b", sum("c") as "c" from "t" group by "a", "b") as t1
+        join (select "g", "e", sum("f") as "f" from "t2" group by "g", "e") as t2
+        on (t1."a", t2."g") = (t2."e", t1."b")"#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T1"."a" -> "a", "T1"."b" -> "b", "T1"."c" -> "c", "T2"."g" -> "g", "T2"."e" -> "e", "T2"."f" -> "f")
+    join on ROW("T1"."a", "T2"."g") = ROW("T2"."e", "T1"."b")
+        scan "T1"
+            projection ("column_12" -> "a", "column_13" -> "b", sum(("sum_31")) -> "c")
+                group by ("column_12", "column_13") output: ("column_12" -> "column_12", "column_13" -> "column_13", "sum_31" -> "sum_31")
+                    motion [policy: segment([ref("column_12"), ref("column_13")])]
+                        scan 
+                            projection ("t"."a" -> "column_12", "t"."b" -> "column_13", sum(("t"."c")) -> "sum_31")
+                                group by ("t"."a", "t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                                    scan "t"
+        motion [policy: full]
+            scan "T2"
+                projection ("column_55" -> "g", "column_56" -> "e", sum(("sum_74")) -> "f")
+                    group by ("column_55", "column_56") output: ("column_55" -> "column_55", "column_56" -> "column_56", "sum_74" -> "sum_74")
+                        motion [policy: segment([ref("column_55"), ref("column_56")])]
+                            scan 
+                                projection ("t2"."g" -> "column_55", "t2"."e" -> "column_56", sum(("t2"."f")) -> "sum_74")
+                                    group by ("t2"."g", "t2"."e") output: ("t2"."e" -> "e", "t2"."f" -> "f", "t2"."g" -> "g", "t2"."h" -> "h", "t2"."bucket_id" -> "bucket_id")
+                                        scan "t2"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_multiple_motions_in_condition_row() {
+    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+        inner join (select count("b") as c, count("d") as d from "t") as i
+        on (o.a, i.d) = (i.c, o.a) and i.c < i.d
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("O"."A" -> "A", "O"."B" -> "B", "I"."C" -> "C", "I"."D" -> "D")
+    join on ROW("O"."A", "I"."D") = ROW("I"."C", "O"."A") and ROW("I"."C") < ROW("I"."D")
+        motion [policy: segment([ref("A")])]
+            scan "O"
+                projection (sum(("sum_13")) -> "A", sum(("sum_16")) -> "B")
+                    motion [policy: full]
+                        scan 
+                            projection (sum(("t"."a")) -> "sum_13", sum(("t"."b")) -> "sum_16")
+                                scan "t"
+        motion [policy: segment([ref("C")])]
+            scan "I"
+                projection (sum(("count_39")) -> "C", sum(("count_42")) -> "D")
+                    motion [policy: full]
+                        scan 
+                            projection (count(("t"."b")) -> "count_39", count(("t"."d")) -> "count_42")
+                                scan "t"
 "#,
     );
 
@@ -766,3 +1103,4 @@ motion [policy: full]
 
 #[cfg(test)]
 mod params;
+mod single;

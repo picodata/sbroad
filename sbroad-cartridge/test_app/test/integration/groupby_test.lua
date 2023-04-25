@@ -676,6 +676,26 @@ groupby_queries.test_with_subquery_2 = function ()
     })
 end
 
+groupby_queries.test_less_cols_in_proj = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+            SELECT "c" FROM "arithmetic_space"
+            GROUP BY "c", "d"
+        ]], {}
+    })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "c", type = "integer" },
+    })
+
+    t.assert_items_equals(r.rows, {
+        { 1 }, { 1 }
+    })
+end
+
 groupby_queries.test_with_subquery_3 = function ()
     local api = cluster:server("api-1").net_box
 
@@ -754,7 +774,7 @@ groupby_queries.test_complex_2 = function ()
                 WHERE "id" = ? or "b" = ?
                 GROUP BY "c"
                 EXCEPT
-                (SELECT "a" FROM "arithmetic_space" GROUP BY "a"))
+                SELECT "a" FROM "arithmetic_space" GROUP BY "a")
         )
         ]], {2, 1}
     })
@@ -838,12 +858,6 @@ end
 
 groupby_queries.test_aggr_invalid = function()
     local api = cluster:server("api-1").net_box
-
-    -- Currently only aggregates with groupby clause are supported
-    local _, err = api:call("sbroad.execute", {
-        [[ SELECT "d", count("e" + "d") from "arithmetic_space"]], {}
-    })
-    t.assert_str_contains(tostring(err), "not supported")
 
     -- Aggregate function inside aggregate function makes no sense
     local _, err = api:call("sbroad.execute", {
@@ -932,6 +946,17 @@ groupby_queries.test_aggr_valid = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", {
+        [[ SELECT sum("e" + "d") from "arithmetic_space"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 14 },
+    })
+
+    r, err = api:call("sbroad.execute", {
         [[ SELECT "d", count("e" + "d") from "arithmetic_space" group by "d"]], {}
     })
     t.assert_equals(err, nil)
@@ -1023,6 +1048,288 @@ groupby_queries.test_aggr_valid = function()
     })
 end
 
+groupby_queries.test_union_single = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+            SELECT count("e") from (SELECT "e" from "arithmetic_space"
+            GROUP BY "e"
+            UNION ALL
+            select * from (SELECT sum("e" + "d") from "arithmetic_space"
+            UNION ALL
+            SELECT sum("e") from "arithmetic_space"))
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 3 },
+    })
+end
+
+groupby_queries.test_except_single = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+            SELECT "e" from "arithmetic_space"
+            GROUP BY "e"
+            EXCEPT
+            SELECT * from (
+            SELECT sum("e" + "d") from "arithmetic_space"
+            EXCEPT
+            SELECT sum("e") from "arithmetic_space")
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "e", type = "integer" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 2 },
+    })
+    r, err = api:call("sbroad.execute", {
+        [[
+            SELECT "e" from "arithmetic_space"
+            GROUP BY "e"
+            EXCEPT
+            SELECT sum("e" + "d") from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "e", type = "integer" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 2 },
+    })
+    r, err = api:call("sbroad.execute", {
+        [[
+            SELECT sum("e" + "d") from "arithmetic_space"
+            EXCEPT
+            SELECT "e" from "arithmetic_space"
+            WHERE "id" > 2
+            GROUP BY "e"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 14 },
+    })
+end
+
+groupby_queries.test_join_single1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b from (select sum("a") as a, sum("b") as b from "arithmetic_space") as o
+            inner join (select sum("a") as c, sum("b") as d from "arithmetic_space") as i
+            on (o.a, o.b) = (i.c, i.d)
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 9 },
+    })
+end
+
+groupby_queries.test_join_single2 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b from (select sum("a") as a, sum("b") as b from "arithmetic_space") as o
+            inner join (select sum("a") as c, sum("b") as d from "arithmetic_space") as i
+            on o.a = i.c and o.b = i.d or o.a = 1
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 9 },
+    })
+end
+
+groupby_queries.test_join_single3 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b from (select sum("a") as a, sum("b") as b from "arithmetic_space") as o
+            inner join (select sum("a") as c, sum("b") as d from "arithmetic_space") as i
+            on o.a = i.c and o.b = i.d and i.c in (6, 10) or o.a = 1
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 9 },
+    })
+end
+
+groupby_queries.test_join_single4 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b from (select sum("a") as a, sum("b") as b from "arithmetic_space") as o
+            inner join (select sum("a") as c, sum("b") as d from "arithmetic_space") as i
+            on o.a = i.c or o.b = i.d
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 9 },
+    })
+end
+
+groupby_queries.test_join_single5 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b from (select sum("a") as a, sum("b") as b from "arithmetic_space") as o
+            inner join (select sum("a") as c, sum("b") as d from "arithmetic_space") as i
+            on o.a = 6 and o.b = 9 or i.c = 1 and i.d = 2
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 9 },
+    })
+end
+
+groupby_queries.test_join_single6 = function()
+    local api = cluster:server("api-1").net_box
+
+    local expected_metadata = {
+        { name = "O.A", type = "decimal" },
+        { name = "O.B", type = "decimal" },
+        { name = "I.C", type = "integer" },
+        { name = "I.D", type = "integer" },
+    }
+    local expected_rows = {
+        { 6, 4, 4, 6 },
+        { 6, 4, 4, 6 },
+        { 6, 4, 4, 5 },
+        { 6, 4, 4, 5 },
+    }
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b, i.c, i.d from (select sum("a") as a, count("b") as b from "arithmetic_space") as o
+            inner join (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as i
+            on o.a = i.d or o.b = i.c
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, expected_metadata)
+    t.assert_items_equals(r.rows, expected_rows)
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as i
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as o
+            on o.a = i.d or o.b = i.c and i.c in (select "id" from "arithmetic_space")
+            where o.a > 5
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, expected_metadata)
+    t.assert_items_equals(r.rows, expected_rows)
+end
+
+groupby_queries.test_join_single7 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[  select o.a, i.d from  (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as o
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
+            on i.a = cast(o.d as number)
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "I.A", type = "decimal" },
+        { name = "O.D", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 6 },
+        { 6, 6 },
+    })
+end
+
+groupby_queries.test_join_single7 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select i.a, o.d from  (select "c" as c, "d" as d from "arithmetic_space") as o
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
+            on i.a = o.d + 4 and i.b = o.c + 3
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "I.A", type = "decimal" },
+        { name = "O.D", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 2 },
+        { 6, 2 },
+    })
+end
+
+groupby_queries.test_join_single8 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[  select i.a, o.d from  (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as o
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
+            on i.a < 10
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "I.A", type = "decimal" },
+        { name = "O.D", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 6 },
+        { 6, 6 },
+        { 6, 5 },
+        { 6, 5 },
+    })
+end
+
+groupby_queries.test_join_single9 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select i.a, o.d from  (select "c" as c, "d" as d from "arithmetic_space" group by "c", "d") as o
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
+            on i.a < o.d + 5
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "I.A", type = "decimal" },
+        { name = "O.D", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 2 },
+    })
+end
 groupby_queries.test_aggr_distinct = function()
     local api = cluster:server("api-1").net_box
 
@@ -1043,5 +1350,28 @@ groupby_queries.test_aggr_distinct = function()
     t.assert_items_equals(r.rows, {
         {1, 1, 2, 3, 2},
         {2, 1, 2, 4, 4},
+    })
+end
+
+groupby_queries.test_aggr_distinct_without_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT sum(distinct "d"), count("e"+"a"),
+            count(distinct "e"+"a"), count(distinct "e"+"a") + sum(distinct "d"),
+            sum("d") from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+        { name = "COL_2", type = "decimal" },
+        { name = "COL_3", type = "integer" },
+        { name = "COL_4", type = "decimal" },
+        { name = "COL_5", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        {3, 4, 2, 5, 6},
     })
 end

@@ -363,7 +363,8 @@ impl Plan {
     /// - node is not relational
     /// - node's output is not a row of aliases
     pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, SbroadError> {
-        if let Node::Relational(rel) = self.get_node(node)? {
+        let n = self.get_node(node)?;
+        if let Node::Relational(rel) = n {
             if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
                 let mut cols: Vec<usize> = Vec::with_capacity(list.len());
                 for alias in list {
@@ -383,7 +384,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type".into()),
+            Some(format!("node is not Relational type: {n:?}")),
         ))
     }
 
@@ -454,11 +455,12 @@ impl Plan {
     /// - node doesn't exist in the plan
     /// - node is not a relational type
     pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, SbroadError> {
-        match self.get_node(node_id)? {
+        let node = self.get_node(node_id)?;
+        match node {
             Node::Relational(rel) => Ok(rel),
             Node::Expression(_) | Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("node is not Relational type".into()),
+                Some(format!("node is not Relational type: {node:?}")),
             )),
         }
     }

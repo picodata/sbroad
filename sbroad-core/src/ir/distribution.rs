@@ -99,13 +99,23 @@ pub enum Distribution {
         /// A set of distribution keys (we can have multiple keys after join)
         keys: KeySet,
     },
+    /// A tuple is located exactly only on one node
+    Single,
 }
 
 impl Distribution {
     /// Calculate a new distribution for the `Except` and `UnionAll` output tuple.
     /// Single
-    fn union_except(left: &Distribution, right: &Distribution) -> Distribution {
-        match (left, right) {
+    fn union_except(
+        left: &Distribution,
+        right: &Distribution,
+    ) -> Result<Distribution, SbroadError> {
+        let dist = match (left, right) {
+            (Distribution::Single, _) | (_, Distribution::Single) => {
+                 return Err(SbroadError::Invalid(
+                     Entity::Distribution,
+                     Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))))   
+            }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
             (Distribution::Replicated, _) | (_, Distribution::Replicated) => {
                 Distribution::Replicated
@@ -128,12 +138,18 @@ impl Distribution {
                     Distribution::Segment { keys: keys.into() }
                 }
             }
-        }
+        };
+        Ok(dist)
     }
 
     /// Calculate a new distribution for the tuple combined from two different tuples.
-    fn join(left: &Distribution, right: &Distribution) -> Distribution {
-        match (left, right) {
+    fn join(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
+        let dist = match (left, right) {
+            (Distribution::Single, _) | (_, Distribution::Single) => {
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))))
+            }
             (Distribution::Any, Distribution::Any | Distribution::Replicated)
             | (Distribution::Replicated, Distribution::Any) => Distribution::Any,
             (Distribution::Replicated, Distribution::Replicated) => Distribution::Replicated,
@@ -163,7 +179,8 @@ impl Distribution {
                     Distribution::Segment { keys: keys.into() }
                 }
             }
-        }
+        };
+        Ok(dist)
     }
 
     #[must_use]
@@ -285,13 +302,31 @@ impl Plan {
         };
 
         let mut parent_node = None;
+        let mut contains_expr = false;
         for id in row_children.iter() {
             let child_id = row_child_id(*id)?;
-            if let Expression::Reference { parent, .. } = self.get_expression_node(child_id)? {
-                parent_node = *parent;
-                break;
+            match self.get_expression_node(child_id)? {
+                Expression::Reference { parent, .. } => {
+                    parent_node = *parent;
+                    break;
+                }
+                Expression::Constant { .. } => {}
+                _ => {
+                    contains_expr = true;
+                    break;
+                }
             }
         }
+
+        // if node's output has non-const expression, we can't
+        // make any assumptions about its distribution.
+        // e.g select a + b from t
+        // Here Projection must have Distribution::Any
+        if contains_expr {
+            self.set_dist(row_id, Distribution::Any)?;
+            return Ok(());
+        }
+
         let parent_id: usize = if let Some(parent_id) = parent_node {
             parent_id
         } else {
@@ -340,7 +375,7 @@ impl Plan {
                 let mut dist = Distribution::Replicated;
                 for child_id in ref_nodes {
                     let right_dist = self.dist_from_child(child_id, &ref_map)?;
-                    dist = Distribution::union_except(&dist, &right_dist);
+                    dist = Distribution::union_except(&dist, &right_dist)?;
                 }
                 let output = self.get_mut_expression_node(row_id)?;
                 if let Expression::Row {
@@ -443,6 +478,7 @@ impl Plan {
                             Some("distribution is uninitialized".to_string()),
                         ))
                     }
+                    Some(Distribution::Single) => return Ok(Distribution::Single),
                     Some(Distribution::Any) => return Ok(Distribution::Any),
                     Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Segment { keys }) => {
@@ -549,9 +585,9 @@ impl Plan {
         let parent = self.get_relation_node(parent_id)?;
         let new_dist = match parent {
             Relational::Except { .. } | Relational::UnionAll { .. } => {
-                Distribution::union_except(&left_dist, &right_dist)
+                Distribution::union_except(&left_dist, &right_dist)?
             }
-            Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist),
+            Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist)?,
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,

@@ -1289,7 +1289,5 @@ impl Plan {
     }
 }
 
-mod groupby;
-
 #[cfg(test)]
 mod tests;

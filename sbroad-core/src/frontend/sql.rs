@@ -16,13 +16,12 @@ use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Arithmetic, Bool, Unary};
-use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 
 use crate::ir::aggregates::SimpleAggregate;
-use crate::ir::expression::Expression::StableFunction;
 use sbroad_proc::otm_child_span;
 
 /// Helper structure to fix the double linking
@@ -142,6 +141,7 @@ impl Ast for AbstractSyntaxTree {
         let mut sq_nodes: Vec<usize> = Vec::new();
 
         let mut betweens: Vec<Between> = Vec::new();
+        // ids of arithmetic expressions that have parentheses
         let mut arithmetic_expression_ids: Vec<usize> = Vec::new();
 
         let get_arithmetic_plan_id = |plan: &mut Plan,
@@ -800,7 +800,7 @@ impl Ast for AbstractSyntaxTree {
                         let plan_column_id = map.get(*ast_column_id)?;
                         children.push(plan_column_id);
                     }
-                    let groupby_id = plan.add_groupby(&children)?;
+                    let groupby_id = plan.add_groupby_from_ast(&children)?;
                     groupby_nodes.push(groupby_id);
                     map.add(id, groupby_id);
                 }
@@ -842,12 +842,8 @@ impl Ast for AbstractSyntaxTree {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
                     })?;
-                    let mut plan_child_id = map.get(*ast_child_id)?;
+                    let plan_child_id = map.get(*ast_child_id)?;
                     let mut proj_columns: Vec<usize> = Vec::with_capacity(node.children.len());
-                    let mut aggregates: Vec<AggregateInfo> =
-                        Vec::with_capacity(node.children.len());
-                    let mut columns_with_aggregates: HashSet<usize> =
-                        HashSet::with_capacity(node.children.len());
                     for ast_column_id in node.children.iter().skip(1) {
                         let ast_column = self.nodes.get_node(*ast_column_id)?;
                         match ast_column.rule {
@@ -859,34 +855,6 @@ impl Ast for AbstractSyntaxTree {
                                         )
                                     })?;
                                 let plan_alias_id = map.get(ast_alias_id)?;
-                                // Collect aggregate functions inside column expression
-                                let mut bfs = BreadthFirst::with_capacity(
-                                    |x| plan.nodes.aggregate_iter(x, false),
-                                    EXPR_CAPACITY,
-                                    EXPR_CAPACITY,
-                                );
-                                for (_, id) in bfs.iter(plan_alias_id) {
-                                    // we can't use get_expression_node, because parameters are not
-                                    // bound yet
-                                    let expr = plan.get_node(id)?;
-                                    if let Node::Expression(StableFunction {
-                                        name,
-                                        is_distinct,
-                                        ..
-                                    }) = expr
-                                    {
-                                        let Some(aggr) = SimpleAggregate::new(name, id) else {
-                                                continue
-                                            };
-                                        let info = AggregateInfo {
-                                            aggregate: aggr,
-                                            expression_top: plan_alias_id,
-                                            is_distinct: *is_distinct,
-                                        };
-                                        aggregates.push(info);
-                                        columns_with_aggregates.insert(plan_alias_id);
-                                    }
-                                }
                                 proj_columns.push(plan_alias_id);
                             }
                             Type::Asterisk => {
@@ -918,20 +886,6 @@ impl Ast for AbstractSyntaxTree {
                             }
                         }
                     }
-                    if let Some(groupby_id) = groupby_nodes.pop() {
-                        plan_child_id = plan.add_two_stage_aggregation(
-                            groupby_id,
-                            &proj_columns,
-                            &columns_with_aggregates,
-                            &aggregates,
-                        )?;
-                    } else if !aggregates.is_empty() {
-                        return Err(SbroadError::Unsupported(
-                            Entity::Query,
-                            Some("Aggregates without group by clause are not supported yet".into()),
-                        ));
-                    }
-
                     let projection_id = plan.add_proj_internal(plan_child_id, &proj_columns)?;
                     map.add(id, projection_id);
                 }
@@ -953,6 +907,7 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_child_id = map.get(ast_child_id)?;
+                    arithmetic_expression_ids.push(plan_child_id);
                     map.add(id, plan_child_id);
                 }
                 Type::Except => {

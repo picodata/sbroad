@@ -1524,7 +1524,7 @@ fn groupby_linker_test() {
                 format!(
                     "{} {} {}",
                     r#"SELECT "column_12" as "ii" FROM"#,
-                    r#"(SELECT "id" FROM "TMP_test_45")"#,
+                    r#"(SELECT "id" FROM "TMP_test_44")"#,
                     r#"GROUP BY "column_12""#,
                 ),
                 vec![],

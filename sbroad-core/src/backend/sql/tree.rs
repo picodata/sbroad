@@ -510,7 +510,9 @@ impl Select {
             let sn_left = sp.nodes.get_syntax_node(left_id)?;
             let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
             if let Node::Relational(
-                Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
+                Relational::ScanRelation { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Motion { .. },
             ) = plan_node_left
             {
                 select.scan = left_id;

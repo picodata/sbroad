@@ -624,6 +624,10 @@ impl Router for RouterRuntimeMock {
         let nodes = ordered.to_syntax_data()?;
 
         match buckets {
+            Buckets::Single => {
+                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
+                result.extend(exec_on_some(1_u64, String::from(sql).as_str()))?;
+            }
             Buckets::All => {
                 let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;

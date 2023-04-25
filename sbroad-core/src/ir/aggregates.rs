@@ -2,7 +2,6 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::function::{Behavior, Function};
-use crate::ir::operator::Relational;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -130,7 +129,6 @@ impl SimpleAggregate {
     pub fn create_columns_for_local_projection(
         &self,
         plan: &mut Plan,
-        local_groupby_id: usize,
         is_distinct: bool,
     ) -> Result<Vec<usize>, SbroadError> {
         let local_aggregates = self.kind.get_local_aggregates();
@@ -170,17 +168,15 @@ impl SimpleAggregate {
                 }
             }
             LocalAggrs::GroupingExpressions(expr_ids) => {
+                // in case we have distinct modifier for aggregate,
+                // we do group by aggregate function arguments.
+                // We have already added those arguments to GroupBy,
+                // so here we need only to create projection columns
                 for (pos, expr_id) in expr_ids.iter().enumerate() {
                     let alias_id = plan
                         .nodes
                         .add_alias(self.local_aliases[pos].as_str(), *expr_id)?;
                     local_proj_cols.push(alias_id);
-                }
-                if let Relational::GroupBy {
-                    ref mut gr_cols, ..
-                } = plan.get_mut_relation_node(local_groupby_id)?
-                {
-                    gr_cols.extend(expr_ids.into_iter());
                 }
             }
         }
@@ -195,6 +191,7 @@ impl SimpleAggregate {
     ///
     pub fn create_column_for_final_projection(
         &self,
+        final_proj_id: usize,
         plan: &mut Plan,
         alias_to_pos: &HashMap<String, usize>,
         is_distinct: bool,
@@ -215,10 +212,10 @@ impl SimpleAggregate {
         let Some(position) = alias_to_pos.get(local_alias.as_str()) else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("could find aggregate column in final Projection child by local alias: {local_alias}"))))
+                Some(format!("could find aggregate column in final Projection child by local alias: {local_alias}. Aliases: {alias_to_pos:?}"))))
         };
         let ref_node = Expression::Reference {
-            parent: None,
+            parent: Some(final_proj_id),
             // projection has only one child
             targets: Some(vec![0]),
             position: *position,
