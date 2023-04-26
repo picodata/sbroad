@@ -1,6 +1,7 @@
 use crate::collection;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
+use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::transformation::helpers::sql_to_ir;
@@ -208,7 +209,7 @@ fn inner_join3() {
     }
     let join = join_node.unwrap();
     let dist = plan.get_distribution(join.output()).unwrap();
-    let keys: HashSet<_> = collection! { Key::new(vec![0]), Key::new(vec![2]) };
+    let keys: HashSet<_, RepeatableState> = collection! { Key::new(vec![0]), Key::new(vec![2]) };
     assert_eq!(&Distribution::Segment { keys: keys.into() }, dist,);
 }
 

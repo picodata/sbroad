@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::collection;
 use crate::errors::{Action, Entity, SbroadError};
+use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::expression::Expression;
@@ -39,7 +40,7 @@ impl Key {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct KeySet(HashSet<Key>);
+pub struct KeySet(HashSet<Key, RepeatableState>);
 
 impl TryFrom<&MotionKey> for KeySet {
     type Error = SbroadError;
@@ -58,7 +59,8 @@ impl TryFrom<&MotionKey> for KeySet {
                 }
             }
         }
-        Ok(HashSet::<Key>::from([Key::new(positions)]).into())
+        let keys: HashSet<_, RepeatableState> = collection! { Key::new(positions) };
+        Ok(keys.into())
     }
 }
 
@@ -78,8 +80,8 @@ impl KeySet {
     }
 }
 
-impl From<HashSet<Key>> for KeySet {
-    fn from(keys: HashSet<Key>) -> Self {
+impl From<HashSet<Key, RepeatableState>> for KeySet {
+    fn from(keys: HashSet<Key, RepeatableState>) -> Self {
         Self(keys)
     }
 }
@@ -128,7 +130,7 @@ impl Distribution {
                     keys: keys_right, ..
                 },
             ) => {
-                let mut keys: HashSet<Key> = HashSet::new();
+                let mut keys: HashSet<Key, RepeatableState> = HashSet::with_hasher(RepeatableState);
                 for key in keys_left.intersection(keys_right).iter() {
                     keys.insert(Key::new(key.positions.clone()));
                 }
@@ -169,7 +171,7 @@ impl Distribution {
                     ..
                 },
             ) => {
-                let mut keys: HashSet<Key> = HashSet::new();
+                let mut keys: HashSet<Key, RepeatableState> = HashSet::with_hasher(RepeatableState);
                 for key in keys_left.union(keys_right).iter() {
                     keys.insert(Key::new(key.positions.clone()));
                 }
@@ -482,7 +484,8 @@ impl Plan {
                     Some(Distribution::Any) => return Ok(Distribution::Any),
                     Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
                     Some(Distribution::Segment { keys }) => {
-                        let mut new_keys: HashSet<Key> = HashSet::new();
+                        let mut new_keys: HashSet<Key, RepeatableState> =
+                            HashSet::with_hasher(RepeatableState);
                         for key in keys.iter() {
                             let mut new_key: Key = Key::new(Vec::new());
                             let all_found = key.positions.iter().all(|pos| {
@@ -564,7 +567,7 @@ impl Plan {
                 ..
             } = self.get_mut_expression_node(row_id)?
             {
-                let keys: HashSet<_> = collection! { new_key };
+                let keys: HashSet<Key, RepeatableState> = collection! { new_key };
                 *distribution = Some(Distribution::Segment { keys: keys.into() });
             }
         }
