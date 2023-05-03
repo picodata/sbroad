@@ -260,3 +260,5 @@ impl fmt::Display for SbroadError {
         write!(f, "{p}")
     }
 }
+
+impl std::error::Error for SbroadError {}
