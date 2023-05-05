@@ -2,6 +2,7 @@ use std::{
     any::Any,
     cell::{Ref, RefCell},
     collections::HashMap,
+    rc::Rc,
 };
 
 use sbroad::{
@@ -27,13 +28,15 @@ use sbroad::{
 
 use super::meta::router::RouterMetadata;
 
+thread_local! (static PLAN_CACHE: Rc<RefCell<LRUCache<String, Plan>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, None).unwrap())));
+
 const DEFAULT_BUCKET_COUNT: usize = 3000;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntime {
     metadata: RefCell<RouterMetadata>,
     bucket_count: usize,
-    ir_cache: RefCell<LRUCache<String, Plan>>,
+    ir_cache: Rc<RefCell<LRUCache<String, Plan>>>,
 }
 
 impl RouterRuntime {
@@ -44,12 +47,12 @@ impl RouterRuntime {
     pub fn new() -> Result<Self, SbroadError> {
         let metadata = RouterMetadata::default();
         let bucket_count = DEFAULT_BUCKET_COUNT;
-        let ir_cache = LRUCache::new(DEFAULT_CAPACITY, None)?;
-        Ok(RouterRuntime {
+        let runtime = PLAN_CACHE.with(|cache| RouterRuntime {
             metadata: RefCell::new(metadata),
             bucket_count,
-            ir_cache: RefCell::new(ir_cache),
-        })
+            ir_cache: cache.clone(),
+        });
+        Ok(runtime)
     }
 }
 
