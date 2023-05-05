@@ -1,16 +1,19 @@
-Query       ::= 'EXPLAIN'* ('SELECT' | 'SELECT' 'UNION ALL' 'SELECT' | 'SELECT' ('EXCEPT' | 'EXCEPT DISTINCT') 'SELECT'  | 'INSERT')
-SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table (',' table)* | 'SELECT') ('AS' alias)? ( ('INNER')? 'JOIN' (table | 'SELECT' | 'VALUES' row (',' row)*) ('AS' alias)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+STATEMENT   ::= EXPLAIN | DML
+EXPLAIN     ::= 'EXPLAIN' DML
+DML         ::= (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' 'DISTINCT'? ) SELECT  | INSERT)
+SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table | '(' (SELECT | VALUES) ')') ('AS' name)? ( ('INNER')? 'JOIN' (table | '(' (SELECT | VALUES) ')' )  ('AS' name)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+VALUES      ::= 'VALUES' '(' row (',' row)* ')'
 row         ::= '(' (value (',' value)*) ')'
-column      ::= '*' | ('table' '.')? 'column_name' ('AS' alias)? |  'table' '.' '*' | expression ('AS' alias)?
+column      ::= '*' | (table '.')? name ('AS' name)? |  table '.' '*' | expression ('AS' name)?
 expression  ::= column_name
                | 'CAST' '(' expression 'AS' type ')'
                | expression ('IS NULL' | 'IS NOT NULL')
-               | expression ('OR | AND | * | / | + | -| = | > | >= | < | <= | <> | <= | <> | != ') expression
+               | expression ('OR' | 'AND' | '*' | '/' | '+' | '-' | '=' | '>' | '<' | '>=' | '<=' | ('<>' | '!=')) expression
                | expression 'BETWEEN' expression 'AND' expression
                | reference
-               | 'SELECT'
+               | SELECT
                | value
-reference   ::= (table '.')? (alias)
+reference   ::= (table '.')? name
 value       ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
@@ -34,4 +37,5 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
-INSERT      ::= 'INSERT' 'INTO' table ('(' column_name (',' column_name)* ')')?  'VALUES' row
+INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')?  'VALUES' row
+
