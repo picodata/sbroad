@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use sbroad::{
     debug,
@@ -25,10 +25,12 @@ use sbroad::{
     warn,
 };
 
+thread_local!(static STATEMENT_CACHE: Rc<RefCell<LRUCache<String, PreparedStmt>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare))).unwrap())));
+
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
     pub metadata: RefCell<StorageMetadata>,
-    cache: RefCell<LRUCache<String, PreparedStmt>>,
+    cache: Rc<RefCell<LRUCache<String, PreparedStmt>>>,
 }
 
 impl QueryCache for StorageRuntime {
@@ -62,14 +64,11 @@ impl StorageRuntime {
     /// # Errors
     /// - Failed to initialize the LRU cache.
     pub fn new() -> Result<Self, SbroadError> {
-        let cache: LRUCache<String, PreparedStmt> =
-            LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
-        let result = StorageRuntime {
+        let runtime = STATEMENT_CACHE.with(|cache| StorageRuntime {
             metadata: RefCell::new(StorageMetadata::new()),
-            cache: RefCell::new(cache),
-        };
-
-        Ok(result)
+            cache: cache.clone(),
+        });
+        Ok(runtime)
     }
 
     /// Execute dispatched plan (divided into required and optional parts).
