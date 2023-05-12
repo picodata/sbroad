@@ -11,7 +11,6 @@ use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, Table, Type};
 
-use tarantool::index::IteratorType;
 use tarantool::space::Space;
 use tarantool::util::Value;
 
@@ -144,29 +143,51 @@ impl Metadata for RouterMetadata {
         // distributed SQL.
         let pico_space = Space::find("_pico_space")
             .ok_or_else(|| SbroadError::NotFound(Entity::Space, "_pico_space".to_string()))?;
-        let mut iter = pico_space
-            .select(IteratorType::Eq, &[meta.id])
-            .map_err(|e| {
-                SbroadError::FailedTo(
-                    Action::Get,
-                    Some(Entity::ShardingKey),
-                    format!("space id {}: {e}", meta.id),
-                )
-            })?;
-        let tuple = iter
-            .next()
-            .ok_or_else(|| SbroadError::NotFound(Entity::ShardingKey, name.to_string()))?;
-        let distribution_str: String = tuple.get(1).ok_or_else(|| {
+        let tuple = pico_space.get(&[meta.id]).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Get,
                 Some(Entity::ShardingKey),
-                format!("sharding key not found in the tuple: {tuple:?}"),
+                format!("space id {}: {e}", meta.id),
             )
         })?;
-        let keys: Vec<String> = distribution_str
-            .split(',')
-            .map(normalize_name_from_schema)
-            .collect();
+        let tuple =
+            tuple.ok_or_else(|| SbroadError::NotFound(Entity::ShardingKey, name.to_string()))?;
+        let space_def: crate::SpaceDef = tuple.decode().map_err(|e| {
+            SbroadError::FailedTo(
+                Action::Deserialize,
+                Some(Entity::SpaceMetadata),
+                format!("serde error: {e}"),
+            )
+        })?;
+        let keys: Vec<_> = match &space_def.distribution {
+            crate::Distribution::Global => {
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some("global distribution is not supported".into()),
+                ));
+            }
+            crate::Distribution::ShardedImplicitly {
+                sharding_key,
+                sharding_fn,
+            } => {
+                if !matches!(sharding_fn, crate::ShardingFn::Murmur3) {
+                    return Err(SbroadError::NotImplemented(
+                        Entity::Distribution,
+                        format!("by hash function {sharding_fn}"),
+                    ));
+                }
+                sharding_key
+                    .iter()
+                    .map(|field| normalize_name_from_schema(field))
+                    .collect()
+            }
+            crate::Distribution::ShardedByField { field } => {
+                return Err(SbroadError::NotImplemented(
+                    Entity::Distribution,
+                    format!("explicitly by field '{field}'"),
+                ));
+            }
+        };
         let sharding_keys: &[&str] = &keys.iter().map(String::as_str).collect::<Vec<_>>();
         Table::new_seg(
             &normalize_name_from_sql(table_name),
