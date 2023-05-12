@@ -59,7 +59,7 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
 #[derive(Deserialize, Serialize)]
 pub struct EncodedPatternWithParams(
     String,
-    Vec<EncodedValue>,
+    Option<Vec<EncodedValue>>,
     Option<HashMap<String, String>>,
     Option<String>,
     bool,
@@ -71,7 +71,7 @@ impl From<PatternWithParams> for EncodedPatternWithParams {
             value.params.drain(..).map(EncodedValue::from).collect();
         EncodedPatternWithParams(
             value.pattern,
-            encoded_params,
+            Some(encoded_params),
             value.context,
             value.id,
             value.force_trace,
@@ -81,7 +81,13 @@ impl From<PatternWithParams> for EncodedPatternWithParams {
 
 impl From<EncodedPatternWithParams> for PatternWithParams {
     fn from(mut value: EncodedPatternWithParams) -> Self {
-        let params: Vec<Value> = value.1.drain(..).map(Value::from).collect();
+        let params: Vec<Value> = match value.1.take() {
+            Some(mut encoded_params) => encoded_params
+                .drain(..)
+                .map(Value::from)
+                .collect::<Vec<Value>>(),
+            None => Vec::new(),
+        };
         PatternWithParams {
             pattern: value.0,
             params,
