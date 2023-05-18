@@ -1,7 +1,7 @@
 STATEMENT   ::= EXPLAIN | DML
 EXPLAIN     ::= 'EXPLAIN' DML
 DML         ::= (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' 'DISTINCT'? ) SELECT  | INSERT)
-SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table | '(' (SELECT | VALUES) ')') ('AS' name)? ( ('INNER')? 'JOIN' (table | '(' (SELECT | VALUES) ')' )  ('AS' name)? 'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' 'AS' name) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' 'AS' name))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
 VALUES      ::= 'VALUES' '(' row (',' row)* ')'
 row         ::= '(' (value (',' value)*) ')'
 column      ::= '*' | (table '.')? name ('AS' name)? |  table '.' '*' | expression ('AS' name)?
