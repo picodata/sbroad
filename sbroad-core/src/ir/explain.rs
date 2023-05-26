@@ -9,7 +9,7 @@ use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{JoinKind, Relational};
 use crate::ir::transformation::redistribution::{
-    MotionPolicy as IrMotionPolicy, Target as IrTarget,
+    MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
 use crate::ir::Plan;
 
@@ -644,6 +644,7 @@ enum MotionPolicy {
     Full,
     Segment(MotionKey),
     Local,
+    LocalSegment(MotionKey),
 }
 
 impl Display for MotionPolicy {
@@ -652,6 +653,7 @@ impl Display for MotionPolicy {
             MotionPolicy::Full => write!(f, "full"),
             MotionPolicy::Segment(mk) => write!(f, "segment({mk})"),
             MotionPolicy::Local => write!(f, "local"),
+            MotionPolicy::LocalSegment(mk) => write!(f, "local segment({mk})"),
         }
     }
 }
@@ -705,7 +707,7 @@ impl Display for InnerJoin {
             }
             JoinKind::Inner => String::new(),
         };
-        write!(f, "{}join on {}", kind, self.condition)
+        write!(f, "{kind}join on {0}", self.condition)
     }
 }
 
@@ -936,43 +938,50 @@ impl FullExplain {
                     })?;
                     current_node.children.push(child);
 
+                    let collect_targets = |s: &IrMotionKey| -> Result<Vec<Target>, SbroadError> {
+                        let child_id = children.first().ok_or_else(|| {
+                            SbroadError::UnexpectedNumberOfValues(
+                                "current node should have exactly one child".to_string(),
+                            )
+                        })?;
+
+                        let child_output_id = ir.get_relation_node(*child_id)?.output();
+                        let col_list = ir.get_expression_node(child_output_id)?.get_row_list()?;
+
+                        let targets = (s.targets)
+                            .iter()
+                            .map(|r| match r {
+                                IrTarget::Reference(pos) => {
+                                    let col_id = *col_list.get(*pos).ok_or_else(|| {
+                                        SbroadError::NotFound(
+                                            Entity::Target,
+                                            format!("reference with position {pos}"),
+                                        )
+                                    })?;
+                                    let col_name = ir
+                                        .get_expression_node(col_id)?
+                                        .get_alias_name()?
+                                        .to_string();
+
+                                    Ok::<Target, SbroadError>(Target::Reference(col_name))
+                                }
+                                IrTarget::Value(v) => Ok(Target::Value(v.clone())),
+                            })
+                            .collect::<Result<Vec<Target>, _>>()?;
+                        Ok(targets)
+                    };
+
                     let p = match policy {
                         IrMotionPolicy::Segment(s) => {
-                            let child_id = children.first().ok_or_else(|| {
-                                SbroadError::UnexpectedNumberOfValues(
-                                    "current node should have exactly one child".to_string(),
-                                )
-                            })?;
-
-                            let child_output_id = ir.get_relation_node(*child_id)?.output();
-                            let col_list =
-                                ir.get_expression_node(child_output_id)?.get_row_list()?;
-
-                            let targets = (s.targets)
-                                .iter()
-                                .map(|r| match r {
-                                    IrTarget::Reference(pos) => {
-                                        let col_id = *col_list.get(*pos).ok_or_else(|| {
-                                            SbroadError::NotFound(
-                                                Entity::Target,
-                                                format!("reference with position {pos}"),
-                                            )
-                                        })?;
-                                        let col_name = ir
-                                            .get_expression_node(col_id)?
-                                            .get_alias_name()?
-                                            .to_string();
-
-                                        Ok(Target::Reference(col_name))
-                                    }
-                                    IrTarget::Value(v) => Ok(Target::Value(v.clone())),
-                                })
-                                .collect::<Result<Vec<Target>, _>>()?;
-
+                            let targets = collect_targets(s)?;
                             MotionPolicy::Segment(MotionKey { targets })
                         }
                         IrMotionPolicy::Full => MotionPolicy::Full,
                         IrMotionPolicy::Local => MotionPolicy::Local,
+                        IrMotionPolicy::LocalSegment(s) => {
+                            let targets = collect_targets(s)?;
+                            MotionPolicy::LocalSegment(MotionKey { targets })
+                        }
                     };
                     let m = Motion::new(p);
 

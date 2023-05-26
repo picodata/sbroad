@@ -33,7 +33,8 @@ impl Plan {
             Relational::Motion { policy, .. } => match policy {
                 MotionPolicy::Full => Policy::Full,
                 MotionPolicy::Local => Policy::Local,
-                MotionPolicy::Segment(MotionKey { targets }) => {
+                MotionPolicy::Segment(MotionKey { targets })
+                | MotionPolicy::LocalSegment(MotionKey { targets }) => {
                     let mut new_targets: Vec<String> = Vec::with_capacity(targets.len());
                     let aliases = self.get_relational_aliases(node_id).unwrap();
                     for t in targets {

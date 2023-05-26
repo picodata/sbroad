@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::mock::RouterRuntimeMock;
-use crate::executor::engine::Router;
+use crate::executor::engine::Vshard;
 
 use crate::executor::Query;
 use crate::ir::helpers::RepeatableState;

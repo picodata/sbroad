@@ -213,9 +213,8 @@ impl Ast for AbstractSyntaxTree {
 
             let op_node = self.nodes.get_node(*ast_op_id)?;
             let op = Arithmetic::from_node_type(&op_node.rule)?;
-
             let op_id = plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
-            Ok(op_id)
+            Ok::<usize, SbroadError>(op_id)
         };
 
         for (_, id) in dft_post.iter(top) {

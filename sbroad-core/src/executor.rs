@@ -24,18 +24,17 @@
 //! 6. Executes the final IR top subtree and returns the final result to the user.
 
 use std::any::Any;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::Router;
+use crate::executor::engine::{helpers::materialize_values, Router, Vshard};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
-use crate::executor::vtable::VirtualTable;
 use crate::frontend::Ast;
 use crate::ir::operator::Relational;
-use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
+use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
@@ -68,7 +67,8 @@ impl Plan {
 #[derive(Debug)]
 pub struct Query<'a, C>
 where
-    C: Router,
+    C: Router + Vshard,
+    &'a C: Vshard,
 {
     /// Explain flag
     is_explain: bool,
@@ -82,7 +82,8 @@ where
 
 impl<'a, C> Query<'a, C>
 where
-    C: Router,
+    C: Router + Vshard,
+    &'a C: Vshard,
 {
     /// Create a new query.
     ///
@@ -179,13 +180,39 @@ where
                     continue;
                 }
 
+                // Local segment motions should be treated as a special case.
+                // 1. If we can materialize it on the router, then we should do it
+                //    (the child node is `VALUES` of constants).
+                // 2. Otherwise we should skip it and dispatch the query to the segments
+                //    (materialization would be done on the segments).
+                let motion = self.exec_plan.get_ir_plan().get_relation_node(*motion_id)?;
+                if let Relational::Motion {
+                    policy: MotionPolicy::LocalSegment(_),
+                    ..
+                } = motion
+                {
+                    if let Some(virtual_table) =
+                        materialize_values(&mut self.exec_plan, *motion_id)?
+                    {
+                        self.exec_plan.set_motion_vtable(
+                            *motion_id,
+                            virtual_table,
+                            &self.coordinator,
+                        )?;
+                        self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
+                        already_materialized.insert(top_id, *motion_id);
+                    }
+                    continue;
+                }
+
                 let buckets = self.bucket_discovery(top_id)?;
                 let virtual_table = self.coordinator.materialize_motion(
                     &mut self.exec_plan,
                     *motion_id,
                     &buckets,
                 )?;
-                self.add_motion_result(*motion_id, virtual_table)?;
+                self.exec_plan
+                    .set_motion_vtable(*motion_id, virtual_table, &self.coordinator)?;
                 already_materialized.insert(top_id, *motion_id);
             }
         }
@@ -194,95 +221,6 @@ where
         let buckets = self.bucket_discovery(top_id)?;
         self.coordinator
             .dispatch(&mut self.exec_plan, top_id, &buckets)
-    }
-
-    /// Add materialize motion result to translation map of virtual tables
-    ///
-    /// # Errors
-    /// - invalid motion node
-    #[otm_child_span("query.motion.add")]
-    pub fn add_motion_result(
-        &mut self,
-        motion_id: usize,
-        mut vtable: VirtualTable,
-    ) -> Result<(), SbroadError> {
-        let policy = if let Relational::Motion { policy, .. } = self
-            .get_exec_plan()
-            .get_ir_plan()
-            .get_relation_node(motion_id)?
-        {
-            policy.clone()
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("invalid motion node".to_string()),
-            ));
-        };
-        if let MotionPolicy::Segment(shard_key) = policy {
-            // At the moment we generate a new sharding column only for the motions
-            // prior the insertion node. As we support only relations with segmented
-            // data (Tarantool doesn't have relations with replicated data), we handle
-            // a case with sharding column only for a segment motion policy.
-            self.reshard_vtable(&mut vtable, &shard_key)?;
-        }
-
-        let need_init = self.exec_plan.get_vtables().is_none();
-        if need_init {
-            self.exec_plan.set_vtables(HashMap::new());
-        }
-
-        if let Some(vtables) = self.exec_plan.get_mut_vtables() {
-            vtables.insert(motion_id, Rc::new(vtable));
-        }
-
-        Ok(())
-    }
-
-    /// Reshard virtual table.
-    ///
-    /// # Errors
-    /// - Invalid distribution key.
-    pub fn reshard_vtable(
-        &self,
-        vtable: &mut VirtualTable,
-        sharding_key: &MotionKey,
-    ) -> Result<(), SbroadError> {
-        vtable.set_motion_key(sharding_key);
-
-        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
-        for (pos, tuple) in vtable.get_tuples().iter().enumerate() {
-            let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            for target in &sharding_key.targets {
-                match target {
-                    Target::Reference(col_idx) => {
-                        let part = tuple.get(*col_idx).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::DistributionKey,
-                                format!(
-                                "failed to find a distribution key column {pos} in the tuple {tuple:?}."
-                            ),
-                            )
-                        })?;
-                        shard_key_tuple.push(part);
-                    }
-                    Target::Value(ref value) => {
-                        shard_key_tuple.push(value);
-                    }
-                }
-            }
-            let bucket_id = self.coordinator.determine_bucket_id(&shard_key_tuple);
-            match index.entry(bucket_id) {
-                Entry::Vacant(entry) => {
-                    entry.insert(vec![pos]);
-                }
-                Entry::Occupied(entry) => {
-                    entry.into_mut().push(pos);
-                }
-            }
-        }
-
-        vtable.set_index(index);
-        Ok(())
     }
 
     /// Query explain

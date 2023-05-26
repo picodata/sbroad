@@ -380,12 +380,6 @@ impl<'plan> ExpressionMapper<'plan> {
     }
 }
 
-pub struct AggregateInfo {
-    pub expression_top: usize,
-    pub aggregate: SimpleAggregate,
-    pub is_distinct: bool,
-}
-
 impl Plan {
     #[allow(unreachable_code)]
     fn generate_local_alias(id: usize) -> String {

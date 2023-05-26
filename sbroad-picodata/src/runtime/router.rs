@@ -26,16 +26,14 @@ use sbroad::{
     ir::Plan,
 };
 
-use super::meta::router::RouterMetadata;
+use super::{meta::router::RouterMetadata, DEFAULT_BUCKET_COUNT};
 
 thread_local! (static PLAN_CACHE: Rc<RefCell<LRUCache<String, Plan>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, None).unwrap())));
-
-const DEFAULT_BUCKET_COUNT: usize = 3000;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntime {
     metadata: RefCell<RouterMetadata>,
-    bucket_count: usize,
+    bucket_count: u64,
     ir_cache: Rc<RefCell<LRUCache<String, Plan>>>,
 }
 
@@ -129,10 +127,6 @@ impl Router for RouterRuntime {
     ) -> Result<Vec<&'rec sbroad::ir::value::Value>, SbroadError> {
         sharding_keys_from_tuple(&*self.metadata()?, &space, args)
     }
-
-    fn determine_bucket_id(&self, s: &[&sbroad::ir::value::Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count)
-    }
 }
 
 impl Vshard for RouterRuntime {
@@ -153,11 +147,15 @@ impl Vshard for RouterRuntime {
     }
 
     fn bucket_count(&self) -> u64 {
-        self.bucket_count as u64
+        self.bucket_count
     }
 
     fn get_random_bucket(&self) -> Buckets {
         get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&sbroad::ir::value::Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
     }
 
     fn exec_ir_on_some(
@@ -166,5 +164,43 @@ impl Vshard for RouterRuntime {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
         exec_with_filtered_buckets(self, sub_plan, buckets)
+    }
+}
+
+impl Vshard for &RouterRuntime {
+    fn exec_ir_on_all(
+        &self,
+        required: Binary,
+        optional: Binary,
+        query_type: QueryType,
+        conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        exec_ir_on_all(
+            &*self.metadata()?,
+            required,
+            optional,
+            query_type,
+            conn_type,
+        )
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&sbroad::ir::value::Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        exec_with_filtered_buckets(*self, sub_plan, buckets)
     }
 }

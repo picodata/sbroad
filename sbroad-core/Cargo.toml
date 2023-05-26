@@ -21,7 +21,7 @@ opentelemetry-jaeger = "0.16"
 pest = "2.0"
 pest_derive = "2.0"
 rand = "0.8"
-rmp-serde = "0.14"
+rmp-serde = "1.0"
 sbroad-proc = { path = "../sbroad-proc", version = "0.1" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.8"

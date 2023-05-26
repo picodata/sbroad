@@ -7,12 +7,16 @@ use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::QueryCache;
 use sbroad::executor::engine::{
-    helpers::{normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple},
-    Metadata, Router,
+    helpers::{
+        normalize_name_from_sql, sharding_keys_from_map, sharding_keys_from_tuple,
+        vshard::get_random_bucket,
+    },
+    Metadata, Router, Vshard,
 };
 use sbroad::executor::hash::bucket_id_by_tuple;
-use sbroad::executor::ir::ExecutionPlan;
+use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
+use sbroad::executor::protocol::Binary;
 use sbroad::executor::result::ProducerResult;
 use sbroad::executor::vtable::VirtualTable;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
@@ -27,7 +31,7 @@ use sbroad::ir::Plan;
 pub struct RouterConfigurationMock {
     functions: HashMap<String, Function>,
     tables: HashMap<String, Table>,
-    bucket_count: usize,
+    bucket_count: u64,
     sharding_column: String,
 }
 
@@ -461,8 +465,80 @@ impl Router for RouterRuntimeMock {
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(&*self.metadata()?, &space, rec)
     }
+}
+
+impl Vshard for RouterRuntimeMock {
+    fn exec_ir_on_all(
+        &self,
+        _required: Binary,
+        _optional: Binary,
+        _query_type: QueryType,
+        _conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Query,
+            Some("exec_ir_on_all function is not implemented for the bench engine".to_string()),
+        ))
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.metadata.borrow().bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
 
     fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.metadata.borrow().bucket_count)
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Query,
+            Some("exec_ir_on_some function is not implemented for the bench engine".to_string()),
+        ))
+    }
+}
+
+impl Vshard for &RouterRuntimeMock {
+    fn exec_ir_on_all(
+        &self,
+        _required: Binary,
+        _optional: Binary,
+        _query_type: QueryType,
+        _conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Query,
+            Some("exec_ir_on_all function is not implemented for the bench engine".to_string()),
+        ))
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.metadata.borrow().bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Query,
+            Some("exec_ir_on_some function is not implemented for the bench engine".to_string()),
+        ))
     }
 }

@@ -436,27 +436,6 @@ g.test_bucket_id_in_join = function()
     })
 end
 
-g.test_bucket_id_function = function()
-    local api = cluster:server("api-1").net_box
-
-    local r, err = api:call(
-        "sbroad.execute",
-        {
-            [[SELECT bucket_id('hello') FROM "space_simple_shard_key" WHERE "id" = 10]],
-            {}
-        }
-    )
-    t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "COL_1", type = "unsigned"},
-        },
-        rows = {
-            { 13352 },
-        },
-    })
-end
-
 g.test_uppercase1 = function()
     local api = cluster:server("api-1").net_box
 

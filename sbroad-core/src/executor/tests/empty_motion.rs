@@ -34,7 +34,7 @@ fn empty_motion1_test() {
     let mut virtual_t1 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
-        query.reshard_vtable(&mut virtual_t1, key).unwrap();
+        virtual_t1.reshard(key, &query.coordinator).unwrap();
     }
     query.coordinator.add_virtual_table(motion1_id, virtual_t1);
     let motion2_id = *query
@@ -48,7 +48,7 @@ fn empty_motion1_test() {
     let mut virtual_t2 = t2_empty();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        virtual_t2.reshard(key, &query.coordinator).unwrap();
     }
     query.coordinator.add_virtual_table(motion2_id, virtual_t2);
 

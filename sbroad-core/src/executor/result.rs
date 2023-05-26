@@ -2,6 +2,7 @@ use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
 use tarantool::tlua::{self, LuaRead};
+use tarantool::tuple::Encode;
 
 use crate::debug;
 use crate::errors::{Entity, SbroadError};
@@ -92,17 +93,14 @@ impl ProducerResult {
     /// # Errors
     /// - convert to virtual table error
     pub fn as_virtual_table(
-        &self,
+        &mut self,
         column_names: Vec<String>,
         possibly_incorrect_types: bool,
     ) -> Result<VirtualTable, SbroadError> {
         let mut vtable = VirtualTable::new();
 
-        for encoded_tuple in &self.rows {
-            let tuple: Vec<Value> = encoded_tuple
-                .iter()
-                .map(|v| Value::from(v.clone()))
-                .collect();
+        for mut encoded_tuple in self.rows.drain(..) {
+            let tuple: Vec<Value> = encoded_tuple.drain(..).map(Value::from).collect();
             vtable.add_tuple(tuple);
         }
 
@@ -156,7 +154,7 @@ impl Serialize for ProducerResult {
 
 /// Results of query execution for `INSERT`.
 #[allow(clippy::module_name_repetitions)]
-#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConsumerResult {
     pub row_count: u64,
 }
@@ -186,6 +184,8 @@ impl Serialize for ConsumerResult {
         map.end()
     }
 }
+
+impl Encode for ConsumerResult {}
 
 impl Plan {
     /// Checks if the plan contains a `Values` node.

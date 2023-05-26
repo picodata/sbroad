@@ -14,11 +14,11 @@ fn concat1_test() {
 #[test]
 fn concat2_test() {
     explain_check(
-        r#"SELECT "a" FROM "t1" WHERE CAST('1' as string) || BUCKET_ID('hello') || '2' = 42"#,
+        r#"SELECT "a" FROM "t1" WHERE CAST('1' as string) || FUNC('hello') || '2' = 42"#,
         &format!(
             "{}\n{}\n{}\n",
             r#"projection ("t1"."a" -> "a")"#,
-            r#"    selection ROW(('1'::string) || (("BUCKET_ID"(('hello'))) || ('2'))) = ROW(42)"#,
+            r#"    selection ROW(('1'::string) || (("FUNC"(('hello'))) || ('2'))) = ROW(42)"#,
             r#"        scan "t1""#,
         ),
     );

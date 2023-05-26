@@ -1,4 +1,5 @@
 local t = require('luatest')
+local d = require('decimal')
 local left_join = t.group('left_join')
 local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
@@ -13,8 +14,10 @@ left_join.before_all(
 
             local r, err = api:call("sbroad.execute", {
                 [[
-                    INSERT INTO "arithmetic_space"
-                    ("id", "a", "b", "c", "d", "e", "f", "boolean_col", "string_col", "number_col")
+                    INSERT INTO "arithmetic_space"(
+                        "id", "a", "b", "c", "d", "e", "f",
+                        "boolean_col", "string_col", "number_col"
+                    )
                     VALUES (?,?,?,?,?,?,?,?,?,?),
                     (?,?,?,?,?,?,?,?,?,?),
                     (?,?,?,?,?,?,?,?,?,?),
@@ -32,8 +35,10 @@ left_join.before_all(
             t.assert_equals(r, {row_count = 4})
             r, err = api:call("sbroad.execute", {
                 [[
-                    INSERT INTO "arithmetic_space2"
-                    ("id", "a", "b", "c", "d", "e", "f", "boolean_col", "string_col", "number_col")
+                    INSERT INTO "arithmetic_space2"(
+                        "id", "a", "b", "c", "d", "e", "f",
+                        "boolean_col", "string_col", "number_col"
+                    )
                     VALUES (?,?,?,?,?,?,?,?,?,?),
                     (?,?,?,?,?,?,?,?,?,?),
                     (?,?,?,?,?,?,?,?,?,?),
@@ -51,13 +56,24 @@ left_join.before_all(
             t.assert_equals(r, {row_count = 4})
 
             for i =1,6 do
-                              --yearquarter    a_to    b_to    a_from    b_from    c_by_ab    d_by_ab    d_c_diff    field1    field2
-                              --integer        string  string  string    string    decimal    decimal    decimal     string    string
-                local values = {i,             "a",    "a",    "a",      "a",      i,         i,         i,          "a",      "a"}
+                local values = {
+                    i,          -- yearquarter (integer)
+                    "a",        -- a_to (string)
+                    "a",        -- b_to (string)
+                    "a",        -- a_from (string)
+                    "a",        -- b_from (string)
+                    d.new(i),   -- c_by_ab (decimal)
+                    d.new(i),   -- d_by_ab (decimal)
+                    d.new(i),   -- d_c_diff (decimal)
+                    "a",        -- field1 (string)
+                    "a"         -- field2 (string)
+                }
                 r, err = api:call("sbroad.execute", {
                     [[
-                        INSERT INTO "SPACE1"
-                        ("yearquarter","a_to","b_to","a_from","b_from","c_by_ab","d_by_ab","d_c_diff","field1","field2")
+                        INSERT INTO "SPACE1"(
+                            "yearquarter","a_to","b_to","a_from","b_from",
+                            "c_by_ab","d_by_ab","d_c_diff","field1","field2"
+                        )
                         VALUES (?,?,?,?,?,?,?,?,?,?)
                     ]], values
                 })
@@ -65,13 +81,31 @@ left_join.before_all(
                 t.assert_equals(r, {row_count = 1})
             end
             for i =4,10 do
-                              --id       yearquarter    a       b       name    field1    field2    field3    field4    field5    field6    field7    field8    field9    count_from    count_to
-                              --integer  integer        string  string  string  integer   decimal   string    integer   string    decimal   decimal   decimal   integer   integer       integer
-                local values = {i,       i,             "a",    "a",    "a",    i,        i,        "a",      i,        "a",      i,        i,        i,        i,        i,            i}
+                local values = {
+                    i,          -- id (integer)
+                    i,          -- yearquarter (integer)
+                    "a",        -- a (string)
+                    "a",        -- b (string)
+                    "a",        -- name (string)
+                    i,          -- field1 (integer)
+                    d.new(i),   -- field2 (decimal)
+                    "a",        -- field3 (string)
+                    i,          -- field4 (integer)
+                    "a",        -- field5 (string)
+                    d.new(i),   -- field6 (decimal)
+                    d.new(i),   -- field7 (decimal)
+                    d.new(i),   -- field8 (decimal)
+                    i,          -- field9 (integer)
+                    i,          -- count_from (integer)
+                    i           -- count_to (integer)
+                }
                 r, err = api:call("sbroad.execute", {
                     [[
-                        INSERT INTO "SPACE2"
-                        ("id","yearquarter","a","b","name","field1","field2","field3","field4","field5","field6","field7","field8","field9","count_from","count_to")
+                        INSERT INTO "SPACE2"(
+                            "id","yearquarter","a","b","name","field1","field2",
+                            "field3","field4","field5","field6","field7","field8",
+                            "field9","count_from","count_to"
+                        )
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ]], values
                 })

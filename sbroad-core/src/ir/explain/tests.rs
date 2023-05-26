@@ -315,13 +315,9 @@ fn insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
-        scan
-            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::string -> COL_1)
-                scan
-                    motion [policy: segment([ref("COLUMN_1")])]
-                        values
-                            value row (data=ROW(1, '123'))
+    motion [policy: local segment([ref("COLUMN_1")])]
+        values
+            value row (data=ROW(1, '123'))
 "#,
     );
 
@@ -340,15 +336,11 @@ fn multiply_insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
-        scan
-            projection ("COLUMN_5"::unsigned -> COL_0, "COLUMN_6"::string -> COL_1)
-                scan
-                    motion [policy: segment([ref("COLUMN_5")])]
-                        values
-                            value row (data=ROW(1, '123'))
-                            value row (data=ROW(2, '456'))
-                            value row (data=ROW(3, '789'))
+    motion [policy: local segment([ref("COLUMN_5")])]
+        values
+            value row (data=ROW(1, '123'))
+            value row (data=ROW(2, '456'))
+            value row (data=ROW(3, '789'))
 "#,
     );
 
@@ -368,13 +360,9 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
-        scan
-            projection ("hash_testing"."identification_number"::unsigned -> COL_0, "hash_testing"."product_code"::string -> COL_1)
-                scan
-                    motion [policy: segment([ref("identification_number")])]
-                        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
-                            scan "hash_testing"
+    motion [policy: segment([ref("identification_number")])]
+        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+            scan "hash_testing"
 "#,
     );
 
@@ -443,7 +431,7 @@ fn select_cast_plan2() {
 
 #[test]
 fn select_cast_plan_nested() {
-    let query = r#"SELECT cast(bucket_id("id") as string) FROM "test_space""#;
+    let query = r#"SELECT cast(func("id") as string) FROM "test_space""#;
 
     let plan = sql_to_optimized_ir(query, vec![]);
 
@@ -452,7 +440,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("BUCKET_ID"(("test_space"."id"))::string -> "COL_1")
+        r#"projection ("FUNC"(("test_space"."id"))::string -> "COL_1")
     scan "test_space"
 "#,
     );
@@ -462,7 +450,7 @@ fn select_cast_plan_nested() {
 
 #[test]
 fn select_cast_plan_nested_where() {
-    let query = r#"SELECT "id" FROM "test_space" WHERE cast(bucket_id("id") as string) = 1"#;
+    let query = r#"SELECT "id" FROM "test_space" WHERE cast(func("id") as string) = 1"#;
 
     let plan = sql_to_optimized_ir(query, vec![]);
 
@@ -472,7 +460,7 @@ fn select_cast_plan_nested_where() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("BUCKET_ID"(("test_space"."id"))::string) = ROW(1)
+    selection ROW("FUNC"(("test_space"."id"))::string) = ROW(1)
         scan "test_space"
 "#,
     );
@@ -482,7 +470,7 @@ fn select_cast_plan_nested_where() {
 
 #[test]
 fn select_cast_plan_nested_where2() {
-    let query = r#"SELECT "id" FROM "test_space" WHERE bucket_id(cast(42 as string)) = 1"#;
+    let query = r#"SELECT "id" FROM "test_space" WHERE func(cast(42 as string)) = 1"#;
 
     let plan = sql_to_optimized_ir(query, vec![]);
 
@@ -492,7 +480,7 @@ fn select_cast_plan_nested_where2() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id" -> "id")
-    selection ROW("BUCKET_ID"((42::string))) = ROW(1)
+    selection ROW("FUNC"((42::string))) = ROW(1)
         scan "test_space"
 "#,
     );

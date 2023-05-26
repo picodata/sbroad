@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::executor::engine::Router;
+use crate::executor::engine::{Router, Vshard};
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
@@ -95,7 +95,8 @@ impl Buckets {
 
 impl<'a, T> Query<'a, T>
 where
-    T: Router,
+    T: Router + Vshard,
+    &'a T: Vshard,
 {
     fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
         let mut buckets: Vec<Buckets> = Vec::new();
@@ -192,9 +193,11 @@ where
         if buckets.is_empty() {
             Ok(Buckets::new_all())
         } else {
-            Ok(buckets
-                .into_iter()
-                .fold(Ok(Buckets::new_all()), |a, b| a?.conjuct(&b)))?
+            Ok::<Result<Buckets, SbroadError>, SbroadError>(
+                buckets
+                    .into_iter()
+                    .fold(Ok(Buckets::new_all()), |a, b| a?.conjuct(&b)),
+            )?
         }
     }
 
@@ -253,7 +256,8 @@ where
         // We use a `subtree_iter()` because we need DNF version of the filter/condition
         // expressions to determine buckets.
         let capacity = ir_plan.next_id();
-        let mut tree = PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), capacity);
+        let mut tree =
+            PostOrder::with_capacity(|node| ir_plan.exec_plan_subtree_iter(node), capacity);
         let nodes: Vec<usize> = tree
             .iter(top_id)
             .filter_map(|(_, id)| {
@@ -275,7 +279,12 @@ where
                 Relational::ScanRelation { output, .. } => {
                     self.bucket_map.insert(*output, Buckets::new_all());
                 }
-                Relational::Motion { policy, output, .. } => match policy {
+                Relational::Motion {
+                    children,
+                    policy,
+                    output,
+                    ..
+                } => match policy {
                     MotionPolicy::Full => {
                         self.bucket_map.insert(*output, Buckets::new_all());
                     }
@@ -288,6 +297,43 @@ where
                         );
                         self.bucket_map
                             .insert(*output, Buckets::new_filtered(buckets));
+                    }
+                    MotionPolicy::LocalSegment(_) => {
+                        if let Ok(virtual_table) = self.exec_plan.get_motion_vtable(node_id) {
+                            // In a case of `insert .. values ..` it is possible built a local
+                            // segmented virtual table right on the router. So, we can use its
+                            // buckets from the index to determine the buckets for the insert.
+                            let buckets = virtual_table
+                                .get_index()
+                                .keys()
+                                .copied()
+                                .collect::<HashSet<u64, RepeatableState>>();
+                            self.bucket_map
+                                .insert(*output, Buckets::new_filtered(buckets));
+                        } else {
+                            // We'll create and populate a local segmented virtual table on the
+                            // storage later. At the moment the best thing we can do is to copy
+                            // child's buckets.
+                            let child_id = children.first().ok_or_else(|| {
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "Motion node should have exactly one child".to_string(),
+                                )
+                            })?;
+                            let child_rel =
+                                self.exec_plan.get_ir_plan().get_relation_node(*child_id)?;
+                            let child_buckets = self
+                                .bucket_map
+                                .get(&child_rel.output())
+                                .ok_or_else(|| {
+                                    SbroadError::FailedTo(
+                                        Action::Retrieve,
+                                        Some(Entity::Buckets),
+                                        "of the child from the bucket map.".to_string(),
+                                    )
+                                })?
+                                .clone();
+                            self.bucket_map.insert(*output, child_buckets);
+                        }
                     }
                     MotionPolicy::Local => {
                         return Err(SbroadError::Invalid(

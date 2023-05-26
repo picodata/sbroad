@@ -232,13 +232,9 @@ fn front_sql10() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, COL_2 -> COL_2, COL_3 -> COL_3, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', COL_1::string)))))
-        scan
-            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::unsigned -> COL_1, "COLUMN_3"::unsigned -> COL_2, "COLUMN_4"::unsigned -> COL_3)
-                scan
-                    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
-                        values
-                            value row (data=ROW(1, 2, 3, 4))
+    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+        values
+            value row (data=ROW(1, 2, 3, 4))
 "#,
     );
 
@@ -253,13 +249,9 @@ fn front_sql11() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
-        scan
-            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::unsigned -> COL_1)
-                scan
-                    motion [policy: segment([ref("COLUMN_1"), value(NULL)])]
-                        values
-                            value row (data=ROW(1, 2))
+    motion [policy: local segment([ref("COLUMN_1"), value(NULL)])]
+        values
+            value row (data=ROW(1, 2))
 "#,
     );
 
@@ -274,13 +266,9 @@ fn front_sql14() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
-        scan
-            projection ("t"."b"::unsigned -> COL_0, "t"."d"::unsigned -> COL_1)
-                scan
-                    motion [policy: segment([ref("b"), value(NULL)])]
-                        projection ("t"."b" -> "b", "t"."d" -> "d")
-                            scan "t"
+    motion [policy: segment([ref("b"), value(NULL)])]
+        projection ("t"."b" -> "b", "t"."d" -> "d")
+            scan "t"
 "#,
     );
 
@@ -378,7 +366,7 @@ fn front_sql20() {
 fn front_sql_exists_subquery_select_from_table() {
     let input = r#"SELECT "id" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing")"#;
 
-    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"projection ("test_space"."id" -> "id")
@@ -646,18 +634,14 @@ fn front_sql_groupby_insert() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
-        scan
-            projection ("b"::unsigned -> COL_0, "d"::unsigned -> COL_1)
-                scan
-                    motion [policy: segment([ref("b"), value(NULL)])]
-                        projection ("column_24" -> "b", "column_25" -> "d")
-                            group by ("column_24", "column_25") output: ("column_25" -> "column_25", "column_24" -> "column_24")
-                                motion [policy: segment([ref("column_24"), ref("column_25")])]
-                                    scan 
-                                        projection ("t"."d" -> "column_25", "t"."b" -> "column_24")
-                                            group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
-                                                scan "t"
+    motion [policy: segment([ref("b"), value(NULL)])]
+        projection ("column_24" -> "b", "column_25" -> "d")
+            group by ("column_24", "column_25") output: ("column_25" -> "column_25", "column_24" -> "column_24")
+                motion [policy: segment([ref("column_24"), ref("column_25")])]
+                    scan 
+                        projection ("t"."d" -> "column_25", "t"."b" -> "column_24")
+                            group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                                scan "t"
 "#,
     );
 
@@ -769,7 +753,7 @@ fn front_sql_invalid_count_asterisk1() {
 
 #[test]
 fn front_sql_aggregates_with_subexpressions() {
-    let input = r#"SELECT "b", count("a" * "b" + 1), count(bucket_id("a")) FROM "t"
+    let input = r#"SELECT "b", count("a" * "b" + 1), count(func("a")) FROM "t"
         group by "b""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
@@ -779,7 +763,7 @@ fn front_sql_aggregates_with_subexpressions() {
     group by ("column_12") output: ("column_12" -> "column_12", "count_39" -> "count_39", "count_35" -> "count_35")
         motion [policy: segment([ref("column_12")])]
             scan 
-                projection ("t"."b" -> "column_12", count(("BUCKET_ID"(("t"."a")))) -> "count_39", count((("t"."a") * ("t"."b") + (1))) -> "count_35")
+                projection ("t"."b" -> "column_12", count(("FUNC"(("t"."a")))) -> "count_39", count((("t"."a") * ("t"."b") + (1))) -> "count_35")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
 "#,
@@ -1027,16 +1011,12 @@ fn front_sql_insert_single() {
 
     let expected_explain = String::from(
         r#"insert "t"
-    projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
-        scan
-            projection ("COL_1"::unsigned -> COL_0, "COL_2"::unsigned -> COL_1)
-                scan
-                    motion [policy: segment([ref("COL_1"), value(NULL)])]
-                        projection (sum(("sum_25")) -> "COL_1", sum(("count_28")) -> "COL_2")
-                            motion [policy: full]
-                                scan 
-                                    projection (sum(("t"."b")) -> "sum_25", count(("t"."d")) -> "count_28")
-                                        scan "t"
+    motion [policy: segment([ref("COL_1"), value(NULL)])]
+        projection (sum(("sum_25")) -> "COL_1", sum(("count_28")) -> "COL_2")
+            motion [policy: full]
+                scan 
+                    projection (sum(("t"."b")) -> "sum_25", count(("t"."d")) -> "count_28")
+                        scan "t"
 "#,
     );
 
@@ -1230,7 +1210,7 @@ fn front_sql_groupby_with_aggregates() {
         join (select "g", "e", sum("f") as "f" from "t2" group by "g", "e") as t2
         on (t1."a", t2."g") = (t2."e", t1."b")"#;
 
-    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("T1"."a" -> "a", "T1"."b" -> "b", "T1"."c" -> "c", "T2"."g" -> "g", "T2"."e" -> "e", "T2"."f" -> "f")
     join on ROW("T1"."a", "T2"."g") = ROW("T2"."e", "T1"."b")

@@ -7,14 +7,14 @@ pub trait ToHashString {
 #[must_use]
 /// A simple function to calculate the bucket id from a string slice.
 /// `(MurMur3 hash at str) % bucket_count + 1`
-pub fn str_to_bucket_id(s: &str, bucket_count: usize) -> u64 {
+pub fn str_to_bucket_id(s: &str, bucket_count: u64) -> u64 {
     let mut hasher = Murmur3Hasher::default();
     hasher.write(s.as_bytes());
-    u64::from(hasher.finish()) % bucket_count as u64 + 1
+    u64::from(hasher.finish()) % bucket_count + 1
 }
 
 #[must_use]
-pub fn bucket_id_by_tuple<T>(tuple: &[&T], bucket_count: usize) -> u64
+pub fn bucket_id_by_tuple<T>(tuple: &[&T], bucket_count: u64) -> u64
 where
     T: ToHashString,
 {

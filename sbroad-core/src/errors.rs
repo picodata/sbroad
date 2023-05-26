@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::fmt;
+use tarantool::error::TransactionError;
 
 const DO_SKIP: &str = "do skip";
 
@@ -98,6 +99,8 @@ pub enum Entity {
     Table,
     /// corresponds to struct Target
     Target,
+    /// tarantool transaction
+    Transaction,
     /// general variant for tuple
     Tuple,
     /// general variant for type of some object
@@ -157,6 +160,7 @@ impl fmt::Display for Entity {
             Entity::SyntaxPlan => "syntax plan".to_string(),
             Entity::Table => "table".to_string(),
             Entity::Target => "target".to_string(),
+            Entity::Transaction => "transaction".to_string(),
             Entity::Tuple => "tuple".to_string(),
             Entity::Type => "type".to_string(),
             Entity::Value => "value".to_string(),
@@ -273,3 +277,9 @@ impl fmt::Display for SbroadError {
 }
 
 impl std::error::Error for SbroadError {}
+
+impl From<TransactionError> for SbroadError {
+    fn from(error: TransactionError) -> Self {
+        SbroadError::FailedTo(Action::Create, Some(Entity::Transaction), error.to_string())
+    }
+}

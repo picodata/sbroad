@@ -1,33 +1,23 @@
-local function init_bucket_id()
+local helper = require('sbroad.helper')
+
+local function init_bucket()
+    local exec_fn = helper.module_name() .. ".calculate_bucket_id"
     box.schema.func.create(
-        'libsbroad.calculate_bucket_id',
+        exec_fn,
         { if_not_exists = true, language = 'C' }
     )
-
-    box.schema.func.create('BUCKET_ID', {
-        language = 'Lua',
-        body = [[
-            function(x)
-                return box.func['libsbroad.calculate_bucket_id']:call({ x })
-            end
-        ]],
-        if_not_exists = true,
-        param_list = {'string'},
-        returns = 'unsigned',
-        aggregate = 'none',
-        exports = {'SQL'},
-    })
 end
 
 local function init_statistics()
+    local exec_fn = helper.module_name() .. ".init_statistics"
     box.schema.func.create(
-        'libsbroad.init_statistics',
+        exec_fn,
         { if_not_exists = true, language = 'C' }
     )
 end
 
 local function init()
-    init_bucket_id()
+    init_bucket()
     init_statistics()
 end
 

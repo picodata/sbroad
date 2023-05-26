@@ -8,6 +8,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational, Unary};
+use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
 use crate::ir::Node;
@@ -792,7 +793,35 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::Motion { .. } => {
+                Relational::Motion {
+                    policy, children, ..
+                } => {
+                    if let MotionPolicy::LocalSegment { .. } = policy {
+                        #[cfg(feature = "mock")]
+                        {
+                            // We should materialize the subquery on the storage.
+                            // Honestly, this SQL is not valid and should never be
+                            // generated in runtime, but let's leave it for testing.
+                            if let Some(child_id) = children.first() {
+                                let sn = SyntaxNode::new_pointer(
+                                    id,
+                                    Some(self.nodes.get_syntax_node_id(*child_id)?),
+                                    vec![],
+                                );
+                                return Ok(self.nodes.push_syntax_node(sn));
+                            }
+                        }
+                        #[cfg(not(feature = "mock"))]
+                        {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(
+                                    "LocalSegment motion policy is not supported in the syntax plan."
+                                        .into(),
+                                ),
+                            ));
+                        }
+                    }
                     let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);
                     let mut children: Vec<usize> = Vec::new();
@@ -1149,7 +1178,7 @@ impl<'p> SyntaxPlan<'p> {
         Ok(())
     }
 
-    fn empty(plan: &'p ExecutionPlan) -> Self {
+    pub(crate) fn empty(plan: &'p ExecutionPlan) -> Self {
         SyntaxPlan {
             nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id()),
             top: None,
@@ -1287,6 +1316,14 @@ impl OrderedSyntaxNodes {
             );
         }
         Ok(result)
+    }
+
+    #[must_use]
+    pub fn empty() -> Self {
+        OrderedSyntaxNodes {
+            arena: Vec::new(),
+            positions: Vec::new(),
+        }
     }
 }
 

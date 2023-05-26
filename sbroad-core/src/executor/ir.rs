@@ -5,6 +5,7 @@ use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Action, Entity, SbroadError};
+use crate::executor::engine::Vshard;
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
@@ -12,6 +13,8 @@ use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::{Node, Plan};
+use crate::otm::child_span;
+use sbroad_proc::otm_child_span;
 
 /// Query type (used to parse the returned results).
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -98,6 +101,47 @@ impl ExecutionPlan {
         ))
     }
 
+    /// Add materialize motion result to translation map of virtual tables
+    ///
+    /// # Errors
+    /// - invalid motion node
+    #[otm_child_span("query.motion.add")]
+    pub fn set_motion_vtable(
+        &mut self,
+        motion_id: usize,
+        vtable: VirtualTable,
+        runtime: &impl Vshard,
+    ) -> Result<(), SbroadError> {
+        let mut vtable = vtable;
+        let policy = if let Relational::Motion { policy, .. } =
+            self.get_ir_plan().get_relation_node(motion_id)?
+        {
+            policy.clone()
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("invalid motion node".to_string()),
+            ));
+        };
+        match policy {
+            MotionPolicy::Segment(shard_key) | MotionPolicy::LocalSegment(shard_key) => {
+                vtable.reshard(&shard_key, runtime)?;
+            }
+            MotionPolicy::Full | MotionPolicy::Local => {}
+        }
+
+        let need_init = self.get_vtables().is_none();
+        if need_init {
+            self.set_vtables(HashMap::new());
+        }
+
+        if let Some(vtables) = self.get_mut_vtables() {
+            vtables.insert(motion_id, Rc::new(vtable));
+        }
+
+        Ok(())
+    }
+
     #[must_use]
     pub fn has_segmented_tables(&self) -> bool {
         self.vtables.as_ref().map_or(false, |vtable_map| {
@@ -181,7 +225,7 @@ impl ExecutionPlan {
 
         if children.len() != 1 {
             return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "Motion node ({}) must have once child only (actual {})",
+                "Motion node ({}) must have a single child only (actual {})",
                 node_id,
                 children.len()
             )));
@@ -217,7 +261,7 @@ impl ExecutionPlan {
 
         if children.len() != 1 {
             return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "Sub query node ({}) must have once child only (actual {})",
+                "Sub query node ({}) must have a single child only (actual {})",
                 node_id,
                 children.len()
             )));
@@ -295,13 +339,20 @@ impl ExecutionPlan {
                         })?;
                     }
 
-                    if let Relational::Motion { children, .. } = rel {
+                    if let Relational::Motion {
+                        children, policy, ..
+                    } = rel
+                    {
                         if let Some(vtable) =
                             self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
                         {
                             new_vtables.insert(next_id, Rc::clone(vtable));
                         }
-                        *children = Vec::new();
+                        // We should not remove the child of a local motion node.
+                        // The subtree is needed to complie the SQL on the storage.
+                        if !policy.is_local() {
+                            *children = Vec::new();
+                        }
                     }
 
                     if let Some(children) = rel.mut_children() {

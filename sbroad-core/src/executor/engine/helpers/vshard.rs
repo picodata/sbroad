@@ -136,7 +136,7 @@ pub fn exec_ir_on_all(
 
 #[otm_child_span("query.dispatch.cartridge.some")]
 pub fn exec_with_filtered_buckets(
-    runtime: &(impl Vshard + Router),
+    runtime: &(impl Router + Vshard),
     mut sub_plan: ExecutionPlan,
     buckets: &Buckets,
 ) -> Result<Box<dyn Any>, SbroadError> {

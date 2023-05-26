@@ -15,7 +15,7 @@ use std::rc::Rc;
 use tarantool::tlua::LuaFunction;
 
 use crate::cartridge::config::RouterConfiguration;
-use crate::cartridge::update_tracing;
+use crate::cartridge::{bucket_count, update_tracing};
 use sbroad::executor::protocol::Binary;
 
 use sbroad::error;
@@ -45,7 +45,7 @@ use super::ConfigurationProvider;
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntime {
     metadata: RefCell<RouterConfiguration>,
-    bucket_count: usize,
+    bucket_count: u64,
     ir_cache: RefCell<LRUCache<String, Plan>>,
 }
 
@@ -258,11 +258,6 @@ impl Router for RouterRuntime {
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(&*self.cached_config()?, &space, rec)
     }
-
-    /// Calculate bucket for a key.
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count)
-    }
 }
 
 impl Statistics for RouterRuntime {
@@ -309,51 +304,13 @@ impl RouterRuntime {
     /// - Failed to detect the correct amount of buckets.
     pub fn new() -> Result<Self, SbroadError> {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None)?;
-        let mut result = RouterRuntime {
+        let result = RouterRuntime {
             metadata: RefCell::new(RouterConfiguration::new()),
-            bucket_count: 0,
+            bucket_count: bucket_count()?,
             ir_cache: RefCell::new(cache),
         };
 
-        result.set_bucket_count()?;
-
         Ok(result)
-    }
-
-    /// Function get summary count of bucket from `vshard`
-    fn set_bucket_count(&mut self) -> Result<(), SbroadError> {
-        let lua = tarantool::lua_state();
-
-        let bucket_count_fn: LuaFunction<_> =
-            match lua.eval("return require('vshard').router.bucket_count") {
-                Ok(v) => v,
-                Err(e) => {
-                    error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!(
-                        "Failed lua function load: {e}"
-                    )));
-                }
-            };
-
-        let bucket_count: u64 = match bucket_count_fn.call() {
-            Ok(r) => r,
-            Err(e) => {
-                error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-                return Err(SbroadError::LuaError(e.to_string()));
-            }
-        };
-
-        self.bucket_count = match bucket_count.try_into() {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(SbroadError::Invalid(
-                    Entity::Runtime,
-                    Some("invalid bucket count".into()),
-                ));
-            }
-        };
-
-        Ok(())
     }
 }
 
@@ -375,11 +332,15 @@ impl Vshard for RouterRuntime {
     }
 
     fn bucket_count(&self) -> u64 {
-        self.bucket_count as u64
+        self.bucket_count
     }
 
     fn get_random_bucket(&self) -> Buckets {
         get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
     }
 
     fn exec_ir_on_some(
@@ -388,5 +349,43 @@ impl Vshard for RouterRuntime {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
         exec_with_filtered_buckets(self, sub_plan, buckets)
+    }
+}
+
+impl Vshard for &RouterRuntime {
+    fn exec_ir_on_all(
+        &self,
+        required: Binary,
+        optional: Binary,
+        query_type: QueryType,
+        conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        exec_ir_on_all(
+            &*self.metadata()?,
+            required,
+            optional,
+            query_type,
+            conn_type,
+        )
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        exec_with_filtered_buckets(*self, sub_plan, buckets)
     }
 }

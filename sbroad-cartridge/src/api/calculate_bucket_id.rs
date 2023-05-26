@@ -8,7 +8,7 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
-use sbroad::executor::engine::Router;
+use sbroad::executor::engine::{Router, Vshard};
 use sbroad::ir::value::{EncodedValue, Value};
 use sbroad::log::tarantool_error;
 

@@ -267,7 +267,21 @@ fn insert2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    assert_eq!(plan.slices.slices().is_empty(), true);
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::LocalSegment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
 }
 
 #[test]
@@ -276,7 +290,21 @@ fn insert3() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    assert_eq!(plan.slices.slices().is_empty(), true);
+    let motion_id = *plan.slices.slice(0).unwrap().position(0).unwrap();
+    let motion = plan.get_relation_node(motion_id).unwrap();
+    if let Relational::Motion { policy, .. } = motion {
+        assert_eq!(
+            *policy,
+            MotionPolicy::LocalSegment(
+                (Key {
+                    positions: vec![0, 1]
+                })
+                .into()
+            )
+        );
+    } else {
+        panic!("Expected a motion node");
+    }
 }
 
 #[test]

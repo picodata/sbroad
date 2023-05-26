@@ -65,7 +65,7 @@ fn bucket2_test() {
 
 #[test]
 fn bucket3_test() {
-    let sql = r#"SELECT *, bucket_id('111') FROM "t1""#;
+    let sql = r#"SELECT *, func('111') FROM "t1""#;
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
@@ -80,7 +80,7 @@ fn bucket3_test() {
     expected.rows.push(vec![
         EncodedValue::String("Execute query on all buckets".to_string()),
         EncodedValue::String(String::from(PatternWithParams::new(
-            r#"SELECT "t1"."a", "t1"."b", "BUCKET_ID" (?) as "COL_1" FROM "t1""#.to_string(),
+            r#"SELECT "t1"."a", "t1"."b", "FUNC" (?) as "COL_1" FROM "t1""#.to_string(),
             vec![Value::from("111".to_string())],
         ))),
     ]);

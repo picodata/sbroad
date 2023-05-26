@@ -49,7 +49,7 @@ fn box_execute_result_serialize() {
 #[test]
 fn convert_to_vtable() {
     let col_names = ["id", "name", "count", "price"];
-    let r = ProducerResult {
+    let mut r = ProducerResult {
         metadata: vec![
             MetadataColumn::new(col_names[0].into(), "integer".into()),
             MetadataColumn::new(col_names[1].into(), "string".into()),

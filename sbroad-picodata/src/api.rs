@@ -3,7 +3,7 @@ use crate::runtime::storage::StorageRuntime;
 use sbroad::backend::sql::ir::PatternWithParams;
 use sbroad::debug;
 use sbroad::errors::{Action, SbroadError};
-use sbroad::executor::engine::{helpers::decode_msgpack, Router};
+use sbroad::executor::engine::{helpers::decode_msgpack, Vshard};
 use sbroad::executor::protocol::{EncodedRequiredData, RequiredData};
 use sbroad::executor::Query;
 use sbroad::otm::query_span;

@@ -49,8 +49,7 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                         ));
                     }
                 };
-                let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params)
-                {
+                let mut query = match Query::new(&runtime, &lua_params.pattern, lua_params.params) {
                     Ok(q) => q,
                     Err(e) => {
                         error!(Option::from("query dispatch"), &format!("{e:?}"));
@@ -127,6 +126,9 @@ pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
                 Ok(result) => {
                     if let Some(tuple) = (*result).downcast_ref::<Tuple>() {
                         f_ctx.return_tuple(tuple).unwrap();
+                        0
+                    } else if let Some(mp) = (*result).downcast_ref::<Vec<u8>>() {
+                        f_ctx.return_mp(mp.as_slice()).unwrap();
                         0
                     } else {
                         error!(

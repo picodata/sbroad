@@ -144,7 +144,7 @@ fn linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -228,7 +228,7 @@ fn union_linker_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -332,7 +332,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     virtual_table.set_alias("\"t8\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -419,7 +419,7 @@ fn join_linker2_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     query
@@ -491,7 +491,7 @@ fn join_linker3_test() {
     virtual_table.set_alias("\"t2\"").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     query
@@ -558,7 +558,7 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        virtual_t2.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -583,7 +583,7 @@ fn join_linker4_test() {
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
-        query.reshard_vtable(&mut virtual_sq, key).unwrap();
+        virtual_sq.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -669,7 +669,7 @@ on q."f" = "t1"."a""#;
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        virtual_t2.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -698,7 +698,7 @@ on q."f" = "t1"."a""#;
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
-        query.reshard_vtable(&mut virtual_sq, key).unwrap();
+        virtual_sq.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -749,7 +749,7 @@ fn anonymous_col_index_test() {
     let mut virtual_t1 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
-        query.reshard_vtable(&mut virtual_t1, key).unwrap();
+        virtual_t1.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -765,7 +765,7 @@ fn anonymous_col_index_test() {
     let mut virtual_t2 = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
-        query.reshard_vtable(&mut virtual_t2, key).unwrap();
+        virtual_t2.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
@@ -941,24 +941,26 @@ fn insert1_test() {
             EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {}",
-                    r#"INSERT INTO "t" ("b", "bucket_id")"#,
-                    r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
+                    "{} {}",
+                    r#"INSERT INTO "t" ("b")"#,
+                    // We don't generate SQL for insertion, so in this test we just check that
+                    // correct virtual table is used.
+                    r#"(SELECT "a" FROM "TMP_test_113") as "t""#,
                 ),
-                vec![Value::Null, Value::String("NULL".into()), Value::String("NULL".into())],
+                vec![],
             ))),
         ],
         vec![
             EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {}",
-                    r#"INSERT INTO "t" ("b", "bucket_id")"#,
-                    r#"SELECT COL_0, bucket_id (coalesce (CAST (? as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0 FROM ((SELECT "a" FROM "TMP_test_142") as "t"))"#,
+                    "{} {}",
+                    r#"INSERT INTO "t" ("b")"#,
+                    // We don't generate SQL for insertion, so in this test we just check that
+                    // correct virtual table is used.
+                    r#"(SELECT "a" FROM "TMP_test_113") as "t""#,
                 ),
-                vec![Value::Null, Value::String("NULL".into()), Value::String("NULL".into())],
+                vec![],
             ))),
         ],
     ]);
@@ -989,13 +991,13 @@ fn insert2_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {} {}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
-                r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
-                r#"(SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
+                "{} {}",
+                // We don't generate SQL for insertion, so we just check a storage plan
+                // and buckets this way.
+                r#"INSERT INTO "t" ("a", "b")"#,
+                r#"SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?) "#,
             ),
-            vec![Value::from("NULL"), Value::from("NULL"), Value::from(1_u64), Value::from(2_u64)],
+            vec![Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1058,26 +1060,26 @@ fn insert3_test() {
             EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {}",
-                    r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
-                    r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
+                    "{} {}",
+                    r#"INSERT INTO "t" ("b", "a")"#,
+                    // We don't generate SQL for insertion, so in this test we just check that
+                    // correct virtual table is used.
+                    r#"(SELECT "a","b" FROM "TMP_test_117") as "t""#,
                 ),
-                vec![Value::from("NULL"), Value::from("NULL")],
+                vec![],
             ))),
         ],
         vec![
             EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
             EncodedValue::String(String::from(PatternWithParams::new(
                 format!(
-                    "{} {} {} {}",
-                    r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("t"."a" as unsigned) as COL_0, CAST ("t"."b" as unsigned) as COL_1 FROM"#,
-                    r#"((SELECT "a","b" FROM "TMP_test_155") as "t"))"#,
+                    "{} {}",
+                    r#"INSERT INTO "t" ("b", "a")"#,
+                    // We don't generate SQL for insertion, so in this test we just check that
+                    // correct virtual table is used.
+                    r#"(SELECT "a","b" FROM "TMP_test_117") as "t""#,
                 ),
-                vec![Value::from("NULL"), Value::from("NULL")],
+                vec![],
             ))),
         ],
     ]);
@@ -1109,13 +1111,13 @@ fn insert4_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {} {}",
-                r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                r#"(SELECT CAST ("t"."b" as unsigned) as COL_0, CAST ("t"."a" as unsigned) as COL_1 FROM"#,
-                r#"(SELECT "t"."b", "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?)))"#,
+                "{} {}",
+                // We don't generate SQL for insertion, so we just check a storage plan
+                // and buckets this way.
+                r#"INSERT INTO "t" ("b", "a")"#,
+                r#"SELECT "t"."b", "t"."a" FROM "t" WHERE ("t"."a") = (?) and ("t"."b") = (?) "#,
             ),
-            vec![Value::from("NULL"), Value::from("NULL"), Value::from(1_u64), Value::from(2_u64)],
+            vec![Value::from(1_u64), Value::from(2_u64)],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1173,13 +1175,13 @@ fn insert5_test() {
         EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
         EncodedValue::String(String::from(PatternWithParams::new(
             format!(
-                "{} {} {} {}",
-                r#"INSERT INTO "t" ("b", "a", "bucket_id")"#,
-                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_1 as string), ?) || coalesce (CAST (COL_0 as string), ?)) FROM"#,
-                r#"(SELECT CAST ("COL_1" as unsigned) as COL_0, CAST ("COL_2" as unsigned) as COL_1 FROM"#,
-                r#"((SELECT "COL_1","COL_2" FROM "TMP_test_125") as "t"))"#,
+                "{} {}",
+                r#"INSERT INTO "t" ("b", "a")"#,
+                // We don't generate SQL for insertion, so in this test we just check that
+                // correct virtual table is used.
+                r#"(SELECT "COL_1","COL_2" FROM "TMP_test_87") as "t""#,
             ),
-            vec![Value::from("NULL"), Value::from("NULL")],
+            vec![],
         ))),
     ]]);
     assert_eq!(expected, result);
@@ -1192,79 +1194,21 @@ fn insert6_test() {
     let coordinator = RouterRuntimeMock::new();
 
     let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
-
-    let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "COLUMN_5".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "COLUMN_6".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
-    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
-    virtual_table.add_tuple(vec![Value::from(3_u64), Value::from(4_u64)]);
-    virtual_table.set_alias("\"t\"").unwrap();
-
-    query
-        .coordinator
-        .add_virtual_table(motion_id, virtual_table);
-    let result = *query
+    let _ = *query
         .dispatch()
         .unwrap()
         .downcast::<ProducerResult>()
         .unwrap();
 
-    let mut expected = ProducerResult::new();
-
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
     let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    assert_eq!(550, bucket1);
 
     let param3 = Value::from(3_u64);
     let param4 = Value::from(4_u64);
     let bucket2 = query.coordinator.determine_bucket_id(&[&param3, &param4]);
-
-    expected.rows.extend(vec![
-        vec![
-            EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
-            EncodedValue::String(String::from(PatternWithParams::new(
-                format!(
-                    "{} {} {} {}",
-                    r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("COLUMN_5" as unsigned) as COL_0, CAST ("COLUMN_6" as unsigned) as COL_1 FROM"#,
-                    r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
-                ),
-                vec![Value::from("NULL"), Value::from("NULL")],
-            ))),
-        ],
-        vec![
-            EncodedValue::String(format!("Execute query on a bucket [{bucket2}]")),
-            EncodedValue::String(String::from(PatternWithParams::new(
-                format!(
-                    "{} {} {} {}",
-                    r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                    r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("COLUMN_5" as unsigned) as COL_0, CAST ("COLUMN_6" as unsigned) as COL_1 FROM"#,
-                    r#"((SELECT "COLUMN_5","COLUMN_6" FROM "TMP_test_94") as "t"))"#,
-                ),
-                vec![Value::from("NULL"), Value::from("NULL")],
-            ))),
-        ],
-    ]);
-    assert_eq!(expected, result);
+    assert_eq!(8906, bucket2);
 }
 
 #[test]
@@ -1341,13 +1285,12 @@ fn insert8_test() {
             String::from(
                 PatternWithParams::new(
                     format!(
-                    "{} {} {} {} {}",
-                    r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op", "bucket_id")"#,
-                    r#"SELECT COL_0, COL_1, COL_2, COL_3, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
-                    r#"(SELECT CAST ("hash_single_testing"."identification_number" as int) as COL_0, CAST ("hash_single_testing"."product_code" as string) as COL_1,"#,
-                    r#"CAST ("hash_single_testing"."product_units" as bool) as COL_2, CAST ("hash_single_testing"."sys_op" as unsigned) as COL_3 FROM"#,
-                    r#"((SELECT "identification_number","product_code","product_units","sys_op" FROM "TMP_test_114") as "hash_single_testing"))"#,
-                    ), vec![Value::from("NULL"), Value::from("NULL")],
+                    "{} {}",
+                    r#"INSERT INTO "hash_testing" ("identification_number", "product_code", "product_units", "sys_op")"#,
+                    // We don't generate SQL for insertion, so in this test we just check that
+                    // correct virtual table is used.
+                    r#"(SELECT "identification_number","product_code","product_units","sys_op" FROM "TMP_test_56") as "hash_single_testing""#,
+                    ), vec![],
                 )
             )
         ),
@@ -1367,57 +1310,18 @@ fn insert9_test() {
         vec![Value::from(1_u64), Value::from(2_u64)],
     )
     .unwrap();
-    let motion_id = *query
-        .exec_plan
-        .get_ir_plan()
-        .clone_slices()
-        .slice(0)
-        .unwrap()
-        .position(0)
-        .unwrap();
 
-    let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "COLUMN_1".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "COLUMN_2".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
-    virtual_table.set_alias("\"t\"").unwrap();
-
-    query
-        .coordinator
-        .add_virtual_table(motion_id, virtual_table);
-    let result = *query
+    let _ = *query
         .dispatch()
         .unwrap()
         .downcast::<ProducerResult>()
         .unwrap();
 
-    let mut expected = ProducerResult::new();
-
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
     let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
 
-    expected.rows.extend(vec![vec![
-        EncodedValue::String(format!("Execute query on a bucket [{bucket1}]")),
-        EncodedValue::String(String::from(PatternWithParams::new(
-            format!(
-                "{} {} {}",
-                r#"INSERT INTO "t" ("a", "b", "bucket_id")"#,
-                r#"SELECT COL_0, COL_1, bucket_id (coalesce (CAST (COL_0 as string), ?) || coalesce (CAST (COL_1 as string), ?)) FROM"#,
-                r#"(SELECT CAST ("COLUMN_1" as unsigned) as COL_0, CAST ("COLUMN_2" as unsigned) as COL_1 FROM ((SELECT "COLUMN_1","COLUMN_2" FROM "TMP_test_82") as "t"))"#,
-            ),
-            vec![Value::from("NULL"), Value::from("NULL")],
-        ))),
-    ]]);
-    assert_eq!(expected, result);
+    assert_eq!(550, bucket1);
 }
 
 /// Helper function to create a "test" virtual table.

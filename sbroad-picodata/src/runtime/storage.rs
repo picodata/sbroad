@@ -4,9 +4,10 @@ use sbroad::{
     debug,
     errors::{Action, Entity, SbroadError},
     executor::{
+        bucket::Buckets,
         engine::{
             helpers::{
-                compile_encoded_optional,
+                compile_encoded_optional, execute_dml,
                 storage::{
                     meta::StorageMetadata,
                     runtime::{
@@ -15,21 +16,29 @@ use sbroad::{
                     },
                     PreparedStmt,
                 },
+                vshard::get_random_bucket,
             },
-            QueryCache,
+            QueryCache, Vshard,
         },
-        ir::QueryType,
+        hash::bucket_id_by_tuple,
+        ir::{ConnectionType, ExecutionPlan, QueryType},
         lru::{Cache, LRUCache, DEFAULT_CAPACITY},
-        protocol::RequiredData,
+        protocol::{Binary, RequiredData},
     },
+    ir::value::Value,
     warn,
 };
+
+use tarantool::tuple::Tuple;
+
+use super::DEFAULT_BUCKET_COUNT;
 
 thread_local!(static STATEMENT_CACHE: Rc<RefCell<LRUCache<String, PreparedStmt>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare))).unwrap())));
 
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
     pub metadata: RefCell<StorageMetadata>,
+    bucket_count: u64,
     cache: Rc<RefCell<LRUCache<String, PreparedStmt>>>,
 }
 
@@ -58,6 +67,44 @@ impl QueryCache for StorageRuntime {
     }
 }
 
+impl Vshard for StorageRuntime {
+    fn exec_ir_on_all(
+        &self,
+        _required: Binary,
+        _optional: Binary,
+        _query_type: QueryType,
+        _conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_all is not supported on the storage".to_string()),
+        ))
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_some is not supported on the storage".to_string()),
+        ))
+    }
+}
+
 impl StorageRuntime {
     /// Build a new storage runtime.
     ///
@@ -66,6 +113,7 @@ impl StorageRuntime {
     pub fn new() -> Result<Self, SbroadError> {
         let runtime = STATEMENT_CACHE.with(|cache| StorageRuntime {
             metadata: RefCell::new(StorageMetadata::new()),
+            bucket_count: DEFAULT_BUCKET_COUNT,
             cache: cache.clone(),
         });
         Ok(runtime)
@@ -81,45 +129,39 @@ impl StorageRuntime {
         required: &mut RequiredData,
         raw_optional: &mut Vec<u8>,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        if required.can_be_cached {
-            return self.execute_cacheable_plan(required, raw_optional);
+        match required.query_type {
+            QueryType::DML => self.execute_dml(required, raw_optional),
+            QueryType::DQL => {
+                if required.can_be_cached {
+                    self.execute_cacheable_dql(required, raw_optional)
+                } else {
+                    execute_non_cacheable_dql(required, raw_optional)
+                }
+            }
         }
-        Self::execute_non_cacheable_plan(required, raw_optional)
     }
 
     #[allow(unused_variables)]
-    fn execute_non_cacheable_plan(
+    fn execute_dml(
+        &self,
         required: &mut RequiredData,
         raw_optional: &mut Vec<u8>,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        let plan_id = required.plan_id.clone();
-
-        if required.can_be_cached {
+        if required.query_type != QueryType::DML {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
-                Some("Expected a plan that can not be cached.".to_string()),
+                Some("Expected a DML plan.".to_string()),
             ));
         }
 
-        let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
-        debug!(
-            Option::from("execute"),
-            &format!(
-                "Failed to execute the statement: {}",
-                pattern_with_params.pattern
-            ),
-        );
-        let result = if required.query_type == QueryType::DML {
-            write_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
-        } else {
-            read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
-        };
-
-        result
+        let result = execute_dml(self, raw_optional)?;
+        let tuple = Tuple::new(&(result,))
+            .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}"))))?;
+        Ok(Box::new(tuple) as Box<dyn Any>)
     }
 
     #[allow(unused_variables)]
-    fn execute_cacheable_plan(
+    fn execute_cacheable_dql(
         &self,
         required: &mut RequiredData,
         raw_optional: &mut Vec<u8>,
@@ -226,4 +268,30 @@ impl StorageRuntime {
 
         result
     }
+}
+
+fn execute_non_cacheable_dql(
+    required: &mut RequiredData,
+    raw_optional: &mut Vec<u8>,
+) -> Result<Box<dyn Any>, SbroadError> {
+    if required.can_be_cached || required.query_type != QueryType::DQL {
+        return Err(SbroadError::Invalid(
+            Entity::Plan,
+            Some("Expected a DQL plan that can not be cached.".to_string()),
+        ));
+    }
+
+    let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
+    debug!(
+        Option::from("execute"),
+        &format!(
+            "Failed to execute the statement: {}",
+            pattern_with_params.pattern
+        ),
+    );
+    warn!(
+        Option::from("execute"),
+        &format!("SQL pattern: {}", pattern_with_params.pattern),
+    );
+    read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
 }

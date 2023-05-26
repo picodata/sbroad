@@ -124,9 +124,6 @@ pub trait Router: QueryCache {
         args: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError>;
 
-    /// Determine shard for query execution by sharding key value
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64;
-
     /// Dispatch a sql query to the shards in cluster and get the results.
     ///
     /// # Errors
@@ -260,4 +257,7 @@ pub trait Vshard {
 
     /// Get a random bucket from the cluster.
     fn get_random_bucket(&self) -> Buckets;
+
+    /// Determine shard for query execution by sharding key value
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64;
 }

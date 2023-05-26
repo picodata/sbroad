@@ -897,7 +897,7 @@ impl Plan {
                     )),
                 ))
             }
-            MotionPolicy::Segment(key) => {
+            MotionPolicy::Segment(key) | MotionPolicy::LocalSegment(key) => {
                 if let Ok(keyset) = KeySet::try_from(key) {
                     self.set_dist(output, Distribution::Segment { keys: keyset })?;
                 } else {

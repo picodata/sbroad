@@ -353,9 +353,12 @@ fn subtree_next<'plan>(
                     None
                 }
                 Relational::Motion {
-                    children, output, ..
+                    children,
+                    output,
+                    policy,
+                    ..
                 } => {
-                    if iter.need_motion_subtree() {
+                    if policy.is_local() || iter.need_motion_subtree() {
                         let step = *iter.get_child().borrow();
                         if step < children.len() {
                             *iter.get_child().borrow_mut() += 1;

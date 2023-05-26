@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::vec;
@@ -6,7 +6,7 @@ use std::vec;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Entity, SbroadError};
-use crate::executor::bucket::Buckets;
+use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 use crate::ir::value::Value;
@@ -106,7 +106,7 @@ impl VirtualTable {
 
     /// Gets a mutable virtual table tuples list
     #[must_use]
-    pub fn get_mut_tuples(&mut self) -> &mut [VTableTuple] {
+    pub fn get_mut_tuples(&mut self) -> &mut Vec<VTableTuple> {
         &mut self.tuples
     }
 
@@ -137,6 +137,12 @@ impl VirtualTable {
     #[must_use]
     pub fn get_index(&self) -> &HashMap<u64, Vec<usize>> {
         &self.index.value
+    }
+
+    /// Gets virtual table mutable index
+    #[must_use]
+    pub fn get_mut_index(&mut self) -> &mut HashMap<u64, Vec<usize>> {
+        &mut self.index.value
     }
 
     /// Set vtable index
@@ -230,14 +236,63 @@ impl VirtualTable {
 
         for bucket in buckets {
             if let Some(positions) = self.index.value.get(bucket) {
+                let mut new_positions: Vec<usize> = Vec::with_capacity(positions.len());
                 for pos in positions {
                     result.tuples.push(self.tuples[*pos].clone());
+                    new_positions.push(result.tuples.len() - 1);
                 }
-                result.index.value.insert(*bucket, positions.clone());
+                result.index.value.insert(*bucket, new_positions);
             }
         }
 
         result
+    }
+
+    /// Reshard a virtual table (i.e. build a bucket index).
+    ///
+    /// # Errors
+    /// - Motion key is invalid.
+    pub fn reshard(
+        &mut self,
+        sharding_key: &MotionKey,
+        runtime: &impl Vshard,
+    ) -> Result<(), SbroadError> {
+        self.set_motion_key(sharding_key);
+
+        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (pos, tuple) in self.get_tuples().iter().enumerate() {
+            let mut shard_key_tuple: Vec<&Value> = Vec::new();
+            for target in &sharding_key.targets {
+                match target {
+                    Target::Reference(col_idx) => {
+                        let part = tuple.get(*col_idx).ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::DistributionKey,
+                                format!(
+                                "failed to find a distribution key column {pos} in the tuple {tuple:?}."
+                            ),
+                            )
+                        })?;
+                        shard_key_tuple.push(part);
+                    }
+                    Target::Value(ref value) => {
+                        shard_key_tuple.push(value);
+                    }
+                }
+            }
+            let bucket_id = runtime.determine_bucket_id(&shard_key_tuple);
+            match index.entry(bucket_id) {
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![pos]);
+                }
+                Entry::Occupied(entry) => {
+                    entry.into_mut().push(pos);
+                }
+            }
+        }
+
+        self.set_index(index);
+        Ok(())
     }
 }
 

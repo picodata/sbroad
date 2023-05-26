@@ -10,12 +10,13 @@ use crate::collection;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
-    helpers::{sharding_keys_from_map, sharding_keys_from_tuple},
-    InitialBucket, InitialColumnStats, InitialHistogram, Router, Statistics,
+    helpers::{sharding_keys_from_map, sharding_keys_from_tuple, vshard::get_random_bucket},
+    InitialBucket, InitialColumnStats, InitialHistogram, Router, Statistics, Vshard,
 };
 use crate::executor::hash::bucket_id_by_tuple;
-use crate::executor::ir::ExecutionPlan;
+use crate::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
+use crate::executor::protocol::Binary;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Cache;
@@ -35,7 +36,7 @@ use super::{Metadata, QueryCache};
 pub struct RouterConfigurationMock {
     functions: HashMap<String, Function>,
     tables: HashMap<String, Table>,
-    bucket_count: usize,
+    bucket_count: u64,
     sharding_column: String,
 }
 
@@ -89,10 +90,10 @@ impl RouterConfigurationMock {
     #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn new() -> Self {
-        let name_bucket_id = normalize_name_from_sql("bucket_id");
-        let fn_bucket_id = Function::new_stable(name_bucket_id.clone());
+        let name_func = normalize_name_from_sql("func");
+        let fn_func = Function::new_stable(name_func.clone());
         let mut functions = HashMap::new();
-        functions.insert(name_bucket_id, fn_bucket_id);
+        functions.insert(name_func, fn_func);
 
         let mut tables = HashMap::new();
 
@@ -310,6 +311,82 @@ impl QueryCache for RouterRuntimeMock {
                 SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
             })?
             .capacity())
+    }
+}
+
+impl Vshard for RouterRuntimeMock {
+    fn exec_ir_on_all(
+        &self,
+        _required: Binary,
+        _optional: Binary,
+        _query_type: QueryType,
+        _conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_all is not supported for the mock runtime".to_string()),
+        ))
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.metadata.borrow().bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_some is not supported for the mock runtime".to_string()),
+        ))
+    }
+}
+
+impl Vshard for &RouterRuntimeMock {
+    fn exec_ir_on_all(
+        &self,
+        _required: Binary,
+        _optional: Binary,
+        _query_type: QueryType,
+        _conn_type: ConnectionType,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_all is not supported for the mock runtime".to_string()),
+        ))
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.metadata.borrow().bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count())
+    }
+
+    fn exec_ir_on_some(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _buckets: &Buckets,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_on_some is not supported for the mock runtime".to_string()),
+        ))
     }
 }
 
@@ -665,10 +742,6 @@ impl Router for RouterRuntimeMock {
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(&*self.metadata.borrow(), &space, rec)
-    }
-
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.metadata.borrow().bucket_count)
     }
 }
 

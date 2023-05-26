@@ -5,7 +5,9 @@ use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::engine::helpers::storage::meta::{
     DEFAULT_JAEGER_AGENT_HOST, DEFAULT_JAEGER_AGENT_PORT,
 };
-use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_name_from_sql};
+use sbroad::executor::engine::helpers::{
+    normalize_name_for_space_api, normalize_name_from_schema, normalize_name_from_sql,
+};
 use sbroad::executor::engine::Metadata;
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
@@ -15,13 +17,6 @@ use tarantool::space::Space;
 use tarantool::util::Value;
 
 pub const DEFAULT_BUCKET_COLUMN: &str = "bucket_id";
-
-fn normalize_name_for_space_api(s: &str) -> String {
-    if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return s.to_string();
-    }
-    s.to_uppercase()
-}
 
 /// Router runtime configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,6 +76,7 @@ impl RouterMetadata {
 
 impl Metadata for RouterMetadata {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_lines)]
     fn table(&self, table_name: &str) -> Result<Table, SbroadError> {
         let name = normalize_name_for_space_api(table_name);
 

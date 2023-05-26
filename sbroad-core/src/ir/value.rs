@@ -110,7 +110,7 @@ impl From<bool> for Trivalent {
 
 /// Values are used to keep constants in the IR tree
 /// or results in the virtual tables.
-#[derive(Hash, PartialEq, Debug, Clone, Deserialize, Serialize)]
+#[derive(Hash, PartialEq, Debug, Default, Clone, Deserialize, Serialize)]
 pub enum Value {
     /// Boolean type.
     Boolean(bool),
@@ -121,6 +121,7 @@ pub enum Value {
     /// Signed integer type.
     Integer(i64),
     /// SQL NULL ("unknown" in the terms of three-valued logic).
+    #[default]
     Null,
     /// String type.
     String(String),

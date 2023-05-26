@@ -79,6 +79,16 @@ pub enum MotionPolicy {
     Segment(MotionKey),
     /// No need to move data.
     Local,
+    /// Materialize a virtual table on the data node and calculate
+    /// tuple buckets.
+    LocalSegment(MotionKey),
+}
+
+impl MotionPolicy {
+    #[must_use]
+    pub fn is_local(&self) -> bool {
+        matches!(self, MotionPolicy::Local | MotionPolicy::LocalSegment(_))
+    }
 }
 
 /// Helper struct that unwraps `Expression::Bool` fields.
@@ -131,32 +141,50 @@ impl Strategy {
 }
 
 /// Choose a policy for the inner join child (a policy with the largest motion of data wins).
-fn join_policy_for_or(left_policy: &MotionPolicy, right_policy: &MotionPolicy) -> MotionPolicy {
+fn join_policy_for_or(
+    left_policy: &MotionPolicy,
+    right_policy: &MotionPolicy,
+) -> Result<MotionPolicy, SbroadError> {
     match (left_policy, right_policy) {
-        (MotionPolicy::Full, _) | (_, MotionPolicy::Full) => MotionPolicy::Full,
-        (MotionPolicy::Local, _) => right_policy.clone(),
-        (_, MotionPolicy::Local) => left_policy.clone(),
+        (MotionPolicy::LocalSegment(_), _) | (_, MotionPolicy::LocalSegment(_)) => {
+            Err(SbroadError::Invalid(
+                Entity::Motion,
+                Some("LocalSegment motion is not supported for joins".to_string()),
+            ))
+        }
+        (MotionPolicy::Full, _) | (_, MotionPolicy::Full) => Ok(MotionPolicy::Full),
+        (MotionPolicy::Local, _) => Ok(right_policy.clone()),
+        (_, MotionPolicy::Local) => Ok(left_policy.clone()),
         (MotionPolicy::Segment(key_left), MotionPolicy::Segment(key_right)) => {
             if key_left == key_right {
-                left_policy.clone()
+                Ok(left_policy.clone())
             } else {
-                MotionPolicy::Full
+                Ok(MotionPolicy::Full)
             }
         }
     }
 }
 
 /// Choose a policy for the inner join child (a policy with the smallest motion of data wins).
-fn join_policy_for_and(left_policy: &MotionPolicy, right_policy: &MotionPolicy) -> MotionPolicy {
+fn join_policy_for_and(
+    left_policy: &MotionPolicy,
+    right_policy: &MotionPolicy,
+) -> Result<MotionPolicy, SbroadError> {
     match (left_policy, right_policy) {
-        (MotionPolicy::Full, _) => right_policy.clone(),
-        (_, MotionPolicy::Full) => left_policy.clone(),
-        (MotionPolicy::Local, _) | (_, MotionPolicy::Local) => MotionPolicy::Local,
+        (MotionPolicy::LocalSegment(_), _) | (_, MotionPolicy::LocalSegment(_)) => {
+            Err(SbroadError::Invalid(
+                Entity::Motion,
+                Some("LocalSegment motion is not supported for joins".to_string()),
+            ))
+        }
+        (MotionPolicy::Full, _) => Ok(right_policy.clone()),
+        (_, MotionPolicy::Full) => Ok(left_policy.clone()),
+        (MotionPolicy::Local, _) | (_, MotionPolicy::Local) => Ok(MotionPolicy::Local),
         (MotionPolicy::Segment(key_left), MotionPolicy::Segment(key_right)) => {
             if key_left == key_right {
-                left_policy.clone()
+                Ok(left_policy.clone())
             } else {
-                MotionPolicy::Full
+                Ok(MotionPolicy::Full)
             }
         }
     }
@@ -934,8 +962,8 @@ impl Plan {
                         .cloned()
                         .unwrap_or(MotionPolicy::Full);
                     match bool_op.op {
-                        Bool::And => join_policy_for_and(&left_policy, &right_policy),
-                        Bool::Or => join_policy_for_or(&left_policy, &right_policy),
+                        Bool::And => join_policy_for_and(&left_policy, &right_policy)?,
+                        Bool::Or => join_policy_for_or(&left_policy, &right_policy)?,
                         _ => {
                             return Err(SbroadError::Unsupported(
                                 Entity::Operator,
@@ -1197,76 +1225,31 @@ impl Plan {
         Ok(Some(strategy))
     }
 
-    /// Returns the strategy for the insert node. Also it
-    /// wraps the child node with nested sub-queries that:
-    ///
-    /// - cast expression types
-    /// - calculate `bucket_id`
-    ///
-    /// Full key example:
-    /// ```text
-    /// insert into t1 (a, b) values (1, 2)
-    ///   =>
-    /// insert into t1 (a, b, bucket_id)
-    /// select COL_1, COL_2, bucket_id(coalesce(cast(COL_2 as string), '') || coalesce(cast(COL_1 as string), '')) from (
-    ///   select
-    ///     cast(COLUMN_1 as integer) as COL_1, cast(COLUMN_2 as unsigned) as COL_2
-    ///   from (values (1, 2))
-    /// )
-    /// ```
-    ///
-    /// Trimmed key example:
-    /// ```text
-    /// insert into t1 (a) select c from t2
-    ///   =>
-    /// insert into t1 (a, bucket_id)
-    /// select COL_1, bucket_id(coalesce(cast(NULL as string), '') || coalesce(cast(COL_1 as string), '')) from (
-    ///   select
-    ///     cast(c as integer) as COL_1
-    ///   from (select c from t2)
-    /// )
-    /// ```
     fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
-        // Get the original INSERT child node id.
-        let orig_child_id = self.insert_child_id(rel_id)?;
-        self.replace_insert_child_with_cast_types_sq(rel_id)?;
-
-        // Get a new parent node id for the original INSERT child.
-        let proj_id = self.insert_child_id(rel_id)?;
-        let proj = self.get_relation_node(proj_id)?;
-
-        // We have generated this projection in `replace_insert_child_with_cast_types_sq()`
-        // method and we are sure, that there is exactly a single child in it.
-        let new_parent_id = *proj
-            .children()
-            .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    "expected non-empty amount of children in the projection node".to_string(),
-                )
-            })?
-            .first()
-            .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    "expected at least a single child in projection node".to_string(),
-                )
-            })?;
+        let mut map = Strategy::new(rel_id);
         let motion_key = self.insert_child_motion_key(rel_id)?;
-        self.replace_insert_child_with_bucket_id_sq(rel_id, &motion_key)?;
+        let child_id = self.insert_child_id(rel_id)?;
+        let child_output_id = self.get_relation_node(child_id)?.output();
+        let child_dist = self.get_distribution(child_output_id)?;
 
-        let mut map = Strategy::new(new_parent_id);
-        let orig_child_output_id = self.get_relation_node(orig_child_id)?.output();
-        let orig_child_dist = self.get_distribution(orig_child_output_id)?;
-        if let Distribution::Segment { keys } = orig_child_dist {
+        // Check that we can make a local segment motion.
+        if let Distribution::Segment { keys } = child_dist {
             for key in keys.iter() {
                 let insert_mkey = MotionKey::from(key);
                 if insert_mkey == motion_key {
-                    map.add_child(orig_child_id, MotionPolicy::Local);
+                    map.add_child(child_id, MotionPolicy::LocalSegment(motion_key));
                     return Ok(map);
                 }
             }
         }
+        if let Relational::Values { .. } = self.get_relation_node(child_id)? {
+            if let Distribution::Replicated = child_dist {
+                map.add_child(child_id, MotionPolicy::LocalSegment(motion_key));
+                return Ok(map);
+            }
+        }
 
-        map.add_child(orig_child_id, MotionPolicy::Segment(motion_key));
+        map.add_child(child_id, MotionPolicy::Segment(motion_key));
 
         Ok(map)
     }

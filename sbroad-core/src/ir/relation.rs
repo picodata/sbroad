@@ -3,7 +3,10 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
-use tarantool::space::{Field, SpaceEngineType};
+use tarantool::{
+    space::{Field, SpaceEngineType},
+    tuple::{FieldType, KeyDef, KeyDefPart},
+};
 
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
@@ -103,6 +106,22 @@ impl From<Column> for Field {
     }
 }
 
+impl From<&Column> for FieldType {
+    fn from(column: &Column) -> Self {
+        match column.r#type {
+            Type::Boolean => FieldType::Boolean,
+            Type::Decimal => FieldType::Decimal,
+            Type::Double => FieldType::Double,
+            Type::Integer => FieldType::Integer,
+            Type::Number => FieldType::Number,
+            Type::Scalar => FieldType::Scalar,
+            Type::String => FieldType::String,
+            Type::Unsigned => FieldType::Unsigned,
+            Type::Array => FieldType::Array,
+        }
+    }
+}
+
 impl Column {
     #[must_use]
     pub fn default_value() -> Value {
@@ -116,7 +135,7 @@ impl SerSerialize for Column {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(2))?;
+        let mut map = serializer.serialize_map(Some(3))?;
         map.serialize_entry("name", &self.name)?;
         match &self.r#type {
             Type::Boolean => map.serialize_entry("type", "boolean")?,
@@ -129,6 +148,13 @@ impl SerSerialize for Column {
             Type::Unsigned => map.serialize_entry("type", "unsigned")?,
             Type::Array => map.serialize_entry("type", "array")?,
         }
+        map.serialize_entry(
+            "role",
+            match self.role {
+                ColumnRole::User => "user",
+                ColumnRole::Sharding => "sharding",
+            },
+        )?;
 
         map.end()
     }
@@ -418,6 +444,40 @@ impl Table {
     #[must_use]
     pub fn get_sharding_positions(&self) -> &[usize] {
         &self.key.positions
+    }
+
+    /// Get a sharding key definition for the table.
+    ///
+    /// # Errors
+    /// - Table internal inconsistency.
+    /// - Invalid sharding key position.
+    pub fn get_key_def(&self) -> Result<KeyDef, SbroadError> {
+        let mut parts = Vec::with_capacity(self.get_sharding_positions().len());
+        for pos in self.get_sharding_positions() {
+            let column = self.columns.get(*pos).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Column,
+                    format!(
+                        "(distribution column) at position {} for Table {}",
+                        *pos, self.name
+                    ),
+                )
+            })?;
+            let field_no = u32::try_from(*pos).map_err(|e| {
+                SbroadError::Invalid(
+                    Entity::Table,
+                    Some(format!("sharding key (position {pos}) error: {e}")),
+                )
+            })?;
+            let part = KeyDefPart {
+                field_no,
+                field_type: FieldType::from(column),
+                is_nullable: true,
+                ..Default::default()
+            };
+            parts.push(part);
+        }
+        KeyDef::new(&parts).map_err(|e| SbroadError::Invalid(Entity::Table, Some(e.to_string())))
     }
 }
 

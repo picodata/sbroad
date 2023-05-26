@@ -25,7 +25,7 @@ fn exec_plan_subtree_test() {
     let mut virtual_table = virtual_table_23();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
@@ -89,7 +89,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
 
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
@@ -168,7 +168,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     virtual_table.set_alias("").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
@@ -273,7 +273,7 @@ fn exec_plan_subtree_aggregates() {
     virtual_table.set_alias("").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
@@ -360,7 +360,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     virtual_table.set_alias("").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
@@ -427,7 +427,7 @@ fn exec_plan_subtree_count_asterisk() {
     virtual_table.set_alias("").unwrap();
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
-        query.reshard_vtable(&mut virtual_table, key).unwrap();
+        virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
     let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();

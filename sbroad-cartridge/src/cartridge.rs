@@ -8,8 +8,10 @@ use std::cell::Ref;
 
 use opentelemetry::global::{set_text_map_propagator, set_tracer_provider};
 use opentelemetry::sdk::propagation::{TextMapCompositePropagator, TraceContextPropagator};
+use sbroad::error;
 use sbroad::errors::{Action, SbroadError};
 use sbroad::otm::update_global_tracer;
+use tarantool::tlua::LuaFunction;
 
 static SERVICE_NAME: &str = "sbroad";
 
@@ -72,4 +74,29 @@ pub trait ConfigurationProvider: Sized {
     /// # Errors
     /// - Failed to update the configuration.
     fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError>;
+}
+
+fn bucket_count() -> Result<u64, SbroadError> {
+    let lua = tarantool::lua_state();
+
+    let bucket_count_fn: LuaFunction<_> =
+        match lua.eval("return require('vshard').router.bucket_count") {
+            Ok(v) => v,
+            Err(e) => {
+                error!(Option::from("set_bucket_count"), &format!("{e:?}"));
+                return Err(SbroadError::LuaError(format!(
+                    "Failed lua function load: {e}"
+                )));
+            }
+        };
+
+    let bucket_count: u64 = match bucket_count_fn.call() {
+        Ok(r) => r,
+        Err(e) => {
+            error!(Option::from("set_bucket_count"), &format!("{e:?}"));
+            return Err(SbroadError::LuaError(e.to_string()));
+        }
+    };
+
+    Ok(bucket_count)
 }
