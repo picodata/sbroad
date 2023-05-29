@@ -505,6 +505,77 @@ fn front_sql_groupby_join_1() {
 }
 
 #[test]
+fn front_sql_join() {
+    // test we can have not null and bool kind of condition in join
+    let input = r#"SELECT "product_code", "product_units" FROM (SELECT "product_units", "product_code", "identification_number" FROM "hash_testing") as t2
+        INNER JOIN (SELECT "id" from "test_space") as t
+        ON t2."identification_number" = t."id" and t."id" is not null
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T2"."product_code" -> "product_code", "T2"."product_units" -> "product_units")
+    join on ROW("T2"."identification_number") = ROW("T"."id") and ROW("T"."id") is not null
+        scan "T2"
+            projection ("hash_testing"."product_units" -> "product_units", "hash_testing"."product_code" -> "product_code", "hash_testing"."identification_number" -> "identification_number")
+                scan "hash_testing"
+        motion [policy: full]
+            scan "T"
+                projection ("test_space"."id" -> "id")
+                    scan "test_space"
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+
+    // here hash_single_testing is sharded by "identification_number", so it is a local join
+    let input = r#"SELECT "product_code", "product_units" FROM (SELECT "product_units", "product_code", "identification_number" FROM "hash_single_testing") as t1
+        INNER JOIN (SELECT "id" from "test_space") as t2
+        ON t1."identification_number" = t2."id" and t2."id" is not null
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T1"."product_code" -> "product_code", "T1"."product_units" -> "product_units")
+    join on ROW("T1"."identification_number") = ROW("T2"."id") and ROW("T2"."id") is not null
+        scan "T1"
+            projection ("hash_single_testing"."product_units" -> "product_units", "hash_single_testing"."product_code" -> "product_code", "hash_single_testing"."identification_number" -> "identification_number")
+                scan "hash_single_testing"
+        scan "T2"
+            projection ("test_space"."id" -> "id")
+                scan "test_space"
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+
+    // check we have no error, in case one of the join children has Distribution::Single
+    let input = r#"SELECT "product_code", "product_units" FROM (SELECT "product_units", "product_code", "identification_number" FROM "hash_single_testing") as t1
+        INNER JOIN (SELECT sum("id") as "id" from "test_space") as t2
+        ON t1."identification_number" = t2."id" and t2."id" is not null
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T1"."product_code" -> "product_code", "T1"."product_units" -> "product_units")
+    join on ROW("T1"."identification_number") = ROW("T2"."id") and ROW("T2"."id") is not null
+        scan "T1"
+            projection ("hash_single_testing"."product_units" -> "product_units", "hash_single_testing"."product_code" -> "product_code", "hash_single_testing"."identification_number" -> "identification_number")
+                scan "hash_single_testing"
+        motion [policy: segment([ref("id")])]
+            scan "T2"
+                projection (sum(("sum_41")) -> "id")
+                    motion [policy: full]
+                        scan 
+                            projection (sum(("test_space"."id")) -> "sum_41")
+                                scan "test_space"
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_groupby_insert() {
     let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t" group by "b", "d""#;
 

@@ -842,7 +842,10 @@ impl Plan {
                 (Expression::Arithmetic { .. }, _) | (_, Expression::Arithmetic { .. }) => {
                     MotionPolicy::Full
                 }
-                (Expression::Bool { .. }, Expression::Bool { .. }) => {
+                (
+                    Expression::Bool { .. } | Expression::Unary { .. },
+                    Expression::Bool { .. } | Expression::Unary { .. },
+                ) => {
                     let left_policy = inner_map
                         .get(&bool_op.left)
                         .cloned()
@@ -882,11 +885,17 @@ impl Plan {
                         }
                     }
                 }
-                (Expression::Constant { .. }, Expression::Bool { .. }) => inner_map
+                (
+                    Expression::Constant { .. },
+                    Expression::Bool { .. } | Expression::Unary { .. },
+                ) => inner_map
                     .get(&bool_op.right)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
-                (Expression::Bool { .. }, Expression::Constant { .. }) => inner_map
+                (
+                    Expression::Bool { .. } | Expression::Unary { .. },
+                    Expression::Constant { .. },
+                ) => inner_map
                     .get(&bool_op.left)
                     .cloned()
                     .unwrap_or(MotionPolicy::Full),
@@ -935,7 +944,13 @@ impl Plan {
                     *policy_to_update = MotionPolicy::Segment(MotionKey {
                         targets: eq_cols
                             .iter()
-                            .map(|(_, o_col)| Target::Reference(*o_col))
+                            .map(|(i_col, o_col)| -> Target {
+                                let pos = match segmented_child {
+                                    JoinChild::Outer => *i_col,
+                                    JoinChild::Inner => *o_col,
+                                };
+                                Target::Reference(pos)
+                            })
                             .collect::<Vec<Target>>(),
                     });
                     break;
