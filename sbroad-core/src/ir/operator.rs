@@ -18,6 +18,7 @@ use crate::collection;
 use crate::ir::distribution::{Distribution, KeySet};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::ColumnRole;
+use crate::ir::transformation::redistribution::JoinChild;
 
 /// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
@@ -783,7 +784,7 @@ impl Plan {
         // to the child's output in the condition expression as
         // we have filtered out the sharding column.
         let mut children: Vec<usize> = Vec::with_capacity(2);
-        for child in &[left, right] {
+        for (child, join_child) in &[(left, JoinChild::Outer), (right, JoinChild::Inner)] {
             let child_node = self.get_relation_node(*child)?;
             if let Relational::ScanRelation {
                 relation, alias, ..
@@ -822,10 +823,18 @@ impl Plan {
                         }
                     })
                     .collect::<Vec<_>>();
+                // we should update ONLY references that refer to current child (left, right)
+                let current_target = match join_child {
+                    JoinChild::Inner => Some(vec![1_usize]),
+                    JoinChild::Outer => Some(vec![0_usize]),
+                };
                 for ref_id in refs {
                     let expr = self.get_mut_expression_node(ref_id)?;
-                    if let Expression::Reference { position, .. } = expr {
-                        if *position > sharding_column_pos {
+                    if let Expression::Reference {
+                        position, targets, ..
+                    } = expr
+                    {
+                        if current_target == *targets && *position > sharding_column_pos {
                             *position -= 1;
                         }
                     }

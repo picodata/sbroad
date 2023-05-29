@@ -1359,6 +1359,44 @@ fn front_sql_unique_local_groupings() {
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
+
+#[test]
+fn front_sql_join_table_with_bucket_id_as_first_col() {
+    // here we are joining t3 who has bucket_id as its first column,
+    // check that we correctly handle references in join condition,
+    // after inserting SQ with Projection under outer child
+    let input = r#"
+SELECT * FROM
+    "t3"
+INNER JOIN
+    (SELECT * FROM "hash_single_testing" INNER JOIN (SELECT "id" FROM "test_space") as "ts"
+     ON "hash_single_testing"."identification_number" = "ts"."id") as "ij"
+ON "t3"."a" = "ij"."id"
+"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t3"."a" -> "a", "t3"."b" -> "b", "ij"."identification_number" -> "identification_number", "ij"."product_code" -> "product_code", "ij"."product_units" -> "product_units", "ij"."sys_op" -> "sys_op", "ij"."id" -> "id")
+    join on ROW("t3"."a") = ROW("ij"."id")
+        scan "t3"
+            projection ("t3"."a" -> "a", "t3"."b" -> "b")
+                scan "t3"
+        scan "ij"
+            projection ("hash_single_testing"."identification_number" -> "identification_number", "hash_single_testing"."product_code" -> "product_code", "hash_single_testing"."product_units" -> "product_units", "hash_single_testing"."sys_op" -> "sys_op", "ts"."id" -> "id")
+                join on ROW("hash_single_testing"."identification_number") = ROW("ts"."id")
+                    scan "hash_single_testing"
+                        projection ("hash_single_testing"."identification_number" -> "identification_number", "hash_single_testing"."product_code" -> "product_code", "hash_single_testing"."product_units" -> "product_units", "hash_single_testing"."sys_op" -> "sys_op")
+                            scan "hash_single_testing"
+                    scan "ts"
+                        projection ("test_space"."id" -> "id")
+                            scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod params;
 mod single;
