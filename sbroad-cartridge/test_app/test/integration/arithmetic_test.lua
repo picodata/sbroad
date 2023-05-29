@@ -651,6 +651,69 @@ g.test_arithmetic_in_parens = function()
     t.assert_items_equals(with_parens.rows, without_parens.rows)
 end
 
+g.test_arithmetic_in_subquery = function()
+    local api = cluster:server("api-1").net_box
+
+    local res_all, err = api:call("sbroad.execute", { [[select "id" from "arithmetic_space"]], {} })
+    t.assert_equals(err, nil)
+    t.assert_not_equals(res_all.rows, {})
+
+    -- test arithmetic expressions in subquery projection and condition
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "arithmetic_space"
+        where exists (select (1 + 2) * 3 / 4 from "arithmetic_space" where (1 * 2) / (8 / 4) = "id")
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(res_all, r)
+
+    -- test subquery with asterisk and multiplication
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "arithmetic_space"
+        where exists (select * from "arithmetic_space" where 1 * 1 = 2)
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {},
+    })
+
+    -- test subquery with multiplication in projection
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "arithmetic_space"
+        where "id" in (select 2 * 3 from "arithmetic_space")
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {6}
+        },
+    })
+
+    -- test nested subquery with arithmetic
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "arithmetic_space"
+        where "id" in (
+            select 1 + 0 from "arithmetic_space" where exists (
+                select 1 * (2 + 3) from (select * from (values (1)))
+            )
+        )
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
+end
+
 g1.test_join_simple_arithmetic = function()
     local api = cluster:server("api-1").net_box
 
