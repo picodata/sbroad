@@ -317,9 +317,9 @@ fn insert_plan() {
         r#"insert "test_space"
     projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
         scan
-            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::string -> COL_1)
+            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::string -> COL_1)
                 scan
-                    motion [policy: segment([ref(COLUMN_1)])]
+                    motion [policy: segment([ref("COLUMN_1")])]
                         values
                             value row (data=ROW(1, '123'))
 "#,
@@ -342,9 +342,9 @@ fn multiply_insert_plan() {
         r#"insert "test_space"
     projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)))))
         scan
-            projection (COLUMN_5::unsigned -> COL_0, COLUMN_6::string -> COL_1)
+            projection ("COLUMN_5"::unsigned -> COL_0, "COLUMN_6"::string -> COL_1)
                 scan
-                    motion [policy: segment([ref(COLUMN_5)])]
+                    motion [policy: segment([ref("COLUMN_5")])]
                         values
                             value row (data=ROW(1, '123'))
                             value row (data=ROW(2, '456'))
@@ -392,7 +392,7 @@ fn select_value_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection (COLUMN_1 -> COLUMN_1)
+        r#"projection ("COLUMN_1" -> "COLUMN_1")
     scan
         values
             value row (data=ROW(1))

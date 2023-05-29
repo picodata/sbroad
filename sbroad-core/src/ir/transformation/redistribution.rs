@@ -8,7 +8,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, JoinKind, Relational};
+use crate::ir::operator::{Bool, JoinKind, Relational, Unary};
 
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
@@ -81,6 +81,7 @@ pub enum MotionPolicy {
     Local,
 }
 
+/// Helper struct that unwraps `Expression::Bool` fields.
 struct BoolOp {
     left: usize,
     op: Bool,
@@ -106,6 +107,8 @@ impl BoolOp {
 
 type ChildId = usize;
 
+/// Helper struct to store motion policy for every child of
+/// relational node with `parent_id`.
 #[derive(Debug)]
 struct Strategy {
     parent_id: usize,
@@ -120,6 +123,8 @@ impl Strategy {
         }
     }
 
+    /// Add motion policy for child node.
+    /// Update policy in case `child_id` key is already in the `children_policy` map.
     fn add_child(&mut self, child_id: usize, policy: MotionPolicy) {
         self.children_policy.insert(child_id, policy);
     }
@@ -170,7 +175,10 @@ impl Plan {
         Ok(nodes)
     }
 
-    /// Get boolean expressions with row children in the sub-tree.
+    /// Get boolean expressions with both row children in the sub-tree.
+    /// It's a helper function for resolving subquery conflicts.
+    /// E.g. boolean `In` operator will have both row children where
+    /// right `Row` is a transformed subquery.
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
@@ -201,13 +209,43 @@ impl Plan {
         Ok(nodes)
     }
 
+    /// Get unary expressions with both row children in the sub-tree.
+    /// It's a helper function for resolving subquery conflicts.
+    /// E.g. unary `Exists` operator will have `Row` child that
+    /// is a transformed subquery.
+    ///
+    /// # Errors
+    /// - some of the expression nodes are invalid
+    pub(crate) fn get_unary_nodes_with_row_children(
+        &self,
+        top: usize,
+    ) -> Result<Vec<usize>, SbroadError> {
+        let mut nodes: Vec<usize> = Vec::new();
+
+        let mut post_tree =
+            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        for (_, id) in post_tree.iter(top) {
+            // Append only unaries with row children.
+            if let Node::Expression(Expression::Unary { child, .. }) = self.get_node(id)? {
+                let child_is_row = matches!(
+                    self.get_node(*child)?,
+                    Node::Expression(Expression::Row { .. })
+                );
+                if child_is_row {
+                    nodes.push(id);
+                }
+            }
+        }
+        Ok(nodes)
+    }
+
     /// Get a single sub-query from the row node.
     ///
     /// # Errors
     /// - Row node is not of a row type
     /// There are more than one sub-queries in the row node.
     pub fn get_sub_query_from_row_node(&self, row_id: usize) -> Result<Option<usize>, SbroadError> {
-        let rel_ids = self.get_relational_from_row_nodes(row_id)?;
+        let rel_ids = self.get_relational_nodes_from_row(row_id)?;
         self.get_sub_query_among_rel_nodes(&rel_ids)
     }
 
@@ -245,7 +283,7 @@ impl Plan {
     /// - Row node is not of a row type
     /// - There are more than one motion nodes in the row node
     pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, SbroadError> {
-        let rel_nodes = self.get_relational_from_row_nodes(node_id)?;
+        let rel_nodes = self.get_relational_nodes_from_row(node_id)?;
         self.get_motion_among_rel_nodes(&rel_nodes)
     }
 
@@ -283,7 +321,7 @@ impl Plan {
     /// # Errors
     /// - nodes are not rows
     /// - uninitialized distribution for some row
-    fn choose_strategy_for_inner_sq(
+    fn choose_strategy_for_bool_op_inner_sq(
         &self,
         outer_id: usize,
         inner_id: usize,
@@ -364,6 +402,8 @@ impl Plan {
         Ok(())
     }
 
+    /// Get `Relational::SubQuery` node that is referenced by passed `row_id`.
+    /// Only returns `SubQuery` that is an additional child of passed `rel_id` node.
     fn get_additional_sq(
         &self,
         rel_id: usize,
@@ -379,13 +419,14 @@ impl Plan {
         Ok(None)
     }
 
-    fn get_sq_node_strategies(
+    /// Get `SubQuery`s from passed boolean `op_id` node (e.g. `In`).
+    fn get_sq_node_strategies_for_bool_op(
         &self,
         rel_id: usize,
-        node_id: usize,
+        op_id: usize,
     ) -> Result<Vec<(usize, MotionPolicy)>, SbroadError> {
         let mut strategies: Vec<(usize, MotionPolicy)> = Vec::new();
-        let bool_op = BoolOp::from_expr(self, node_id)?;
+        let bool_op = BoolOp::from_expr(self, op_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
         let right = self.get_additional_sq(rel_id, bool_op.right)?;
         match left {
@@ -400,7 +441,7 @@ impl Plan {
                         // Left side is sub-query, right is an outer tuple.
                         strategies.push((
                             left_sq,
-                            self.choose_strategy_for_inner_sq(
+                            self.choose_strategy_for_bool_op_inner_sq(
                                 bool_op.right,
                                 self.get_relational_output(left_sq)?,
                                 &bool_op.op,
@@ -414,7 +455,7 @@ impl Plan {
                     // Left side is an outer tuple, right is sub-query.
                     strategies.push((
                         right_sq,
-                        self.choose_strategy_for_inner_sq(
+                        self.choose_strategy_for_bool_op_inner_sq(
                             bool_op.left,
                             self.get_relational_output(right_sq)?,
                             &bool_op.op,
@@ -426,26 +467,59 @@ impl Plan {
         Ok(strategies)
     }
 
+    /// Get `SubQuery`s from passed unary `op_id` node (e.g. `Exists`).
+    fn get_sq_node_strategy_for_unary_op(
+        &self,
+        rel_id: usize,
+        op_id: usize,
+    ) -> Result<Option<(usize, MotionPolicy)>, SbroadError> {
+        let unary_op_expr = self.get_expression_node(op_id)?;
+        let Expression::Unary { child, op } = unary_op_expr else {
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!("Expected Unary expression, got {unary_op_expr:?}")),
+            ));
+        };
+
+        if let Unary::Exists | Unary::NotExists = op {
+            let child_sq = self.get_additional_sq(rel_id, *child)?;
+            if let Some(child_sq) = child_sq {
+                return Ok(Some((child_sq, MotionPolicy::Full)));
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Resolve sub-query conflicts with motion policies.
     fn resolve_sub_query_conflicts(
         &mut self,
-        rel_id: usize,
-        expr_id: usize,
+        select_id: usize,
+        filter_id: usize,
     ) -> Result<Strategy, SbroadError> {
-        let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
-        for node in &nodes {
-            let bool_op = BoolOp::from_expr(self, *node)?;
+        let mut strategy = Strategy::new(select_id);
+
+        let bool_nodes = self.get_bool_nodes_with_row_children(filter_id)?;
+        for bool_node in &bool_nodes {
+            let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
-
-        let mut strategy = Strategy::new(rel_id);
-        for node in &nodes {
-            let strategies = self.get_sq_node_strategies(rel_id, *node)?;
+        for bool_node in &bool_nodes {
+            let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
                 strategy.add_child(id, policy);
             }
         }
+
+        let unary_nodes = self.get_unary_nodes_with_row_children(filter_id)?;
+        for unary_node in &unary_nodes {
+            let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, *unary_node)?;
+            if let Some((id, policy)) = unary_strategy {
+                strategy.add_child(id, policy);
+            }
+        }
+
         Ok(strategy)
     }
 
@@ -593,8 +667,8 @@ impl Plan {
         Ok(inner_positions)
     }
 
-    // Take the positions of the columns in the join condition row
-    // and return the positions of the columns in the inner child row.
+    /// Take the positions of the columns in the join condition row
+    /// and return the positions of the columns in the inner child row.
     fn get_referred_inner_child_column_positions(
         &self,
         column_positions: &[usize],
@@ -761,17 +835,17 @@ impl Plan {
     fn resolve_join_conflicts(
         &mut self,
         rel_id: usize,
-        expr_id: usize,
+        cond_id: usize,
         join_kind: &JoinKind,
     ) -> Result<(), SbroadError> {
         // If one of the children has Distribution::Single, then we can't compute Distribution of
         // Rows in condition, because in case of Single it depends on join condition, and computing
         // distribution of Row in condition makes no sense, so we handle the single distribution separately
         if let Some(strategy) =
-            self.calculate_strategy_for_single_distribution(rel_id, expr_id, join_kind)?
+            self.calculate_strategy_for_single_distribution(rel_id, cond_id, join_kind)?
         {
             self.create_motion_nodes(&strategy)?;
-            let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
+            let nodes = self.get_bool_nodes_with_row_children(cond_id)?;
             for node in &nodes {
                 let bool_op = BoolOp::from_expr(self, *node)?;
                 self.set_distribution(bool_op.left)?;
@@ -782,7 +856,7 @@ impl Plan {
 
         // First, we need to set the motion policy for each boolean expression in the join condition.
         {
-            let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
+            let nodes = self.get_bool_nodes_with_row_children(cond_id)?;
             for node in &nodes {
                 let bool_op = BoolOp::from_expr(self, *node)?;
                 self.set_distribution(bool_op.left)?;
@@ -814,7 +888,7 @@ impl Plan {
         let mut new_inner_policy = MotionPolicy::Full;
         let mut expr_tree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, true), EXPR_CAPACITY);
-        for (_, node_id) in expr_tree.iter(expr_id) {
+        for (_, node_id) in expr_tree.iter(cond_id) {
             let expr = self.get_expression_node(node_id)?;
             let bool_op = if let Expression::Bool { .. } = expr {
                 BoolOp::from_expr(self, node_id)?
@@ -825,7 +899,12 @@ impl Plan {
             // Try to improve full motion policy in the sub-queries.
             // We don't influence the inner child here, so the inner map is empty
             // for the current node id.
-            let sq_strategies = self.get_sq_node_strategies(rel_id, node_id)?;
+            // `get_sq_node_strategies_for_bool_op` will be triggered only in case `node_id` is a
+            // boolean operator with both `Row` children.
+            // Note, that we don't have to call `get_sq_node_strategy_for_unary_op` here, because
+            // the only strategy it can return is `Motion::Full` for its child and all subqueries
+            // are covered with `Motion::Full` by default.
+            let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
                 strategy.add_child(id, policy);

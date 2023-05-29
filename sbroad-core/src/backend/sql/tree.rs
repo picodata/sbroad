@@ -7,7 +7,7 @@ use std::mem::take;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
 use crate::ir::Node;
@@ -47,6 +47,9 @@ pub enum SyntaxData {
 }
 
 /// A syntax tree node.
+///
+/// In order to understand the process of `left` (and `right`) fields filling
+/// see `add_plan_node` function.
 #[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub struct SyntaxNode {
     /// Payload
@@ -56,8 +59,17 @@ pub struct SyntaxNode {
     /// other nodes have values (all children should be on the right of the
     /// current node in a case of in-order traversal - row or sub-query as
     /// an example).
+    ///
+    /// Literally the left node if we look at SQL query representation.
+    /// It's `None` in case:
+    /// * It's a first token in an SQL query.
+    /// * `OrderedSyntaxNodes` `try_from` method made it so during traversal.
     pub(crate) left: Option<usize>,
     /// Pointers to the right children.
+    ///
+    /// Literally the right node if we look at SQL query representation.
+    /// Sometimes this field may contain the node itself but converted from `Node` to `SyntaxNode` representation. E.g. see how
+    /// `Expression::Bool` operator is added to `right` being transformed to `SyntaxNode::Operator` in `add_plan_node` function).
     pub(crate) right: Vec<usize>,
 }
 
@@ -181,6 +193,7 @@ impl SyntaxNode {
 #[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SyntaxNodes {
     pub(crate) arena: Vec<SyntaxNode>,
+    /// Map of { node_id from `Plan` arena -> node_id from `SyntaxNodes`(Self) arena }.
     map: HashMap<usize, usize, RandomState>,
 }
 
@@ -229,6 +242,7 @@ fn syntax_next<'nodes>(iter: &mut SyntaxIterator<'nodes>) -> Option<&'nodes usiz
         None => None,
     }
 }
+
 impl SyntaxNodes {
     /// Add sub-query syntax node
     ///
@@ -543,9 +557,26 @@ impl Select {
 /// A wrapper over original plan tree.
 /// We can modify it as we wish without any influence
 /// on the original plan tree.
+///
+/// Example:
+/// - Query: `SELECT "id" FROM "test_space"`
+/// - `SyntaxPlan` (syntax node id -> plan node id):
+///   5 -> 11 (`ScanRelation` (`"test_space"`))   <- `top` = 5
+///   ├── 7 -> 15 (`Projection` (child = 11))     <- left
+///   │   ├── None                                <- left
+///   │   ├── 1 -> 13 (`Alias` (`"id"`))
+///   │   │   ├── None                            <- left
+///   │   │   └── 0 -> 12 (`Reference` (target = 15, position = 0))
+///   │   │       ├── None                        <- left
+///   │   │       └── []
+///   │   └── 6 -> From
+///   │       ├── None                            <- left
+///   │       └── []
+///   └── []
 #[derive(Debug)]
 pub struct SyntaxPlan<'p> {
     pub(crate) nodes: SyntaxNodes,
+    /// Id of top `SyntaxNode`.
     top: Option<usize>,
     plan: &'p ExecutionPlan,
     snapshot: Snapshot,
@@ -867,7 +898,7 @@ impl<'p> SyntaxPlan<'p> {
                 Expression::Row { list, .. } => {
                     // In projections with a huge amount of columns it can be
                     // very expensive to retrieve corresponding relational nodes.
-                    let rel_ids = ir_plan.get_relational_from_row_nodes(id)?;
+                    let rel_ids = ir_plan.get_relational_nodes_from_row(id)?;
 
                     if let Some(motion_id) = ir_plan.get_motion_among_rel_nodes(&rel_ids)? {
                         // Replace motion node to virtual table node
@@ -972,13 +1003,15 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::Unary { child, op, .. } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*child)?),
-                        vec![self
-                            .nodes
-                            .push_syntax_node(SyntaxNode::new_operator(&format!("{op}")))],
-                    );
+                    let operator_node_id = self
+                        .nodes
+                        .push_syntax_node(SyntaxNode::new_operator(&format!("{op}")));
+                    let child_node_id = self.nodes.get_syntax_node_id(*child)?;
+                    let (left, right) = match op {
+                        Unary::IsNull | Unary::IsNotNull => (child_node_id, operator_node_id),
+                        Unary::Exists | Unary::NotExists => (operator_node_id, child_node_id),
+                    };
+                    let sn = SyntaxNode::new_pointer(id, Some(left), vec![right]);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::StableFunction {
@@ -1227,9 +1260,12 @@ impl<'p> SyntaxPlan<'p> {
     }
 }
 
+/// Wrapper over `SyntaxNode` `arena` that is used for converting it to SQL.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OrderedSyntaxNodes {
     arena: Vec<SyntaxNode>,
+    /// Indices of nodes from `arena`. During the conversion to SQL the order of nodes from
+    /// `positions` is the order they will appear in SQL string representation.
     positions: Vec<usize>,
 }
 
@@ -1271,6 +1307,7 @@ impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
         stack.push(sp.get_top()?);
         while let Some(id) = stack.last() {
             let sn = sp.nodes.get_mut_syntax_node(*id)?;
+            // Note that in case `left` is a `Some(...)`, call of `take` will make it None.
             if let Some(left_id) = sn.left.take() {
                 stack.push(left_id);
             } else if let Some(id) = stack.pop() {

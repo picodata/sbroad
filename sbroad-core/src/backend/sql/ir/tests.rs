@@ -6,6 +6,7 @@ use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::executor::ir::ExecutionPlan;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
+use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::tree::Snapshot;
 
 use super::*;
@@ -17,10 +18,7 @@ fn check_sql_with_snapshot(
     expected: PatternWithParams,
     snapshot: Snapshot,
 ) {
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.bind_params(params).unwrap();
+    let mut plan = sql_to_ir(query, params);
     plan.replace_in_operator().unwrap();
     plan.split_columns().unwrap();
     plan.set_dnf().unwrap();

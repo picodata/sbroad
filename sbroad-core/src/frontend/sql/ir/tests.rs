@@ -234,9 +234,9 @@ fn front_sql10() {
         r#"insert "t"
     projection (COL_0 -> COL_0, COL_1 -> COL_1, COL_2 -> COL_2, COL_3 -> COL_3, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', COL_1::string)))))
         scan
-            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1, COLUMN_3::unsigned -> COL_2, COLUMN_4::unsigned -> COL_3)
+            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::unsigned -> COL_1, "COLUMN_3"::unsigned -> COL_2, "COLUMN_4"::unsigned -> COL_3)
                 scan
-                    motion [policy: segment([ref(COLUMN_1), ref(COLUMN_2)])]
+                    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
                         values
                             value row (data=ROW(1, 2, 3, 4))
 "#,
@@ -255,9 +255,9 @@ fn front_sql11() {
         r#"insert "t"
     projection (COL_0 -> COL_0, COL_1 -> COL_1, bucket_id((coalesce(('NULL', COL_0::string)) || coalesce(('NULL', NULL::string)))))
         scan
-            projection (COLUMN_1::unsigned -> COL_0, COLUMN_2::unsigned -> COL_1)
+            projection ("COLUMN_1"::unsigned -> COL_0, "COLUMN_2"::unsigned -> COL_1)
                 scan
-                    motion [policy: segment([ref(COLUMN_1), value(NULL)])]
+                    motion [policy: segment([ref("COLUMN_1"), value(NULL)])]
                         values
                             value row (data=ROW(1, 2))
 "#,
@@ -368,6 +368,70 @@ fn front_sql20() {
         r#"projection ("hash_testing"."identification_number" -> "identification_number")
     selection ROW("hash_testing"."product_code") = ROW('«123»')
         scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_exists_subquery_select_from_table() {
+    let input = r#"SELECT "id" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing")"#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection exists ROW($0)
+        scan "test_space"
+subquery $0:
+motion [policy: full]
+            scan
+                projection (0 -> "COL_1")
+                    scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_not_exists_subquery_select_from_table() {
+    let input = r#"SELECT "id" FROM "test_space" WHERE NOT EXISTS (SELECT 0 FROM "hash_testing")"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection not exists ROW($0)
+        scan "test_space"
+subquery $0:
+motion [policy: full]
+            scan
+                projection (0 -> "COL_1")
+                    scan "hash_testing"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_exists_subquery_select_from_table_with_condition() {
+    let input = r#"SELECT "id" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing" WHERE "identification_number" != 42)"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id" -> "id")
+    selection exists ROW($0)
+        scan "test_space"
+subquery $0:
+motion [policy: full]
+            scan
+                projection (0 -> "COL_1")
+                    selection ROW("hash_testing"."identification_number") <> ROW(42)
+                        scan "hash_testing"
 "#,
     );
 

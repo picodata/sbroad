@@ -71,6 +71,8 @@ impl Unary {
         match s {
             Type::IsNull => Ok(Unary::IsNull),
             Type::IsNotNull => Ok(Unary::IsNotNull),
+            Type::Exists => Ok(Unary::Exists),
+            Type::NotExists => Ok(Unary::NotExists),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!("unary operator: {s:?}")),
@@ -129,6 +131,7 @@ impl Value {
 }
 
 #[derive(Debug)]
+/// Helper struct representing map of { `ParseNode` id -> `Node` id }
 pub(super) struct Translation {
     map: HashMap<usize, usize>,
 }
@@ -191,8 +194,9 @@ impl Plan {
                         capacity,
                     );
                     for (_, op_id) in expr_post.iter(*tree) {
+                        let expression_node = self.get_node(op_id)?;
                         if let Node::Expression(Expression::Bool { left, right, .. }) =
-                            self.get_node(op_id)?
+                            expression_node
                         {
                             let children = &[*left, *right];
                             for child in children {
@@ -201,6 +205,14 @@ impl Plan {
                                 {
                                     set.insert(SubQuery::new(id, op_id, *child));
                                 }
+                            }
+                        } else if let Node::Expression(Expression::Unary { child, .. }) =
+                            expression_node
+                        {
+                            if let Node::Relational(Relational::ScanSubQuery { .. }) =
+                                self.get_node(*child)?
+                            {
+                                set.insert(SubQuery::new(id, op_id, *child));
                             }
                         }
                     }
@@ -295,6 +307,9 @@ impl Plan {
                         Some("Sub-query is not a left or right operand".into()),
                     ));
                 }
+                replaces.insert(sq.sq, row_id);
+            } else if let Expression::Unary { child, .. } = op {
+                *child = row_id;
                 replaces.insert(sq.sq, row_id);
             } else {
                 return Err(SbroadError::Invalid(

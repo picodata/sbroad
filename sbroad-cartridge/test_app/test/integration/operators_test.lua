@@ -334,6 +334,245 @@ g.test_is_not_null_2 = function()
     })
 end
 
+g.test_in_subquery_select_from_table = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "space_simple_shard_key" WHERE "id" IN (SELECT "id" FROM "testing_space")
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
+end
+
+g.test_not_in_subquery_select_from_values = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "space_simple_shard_key"
+        WHERE "id" NOT IN (SELECT cast(COLUMN_2 as int) FROM (VALUES (1), (3)))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {10}
+        },
+    })
+end
+
+g.test_in_subquery_select_from_values = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "space_simple_shard_key_hist" WHERE "id" IN (SELECT cast(COLUMN_1 as int) FROM (VALUES (1)))
+    ]], {1} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
+end
+
+g.test_exists_subquery_select_from_values = function ()
+    local api = cluster:server("api-1").net_box
+
+    -- Exists condition should return true on each row from t
+    -- as soon as it's subquery always returns one row.
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "t" WHERE EXISTS (SELECT 0 FROM (VALUES (1)))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1}, {2}
+        },
+    })
+end
+
+g.test_not_exists_subquery_select_from_values = function()
+    local api = cluster:server("api-1").net_box
+
+    -- NotExists condition should return false on each row from t
+    -- as soon as it's subquery always returns one row.
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "t" WHERE NOT EXISTS (SELECT cast(COLUMN_1 as int) FROM (VALUES (1)))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = { },
+    })
+end
+
+g.test_exists_subquery_with_several_rows = function ()
+    local api = cluster:server("api-1").net_box
+
+    -- Exists condition should return true on each row from testing_space
+    -- as soon as it's subquery always returns two rows.
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "testing_space" WHERE EXISTS (SELECT 0 FROM "t" WHERE "t"."id" = 1 or "t"."a" = (?))
+    ]], {require('decimal').new(6.66)} })
+
+    t.assert_str_contains(
+            tostring(err),
+            "Failed to execute SQL statement: Expression subquery returned more than 1 row"
+    )
+end
+
+g.test_not_exists_subquery_with_several_rows = function()
+    local api = cluster:server("api-1").net_box
+
+    -- NotExists condition should return false on each row from testing_space
+    -- as soon as it's subquery always returns two rows.
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "testing_space"
+        WHERE NOT EXISTS (SELECT 0 FROM "t" WHERE "t"."id" = 1 or "t"."a" = (?))
+    ]], {require('decimal').new(6.66)} })
+
+    t.assert_str_contains(
+            tostring(err),
+            "Failed to execute SQL statement: Expression subquery returned more than 1 row"
+    )
+end
+
+g.test_exists_nested = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "testing_space" WHERE EXISTS
+        (SELECT 0 FROM (VALUES (1)) WHERE EXISTS (SELECT 0 FROM "t" WHERE "t"."id" = 1))
+    ]], {1} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {
+            {1, "123", 1}
+        },
+    })
+end
+
+g.test_exists_partitioned_in_selection_condition = function()
+    -- make sure table is located on both storages, not only on one storage
+    local storage1 = cluster:server("storage-1-1").net_box
+    local r, err = storage1:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+    local storage2 = cluster:server("storage-2-1").net_box
+    r, err = storage2:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+
+    local api = cluster:server("api-1").net_box
+
+    local r_all, err_all = api:call("sbroad.execute", { [[
+        SELECT * FROM "t"
+    ]], {} })
+
+    t.assert_equals(err_all, nil)
+    t.assert_equals(r_all, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "a", type = "number"},
+        },
+        rows = {
+            {1, 4.2}, {2, 6.66}
+        },
+    })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * FROM "t" WHERE EXISTS (SELECT * FROM "testing_space")
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r_all, r)
+end
+
+g.test_exists_partitioned_in_join_filter = function()
+    -- make sure table is located on both storages, not only on one storage
+    local storage1 = cluster:server("storage-1-1").net_box
+    local r, err = storage1:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+    local storage2 = cluster:server("storage-2-1").net_box
+    r, err = storage2:call("box.execute", {
+        [[select * from "t"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(true, next(r.rows) ~= nil)
+
+
+    local api = cluster:server("api-1").net_box
+
+    -- Inner child would be broadcasted and join still will be located
+    -- on both storages
+    local r_all, err_all = api:call("sbroad.execute", { [[
+        SELECT * FROM
+            (SELECT "id" as "tid" FROM "t") as "t"
+        INNER JOIN
+            (SELECT "id" as "sid" FROM "space_simple_shard_key") as "s"
+        ON true
+    ]], {} })
+
+    t.assert_equals(err_all, nil)
+    t.assert_equals(r_all, {
+        metadata = {
+            {name = "t.tid", type = "integer"},
+            {name = "s.sid", type = "integer"},
+        },
+        rows = {
+            {1, 1}, {1, 10}, {2, 1}, {2, 10}
+        },
+    })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * FROM
+            (SELECT "id" as "tid" FROM "t") as "t"
+        INNER JOIN
+            (SELECT "id" as "sid" FROM "space_simple_shard_key") as "s"
+        ON EXISTS (SELECT * FROM "testing_space")
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r_all, r)
+end
+
 g.test_between1 = function()
     local api = cluster:server("api-1").net_box
 

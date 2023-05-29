@@ -654,8 +654,8 @@ end
 g.test_arithmetic_in_subquery = function()
     local api = cluster:server("api-1").net_box
 
-    local res_all, err = api:call("sbroad.execute", { [[select "id" from "arithmetic_space"]], {} })
-    t.assert_equals(err, nil)
+    local res_all, err_all = api:call("sbroad.execute", { [[select "id" from "arithmetic_space"]], {} })
+    t.assert_equals(err_all, nil)
     t.assert_not_equals(res_all.rows, {})
 
     -- test arithmetic expressions in subquery projection and condition
@@ -667,7 +667,7 @@ g.test_arithmetic_in_subquery = function()
     t.assert_equals(res_all, r)
 
     -- test subquery with asterisk and multiplication
-    local r, err = api:call("sbroad.execute", { [[
+    r, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space"
         where exists (select * from "arithmetic_space" where 1 * 1 = 2)
     ]], {} })
@@ -680,7 +680,7 @@ g.test_arithmetic_in_subquery = function()
     })
 
     -- test subquery with multiplication in projection
-    local r, err = api:call("sbroad.execute", { [[
+    r, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space"
         where "id" in (select 2 * 3 from "arithmetic_space")
     ]], {} })
@@ -695,7 +695,7 @@ g.test_arithmetic_in_subquery = function()
     })
 
     -- test nested subquery with arithmetic
-    local r, err = api:call("sbroad.execute", { [[
+    r, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space"
         where "id" in (
             select 1 + 0 from "arithmetic_space" where exists (

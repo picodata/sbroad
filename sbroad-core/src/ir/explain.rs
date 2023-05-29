@@ -575,6 +575,7 @@ impl Display for Selection {
             }
             Selection::UnaryOp { op, child } => match op {
                 Unary::IsNull | Unary::IsNotNull => format!("{child} {op}"),
+                Unary::Exists | Unary::NotExists => format!("{op} {child}"),
             },
         };
 

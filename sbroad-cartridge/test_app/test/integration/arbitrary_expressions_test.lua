@@ -66,6 +66,12 @@ arbitrary_projection.test_arbitrary_invalid = function()
         select cast("id" * 2 > 0 as boolean), cast("id" * 2 > 0 as boolean) as "cast" from "arithmetic_space"
     ]], {} })
     t.assert_str_contains(tostring(err), "rule parsing error")
+
+    -- selection from values without cast
+    local _, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "arithmetic_space" WHERE "id" IN (SELECT * FROM (VALUES (1)))
+    ]], {} })
+    t.assert_str_contains(tostring(err), "Sbroad Error: type any not implemented")
 end
 
 arbitrary_projection.test_arbitrary_valid = function()
@@ -75,12 +81,12 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_not_equals(res_all.rows, {})
 
-    -- array of {true,true} with lenght equals to rows amount
+    -- array of {true,true} with length equals to rows amount
     local all_true = fun.map(function()
         return { true, true }
     end, res_all.rows):totable()
 
-    -- array of {false,false} with lenght equals to rows amount
+    -- array of {false,false} with length equals to rows amount
     local all_false = fun.map(function()
         return { false, false }
     end, res_all.rows):totable()
@@ -147,8 +153,39 @@ arbitrary_projection.test_arbitrary_valid = function()
 
     -- projection consisted of arithmetic and unary
     local r, err = api:call("sbroad.execute", { [[
-        select "id" is not null, "id" is not null as "not_null" from "arithmetic_space"
+        select "id" is not null, ("id" + 2) is not null as "cmp" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.rows, all_true)
+
+    -- column selection from values
+    -- results in type erasing
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT COLUMN_1 FROM (VALUES (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COLUMN_1", type = "any"},
+        },
+        rows = {
+            {1}
+        },
+    })
+
+    -- column selection from values with cast
+    r, err = api:call("sbroad.execute", { [[
+        SELECT CAST(COLUMN_1 as int) FROM (VALUES (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
 end

@@ -37,7 +37,7 @@ fn rel_nodes_from_reference_in_scan() {
     let scan_id = plan.add_scan("t", None).unwrap();
     let output = plan.get_relational_output(scan_id).unwrap();
 
-    let rel_set = plan.get_relational_from_row_nodes(output).unwrap();
+    let rel_set = plan.get_relational_nodes_from_row(output).unwrap();
     assert_eq!(true, rel_set.is_empty());
 }
 
@@ -59,7 +59,7 @@ fn rel_nodes_from_reference_in_proj() {
     let proj_id = plan.add_proj(scan_id, &["a"]).unwrap();
     let output = plan.get_relational_output(proj_id).unwrap();
 
-    let rel_set = plan.get_relational_from_row_nodes(output).unwrap();
+    let rel_set = plan.get_relational_nodes_from_row(output).unwrap();
     assert_eq!(1, rel_set.len());
     assert_eq!(Some(&scan_id), rel_set.get(&scan_id));
 }

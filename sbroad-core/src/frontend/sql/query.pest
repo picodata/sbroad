@@ -10,9 +10,9 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         Join? ~ (^"where" ~ Selection)? ~ 
         (^"group" ~ ^"by" ~ GroupBy)?
     }
-        Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))*? }
-            Column = { Alias | Expr | ArithmeticExpr | Value }
-                Alias = {(Expr | Expr | ArithmeticExpr | Value) ~ ^"as" ~ AliasName }
+        Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))* }
+            Column = { Alias | Expr | Value }
+                Alias = {(Expr | Value) ~ ^"as" ~ AliasName }
                 AliasName = @{ Name }
                 Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
                     ColumnName = @{ Name }
@@ -33,26 +33,27 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     SubQuery = { "(" ~ (Except | UnionAll | Select | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
-    Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)*? }
+    Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
         ValuesRow = { Row }
-
-ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
-    ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
-    ArithELeft = _{ ArithParentheses | Value }
-    Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
-        MultiplicationRight = _{ Multiplication | ArithELeft }
-    Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
-        AdditionLeft = _{ MultiplicationRight }
-        AdditionRight = _{ Addition | Multiplication | ArithELeft }
-    Multiply = { "*" }
-    Divide = { "/" }
-    Add = { "+" }
-    Subtract = { "-" }
 
 Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ ArithmeticExpr | SubQuery | Value }
-    Unary = _{ IsNull | IsNotNull}
+    Primary = _{ SubQuery | ArithmeticExpr | Value }
+    ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
+        ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
+        ArithELeft = _{ ArithParentheses | Value }
+        Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
+            MultiplicationRight = _{ Multiplication | ArithELeft }
+        Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
+            AdditionLeft = _{ MultiplicationRight }
+            AdditionRight = _{ Addition | Multiplication | ArithELeft }
+        Multiply = { "*" }
+        Divide = { "/" }
+        Add = { "+" }
+        Subtract = { "-" }
+    Unary = _{ IsNull | IsNotNull | Exists | NotExists }
+        Exists = { ^"exists" ~ SubQuery }
+        NotExists = { ^"not" ~ ^"exists" ~ SubQuery }
         IsNull = { Primary ~ ^"is" ~ ^"null" }
         IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
     Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq | NotIn }

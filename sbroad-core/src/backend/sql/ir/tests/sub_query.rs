@@ -139,3 +139,20 @@ fn sub_query3_latest() {
     );
     check_sql_with_snapshot(query, params, expected, Snapshot::Latest);
 }
+
+#[test]
+fn sub_query_exists() {
+    let query =
+        r#"SELECT "FIRST_NAME" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing")"#;
+
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "test_space"."FIRST_NAME" FROM "test_space""#,
+            r#"WHERE exists (SELECT ? as "COL_1" FROM "hash_testing")"#
+        ),
+        vec![Value::from(0_u64)],
+    );
+    check_sql_with_snapshot(query, vec![], expected.clone(), Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Oldest);
+}

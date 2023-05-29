@@ -3,6 +3,20 @@ use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 
 #[test]
+fn selection_column_from_values() {
+    let query = r#"
+        SELECT COLUMN_1 FROM (VALUES (1))
+    "#;
+
+    let expected = PatternWithParams::new(
+        format!("{}", r#"SELECT "COLUMN_1" FROM (VALUES (?))"#,),
+        vec![Value::Unsigned(1)],
+    );
+    check_sql_with_snapshot(query, vec![], expected.clone(), Snapshot::Oldest);
+    check_sql_with_snapshot(query, vec![], expected, Snapshot::Latest);
+}
+
+#[test]
 fn selection1_latest() {
     let query = r#"SELECT "product_code" FROM "hash_testing"
         WHERE "identification_number" in

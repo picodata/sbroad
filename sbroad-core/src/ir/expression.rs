@@ -668,6 +668,7 @@ impl Plan {
         let relational_op = self.get_relation_node(child_node)?;
         let output_id = relational_op.output();
         let output = self.get_expression_node(output_id)?;
+        // Map of { column name (aliased) from child output -> its index in output }
         let map: HashMap<&str, usize, RandomState> = if let Expression::Row { list, .. } = output {
             let state = RandomState::new();
             let mut map: HashMap<&str, usize, RandomState> =
@@ -692,6 +693,7 @@ impl Plan {
             ));
         };
 
+        // Vec of { `map` key, targets, `map` value }
         let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
         let all_found = col_names.iter().all(|col| {
             map.get(col).map_or(false, |pos| {
@@ -898,7 +900,7 @@ impl Plan {
     /// - node is not a row
     /// - row is invalid
     /// - `relational_map` is not initialized
-    pub fn get_relational_from_row_nodes(
+    pub fn get_relational_nodes_from_row(
         &self,
         row_id: usize,
     ) -> Result<HashSet<usize, RandomState>, SbroadError> {

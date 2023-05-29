@@ -137,6 +137,10 @@ pub enum Unary {
     IsNull,
     /// `is not null`
     IsNotNull,
+    /// `exists`
+    Exists,
+    /// `not exists`
+    NotExists,
 }
 
 impl Unary {
@@ -148,6 +152,8 @@ impl Unary {
         match s.to_lowercase().as_str() {
             "is null" => Ok(Unary::IsNull),
             "is not null" => Ok(Unary::IsNotNull),
+            "exists" => Ok(Unary::Exists),
+            "not exists" => Ok(Unary::NotExists),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!(
@@ -163,6 +169,8 @@ impl Display for Unary {
         let op = match &self {
             Unary::IsNull => "is null",
             Unary::IsNotNull => "is not null",
+            Unary::Exists => "exists",
+            Unary::NotExists => "not exists",
         };
 
         write!(f, "{op}")
@@ -1056,7 +1064,7 @@ impl Plan {
         Ok(union_all_id)
     }
 
-    /// Adds a values row node
+    /// Adds a values row node.
     ///
     /// # Errors
     /// - Row node is not of a row type
@@ -1072,7 +1080,7 @@ impl Plan {
             // Generate a row of aliases for the incoming row.
             *col_idx += 1;
             // The column names are generated according to tarantool naming of anonymous columns
-            let name = format!("COLUMN_{col_idx}");
+            let name = format!("\"COLUMN_{col_idx}\"");
             let alias_id = self.nodes.add_alias(&name, col_id)?;
             aliases.push(alias_id);
         }
@@ -1093,18 +1101,23 @@ impl Plan {
     /// # Errors
     /// - No child nodes
     /// - Child node is not relational
-    pub fn add_values(&mut self, children: Vec<usize>) -> Result<usize, SbroadError> {
-        // Get the last row of the children list. We need it to
-        // get the correct anonymous column names.
-        let last_id = if let Some(last_id) = children.last() {
+    pub fn add_values(&mut self, value_rows: Vec<usize>) -> Result<usize, SbroadError> {
+        // In case we have several `ValuesRow` under `Values`
+        // (e.g. VALUES (1, "test_1"), (2, "test_2")),
+        // the list of alias column names for it will look like:
+        // (COLUMN_1, COLUMN_2), (COLUMN_3, COLUMN_4).
+        // As soon as we want to assign name for column and not for the specific value,
+        // we choose the names of last `ValuesRow` and set them as names of all the columns of `Values`.
+        // The assumption always is that the child `ValuesRow` has the same number of elements.
+        let last_id = if let Some(last_id) = value_rows.last() {
             *last_id
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
                 "Values node has no children, expected at least one child.".into(),
             ));
         };
-        let child_last = self.get_relation_node(last_id)?;
-        let last_output_id = if let Relational::ValuesRow { output, .. } = child_last {
+        let value_row_last = self.get_relation_node(last_id)?;
+        let last_output_id = if let Relational::ValuesRow { output, .. } = value_row_last {
             *output
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -1135,15 +1148,20 @@ impl Plan {
         // Generate a row of aliases referencing all the children.
         let mut aliases: Vec<usize> = Vec::with_capacity(names.len());
         for (pos, name) in names.iter().enumerate() {
-            let ref_id =
-                self.nodes
-                    .add_ref(None, Some((0..children.len()).collect::<Vec<usize>>()), pos);
+            let ref_id = self.nodes.add_ref(
+                None,
+                Some((0..value_rows.len()).collect::<Vec<usize>>()),
+                pos,
+            );
             let alias_id = self.nodes.add_alias(name, ref_id)?;
             aliases.push(alias_id);
         }
         let output = self.nodes.add_row(aliases, None);
 
-        let values = Relational::Values { output, children };
+        let values = Relational::Values {
+            output,
+            children: value_rows,
+        };
         let values_id = self.nodes.push(Node::Relational(values));
         self.replace_parent_in_subtree(output, None, Some(values_id))?;
         Ok(values_id)

@@ -131,7 +131,7 @@ fn simple_join() {
 					[id: 40] expression: Reference
 						Alias: "id"
 						Referenced table name (or alias): "t1"
-						Parent: (current relational node)
+						Parent: Some(50)
 						target_id: 0
 			Right child
 			[id: 56] expression: Row [distribution = Some(Any)]
@@ -139,7 +139,7 @@ fn simple_join() {
 					[id: 42] expression: Reference
 						Alias: "identification_number"
 						Referenced table name (or alias): "t2"
-						Parent: (current relational node)
+						Parent: Some(50)
 						target_id: 1
 	Children:
 		Child_id = 19

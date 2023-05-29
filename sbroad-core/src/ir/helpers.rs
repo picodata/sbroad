@@ -86,7 +86,9 @@ impl Plan {
                     writeln!(buf, "Constant [value = {value}]")?;
                 }
                 Expression::Reference {
-                    targets, position, ..
+                    targets,
+                    position,
+                    parent,
                 } => {
                     let alias_name = self.get_alias_from_reference_node(expr).unwrap();
 
@@ -107,7 +109,7 @@ impl Plan {
                     }
 
                     formatted_tabulate(buf, tabulation_number + 1)?;
-                    writeln!(buf, "Parent: (current relational node)")?;
+                    writeln!(buf, "Parent: {parent:?}")?;
 
                     if let Some(targets) = targets {
                         for target_id in targets {
@@ -129,7 +131,12 @@ impl Plan {
                 Expression::Cast { .. } => writeln!(buf, "Cast")?,
                 Expression::Concat { .. } => writeln!(buf, "Concat")?,
                 Expression::StableFunction { .. } => writeln!(buf, "StableFunction")?,
-                Expression::Unary { .. } => writeln!(buf, "Unary")?,
+                Expression::Unary { op, child } => {
+                    writeln!(buf, "Unary [op: {op}]")?;
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
+                }
                 Expression::Arithmetic { .. } => writeln!(buf, "Arithmetic")?,
             };
         }

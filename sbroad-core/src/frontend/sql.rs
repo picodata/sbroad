@@ -21,7 +21,6 @@ use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 
-use crate::ir::aggregates::SimpleAggregate;
 use sbroad_proc::otm_child_span;
 
 /// Helper structure to fix the double linking
@@ -33,12 +32,6 @@ struct Between {
     left_id: usize,
     /// Less or equal node id (`left <= right`)
     less_eq_id: usize,
-}
-
-pub struct AggregateInfo {
-    pub expression_top: usize,
-    pub aggregate: SimpleAggregate,
-    pub is_distinct: bool,
 }
 
 impl Between {
@@ -118,6 +111,7 @@ impl Ast for AbstractSyntaxTree {
         self.nodes.arena.is_empty()
     }
 
+    /// Function that transforms `AbstractSyntaxTree` into `Plan`.
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("ast.resolve")]
@@ -132,8 +126,12 @@ impl Ast for AbstractSyntaxTree {
         };
         let capacity = self.nodes.arena.len();
         let mut dft_post = PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+        // Map of { `ParseNode` id -> `Node` id }.
         let mut map = Translation::with_capacity(self.nodes.next_id());
+        // Set of all `Expression::Row` generated from AST.
         let mut rows: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
+        // Counter for `Expression::ValuesRow` output column name aliases ("COLUMN_<`col_idx`>").
+        // Is it global for every `ValuesRow` met in the AST.
         let mut col_idx: usize = 0;
 
         let mut groupby_nodes: Vec<usize> = Vec::new();
@@ -141,17 +139,18 @@ impl Ast for AbstractSyntaxTree {
         let mut sq_nodes: Vec<usize> = Vec::new();
 
         let mut betweens: Vec<Between> = Vec::new();
-        // ids of arithmetic expressions that have parentheses
-        let mut arithmetic_expression_ids: Vec<usize> = Vec::new();
+        // Ids of arithmetic expressions that have parentheses.
+        let mut arith_expr_with_parentheses_ids: Vec<usize> = Vec::new();
 
+        // Closure to retrieve arithmetic expression under parenthesis.
         let get_arithmetic_plan_id = |plan: &mut Plan,
                                       map: &Translation,
-                                      arithmetic_expression_ids: &mut Vec<usize>,
+                                      arith_expr_with_parentheses_ids: &mut Vec<usize>,
                                       rows: &mut HashSet<usize>,
                                       ast_id: usize|
          -> Result<usize, SbroadError> {
             let plan_id;
-            // if child of current multiplication or addition is `(expr)` then
+            // If child of current multiplication or addition is `(expr)` then
             // we need to get expr that is child of `()` and add it to the plan
             // also we will mark this expr to add in the future `()`
             let arithmetic_parse_node = self.nodes.get_node(ast_id)?;
@@ -162,7 +161,7 @@ impl Ast for AbstractSyntaxTree {
                     )
                 })?;
                 plan_id = plan.as_row(map.get(*arithmetic_id)?, rows)?;
-                arithmetic_expression_ids.push(plan_id);
+                arith_expr_with_parentheses_ids.push(plan_id);
             } else {
                 plan_id = plan.as_row(map.get(ast_id)?, rows)?;
             }
@@ -170,41 +169,41 @@ impl Ast for AbstractSyntaxTree {
             Ok(plan_id)
         };
 
-        let get_arithmetic_cond_id =
-            |plan: &mut Plan,
-             current_node: &ParseNode,
-             map: &Translation,
-             arithmetic_expression_ids: &mut Vec<usize>,
-             rows: &mut HashSet<usize>| {
-                let ast_left_id = current_node.children.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        "Multiplication or Addition has no children.".into(),
-                    )
-                })?;
-                let plan_left_id = get_arithmetic_plan_id(
-                    plan,
-                    map,
-                    arithmetic_expression_ids,
-                    rows,
-                    *ast_left_id,
-                )?;
+        // Closure to add arithmetic expression operator to plan and get id of newly added node.
+        let get_arithmetic_op_id = |plan: &mut Plan,
+                                    current_node: &ParseNode,
+                                    map: &Translation,
+                                    arith_expr_with_parentheses_ids: &mut Vec<usize>,
+                                    rows: &mut HashSet<usize>| {
+            let ast_left_id = current_node.children.first().ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(
+                    "Multiplication or Addition has no children.".into(),
+                )
+            })?;
+            let plan_left_id = get_arithmetic_plan_id(
+                plan,
+                map,
+                arith_expr_with_parentheses_ids,
+                rows,
+                *ast_left_id,
+            )?;
 
-                let ast_right_id = current_node.children.get(2).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Node,
-                        "that is right node with index 2 among Multiplication or Addition children"
-                            .into(),
-                    )
-                })?;
-                let plan_right_id = get_arithmetic_plan_id(
-                    plan,
-                    map,
-                    arithmetic_expression_ids,
-                    rows,
-                    *ast_right_id,
-                )?;
+            let ast_right_id = current_node.children.get(2).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Node,
+                    "that is right node with index 2 among Multiplication or Addition children"
+                        .into(),
+                )
+            })?;
+            let plan_right_id = get_arithmetic_plan_id(
+                plan,
+                map,
+                arith_expr_with_parentheses_ids,
+                rows,
+                *ast_right_id,
+            )?;
 
-                let ast_op_id = current_node.children.get(1).ok_or_else(|| {
+            let ast_op_id = current_node.children.get(1).ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Node,
                         "that is center node (operator) with index 1 among Multiplication or Addition children"
@@ -212,13 +211,12 @@ impl Ast for AbstractSyntaxTree {
                     )
                 })?;
 
-                let op_node = self.nodes.get_node(*ast_op_id)?;
-                let op = Arithmetic::from_node_type(&op_node.rule)?;
+            let op_node = self.nodes.get_node(*ast_op_id)?;
+            let op = Arithmetic::from_node_type(&op_node.rule)?;
 
-                let cond_id =
-                    plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
-                Ok(cond_id)
-            };
+            let op_id = plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
+            Ok(op_id)
+        };
 
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
@@ -298,6 +296,7 @@ impl Ast for AbstractSyntaxTree {
                         plan_rel_list.push(plan_id);
                     }
 
+                    // Closure to get uppercase name from AST `ColumnName` node.
                     let get_column_name = |ast_id: usize| -> Result<String, SbroadError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
                         if let Type::ColumnName = ast_col_name.rule {
@@ -317,6 +316,8 @@ impl Ast for AbstractSyntaxTree {
                         }
                     };
 
+                    // Closure to get the nearest name of relation the output column came from
+                    // E.g. for `Scan` it would be it's `realation`.
                     let get_scan_name =
                         |col_name: &str, plan_id: usize| -> Result<Option<String>, SbroadError> {
                             let child = plan.get_relation_node(plan_id)?;
@@ -333,10 +334,12 @@ impl Ast for AbstractSyntaxTree {
                             }
                         };
 
-                    // Reference to the join node.
-                    if let (Some(plan_left_id), Some(plan_right_id)) =
-                        (plan_rel_list.first(), plan_rel_list.get(1))
+                    let plan_left_id = plan_rel_list.first();
+                    let plan_right_id = plan_rel_list.get(1);
+                    if let (Some(plan_left_id), Some(plan_right_id)) = (plan_left_id, plan_right_id)
                     {
+                        // Handling case of referencing join node.
+
                         if let (Some(ast_scan_id), Some(ast_col_name_id)) =
                             (node.children.first(), node.children.get(1))
                         {
@@ -440,13 +443,13 @@ impl Ast for AbstractSyntaxTree {
                                 "expected children nodes contain a column name.".into(),
                             ));
                         };
+                    } else if let (Some(plan_rel_id), None) = (plan_left_id, plan_right_id) {
+                        // Handling case of referencing a single child node.
 
-                    // Reference to a single child node.
-                    } else if let (Some(plan_rel_id), None) =
-                        (plan_rel_list.first(), plan_rel_list.get(1))
-                    {
+                        let first_child_id = node.children.first();
+                        let second_child_id = node.children.get(1);
                         let col_name: String = if let (Some(ast_scan_id), Some(ast_col_id)) =
-                            (node.children.first(), node.children.get(1))
+                            (first_child_id, second_child_id)
                         {
                             // Get column name.
                             let col_name = get_column_name(*ast_col_id)?;
@@ -474,9 +477,7 @@ impl Ast for AbstractSyntaxTree {
                                 ));
                             };
                             col_name
-                        } else if let (Some(ast_col_id), None) =
-                            (node.children.first(), node.children.get(1))
-                        {
+                        } else if let (Some(ast_col_id), None) = (first_child_id, second_child_id) {
                             // Get the column name.
                             get_column_name(*ast_col_id)?
                         } else {
@@ -615,7 +616,7 @@ impl Ast for AbstractSyntaxTree {
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(id, cond_id);
                 }
-                Type::IsNull | Type::IsNotNull => {
+                Type::IsNull | Type::IsNotNull | Type::Exists | Type::NotExists => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(format!(
                             "{:?} has no children.",
@@ -907,11 +908,11 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, projection_id);
                 }
                 Type::Multiplication | Type::Addition => {
-                    let cond_id = get_arithmetic_cond_id(
+                    let cond_id = get_arithmetic_op_id(
                         &mut plan,
                         node,
                         &map,
-                        &mut arithmetic_expression_ids,
+                        &mut arith_expr_with_parentheses_ids,
                         &mut rows,
                     )?;
                     map.add(id, cond_id);
@@ -924,7 +925,7 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_child_id = map.get(ast_child_id)?;
-                    arithmetic_expression_ids.push(plan_child_id);
+                    arith_expr_with_parentheses_ids.push(plan_child_id);
                     map.add(id, plan_child_id);
                 }
                 Type::Except => {
@@ -963,12 +964,13 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, values_row_id);
                 }
                 Type::Values => {
-                    let mut plan_children_ids: Vec<usize> = Vec::with_capacity(node.children.len());
+                    let mut plan_value_row_ids: Vec<usize> =
+                        Vec::with_capacity(node.children.len());
                     for ast_child_id in &node.children {
                         let plan_child_id = map.get(*ast_child_id)?;
-                        plan_children_ids.push(plan_child_id);
+                        plan_value_row_ids.push(plan_child_id);
                     }
-                    let plan_values_id = plan.add_values(plan_children_ids)?;
+                    let plan_values_id = plan.add_values(plan_value_row_ids)?;
                     map.add(id, plan_values_id);
                 }
                 Type::Insert => {
@@ -1080,7 +1082,7 @@ impl Ast for AbstractSyntaxTree {
         plan.set_top(plan_top_id)?;
         let replaces = plan.replace_sq_with_references()?;
         plan.fix_betweens(&betweens, &replaces)?;
-        plan.fix_arithmetic_parentheses(&arithmetic_expression_ids)?;
+        plan.fix_arithmetic_parentheses(&arith_expr_with_parentheses_ids)?;
         Ok(plan)
     }
 }

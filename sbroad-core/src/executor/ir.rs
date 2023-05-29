@@ -39,9 +39,12 @@ impl ConnectionType {
     }
 }
 
+/// Wrapper over `Plan` containing `vtables` map.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ExecutionPlan {
     plan: Plan,
+    /// Virtual tables for `Motion` nodes.
+    /// Map of { `Motion` node_id -> it's corresponding data }
     pub vtables: Option<VirtualTableMap>,
 }
 

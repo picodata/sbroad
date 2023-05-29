@@ -407,7 +407,7 @@ impl Plan {
         self.nodes.add_bool(left, op, right)
     }
 
-    /// Add rithmetic node to the plan.
+    /// Add arithmetic node to the plan.
     ///
     /// # Errors
     /// Returns `SbroadError` when the condition node can't append'.

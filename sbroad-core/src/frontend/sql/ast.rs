@@ -45,6 +45,7 @@ pub enum Type {
     Double,
     Eq,
     Except,
+    Exists,
     Explain,
     False,
     Function,
@@ -68,6 +69,7 @@ pub enum Type {
     Multiply,
     Name,
     NotEq,
+    NotExists,
     NotIn,
     Null,
     Or,
@@ -129,6 +131,7 @@ impl Type {
             Rule::Double => Ok(Type::Double),
             Rule::Eq => Ok(Type::Eq),
             Rule::Except => Ok(Type::Except),
+            Rule::Exists => Ok(Type::Exists),
             Rule::Explain => Ok(Type::Explain),
             Rule::False => Ok(Type::False),
             Rule::Function => Ok(Type::Function),
@@ -153,6 +156,7 @@ impl Type {
             Rule::Multiply => Ok(Type::Multiply),
             Rule::Name => Ok(Type::Name),
             Rule::NotEq => Ok(Type::NotEq),
+            Rule::NotExists => Ok(Type::NotExists),
             Rule::NotIn => Ok(Type::NotIn),
             Rule::Null => Ok(Type::Null),
             Rule::Or => Ok(Type::Or),
@@ -219,6 +223,7 @@ impl fmt::Display for Type {
             Type::Double => "Double".to_string(),
             Type::Eq => "Eq".to_string(),
             Type::Except => "Except".to_string(),
+            Type::Exists => "Exists".to_string(),
             Type::Explain => "Explain".to_string(),
             Type::False => "False".to_string(),
             Type::Function => "Function".to_string(),
@@ -240,6 +245,7 @@ impl fmt::Display for Type {
             Type::Multiply => "Multiply".to_string(),
             Type::Name => "Name".to_string(),
             Type::NotEq => "NotEq".to_string(),
+            Type::NotExists => "NotExists".to_string(),
             Type::NotIn => "NotIn".to_string(),
             Type::Null => "Null".to_string(),
             Type::Or => "Or".to_string(),
@@ -446,7 +452,10 @@ impl<'n> StackParseNode<'n> {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AbstractSyntaxTree {
     pub(in crate::frontend::sql) nodes: ParseNodes,
+    /// Index of top `ParseNode` in `nodes.arena`.
     pub(in crate::frontend::sql) top: Option<usize>,
+    /// Map of { reference node_id -> relation node_id it refers to }.
+    /// See `build_ref_to_relation_map` to understand how it is filled.
     pub(super) map: HashMap<usize, Vec<usize>>,
 }
 

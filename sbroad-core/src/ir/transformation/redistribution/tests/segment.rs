@@ -63,7 +63,7 @@ fn sub_query1() {
     expected_rel_set.insert(sq_id);
     assert_eq!(
         expected_rel_set,
-        plan.get_relational_from_row_nodes(b_id).unwrap()
+        plan.get_relational_nodes_from_row(b_id).unwrap()
     );
     assert_eq!(Some(sq_id), plan.get_sub_query_from_row_node(b_id).unwrap());
 
