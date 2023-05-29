@@ -256,7 +256,7 @@ fn subtree_next<'plan>(
                                             is_additional = true;
                                         }
                                     }
-                                    if let Ok(Relational::InnerJoin { children, .. }) = parent {
+                                    if let Ok(Relational::Join { children, .. }) = parent {
                                         if children.iter().skip(2).any(|&c| c == *rel_id) {
                                             is_additional = true;
                                         }
@@ -274,7 +274,7 @@ fn subtree_next<'plan>(
             },
 
             Node::Relational(r) => match r {
-                Relational::InnerJoin {
+                Relational::Join {
                     children,
                     condition,
                     output,

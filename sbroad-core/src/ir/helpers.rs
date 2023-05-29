@@ -165,7 +165,7 @@ impl Plan {
                         writeln!(buf, "Alias: {alias}")?;
                     }
                 }
-                Relational::InnerJoin { condition, .. } => {
+                Relational::Join { condition, .. } => {
                     writeln!(buf, "InnerJoin")?;
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "Condition:")?;
@@ -220,7 +220,7 @@ impl Plan {
             }
             // Print children.
             match relation {
-                Relational::InnerJoin { children, .. }
+                Relational::Join { children, .. }
                 | Relational::Projection { children, .. }
                 | Relational::Except { children, .. }
                 | Relational::Insert { children, .. }
@@ -246,7 +246,7 @@ impl Plan {
             // Print output.
             match relation {
                 Relational::ScanRelation { output, .. }
-                | Relational::InnerJoin { output, .. }
+                | Relational::Join { output, .. }
                 | Relational::Except { output, .. }
                 | Relational::Insert { output, .. }
                 | Relational::Projection { output, .. }

@@ -57,7 +57,7 @@ fn relational_next<'nodes>(
     match iter.get_nodes().arena.get(iter.get_current()) {
         Some(Node::Relational(
             Relational::Except { children, .. }
-            | Relational::InnerJoin { children, .. }
+            | Relational::Join { children, .. }
             | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }

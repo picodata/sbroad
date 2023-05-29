@@ -517,7 +517,9 @@ fn join() {
         .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
-    let join = plan.add_join(scan_t1, scan_t2, condition).unwrap();
+    let join = plan
+        .add_join(scan_t1, scan_t2, condition, JoinKind::Inner)
+        .unwrap();
     plan.top = Some(join);
 }
 
@@ -576,6 +578,7 @@ fn join_duplicate_columns() {
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     assert_eq!(
         SbroadError::DuplicatedValue("row can't be added because `a` already has an alias".into()),
-        plan.add_join(scan_t1, scan_t2, condition).unwrap_err()
+        plan.add_join(scan_t1, scan_t2, condition, JoinKind::Inner)
+            .unwrap_err()
     );
 }

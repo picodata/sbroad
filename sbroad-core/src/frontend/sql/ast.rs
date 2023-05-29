@@ -54,7 +54,8 @@ pub enum Type {
     GroupBy,
     GroupingElement,
     In,
-    InnerJoin,
+    InnerJoinKind,
+    Join,
     Insert,
     Integer,
     IsNotNull,
@@ -62,6 +63,7 @@ pub enum Type {
     Length,
     Lt,
     LtEq,
+    LeftJoinKind,
     Multiplication,
     Multiply,
     Name,
@@ -137,12 +139,14 @@ impl Type {
             Rule::Gt => Ok(Type::Gt),
             Rule::GtEq => Ok(Type::GtEq),
             Rule::In => Ok(Type::In),
-            Rule::InnerJoin => Ok(Type::InnerJoin),
+            Rule::InnerJoinKind => Ok(Type::InnerJoinKind),
+            Rule::Join => Ok(Type::Join),
             Rule::Insert => Ok(Type::Insert),
             Rule::Integer => Ok(Type::Integer),
             Rule::IsNotNull => Ok(Type::IsNotNull),
             Rule::IsNull => Ok(Type::IsNull),
             Rule::Length => Ok(Type::Length),
+            Rule::LeftJoinKind => Ok(Type::LeftJoinKind),
             Rule::Lt => Ok(Type::Lt),
             Rule::LtEq => Ok(Type::LtEq),
             Rule::Multiplication => Ok(Type::Multiplication),
@@ -221,13 +225,15 @@ impl fmt::Display for Type {
             Type::FunctionName => "FunctionName".to_string(),
             Type::Gt => "Gt".to_string(),
             Type::GtEq => "GtEq".to_string(),
+            Type::InnerJoinKind => "inner".to_string(),
             Type::In => "In".to_string(),
-            Type::InnerJoin => "InnerJoin".to_string(),
+            Type::Join => "Join".to_string(),
             Type::Insert => "Insert".to_string(),
             Type::Integer => "Integer".to_string(),
             Type::IsNotNull => "IsNotNull".to_string(),
             Type::IsNull => "IsNull".to_string(),
             Type::Length => "Length".to_string(),
+            Type::LeftJoinKind => "left".to_string(),
             Type::Lt => "Lt".to_string(),
             Type::LtEq => "LtEq".to_string(),
             Type::Multiplication => "Multiplication".to_string(),
@@ -506,13 +512,43 @@ impl AbstractSyntaxTree {
         Ok(ast)
     }
 
+    /// Bring join AST to expected kind
+    ///
+    /// Inner join can be specified as `inner join` or `join` in user query,
+    /// add `inner` to join if the second form was used
+    pub(super) fn normalize_join_ast(&mut self, join_id: usize) -> Result<(), SbroadError> {
+        let node = self.nodes.get_node(join_id)?;
+        if let Type::Join = node.rule {
+            if node.children.len() < 3 {
+                let inner_node = ParseNode {
+                    children: vec![],
+                    rule: Type::InnerJoinKind,
+                    value: Some("inner".into()),
+                };
+                let inner_id = self.nodes.push_node(inner_node);
+                let mut_node = self.nodes.get_mut_node(join_id)?;
+                mut_node.children.insert(0, inner_id);
+            }
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::ParseNode,
+                Some(format!("expected join parse node, got: {node:?}")),
+            ));
+        }
+        Ok(())
+    }
+
     /// `Select` node is not IR-friendly as it can have up to five children.
     /// Transform this node in IR-way (to a binary sub-tree).
     pub(super) fn transform_select(&mut self) -> Result<(), SbroadError> {
         let mut selects: HashSet<usize> = HashSet::new();
-        for (id, node) in self.nodes.arena.iter().enumerate() {
+        for id in 0..self.nodes.arena.len() {
+            let node = self.nodes.get_node(id)?;
             if node.rule == Type::Select {
                 selects.insert(id);
+            }
+            if node.rule == Type::Join {
+                self.normalize_join_ast(id)?;
             }
         }
         for node in &selects {
@@ -523,7 +559,6 @@ impl AbstractSyntaxTree {
                 3 => self.transform_select_3(*node, &children)?,
                 4 => self.transform_select_4(*node, &children)?,
                 5 => self.transform_select_5(*node, &children)?,
-                6 => self.transform_select_6(*node, &children)?,
                 _ => return Err(SbroadError::Invalid(Entity::AST, None)),
             }
         }
@@ -625,6 +660,7 @@ impl AbstractSyntaxTree {
         children: &[usize],
     ) -> Result<(), SbroadError> {
         let allowed = [
+            [Type::Projection, Type::Scan, Type::Join],
             [Type::Projection, Type::Scan, Type::GroupBy],
             [Type::Projection, Type::Scan, Type::Selection],
         ];
@@ -643,40 +679,20 @@ impl AbstractSyntaxTree {
         children: &[usize],
     ) -> Result<(), SbroadError> {
         let allowed = [
-            [
-                Type::Projection,
-                Type::Scan,
-                Type::InnerJoin,
-                Type::Condition,
-            ],
             [Type::Projection, Type::Scan, Type::Selection, Type::GroupBy],
+            [Type::Projection, Type::Scan, Type::Join, Type::Selection],
+            [Type::Projection, Type::Scan, Type::Join, Type::GroupBy],
         ];
         self.check(&allowed, children)?;
-        match self.nodes.get_node(children[2])?.rule {
-            Type::InnerJoin => {
-                // insert Scan as first child of InnerJoin
-                self.nodes
-                    .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-                // push Condition as last child of InnerJoin
-                self.nodes
-                    .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
-                // insert InnerJoin as first child of Projection
-                self.nodes
-                    .push_front_child(get_or_err(children, 0)?, get_or_err(children, 2)?)?;
-            }
-            Type::Selection => {
-                // insert Selection as first child of GroupBy
-                self.nodes
-                    .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
-                // insert Scan as first child of Selection
-                self.nodes
-                    .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-                // insert GroupBy as first child of Projection
-                self.nodes
-                    .push_front_child(get_or_err(children, 0)?, get_or_err(children, 3)?)?;
-            }
-            _ => return Err(SbroadError::Invalid(Entity::AST, None)),
-        }
+        // insert Selection | InnerJoin as first child of GroupBy
+        self.nodes
+            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
+        // insert Scan as first child of Selection | InnerJoin
+        self.nodes
+            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+        // insert GroupBy as first child of Projection
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 3)?)?;
         self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
@@ -686,68 +702,26 @@ impl AbstractSyntaxTree {
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        let allowed = [
-            [
-                Type::Projection,
-                Type::Scan,
-                Type::InnerJoin,
-                Type::Condition,
-                Type::Selection,
-            ],
-            [
-                Type::Projection,
-                Type::Scan,
-                Type::InnerJoin,
-                Type::Condition,
-                Type::GroupBy,
-            ],
-        ];
-        self.check(&allowed, children)?;
-        // insert InnerJoin as first child of Selection | GroupBy
-        self.nodes
-            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 2)?)?;
-        // insert Scan as first child of InnerJoin
-        self.nodes
-            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        // push back condition as last child of InnerJoin
-        self.nodes
-            .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
-        // insert GroupBy | Selection as first child of Projection
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 4)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
-        Ok(())
-    }
-
-    fn transform_select_6(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
         let allowed = [[
             Type::Projection,
             Type::Scan,
-            Type::InnerJoin,
-            Type::Condition,
+            Type::Join,
             Type::Selection,
             Type::GroupBy,
         ]];
         self.check(&allowed, children)?;
         // insert Selection as first child of GroupBy
         self.nodes
-            .push_front_child(get_or_err(children, 5)?, get_or_err(children, 4)?)?;
+            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 3)?)?;
         // insert InnerJoin as first child of Selection
         self.nodes
-            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 2)?)?;
-        // insert Scan as first child fo InnerJoin
+            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
+        // insert Scan as first child of InnerJoin
         self.nodes
             .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        // push back Condition as last child of InnerJoin
-        self.nodes
-            .push_back_child(get_or_err(children, 2)?, get_or_err(children, 3)?)?;
         // insert GroupBy as first child of Projection
         self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 5)?)?;
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 4)?)?;
         self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
@@ -899,19 +873,19 @@ impl AbstractSyntaxTree {
                         }
                     }
                 }
-                Type::InnerJoin => {
+                Type::Join => {
                     let left_id = rel_node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "AST inner join has no children.".into(),
                         )
                     })?;
-                    let right_id = rel_node.children.get(1).ok_or_else(|| {
+                    let right_id = rel_node.children.get(2).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
                             "that is AST inner join right child with index 1".into(),
                         )
                     })?;
-                    let cond_id = rel_node.children.get(2).ok_or_else(|| {
+                    let cond_id = rel_node.children.get(3).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
                             "that is AST inner join condition child with index 2".into(),

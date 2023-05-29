@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{JoinKind, Relational};
 use crate::ir::transformation::redistribution::{
     MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
@@ -676,11 +676,20 @@ impl Display for Target {
 #[derive(Debug, Serialize)]
 struct InnerJoin {
     condition: Selection,
+    kind: JoinKind,
 }
 
 impl Display for InnerJoin {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "join on {}", self.condition)
+        let kind = match self.kind {
+            JoinKind::LeftOuter => {
+                let mut s = self.kind.to_string();
+                s.push(' ');
+                s
+            }
+            JoinKind::Inner => String::new(),
+        };
+        write!(f, "{}join on {}", kind, self.condition)
     }
 }
 
@@ -953,9 +962,10 @@ impl FullExplain {
 
                     Some(ExplainNode::Motion(m))
                 }
-                Relational::InnerJoin {
+                Relational::Join {
                     children,
                     condition,
+                    kind,
                     ..
                 } => {
                     if children.len() < 2 {
@@ -988,7 +998,10 @@ impl FullExplain {
                     }
 
                     let condition = Selection::new(ir, *condition, &sq_ref_map)?;
-                    Some(ExplainNode::InnerJoin(InnerJoin { condition }))
+                    Some(ExplainNode::InnerJoin(InnerJoin {
+                        condition,
+                        kind: kind.clone(),
+                    }))
                 }
                 Relational::ValuesRow { data, children, .. } => {
                     let mut sq_ref_map: HashMap<usize, usize> =

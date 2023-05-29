@@ -100,7 +100,7 @@ impl Plan {
                 Relational::Selection {
                     filter: tree_id, ..
                 }
-                | Relational::InnerJoin {
+                | Relational::Join {
                     condition: tree_id, ..
                 } => {
                     let expr_id = *tree_id;
@@ -119,7 +119,7 @@ impl Plan {
                 | Relational::Projection {
                     output: tree_id, ..
                 }
-                | Relational::InnerJoin {
+                | Relational::Join {
                     condition: tree_id, ..
                 } => {
                     *tree_id = new_tree_id;

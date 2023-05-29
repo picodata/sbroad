@@ -75,7 +75,7 @@ fn check_join_motions(
         .iter(plan.get_top().unwrap())
         .find(|(_, n)| -> bool {
             let rel = plan.get_relation_node(*n).unwrap();
-            matches!(rel, Relational::InnerJoin { .. })
+            matches!(rel, Relational::Join { .. })
         })
         .unwrap();
     let (left_id, right_id, sq_nodes_ids) = {
@@ -155,7 +155,7 @@ fn front_sql_join_single_both_4() {
         on o.a = i.c and o.b < i.d
     "#;
 
-    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn front_sql_join_single_both_5() {
         on cast(o.a as number) = i.c
     "#;
 
-    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn front_sql_join_single_both_9() {
         on o.a = i.c or i.c < 2
     "#;
 
-    check_join_motions(input, Policy::Full, Policy::new_seg(&["C"]), None);
+    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
 }
 
 #[test]
@@ -262,8 +262,8 @@ fn front_sql_join_single_both_12() {
 
     check_join_motions(
         input,
+        Policy::new_seg(&["A"]),
         Policy::Full,
-        Policy::new_seg(&["C"]),
         Some(vec![Policy::Full]),
     );
 }

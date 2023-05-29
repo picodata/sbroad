@@ -6,7 +6,7 @@ use crate::executor::Query;
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::{Bool, JoinKind, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
@@ -424,11 +424,11 @@ where
                     self.bucket_map
                         .insert(output_id, child_buckets.conjuct(&filter_buckets)?);
                 }
-                Relational::InnerJoin {
+                Relational::Join {
                     children,
                     condition,
                     output,
-                    ..
+                    kind,
                 } => {
                     if let (Some(inner_id), Some(outer_id)) = (children.first(), children.get(1)) {
                         let inner_rel =
@@ -459,13 +459,17 @@ where
                             .clone();
                         let output_id = *output;
                         let condition_id = *condition;
-                        let filter_buckets = self.get_expression_tree_buckets(condition_id)?;
-                        self.bucket_map.insert(
-                            output_id,
-                            inner_buckets
-                                .disjunct(&outer_buckets)?
-                                .conjuct(&filter_buckets)?,
-                        );
+                        let join_buckets = match kind {
+                            JoinKind::Inner => {
+                                let filter_buckets =
+                                    self.get_expression_tree_buckets(condition_id)?;
+                                inner_buckets
+                                    .disjunct(&outer_buckets)?
+                                    .conjuct(&filter_buckets)?
+                            }
+                            JoinKind::LeftOuter => inner_buckets.disjunct(&outer_buckets)?,
+                        };
+                        self.bucket_map.insert(output_id, join_buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
                             "current node should have at least two children".to_string(),

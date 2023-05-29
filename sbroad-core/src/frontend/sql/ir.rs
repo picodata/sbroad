@@ -181,7 +181,7 @@ impl Plan {
             match node {
                 Node::Relational(
                     Relational::Selection { filter: tree, .. }
-                    | Relational::InnerJoin {
+                    | Relational::Join {
                         condition: tree, ..
                     },
                 ) => {
@@ -221,7 +221,7 @@ impl Plan {
             // Append sub-query to relational node if it is not already there (can happen with BETWEEN).
             match self.get_mut_node(sq.relational)? {
                 Node::Relational(
-                    Relational::Selection { children, .. } | Relational::InnerJoin { children, .. },
+                    Relational::Selection { children, .. } | Relational::Join { children, .. },
                 ) => {
                     // O(n) can become a problem.
                     if !children.contains(&sq.sq) {
@@ -239,7 +239,7 @@ impl Plan {
             // Generate a reference to the sub-query.
             let row_id: usize = match self.get_node(sq.relational)? {
                 Node::Relational(
-                    Relational::Selection { children, .. } | Relational::InnerJoin { children, .. },
+                    Relational::Selection { children, .. } | Relational::Join { children, .. },
                 ) => {
                     let nodes = children.clone();
                     let sq_output = self.get_relation_node(sq.sq)?.output();

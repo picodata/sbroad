@@ -88,7 +88,7 @@ impl Plan {
                         filter: ref param_id,
                         ..
                     }
-                    | Relational::InnerJoin {
+                    | Relational::Join {
                         condition: ref param_id,
                         ..
                     }
@@ -176,7 +176,7 @@ impl Plan {
                         filter: ref mut param_id,
                         ..
                     }
-                    | Relational::InnerJoin {
+                    | Relational::Join {
                         condition: ref mut param_id,
                         ..
                     }

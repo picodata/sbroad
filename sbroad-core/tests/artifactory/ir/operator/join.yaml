@@ -141,11 +141,12 @@ nodes:
             - 26
           distribution: ~
     - Relational:
-        InnerJoin:
+        Join:
           children:
             - 5
             - 11
           condition: 18
+          kind: Inner
           output: 27
 relations:
   tables:

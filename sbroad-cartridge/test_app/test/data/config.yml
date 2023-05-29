@@ -1093,3 +1093,207 @@ schema:
       engine: memtx
       sharding_key:
       - id
+    SPACE1:
+      is_local: false
+      temporary: false
+      engine: vinyl
+      format:
+        - name: bucket_id
+          type: unsigned
+          is_nullable: true
+        - name: yearquarter
+          type: integer
+          is_nullable: false
+        - name: a_to
+          type: string
+          is_nullable: false
+        - name: b_to
+          type: string
+          is_nullable: false
+        - name: a_from
+          type: string
+          is_nullable: false
+        - name: b_from
+          type: string
+          is_nullable: false
+        - name: c_by_ab
+          type: decimal
+          is_nullable: true
+        - name: d_by_ab
+          type: decimal
+          is_nullable: true
+        - name: d_c_diff
+          type: decimal
+          is_nullable: true
+        - name: field1
+          type: string
+          is_nullable: true
+        - name: field2
+          type: string
+          is_nullable: true
+      indexes:
+        - unique: true
+          name: primary
+          parts:
+            - path: yearquarter
+              is_nullable: false
+              type: integer
+            - path: a_to
+              is_nullable: false
+              type: string
+            - path: b_to
+              is_nullable: false
+              type: string
+            - path: a_from
+              is_nullable: false
+              type: string
+            - path: b_from
+              is_nullable: false
+              type: string
+          type: TREE
+        - unique: false
+          name: ab_from
+          parts:
+            - path: yearquarter
+              is_nullable: false
+              type: integer
+            - path: a_from
+              is_nullable: false
+              type: string
+            - path: b_from
+              is_nullable: false
+              type: string
+          type: TREE
+        - unique: false
+          name: bucket_id
+          parts:
+            - path: bucket_id
+              type: unsigned
+              is_nullable: true
+          type: TREE
+      sharding_key:
+        - a_to
+        - a_from
+    SPACE2:
+      engine: vinyl
+      is_local: false
+      temporary: false
+      format:
+        - name: bucket_id
+          type: unsigned
+          is_nullable: true
+        - name: id
+          type: integer
+          is_nullable: false
+        - name: yearquarter
+          type: integer
+          is_nullable: false
+        - name: a
+          type: string
+          is_nullable: false
+        - name: b
+          type: string
+          is_nullable: false
+        - name: name
+          type: string
+          is_nullable: true
+        - name: field1
+          type: integer
+          is_nullable: true
+        - name: field2
+          type: decimal
+          is_nullable: true
+        - name: field3
+          type: string
+          is_nullable: true
+        - name: field4
+          type: integer
+          is_nullable: true
+        - name: field5
+          type: string
+          is_nullable: true
+        - name: field6
+          type: decimal
+          is_nullable: true
+        - name: field7
+          type: decimal
+          is_nullable: true
+        - name: field8
+          type: decimal
+          is_nullable: true
+        - name: field9
+          type: integer
+          is_nullable: true
+        - name: count_from
+          type: integer
+          is_nullable: true
+        - name: count_to
+          type: integer
+          is_nullable: true
+      indexes:
+        - unique: true
+          parts:
+            - path: id
+              is_nullable: false
+              type: integer
+            - path: yearquarter
+              is_nullable: false
+              type: integer
+          type: TREE
+          name: primary
+        - unique: true
+          parts:
+            - path: a
+              is_nullable: false
+              type: string
+            - path: b
+              is_nullable: false
+              type: string
+            - path: yearquarter
+              is_nullable: false
+              type: integer
+          type: TREE
+          name: ab
+        - unique: false
+          parts:
+            - path: bucket_id
+              is_nullable: true
+              type: unsigned
+          type: TREE
+          name: bucket_id
+      sharding_key:
+        - id
+    null_t:
+      format:
+      - type: integer
+        name: na
+        is_nullable: false
+      - type: integer
+        name: nb
+        is_nullable: true
+      - type: integer
+        name: nc
+        is_nullable: true
+      - type: unsigned
+        name: bucket_id
+        is_nullable: false
+      temporary: false
+      indexes:
+      - unique: true
+        parts:
+        - path: na
+          is_nullable: false
+          type: integer
+        type: TREE
+        name: id
+      - unique: false
+        parts:
+        - path: bucket_id
+          is_nullable: false
+          type: unsigned
+        type: TREE
+        name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+      - na

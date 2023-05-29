@@ -1,76 +1,80 @@
 ---
 nodes:
   arena:
-    - children:
-        - 14
+    - children: #0
+        - 15
       rule: Select
       value: ~
-    - children:
-        - 2
-      rule: Condition
-      value: ~
-    - children:
-        - 6
-        - 3
-      rule: Eq
-      value: ~
-    - children:
-        - 5
-        - 4
-      rule: Reference
-      value: ~
-    - children: []
-      rule: ColumnName
-      value: a
-    - children: []
-      rule: ScanName
-      value: t2
-    - children:
-        - 8
-        - 7
-      rule: Reference
-      value: ~
-    - children: []
-      rule: ColumnName
-      value: a
-    - children: []
-      rule: ScanName
-      value: t1
-    - children:
+    - children: #1
+        - 13
         - 12
         - 10
-        - 1
-      rule: InnerJoin
+        - 2
+      rule: Join
       value: ~
-    - children:
+    - children: #2
+        - 3
+      rule: Condition
+      value: ~
+    - children: #3
+        - 7
+        - 4
+      rule: Eq
+      value: ~
+    - children: #4
+        - 6
+        - 5
+      rule: Reference
+      value: ~
+    - children: [] #5
+      rule: ColumnName
+      value: a
+    - children: [] #6
+      rule: ScanName
+      value: t2
+    - children: #7
+        - 9
+        - 8
+      rule: Reference
+      value: ~
+    - children: [] #8
+      rule: ColumnName
+      value: a
+    - children: [] #9
+      rule: ScanName
+      value: t1
+    - children: #10
         - 11
       rule: Scan
       value: ~
-    - children: []
+    - children: [] #11
       rule: Table
       value: t2
-    - children:
-        - 13
+    - children: [] #12
+      rule: InnerJoinKind
+      value: inner
+    - children: #13
+        - 14
       rule: Scan
       value: ~
-    - children: []
+    - children: [] #14
       rule: Table
       value: t1
-    - children:
-        - 9
-        - 15
+    - children: #15
+        - 1
+        - 16
       rule: Projection
       value: ~
-    - children: []
+    - children: [] #16
       rule: Asterisk
       value: "*"
-top: 14
+top: 15
 map:
-  15:
-    - 9
-  6:
-    - 12
+  4:
+    - 13
     - 10
-  3:
-    - 12
+  7:
+    - 13
     - 10
+  16:
+    - 1

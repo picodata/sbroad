@@ -395,7 +395,7 @@ impl Select {
         let left_id = sn.left_id_or_err()?;
         let sn_left = sp.nodes.get_syntax_node(left_id)?;
         let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-        if let Node::Relational(Relational::InnerJoin { .. }) = sp.plan_node_or_err(&sn.data)? {
+        if let Node::Relational(Relational::Join { .. }) = sp.plan_node_or_err(&sn.data)? {
             select.join = Some(id);
             if let Node::Relational(
                 Relational::ScanRelation { .. }
@@ -627,7 +627,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(id, None, nodes);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::InnerJoin {
+                Relational::Join {
                     children,
                     condition,
                     ..

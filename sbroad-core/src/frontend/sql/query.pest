@@ -3,11 +3,11 @@ Command = _{ SOI ~ (ExplainQuery | Query) ~ EOF }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
+// todo(ars): rename InnerJoin to Join
 Query = _{ Except | UnionAll | Select | Values | Insert }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        (((^"inner" ~ ^"join") | ^"join") ~ InnerJoin ~
-        ^"on" ~ Condition)? ~ (^"where" ~ Selection)? ~
+        Join? ~ (^"where" ~ Selection)? ~ 
         (^"group" ~ ^"by" ~ GroupBy)?
     }
         Projection = { (Asterisk | Column) ~ ("," ~ (Asterisk | Column))*? }
@@ -22,7 +22,10 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         Selection = { Expr }
         Scan = { (SubQuery | Table) ~ (^"as" ~ ScanName)? }
             Table = @{ Name }
-        InnerJoin = { Scan }
+        Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Condition }
+        JoinKind = _{ ( InnerJoinKind | LeftJoinKind ) }
+        InnerJoinKind = { ^"inner" }
+        LeftJoinKind = { ^"left" ~ (^"outer")? }
         Condition = { Expr }
         GroupBy = { GroupingElement ~ ("," ~ GroupingElement)* }
     UnionAll = { (SubQuery | Select) ~ ^"union" ~ ^"all" ~ (SubQuery | Select) }

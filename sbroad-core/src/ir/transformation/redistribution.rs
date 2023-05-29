@@ -8,7 +8,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, Relational};
+use crate::ir::operator::{Bool, JoinKind, Relational};
 
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
@@ -456,7 +456,7 @@ impl Plan {
     /// - Join node has no children.
     fn get_join_children(&self, join_id: usize) -> Result<&[usize], SbroadError> {
         let join = self.get_relation_node(join_id)?;
-        if let Relational::InnerJoin { .. } = join {
+        if let Relational::Join { .. } = join {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
@@ -758,11 +758,18 @@ impl Plan {
     /// # Errors
     /// - Failed to set row distribution in the join condition tree.
     #[allow(clippy::too_many_lines)]
-    fn resolve_join_conflicts(&mut self, rel_id: usize, expr_id: usize) -> Result<(), SbroadError> {
+    fn resolve_join_conflicts(
+        &mut self,
+        rel_id: usize,
+        expr_id: usize,
+        join_kind: &JoinKind,
+    ) -> Result<(), SbroadError> {
         // If one of the children has Distribution::Single, then we can't compute Distribution of
         // Rows in condition, because in case of Single it depends on join condition, and computing
         // distribution of Row in condition makes no sense, so we handle the single distribution separately
-        if let Some(strategy) = self.calculate_strategy_for_single_distribution(rel_id, expr_id)? {
+        if let Some(strategy) =
+            self.calculate_strategy_for_single_distribution(rel_id, expr_id, join_kind)?
+        {
             self.create_motion_nodes(&strategy)?;
             let nodes = self.get_bool_nodes_with_row_children(expr_id)?;
             for node in &nodes {
@@ -903,6 +910,7 @@ impl Plan {
         condition_eq_cols: Option<&EqualityCols>,
         keys: &KeySet,
         segmented_child: &JoinChild,
+        join_kind: &JoinKind,
     ) -> (MotionPolicy, MotionPolicy) {
         let (mut outer_policy, mut inner_policy) = match segmented_child {
             JoinChild::Outer => (MotionPolicy::Local, MotionPolicy::Full),
@@ -933,6 +941,15 @@ impl Plan {
                     break;
                 }
             }
+        } else if let JoinKind::LeftOuter = join_kind {
+            // if we can't perform repartition join (no equality columns),
+            // and left join is performed, we can't broadcast left (outer) table.
+            // in this case we broadcast the inner table and rehash outer table
+            outer_policy = MotionPolicy::Segment(MotionKey {
+                // we can choose any distribution columns here
+                targets: vec![Target::Reference(0)],
+            });
+            inner_policy = MotionPolicy::Full;
         }
         (outer_policy, inner_policy)
     }
@@ -973,6 +990,7 @@ impl Plan {
         &mut self,
         join_id: usize,
         condition_id: usize,
+        join_kind: &JoinKind,
     ) -> Result<Option<Strategy>, SbroadError> {
         let (outer_id, inner_id) = if let Some(children) = self.get_relational_children(join_id)? {
             (
@@ -1020,11 +1038,14 @@ impl Plan {
                     });
                     (outer_policy, inner_policy)
                 } else {
-                    let inner_policy = MotionPolicy::Segment(MotionKey {
+                    // Note: it is important that outer policy is Segment
+                    // in case it is left join, we can't broadcast the left table
+                    // for more details: https://git.picodata.io/picodata/picodata/sbroad/-/issues/248
+                    let outer_policy = MotionPolicy::Segment(MotionKey {
                         // we can choose any distribution columns here
                         targets: vec![Target::Reference(0)],
                     });
-                    let outer_policy = MotionPolicy::Full;
+                    let inner_policy = MotionPolicy::Full;
                     (outer_policy, inner_policy)
                 }
             }
@@ -1033,6 +1054,7 @@ impl Plan {
                     eq_cols.as_ref(),
                     keys,
                     &JoinChild::Inner,
+                    join_kind,
                 )
             }
             (Distribution::Segment { keys }, Distribution::Single) => {
@@ -1040,13 +1062,26 @@ impl Plan {
                     eq_cols.as_ref(),
                     keys,
                     &JoinChild::Outer,
+                    join_kind,
                 )
             }
             (Distribution::Replicated | Distribution::Any, Distribution::Single) => {
                 (MotionPolicy::Local, MotionPolicy::Full)
             }
             (Distribution::Single, Distribution::Replicated | Distribution::Any) => {
-                (MotionPolicy::Full, MotionPolicy::Local)
+                if let JoinKind::LeftOuter = join_kind {
+                    // outer table can't be safely broadcasted in case of LeftJoin see
+                    // https://git.picodata.io/picodata/picodata/sbroad/-/issues/248
+                    (
+                        MotionPolicy::Segment(MotionKey {
+                            // we can choose any distribution columns here
+                            targets: vec![Target::Reference(0)],
+                        }),
+                        MotionPolicy::Full,
+                    )
+                } else {
+                    (MotionPolicy::Full, MotionPolicy::Local)
+                }
             }
             // above we checked that at least one child has Distribution::Single
             (_, _) => return Err(SbroadError::Invalid(Entity::Distribution, None)),
@@ -1334,10 +1369,13 @@ impl Plan {
                     let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
                     self.create_motion_nodes(&strategy)?;
                 }
-                Relational::InnerJoin {
-                    output, condition, ..
+                Relational::Join {
+                    output,
+                    condition,
+                    kind,
+                    ..
                 } => {
-                    self.resolve_join_conflicts(*id, condition)?;
+                    self.resolve_join_conflicts(*id, condition, &kind)?;
                     self.set_distribution(output)?;
                 }
                 Relational::Insert { .. } => {

@@ -306,7 +306,9 @@ impl ExecutionPlan {
                                     sql.push_str("INSERT INTO ");
                                     sql.push_str(relation.as_str());
                                 }
-                                Relational::InnerJoin { .. } => sql.push_str("INNER JOIN"),
+                                Relational::Join { kind, .. } => sql.push_str(
+                                    format!("{} JOIN", kind.to_string().to_uppercase()).as_str(),
+                                ),
                                 Relational::Projection { .. } => sql.push_str("SELECT"),
                                 Relational::ScanRelation { relation, .. } => {
                                     sql.push_str(relation);

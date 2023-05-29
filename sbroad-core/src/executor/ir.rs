@@ -144,7 +144,7 @@ impl ExecutionPlan {
             Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
             Relational::Except { .. }
             | Relational::GroupBy { .. }
-            | Relational::InnerJoin { .. }
+            | Relational::Join { .. }
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
@@ -341,7 +341,7 @@ impl ExecutionPlan {
                         filter: ref mut expr_id,
                         ..
                     }
-                    | Relational::InnerJoin {
+                    | Relational::Join {
                         condition: ref mut expr_id,
                         ..
                     } = rel

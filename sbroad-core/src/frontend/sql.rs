@@ -15,7 +15,7 @@ use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Arithmetic, Bool, Unary};
+use crate::ir::operator::{Arithmetic, Bool, JoinKind, Unary};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -804,23 +804,40 @@ impl Ast for AbstractSyntaxTree {
                     groupby_nodes.push(groupby_id);
                     map.add(id, groupby_id);
                 }
-                Type::InnerJoin => {
+                Type::Join => {
+                    // Join ast has the following structure:
+                    // Join
+                    // - left Scan
+                    // - kind
+                    // - right scan
+                    // - condition
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Join has no children.".into())
                     })?;
                     let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node.children.get(1).ok_or_else(|| {
+                    let ast_right_id = node.children.get(2).ok_or_else(|| {
                         SbroadError::NotFound(Entity::Node, "(right) among Join children.".into())
                     })?;
                     let plan_right_id = map.get(*ast_right_id)?;
-                    let ast_cond_id = node.children.get(2).ok_or_else(|| {
+                    let ast_cond_id = node.children.get(3).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
                             "(Condition) among Join children".into(),
                         )
                     })?;
+                    let ast_kind_id = node.children.get(1).ok_or_else(|| {
+                        SbroadError::NotFound(Entity::Node, "(kind) among Join children.".into())
+                    })?;
+                    let ast_kind_node = self.nodes.get_node(*ast_kind_id)?;
+                    let kind = match ast_kind_node.rule {
+                        Type::LeftJoinKind => JoinKind::LeftOuter,
+                        Type::InnerJoinKind => JoinKind::Inner,
+                        _ => return Err(SbroadError::Invalid(Entity::AST,
+                        Some(format!("expected join kind node as 1 child of join. Got: {ast_kind_node:?}"))))
+                    };
                     let plan_cond_id = map.get(*ast_cond_id)?;
-                    let plan_join_id = plan.add_join(plan_left_id, plan_right_id, plan_cond_id)?;
+                    let plan_join_id =
+                        plan.add_join(plan_left_id, plan_right_id, plan_cond_id, kind)?;
                     map.add(id, plan_join_id);
                 }
                 Type::Selection => {
@@ -1032,6 +1049,8 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Select
                 | Type::SubQueryName
                 | Type::Subtract
+                | Type::InnerJoinKind
+                | Type::LeftJoinKind
                 | Type::TargetColumns
                 | Type::TypeAny
                 | Type::TypeBool

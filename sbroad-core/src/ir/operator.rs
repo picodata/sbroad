@@ -168,6 +168,23 @@ impl Display for Unary {
     }
 }
 
+/// Specifies what kind of join user specified in query
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum JoinKind {
+    LeftOuter,
+    Inner,
+}
+
+impl Display for JoinKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let kind = match self {
+            JoinKind::LeftOuter => "left",
+            JoinKind::Inner => "inner",
+        };
+        write!(f, "{kind}")
+    }
+}
+
 /// Relational algebra operator returning a new tuple.
 ///
 /// Transforms input tuple(s) into the output one using the
@@ -192,7 +209,7 @@ pub enum Relational {
         /// The output tuple (need for `insert returning`).
         output: usize,
     },
-    InnerJoin {
+    Join {
         /// Contains at least two elements: left and right node indexes
         /// from the plan node arena. Every element other than those
         /// two should be treated as a `SubQuery` node.
@@ -202,6 +219,8 @@ pub enum Relational {
         condition: usize,
         /// Outputs tuple node index from the plan node arena.
         output: usize,
+        /// inner or left
+        kind: JoinKind,
     },
     Motion {
         // Scan name.
@@ -335,7 +354,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
-            | Relational::InnerJoin { output, .. }
+            | Relational::Join { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
@@ -354,7 +373,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
-            | Relational::InnerJoin { output, .. }
+            | Relational::Join { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
@@ -373,7 +392,7 @@ impl Relational {
         match self {
             Relational::Except { children, .. }
             | Relational::GroupBy { children, .. }
-            | Relational::InnerJoin { children, .. }
+            | Relational::Join { children, .. }
             | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
@@ -396,7 +415,7 @@ impl Relational {
             | Relational::GroupBy {
                 ref mut children, ..
             }
-            | Relational::InnerJoin {
+            | Relational::Join {
                 ref mut children, ..
             }
             | Relational::Insert {
@@ -455,7 +474,7 @@ impl Relational {
                 children: ref mut old,
                 ..
             }
-            | Relational::InnerJoin {
+            | Relational::Join {
                 children: ref mut old,
                 ..
             }
@@ -522,7 +541,7 @@ impl Relational {
             Relational::Projection { .. }
             | Relational::GroupBy { .. }
             | Relational::Selection { .. }
-            | Relational::InnerJoin { .. } => {
+            | Relational::Join { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
                 let col_id = *list.get(position).ok_or_else(|| {
@@ -747,6 +766,7 @@ impl Plan {
         left: usize,
         right: usize,
         condition: usize,
+        kind: JoinKind,
     ) -> Result<usize, SbroadError> {
         if !self.is_trivalent(condition)? {
             return Err(SbroadError::Invalid(
@@ -816,10 +836,11 @@ impl Plan {
         }
         if let (Some(left_id), Some(right_id)) = (children.first(), children.get(1)) {
             let output = self.add_row_for_join(*left_id, *right_id)?;
-            let join = Relational::InnerJoin {
+            let join = Relational::Join {
                 children: vec![*left_id, *right_id],
                 condition,
                 output,
+                kind,
             };
 
             let join_id = self.nodes.push(Node::Relational(join));
@@ -1255,7 +1276,7 @@ impl Plan {
                         return Ok(true);
                     }
                 }
-                Relational::InnerJoin { children, .. } => {
+                Relational::Join { children, .. } => {
                     if children.iter().skip(2).any(|&c| c == node_id) {
                         return Ok(true);
                     }
@@ -1282,7 +1303,7 @@ impl Plan {
             Relational::Selection { .. } | Relational::Projection { .. } => {
                 Ok(children.first() != Some(&sq_id))
             }
-            Relational::InnerJoin { .. } => {
+            Relational::Join { .. } => {
                 Ok(children.first() != Some(&sq_id) && children.get(1) != Some(&sq_id))
             }
             _ => Ok(false),

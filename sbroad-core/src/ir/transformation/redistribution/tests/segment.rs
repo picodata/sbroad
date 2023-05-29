@@ -201,7 +201,7 @@ fn inner_join3() {
     let mut join_node: Option<&Relational> = None;
     for node in &plan.nodes.arena {
         if let Node::Relational(rel) = node {
-            if matches!(rel, Relational::InnerJoin { .. }) {
+            if matches!(rel, Relational::Join { .. }) {
                 join_node = Some(rel);
                 break;
             }

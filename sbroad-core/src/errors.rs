@@ -10,6 +10,8 @@ pub enum Entity {
     Args,
     /// corresponding to struct AbstractSyntaxTree
     AST,
+    /// corresponding to struct ParseNode
+    ParseNode,
     /// corresponding to trait Aggregate
     Aggregate,
     /// corresponding to struct Buckets
@@ -129,6 +131,7 @@ impl fmt::Display for Entity {
             Entity::PatternWithParams => "pattern with parameters".to_string(),
             Entity::Plan => "plan".to_string(),
             Entity::ProducerResult => "producer result".to_string(),
+            Entity::ParseNode => "parse node".to_string(),
             Entity::Query => "query".to_string(),
             Entity::Relational => "relational".to_string(),
             Entity::RequiredData => "required data".to_string(),

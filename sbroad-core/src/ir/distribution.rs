@@ -590,7 +590,7 @@ impl Plan {
             Relational::Except { .. } | Relational::UnionAll { .. } => {
                 Distribution::union_except(&left_dist, &right_dist)?
             }
-            Relational::InnerJoin { .. } => Distribution::join(&left_dist, &right_dist)?,
+            Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,

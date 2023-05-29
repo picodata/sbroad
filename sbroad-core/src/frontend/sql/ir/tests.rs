@@ -1074,6 +1074,125 @@ fn front_sql_multiple_motions_in_condition_row() {
 }
 
 #[test]
+fn front_sql_left_join() {
+    let input = r#"SELECT * from (select "a" as a from "t") as o 
+        left outer join (select "b" as c, "d" as d from "t") as i
+        on o.a = i.c
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("O"."A" -> "A", "I"."C" -> "C", "I"."D" -> "D")
+    left join on ROW("O"."A") = ROW("I"."C")
+        scan "O"
+            projection ("t"."a" -> "A")
+                scan "t"
+        motion [policy: full]
+            scan "I"
+                projection ("t"."b" -> "C", "t"."d" -> "D")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_left_join_single_left() {
+    let input = r#"
+        select * from (select sum("id") / 3 as a from "test_space") as t1
+        left outer join (select "id" as b from "test_space") as t2
+        on t1.a = t2.b
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T1"."A" -> "A", "T2"."B" -> "B")
+    left join on ROW("T1"."A") = ROW("T2"."B")
+        motion [policy: segment([ref("A")])]
+            scan "T1"
+                projection ((sum(("sum_13"))) / (3) -> "A")
+                    motion [policy: full]
+                        scan 
+                            projection (sum(("test_space"."id")) -> "sum_13")
+                                scan "test_space"
+        scan "T2"
+            projection ("test_space"."id" -> "B")
+                scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_left_join_single_left2() {
+    let input = r#"
+        select * from (select sum("id") / 3 as a from "test_space") as t1
+        left join (select "id" as b from "test_space") as t2
+        on t1.a + 3 != t2.b
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    // full motion should be under outer child
+    let expected_explain = String::from(
+        r#"projection ("T1"."A" -> "A", "T2"."B" -> "B")
+    left join on ROW("T1"."A") + ROW(3) <> ROW("T2"."B")
+        motion [policy: segment([ref("A")])]
+            scan "T1"
+                projection ((sum(("sum_13"))) / (3) -> "A")
+                    motion [policy: full]
+                        scan 
+                            projection (sum(("test_space"."id")) -> "sum_13")
+                                scan "test_space"
+        motion [policy: full]
+            scan "T2"
+                projection ("test_space"."id" -> "B")
+                    scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_left_join_single_both() {
+    let input = r#"
+        select * from (select sum("id") / 3 as a from "test_space") as t1
+        left join (select count("id") as b from "test_space") as t2
+        on t1.a != t2.b
+        "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    // full motion should be under outer child
+    let expected_explain = String::from(
+        r#"projection ("T1"."A" -> "A", "T2"."B" -> "B")
+    left join on ROW("T1"."A") <> ROW("T2"."B")
+        motion [policy: segment([ref("A")])]
+            scan "T1"
+                projection ((sum(("sum_13"))) / (3) -> "A")
+                    motion [policy: full]
+                        scan 
+                            projection (sum(("test_space"."id")) -> "sum_13")
+                                scan "test_space"
+        motion [policy: full]
+            scan "T2"
+                projection (sum(("count_38")) -> "B")
+                    motion [policy: full]
+                        scan 
+                            projection (count(("test_space"."id")) -> "count_38")
+                                scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_nested_subqueries() {
     let input = r#"SELECT "a" FROM "t"
         WHERE "a" in (SELECT "a" FROM "t1" WHERE "a" in (SELECT "b" FROM "t1"))"#;
