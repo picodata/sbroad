@@ -267,24 +267,7 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
-                    let alias_name: Option<String> = if let Some(ast_name_id) = node.children.get(1)
-                    {
-                        let ast_alias = self.nodes.get_node(*ast_name_id)?;
-                        if let Type::SubQueryName = ast_alias.rule {
-                        } else {
-                            return Err(SbroadError::Invalid(
-                                Entity::Type,
-                                Some(format!(
-                                    "expected a sub-query name, got {:?}.",
-                                    ast_alias.rule
-                                )),
-                            ));
-                        }
-                        ast_alias.value.as_deref().map(normalize_name_from_sql)
-                    } else {
-                        None
-                    };
-                    let plan_sq_id = plan.add_sub_query(plan_child_id, alias_name.as_deref())?;
+                    let plan_sq_id = plan.add_sub_query(plan_child_id, None)?;
                     sq_nodes.push(plan_sq_id);
                     map.add(id, plan_sq_id);
                 }
@@ -1049,7 +1032,6 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Multiply
                 | Type::ScanName
                 | Type::Select
-                | Type::SubQueryName
                 | Type::Subtract
                 | Type::InnerJoinKind
                 | Type::LeftJoinKind
