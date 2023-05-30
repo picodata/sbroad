@@ -32,6 +32,7 @@ where
     }
 
     pub fn populate_nodes(&mut self, root: usize) {
+        self.nodes.clear();
         self.traverse(root, 0);
     }
 

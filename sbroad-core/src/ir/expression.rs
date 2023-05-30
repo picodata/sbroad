@@ -849,7 +849,7 @@ impl Plan {
             let Some(referred_rel_id) = parent else {
                 return Err(SbroadError::NotFound(
                     Entity::Node,
-                    "that is Reference parent".into(),
+                    format!("that is Reference ({ref_id}) parent"),
                 ));
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
@@ -925,7 +925,7 @@ impl Plan {
             {
                 let referred_rel_id = parent.ok_or(SbroadError::NotFound(
                     Entity::Node,
-                    "that is Reference parent".into(),
+                    format!("that is Reference ({id}) parent"),
                 ))?;
                 let rel = self.get_relation_node(referred_rel_id)?;
                 if let Some(children) = rel.children() {

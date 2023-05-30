@@ -7,7 +7,7 @@ use crate::ir::relation::Type as RelationType;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
     Boolean,

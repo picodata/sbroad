@@ -12,6 +12,7 @@ use operator::{Arithmetic, Relational};
 use relation::Table;
 
 use crate::errors::{Action, Entity, SbroadError};
+use crate::ir::expression::Expression::StableFunction;
 use crate::ir::undo::TransformationLog;
 
 use self::parameters::Parameters;
@@ -535,6 +536,64 @@ impl Plan {
         self.get_expression_node(row_id)?.get_row_list()
     }
 
+    /// Replace expression that is not root of the tree (== has parent)
+    ///
+    /// # Arguments
+    /// * `parent_id` - id of the expression that is parent to expression being replaced
+    /// * `old_id` - child of `parent_id` expression that is being replaced
+    /// * `new_id` - id of expression that replaces `old_id` expression
+    ///
+    /// # Errors
+    /// - invalid parent id
+    /// - parent expression does not have specified child expression
+    ///
+    /// # Note
+    /// This function assumes that parent expression does NOT have two or more
+    /// children with the same id. So, if this happens, only one child will be replaced.
+    pub fn replace_expression(
+        &mut self,
+        parent_id: usize,
+        old_id: usize,
+        new_id: usize,
+    ) -> Result<(), SbroadError> {
+        match self.get_mut_expression_node(parent_id)? {
+            Expression::Unary { child, .. }
+            | Expression::Alias { child, .. }
+            | Expression::Cast { child, .. } => {
+                if *child == old_id {
+                    *child = new_id;
+                    return Ok(());
+                }
+            }
+            Expression::Bool { left, right, .. }
+            | Expression::Arithmetic { left, right, .. }
+            | Expression::Concat { left, right, .. } => {
+                if *left == old_id {
+                    *left = new_id;
+                    return Ok(());
+                }
+                if *right == old_id {
+                    *right = new_id;
+                    return Ok(());
+                }
+            }
+            Expression::Row { list: arr, .. } | StableFunction { children: arr, .. } => {
+                for child in arr.iter_mut() {
+                    if *child == old_id {
+                        *child = new_id;
+                        return Ok(());
+                    }
+                }
+            }
+            Expression::Constant { .. } | Expression::Reference { .. } => {}
+        }
+        return Err(SbroadError::FailedTo(
+            Action::Replace,
+            Some(Entity::Expression),
+            format!("parent expression ({parent_id}) has no child with id {old_id}"),
+        ));
+    }
+
     /// Gets `GroupBy` column by idx
     ///
     /// # Errors
@@ -549,6 +608,41 @@ impl Plan {
                 ))
             })?;
             return Ok(*col_id);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("Expected GroupBy node. Got: {node:?}")),
+        ))
+    }
+
+    /// Gets `GroupBy` columns
+    ///
+    /// # Errors
+    /// - node is not `GroupBy`
+    pub fn get_grouping_cols(&self, groupby_id: usize) -> Result<&[usize], SbroadError> {
+        let node = self.get_relation_node(groupby_id)?;
+        if let Relational::GroupBy { gr_cols, .. } = node {
+            return Ok(gr_cols);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("Expected GroupBy node. Got: {node:?}")),
+        ))
+    }
+
+    /// Gets `GroupBy` columns to specified columns
+    ///
+    /// # Errors
+    /// - node is not `GroupBy`
+    pub fn set_grouping_cols(
+        &mut self,
+        groupby_id: usize,
+        new_cols: Vec<usize>,
+    ) -> Result<(), SbroadError> {
+        let node = self.get_mut_relation_node(groupby_id)?;
+        if let Relational::GroupBy { gr_cols, .. } = node {
+            *gr_cols = new_cols;
+            return Ok(());
         }
         Err(SbroadError::Invalid(
             Entity::Node,

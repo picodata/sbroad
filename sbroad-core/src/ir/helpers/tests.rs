@@ -44,7 +44,6 @@ fn simple_join() {
                         (SELECT "identification_number" FROM "hash_testing") as "t2"
                         ON "t1"."id" = "t2"."identification_number""#;
     let mut plan = sql_to_optimized_ir(query, vec![]);
-
     let actual_arena = plan.formatted_arena().unwrap();
 
     let mut expected_arena = String::new();
@@ -235,7 +234,6 @@ fn simple_aggregation_with_group_by() {
     let mut plan = sql_to_optimized_ir(query, vec![]);
 
     let actual_arena = plan.formatted_arena().unwrap();
-
     let mut expected_arena = String::new();
     expected_arena.push_str(
         r#"---------------------------------------------
@@ -285,20 +283,20 @@ fn simple_aggregation_with_group_by() {
 				[id: 33] expression: Alias [name = "column_12", child = Reference { parent: Some(35), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 ---------------------------------------------
-[id: 44] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
+[id: 45] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
 	Children:
 		Child_id = 35
-	Output_id: 43
-		[id: 43] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
+	Output_id: 44
+		[id: 44] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 42] expression: Alias [name = "column_12", child = Reference { parent: Some(44), targets: Some([0]), position: 0 }]
+				[id: 43] expression: Alias [name = "column_12", child = Reference { parent: Some(45), targets: Some([0]), position: 0 }]
 ---------------------------------------------
 ---------------------------------------------
 [id: 40] relation: GroupBy [is_final = true]
 	Gr_cols:
 		Gr_col: Reference { parent: Some(40), targets: Some([0]), position: 0 }
 	Children:
-		Child_id = 44
+		Child_id = 45
 	Output_id: 39
 		[id: 39] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:

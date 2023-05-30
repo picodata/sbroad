@@ -14,6 +14,10 @@ pub enum Entity {
     ParseNode,
     /// corresponding to trait Aggregate
     Aggregate,
+    /// corresponding to struct AggregateSignature
+    AggregateSignature,
+    /// corresponding to struct AggregateCollector
+    AggregateCollector,
     /// corresponding to struct Buckets
     Buckets,
     /// raw bytes
@@ -110,6 +114,8 @@ impl fmt::Display for Entity {
             Entity::Args => "args".to_string(),
             Entity::AST => "AST".to_string(),
             Entity::Aggregate => "aggregate".to_string(),
+            Entity::AggregateCollector => "aggregate collector".to_string(),
+            Entity::AggregateSignature => "aggregate signature".to_string(),
             Entity::Buckets => "buckets".to_string(),
             Entity::Bytes => "bytes".to_string(),
             Entity::Cache => "cache".to_string(),
@@ -172,6 +178,7 @@ pub enum Action {
     Deserialize,
     Drop,
     Find,
+    Replace,
     Get,
     Insert,
     Put,
@@ -195,6 +202,7 @@ impl fmt::Display for Action {
             Action::Insert => "insert".to_string(),
             Action::Put => "put".to_string(),
             Action::Retrieve => "retrieve".to_string(),
+            Action::Replace => "replace".to_string(),
             Action::Serialize => "serialize".to_string(),
         };
         write!(f, "{p}")
