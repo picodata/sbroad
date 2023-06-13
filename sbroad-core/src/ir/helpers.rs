@@ -85,6 +85,9 @@ impl Plan {
                 Expression::Constant { value } => {
                     writeln!(buf, "Constant [value = {value}]")?;
                 }
+                Expression::CountAsterisk => {
+                    writeln!(buf, "CountAsterisk")?;
+                }
                 Expression::Reference {
                     targets,
                     position,

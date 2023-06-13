@@ -714,6 +714,60 @@ fn front_sql_aggregates() {
 }
 
 #[test]
+fn front_sql_count_asterisk1() {
+    let input = r#"SELECT count(*), count(*) FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (sum(("count_13")) -> "COL_1", sum(("count_13")) -> "COL_2")
+    motion [policy: full]
+        scan 
+            projection (count((*)) -> "count_13")
+                scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_count_asterisk2() {
+    let input = r#"SELECT cOuNt(*), "b" FROM "t" group by "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (sum(("count_26")) -> "COL_1", "column_12" -> "b")
+    group by ("column_12") output: ("column_12" -> "column_12", "count_26" -> "count_26")
+        motion [policy: segment([ref("column_12")])]
+            scan 
+                projection ("t"."b" -> "column_12", count((*)) -> "count_26")
+                    group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_invalid_count_asterisk1() {
+    let input = r#"SELECT sum(*) FROM "t" group by "b""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let plan = ast.resolve_metadata(metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("\"*\" is allowed only inside \"count\" aggregate function.")
+    );
+}
+
+#[test]
 fn front_sql_aggregates_with_subexpressions() {
     let input = r#"SELECT "b", count("a" * "b" + 1), count(bucket_id("a")) FROM "t"
         group by "b""#;

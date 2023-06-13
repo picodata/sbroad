@@ -198,6 +198,9 @@ impl Plan {
                 op.hash(state);
                 self.hash_for_expr(*child, state, depth - 1);
             }
+            Expression::CountAsterisk => {
+                "CountAsterisk".hash(state);
+            }
         }
     }
 }
@@ -423,6 +426,9 @@ impl Plan {
             if let Node::Expression(right) = r {
                 match left {
                     Expression::Alias { .. } => {}
+                    Expression::CountAsterisk => {
+                        return Ok(matches!(right, Expression::CountAsterisk))
+                    }
                     Expression::Bool {
                         left: left_left,
                         op: op_left,

@@ -173,7 +173,11 @@ fn expression_next<'nodes>(
             }
         }
         Some(
-            Node::Expression(Expression::Constant { .. } | Expression::Reference { .. })
+            Node::Expression(
+                Expression::Constant { .. }
+                | Expression::Reference { .. }
+                | Expression::CountAsterisk,
+            )
             | Node::Relational(_)
             | Node::Parameter,
         )

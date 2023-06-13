@@ -700,15 +700,37 @@ impl Ast for AbstractSyntaxTree {
                 Type::Function => {
                     if let Some((first, mut other)) = node.children.split_first() {
                         let mut is_distinct = false;
+                        let function_name =
+                            self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
+                                SbroadError::NotFound(Entity::Name, "of sql function".into())
+                            })?;
                         if let Some(first_id) = other.first() {
-                            if let Type::Distinct = self.nodes.get_node(*first_id)?.rule {
-                                is_distinct = true;
-                                let Some((_, args)) = other.split_first() else {
-                                    return Err(SbroadError::Invalid(
-                                        Entity::AST,
-                                        Some("function ast has no arguments".into())))
-                                };
-                                other = args;
+                            let rule = &self.nodes.get_node(*first_id)?.rule;
+                            match rule {
+                                Type::Distinct => {
+                                    is_distinct = true;
+                                    let Some((_, args)) = other.split_first() else {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::AST,
+                                            Some("function ast has no arguments".into())))
+                                    };
+                                    other = args;
+                                }
+                                Type::CountAsterisk => {
+                                    if other.len() > 1 {
+                                        return Err(SbroadError::UnexpectedNumberOfValues(
+                                            "function ast with Asterisk has extra children".into(),
+                                        ));
+                                    }
+                                    let normalized_name = function_name.to_lowercase();
+                                    if "count" != normalized_name.as_str() {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::Query,
+                                            Some(format!("\"*\" is allowed only inside \"count\" aggregate function. Got: {normalized_name}"))
+                                        ));
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                         let mut plan_arg_list = Vec::new();
@@ -716,10 +738,6 @@ impl Ast for AbstractSyntaxTree {
                             let plan_child_id = map.get(*ast_child_id)?;
                             plan_arg_list.push(plan_child_id);
                         }
-                        let function_name =
-                            self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
-                                SbroadError::NotFound(Entity::Name, "of sql function".into())
-                            })?;
 
                         if Expression::is_aggregate_name(function_name) {
                             if plan_arg_list.len() != 1 {
@@ -1021,6 +1039,10 @@ impl Ast for AbstractSyntaxTree {
                         SbroadError::UnexpectedNumberOfValues("Explain has no children.".into())
                     })?;
                     map.add(0, map.get(*ast_child_id)?);
+                }
+                Type::CountAsterisk => {
+                    let plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
+                    map.add(id, plan_id);
                 }
                 Type::AliasName
                 | Type::Add

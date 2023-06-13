@@ -868,7 +868,7 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_parameter(id);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Expression::Reference { .. } => {
+                Expression::Reference { .. } | Expression::CountAsterisk => {
                     let sn = SyntaxNode::new_pointer(id, None, vec![]);
                     Ok(self.nodes.push_syntax_node(sn))
                 }

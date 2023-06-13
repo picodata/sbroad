@@ -84,6 +84,9 @@ impl ColExpr {
                     let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
                     stack.push(cast_expr);
                 }
+                Expression::CountAsterisk => {
+                    stack.push(ColExpr::Column("*".to_string()));
+                }
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
 
@@ -470,6 +473,12 @@ impl Row {
                     let col = Col::new(plan, *child)?;
                     row.add_col(RowVal::Column(col));
                 }
+                Expression::CountAsterisk => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Plan,
+                        Some("CountAsterisk can't be present among Row children!".into()),
+                    ))
+                }
             }
         }
 
@@ -548,6 +557,12 @@ impl Selection {
             | Expression::Alias { .. } => {
                 let row = Row::from_ir_nodes(plan, &[subtree_node_id], ref_map)?;
                 Selection::Row(row)
+            }
+            Expression::CountAsterisk => {
+                return Err(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some("CountAsterisk can't be present in Selection filter!".into()),
+                ))
             }
         };
 

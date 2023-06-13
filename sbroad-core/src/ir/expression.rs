@@ -150,6 +150,8 @@ pub enum Expression {
         /// Child expression node index in the plan node arena.
         child: usize,
     },
+    /// Argument of `count` aggregate in `count(*)` expression
+    CountAsterisk,
 }
 
 #[allow(dead_code)]

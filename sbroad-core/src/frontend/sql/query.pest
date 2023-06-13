@@ -18,7 +18,7 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
                     ColumnName = @{ Name }
                     ScanName = @{ Name }
                     Name = @{ NameString | ("\"" ~ NameString ~ "\"") }
-                Asterisk = @{ "*" }
+                Asterisk = { "*" }
         Selection = { Expr }
         Scan = { (SubQuery | Table) ~ (^"as" ~ ScanName)? }
             Table = @{ Name }
@@ -92,10 +92,11 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
         OrLeft = _{ AndRight }
         OrRight = _{ Or | OrLeft }
 
-Function = { FunctionName ~ ("(" ~ Distinct? ~  FunctionArgs ~ ")") }
+Function = { FunctionName ~ "(" ~ (CountAsterisk | (Distinct? ~  FunctionArgs)) ~ ")" }
     FunctionName = @{ Name }
     FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
     FunctionExpr = _{ Parentheses | Primary }
+    CountAsterisk = { "*" }
 
 Distinct = { ^"distinct" }
 

@@ -226,6 +226,24 @@ fn invalid_query() {
 }
 
 #[test]
+fn front_sql_invalid_count_asterisk2() {
+    let input = r#"SELECT count(distinct *) FROM "t" group by "b""#;
+
+    let ast = AbstractSyntaxTree::new(input);
+
+    assert_eq!(true, ast.is_err());
+}
+
+#[test]
+fn front_sql_invalid_count_asterisk3() {
+    let input = r#"SELECT count(*, a) FROM "t" group by "b""#;
+
+    let ast = AbstractSyntaxTree::new(input);
+
+    assert_eq!(true, ast.is_err());
+}
+
+#[test]
 fn invalid_condition() {
     let query = r#"SELECT "identification_number", "product_code" FROM "test_space" WHERE
     "identification_number" = 1 "product_code" = 2"#;

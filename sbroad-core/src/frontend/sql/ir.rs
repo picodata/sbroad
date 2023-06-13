@@ -377,7 +377,9 @@ impl Plan {
             let next_id = self.nodes.next_id();
             let mut expr = self.get_expression_node(id)?.clone();
             match expr {
-                Expression::Constant { .. } | Expression::Reference { .. } => {}
+                Expression::Constant { .. }
+                | Expression::Reference { .. }
+                | Expression::CountAsterisk => {}
                 Expression::Alias { ref mut child, .. }
                 | Expression::Cast { ref mut child, .. }
                 | Expression::Unary { ref mut child, .. } => {

@@ -450,7 +450,7 @@ impl ExecutionPlan {
                             })?;
                         }
                     }
-                    Expression::Constant { .. } => {}
+                    Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
                 Node::Parameter { .. } => {}
             }

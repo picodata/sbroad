@@ -403,3 +403,74 @@ fn exec_plan_subtree_aggregates_no_groupby() {
             vec![]
         ));
 }
+
+#[test]
+fn exec_plan_subtree_count_asterisk() {
+    let sql = r#"SELECT count(*) FROM "test_space""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "count_13".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.set_alias("").unwrap();
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        query.reshard_vtable(&mut virtual_table, key).unwrap();
+    }
+
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+
+    // Check groupby local stage
+    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
+    let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
+    } else {
+        panic!("Expected MotionPolicy::Full for local aggregation stage");
+    };
+
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT count (*) as "count_13" FROM "test_space""#.to_string(),
+            vec![]
+        )
+    );
+
+    // Check main query
+    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
+    let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT sum ("count_13") as "COL_1" FROM (SELECT "count_13" FROM "TMP_test_7")"#
+                .to_string(),
+            vec![]
+        )
+    );
+}

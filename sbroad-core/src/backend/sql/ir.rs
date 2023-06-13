@@ -386,6 +386,9 @@ impl ExecutionPlan {
                                     Expression::StableFunction { name, .. } => {
                                         sql.push_str(name.as_str());
                                     }
+                                    Expression::CountAsterisk => {
+                                        sql.push('*');
+                                    }
                                 }
                             }
                         }

@@ -68,6 +68,24 @@ groupby_queries.before_all(
 
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 4})
+            r, err = api:call("sbroad.execute", {
+                [[
+                    INSERT INTO "null_t"
+                    ("na", "nb", "nc")
+                    VALUES (?,?,?),(?,?,?),
+                    (?,?,?),(?,?,?),(?,?,?)
+                ]],
+                {
+                    1, nil, 1,
+                    2, nil, nil,
+                    3, nil, 3,
+                    4, 1, 2,
+                    5, nil, 1,
+                }
+            })
+
+            t.assert_equals(err, nil)
+            t.assert_equals(r, {row_count = 5})
         end
 )
 
@@ -1373,5 +1391,56 @@ groupby_queries.test_aggr_distinct_without_groupby = function()
     })
     t.assert_items_equals(r.rows, {
         {3, 4, 2, 5, 6},
+    })
+end
+
+groupby_queries.test_count_asterisk = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT count(*) from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        {4}
+    })
+    local api = cluster:server("api-1").net_box
+
+    -- check on table with nulls
+    r, err = api:call("sbroad.execute", {
+        [[
+        SELECT count(*) from "null_t"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        {5}
+    })
+end
+
+groupby_queries.test_count_asterisk_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT count(*), "nb" from "null_t" group by "nb"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+        { name = "nb", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        {4, nil},
+        {1, 1}
     })
 end

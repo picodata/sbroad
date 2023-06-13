@@ -153,7 +153,9 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Constant { .. } | Expression::Reference { .. } => {}
+                    Expression::Constant { .. }
+                    | Expression::Reference { .. }
+                    | Expression::CountAsterisk => {}
                 },
                 Node::Parameter => {}
             }
@@ -246,7 +248,9 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Constant { .. } | Expression::Reference { .. } => {}
+                    Expression::Constant { .. }
+                    | Expression::Reference { .. }
+                    | Expression::CountAsterisk => {}
                 },
                 Node::Parameter => {}
             }
