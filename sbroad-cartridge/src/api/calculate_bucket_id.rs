@@ -132,25 +132,17 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
         let res = match Args::try_from(args) {
             Ok(Args::String(params)) => {
                 let bucket_str = Value::from(params.rec);
-                let bucket_id = runtime.determine_bucket_id(&[&bucket_str]);
-
-                Ok(bucket_id)
+                runtime.determine_bucket_id(&[&bucket_str])
             }
             Ok(Args::Tuple(params)) => {
                 match runtime.extract_sharding_keys_from_tuple(params.space, &params.rec) {
-                    Ok(tuple) => {
-                        let bucket_id = runtime.determine_bucket_id(&tuple);
-                        Ok(bucket_id)
-                    }
+                    Ok(tuple) => runtime.determine_bucket_id(&tuple),
                     Err(e) => Err(e),
                 }
             }
             Ok(Args::Map(params)) => {
                 match runtime.extract_sharding_keys_from_map(params.space, &params.rec) {
-                    Ok(tuple) => {
-                        let bucket_id = runtime.determine_bucket_id(&tuple);
-                        Ok(bucket_id)
-                    }
+                    Ok(tuple) => runtime.determine_bucket_id(&tuple),
                     Err(e) => Err(e),
                 }
             }

@@ -20,7 +20,6 @@ use sbroad::{
             },
             QueryCache, Vshard,
         },
-        hash::bucket_id_by_tuple,
         ir::{ConnectionType, ExecutionPlan, QueryType},
         lru::{Cache, LRUCache, DEFAULT_CAPACITY},
         protocol::{Binary, RequiredData},
@@ -31,7 +30,7 @@ use sbroad::{
 
 use tarantool::tuple::Tuple;
 
-use super::DEFAULT_BUCKET_COUNT;
+use super::{router::calculate_bucket_id, DEFAULT_BUCKET_COUNT};
 
 thread_local!(static STATEMENT_CACHE: Rc<RefCell<LRUCache<String, PreparedStmt>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare))).unwrap())));
 
@@ -89,8 +88,8 @@ impl Vshard for StorageRuntime {
         get_random_bucket(self)
     }
 
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count())
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        calculate_bucket_id(s, self.bucket_count())
     }
 
     fn exec_ir_on_some(

@@ -578,8 +578,8 @@ impl Vshard for RouterRuntimeMock {
         get_random_bucket(self)
     }
 
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count())
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
     fn exec_ir_on_some(
@@ -616,8 +616,8 @@ impl Vshard for &RouterRuntimeMock {
         get_random_bucket(self)
     }
 
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count())
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
     fn exec_ir_on_some(

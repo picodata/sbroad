@@ -17,16 +17,20 @@ use sbroad::{
             },
             QueryCache, Router, Vshard,
         },
-        hash::bucket_id_by_tuple,
         ir::{ConnectionType, ExecutionPlan, QueryType},
         lru::{Cache, LRUCache, DEFAULT_CAPACITY},
         protocol::Binary,
     },
     frontend::sql::ast::AbstractSyntaxTree,
-    ir::Plan,
+    ir::{
+        value::{MsgPackValue, Value},
+        Plan,
+    },
 };
 
 use super::{meta::router::RouterMetadata, DEFAULT_BUCKET_COUNT};
+
+use tarantool::tuple::{KeyDef, Tuple};
 
 thread_local! (static PLAN_CACHE: Rc<RefCell<LRUCache<String, Plan>>> = Rc::new(RefCell::new(LRUCache::new(DEFAULT_CAPACITY, None).unwrap())));
 
@@ -112,8 +116,8 @@ impl Router for RouterRuntime {
     fn extract_sharding_keys_from_map<'rec>(
         &self,
         space: String,
-        args: &'rec HashMap<String, sbroad::ir::value::Value>,
-    ) -> Result<Vec<&'rec sbroad::ir::value::Value>, SbroadError> {
+        args: &'rec HashMap<String, Value>,
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         let metadata = self.metadata.try_borrow().map_err(|e| {
             SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
         })?;
@@ -123,10 +127,35 @@ impl Router for RouterRuntime {
     fn extract_sharding_keys_from_tuple<'rec>(
         &self,
         space: String,
-        args: &'rec [sbroad::ir::value::Value],
-    ) -> Result<Vec<&'rec sbroad::ir::value::Value>, SbroadError> {
+        args: &'rec [Value],
+    ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_keys_from_tuple(&*self.metadata()?, &space, args)
     }
+}
+
+pub(crate) fn calculate_bucket_id(tuple: &[&Value], bucket_count: u64) -> Result<u64, SbroadError> {
+    let wrapped_tuple = tuple
+        .iter()
+        .map(|v| MsgPackValue::from(*v))
+        .collect::<Vec<_>>();
+    let tnt_tuple = Tuple::new(&wrapped_tuple).map_err(|e| {
+        SbroadError::FailedTo(Action::Create, Some(Entity::Tuple), format!("{e:?}"))
+    })?;
+    let mut key_parts = Vec::with_capacity(tuple.len());
+    for (pos, value) in tuple.iter().enumerate() {
+        let pos = u32::try_from(pos).map_err(|_| {
+            SbroadError::FailedTo(
+                Action::Create,
+                Some(Entity::KeyDef),
+                "Tuple is too long".to_string(),
+            )
+        })?;
+        key_parts.push(value.as_key_def_part(pos));
+    }
+    let key = KeyDef::new(key_parts.as_slice()).map_err(|e| {
+        SbroadError::FailedTo(Action::Create, Some(Entity::KeyDef), format!("{e:?}"))
+    })?;
+    Ok(u64::from(key.hash(&tnt_tuple)) % bucket_count)
 }
 
 impl Vshard for RouterRuntime {
@@ -154,8 +183,8 @@ impl Vshard for RouterRuntime {
         get_random_bucket(self)
     }
 
-    fn determine_bucket_id(&self, s: &[&sbroad::ir::value::Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count())
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        calculate_bucket_id(s, self.bucket_count())
     }
 
     fn exec_ir_on_some(
@@ -192,8 +221,8 @@ impl Vshard for &RouterRuntime {
         get_random_bucket(self)
     }
 
-    fn determine_bucket_id(&self, s: &[&sbroad::ir::value::Value]) -> u64 {
-        bucket_id_by_tuple(s, self.bucket_count())
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        calculate_bucket_id(s, self.bucket_count())
     }
 
     fn exec_ir_on_some(

@@ -9,6 +9,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua::{self, LuaRead};
+use tarantool::tuple::{FieldType, KeyDefPart};
 
 use crate::error;
 use crate::errors::{Action, Entity, SbroadError};
@@ -502,6 +503,27 @@ impl Value {
                 | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
             },
+        }
+    }
+
+    #[must_use]
+    pub fn as_key_def_part(&self, field_no: u32) -> KeyDefPart {
+        let field_type = match self {
+            Value::Boolean(_) => FieldType::Boolean,
+            Value::Integer(_) => FieldType::Integer,
+            Value::Decimal(_) => FieldType::Decimal,
+            Value::Double(_) => FieldType::Double,
+            Value::Unsigned(_) => FieldType::Unsigned,
+            Value::String(_) => FieldType::String,
+            Value::Tuple(_) => FieldType::Array,
+            Value::Null => FieldType::Any,
+        };
+        KeyDefPart {
+            field_no,
+            field_type,
+            collation: None,
+            is_nullable: true,
+            path: None,
         }
     }
 

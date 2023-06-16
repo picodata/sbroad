@@ -47,7 +47,10 @@ fn bucket2_test() {
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),

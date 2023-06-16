@@ -263,5 +263,5 @@ pub trait Vshard {
     /// # Errors
     /// - Internal error. Under normal conditions we should always return
     ///   bucket id successfully.
-    fn determine_bucket_id(&self, s: &[&Value]) -> u64;
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError>;
 }

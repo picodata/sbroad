@@ -198,7 +198,7 @@ where
                             }
                         }
                         if !values.is_empty() {
-                            let bucket = self.coordinator.determine_bucket_id(&values);
+                            let bucket = self.coordinator.determine_bucket_id(&values)?;
                             let bucket_set: HashSet<u64, RepeatableState> =
                                 vec![bucket].into_iter().collect();
                             buckets.push(Buckets::new_filtered(bucket_set));

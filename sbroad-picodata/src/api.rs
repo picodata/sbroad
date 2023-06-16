@@ -96,6 +96,5 @@ pub fn execute_sql(tuple_buf: &[u8]) -> Result<Vec<u8>, SbroadError> {
 /// - Failed to initialize router runtime.
 pub fn determine_bucket_id(values: &[&sbroad::ir::value::Value]) -> Result<u64, SbroadError> {
     let runtime = RouterRuntime::new()?;
-    let bucket_id = runtime.determine_bucket_id(values);
-    Ok(bucket_id)
+    runtime.determine_bucket_id(values)
 }

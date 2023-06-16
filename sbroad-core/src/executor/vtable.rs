@@ -282,7 +282,7 @@ impl VirtualTable {
                     }
                 }
             }
-            let bucket_id = runtime.determine_bucket_id(&shard_key_tuple);
+            let bucket_id = runtime.determine_bucket_id(&shard_key_tuple)?;
             match index.entry(bucket_id) {
                 Entry::Vacant(entry) => {
                     entry.insert(vec![pos]);

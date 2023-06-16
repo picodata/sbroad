@@ -28,7 +28,7 @@ fn shard_query() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = coordinator.determine_bucket_id(&[&param1]);
+    let bucket = coordinator.determine_bucket_id(&[&param1]).unwrap();
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
@@ -67,7 +67,7 @@ fn shard_union_query() {
 
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
@@ -105,7 +105,10 @@ fn map_reduce_query() {
     let param1 = Value::from(1_u64);
     let param457 = Value::from("457");
 
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param457]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param457])
+        .unwrap();
 
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
@@ -159,10 +162,10 @@ fn linker_test() {
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]).unwrap();
 
     expected.rows.extend(vec![
         vec![
@@ -243,10 +246,10 @@ fn union_linker_test() {
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]).unwrap();
 
     expected.rows.extend(vec![
         vec![
@@ -346,7 +349,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
     let mut expected = ProducerResult::new();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket2}]")),
@@ -434,7 +437,7 @@ fn join_linker2_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket1}]")),
@@ -506,7 +509,7 @@ fn join_linker3_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket1}]")),
@@ -597,10 +600,10 @@ fn join_linker4_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
 
     expected.rows.extend(vec![
         vec![
@@ -777,10 +780,10 @@ fn anonymous_col_index_test() {
 
     let mut expected = ProducerResult::new();
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
 
     let param3 = Value::from(3_u64);
-    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]);
+    let bucket3 = query.coordinator.determine_bucket_id(&[&param3]).unwrap();
     expected.rows.extend(vec![
         vec![
             LuaValue::String(format!("Execute query on a bucket [{bucket3}]")),
@@ -840,7 +843,7 @@ fn sharding_column1_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
@@ -871,7 +874,7 @@ fn sharding_column2_test() {
     let mut expected = ProducerResult::new();
 
     let param1 = Value::from(1_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
     expected.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
         LuaValue::String(String::from(PatternWithParams::new(
@@ -928,11 +931,17 @@ fn insert1_test() {
 
     let param1 = Column::default_value();
     let param2 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     let param1 = Column::default_value();
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket2 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![
         vec![
@@ -983,7 +992,10 @@ fn insert2_test() {
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
@@ -1047,11 +1059,17 @@ fn insert3_test() {
 
     let param1 = Value::from(2_u64);
     let param2 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     let param1 = Value::from(4_u64);
     let param2 = Value::from(3_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket2 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![
         vec![
@@ -1103,7 +1121,10 @@ fn insert4_test() {
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
@@ -1167,7 +1188,10 @@ fn insert5_test() {
 
     let param1 = Value::from(6_u64);
     let param2 = Value::from(5_u64);
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
@@ -1200,12 +1224,18 @@ fn insert6_test() {
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
     assert_eq!(550, bucket1);
 
     let param3 = Value::from(3_u64);
     let param4 = Value::from(4_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param3, &param4]);
+    let bucket2 = query
+        .coordinator
+        .determine_bucket_id(&[&param3, &param4])
+        .unwrap();
     assert_eq!(8906, bucket2);
 }
 
@@ -1275,7 +1305,10 @@ fn insert8_test() {
     let mut expected = ProducerResult::new();
     let param1 = Value::from(1_u64);
     let param2 = Value::from("two");
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     expected.rows.extend(vec![vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
@@ -1317,7 +1350,10 @@ fn insert9_test() {
 
     let param1 = Value::from(1_u64);
     let param2 = Value::from(2_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1, &param2]);
+    let bucket1 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param2])
+        .unwrap();
 
     assert_eq!(550, bucket1);
 }
@@ -1410,7 +1446,8 @@ fn groupby_linker_test() {
         for v in tuple.iter() {
             ref_tuple.push(v);
         }
-        buckets.push(coordinator.determine_bucket_id(&ref_tuple));
+        let bucket_id = coordinator.determine_bucket_id(&ref_tuple).unwrap();
+        buckets.push(bucket_id);
     }
 
     query.coordinator.add_virtual_table(motion_id, virtual_t1);

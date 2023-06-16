@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::fmt;
-use tarantool::error::TransactionError;
+use tarantool::transaction::TransactionError;
 
 const DO_SKIP: &str = "do skip";
 
@@ -43,6 +43,8 @@ pub enum Entity {
     Histogram,
     /// tarantool index
     Index,
+    /// tuple key definition
+    KeyDef,
     /// corresponds to metadata field of struct ProducerResult
     Metadata,
     /// corresponds to enum MotionPolicy
@@ -131,6 +133,7 @@ impl fmt::Display for Entity {
             Entity::ExpressionMapper => "expression mapper".to_string(),
             Entity::Histogram => "histogram".to_string(),
             Entity::Index => "index".to_string(),
+            Entity::KeyDef => "key definition".to_string(),
             Entity::Metadata => "metadata".to_string(),
             Entity::Motion => "motion".to_string(),
             Entity::MsgPack => "msgpack".to_string(),
@@ -278,8 +281,12 @@ impl fmt::Display for SbroadError {
 
 impl std::error::Error for SbroadError {}
 
-impl From<TransactionError> for SbroadError {
-    fn from(error: TransactionError) -> Self {
-        SbroadError::FailedTo(Action::Create, Some(Entity::Transaction), error.to_string())
+impl<E: fmt::Debug> From<TransactionError<E>> for SbroadError {
+    fn from(error: TransactionError<E>) -> Self {
+        SbroadError::FailedTo(
+            Action::Create,
+            Some(Entity::Transaction),
+            format!("{error:?}"),
+        )
     }
 }

@@ -9,7 +9,7 @@ use std::{
 
 use tarantool::{
     space::Space,
-    transaction::start_transaction,
+    transaction::transaction,
     tuple::{
         rmp::{self, decode::RmpRead},
         Tuple,
@@ -405,7 +405,7 @@ pub fn execute_dml(
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
     })?;
-    start_transaction(|| -> Result<(), SbroadError> {
+    transaction(|| -> Result<(), SbroadError> {
         for (bucket_id, positions) in vtable.get_index().iter() {
             for pos in positions {
                 let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {

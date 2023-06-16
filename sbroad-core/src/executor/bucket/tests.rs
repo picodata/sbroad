@@ -27,7 +27,7 @@ fn simple_union_query() {
 
     let param1 = Value::from(1_u64);
 
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
 
@@ -51,10 +51,10 @@ fn simple_disjunction_in_union_query() {
     let buckets = query.bucket_discovery(top).unwrap();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
 
     let param100 = Value::from(100_u64);
-    let bucket100 = query.coordinator.determine_bucket_id(&[&param100]);
+    let bucket100 = query.coordinator.determine_bucket_id(&[&param100]).unwrap();
 
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket100].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
@@ -84,7 +84,10 @@ fn complex_shard_key_union_query() {
     let param1 = Value::from(1_u64);
     let param222 = Value::from("222");
 
-    let bucket = query.coordinator.determine_bucket_id(&[&param1, &param222]);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param222])
+        .unwrap();
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
 
@@ -121,21 +124,31 @@ fn union_complex_cond_query() {
     let param222 = Value::from("222");
     let param111 = Value::from("111");
 
-    let bucket1222 = query.coordinator.determine_bucket_id(&[&param1, &param222]);
+    let bucket1222 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param222])
+        .unwrap();
     let bucket100222 = query
         .coordinator
-        .determine_bucket_id(&[&param100, &param222]);
+        .determine_bucket_id(&[&param100, &param222])
+        .unwrap();
     let bucket1000222 = query
         .coordinator
-        .determine_bucket_id(&[&param1000, &param222]);
+        .determine_bucket_id(&[&param1000, &param222])
+        .unwrap();
 
-    let bucket1111 = query.coordinator.determine_bucket_id(&[&param1, &param111]);
+    let bucket1111 = query
+        .coordinator
+        .determine_bucket_id(&[&param1, &param111])
+        .unwrap();
     let bucket100111 = query
         .coordinator
-        .determine_bucket_id(&[&param100, &param111]);
+        .determine_bucket_id(&[&param100, &param111])
+        .unwrap();
     let bucket1000111 = query
         .coordinator
-        .determine_bucket_id(&[&param1000, &param111]);
+        .determine_bucket_id(&[&param1000, &param111])
+        .unwrap();
 
     let bucket_set: HashSet<u64, RepeatableState> = vec![
         bucket1222,
@@ -167,10 +180,10 @@ fn union_query_conjunction() {
     let buckets = query.bucket_discovery(top).unwrap();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
 
     let param2 = Value::from(2_u64);
-    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]);
+    let bucket2 = query.coordinator.determine_bucket_id(&[&param2]).unwrap();
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1, bucket2].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
 
@@ -194,7 +207,7 @@ fn simple_except_query() {
     let buckets = query.bucket_discovery(top).unwrap();
 
     let param1 = Value::from(1_u64);
-    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]);
+    let bucket1 = query.coordinator.determine_bucket_id(&[&param1]).unwrap();
     let bucket_set: HashSet<u64, RepeatableState> = vec![bucket1].into_iter().collect();
     let expected = Buckets::new_filtered(bucket_set);
 
