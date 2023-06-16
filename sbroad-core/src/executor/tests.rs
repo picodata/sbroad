@@ -141,7 +141,7 @@ fn linker_test() {
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23();
+    let mut virtual_table = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -225,7 +225,7 @@ fn union_linker_test() {
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23();
+    let mut virtual_table = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -328,8 +328,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_table = virtual_table_23();
-    virtual_table.set_alias("\"t8\"").unwrap();
+    let mut virtual_table = virtual_table_23(Some("\"t8\""));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -728,7 +727,6 @@ on q."f" = "t1"."a""#;
     assert_eq!(expected, result);
 }
 
-// select * from "test_1" where "identification_number" in (select COLUMN_2 as "b" from (values (1), (2))) or "identification_number" in (select COLUMN_2 as "c" from (values (3), (4)));
 #[test]
 fn anonymous_col_index_test() {
     let sql = r#"SELECT * FROM "test_space"
@@ -746,14 +744,14 @@ fn anonymous_col_index_test() {
         .unwrap()
         .position(0)
         .unwrap();
-    let mut virtual_t1 = virtual_table_23();
+    let mut virtual_t1 = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion1_id)
     {
         virtual_t1.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
-        .add_virtual_table(motion1_id, virtual_table_23());
+        .add_virtual_table(motion1_id, virtual_table_23(None));
     let motion2_id = *query
         .exec_plan
         .get_ir_plan()
@@ -762,14 +760,14 @@ fn anonymous_col_index_test() {
         .unwrap()
         .position(1)
         .unwrap();
-    let mut virtual_t2 = virtual_table_23();
+    let mut virtual_t2 = virtual_table_23(None);
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion2_id)
     {
         virtual_t2.reshard(key, &query.coordinator).unwrap();
     }
     query
         .coordinator
-        .add_virtual_table(motion2_id, virtual_table_23());
+        .add_virtual_table(motion2_id, virtual_table_23(None));
 
     let result = *query
         .dispatch()
@@ -1324,8 +1322,9 @@ fn insert9_test() {
     assert_eq!(550, bucket1);
 }
 
-/// Helper function to create a "test" virtual table.
-fn virtual_table_23() -> VirtualTable {
+/// Helper function to create a test virtual table.
+/// Called `23` because it contains Integer values [2, 3] for "identification_number" column.
+fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
     virtual_table.add_column(Column {
@@ -1336,6 +1335,10 @@ fn virtual_table_23() -> VirtualTable {
 
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64)]);
+
+    if let Some(alias) = alias {
+        virtual_table.set_alias(alias).unwrap();
+    }
 
     virtual_table
 }
@@ -1410,8 +1413,6 @@ fn groupby_linker_test() {
         buckets.push(coordinator.determine_bucket_id(&ref_tuple));
     }
 
-    virtual_t1.set_alias("").unwrap();
-
     query.coordinator.add_virtual_table(motion_id, virtual_t1);
 
     let result = *query
@@ -1465,4 +1466,4 @@ mod not_in;
 mod not_eq;
 
 #[cfg(test)]
-mod subtree;
+mod exec_plan;

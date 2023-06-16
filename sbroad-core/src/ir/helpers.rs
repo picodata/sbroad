@@ -1,5 +1,6 @@
 //! Helper module with functions and structures for the IR.
 
+use crate::backend::sql::tree::{SyntaxData, SyntaxPlan};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
@@ -308,6 +309,73 @@ impl Plan {
     pub fn formatted_arena(&mut self) -> Result<String, SbroadError> {
         let top_id = self.get_top()?;
         self.formatted_arena_subtree(top_id)
+    }
+}
+
+/// Formatting helper debug functions
+impl SyntaxPlan<'_> {
+    /// Pretty-printing plan `nodes.arena`.
+    ///
+    /// # Errors
+    /// - Failed to retrieve top node.
+    /// - Failed to format one of the nodes.
+    pub fn formatted(&self, plan: &Plan) -> Result<String, SbroadError> {
+        let mut buf = String::new();
+        let top = self.top.ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some(String::from(
+                    "Top id should have already be set for SyntaxPlan",
+                )),
+            )
+        })?;
+        if self.formatted_inner(plan, &mut buf, 0, top).is_err() {
+            return Err(SbroadError::FailedTo(
+                Action::Serialize,
+                Some(Entity::SyntaxPlan),
+                "Unable to get formatted arena string".to_string(),
+            ));
+        }
+        Ok(buf)
+    }
+
+    fn formatted_inner(
+        &self,
+        plan: &Plan,
+        buf: &mut String,
+        tabulation_number: i32,
+        node_id: usize,
+    ) -> Result<(), std::fmt::Error> {
+        let node = self.nodes.arena.get(node_id);
+        if let Some(node) = node {
+            formatted_tabulate(buf, tabulation_number)?;
+            let data = &node.data;
+            if let SyntaxData::PlanId(id) = data {
+                let node = plan.get_node(*id);
+                if let Ok(node) = node {
+                    writeln!(buf, "{node:?} [id={id}]")?;
+                }
+            } else {
+                writeln!(buf, "{data:?}")?;
+            }
+
+            if let Some(left_id) = node.left {
+                formatted_tabulate(buf, tabulation_number + 1)?;
+                writeln!(buf, "Left:")?;
+                self.formatted_inner(plan, buf, tabulation_number + 2, left_id)?;
+            }
+            if !node.right.is_empty() {
+                formatted_tabulate(buf, tabulation_number + 1)?;
+                writeln!(buf, "Right:")?;
+            }
+            for right in &node.right {
+                self.formatted_inner(plan, buf, tabulation_number + 2, *right)?;
+            }
+        } else {
+            formatted_tabulate(buf, tabulation_number)?;
+            writeln!(buf, "MISSING")?;
+        }
+        Ok(())
     }
 }
 

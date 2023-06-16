@@ -435,7 +435,7 @@ fn front_sql_groupby() {
         r#"projection ("column_12" -> "identification_number", "column_13" -> "product_code")
     group by ("column_13", "column_12") output: ("column_12" -> "column_12", "column_13" -> "column_13")
         motion [policy: segment([ref("column_13"), ref("column_12")])]
-            scan 
+            scan
                 projection ("hash_testing"."identification_number" -> "column_12", "hash_testing"."product_code" -> "column_13")
                     group by ("hash_testing"."product_code", "hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                         scan "hash_testing"
@@ -458,7 +458,7 @@ fn front_sql_groupby_less_cols_in_proj() {
         r#"projection ("column_12" -> "identification_number")
     group by ("column_12", "column_13") output: ("column_12" -> "column_12", "column_13" -> "column_13")
         motion [policy: segment([ref("column_12"), ref("column_13")])]
-            scan 
+            scan
                 projection ("hash_testing"."identification_number" -> "column_12", "hash_testing"."product_units" -> "column_13")
                     group by ("hash_testing"."identification_number", "hash_testing"."product_units") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                         scan "hash_testing"
@@ -482,7 +482,7 @@ fn front_sql_groupby_union_1() {
     projection ("column_12" -> "identification_number")
         group by ("column_12") output: ("column_12" -> "column_12")
             motion [policy: segment([ref("column_12")])]
-                scan 
+                scan
                     projection ("hash_testing"."identification_number" -> "column_12")
                         group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                             scan "hash_testing"
@@ -514,7 +514,7 @@ fn front_sql_groupby_union_2() {
                 projection ("column_28" -> "identification_number")
                     group by ("column_28") output: ("column_28" -> "column_28")
                         motion [policy: segment([ref("column_28")])]
-                            scan 
+                            scan
                                 projection ("hash_testing"."identification_number" -> "column_28")
                                     group by ("hash_testing"."identification_number") output: ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op", "hash_testing"."bucket_id" -> "bucket_id")
                                         scan "hash_testing"
@@ -540,7 +540,7 @@ fn front_sql_groupby_join_1() {
         r#"projection ("column_63" -> "product_code", "column_64" -> "product_units")
     group by ("column_63", "column_64") output: ("column_64" -> "column_64", "column_63" -> "column_63")
         motion [policy: segment([ref("column_63"), ref("column_64")])]
-            scan 
+            scan
                 projection ("T2"."product_units" -> "column_64", "T2"."product_code" -> "column_63")
                     group by ("T2"."product_code", "T2"."product_units") output: ("T2"."product_units" -> "product_units", "T2"."product_code" -> "product_code", "T2"."identification_number" -> "identification_number", "T"."id" -> "id")
                         join on ROW("T2"."identification_number") = ROW("T"."id")
@@ -619,7 +619,7 @@ fn front_sql_join() {
             scan "T2"
                 projection (sum(("sum_41")) -> "id")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (sum(("test_space"."id")) -> "sum_41")
                                 scan "test_space"
 "#,
@@ -638,7 +638,7 @@ fn front_sql_groupby_insert() {
         projection ("column_24" -> "b", "column_25" -> "d")
             group by ("column_24", "column_25") output: ("column_25" -> "column_25", "column_24" -> "column_24")
                 motion [policy: segment([ref("column_24"), ref("column_25")])]
-                    scan 
+                    scan
                         projection ("t"."d" -> "column_25", "t"."b" -> "column_24")
                             group by ("t"."b", "t"."d") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                                 scan "t"
@@ -687,7 +687,7 @@ fn front_sql_aggregates() {
         r#"projection ("column_12" -> "b", (sum(("count_28"))) + (sum(("count_30"))) -> "COL_1")
     group by ("column_12") output: ("column_12" -> "column_12", "count_28" -> "count_28", "count_30" -> "count_30")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", count(("t"."a")) -> "count_28", count(("t"."b")) -> "count_30")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -706,7 +706,7 @@ fn front_sql_count_asterisk1() {
     let expected_explain = String::from(
         r#"projection (sum(("count_13")) -> "COL_1", sum(("count_13")) -> "COL_2")
     motion [policy: full]
-        scan 
+        scan
             projection (count((*)) -> "count_13")
                 scan "t"
 "#,
@@ -725,7 +725,7 @@ fn front_sql_count_asterisk2() {
         r#"projection (sum(("count_26")) -> "COL_1", "column_12" -> "b")
     group by ("column_12") output: ("column_12" -> "column_12", "count_26" -> "count_26")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", count((*)) -> "count_26")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -762,7 +762,7 @@ fn front_sql_aggregates_with_subexpressions() {
         r#"projection ("column_12" -> "b", sum(("count_35")) -> "COL_1", sum(("count_39")) -> "COL_2")
     group by ("column_12") output: ("column_12" -> "column_12", "count_39" -> "count_39", "count_35" -> "count_35")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", count(("FUNC"(("t"."a")))) -> "count_39", count((("t"."a") * ("t"."b") + (1))) -> "count_35")
                     group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -782,7 +782,7 @@ fn front_sql_aggregates_with_distinct1() {
         r#"projection ("column_12" -> "b", count(distinct ("column_27")) -> "COL_1", count(distinct ("column_12")) -> "COL_2")
     group by ("column_12") output: ("column_12" -> "column_12", "column_27" -> "column_27")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", "t"."a" -> "column_27")
                     group by ("t"."b", "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -803,7 +803,7 @@ fn front_sql_aggregates_with_distinct2() {
         r#"projection ("column_12" -> "b", sum(distinct ("column_34")) -> "COL_1")
     group by ("column_12") output: ("column_12" -> "column_12", "column_34" -> "column_34")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", ("t"."a") + ("t"."b") + (3) -> "column_34")
                     group by ("t"."b", ("t"."a") + ("t"."b") + (3)) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -822,7 +822,7 @@ fn front_sql_aggregates_with_distinct3() {
     let expected_explain = String::from(
         r#"projection (sum(distinct ("column_19")) -> "COL_1")
     motion [policy: full]
-        scan 
+        scan
             projection (("t"."a") + ("t"."b") + (3) -> "column_19")
                 group by (("t"."a") + ("t"."b") + (3)) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                     scan "t"
@@ -892,7 +892,7 @@ fn front_sql_aggregate_without_groupby() {
     let expected_explain = String::from(
         r#"projection (sum(("sum_20")) -> "COL_1")
     motion [policy: full]
-        scan 
+        scan
             projection (sum((("t"."a") * ("t"."b") + (1))) -> "sum_20")
                 scan "t"
 "#,
@@ -912,7 +912,7 @@ fn front_sql_aggregate_without_groupby2() {
     scan "t1"
         projection (sum(("count_13")) -> "COL_1")
             motion [policy: full]
-                scan 
+                scan
                     projection (count(("test_space"."id")) -> "count_13")
                         scan "test_space"
 "#,
@@ -938,7 +938,7 @@ fn front_sql_union_single_left() {
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_29")) -> "COL_1")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_29")
                         scan "t"
 "#,
@@ -962,7 +962,7 @@ fn front_sql_union_single_right() {
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_13")) -> "COL_1")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_13")
                         scan "t"
     projection ("t"."a" -> "a")
@@ -988,13 +988,13 @@ fn front_sql_union_single_both() {
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_13")) -> "COL_1")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_13")
                         scan "t"
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_30")) -> "COL_1")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_30")
                         scan "t"
 "#,
@@ -1014,7 +1014,7 @@ fn front_sql_insert_single() {
     motion [policy: segment([ref("COL_1"), value(NULL)])]
         projection (sum(("sum_25")) -> "COL_1", sum(("count_28")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."b")) -> "sum_25", count(("t"."d")) -> "count_28")
                         scan "t"
 "#,
@@ -1038,7 +1038,7 @@ fn front_sql_except_single_right() {
     motion [policy: segment([ref("COL_1"), ref("COL_2")])]
         projection (sum(("sum_31")) -> "COL_1", sum(("count_34")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_31", count(("t"."b")) -> "count_34")
                         scan "t"
 "#,
@@ -1060,7 +1060,7 @@ fn front_sql_except_single_right() {
     motion [policy: segment([ref("COL_2"), ref("COL_1")])]
         projection (sum(("sum_31")) -> "COL_1", sum(("count_34")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_31", count(("t"."b")) -> "count_34")
                         scan "t"
 "#,
@@ -1082,7 +1082,7 @@ fn front_sql_except_single_left() {
     motion [policy: segment([ref("COL_1"), ref("COL_2")])]
         projection (sum(("sum_13")) -> "COL_1", sum(("count_16")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_13", count(("t"."b")) -> "count_16")
                         scan "t"
     projection ("t"."a" -> "a", "t"."b" -> "b")
@@ -1106,13 +1106,13 @@ fn front_sql_except_single_both() {
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_13")) -> "COL_1", sum(("count_16")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."a")) -> "sum_13", count(("t"."b")) -> "count_16")
                         scan "t"
     motion [policy: segment([ref("COL_1")])]
         projection (sum(("sum_33")) -> "COL_1", sum(("sum_36")) -> "COL_2")
             motion [policy: full]
-                scan 
+                scan
                     projection (sum(("t"."b")) -> "sum_36", sum(("t"."a")) -> "sum_33")
                         scan "t"
 "#,
@@ -1132,7 +1132,7 @@ fn front_sql_groupby_expression() {
         r#"projection ("column_16" -> "COL_1")
     group by ("column_16") output: ("column_16" -> "column_16")
         motion [policy: segment([ref("column_16")])]
-            scan 
+            scan
                 projection (("t"."a") + ("t"."b") -> "column_16")
                     group by (("t"."a") + ("t"."b")) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -1153,7 +1153,7 @@ fn front_sql_groupby_expression2() {
         r#"projection ("column_16" + (sum(("count_35"))) -> "COL_1")
     group by ("column_16") output: ("column_16" -> "column_16", "count_35" -> "count_35")
         motion [policy: segment([ref("column_16")])]
-            scan 
+            scan
                 projection ((("t"."a") + ("t"."b")) -> "column_16", count(("t"."a")) -> "count_35")
                     group by ((("t"."a") + ("t"."b"))) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -1173,7 +1173,7 @@ fn front_sql_groupby_expression3() {
         r#"projection ("column_16" -> "COL_1", "column_26" * (sum(("sum_55"))) / (sum(("count_61"))) -> "COL_2")
     group by ("column_16", "column_26") output: ("column_26" -> "column_26", "column_16" -> "column_16", "sum_55" -> "sum_55", "count_61" -> "count_61")
         motion [policy: segment([ref("column_16"), ref("column_26")])]
-            scan 
+            scan
                 projection ((("t"."c") * ("t"."d")) -> "column_26", ("t"."a") + ("t"."b") -> "column_16", sum((("t"."c") * ("t"."d"))) -> "sum_55", count((("t"."a") * ("t"."b"))) -> "count_61")
                     group by (("t"."a") + ("t"."b"), (("t"."c") * ("t"."d"))) output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -1193,7 +1193,7 @@ fn front_sql_groupby_expression4() {
         r#"projection ("column_16" -> "COL_1", "column_17" -> "a")
     group by ("column_16", "column_17") output: ("column_17" -> "column_17", "column_16" -> "column_16")
         motion [policy: segment([ref("column_16"), ref("column_17")])]
-            scan 
+            scan
                 projection ("t"."a" -> "column_17", ("t"."a") + ("t"."b") -> "column_16")
                     group by (("t"."a") + ("t"."b"), "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"
@@ -1218,7 +1218,7 @@ fn front_sql_groupby_with_aggregates() {
             projection ("column_12" -> "a", "column_13" -> "b", sum(("sum_31")) -> "c")
                 group by ("column_13", "column_12") output: ("column_12" -> "column_12", "column_13" -> "column_13", "sum_31" -> "sum_31")
                     motion [policy: segment([ref("column_13"), ref("column_12")])]
-                        scan 
+                        scan
                             projection ("t"."a" -> "column_12", "t"."b" -> "column_13", sum(("t"."c")) -> "sum_31")
                                 group by ("t"."b", "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                                     scan "t"
@@ -1227,7 +1227,7 @@ fn front_sql_groupby_with_aggregates() {
                 projection ("column_55" -> "g", "column_56" -> "e", sum(("sum_74")) -> "f")
                     group by ("column_55", "column_56") output: ("column_56" -> "column_56", "column_55" -> "column_55", "sum_74" -> "sum_74")
                         motion [policy: segment([ref("column_55"), ref("column_56")])]
-                            scan 
+                            scan
                                 projection ("t2"."e" -> "column_56", "t2"."g" -> "column_55", sum(("t2"."f")) -> "sum_74")
                                     group by ("t2"."g", "t2"."e") output: ("t2"."e" -> "e", "t2"."f" -> "f", "t2"."g" -> "g", "t2"."h" -> "h", "t2"."bucket_id" -> "bucket_id")
                                         scan "t2"
@@ -1253,14 +1253,14 @@ fn front_sql_multiple_motions_in_condition_row() {
             scan "O"
                 projection (sum(("sum_13")) -> "A", sum(("sum_16")) -> "B")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (sum(("t"."b")) -> "sum_16", sum(("t"."a")) -> "sum_13")
                                 scan "t"
         motion [policy: segment([ref("C")])]
             scan "I"
                 projection (sum(("count_39")) -> "C", sum(("count_42")) -> "D")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (count(("t"."d")) -> "count_42", count(("t"."b")) -> "count_39")
                                 scan "t"
 "#,
@@ -1311,7 +1311,7 @@ fn front_sql_left_join_single_left() {
             scan "T1"
                 projection ((sum(("sum_13"))) / (3) -> "A")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (sum(("test_space"."id")) -> "sum_13")
                                 scan "test_space"
         scan "T2"
@@ -1341,7 +1341,7 @@ fn front_sql_left_join_single_left2() {
             scan "T1"
                 projection ((sum(("sum_13"))) / (3) -> "A")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (sum(("test_space"."id")) -> "sum_13")
                                 scan "test_space"
         motion [policy: full]
@@ -1372,14 +1372,14 @@ fn front_sql_left_join_single_both() {
             scan "T1"
                 projection ((sum(("sum_13"))) / (3) -> "A")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (sum(("test_space"."id")) -> "sum_13")
                                 scan "test_space"
         motion [policy: full]
             scan "T2"
                 projection (sum(("count_38")) -> "B")
                     motion [policy: full]
-                        scan 
+                        scan
                             projection (count(("test_space"."id")) -> "count_38")
                                 scan "test_space"
 "#,
@@ -1426,7 +1426,7 @@ fn front_sql_unique_local_aggregates() {
     let expected_explain = String::from(
         r#"projection (sum(("sum_13")) -> "COL_1", sum(("count_16")) -> "COL_2", (sum(("sum_13"))) + (sum(("count_16"))) -> "COL_3")
     motion [policy: full]
-        scan 
+        scan
             projection (count(("t"."a")) -> "count_16", sum(("t"."a")) -> "sum_13")
                 scan "t"
 "#,
@@ -1448,7 +1448,7 @@ fn front_sql_unique_local_groupings() {
         r#"projection (sum(distinct ("column_25")) -> "COL_1", count(distinct ("column_25")) -> "COL_2", count(distinct ("column_12")) -> "COL_3")
     group by ("column_12") output: ("column_12" -> "column_12", "column_25" -> "column_25")
         motion [policy: segment([ref("column_12")])]
-            scan 
+            scan
                 projection ("t"."b" -> "column_12", "t"."a" -> "column_25")
                     group by ("t"."b", "t"."a") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
                         scan "t"

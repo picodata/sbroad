@@ -194,6 +194,7 @@ nodes:
           policy: Full
           generation: none
           output: 31
+          is_child_subquery: true
 relations:
   tables:
     t1:

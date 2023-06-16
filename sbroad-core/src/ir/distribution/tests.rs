@@ -164,7 +164,7 @@ fn projection_any_dist_for_expr() {
     let expected_explain = String::from(
         r#"projection (sum(("count_13")) -> "COL_1")
     motion [policy: full]
-        scan 
+        scan
             projection (count(("test_space"."id")) -> "count_13")
                 scan "test_space"
 "#,

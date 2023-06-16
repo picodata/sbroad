@@ -257,3 +257,49 @@ g.test_join_segment_motion = function()
         }
     )
 end
+
+g.test_subquery_under_motion_without_alias = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * FROM
+                (SELECT "id" as "tid" FROM "testing_space")
+        INNER JOIN
+                (SELECT "id" as "sid" FROM "space_simple_shard_key")
+        ON true
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "tid", type = "integer"},
+            {name = "sid", type = "integer"},
+        },
+        rows = {
+            {1, 1}, {1, 10}
+        }
+    })
+end
+
+g.test_subquery_under_motion_with_alias = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * FROM
+                (SELECT "id" as "tid" FROM "testing_space")
+        INNER JOIN
+                (SELECT "id" as "sid" FROM "space_simple_shard_key") as "smth"
+        ON true
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "tid", type = "integer"},
+            {name = "smth.sid", type = "integer"},
+        },
+        rows = {
+            {1, 1}, {1, 10}
+        }
+    })
+end

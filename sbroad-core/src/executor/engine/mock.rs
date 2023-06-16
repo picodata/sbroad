@@ -677,8 +677,6 @@ impl Router for RouterRuntimeMock {
         motion_node_id: usize,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
-        plan.get_motion_subtree_root(motion_node_id)?;
-
         if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
             Ok(virtual_table.clone())
         } else {

@@ -122,13 +122,7 @@ impl VirtualTable {
         &mut self.columns
     }
 
-    /// Gets virtual table motion key
-    #[must_use]
-    pub fn get_moton_key(&self) -> &Option<MotionKey> {
-        &self.distribution_key
-    }
-
-    /// Sets vtablvirtual tablee motion key
+    /// Sets virtual table motion key
     pub fn set_motion_key(&mut self, sharding_key: &MotionKey) {
         self.distribution_key = Some(sharding_key.clone());
     }

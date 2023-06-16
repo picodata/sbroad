@@ -176,6 +176,9 @@ where
                     }
                     // Unlink the subtree under the motion node
                     // (it has already been materialized and replaced with invalid nodes).
+                    // Such a logic is applied in `materialize_motion`, but only for the
+                    // first `Motion` (that e.g. pointed to BETWEEN).
+                    // We have to apply it again, but for current `motion_id` now.
                     self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
                     continue;
                 }

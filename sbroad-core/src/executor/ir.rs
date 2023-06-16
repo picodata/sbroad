@@ -275,6 +275,9 @@ impl ExecutionPlan {
     }
 
     /// Unlink the subtree of the motion node.
+    /// This logic is applied as an optimization: when we dispatch plan subtrees to the storages,
+    /// we don't need to dispatch a subtrees of `Motion` nodes as soon as they are already replaced
+    /// with vtables. So we replace its `children` field with an empty vec.
     ///
     /// # Errors
     /// - not a motion node

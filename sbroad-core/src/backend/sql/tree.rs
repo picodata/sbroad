@@ -36,7 +36,7 @@ pub enum SyntaxData {
     From,
     /// "("
     OpenParenthesis,
-    /// "=, >, <, and, or, ..""
+    /// "=, >, <, and, or, ..."
     Operator(String),
     /// plan node id
     PlanId(usize),
@@ -386,6 +386,7 @@ struct Select {
 }
 
 type NodeAdder = fn(&mut Select, usize, &SyntaxPlan) -> Result<bool, SbroadError>;
+
 impl Select {
     fn add_one_of(
         id: usize,
@@ -578,7 +579,7 @@ impl Select {
 pub struct SyntaxPlan<'p> {
     pub(crate) nodes: SyntaxNodes,
     /// Id of top `SyntaxNode`.
-    top: Option<usize>,
+    pub(crate) top: Option<usize>,
     plan: &'p ExecutionPlan,
     snapshot: Snapshot,
 }
@@ -794,7 +795,10 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::Motion {
-                    policy, children, ..
+                    policy,
+                    children,
+                    is_child_subquery,
+                    ..
                 } => {
                     if let MotionPolicy::LocalSegment { .. } = policy {
                         #[cfg(feature = "mock")]
@@ -824,24 +828,31 @@ impl<'p> SyntaxPlan<'p> {
                     }
                     let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);
-                    let mut children: Vec<usize> = Vec::new();
-                    if vtable_alias.is_some() {
-                        children = Vec::from([
+
+                    // There are some cases when motion child is not a `SubQuery` and when
+                    // it has an alias. E.g. in case of a `INSERT ... SELECT ...` its child
+                    // may be a `Projection.
+                    let children = if *is_child_subquery || vtable_alias.is_some() {
+                        let mut children: Vec<usize> = vec![
                             self.nodes.push_syntax_node(SyntaxNode::new_open()),
                             self.nodes.push_syntax_node(SyntaxNode::new_vtable(id)),
                             self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                        ]);
+                        ];
 
                         if let Some(name) = vtable_alias {
-                            if !name.is_empty() {
-                                children
-                                    .push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            if name.is_empty() {
+                                return Err(SbroadError::Invalid(
+                                    Entity::VirtualTable,
+                                    Some(format!("Vtable {vtable:?} has an empty alias name")),
+                                ));
                             }
+                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
                         }
-                        let sn = SyntaxNode::new_pointer(id, None, children);
-                        return Ok(self.nodes.push_syntax_node(sn));
-                    }
-                    children.push(self.nodes.push_syntax_node(SyntaxNode::new_vtable(id)));
+                        children
+                    } else {
+                        vec![self.nodes.push_syntax_node(SyntaxNode::new_vtable(id))]
+                    };
+
                     let sn = SyntaxNode::new_pointer(id, None, children);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -930,9 +941,26 @@ impl<'p> SyntaxPlan<'p> {
                     let rel_ids = ir_plan.get_relational_nodes_from_row(id)?;
 
                     if let Some(motion_id) = ir_plan.get_motion_among_rel_nodes(&rel_ids)? {
+                        // Logic of replacing row child with vtable (corresponding to motion) is
+                        // applicable only in case the child is Reference appeared from transformed
+                        // SubQuery (Like in case `Exists` or `In` operator or in expression like
+                        // `select * from t where b = (select a from t)`).
+                        // There are other cases of row containing references to `Motion` nodes when
+                        // we shouldn't replace them with vtable (e.g. aggregates' stable functions
+                        // which arguments may point to `Motion` node).
+                        let first_child_id = *list.first().ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(String::from("Row node should have child list node")),
+                            )
+                        })?;
+                        let first_child = ir_plan.get_expression_node(first_child_id)?;
+                        let first_child_is_ref =
+                            matches!(first_child, Expression::Reference { .. });
+
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        if vtable.get_alias().is_none() {
+                        if vtable.get_alias().is_none() && first_child_is_ref {
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 None,

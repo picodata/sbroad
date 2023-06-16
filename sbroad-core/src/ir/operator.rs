@@ -241,6 +241,12 @@ pub enum Relational {
         policy: MotionPolicy,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
+        /// A helper field indicating whether first element of
+        /// `children` vec is a `Relational::SubQuery`.
+        /// We need it on the stage of translating Plan to SQL, because
+        /// by that moment we've already erased `children` information using
+        /// `unlink_motion_subtree` function.
+        is_child_subquery: bool,
     },
     Projection {
         /// Contains at least one single element: child node index
@@ -909,11 +915,16 @@ impl Plan {
             }
         }
         self.set_const_dist(output)?;
+
+        let child = self.get_relation_node(child_id)?;
+        let is_child_subquery = matches!(child, Relational::ScanSubQuery { .. });
+
         let motion = Relational::Motion {
             alias,
             children: vec![child_id],
             policy: policy.clone(),
             output,
+            is_child_subquery,
         };
         let motion_id = self.nodes.push(Node::Relational(motion));
         self.replace_parent_in_subtree(output, None, Some(motion_id))?;
