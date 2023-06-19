@@ -146,6 +146,22 @@ fn transform_select_6() {
 }
 
 #[test]
+fn single_quoted_str_ast() {
+    let query = r#"SELECT ' ' FROM "test_space""#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("single_quoted_str_ast.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
 fn traversal() {
     let query = r#"select a from t where a = 1"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();

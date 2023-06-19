@@ -1274,7 +1274,7 @@ groupby_queries.test_join_single7 = function()
     local api = cluster:server("api-1").net_box
 
     local r, err = api:call("sbroad.execute", {
-        [[  select o.a, i.d from  (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as o
+        [[  select i.a, o.d from  (select "c" + 3 as c, "d" + 4 as d from "arithmetic_space") as o
             inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
             on i.a = cast(o.d as number)
         ]], {}
@@ -1287,25 +1287,6 @@ groupby_queries.test_join_single7 = function()
     t.assert_items_equals(r.rows, {
         { 6, 6 },
         { 6, 6 },
-    })
-end
-
-groupby_queries.test_join_single7 = function()
-    local api = cluster:server("api-1").net_box
-    local r, err = api:call("sbroad.execute", {
-        [[  select i.a, o.d from  (select "c" as c, "d" as d from "arithmetic_space") as o
-            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
-            on i.a = o.d + 4 and i.b = o.c + 3
-        ]], {}
-    })
-    t.assert_equals(err, nil)
-    t.assert_equals(r.metadata, {
-        { name = "I.A", type = "decimal" },
-        { name = "O.D", type = "integer" },
-    })
-    t.assert_items_equals(r.rows, {
-        { 6, 2 },
-        { 6, 2 },
     })
 end
 
@@ -1348,6 +1329,26 @@ groupby_queries.test_join_single9 = function()
         { 6, 2 },
     })
 end
+
+groupby_queries.test_join_single10 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[  select i.a, o.d from  (select "c" as c, "d" as d from "arithmetic_space") as o
+            inner join (select sum("a") as a, count("b") as b from "arithmetic_space") as i
+            on i.a = o.d + 4 and i.b = o.c + 3
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "I.A", type = "decimal" },
+        { name = "O.D", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 6, 2 },
+        { 6, 2 },
+    })
+end
+
 groupby_queries.test_aggr_distinct = function()
     local api = cluster:server("api-1").net_box
 
@@ -1442,5 +1443,284 @@ groupby_queries.test_count_asterisk_with_groupby = function()
     t.assert_items_equals(r.rows, {
         {4, nil},
         {1, 1}
+    })
+end
+
+groupby_queries.test_avg = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT avg("c"), avg(distinct "c"), avg("b"), avg(distinct "b") from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "double" },
+        { name = "COL_2", type = "double" },
+        { name = "COL_3", type = "double" },
+        { name = "COL_4", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1, 2.25, 2}
+    })
+end
+
+groupby_queries.test_avg_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a", avg("b"), avg(distinct "b") FROM "arithmetic_space"
+        GROUP BY "a"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "a", type = "integer" },
+        { name = "COL_1", type = "double" },
+        { name = "COL_2", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1.5, 1.5},
+        {2, 3, 3},
+    })
+end
+
+groupby_queries.test_group_concat = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT group_concat(cast("c" as string), ' '), group_concat(distinct cast("c" as string))
+        from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "string" },
+        { name = "COL_2", type = "string" },
+    })
+    t.assert_items_equals(r.rows, {
+        {"1 1 1 1", "1"}
+    })
+end
+
+groupby_queries.test_group_concat_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a", group_concat(cast("e" as string), '|'), group_concat(distinct cast("e" as string))
+        FROM "arithmetic_space"
+        GROUP BY "a"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "a", type = "integer" },
+        { name = "COL_1", type = "string" },
+        { name = "COL_2", type = "string" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "2|2", "2"},
+        {2, "2|2", "2"},
+    })
+end
+
+groupby_queries.test_min = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT min("id"), min(distinct "d" / 2) from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "scalar" },
+        { name = "COL_2", type = "scalar" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 0}
+    })
+end
+
+groupby_queries.test_min_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a", min("b"), min(distinct "b") FROM "arithmetic_space"
+        GROUP BY "a"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "a", type = "integer" },
+        { name = "COL_1", type = "scalar" },
+        { name = "COL_2", type = "scalar" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1, 1},
+        {2, 3, 3},
+    })
+end
+
+groupby_queries.test_max = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT max("id"), max(distinct "d" / 2) from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "scalar" },
+        { name = "COL_2", type = "scalar" },
+    })
+    t.assert_items_equals(r.rows, {
+        {4, 1}
+    })
+end
+
+groupby_queries.test_max_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a", max("b"), max(distinct "b") FROM "arithmetic_space"
+        GROUP BY "a"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "a", type = "integer" },
+        { name = "COL_1", type = "scalar" },
+        { name = "COL_2", type = "scalar" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2, 2},
+        {2, 3, 3},
+    })
+end
+
+groupby_queries.test_total = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT total("id"), total(distinct "d" / 2) from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "double" },
+        { name = "COL_2", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        {10, 1}
+    })
+end
+
+groupby_queries.test_total_no_rows = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT total("id") from (
+            select * from "arithmetic_space" inner join
+            "null_t" on false
+        )
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 0 }
+    })
+end
+
+groupby_queries.test_total_null_rows = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT total("nb") from (
+            select * from "arithmetic_space" left join
+            "null_t" on false
+        )
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 0 }
+    })
+end
+
+groupby_queries.test_sum_no_rows = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT sum("id") from (
+            select * from "arithmetic_space" inner join
+            "null_t" on false
+        )
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { nil }
+    })
+end
+
+groupby_queries.test_sum_null_rows = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT sum("nb") from (
+            select * from "arithmetic_space" left join
+            "null_t" on false
+        )
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { nil }
+    })
+end
+
+groupby_queries.test_total_with_groupby = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a", total("b"), total(distinct "b") FROM "arithmetic_space"
+        GROUP BY "a"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "a", type = "integer" },
+        { name = "COL_1", type = "double" },
+        { name = "COL_2", type = "double" },
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 3, 3},
+        {2, 6, 3},
     })
 end

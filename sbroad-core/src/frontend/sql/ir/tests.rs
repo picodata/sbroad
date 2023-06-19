@@ -698,6 +698,120 @@ fn front_sql_aggregates() {
 }
 
 #[test]
+fn front_sql_avg_aggregate() {
+    let input = r#"SELECT avg("b"), avg(distinct "b"), avg("b") * avg("b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ((sum(("sum_13"::double)) / sum(("count_13"::double))) -> "COL_1", avg(distinct ("column_15"::double)) -> "COL_2", ((sum(("sum_13"::double)) / sum(("count_13"::double)))) * ((sum(("sum_13"::double)) / sum(("count_13"::double)))) -> "COL_3")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_15", sum(("t"."b")) -> "sum_13", count(("t"."b")) -> "count_13")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_total_aggregate() {
+    let input = r#"SELECT total("b"), total(distinct "b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (total(("total_13")) -> "COL_1", total(distinct ("column_15")) -> "COL_2")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_15", total(("t"."b")) -> "total_13")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_min_aggregate() {
+    let input = r#"SELECT min("b"), min(distinct "b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (min(("min_13")) -> "COL_1", min(distinct ("column_15")) -> "COL_2")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_15", min(("t"."b")) -> "min_13")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_max_aggregate() {
+    let input = r#"SELECT max("b"), max(distinct "b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (max(("max_13")) -> "COL_1", max(distinct ("column_15")) -> "COL_2")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_15", max(("t"."b")) -> "max_13")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_group_concat_aggregate() {
+    let input = r#"SELECT group_concat("b"), group_concat(distinct "b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (group_concat(("group_concat_13")) -> "COL_1", group_concat(distinct ("column_15")) -> "COL_2")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_15", group_concat(("t"."b")) -> "group_concat_13")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_group_concat_aggregate2() {
+    let input = r#"SELECT group_concat("b", ' '), group_concat(distinct "b") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (group_concat(("group_concat_14", ' ')) -> "COL_1", group_concat(distinct ("column_16")) -> "COL_2")
+    motion [policy: full]
+        scan
+            projection ("t"."b" -> "column_16", group_concat(("t"."b", ' ')) -> "group_concat_14")
+                group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_count_asterisk1() {
     let input = r#"SELECT count(*), count(*) FROM "t""#;
 

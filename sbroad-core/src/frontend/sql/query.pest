@@ -147,7 +147,7 @@ Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned |
     Double = @{ Integer ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Integer) }
     Integer = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
     Unsigned = @{ ASCII_DIGIT+ }
-    SingleQuotedString = _{ "'" ~ String ~ "'" }
+    SingleQuotedString = ${ "'" ~ String ~ "'" }
     Row = {
         ("(" ~ Value ~ ("," ~ Value)* ~ ")")
         | (^"row" ~ "(" ~ Value ~ ("," ~ Value)* ~ ")")

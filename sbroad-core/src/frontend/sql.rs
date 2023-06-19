@@ -21,6 +21,7 @@ use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 
+use crate::ir::aggregates::AggregateKind;
 use sbroad_proc::otm_child_span;
 
 /// Helper structure to fix the double linking
@@ -738,28 +739,13 @@ impl Ast for AbstractSyntaxTree {
                             plan_arg_list.push(plan_child_id);
                         }
 
-                        if Expression::is_aggregate_name(function_name) {
-                            if plan_arg_list.len() != 1 {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Query,
-                                    Some(format!(
-                                        "Expected one argument for aggregate: {function_name}."
-                                    )),
-                                ));
-                            }
-                            let argument = *plan_arg_list.first().ok_or_else(|| {
-                                SbroadError::Invalid(
-                                    Entity::Query,
-                                    Some(format!(
-                                        "aggregate function {function_name} has no arguments!"
-                                    )),
-                                )
-                            })?;
+                        if let Some(kind) = AggregateKind::new(function_name) {
                             let plan_id = plan.add_aggregate_function(
                                 &function_name.to_string(),
-                                argument,
+                                kind,
+                                plan_arg_list.clone(),
                                 is_distinct,
-                            );
+                            )?;
                             map.add(id, plan_id);
                             continue;
                         } else if is_distinct {
@@ -1038,6 +1024,14 @@ impl Ast for AbstractSyntaxTree {
                         SbroadError::UnexpectedNumberOfValues("Explain has no children.".into())
                     })?;
                     map.add(0, map.get(*ast_child_id)?);
+                }
+                Type::SingleQuotedString => {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "SingleQuotedString has no children.".into(),
+                        )
+                    })?;
+                    map.add(id, map.get(*ast_child_id)?);
                 }
                 Type::CountAsterisk => {
                     let plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));

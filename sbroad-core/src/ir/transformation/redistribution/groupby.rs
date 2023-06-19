@@ -952,20 +952,14 @@ impl Plan {
         arguments: &[usize],
         local_alias: &str,
     ) -> Result<usize, SbroadError> {
-        // Currently all supported aggregate functions take only one argument
-        let aggregate_expression = *arguments.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues(format!(
-                "create_local_aggregate: Aggregate function has no children: {kind}, {local_alias}"
-            ))
-        })?;
         let fun = Function {
             name: kind.to_string(),
             behavior: Behavior::Stable,
         };
-        // We can reuse `aggregate_expression` between local aggregates, because
+        // We can reuse aggregate expression between local aggregates, because
         // all local aggregates are located inside the same motion subtree and we
         // assume that each local aggregate does not need to modify its expression
-        let local_fun_id = self.add_stable_function(&fun, vec![aggregate_expression])?;
+        let local_fun_id = self.add_stable_function(&fun, arguments.to_vec())?;
         let alias_id = self.nodes.add_alias(local_alias, local_fun_id)?;
         Ok(alias_id)
     }
@@ -1046,7 +1040,7 @@ impl Plan {
                     .nodes
                     .expr_iter(info.aggr.fun_id, false)
                     .collect::<Vec<usize>>();
-                if args.len() > 1 {
+                if args.len() > 1 && !matches!(info.aggr.kind, AggregateKind::GRCONCAT) {
                     return Err(SbroadError::UnexpectedNumberOfValues(format!(
                         "aggregate ({info:?}) have more than one argument"
                     )));

@@ -137,6 +137,7 @@ impl ColExpr {
                         args.push(arg);
                         len -= 1;
                     }
+                    args.reverse();
                     let args_expr = ColExpr::Row(args);
                     let func_expr =
                         ColExpr::StableFunction(name.clone(), Box::new(args_expr), *is_distinct);
