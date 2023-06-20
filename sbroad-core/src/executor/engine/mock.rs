@@ -25,7 +25,7 @@ use crate::ir::function::Function;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
-use crate::ir::value::{EncodedValue, Value};
+use crate::ir::value::{LuaValue, Value};
 use crate::ir::Plan;
 
 use super::helpers::normalize_name_from_sql;
@@ -832,8 +832,8 @@ fn exec_on_some(bucket: u64, query: &str) -> ProducerResult {
     let mut result = ProducerResult::new();
 
     result.rows.push(vec![
-        EncodedValue::String(format!("Execute query on a bucket [{bucket}]")),
-        EncodedValue::String(String::from(query)),
+        LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
+        LuaValue::String(String::from(query)),
     ]);
 
     result
@@ -843,8 +843,8 @@ fn exec_on_all(query: &str) -> ProducerResult {
     let mut result = ProducerResult::new();
 
     result.rows.push(vec![
-        EncodedValue::String(String::from("Execute query on all buckets")),
-        EncodedValue::String(String::from(query)),
+        LuaValue::String(String::from("Execute query on all buckets")),
+        LuaValue::String(String::from(query)),
     ]);
 
     result

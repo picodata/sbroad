@@ -8,7 +8,7 @@ mod prod_imports {
     pub use crate::error;
     pub use crate::errors::{Action, Entity};
     pub use crate::ir::relation::Column;
-    pub use crate::ir::value::EncodedValue;
+    pub use crate::ir::value::{EncodedValue, Value};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
     pub use tarantool::space::{Field, Space, SpaceCreateOptions};
     pub use tarantool::tuple::Tuple;
@@ -97,24 +97,13 @@ impl TmpSpace {
                 }
             }
             for (idx, tuples) in vtable.get_tuples_with_buckets(buckets).iter().enumerate() {
-                let mut extended_value: Vec<EncodedValue> = Vec::with_capacity(tuples.len() + 1);
+                let mut data: Vec<EncodedValue> = Vec::with_capacity(tuples.len() + 1);
                 for (v, c) in tuples.iter().zip(vtable.get_columns().iter()) {
                     let casted_value = v.cast(&c.r#type)?;
-                    extended_value.push(EncodedValue::from(casted_value));
+                    data.push(casted_value);
                 }
-                extended_value.push(EncodedValue::Unsigned(idx as u64));
-                let data = match rmp_serde::to_vec(&extended_value) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        cleanup(space);
-                        return Err(SbroadError::FailedTo(
-                            Action::Serialize,
-                            Some(Entity::Value),
-                            format!("to tuple buffer (msgpack bytes): {e}"),
-                        ));
-                    }
-                };
-                let tuple = match Tuple::try_from_slice(data.as_slice()) {
+                data.push(EncodedValue::from(Value::Unsigned(idx as u64)));
+                let tuple = match Tuple::new(&data) {
                     Ok(tuple) => tuple,
                     Err(e) => {
                         cleanup(space);

@@ -259,5 +259,9 @@ pub trait Vshard {
     fn get_random_bucket(&self) -> Buckets;
 
     /// Determine shard for query execution by sharding key value
+    ///
+    /// # Errors
+    /// - Internal error. Under normal conditions we should always return
+    ///   bucket id successfully.
     fn determine_bucket_id(&self, s: &[&Value]) -> u64;
 }

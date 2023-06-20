@@ -13,9 +13,9 @@ fn box_execute_result_serialize() {
             MetadataColumn::new("count".into(), "unsigned".into()),
         ],
         rows: vec![vec![
-            EncodedValue::Integer(1),
-            EncodedValue::String("тест".into()),
-            EncodedValue::Unsigned(1),
+            LuaValue::Integer(1),
+            LuaValue::String("тест".into()),
+            LuaValue::Unsigned(1),
         ]],
     };
 
@@ -58,16 +58,16 @@ fn convert_to_vtable() {
         ],
         rows: vec![
             vec![
-                EncodedValue::Integer(1),
-                EncodedValue::String("тест".into()),
-                EncodedValue::Unsigned(1),
-                EncodedValue::Decimal(decimal!(1.5)),
+                LuaValue::Integer(1),
+                LuaValue::String("тест".into()),
+                LuaValue::Unsigned(1),
+                LuaValue::Decimal(decimal!(1.5)),
             ],
             vec![
-                EncodedValue::Integer(2),
-                EncodedValue::String("тест2".into()),
-                EncodedValue::Unsigned(5),
-                EncodedValue::Decimal(decimal!(2.0)),
+                LuaValue::Integer(2),
+                LuaValue::String("тест2".into()),
+                LuaValue::Unsigned(5),
+                LuaValue::Decimal(decimal!(2.0)),
             ],
         ],
     };

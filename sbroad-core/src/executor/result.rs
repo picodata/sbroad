@@ -10,10 +10,10 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
-use crate::ir::value::{EncodedValue, Value};
+use crate::ir::value::{LuaValue, Value};
 use crate::ir::Plan;
 
-type ExecutorTuple = Vec<EncodedValue>;
+type ExecutorTuple = Vec<LuaValue>;
 
 #[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct MetadataColumn {

@@ -7,7 +7,7 @@ use crate::executor::vtable::VirtualTable;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::value::{EncodedValue, Value};
+use crate::ir::value::{LuaValue, Value};
 
 use super::*;
 
@@ -52,8 +52,8 @@ fn between1_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        EncodedValue::String("Execute query on all buckets".to_string()),
-        EncodedValue::String(String::from(PatternWithParams::new(
+        LuaValue::String("Execute query on all buckets".to_string()),
+        LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
@@ -110,8 +110,8 @@ fn between2_test() {
     // Validate the result.
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        EncodedValue::String("Execute query on all buckets".to_string()),
-        EncodedValue::String(String::from(PatternWithParams::new(
+        LuaValue::String("Execute query on all buckets".to_string()),
+        LuaValue::String(String::from(PatternWithParams::new(
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,

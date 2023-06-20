@@ -38,7 +38,7 @@ use crate::{
         relation::{Column, ColumnRole, Type},
         transformation::redistribution::{MotionKey, MotionPolicy},
         tree::Snapshot,
-        value::{EncodedValue, Value},
+        value::{MsgPackValue, Value},
         Node, Plan,
     },
 };
@@ -343,73 +343,54 @@ pub fn execute_dml(
     }
 
     // Check if the virtual table have been dispatched (case 2) or built locally (case 1).
-    if let Some(vtables) = &mut optional.exec_plan.vtables {
-        if let Some(mut vtable) = vtables.mut_map().remove(&insert_child_id) {
-            let space = Space::find(&space_name).ok_or_else(|| {
-                SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
-            })?;
-            // There are no long-living references to the virtual table on the storage
-            // (we can have the ones only on the router while dispatching subplans).
-            // So we should never produce any memory copy here with `Rc::make_mut()`.
-            let vtable = Rc::make_mut(&mut vtable);
-            let mut tuples = std::mem::take(vtable.get_mut_tuples());
-            start_transaction(|| -> Result<(), SbroadError> {
-                for (bucket_id, positions) in vtable.get_mut_index().drain() {
-                    for pos in positions {
-                        let mut vt_tuple = {
-                            let tuple = tuples.get_mut(pos).ok_or_else(|| {
+    let vtable = optional.exec_plan.get_motion_vtable(insert_child_id)?;
+    let space = Space::find(&space_name).ok_or_else(|| {
+        SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
+    })?;
+    start_transaction(|| -> Result<(), SbroadError> {
+        for (bucket_id, positions) in vtable.get_index().iter() {
+            for pos in positions {
+                let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::VirtualTable,
+                        Some(format!(
+                            "tuple at position {pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                let mut insert_tuple = Vec::with_capacity(builder.len());
+                for command in &builder {
+                    // We don't produce any additional allocations as `MsgPackValue` keeps
+                    // a reference to the original value. The only allocation is for message
+                    // pack serialization, but it is unavoidable.
+                    match command {
+                        TupleBuilderCommands::TakePosition(pos) => {
+                            let value = vt_tuple.get(*pos).ok_or_else(|| {
                                 SbroadError::Invalid(
-                                    Entity::VirtualTable,
+                                    Entity::Tuple,
                                     Some(format!(
-                                        "tuple at position {pos} not found in virtual table"
+                                        "column at position {pos} not found in virtual table"
                                     )),
                                 )
                             })?;
-                            std::mem::take(tuple)
-                        };
-                        let mut insert_tuple = Vec::with_capacity(builder.len());
-                        for command in &builder {
-                            match command {
-                                TupleBuilderCommands::TakePosition(pos) => {
-                                    let value = {
-                                        let value = vt_tuple.get_mut(*pos).ok_or_else(||
-                                            SbroadError::Invalid(
-                                                Entity::Tuple,
-                                                Some(format!(
-                                                    "column at position {pos} not found in virtual table"
-                                                ))
-                                            ))?;
-                                        std::mem::take(value)
-                                    };
-                                    insert_tuple.push(EncodedValue::from(value));
-                                }
-                                TupleBuilderCommands::SetValue(value) => {
-                                    insert_tuple.push(EncodedValue::from(value.clone()));
-                                }
-                                TupleBuilderCommands::CalculateBucketId(_) => {
-                                    insert_tuple.push(EncodedValue::Unsigned(bucket_id));
-                                }
-                            }
+                            insert_tuple.push(MsgPackValue::from(value));
                         }
-                        space.insert(&insert_tuple).map_err(|e| {
-                            SbroadError::FailedTo(
-                                Action::Insert,
-                                Some(Entity::Space),
-                                format!("{e}"),
-                            )
-                        })?;
-                        result.row_count += 1;
+                        TupleBuilderCommands::SetValue(value) => {
+                            insert_tuple.push(MsgPackValue::from(value));
+                        }
+                        TupleBuilderCommands::CalculateBucketId(_) => {
+                            insert_tuple.push(MsgPackValue::Unsigned(bucket_id));
+                        }
                     }
                 }
-                Ok(())
-            })?;
+                space.insert(&insert_tuple).map_err(|e| {
+                    SbroadError::FailedTo(Action::Insert, Some(Entity::Space), format!("{e}"))
+                })?;
+                result.row_count += 1;
+            }
         }
-    } else {
-        return Err(SbroadError::NotFound(
-            Entity::VirtualTable,
-            "in the execution plan while executiong DML on the storage".into(),
-        ));
-    }
+        Ok(())
+    })?;
 
     Ok(result)
 }

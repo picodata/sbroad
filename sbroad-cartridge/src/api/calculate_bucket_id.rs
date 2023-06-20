@@ -9,7 +9,7 @@ use serde::{de::Deserializer, Deserialize, Serialize};
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use sbroad::executor::engine::{Router, Vshard};
-use sbroad::ir::value::{EncodedValue, Value};
+use sbroad::ir::value::{LuaValue, Value};
 use sbroad::log::tarantool_error;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -29,7 +29,7 @@ impl<'de> Deserialize<'de> for ArgsMap {
     {
         #[derive(Deserialize)]
         #[serde(rename = "FunctionArgs")]
-        struct StructHelper(HashMap<String, EncodedValue>, String);
+        struct StructHelper(HashMap<String, LuaValue>, String);
 
         let mut struct_helper = StructHelper::deserialize(deserializer)?;
         let rec: HashMap<String, Value> = struct_helper
@@ -62,7 +62,7 @@ impl<'de> Deserialize<'de> for ArgsTuple {
     {
         #[derive(Deserialize)]
         #[serde(rename = "FunctionArgs")]
-        struct StructHelper(Vec<EncodedValue>, String);
+        struct StructHelper(Vec<LuaValue>, String);
 
         let mut struct_helper = StructHelper::deserialize(deserializer)?;
         let rec: Vec<Value> = struct_helper.0.drain(..).map(Value::from).collect();

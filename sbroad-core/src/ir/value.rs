@@ -634,15 +634,17 @@ impl Value {
         }
     }
 
-    /// Cast a value to a different type.
+    /// Cast a value to a different type and wrap into encoded value.
+    /// If the target type is the same as the current type, the value
+    /// is returned by reference. Otherwise, the value is cloned.
     ///
     /// # Errors
     /// - the value cannot be cast to the given type.
     #[allow(clippy::too_many_lines)]
-    pub fn cast(&self, column_type: &Type) -> Result<Value, SbroadError> {
+    pub fn cast(&self, column_type: &Type) -> Result<EncodedValue, SbroadError> {
         match column_type {
             Type::Array => match self {
-                Value::Null => Ok(Value::Null),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -650,8 +652,8 @@ impl Value {
                 )),
             },
             Type::Boolean => match self {
-                Value::Boolean(_) => Ok(self.clone()),
-                Value::Null => Ok(Value::Null),
+                Value::Boolean(_) => Ok(self.into()),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -659,7 +661,7 @@ impl Value {
                 )),
             },
             Type::Decimal => match self {
-                Value::Decimal(_) => Ok(self.clone()),
+                Value::Decimal(_) => Ok(self.into()),
                 Value::Double(v) => Ok(Value::Decimal(
                     Decimal::from_str(&format!("{v}")).map_err(|e| {
                         SbroadError::FailedTo(
@@ -668,10 +670,11 @@ impl Value {
                             format!("{e:?}"),
                         )
                     })?,
-                )),
-                Value::Integer(v) => Ok(Value::Decimal(Decimal::from(*v))),
-                Value::Unsigned(v) => Ok(Value::Decimal(Decimal::from(*v))),
-                Value::Null => Ok(Value::Null),
+                )
+                .into()),
+                Value::Integer(v) => Ok(Value::Decimal(Decimal::from(*v)).into()),
+                Value::Unsigned(v) => Ok(Value::Decimal(Decimal::from(*v)).into()),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -679,11 +682,11 @@ impl Value {
                 )),
             },
             Type::Double => match self {
-                Value::Double(_) => Ok(self.clone()),
-                Value::Decimal(v) => Ok(Value::Double(Double::from_str(&format!("{v}"))?)),
-                Value::Integer(v) => Ok(Value::Double(Double::from(*v))),
-                Value::Unsigned(v) => Ok(Value::Double(Double::from(*v))),
-                Value::Null => Ok(Value::Null),
+                Value::Double(_) => Ok(self.into()),
+                Value::Decimal(v) => Ok(Value::Double(Double::from_str(&format!("{v}"))?).into()),
+                Value::Integer(v) => Ok(Value::Double(Double::from(*v)).into()),
+                Value::Unsigned(v) => Ok(Value::Double(Double::from(*v)).into()),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -691,18 +694,20 @@ impl Value {
                 )),
             },
             Type::Integer => match self {
-                Value::Integer(_) => Ok(self.clone()),
+                Value::Integer(_) => Ok(self.into()),
                 Value::Decimal(v) => Ok(Value::Integer(v.to_i64().ok_or_else(|| {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
                         format!("{self:?} into integer"),
                     )
-                })?)),
+                })?)
+                .into()),
                 Value::Double(v) => v
                     .to_string()
                     .parse::<i64>()
                     .map(Value::Integer)
+                    .map(EncodedValue::from)
                     .map_err(|e| {
                         SbroadError::FailedTo(Action::Serialize, Some(Entity::Value), e.to_string())
                     }),
@@ -712,8 +717,9 @@ impl Value {
                         Some(Entity::Value),
                         format!("u64 {v} into i64: {e}"),
                     )
-                })?)),
-                Value::Null => Ok(Value::Null),
+                })?)
+                .into()),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -726,11 +732,11 @@ impl Value {
                     Some(Entity::Value),
                     format!("{self:?} into scalar"),
                 )),
-                _ => Ok(self.clone()),
+                _ => Ok(self.into()),
             },
             Type::String => match self {
-                Value::String(_) => Ok(self.clone()),
-                Value::Null => Ok(Value::Null),
+                Value::String(_) => Ok(self.into()),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -739,9 +745,9 @@ impl Value {
             },
             Type::Number => match self {
                 Value::Integer(_) | Value::Decimal(_) | Value::Double(_) | Value::Unsigned(_) => {
-                    Ok(self.clone())
+                    Ok(self.into())
                 }
-                Value::Null => Ok(Value::Null),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -749,34 +755,36 @@ impl Value {
                 )),
             },
             Type::Unsigned => match self {
-                Value::Unsigned(_) => Ok(self.clone()),
+                Value::Unsigned(_) => Ok(self.into()),
                 Value::Integer(v) => Ok(Value::Unsigned(u64::try_from(*v).map_err(|e| {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
                         format!("i64 {v} into u64: {e}"),
                     )
-                })?)),
+                })?)
+                .into()),
                 Value::Decimal(v) => Ok(Value::Unsigned(v.to_u64().ok_or_else(|| {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
                         format!("{self:?} into unsigned"),
                     )
-                })?)),
-                Value::Double(v) => {
-                    v.to_string()
-                        .parse::<u64>()
-                        .map(Value::Unsigned)
-                        .map_err(|_| {
-                            SbroadError::FailedTo(
-                                Action::Serialize,
-                                Some(Entity::Value),
-                                format!("{self:?} into unsigned"),
-                            )
-                        })
-                }
-                Value::Null => Ok(Value::Null),
+                })?)
+                .into()),
+                Value::Double(v) => v
+                    .to_string()
+                    .parse::<u64>()
+                    .map(Value::Unsigned)
+                    .map(EncodedValue::from)
+                    .map_err(|_| {
+                        SbroadError::FailedTo(
+                            Action::Serialize,
+                            Some(Entity::Value),
+                            format!("{self:?} into unsigned"),
+                        )
+                    }),
+                Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
@@ -807,10 +815,72 @@ impl ToHashString for Value {
     }
 }
 
+/// A helper enum to encode values into `MessagePack`.
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum EncodedValue<'v> {
+    Ref(MsgPackValue<'v>),
+    Owned(LuaValue),
+}
+
+impl<'v> From<MsgPackValue<'v>> for EncodedValue<'v> {
+    fn from(value: MsgPackValue<'v>) -> Self {
+        EncodedValue::Ref(value)
+    }
+}
+
+impl From<LuaValue> for EncodedValue<'_> {
+    fn from(value: LuaValue) -> Self {
+        EncodedValue::Owned(value)
+    }
+}
+
+impl<'v> From<&'v Value> for EncodedValue<'v> {
+    fn from(value: &'v Value) -> Self {
+        EncodedValue::from(MsgPackValue::from(value))
+    }
+}
+
+impl From<Value> for EncodedValue<'_> {
+    fn from(value: Value) -> Self {
+        EncodedValue::from(LuaValue::from(value))
+    }
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum MsgPackValue<'v> {
+    Boolean(&'v bool),
+    Decimal(&'v Decimal),
+    Double(&'v f64),
+    Integer(&'v i64),
+    Unsigned(&'v u64),
+    String(&'v String),
+    Tuple(&'v Tuple),
+    Null(()),
+}
+
+impl<'v> From<&'v Value> for MsgPackValue<'v> {
+    fn from(value: &'v Value) -> Self {
+        match value {
+            Value::Boolean(v) => MsgPackValue::Boolean(v),
+            Value::Decimal(v) => MsgPackValue::Decimal(v),
+            Value::Double(v) => MsgPackValue::Double(&v.value),
+            Value::Integer(v) => MsgPackValue::Integer(v),
+            Value::Null => MsgPackValue::Null(()),
+            Value::String(v) => MsgPackValue::String(v),
+            Value::Tuple(v) => MsgPackValue::Tuple(v),
+            Value::Unsigned(v) => MsgPackValue::Unsigned(v),
+        }
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, LuaRead, PartialEq, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum EncodedValue {
+pub enum LuaValue {
     Boolean(bool),
     Decimal(Decimal),
     Double(f64),
@@ -821,44 +891,44 @@ pub enum EncodedValue {
     Null(()),
 }
 
-impl fmt::Display for EncodedValue {
+impl fmt::Display for LuaValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            EncodedValue::Boolean(v) => write!(f, "{v}"),
-            EncodedValue::Decimal(v) => fmt::Display::fmt(v, f),
-            EncodedValue::Double(v) => write!(f, "{v}"),
-            EncodedValue::Integer(v) => write!(f, "{v}"),
-            EncodedValue::Unsigned(v) => write!(f, "{v}"),
-            EncodedValue::String(v) => write!(f, "'{v}'"),
-            EncodedValue::Tuple(v) => write!(f, "{v}"),
-            EncodedValue::Null(_) => write!(f, "NULL"),
+            LuaValue::Boolean(v) => write!(f, "{v}"),
+            LuaValue::Decimal(v) => fmt::Display::fmt(v, f),
+            LuaValue::Double(v) => write!(f, "{v}"),
+            LuaValue::Integer(v) => write!(f, "{v}"),
+            LuaValue::Unsigned(v) => write!(f, "{v}"),
+            LuaValue::String(v) => write!(f, "'{v}'"),
+            LuaValue::Tuple(v) => write!(f, "{v}"),
+            LuaValue::Null(_) => write!(f, "NULL"),
         }
     }
 }
 
-impl From<Value> for EncodedValue {
+impl From<Value> for LuaValue {
     fn from(value: Value) -> Self {
         match value {
-            Value::Boolean(v) => EncodedValue::Boolean(v),
-            Value::Decimal(v) => EncodedValue::Decimal(v),
-            Value::Double(v) => EncodedValue::Double(v.value),
-            Value::Integer(v) => EncodedValue::Integer(v),
-            Value::Null => EncodedValue::Null(()),
-            Value::String(v) => EncodedValue::String(v),
-            Value::Tuple(v) => EncodedValue::Tuple(v),
-            Value::Unsigned(v) => EncodedValue::Unsigned(v),
+            Value::Boolean(v) => LuaValue::Boolean(v),
+            Value::Decimal(v) => LuaValue::Decimal(v),
+            Value::Double(v) => LuaValue::Double(v.value),
+            Value::Integer(v) => LuaValue::Integer(v),
+            Value::Null => LuaValue::Null(()),
+            Value::String(v) => LuaValue::String(v),
+            Value::Tuple(v) => LuaValue::Tuple(v),
+            Value::Unsigned(v) => LuaValue::Unsigned(v),
         }
     }
 }
 
-impl From<EncodedValue> for Value {
+impl From<LuaValue> for Value {
     #[allow(clippy::cast_possible_truncation)]
-    fn from(value: EncodedValue) -> Self {
+    fn from(value: LuaValue) -> Self {
         match value {
-            EncodedValue::Unsigned(v) => Value::Unsigned(v),
-            EncodedValue::Integer(v) => Value::Integer(v),
-            EncodedValue::Decimal(v) => Value::Decimal(v),
-            EncodedValue::Double(v) => {
+            LuaValue::Unsigned(v) => Value::Unsigned(v),
+            LuaValue::Integer(v) => Value::Integer(v),
+            LuaValue::Decimal(v) => Value::Decimal(v),
+            LuaValue::Double(v) => {
                 if v.is_nan() {
                     Value::Null
                 } else if v.is_subnormal()
@@ -870,10 +940,10 @@ impl From<EncodedValue> for Value {
                     Value::Integer(v as i64)
                 }
             }
-            EncodedValue::Boolean(v) => Value::Boolean(v),
-            EncodedValue::String(v) => Value::String(v),
-            EncodedValue::Tuple(v) => Value::Tuple(v),
-            EncodedValue::Null(_) => Value::Null,
+            LuaValue::Boolean(v) => Value::Boolean(v),
+            LuaValue::String(v) => Value::String(v),
+            LuaValue::Tuple(v) => Value::Tuple(v),
+            LuaValue::Null(_) => Value::Null,
         }
     }
 }

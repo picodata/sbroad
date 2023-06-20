@@ -214,7 +214,7 @@ g.test_query_errored = function()
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {invalid_type_param} })
     t.assert_equals(
         tostring(err), "Sbroad Error: pattern with parameters parsing error: " ..
-        [[Decode(Syntax("data did not match any variant of untagged enum EncodedValue"))]]
+        [[Decode(Syntax("data did not match any variant of untagged enum LuaValue"))]]
     )
 
     -- check err when params lenght is less then amount of sign `?`

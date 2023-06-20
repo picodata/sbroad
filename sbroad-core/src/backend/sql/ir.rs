@@ -13,7 +13,7 @@ use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
-use crate::ir::value::{EncodedValue, Value};
+use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
 use crate::otm::{
     child_span, current_id, deserialize_context, force_trace, get_tracer, inject_context, query_id,
@@ -59,7 +59,7 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
 #[derive(Deserialize, Serialize)]
 pub struct EncodedPatternWithParams(
     String,
-    Option<Vec<EncodedValue>>,
+    Option<Vec<LuaValue>>,
     Option<HashMap<String, String>>,
     Option<String>,
     bool,
@@ -67,8 +67,7 @@ pub struct EncodedPatternWithParams(
 
 impl From<PatternWithParams> for EncodedPatternWithParams {
     fn from(mut value: PatternWithParams) -> Self {
-        let encoded_params: Vec<EncodedValue> =
-            value.params.drain(..).map(EncodedValue::from).collect();
+        let encoded_params: Vec<LuaValue> = value.params.drain(..).map(LuaValue::from).collect();
         EncodedPatternWithParams(
             value.pattern,
             Some(encoded_params),
