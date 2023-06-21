@@ -17,7 +17,7 @@ cache:
 
 default:
     tags:
-        - picodata
+        - docker
     image: ${SBROAD_DEV_IMAGE}
 build:
     stage: build
