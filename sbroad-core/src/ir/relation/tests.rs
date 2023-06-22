@@ -127,6 +127,26 @@ fn table_seg_wrong_key() {
 }
 
 #[test]
+fn table_seg_compound_type_in_key() {
+    assert_eq!(
+        Table::new_seg(
+            "t",
+            vec![
+                Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+                Column::new("a", Type::Array, ColumnRole::User),
+            ],
+            &["a"],
+            SpaceEngine::Memtx,
+        )
+        .unwrap_err(),
+        SbroadError::Invalid(
+            Entity::Column,
+            Some("column a at position 1 is not scalar".into()),
+        )
+    );
+}
+
+#[test]
 fn table_seg_serialized() {
     let t = Table::new_seg(
         "t",

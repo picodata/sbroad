@@ -67,6 +67,22 @@ impl Type {
             v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
         }
     }
+
+    /// The type of the column is scalar.
+    /// Only scalar types can be used as a distribution key.
+    pub fn is_scalar(&self) -> bool {
+        matches!(
+            self,
+            Type::Boolean
+                | Type::Decimal
+                | Type::Double
+                | Type::Integer
+                | Type::Number
+                | Type::Scalar
+                | Type::String
+                | Type::Unsigned
+        )
+    }
 }
 
 /// A role of the column in the relation.
@@ -341,7 +357,24 @@ impl Table {
         let positions = keys
             .iter()
             .map(|name| match pos_map.get(*name) {
-                Some(pos) => Ok(*pos),
+                Some(pos) => {
+                    // Check that the column type is scalar.
+                    // Compound types are not supported as sharding keys.
+                    let column = &columns.get(*pos).ok_or_else(|| {
+                        SbroadError::FailedTo(
+                            Action::Create,
+                            Some(Entity::Column),
+                            format!("column {name} not found at position {pos}"),
+                        )
+                    })?;
+                    if !column.r#type.is_scalar() {
+                        return Err(SbroadError::Invalid(
+                            Entity::Column,
+                            Some(format!("column {name} at position {pos} is not scalar",)),
+                        ));
+                    }
+                    Ok(*pos)
+                }
                 None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
             })
             .collect::<Result<Vec<usize>, _>>()?;
