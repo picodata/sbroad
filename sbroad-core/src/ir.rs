@@ -663,6 +663,7 @@ impl Plan {
             targets,
             position,
             parent,
+            ..
         } = node
         {
             let ref_node = if let Some(parent) = parent {

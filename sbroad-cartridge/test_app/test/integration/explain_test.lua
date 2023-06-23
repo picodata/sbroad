@@ -108,14 +108,14 @@ g.test_motion_explain = function()
     t.assert_equals(
         r,
         {
-            "projection (\"testing_space\".\"id\" -> \"id\", \"testing_space\".\"name\" -> \"name\")",
-            "    selection ROW(\"testing_space\".\"id\") in ROW($0)",
+            "projection (\"testing_space\".\"id\"::integer -> \"id\", \"testing_space\".\"name\"::string -> \"name\")",
+            "    selection ROW(\"testing_space\".\"id\"::integer) in ROW($0)",
             "        scan \"testing_space\"",
             "subquery $0:",
             "motion [policy: full]",
             "            scan",
-            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\")",
-            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") < ROW(0)",
+            "                projection (\"space_simple_shard_key_hist\".\"id\"::integer -> \"id\")",
+            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\"::integer) < ROW(0::unsigned)",
             "                        scan \"space_simple_shard_key_hist\"",
         }
     )
@@ -138,21 +138,21 @@ WHERE "t3"."name" = '123']], {} })
         r,
         -- luacheck: max line length 210
         {
-            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"name\" -> \"name\", \"t8\".\"tid\" -> \"tid\")",
-            "    selection ROW(\"t3\".\"name\") = ROW('123')",
-            "        join on ROW(\"t3\".\"id\") = ROW(\"t8\".\"tid\")",
+            "projection (\"t3\".\"id\"::integer -> \"id\", \"t3\".\"name\"::string -> \"name\", \"t8\".\"tid\"::integer -> \"tid\")",
+            "    selection ROW(\"t3\".\"name\"::string) = ROW('123'::string)",
+            "        join on ROW(\"t3\".\"id\"::integer) = ROW(\"t8\".\"tid\"::integer)",
             "            scan \"t3\"",
             "                union all",
-            "                    projection (\"space_simple_shard_key\".\"id\" -> \"id\", \"space_simple_shard_key\".\"name\" -> \"name\")",
-            "                        selection ROW(\"space_simple_shard_key\".\"sysOp\") < ROW(1)",
+            "                    projection (\"space_simple_shard_key\".\"id\"::integer -> \"id\", \"space_simple_shard_key\".\"name\"::string -> \"name\")",
+            "                        selection ROW(\"space_simple_shard_key\".\"sysOp\"::integer) < ROW(1::unsigned)",
             "                            scan \"space_simple_shard_key\"",
-            "                    projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
-            "                        selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
+            "                    projection (\"space_simple_shard_key_hist\".\"id\"::integer -> \"id\", \"space_simple_shard_key_hist\".\"name\"::string -> \"name\")",
+            "                        selection ROW(\"space_simple_shard_key_hist\".\"sysOp\"::integer) > ROW(0::unsigned)",
             "                            scan \"space_simple_shard_key_hist\"",
             "            motion [policy: segment([ref(\"tid\")])]",
             "                scan \"t8\"",
-            "                    projection (\"testing_space\".\"id\" -> \"tid\")",
-            "                        selection ROW(\"testing_space\".\"id\") <> ROW(1)",
+            "                    projection (\"testing_space\".\"id\"::integer -> \"tid\")",
+            "                        selection ROW(\"testing_space\".\"id\"::integer) <> ROW(1::unsigned)",
             "                            scan \"testing_space\"",
         }
     )
@@ -173,15 +173,15 @@ g.test_valid_explain = function()
         r,
         -- luacheck: max line length 210
         {
-            "projection (\"t1\".\"id\" -> \"id\", \"t1\".\"name\" -> \"name\")",
-            "    selection ROW(\"t1\".\"id\") = ROW(1)",
+            "projection (\"t1\".\"id\"::integer -> \"id\", \"t1\".\"name\"::string -> \"name\")",
+            "    selection ROW(\"t1\".\"id\"::integer) = ROW(1::unsigned)",
             "        scan \"t1\"",
             "            union all",
-            "                projection (\"space_simple_shard_key\".\"id\" -> \"id\", \"space_simple_shard_key\".\"name\" -> \"name\")",
-            "                    selection ROW(\"space_simple_shard_key\".\"sysOp\") < ROW(0)",
+            "                projection (\"space_simple_shard_key\".\"id\"::integer -> \"id\", \"space_simple_shard_key\".\"name\"::string -> \"name\")",
+            "                    selection ROW(\"space_simple_shard_key\".\"sysOp\"::integer) < ROW(0::unsigned)",
             "                        scan \"space_simple_shard_key\"",
-            "                projection (\"space_simple_shard_key_hist\".\"id\" -> \"id\", \"space_simple_shard_key_hist\".\"name\" -> \"name\")",
-            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\") > ROW(0)",
+            "                projection (\"space_simple_shard_key_hist\".\"id\"::integer -> \"id\", \"space_simple_shard_key_hist\".\"name\"::string -> \"name\")",
+            "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\"::integer) > ROW(0::unsigned)",
             "                        scan \"space_simple_shard_key_hist\"",
         }
     )
@@ -199,8 +199,8 @@ g.test_explain_arithmetic_selection = function()
         r,
         -- luacheck: max line length 210
         {
-            "projection (\"arithmetic_space\".\"id\" -> \"id\")",
-            "    selection ROW(\"arithmetic_space\".\"a\") + ROW(\"arithmetic_space\".\"b\") = ROW(\"arithmetic_space\".\"b\") + ROW(\"arithmetic_space\".\"a\")",
+            "projection (\"arithmetic_space\".\"id\"::integer -> \"id\")",
+            "    selection ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) = ROW(\"arithmetic_space\".\"b\"::integer) + ROW(\"arithmetic_space\".\"a\"::integer)",
             "        scan \"arithmetic_space\"",
         }
     )
@@ -210,10 +210,10 @@ g.test_explain_arithmetic_selection = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
-        -- luacheck: max line length 210
+        -- luacheck: max line length 240
         {
-            "projection (\"arithmetic_space\".\"id\" -> \"id\")",
-            "    selection ROW(\"arithmetic_space\".\"a\") + ROW(\"arithmetic_space\".\"b\") > ROW(0) and ROW(\"arithmetic_space\".\"b\") * ROW(\"arithmetic_space\".\"a\") = ROW(5)",
+            "projection (\"arithmetic_space\".\"id\"::integer -> \"id\")",
+            "    selection ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) > ROW(0::unsigned) and ROW(\"arithmetic_space\".\"b\"::integer) * ROW(\"arithmetic_space\".\"a\"::integer) = ROW(5::unsigned)",
             "        scan \"arithmetic_space\"",
         }
     )
@@ -235,21 +235,21 @@ WHERE "t3"."id" = 2
         r,
         -- luacheck: max line length 210
         {
-            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"a\" -> \"a\", \"t8\".\"id1\" -> \"id1\")",
-            "    selection ROW(\"t3\".\"id\") = ROW(2)",
-            "        join on ROW(\"t3\".\"id\") + ROW(\"t3\".\"a\") * ROW(2) = ROW(\"t8\".\"id1\") + ROW(4)",
+            "projection (\"t3\".\"id\"::integer -> \"id\", \"t3\".\"a\"::integer -> \"a\", \"t8\".\"id1\"::integer -> \"id1\")",
+            "    selection ROW(\"t3\".\"id\"::integer) = ROW(2::unsigned)",
+            "        join on ROW(\"t3\".\"id\"::integer) + ROW(\"t3\".\"a\"::integer) * ROW(2::unsigned) = ROW(\"t8\".\"id1\"::integer) + ROW(4::unsigned)",
             "            scan \"t3\"",
             "                union all",
-            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
-            "                        selection ROW(\"arithmetic_space\".\"c\") < ROW(0)",
+            "                    projection (\"arithmetic_space\".\"id\"::integer -> \"id\", \"arithmetic_space\".\"a\"::integer -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space\"",
-            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
-            "                        selection ROW(\"arithmetic_space\".\"c\") > ROW(0)",
+            "                    projection (\"arithmetic_space\".\"id\"::integer -> \"id\", \"arithmetic_space\".\"a\"::integer -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\"::integer) > ROW(0::unsigned)",
             "                            scan \"arithmetic_space\"",
             "            motion [policy: full]",
             "                scan \"t8\"",
-            "                    projection (\"arithmetic_space2\".\"id\" -> \"id1\")",
-            "                        selection ROW(\"arithmetic_space2\".\"c\") < ROW(0)",
+            "                    projection (\"arithmetic_space2\".\"id\"::integer -> \"id1\")",
+            "                        selection ROW(\"arithmetic_space2\".\"c\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space2\"",
         }
     )
@@ -271,21 +271,21 @@ WHERE "t3"."id" = 2
         r,
         -- luacheck: max line length 210
         {
-            "projection (\"t3\".\"id\" -> \"id\", \"t3\".\"a\" -> \"a\", \"t8\".\"id1\" -> \"id1\")",
-            "    selection ROW(\"t3\".\"id\") = ROW(2)",
-            "        join on ROW(\"t3\".\"id\") + ROW(\"t3\".\"a\") * ROW(2) = ROW(\"t8\".\"id1\") + ROW(4)",
+            "projection (\"t3\".\"id\"::integer -> \"id\", \"t3\".\"a\"::integer -> \"a\", \"t8\".\"id1\"::integer -> \"id1\")",
+            "    selection ROW(\"t3\".\"id\"::integer) = ROW(2::unsigned)",
+            "        join on ROW(\"t3\".\"id\"::integer) + ROW(\"t3\".\"a\"::integer) * ROW(2::unsigned) = ROW(\"t8\".\"id1\"::integer) + ROW(4::unsigned)",
             "            scan \"t3\"",
             "                union all",
-            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
-            "                        selection ROW(\"arithmetic_space\".\"c\") + ROW(\"arithmetic_space\".\"a\") < ROW(0)",
+            "                    projection (\"arithmetic_space\".\"id\"::integer -> \"id\", \"arithmetic_space\".\"a\"::integer -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\"::integer) + ROW(\"arithmetic_space\".\"a\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space\"",
-            "                    projection (\"arithmetic_space\".\"id\" -> \"id\", \"arithmetic_space\".\"a\" -> \"a\")",
-            "                        selection ROW(\"arithmetic_space\".\"c\") > ROW(0)",
+            "                    projection (\"arithmetic_space\".\"id\"::integer -> \"id\", \"arithmetic_space\".\"a\"::integer -> \"a\")",
+            "                        selection ROW(\"arithmetic_space\".\"c\"::integer) > ROW(0::unsigned)",
             "                            scan \"arithmetic_space\"",
             "            motion [policy: full]",
             "                scan \"t8\"",
-            "                    projection (\"arithmetic_space2\".\"id\" -> \"id1\")",
-            "                        selection ROW(\"arithmetic_space2\".\"c\") < ROW(0)",
+            "                    projection (\"arithmetic_space2\".\"id\"::integer -> \"id1\")",
+            "                        selection ROW(\"arithmetic_space2\".\"c\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space2\"",
         }
     )
@@ -303,7 +303,7 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(
         r,
         {
-            "projection ((\"arithmetic_space\".\"id\") + (2) -> \"COL_1\")",
+            "projection ((\"arithmetic_space\".\"id\"::integer) + (2::unsigned) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )
@@ -314,9 +314,9 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
-        -- luacheck: max line length 140
+        -- luacheck: max line length 160
         {
-            "projection ((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\") * (\"arithmetic_space\".\"c\") -> \"COL_1\")",
+            "projection ((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )
@@ -327,9 +327,9 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
-        -- luacheck: max line length 140
+        -- luacheck: max line length 160
         {
-            "projection (((\"arithmetic_space\".\"a\") + (\"arithmetic_space\".\"b\")) * (\"arithmetic_space\".\"c\") -> \"COL_1\")",
+            "projection (((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer)) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
         }
     )

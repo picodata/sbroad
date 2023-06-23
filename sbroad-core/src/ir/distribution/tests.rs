@@ -162,10 +162,10 @@ fn projection_any_dist_for_expr() {
 
     // check explain first
     let expected_explain = String::from(
-        r#"projection (sum(("count_13")) -> "COL_1")
+        r#"projection (sum(("count_13"::integer))::decimal -> "COL_1")
     motion [policy: full]
         scan
-            projection (count(("test_space"."id")) -> "count_13")
+            projection (count(("test_space"."id"::unsigned))::integer -> "count_13")
                 scan "test_space"
 "#,
     );

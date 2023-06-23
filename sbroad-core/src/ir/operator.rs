@@ -734,7 +734,7 @@ impl Plan {
 
         let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
         for (pos, col) in rel.columns.iter().enumerate() {
-            let r_id = self.nodes.add_ref(None, None, pos);
+            let r_id = self.nodes.add_ref(None, None, pos, col.r#type.clone());
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
@@ -764,7 +764,7 @@ impl Plan {
         if let Some(rel) = self.relations.get(table) {
             let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
             for (pos, col) in rel.columns.iter().enumerate() {
-                let r_id = nodes.add_ref(None, None, pos);
+                let r_id = nodes.add_ref(None, None, pos, col.r#type.clone());
                 let col_alias_id = nodes.add_alias(&col.name, r_id)?;
                 refs.push(col_alias_id);
             }
@@ -1218,11 +1218,20 @@ impl Plan {
 
         // Generate a row of aliases referencing all the children.
         let mut aliases: Vec<usize> = Vec::with_capacity(names.len());
+        let columns = last_output.clone_row_list()?;
         for (pos, name) in names.iter().enumerate() {
+            let col_id = *columns.get(pos).ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(format!(
+                    "Values node has no column at position {pos}"
+                ))
+            })?;
+            let col_expr = self.get_expression_node(col_id)?;
+            let col_type = col_expr.get_type(self)?;
             let ref_id = self.nodes.add_ref(
                 None,
                 Some((0..value_rows.len()).collect::<Vec<usize>>()),
                 pos,
+                col_type,
             );
             let alias_id = self.nodes.add_alias(name, ref_id)?;
             aliases.push(alias_id);

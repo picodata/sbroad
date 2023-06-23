@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Formatter;
+use std::fmt::{self, Formatter};
 use tarantool::{
     space::{Field, SpaceEngineType},
     tuple::{FieldType, KeyDef, KeyDefPart},
@@ -21,7 +21,7 @@ const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
 /// This `Type` is derived from the result's metadata.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]
 pub enum Type {
     Array,
     Boolean,
@@ -32,6 +32,22 @@ pub enum Type {
     String,
     Number,
     Unsigned,
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Array => write!(f, "array"),
+            Type::Boolean => write!(f, "boolean"),
+            Type::Decimal => write!(f, "decimal"),
+            Type::Double => write!(f, "double"),
+            Type::Integer => write!(f, "integer"),
+            Type::Scalar => write!(f, "scalar"),
+            Type::String => write!(f, "string"),
+            Type::Number => write!(f, "number"),
+            Type::Unsigned => write!(f, "unsigned"),
+        }
+    }
 }
 
 impl Type {
@@ -70,6 +86,7 @@ impl Type {
 
     /// The type of the column is scalar.
     /// Only scalar types can be used as a distribution key.
+    #[must_use]
     pub fn is_scalar(&self) -> bool {
         matches!(
             self,

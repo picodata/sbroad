@@ -93,6 +93,22 @@ impl Display for Type {
     }
 }
 
+impl Type {
+    #[must_use]
+    pub fn as_type(&self) -> RelationType {
+        match self {
+            Type::Any | Type::Scalar => RelationType::Scalar,
+            Type::Boolean => RelationType::Boolean,
+            Type::Decimal => RelationType::Decimal,
+            Type::Double => RelationType::Double,
+            Type::Integer => RelationType::Integer,
+            Type::Number => RelationType::Number,
+            Type::String | Type::Text | Type::Varchar(_) => RelationType::String,
+            Type::Unsigned => RelationType::Unsigned,
+        }
+    }
+}
+
 impl Plan {
     /// Adds a cast expression to the plan.
     ///

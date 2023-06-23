@@ -98,7 +98,7 @@ fn check_join_motions(
 #[test]
 fn front_sql_join_single_both_1() {
     let input = r#"SELECT * from (select sum("a") as a from "t") as o 
-        inner join (select count("b") as b from "t") as i
+        inner join (select cast(count("b") as decimal) as b from "t") as i
         on o.a = i.b
     "#;
 
@@ -113,7 +113,7 @@ fn front_sql_join_single_both_1() {
 #[test]
 fn front_sql_join_single_both_2() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
         on o.a = i.c and o.b = i.c
     "#;
 
@@ -129,13 +129,13 @@ fn front_sql_join_single_both_2() {
 fn front_sql_join_single_both_3() {
     let inputs = [
         r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on o.a = i.c and o.b = i.d"#,
         r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on (o.a, o.b) = (i.c, i.d)"#,
         r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on (o.a, i.d) = (i.c, o.b)"#,
     ];
 
@@ -162,7 +162,7 @@ fn front_sql_join_single_both_4() {
 #[test]
 fn front_sql_join_single_both_5() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
         on cast(o.a as number) = i.c
     "#;
 
@@ -172,8 +172,8 @@ fn front_sql_join_single_both_5() {
 #[test]
 fn front_sql_join_single_both_6() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
-        on o.a = i.c and i.c = 1
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
+        on o.a = i.c and i.c = 1 
     "#;
 
     check_join_motions(
@@ -187,7 +187,7 @@ fn front_sql_join_single_both_6() {
 #[test]
 fn front_sql_join_single_both_7() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
         on o.a = i.c and i.c + i.d = 2
     "#;
 
@@ -202,7 +202,7 @@ fn front_sql_join_single_both_7() {
 #[test]
 fn front_sql_join_single_both_8() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
         on o.a = i.c and i.c < 2
     "#;
 
@@ -217,7 +217,7 @@ fn front_sql_join_single_both_8() {
 #[test]
 fn front_sql_join_single_both_9() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, count("d") as d from "t") as i
         on o.a = i.c or i.c < 2
     "#;
 
@@ -227,7 +227,7 @@ fn front_sql_join_single_both_9() {
 #[test]
 fn front_sql_join_single_both_10() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
@@ -242,7 +242,7 @@ fn front_sql_join_single_both_10() {
 #[test]
 fn front_sql_join_single_both_11() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
@@ -257,7 +257,7 @@ fn front_sql_join_single_both_11() {
 #[test]
 fn front_sql_join_single_both_12() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
+        inner join (select cast(count("b") as decimal) as c, cast(count("d") as decimal) as d from "t") as i
         on (o.a, o.a) = (i.c, i.d) or i.c in (select "a" as q from "t")
     "#;
 
@@ -272,7 +272,7 @@ fn front_sql_join_single_both_12() {
 #[test]
 fn front_sql_join_single_both_13() {
     let input = r#"
-            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, "d" + 4 as d from "t") as i
+            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, cast("d" + 4 as decimal) as d from "t") as i
             inner join (select sum("a") as a, count("b") as b from "t") as o
             on o.a = i.d or o.b = i.c and i.c in (select "a" from "t")
             where o.a > 5
@@ -284,7 +284,7 @@ fn front_sql_join_single_both_13() {
 #[test]
 fn front_sql_join_single_both_14() {
     let input = r#"
-            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, "d" + 4 as d from "t") as i
+            select o.a, o.b, i.c, i.d from  (select cast("c" + 3 as decimal) as c, cast("d" + 4 as decimal) as d from "t") as i
             inner join (select sum("a") as a, count("b") as b from "t") as o
             on o.a = i.d or o.b = i.c and i.c in (select sum("a") from "t")
     "#;
@@ -295,7 +295,7 @@ fn front_sql_join_single_both_14() {
 #[test]
 fn front_sql_join_single_left_1() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select "b" as c, "d" as d from "t") as i
+        inner join (select cast("b" as decimal) as c, cast("d" as decimal) as d from "t") as i
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
@@ -304,7 +304,7 @@ fn front_sql_join_single_left_1() {
 
 #[test]
 fn front_sql_join_single_left_2() {
-    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+    let input = r#"SELECT * from (select cast(sum("a") as unsigned) as a, cast(sum("b") as unsigned) as b from "t") as o 
         inner join (select "a" as c, "b" as d from "t") as i
         on (o.a, o.b) = (i.c, i.d)
     "#;
@@ -315,7 +315,7 @@ fn front_sql_join_single_left_2() {
 #[test]
 fn front_sql_join_single_left_3() {
     let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select "a" as c, "b" as d from "t") as i
+        inner join (select "a" as c, cast("b" as decimal) as d from "t") as i
         on (o.a, o.b) = (cast(i.c as number), i.d)
     "#;
 
@@ -326,7 +326,7 @@ fn front_sql_join_single_left_3() {
 fn front_sql_join_single_left_4() {
     // Inner child here will have distribution Segment, while outer child will have
     // Distribution::Single
-    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+    let input = r#"SELECT * from (select cast(sum("a") as unsigned) as a, cast(sum("b") as unsigned) as b from "t") as o 
         inner join (select "a" as c, "b" as d from "t" group by "a", "b") as i
         on (o.a, o.b) = (i.c, i.d) and o.a in (select "a" from "t")
     "#;
@@ -341,7 +341,7 @@ fn front_sql_join_single_left_4() {
 
 #[test]
 fn front_sql_join_single_left_5() {
-    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+    let input = r#"SELECT * from (select cast(sum("a") as unsigned) as a, sum("b") as b from "t") as o 
         inner join "test_space" as i
         on o.a = i."id" and (i."sysFrom" = i."sys_op" and o.a = cast(o.a as number) + 1)
     "#;
@@ -351,9 +351,9 @@ fn front_sql_join_single_left_5() {
 
 #[test]
 fn front_sql_join_single_left_6() {
-    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
+    let input = r#"SELECT * from (select cast(sum("a") as unsigned) as a, sum("b") as b from "t") as o 
         inner join "test_space" as i
-        on o.a = i."id" and o.a in (select sum("a") from "t")
+        on o.a = i."id" and o.a in (select cast(sum("a") as unsigned) from "t")
     "#;
 
     check_join_motions(

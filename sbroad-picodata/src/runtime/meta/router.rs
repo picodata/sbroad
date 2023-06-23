@@ -59,19 +59,6 @@ impl RouterMetadata {
             functions: HashMap::new(),
         }
     }
-
-    pub fn init(&mut self) {
-        self.init_core_functions();
-    }
-
-    /// Populate metadata about core functions.
-    /// Core functions should be present in the cluster
-    /// (imported by the core.lua file).
-    fn init_core_functions(&mut self) {
-        let name_bucket_id = normalize_name_from_sql(DEFAULT_BUCKET_COLUMN);
-        let fn_bucket_id = Function::new_stable(name_bucket_id.clone());
-        self.functions.insert(name_bucket_id, fn_bucket_id);
-    }
 }
 
 impl Metadata for RouterMetadata {

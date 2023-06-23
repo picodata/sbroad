@@ -93,6 +93,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
+use crate::ir::relation::Type;
 use crate::ir::transformation::merge_tuples::Chain;
 use crate::ir::value::{Trivalent, Value};
 use crate::ir::Plan;
@@ -107,6 +108,7 @@ struct EqClassRef {
     targets: Option<Vec<usize>>,
     position: usize,
     parent: Option<usize>,
+    col_type: Type,
 }
 
 impl EqClassRef {
@@ -115,21 +117,26 @@ impl EqClassRef {
             targets: expr_tgt,
             position: expr_pos,
             parent: expr_prt,
+            col_type: expr_typ,
         } = expr
         {
             return Ok(EqClassRef {
                 targets: expr_tgt.clone(),
                 position: *expr_pos,
                 parent: *expr_prt,
+                col_type: expr_typ.clone(),
             });
         }
         Err(SbroadError::Invalid(Entity::Expression, None))
     }
 
     fn to_single_col_row(&self, plan: &mut Plan) -> usize {
-        let id = plan
-            .nodes
-            .add_ref(self.parent, self.targets.clone(), self.position);
+        let id = plan.nodes.add_ref(
+            self.parent,
+            self.targets.clone(),
+            self.position,
+            self.col_type.clone(),
+        );
         plan.nodes.add_row(vec![id], None)
     }
 }

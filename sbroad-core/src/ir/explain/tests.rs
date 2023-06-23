@@ -15,7 +15,7 @@ fn simple_query_without_cond_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")
+        r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
     scan "hash_testing" -> "t"
 "#,
     );
@@ -34,8 +34,8 @@ fn simple_query_with_cond_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")
-    selection ROW("t"."identification_number") = ROW(1) and ROW("t"."product_code") = ROW('222')
+        r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
+    selection ROW("t"."identification_number"::integer) = ROW(1::unsigned) and ROW("t"."product_code"::string) = ROW('222'::string)
         scan "hash_testing" -> "t"
 "#,
     );
@@ -57,9 +57,9 @@ fn union_query_plan() {
     let expected = format!(
         "{}\n{}\n{}\n{}\n{}\n",
         r#"union all"#,
-        r#"    projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")"#,
+        r#"    projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing" -> "t""#,
-        r#"    projection ("t2"."identification_number" -> "identification_number", "t2"."product_code" -> "product_code")"#,
+        r#"    projection ("t2"."identification_number"::integer -> "identification_number", "t2"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing_hist" -> "t2""#,
     );
     assert_eq!(expected, explain_tree.to_string());
@@ -80,15 +80,15 @@ WHERE "id" = 1"#;
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let mut actual_explain = String::new();
-    actual_explain.push_str(r#"projection ("t"."id" -> "id", "t"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("t"."id") = ROW(1)
+    actual_explain.push_str(r#"projection ("t"."id"::unsigned -> "id", "t"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("t"."id"::unsigned) = ROW(1::unsigned)
         scan "t"
             union all
-                projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space"."sys_op"::unsigned) > ROW(0::unsigned) and ROW("test_space"."sysFrom"::unsigned) < ROW(0::unsigned)
                         scan "test_space"
-                projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space_hist"."sys_op") < ROW(0)
+                projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                         scan "test_space_hist"
 "#);
 
@@ -117,27 +117,27 @@ WHERE "id" IN (SELECT "id"
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let mut actual_explain = String::new();
-    actual_explain.push_str(r#"projection ("t"."id" -> "id", "t"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("t"."id") in ROW($0)
+    actual_explain.push_str(r#"projection ("t"."id"::unsigned -> "id", "t"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("t"."id"::unsigned) in ROW($0)
         scan "t"
             union all
-                projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space"."sys_op"::unsigned) > ROW(0::unsigned) and ROW("test_space"."sysFrom"::unsigned) < ROW(0::unsigned)
                         scan "test_space"
-                projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space_hist"."sys_op") < ROW(0)
+                projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                         scan "test_space_hist"
 subquery $0:
 scan
-            projection ("t2"."id" -> "id")
-                selection ROW("t2"."id") = ROW(4)
+            projection ("t2"."id"::unsigned -> "id")
+                selection ROW("t2"."id"::unsigned) = ROW(4::unsigned)
                     scan "t2"
                         union all
-                            projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                                selection ROW("test_space"."sys_op") > ROW(0)
+                            projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                                selection ROW("test_space"."sys_op"::unsigned) > ROW(0::unsigned)
                                     scan "test_space"
-                            projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
-                                selection ROW("test_space_hist"."sys_op") < ROW(0)
+                            projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
+                                selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                                     scan "test_space_hist"
 "#);
 
@@ -157,10 +157,10 @@ fn explain_except1() {
     let expected = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"except"#,
-        r#"    projection ("t"."product_code" -> "pc")"#,
+        r#"    projection ("t"."product_code"::string -> "pc")"#,
         r#"        scan "hash_testing" -> "t""#,
         r#"    motion [policy: full]"#,
-        r#"        projection ("hash_testing_hist"."identification_number" -> "identification_number")"#,
+        r#"        projection ("hash_testing_hist"."identification_number"::integer -> "identification_number")"#,
         r#"            scan "hash_testing_hist""#,
     );
     assert_eq!(expected, explain_tree.to_string());
@@ -189,33 +189,33 @@ WHERE "id" IN (SELECT "id"
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let mut actual_explain = String::new();
-    actual_explain.push_str(r#"projection ("t"."id" -> "id", "t"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("t"."id") in ROW($0) or ROW("t"."id") in ROW($1)
+    actual_explain.push_str(r#"projection ("t"."id"::unsigned -> "id", "t"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("t"."id"::unsigned) in ROW($0) or ROW("t"."id"::unsigned) in ROW($1)
         scan "t"
             union all
-                projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."sys_op") > ROW(0) and ROW("test_space"."sysFrom") < ROW(0)
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space"."sys_op"::unsigned) > ROW(0::unsigned) and ROW("test_space"."sysFrom"::unsigned) < ROW(0::unsigned)
                         scan "test_space"
-                projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space_hist"."sys_op") < ROW(0)
+                projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                         scan "test_space_hist"
 subquery $0:
 scan
-            projection ("t2"."id" -> "id")
-                selection ROW("t2"."id") = ROW(4)
+            projection ("t2"."id"::unsigned -> "id")
+                selection ROW("t2"."id"::unsigned) = ROW(4::unsigned)
                     scan "t2"
                         union all
-                            projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                                selection ROW("test_space"."sys_op") > ROW(0)
+                            projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                                selection ROW("test_space"."sys_op"::unsigned) > ROW(0::unsigned)
                                     scan "test_space"
-                            projection ("test_space_hist"."id" -> "id", "test_space_hist"."FIRST_NAME" -> "FIRST_NAME")
-                                selection ROW("test_space_hist"."sys_op") < ROW(0)
+                            projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
+                                selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                                     scan "test_space_hist"
 subquery $1:
 motion [policy: segment([ref("identification_number")])]
             scan
-                projection ("hash_testing"."identification_number" -> "identification_number")
-                    selection ROW("hash_testing"."identification_number") = ROW(5) and ROW("hash_testing"."product_code") = ROW('123')
+                projection ("hash_testing"."identification_number"::integer -> "identification_number")
+                    selection ROW("hash_testing"."identification_number"::integer) = ROW(5::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('123'::string)
                         scan "hash_testing"
 "#);
 
@@ -235,16 +235,16 @@ WHERE "t2"."product_code" = '123'"#;
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let mut actual_explain = String::new();
-    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("t2"."product_code") = ROW('123')
-        join on ROW("t1"."id") = ROW("t2"."identification_number")
+    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("t2"."product_code"::string) = ROW('123'::string)
+        join on ROW("t1"."id"::unsigned) = ROW("t2"."identification_number"::integer)
             scan "t1"
-                projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                    selection ROW("test_space"."id") = ROW(3)
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                    selection ROW("test_space"."id"::unsigned) = ROW(3::unsigned)
                         scan "test_space"
             motion [policy: segment([ref("identification_number")])]
                 scan "t2"
-                    projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+                    projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
                         scan "hash_testing"
 "#);
 
@@ -263,20 +263,20 @@ FROM (SELECT "id", "FIRST_NAME" FROM "test_space" WHERE "id" = 3) as "t1"
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let mut actual_explain = String::new();
-    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME" -> "FIRST_NAME")
-    join on ROW("t1"."id") = ROW($0)
+    actual_explain.push_str(r#"projection ("t1"."FIRST_NAME"::string -> "FIRST_NAME")
+    join on ROW("t1"."id"::unsigned) = ROW($0)
         scan "t1"
-            projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-                selection ROW("test_space"."id") = ROW(3)
+            projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                selection ROW("test_space"."id"::unsigned) = ROW(3::unsigned)
                     scan "test_space"
         motion [policy: full]
             scan "hash_testing"
-                projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code", "hash_testing"."product_units" -> "product_units", "hash_testing"."sys_op" -> "sys_op")
+                projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code", "hash_testing"."product_units"::boolean -> "product_units", "hash_testing"."sys_op"::unsigned -> "sys_op")
                     scan "hash_testing"
 subquery $0:
 motion [policy: segment([ref("identification_number")])]
             scan
-                projection ("hash_testing"."identification_number" -> "identification_number")
+                projection ("hash_testing"."identification_number"::integer -> "identification_number")
                     scan "hash_testing"
 "#);
 
@@ -294,8 +294,8 @@ fn unary_condition_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("test_space"."id") is null and ROW("test_space"."FIRST_NAME") is not null
+        r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("test_space"."id"::unsigned) is null and ROW("test_space"."FIRST_NAME"::string) is not null
         scan "test_space"
 "#,
     );
@@ -317,7 +317,7 @@ fn insert_plan() {
         r#"insert "test_space"
     motion [policy: local segment([ref("COLUMN_1")])]
         values
-            value row (data=ROW(1, '123'))
+            value row (data=ROW(1::unsigned, '123'::string))
 "#,
     );
 
@@ -338,9 +338,9 @@ fn multiply_insert_plan() {
         r#"insert "test_space"
     motion [policy: local segment([ref("COLUMN_5")])]
         values
-            value row (data=ROW(1, '123'))
-            value row (data=ROW(2, '456'))
-            value row (data=ROW(3, '789'))
+            value row (data=ROW(1::unsigned, '123'::string))
+            value row (data=ROW(2::unsigned, '456'::string))
+            value row (data=ROW(3::unsigned, '789'::string))
 "#,
     );
 
@@ -361,7 +361,7 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
     actual_explain.push_str(
         r#"insert "test_space"
     motion [policy: segment([ref("identification_number")])]
-        projection ("hash_testing"."identification_number" -> "identification_number", "hash_testing"."product_code" -> "product_code")
+        projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
             scan "hash_testing"
 "#,
     );
@@ -380,10 +380,10 @@ fn select_value_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("COLUMN_1" -> "COLUMN_1")
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
     scan
         values
-            value row (data=ROW(1))
+            value row (data=ROW(1::unsigned))
 "#,
     );
 
@@ -401,7 +401,7 @@ fn select_cast_plan1() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("test_space"."id"::unsigned -> "b")
+        r#"projection ("test_space"."id"::unsigned::unsigned -> "b")
     scan "test_space"
 "#,
     );
@@ -420,8 +420,8 @@ fn select_cast_plan2() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("test_space"."id"::int) = ROW(1)
+        r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("test_space"."id"::unsigned::int) = ROW(1::unsigned)
         scan "test_space"
 "#,
     );
@@ -440,7 +440,7 @@ fn select_cast_plan_nested() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("FUNC"(("test_space"."id"))::string -> "COL_1")
+        r#"projection ("FUNC"(("test_space"."id"::unsigned))::integer::string -> "COL_1")
     scan "test_space"
 "#,
     );
@@ -459,8 +459,8 @@ fn select_cast_plan_nested_where() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("FUNC"(("test_space"."id"))::string) = ROW(1)
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("FUNC"(("test_space"."id"::unsigned))::integer::string) = ROW(1::unsigned)
         scan "test_space"
 "#,
     );
@@ -479,8 +479,8 @@ fn select_cast_plan_nested_where2() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("FUNC"((42::string))) = ROW(1)
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("FUNC"((42::unsigned::string))::integer) = ROW(1::unsigned)
         scan "test_space"
 "#,
     );

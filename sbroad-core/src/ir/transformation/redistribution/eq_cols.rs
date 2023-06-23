@@ -276,16 +276,23 @@ impl EqualityCols {
                         targets: targets_left,
                         position: pos_left,
                         parent: parent_left,
+                        col_type: col_type_left,
                     },
                     Expression::Reference {
                         targets: targets_right,
                         position: pos_right,
                         parent: parent_right,
+                        col_type: col_type_right,
                     },
                 ) => {
+                    // TODO: compare types only if the runtime requires it.
+
                     // if one Reference refers to one child, and the second one refers to another one,
                     // then we have an equality pair
-                    if targets_left != targets_right && parent_left == parent_right {
+                    if targets_left != targets_right
+                        && parent_left == parent_right
+                        && col_type_left == col_type_right
+                    {
                         let left_referred_child_id =
                             *plan.get_relational_from_reference_node(*left_id)?;
                         let (inner_pos, outer_pos) = if left_referred_child_id == inner_id {

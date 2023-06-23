@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
+use crate::ir::relation::Type;
 
 use super::distribution::Distribution;
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY};
@@ -21,6 +22,7 @@ use super::{operator, Node, Nodes, Plan};
 
 pub mod cast;
 pub mod concat;
+pub mod types;
 
 /// Tuple tree build blocks.
 ///
@@ -112,6 +114,8 @@ pub enum Expression {
         targets: Option<Vec<usize>>,
         /// Expression position in the input tuple (i.e. `Alias` column).
         position: usize,
+        /// Referred column type in the input tuple.
+        col_type: Type,
     },
     /// Top of the tuple tree.
     ///
@@ -142,6 +146,8 @@ pub enum Expression {
         children: Vec<usize>,
         /// If this function is an aggregate function: whether it is marked DISTINCT or not
         is_distinct: bool,
+        /// Function return type.
+        func_type: Type,
     },
     /// Unary expression returning boolean result.
     Unary {
@@ -412,11 +418,13 @@ impl Nodes {
         parent: Option<usize>,
         targets: Option<Vec<usize>>,
         position: usize,
+        col_type: Type,
     ) -> usize {
         let r = Expression::Reference {
             parent,
             targets,
             position,
+            col_type,
         };
         self.push(Node::Expression(r))
     }
@@ -611,17 +619,15 @@ impl Plan {
                 };
                 result.reserve(child_row_list.len());
                 for (pos, alias_node) in child_row_list {
-                    let name: String =
-                        if let Node::Expression(Expression::Alias { ref name, .. }) =
-                            self.get_node(alias_node)?
-                        {
-                            String::from(name)
-                        } else {
-                            return Err(SbroadError::Invalid(
-                                Entity::Expression,
-                                Some("child node is not an Alias".into()),
-                            ));
-                        };
+                    let expr = self.get_expression_node(alias_node)?;
+                    let name: String = if let Expression::Alias { ref name, .. } = expr {
+                        String::from(name)
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Expression,
+                            Some(format!("expression {expr:?} is not an Alias")),
+                        ));
+                    };
                     let new_targets: Vec<usize> = if is_join {
                         // Reference in a join tuple first points to the left,
                         // then to the right child.
@@ -630,8 +636,9 @@ impl Plan {
                         // Reference in union tuple points to **both** left and right children.
                         targets.to_vec()
                     };
+                    let col_type = expr.get_type(self)?;
                     // Adds new references and aliases to arena (if we need them).
-                    let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
+                    let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
                     if need_aliases {
                         let a_id = self.nodes.add_alias(&name, r_id)?;
                         result.push(a_id);
@@ -710,8 +717,17 @@ impl Plan {
             ));
         }
 
+        let columns = output.clone_row_list()?;
         for (col, new_targets, pos) in refs {
-            let r_id = self.nodes.add_ref(None, Some(new_targets), pos);
+            let col_id = *columns.get(pos).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Column,
+                    format!("at position {pos} in the child output"),
+                )
+            })?;
+            let col_expr = self.get_expression_node(col_id)?;
+            let col_type = col_expr.get_type(self)?;
+            let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
             if need_aliases {
                 let a_id = self.nodes.add_alias(col, r_id)?;
                 result.push(a_id);

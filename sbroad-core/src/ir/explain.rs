@@ -8,6 +8,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{JoinKind, Relational};
+use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
@@ -21,10 +22,10 @@ use super::value::Value;
 enum ColExpr {
     Alias(Box<ColExpr>, String),
     Arithmetic(Box<ColExpr>, BinaryOp, Box<ColExpr>, bool),
-    Column(String),
+    Column(String, Type),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(String, Box<ColExpr>, bool),
+    StableFunction(String, Box<ColExpr>, bool, Type),
     Row(Vec<ColExpr>),
     None,
 }
@@ -37,11 +38,11 @@ impl Display for ColExpr {
                 false => format!("{left} {op} {right}"),
                 true => format!("({left} {op} {right})"),
             },
-            ColExpr::Column(c) => c.to_string(),
+            ColExpr::Column(c, col_type) => format!("{c}::{col_type}"),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
-            ColExpr::StableFunction(name, arg, is_distinct) => format!(
-                "{name}({}{arg})",
+            ColExpr::StableFunction(name, arg, is_distinct, func_type) => format!(
+                "{name}({}{arg})::{func_type}",
                 if *is_distinct { "distinct " } else { "" }
             ),
             ColExpr::Row(list) => format!("({})", list.iter().format(", ")),
@@ -85,7 +86,10 @@ impl ColExpr {
                     stack.push(cast_expr);
                 }
                 Expression::CountAsterisk => {
-                    stack.push(ColExpr::Column("*".to_string()));
+                    stack.push(ColExpr::Column(
+                        "*".to_string(),
+                        current_node.get_type(plan)?,
+                    ));
                 }
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
@@ -101,7 +105,7 @@ impl ColExpr {
                     let alias = plan.get_alias_from_reference_node(current_node)?;
                     col_name.push_str(alias);
 
-                    stack.push(ColExpr::Column(col_name));
+                    stack.push(ColExpr::Column(col_name, current_node.get_type(plan)?));
                 }
                 Expression::Concat { .. } => {
                     let right = stack.pop().ok_or_else(|| {
@@ -118,13 +122,14 @@ impl ColExpr {
                     stack.push(concat_expr);
                 }
                 Expression::Constant { value } => {
-                    let expr = ColExpr::Column(value.to_string());
+                    let expr = ColExpr::Column(value.to_string(), current_node.get_type(plan)?);
                     stack.push(expr);
                 }
                 Expression::StableFunction {
                     name,
                     children,
                     is_distinct,
+                    func_type,
                 } => {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
@@ -139,8 +144,12 @@ impl ColExpr {
                     }
                     args.reverse();
                     let args_expr = ColExpr::Row(args);
-                    let func_expr =
-                        ColExpr::StableFunction(name.clone(), Box::new(args_expr), *is_distinct);
+                    let func_expr = ColExpr::StableFunction(
+                        name.clone(),
+                        Box::new(args_expr),
+                        *is_distinct,
+                        func_type.clone(),
+                    );
                     stack.push(func_expr);
                 }
                 Expression::Row { list, .. } => {
@@ -402,7 +411,7 @@ enum RowVal {
 impl Display for RowVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
-            RowVal::Const(c) => c.to_string(),
+            RowVal::Const(c) => format!("{c}::{}", c.get_type()),
             RowVal::Column(c) => c.to_string(),
             RowVal::SqRef(r) => r.to_string(),
         };

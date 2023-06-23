@@ -79,7 +79,7 @@ fn front_explain_select_sql1() {
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
     let expected_explain = String::from(
-        r#"projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")
+        r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
     scan "hash_testing" -> "t"
 "#,
     );
@@ -103,9 +103,9 @@ fn front_explain_select_sql2() {
     let expected_explain = format!(
         "{}\n{}\n{}\n{}\n{}\n",
         r#"union all"#,
-        r#"    projection ("t"."identification_number" -> "c1", "t"."product_code" -> "product_code")"#,
+        r#"    projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing" -> "t""#,
-        r#"    projection ("t2"."identification_number" -> "identification_number", "t2"."product_code" -> "product_code")"#,
+        r#"    projection ("t2"."identification_number"::integer -> "identification_number", "t2"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing_hist" -> "t2""#,
     );
 
@@ -127,13 +127,13 @@ fn front_explain_select_sql3() {
 
     let expected_explain = format!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-        r#"projection ("q1"."a" -> "a")"#,
-        r#"    join on ROW("q1"."a") = ROW("q2"."a2")"#,
+        r#"projection ("q1"."a"::string -> "a")"#,
+        r#"    join on ROW("q1"."a"::string) = ROW("q2"."a2"::string)"#,
         r#"        scan "q1""#,
-        r#"            projection ("q1"."a" -> "a", "q1"."b" -> "b")"#,
+        r#"            projection ("q1"."a"::string -> "a", "q1"."b"::integer -> "b")"#,
         r#"                scan "t3" -> "q1""#,
         r#"        scan "q2""#,
-        r#"            projection ("t3"."a" -> "a2", "t3"."b" -> "b2")"#,
+        r#"            projection ("t3"."a"::string -> "a2", "t3"."b"::integer -> "b2")"#,
         r#"                scan "t3""#,
     );
 

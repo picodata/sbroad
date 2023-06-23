@@ -6,6 +6,7 @@ nodes:
           parent: 11
           targets: ~
           position: 0
+          col_type: Integer
     # 1
     - Expression:
         Alias:
@@ -17,6 +18,7 @@ nodes:
           parent: 11
           targets: ~
           position: 1
+          col_type: Integer
     # 3
     - Expression:
         Alias:
@@ -28,6 +30,7 @@ nodes:
           parent: 11
           targets: ~
           position: 2
+          col_type: Integer
     # 5
     - Expression:
         Alias:
@@ -39,6 +42,7 @@ nodes:
           parent: 11
           targets: ~
           position: 3
+          col_type: Integer
     # 7
     - Expression:
         Alias:
@@ -50,6 +54,7 @@ nodes:
           parent: 11
           targets: ~
           position: 4
+          col_type: Unsigned
     # 9
     - Expression:
         Alias:
@@ -76,6 +81,7 @@ nodes:
           parent: 25
           targets: [0]
           position: 0
+          col_type: Integer
     # 13
     - Expression:
         Row:
@@ -88,6 +94,7 @@ nodes:
           parent: 25
           targets: [0]
           position: 1
+          col_type: Integer
     # 15
     - Expression:
         Row:
@@ -100,6 +107,7 @@ nodes:
           parent: 25
           targets: [0]
           position: 2
+          col_type: Integer
     # 17
     - Expression:
         Row:
@@ -112,6 +120,7 @@ nodes:
           parent: 25
           targets: [0]
           position: 3
+          col_type: Integer
     # 19
     - Expression:
         Row:

@@ -66,7 +66,6 @@ impl RouterConfiguration {
     /// # Errors
     /// Returns `SbroadError` when process was terminated.
     pub fn load_schema(&mut self, s: &str) -> Result<(), SbroadError> {
-        self.init_core_functions();
         if let Ok(docs) = YamlLoader::load_from_str(s) {
             if let Some(schema) = docs.get(0) {
                 self.init_table_segments(schema)?;
@@ -79,15 +78,6 @@ impl RouterConfiguration {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.tables.is_empty()
-    }
-
-    /// Populate metadata about core functions.
-    /// Core functions should be present in the cluster
-    /// (imported by the core.lua file).
-    fn init_core_functions(&mut self) {
-        let name_bucket_id = normalize_name_from_sql("bucket_id");
-        let fn_bucket_id = Function::new_stable(name_bucket_id.clone());
-        self.functions.insert(name_bucket_id, fn_bucket_id);
     }
 
     /// Transform space information from schema to table segments

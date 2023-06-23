@@ -9,8 +9,8 @@ fn front_params1() {
     let plan = sql_to_optimized_ir(pattern, vec![Value::from(0_i64), Value::from(1_i64)]);
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id", "test_space"."FIRST_NAME" -> "FIRST_NAME")
-    selection ROW("test_space"."sys_op") = ROW(0) and ROW("test_space"."sysFrom") > ROW(1)
+        r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) and ROW("test_space"."sysFrom"::unsigned) > ROW(1::integer)
         scan "test_space"
 "#,
     );
@@ -26,8 +26,8 @@ fn front_params2() {
     let plan = sql_to_optimized_ir(pattern, vec![Value::Null, Value::from("hello")]);
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op") = ROW(NULL) and ROW("test_space"."FIRST_NAME") = ROW('hello')
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(NULL::scalar) and ROW("test_space"."FIRST_NAME"::string) = ROW('hello'::string)
         scan "test_space"
 "#,
     );
@@ -44,8 +44,8 @@ fn front_params3() {
     let plan = sql_to_optimized_ir(pattern, vec![Value::Null, Value::from("кириллица")]);
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op") = ROW(NULL) and ROW("test_space"."FIRST_NAME") = ROW('кириллица')
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(NULL::scalar) and ROW("test_space"."FIRST_NAME"::string) = ROW('кириллица'::string)
         scan "test_space"
 "#,
     );
@@ -65,8 +65,8 @@ fn front_params4() {
     );
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."FIRST_NAME") = ROW('''± !@#$%^&*()_+=-\/><";:,.`~')
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."FIRST_NAME"::string) = ROW('''± !@#$%^&*()_+=-\/><";:,.`~'::string)
         scan "test_space"
 "#,
     );
@@ -88,14 +88,14 @@ fn front_params5() {
     let plan = sql_to_optimized_ir(pattern, vec![Value::from(0_i64), Value::from(1_i64)]);
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") in ROW($0)
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or ROW("test_space"."id"::unsigned) in ROW($0)
         scan "test_space"
 subquery $0:
 motion [policy: segment([ref("sysFrom")])]
             scan
-                projection ("test_space_hist"."sysFrom" -> "sysFrom")
-                    selection ROW("test_space_hist"."sys_op") = ROW(1)
+                projection ("test_space_hist"."sysFrom"::unsigned -> "sysFrom")
+                    selection ROW("test_space_hist"."sys_op"::unsigned) = ROW(1::integer)
                         scan "test_space_hist"
 "#,
     );
@@ -122,18 +122,18 @@ fn front_params6() {
     );
 
     let expected_explain = String::from(
-        r#"projection ("test_space"."id" -> "id")
-    selection ROW("test_space"."sys_op") = ROW(0) or ROW("test_space"."id") not in ROW($0)
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or ROW("test_space"."id"::unsigned) not in ROW($0)
         scan "test_space"
 subquery $0:
 motion [policy: full]
             scan
                 union all
-                    projection ("test_space"."id" -> "id")
-                        selection ROW("test_space"."sys_op") = ROW(1)
+                    projection ("test_space"."id"::unsigned -> "id")
+                        selection ROW("test_space"."sys_op"::unsigned) = ROW(1::integer)
                             scan "test_space"
-                    projection ("test_space"."id" -> "id")
-                        selection ROW("test_space"."sys_op") = ROW(2)
+                    projection ("test_space"."id"::unsigned -> "id")
+                        selection ROW("test_space"."sys_op"::unsigned) = ROW(2::integer)
                             scan "test_space"
 "#,
     );

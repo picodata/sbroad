@@ -10,6 +10,7 @@ nodes:
           targets: ~
           parent: 9 
           position: 0
+          col_type: Number
     - Expression:
         Alias:
           name: a
@@ -19,6 +20,7 @@ nodes:
           targets: ~
           parent: 9 
           position: 1
+          col_type: Number
     - Expression:
         Alias:
           name: b
@@ -42,6 +44,7 @@ nodes:
           targets: ~
           parent: 9 
           position: 1
+          col_type: Number
     - Expression:
         Alias:
           name: b

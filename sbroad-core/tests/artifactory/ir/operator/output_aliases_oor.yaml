@@ -5,6 +5,7 @@ nodes:
         Reference:
           branch: Left
           position: 0
+          col_type: Number
     - Expression:
         Alias:
           name: a

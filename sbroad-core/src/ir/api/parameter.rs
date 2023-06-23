@@ -78,6 +78,9 @@ impl Plan {
             Ok(*val_id)
         };
 
+        // After binding parameters we need to recalculate expression types.
+        let mut new_types = HashMap::with_capacity_and_hasher(nodes.len(), RandomState::new());
+
         // Populate rows.
         let mut idx = value_ids.len();
         for (_, id) in &nodes {
@@ -153,9 +156,11 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Constant { .. }
-                    | Expression::Reference { .. }
-                    | Expression::CountAsterisk => {}
+                    Expression::Reference { .. } => {
+                        // Remember to recalculate type.
+                        new_types.insert(id, expr.get_recalculated_type(self)?);
+                    }
+                    Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
                 Node::Parameter => {}
             }
@@ -248,9 +253,20 @@ impl Plan {
                             }
                         }
                     }
-                    Expression::Constant { .. }
-                    | Expression::Reference { .. }
-                    | Expression::CountAsterisk => {}
+                    Expression::Reference { .. } => {
+                        // Update type.
+                        let new_type = new_types
+                            .get(id)
+                            .ok_or_else(|| {
+                                SbroadError::NotFound(
+                                    Entity::Node,
+                                    format!("failed to get type for node {id}"),
+                                )
+                            })?
+                            .clone();
+                        expr.set_type(new_type);
+                    }
+                    Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
                 Node::Parameter => {}
             }

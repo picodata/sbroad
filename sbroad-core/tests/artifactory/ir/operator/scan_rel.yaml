@@ -6,6 +6,7 @@ nodes:
           targets: ~
           position: 0
           parent: 9
+          col_type: Boolean
     - Expression:
         Alias:
           name: a
@@ -15,6 +16,7 @@ nodes:
           targets: ~
           position: 1
           parent: 9
+          col_type: Number
     - Expression:
         Alias:
           name: b
@@ -24,6 +26,7 @@ nodes:
           targets: ~
           position: 2
           parent: 9
+          col_type: String
     - Expression:
         Alias:
           name: c
@@ -33,6 +36,7 @@ nodes:
           targets: ~
           position: 3
           parent: 9
+          col_type: String
     - Expression:
         Alias:
           name: d

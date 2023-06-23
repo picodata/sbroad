@@ -793,6 +793,20 @@ impl Value {
             },
         }
     }
+
+    #[must_use]
+    pub fn get_type(&self) -> Type {
+        match self {
+            Value::Unsigned(_) => Type::Unsigned,
+            Value::Integer(_) => Type::Integer,
+            Value::Decimal(_) => Type::Decimal,
+            Value::Double(_) => Type::Double,
+            Value::Boolean(_) => Type::Boolean,
+            Value::String(_) => Type::String,
+            Value::Tuple(_) => Type::Array,
+            Value::Null => Type::Scalar,
+        }
+    }
 }
 
 impl ToHashString for Value {

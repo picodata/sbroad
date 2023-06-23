@@ -2,6 +2,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Arithmetic;
+use crate::ir::relation::Type as RelType;
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -19,6 +20,18 @@ pub enum AggregateKind {
     MIN,
     MAX,
     GRCONCAT,
+}
+
+impl From<AggregateKind> for RelType {
+    fn from(aggregate_kind: AggregateKind) -> Self {
+        match aggregate_kind {
+            AggregateKind::COUNT => RelType::Integer,
+            AggregateKind::SUM | AggregateKind::AVG => RelType::Decimal,
+            AggregateKind::TOTAL => RelType::Double,
+            AggregateKind::MIN | AggregateKind::MAX => RelType::Scalar,
+            AggregateKind::GRCONCAT => RelType::String,
+        }
+    }
 }
 
 impl Display for AggregateKind {
@@ -191,7 +204,7 @@ impl SimpleAggregate {
         let mut final_aggregates: HashMap<AggregateKind, usize> = HashMap::new();
         let mut create_final_aggr = |local_alias: &str,
                                      local_kind: AggregateKind,
-                                     final_func: &str|
+                                     final_func: AggregateKind|
          -> Result<(), SbroadError> {
             let Some(position) = alias_to_pos.get(local_alias) else {
                 let parent_node = plan.get_relation_node(parent)?;
@@ -204,6 +217,7 @@ impl SimpleAggregate {
                 // projection has only one child
                 targets: Some(vec![0]),
                 position: *position,
+                col_type: RelType::from(local_kind),
             };
             let ref_id = plan.nodes.push(Node::Expression(ref_node));
             let children = match self.kind {
@@ -239,6 +253,7 @@ impl SimpleAggregate {
                 name: final_func.to_string(),
                 children,
                 is_distinct,
+                func_type: RelType::from(final_func),
             };
             let aggr_id = plan.nodes.push(Node::Expression(final_aggr));
             final_aggregates.insert(local_kind, aggr_id);
@@ -253,8 +268,7 @@ impl SimpleAggregate {
                     )),
                 )
             })?;
-            let final_aggregate_name = self.kind.to_string();
-            create_final_aggr(local_alias, self.kind, final_aggregate_name.as_str())?;
+            create_final_aggr(local_alias, self.kind, self.kind)?;
         } else {
             for aggr_kind in self.kind.get_local_aggregates_kinds() {
                 let local_alias = self.lagg_alias.get(&aggr_kind).ok_or_else(|| {
@@ -265,9 +279,8 @@ impl SimpleAggregate {
                         )),
                     )
                 })?;
-                let final_aggregate_name =
-                    self.kind.get_final_aggregate_kind(&aggr_kind)?.to_string();
-                create_final_aggr(local_alias, aggr_kind, final_aggregate_name.as_str())?;
+                let final_aggregate_kind = self.kind.get_final_aggregate_kind(&aggr_kind)?;
+                create_final_aggr(local_alias, aggr_kind, final_aggregate_kind)?;
             }
         }
         let final_expr_id = if final_aggregates.len() == 1 {

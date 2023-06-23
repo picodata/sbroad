@@ -1,6 +1,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::expression::Expression;
+use crate::ir::relation::Type;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 
@@ -18,17 +19,22 @@ pub enum Behavior {
 pub struct Function {
     pub name: String,
     pub behavior: Behavior,
+    pub func_type: Type,
 }
 
 impl Function {
     #[must_use]
-    pub fn new(name: String, behavior: Behavior) -> Self {
-        Self { name, behavior }
+    pub fn new(name: String, behavior: Behavior, func_type: Type) -> Self {
+        Self {
+            name,
+            behavior,
+            func_type,
+        }
     }
 
     #[must_use]
-    pub fn new_stable(name: String) -> Self {
-        Self::new(name, Behavior::Stable)
+    pub fn new_stable(name: String, func_type: Type) -> Self {
+        Self::new(name, Behavior::Stable, func_type)
     }
 
     #[must_use]
@@ -58,6 +64,7 @@ impl Plan {
             name: function.name.to_string(),
             children,
             is_distinct: false,
+            func_type: function.func_type.clone(),
         };
         let func_id = self.nodes.push(Node::Expression(func_expr));
         Ok(func_id)
@@ -106,6 +113,7 @@ impl Plan {
             name: function.to_lowercase(),
             children,
             is_distinct,
+            func_type: Type::from(kind),
         };
         let id = self.nodes.push(Node::Expression(func_expr));
         Ok(id)

@@ -204,13 +204,13 @@ left_join.test_left_join_local_execution = function()
     })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\" -> \"A\", \"T2\".\"B\" -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\") = ROW(\"T2\".\"B\")",
+        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"T1\".\"A\"::integer) = ROW(\"T2\".\"B\"::integer)",
         "        scan \"T1\"",
-        "            projection (\"arithmetic_space\".\"id\" -> \"A\")",
+        "            projection (\"arithmetic_space\".\"id\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        scan \"T2\"",
-        "            projection (\"arithmetic_space2\".\"id\" -> \"B\")",
+        "            projection (\"arithmetic_space2\".\"id\"::integer -> \"B\")",
         "                scan \"arithmetic_space2\"",
     })
 end
@@ -242,14 +242,14 @@ left_join.test_inner_segment_motion = function()
     r, err = api:call("sbroad.execute", { "explain " .. query_str, {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\" -> \"A\", \"T2\".\"B\" -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\") = ROW(\"T2\".\"B\")",
+        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"T1\".\"A\"::integer) = ROW(\"T2\".\"B\"::integer)",
         "        scan \"T1\"",
-        "            projection (\"arithmetic_space\".\"id\" -> \"A\")",
+        "            projection (\"arithmetic_space\".\"id\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        motion [policy: segment([ref(\"B\")])]",
         "            scan \"T2\"",
-        "                projection (\"arithmetic_space2\".\"a\" -> \"B\")",
+        "                projection (\"arithmetic_space2\".\"a\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
     })
 end
@@ -280,14 +280,14 @@ left_join.test_inner_full_motion = function()
     r, err = api:call("sbroad.execute", { "explain " .. query_str, {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\" -> \"A\", \"T2\".\"B\" -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\") < ROW(\"T2\".\"B\")",
+        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"T1\".\"A\"::integer) < ROW(\"T2\".\"B\"::integer)",
         "        scan \"T1\"",
-        "            projection (\"arithmetic_space\".\"id\" -> \"A\")",
+        "            projection (\"arithmetic_space\".\"id\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        motion [policy: full]",
         "            scan \"T2\"",
-        "                projection (\"arithmetic_space2\".\"a\" -> \"B\")",
+        "                projection (\"arithmetic_space2\".\"a\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
     })
 end
@@ -396,19 +396,19 @@ left_join.test_sq_with_full_motion = function()
     r, err = api:call("sbroad.execute", { "explain " .. query_str, {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\" -> \"A\", \"T2\".\"B\" -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\") in ROW($0)",
+        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"T1\".\"A\"::integer) in ROW($0)",
         "        scan \"T1\"",
-        "            projection (\"arithmetic_space\".\"a\" -> \"A\")",
+        "            projection (\"arithmetic_space\".\"a\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        motion [policy: full]",
         "            scan \"T2\"",
-        "                projection (\"arithmetic_space2\".\"id\" -> \"B\")",
+        "                projection (\"arithmetic_space2\".\"id\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
         "subquery $0:",
         "motion [policy: full]",
         "            scan",
-        "                projection ((\"arithmetic_space\".\"a\") + (1) -> \"COL_1\")",
+        "                projection ((\"arithmetic_space\".\"a\"::integer) + (1::unsigned) -> \"COL_1\")",
         "                    scan \"arithmetic_space\"",
     })
 end
@@ -441,19 +441,19 @@ left_join.test_sq_with_segment_motion = function()
     r, err = api:call("sbroad.execute", { "explain " .. query_str, {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
-        "projection (\"T1\".\"A\" -> \"A\", \"T2\".\"B\" -> \"B\")",
-        "    left join on ROW(\"T1\".\"A\") in ROW($0)",
+        "projection (\"T1\".\"A\"::integer -> \"A\", \"T2\".\"B\"::integer -> \"B\")",
+        "    left join on ROW(\"T1\".\"A\"::integer) in ROW($0)",
         "        scan \"T1\"",
-        "            projection (\"arithmetic_space\".\"id\" -> \"A\")",
+        "            projection (\"arithmetic_space\".\"id\"::integer -> \"A\")",
         "                scan \"arithmetic_space\"",
         "        motion [policy: full]",
         "            scan \"T2\"",
-        "                projection (\"arithmetic_space2\".\"id\" -> \"B\")",
+        "                projection (\"arithmetic_space2\".\"id\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
         "subquery $0:",
         "motion [policy: segment([ref(\"c\")])]",
         "            scan",
-        "                projection (\"arithmetic_space\".\"c\" -> \"c\")",
+        "                projection (\"arithmetic_space\".\"c\"::integer -> \"c\")",
         "                    scan \"arithmetic_space\"",
     })
 end

@@ -4,6 +4,7 @@ use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::operator::Relational;
+use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Strategy, Target};
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
@@ -187,8 +188,10 @@ impl Plan {
                 name,
                 children,
                 is_distinct,
+                func_type,
             } => {
                 is_distinct.hash(state);
+                func_type.hash(state);
                 name.hash(state);
                 for child in children {
                     self.hash_for_expr(*child, state, depth - 1);
@@ -547,15 +550,18 @@ impl Plan {
                         name: name_left,
                         children: children_left,
                         is_distinct: distinct_left,
+                        func_type: func_type_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
                             is_distinct: distinct_right,
+                            func_type: func_type_right,
                         } = right
                         {
                             return Ok(name_left == name_right
                                 && distinct_left == distinct_right
+                                && func_type_left == func_type_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));
@@ -1014,6 +1020,7 @@ impl Plan {
         let fun = Function {
             name: kind.to_string(),
             behavior: Behavior::Stable,
+            func_type: Type::from(kind),
         };
         // We can reuse aggregate expression between local aggregates, because
         // all local aggregates are located inside the same motion subtree and we
@@ -1307,10 +1314,20 @@ impl Plan {
                     Some(format!("did not find alias: {local_alias} in child ({child_id}) output!")))
                 )
             };
+            let col_type = self.get_expression_node(*expr_id)?.get_type(self)?;
+            if !col_type.is_scalar() {
+                return Err(SbroadError::Invalid(
+                    Entity::Type,
+                    Some(format!(
+                        "add_final_groupby: GroupBy expr ({expr_id}) is not scalar ({col_type})!"
+                    )),
+                ));
+            }
             let new_col = Expression::Reference {
                 position: *position,
                 parent: None,
                 targets: Some(vec![0]),
+                col_type,
             };
             let new_col_id = self.nodes.push(Node::Expression(new_col));
             gr_cols.push(new_col_id);
@@ -1396,10 +1413,20 @@ impl Plan {
                     return Err(SbroadError::Invalid(Entity::Plan,
                                                     Some(format!("failed to find alias '{local_alias}' in ({child_id}). Aliases: {}", alias_to_pos_map.keys().join(" ")))))
                 };
+                let col_type = self.get_expression_node(expr_id)?.get_type(self)?;
+                if !col_type.is_scalar() {
+                    return Err(SbroadError::Invalid(
+                        Entity::Type,
+                        Some(format!(
+                            "patch_finals: expected scalar expression, found: {col_type}"
+                        )),
+                    ));
+                };
                 let new_ref = Expression::Reference {
                     parent: Some(rel_id),
                     targets: Some(vec![0]),
                     position: pos,
+                    col_type,
                 };
                 let ref_id = self.nodes.push(Node::Expression(new_ref));
                 if let Some(parent_expr_id) = parent {

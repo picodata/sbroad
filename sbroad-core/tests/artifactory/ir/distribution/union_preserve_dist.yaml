@@ -6,6 +6,7 @@ nodes:
           targets: ~
           position: 0
           parent: 5
+          col_type: String
     - Expression:
         Alias:
           name: a
@@ -15,6 +16,7 @@ nodes:
           targets: ~
           position: 1
           parent: 5
+          col_type: String
     - Expression:
         Alias:
           name: b
@@ -34,6 +36,7 @@ nodes:
           targets: ~
           position: 0
           parent: 11
+          col_type: String
     - Expression:
         Alias:
           name: a
@@ -43,6 +46,7 @@ nodes:
           targets: ~
           position: 1
           parent: 11
+          col_type: String
     - Expression:
         Alias:
           name: b
@@ -64,6 +68,7 @@ nodes:
             - 1
           position: 0
           parent: 17
+          col_type: String
     - Expression:
         Alias:
           name: a
@@ -75,6 +80,7 @@ nodes:
             - 1
           position: 1
           parent: 17
+          col_type: String
     - Expression:
         Alias:
           name: b

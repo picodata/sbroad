@@ -6,6 +6,7 @@ nodes:
           targets: ~
           position: 0
           parent: 3
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -28,6 +29,7 @@ nodes:
           targets: ~
           position: 0
           parent: 9
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -37,6 +39,7 @@ nodes:
           targets: ~
           position: 1
           parent: 9
+          col_type: Integer
     - Expression:
         Alias:
           name: b
@@ -61,6 +64,7 @@ nodes:
             - 0
           position: 0
           parent: 13
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -85,6 +89,7 @@ nodes:
             - 0
           position: 0
           parent: 17
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -109,6 +114,7 @@ nodes:
           targets: ~
           position: 0
           parent: 23
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -118,6 +124,7 @@ nodes:
           targets: ~
           position: 1
           parent: 23
+          col_type: Integer
     - Expression:
         Alias:
           name: b
@@ -142,6 +149,7 @@ nodes:
             - 0
           position: 1
           parent: 27
+          col_type: Integer
     - Expression:
         Alias:
           name: b
@@ -162,6 +170,7 @@ nodes:
             - 0
           position: 0
           parent: 31
+          col_type: Integer
     - Expression:
         Alias:
           name: b
@@ -183,6 +192,7 @@ nodes:
             - 1
           position: 0
           parent: 46
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -198,6 +208,7 @@ nodes:
             - 0
           position: 0
           parent: 46
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -218,6 +229,7 @@ nodes:
             - 2
           position: 0
           parent: 46
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -229,6 +241,7 @@ nodes:
             - 0
           position: 0
           parent: 46
+          col_type: Integer
     - Expression:
         Row:
           list:
@@ -254,6 +267,7 @@ nodes:
             - 0
           position: 0
           parent: 46
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -281,6 +295,7 @@ nodes:
             - 0
           position: 0
           parent: 50
+          col_type: Integer
     - Expression:
         Alias:
           name: a
@@ -304,6 +319,7 @@ nodes:
             - 0
           position: 0
           parent: 54
+          col_type: Integer
     - Expression:
         Alias:
           name: b

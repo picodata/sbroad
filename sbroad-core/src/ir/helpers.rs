@@ -93,6 +93,7 @@ impl Plan {
                     targets,
                     position,
                     parent,
+                    col_type,
                 } => {
                     let alias_name = self.get_alias_from_reference_node(expr).unwrap();
 
@@ -123,6 +124,9 @@ impl Plan {
                     } else {
                         writeln!(buf, "NO TARGETS")?;
                     }
+
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Column type: {col_type}")?;
                 }
                 Expression::Row { list, distribution } => {
                     writeln!(buf, "Row [distribution = {distribution:?}]")?;

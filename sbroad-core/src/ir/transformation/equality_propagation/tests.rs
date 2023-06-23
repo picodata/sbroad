@@ -18,7 +18,7 @@ fn equality_propagation1() {
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
-            r#"and ("t"."c") = ("t"."a") or ("t"."d") = (?))"#,
+            r#"and ("t"."a") = ("t"."c") or ("t"."d") = (?))"#,
         ),
         vec![
             Value::from(1_u64),
@@ -80,7 +80,7 @@ fn equality_propagation4() {
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."a") = (?)"#,
-            r#"and ("t"."b") = (?) and ("t"."b") = ("t"."a")"#,
+            r#"and ("t"."b") = (?) and ("t"."a") = ("t"."b")"#,
         ),
         vec![
             Value::from(1_u64),
@@ -107,8 +107,8 @@ fn equality_propagation5() {
             r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
             r#"and ("t"."c") = (?) and ("t"."d") = (?)"#,
-            r#"and ("t"."c") = ("t"."b") and ("t"."b") = ("t"."a")"#,
-            r#"and ("t"."a") = ("t"."d")"#,
+            r#"and ("t"."c") = ("t"."d") and ("t"."d") = ("t"."b")"#,
+            r#"and ("t"."b") = ("t"."a")"#,
         ),
         vec![
             Value::from(1_u64),
