@@ -383,6 +383,8 @@ struct Select {
     join: Option<usize>,
     /// GroupBy syntax node
     groupby: Option<usize>,
+    /// Having syntax node
+    having: Option<usize>,
 }
 
 type NodeAdder = fn(&mut Select, usize, &SyntaxPlan) -> Result<bool, SbroadError>;
@@ -494,17 +496,60 @@ impl Select {
         }
     }
 
-    /// Constructor.
+    fn add_having(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
+        let sn = sp.nodes.get_syntax_node(id)?;
+        if let Node::Relational(Relational::Having { .. }) = sp.plan_node_or_err(&sn.data)? {
+            select.having = Some(id);
+            let left_id = sn.left_id_or_err()?;
+            let sn_left = sp.nodes.get_syntax_node(left_id)?;
+            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+            if let Node::Relational(
+                Relational::ScanRelation { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Motion { .. },
+            ) = plan_node_left
+            {
+                select.scan = left_id;
+                return Ok(true);
+            }
+            if !Select::add_one_of(
+                left_id,
+                select,
+                sp,
+                &[
+                    Select::add_selection,
+                    Select::add_inner_join,
+                    Select::add_groupby,
+                ],
+            )? {
+                return Err(SbroadError::Invalid(
+                    Entity::SyntaxPlan,
+                    Some(format!(
+                        "expected Scan or InnerJoin, or Selection, or GroupBy after Having. Got {plan_node_left:?}"
+                    ))));
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// `Select` node constructor.
     ///
-    /// There are several valid combinations of the `SELECT` command:
-    /// - projection -> selection -> join -> scan
-    /// - projection -> groupby -> selection -> join -> scan
-    /// - projection -> join -> scan
-    /// - projection -> groupby -> join -> scan
-    /// - projection -> selection -> scan
-    /// - projection -> groupby -> selection -> scan
-    /// - projection -> scan
-    /// - projection -> groupby -> scan
+    /// There are several valid combinations of the `SELECT` command.
+    /// The general view of all such commands is:
+    /// `Projection` -> set of additional relational operators (possibly empty) -> `Scan`,
+    /// where additional operators are: `Selection`, `Join`, `GroupBy`, `Having`.
+    ///
+    /// Some examples of valid sequences:
+    /// - `Projection` -> `Scan`
+    /// - `Projection` -> `Selection` -> `Join` -> `Scan`
+    /// - `Projection` -> `GroupBy` -> `Selection` -> `Join` -> `Scan`
+    /// - `Projection` -> `Having` -> `GroupBy` -> `Scan`
+    ///
+    /// Using functions `add_one_of` and `add_<rel_op_name>` constructor recursively traverses
+    /// `SyntaxNode`s tree and tries to add new children operators. In case none of allowed/required
+    /// children operators were met, it throws an error.
     fn new(
         sp: &SyntaxPlan,
         parent: Option<usize>,
@@ -521,6 +566,7 @@ impl Select {
                 selection: None,
                 join: None,
                 groupby: None,
+                having: None,
             };
             let left_id = sn.left_id_or_err()?;
             let sn_left = sp.nodes.get_syntax_node(left_id)?;
@@ -540,12 +586,13 @@ impl Select {
                     Select::add_selection,
                     Select::add_inner_join,
                     Select::add_groupby,
+                    Select::add_having,
                 ],
             )? {
                 return Err(SbroadError::Invalid(
                     Entity::SyntaxPlan,
                     Some(format!(
-                        "expected Scan, InnerJoin, Selection, GroupBy after Projection. Got {plan_node_left:?}"
+                        "expected Scan, InnerJoin, Selection, GroupBy, Having after Projection. Got {plan_node_left:?}"
                     ))));
             }
             if select.scan != 0 {
@@ -746,9 +793,12 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 Relational::Selection {
                     children, filter, ..
+                }
+                | Relational::Having {
+                    children, filter, ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Selection has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues(format!("{node:?} has no children."))
                     })?;
                     let filter_id = match self.snapshot {
                         Snapshot::Latest => *filter,

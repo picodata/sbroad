@@ -197,6 +197,7 @@ impl ExecutionPlan {
             | Relational::Selection { .. }
             | Relational::UnionAll { .. }
             | Relational::Values { .. }
+            | Relational::Having { .. }
             | Relational::ValuesRow { .. } => Ok(*top_id),
             Relational::Motion { .. } | Relational::Insert { .. } => Err(SbroadError::Invalid(
                 Entity::Relational,
@@ -398,12 +399,16 @@ impl ExecutionPlan {
                         filter: ref mut expr_id,
                         ..
                     }
+                    | Relational::Having {
+                        filter: ref mut expr_id,
+                        ..
+                    }
                     | Relational::Join {
                         condition: ref mut expr_id,
                         ..
                     } = rel
                     {
-                        // We transform selection's filter and join's condition to DNF for a better bucket calculation.
+                        // We transform selection's, having's filter and join's condition to DNF for a better bucket calculation.
                         // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
                         // parser can fail to parse such SQL).
 

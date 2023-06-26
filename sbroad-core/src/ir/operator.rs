@@ -292,6 +292,11 @@ pub enum Relational {
         output: usize,
         is_final: bool,
     },
+    Having {
+        children: Vec<usize>,
+        output: usize,
+        filter: usize,
+    },
     UnionAll {
         /// Contains exactly two elements: left and right node indexes
         /// from the plan node arena.
@@ -369,6 +374,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
+            | Relational::Having { output, .. }
             | Relational::Join { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
@@ -388,6 +394,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
+            | Relational::Having { output, .. }
             | Relational::Join { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
@@ -408,6 +415,7 @@ impl Relational {
             Relational::Except { children, .. }
             | Relational::GroupBy { children, .. }
             | Relational::Join { children, .. }
+            | Relational::Having { children, .. }
             | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
@@ -428,6 +436,9 @@ impl Relational {
                 ref mut children, ..
             }
             | Relational::GroupBy {
+                ref mut children, ..
+            }
+            | Relational::Having {
                 ref mut children, ..
             }
             | Relational::Join {
@@ -525,6 +536,10 @@ impl Relational {
                 children: ref mut old,
                 ..
             }
+            | Relational::Having {
+                children: ref mut old,
+                ..
+            }
             | Relational::ValuesRow {
                 children: ref mut old,
                 ..
@@ -555,6 +570,7 @@ impl Relational {
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
             Relational::Projection { .. }
             | Relational::GroupBy { .. }
+            | Relational::Having { .. }
             | Relational::Selection { .. }
             | Relational::Join { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
@@ -1017,6 +1033,50 @@ impl Plan {
         Ok(select_id)
     }
 
+    /// Adds having node
+    ///
+    /// # Errors
+    /// - children list is empty
+    /// - filter expression is not boolean
+    /// - children nodes are not relational
+    /// - first child output tuple is not valid
+    pub fn add_having(&mut self, children: &[usize], filter: usize) -> Result<usize, SbroadError> {
+        let first_child: usize = match children.len() {
+            0 => {
+                return Err(SbroadError::UnexpectedNumberOfValues(
+                    "children list is empty".into(),
+                ))
+            }
+            _ => children[0],
+        };
+
+        if !self.is_trivalent(filter)? {
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("filter expression is not a trivalent expression.".into()),
+            ));
+        }
+
+        for child in children {
+            if let Node::Relational(_) = self.get_node(*child)? {
+            } else {
+                return Err(SbroadError::Invalid(Entity::Relational, None));
+            }
+        }
+
+        let output = self.add_row_for_output(first_child, &[], true)?;
+        let having = Relational::Having {
+            children: children.into(),
+            filter,
+            output,
+        };
+
+        let having_id = self.nodes.push(Node::Relational(having));
+        self.replace_parent_in_subtree(filter, None, Some(having_id))?;
+        self.replace_parent_in_subtree(output, None, Some(having_id))?;
+        Ok(having_id)
+    }
+
     /// Adds sub query scan node.
     ///
     /// # Errors
@@ -1309,7 +1369,7 @@ impl Plan {
         for (_, id) in rel_tree.iter(top_id) {
             let rel = self.get_relation_node(id)?;
             match rel {
-                Relational::Selection { children, .. } => {
+                Relational::Selection { children, .. } | Relational::Having { children, .. } => {
                     if children.iter().skip(1).any(|&c| c == node_id) {
                         return Ok(true);
                     }
@@ -1338,9 +1398,9 @@ impl Plan {
             return Ok(false);
         };
         match self.get_relation_node(rel_id)? {
-            Relational::Selection { .. } | Relational::Projection { .. } => {
-                Ok(children.first() != Some(&sq_id))
-            }
+            Relational::Selection { .. }
+            | Relational::Projection { .. }
+            | Relational::Having { .. } => Ok(children.first() != Some(&sq_id)),
             Relational::Join { .. } => {
                 Ok(children.first() != Some(&sq_id) && children.get(1) != Some(&sq_id))
             }

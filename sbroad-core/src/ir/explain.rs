@@ -441,26 +441,32 @@ impl Row {
                 Expression::Constant { value, .. } => {
                     row.add_col(RowVal::Const(value.clone()));
                 }
-                Expression::Reference { position, .. } => {
+                Expression::Reference { .. } => {
                     let rel_id: usize = *plan.get_relational_from_reference_node(*child)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
-
-                    // If relation node doesn't have alias name it means
-                    // that this node is a sub-query and acts as a part of
-                    // the WHERE cause.
-                    if rel_node.scan_name(plan, *position)?.is_some() {
+                    if plan.is_additional_child(rel_id)? {
+                        if let Relational::ScanSubQuery { .. } | Relational::Motion { .. } =
+                            rel_node
+                        {
+                            let sq_offset = ref_map.get(&rel_id).ok_or_else(|| {
+                                SbroadError::NotFound(
+                                    Entity::SubQuery,
+                                    format!("with index {rel_id} in the map"),
+                                )
+                            })?;
+                            row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
+                        } else {
+                            return Err(SbroadError::Invalid(
+                                Entity::Plan,
+                                Some(format!(
+                                    "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
+                                )),
+                            ));
+                        }
+                    } else {
                         let col = Col::new(plan, *child)?;
                         row.add_col(RowVal::Column(col));
-                    } else {
-                        let sq_offset = ref_map.get(&rel_id).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::SubQuery,
-                                format!("with index {rel_id} in the map"),
-                            )
-                        })?;
-
-                        row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                     }
                 }
                 Expression::Bool { .. }
@@ -724,6 +730,7 @@ enum ExplainNode {
     Projection(Projection),
     Scan(Scan),
     Selection(Selection),
+    Having(Selection),
     UnionAll,
     SubQuery(SubQuery),
     Motion(Motion),
@@ -741,6 +748,7 @@ impl Display for ExplainNode {
             ExplainNode::GroupBy(p) => p.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
             ExplainNode::Selection(s) => format!("selection {s}"),
+            ExplainNode::Having(s) => format!("having {s}"),
             ExplainNode::UnionAll => "union all".to_string(),
             ExplainNode::SubQuery(s) => s.to_string(),
             ExplainNode::Motion(m) => m.to_string(),
@@ -879,6 +887,9 @@ impl FullExplain {
                 }
                 Relational::Selection {
                     children, filter, ..
+                }
+                | Relational::Having {
+                    children, filter, ..
                 } => {
                     let mut sq_ref_map: HashMap<usize, usize> =
                         HashMap::with_capacity(children.len() - 1);
@@ -906,7 +917,12 @@ impl FullExplain {
                     }
                     let filter_id = ir.undo.get_oldest(filter).map_or_else(|| *filter, |id| *id);
                     let s = Selection::new(ir, filter_id, &sq_ref_map)?;
-                    Some(ExplainNode::Selection(s))
+                    let explain_node = match &node {
+                        Relational::Selection { .. } => ExplainNode::Selection(s),
+                        Relational::Having { .. } => ExplainNode::Having(s),
+                        _ => return Err(SbroadError::DoSkip),
+                    };
+                    Some(explain_node)
                 }
                 Relational::UnionAll { .. } => {
                     if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {

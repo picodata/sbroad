@@ -55,6 +55,7 @@ pub enum Type {
     GtEq,
     GroupBy,
     GroupingElement,
+    Having,
     In,
     InnerJoinKind,
     Join,
@@ -143,6 +144,7 @@ impl Type {
             Rule::GroupingElement => Ok(Type::GroupingElement),
             Rule::Gt => Ok(Type::Gt),
             Rule::GtEq => Ok(Type::GtEq),
+            Rule::Having => Ok(Type::Having),
             Rule::In => Ok(Type::In),
             Rule::InnerJoinKind => Ok(Type::InnerJoinKind),
             Rule::Join => Ok(Type::Join),
@@ -234,6 +236,7 @@ impl fmt::Display for Type {
             Type::FunctionName => "FunctionName".to_string(),
             Type::Gt => "Gt".to_string(),
             Type::GtEq => "GtEq".to_string(),
+            Type::Having => "Having".to_string(),
             Type::InnerJoinKind => "inner".to_string(),
             Type::In => "In".to_string(),
             Type::Join => "Join".to_string(),
@@ -572,6 +575,7 @@ impl AbstractSyntaxTree {
                 3 => self.transform_select_3(*node, &children)?,
                 4 => self.transform_select_4(*node, &children)?,
                 5 => self.transform_select_5(*node, &children)?,
+                6 => self.transform_select_6(*node, &children)?,
                 _ => return Err(SbroadError::Invalid(Entity::AST, None)),
             }
         }
@@ -676,13 +680,15 @@ impl AbstractSyntaxTree {
             [Type::Projection, Type::Scan, Type::Join],
             [Type::Projection, Type::Scan, Type::GroupBy],
             [Type::Projection, Type::Scan, Type::Selection],
+            [Type::Projection, Type::Scan, Type::Having],
         ];
         self.check(&allowed, children)?;
         self.nodes
             .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
         self.nodes
             .push_front_child(get_or_err(children, 0)?, get_or_err(children, 2)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
+        self.nodes
+            .set_children(select_id, vec![get_or_err(children, 0)?])?;
         Ok(())
     }
 
@@ -693,8 +699,11 @@ impl AbstractSyntaxTree {
     ) -> Result<(), SbroadError> {
         let allowed = [
             [Type::Projection, Type::Scan, Type::Selection, Type::GroupBy],
+            [Type::Projection, Type::Scan, Type::Selection, Type::Having],
+            [Type::Projection, Type::Scan, Type::GroupBy, Type::Having],
             [Type::Projection, Type::Scan, Type::Join, Type::Selection],
             [Type::Projection, Type::Scan, Type::Join, Type::GroupBy],
+            [Type::Projection, Type::Scan, Type::Join, Type::Having],
         ];
         self.check(&allowed, children)?;
         // insert Selection | InnerJoin as first child of GroupBy
@@ -715,13 +724,36 @@ impl AbstractSyntaxTree {
         select_id: usize,
         children: &[usize],
     ) -> Result<(), SbroadError> {
-        let allowed = [[
-            Type::Projection,
-            Type::Scan,
-            Type::Join,
-            Type::Selection,
-            Type::GroupBy,
-        ]];
+        let allowed = [
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::Join,
+                Type::Selection,
+                Type::GroupBy,
+            ],
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::Join,
+                Type::Selection,
+                Type::Having,
+            ],
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::Join,
+                Type::GroupBy,
+                Type::Having,
+            ],
+            [
+                Type::Projection,
+                Type::Scan,
+                Type::Selection,
+                Type::GroupBy,
+                Type::Having,
+            ],
+        ];
         self.check(&allowed, children)?;
         // insert Selection as first child of GroupBy
         self.nodes
@@ -735,6 +767,39 @@ impl AbstractSyntaxTree {
         // insert GroupBy as first child of Projection
         self.nodes
             .push_front_child(get_or_err(children, 0)?, get_or_err(children, 4)?)?;
+        self.nodes.set_children(select_id, vec![children[0]])?;
+        Ok(())
+    }
+
+    fn transform_select_6(
+        &mut self,
+        select_id: usize,
+        children: &[usize],
+    ) -> Result<(), SbroadError> {
+        let allowed = [[
+            Type::Projection,
+            Type::Scan,
+            Type::Join,
+            Type::Selection,
+            Type::GroupBy,
+            Type::Having,
+        ]];
+        self.check(&allowed, children)?;
+        // insert GroupBy as first child of Having
+        self.nodes
+            .push_front_child(get_or_err(children, 5)?, get_or_err(children, 4)?)?;
+        // insert Selection as first child of GroupBy
+        self.nodes
+            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 3)?)?;
+        // insert InnerJoin as first child of Selection
+        self.nodes
+            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
+        // insert Scan as first child of InnerJoin
+        self.nodes
+            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
+        // insert Having as first child of Projection
+        self.nodes
+            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 5)?)?;
         self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
@@ -862,11 +927,12 @@ impl AbstractSyntaxTree {
                         }
                     }
                 }
-                Type::Selection => {
+                Type::Selection | Type::Having => {
                     let rel_id = rel_node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "AST selection has no children.".into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues(format!(
+                            "AST {:?} has no children.",
+                            rel_node.rule
+                        ))
                     })?;
                     let filter = rel_node.children.get(1).ok_or_else(|| {
                         SbroadError::NotFound(

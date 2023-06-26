@@ -180,7 +180,7 @@ impl SimpleAggregate {
     /// - Invalid aggregate
     /// - Could not find local alias position in child output
     #[allow(clippy::too_many_lines)]
-    pub fn create_column_for_final_projection(
+    pub fn create_final_aggregate_expr(
         &self,
         parent: usize,
         plan: &mut Plan,

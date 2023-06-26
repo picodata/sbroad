@@ -135,10 +135,6 @@ impl Ast for AbstractSyntaxTree {
         // Is it global for every `ValuesRow` met in the AST.
         let mut col_idx: usize = 0;
 
-        let mut groupby_nodes: Vec<usize> = Vec::new();
-        let mut scan_nodes: Vec<usize> = Vec::new();
-        let mut sq_nodes: Vec<usize> = Vec::new();
-
         let mut betweens: Vec<Between> = Vec::new();
         // Ids of arithmetic expressions that have parentheses.
         let mut arith_expr_with_parentheses_ids: Vec<usize> = Vec::new();
@@ -251,7 +247,6 @@ impl Ast for AbstractSyntaxTree {
                         let t = metadata.table(table)?;
                         plan.add_rel(t);
                         let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
-                        scan_nodes.push(scan_id);
                         map.add(id, scan_id);
                     } else {
                         return Err(SbroadError::Invalid(
@@ -268,7 +263,6 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let plan_sq_id = plan.add_sub_query(plan_child_id, None)?;
-                    sq_nodes.push(plan_sq_id);
                     map.add(id, plan_sq_id);
                 }
                 Type::Reference => {
@@ -788,7 +782,6 @@ impl Ast for AbstractSyntaxTree {
                         children.push(plan_column_id);
                     }
                     let groupby_id = plan.add_groupby_from_ast(&children)?;
-                    groupby_nodes.push(groupby_id);
                     map.add(id, groupby_id);
                 }
                 Type::Join => {
@@ -827,9 +820,9 @@ impl Ast for AbstractSyntaxTree {
                         plan.add_join(plan_left_id, plan_right_id, plan_cond_id, kind)?;
                     map.add(id, plan_join_id);
                 }
-                Type::Selection => {
+                Type::Selection | Type::Having => {
                     let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Selection has no children.".into())
+                        SbroadError::UnexpectedNumberOfValues(format!("{node:?} has no children."))
                     })?;
                     let plan_child_id = map.get(*ast_child_id)?;
                     let ast_filter_id = node.children.get(1).ok_or_else(|| {
@@ -839,8 +832,12 @@ impl Ast for AbstractSyntaxTree {
                         )
                     })?;
                     let plan_filter_id = map.get(*ast_filter_id)?;
-                    let plan_selection_id = plan.add_select(&[plan_child_id], plan_filter_id)?;
-                    map.add(id, plan_selection_id);
+                    let plan_node_id = match &node.rule {
+                        Type::Selection => plan.add_select(&[plan_child_id], plan_filter_id)?,
+                        Type::Having => plan.add_having(&[plan_child_id], plan_filter_id)?,
+                        _ => return Err(SbroadError::Invalid(Entity::AST, None)), // never happens
+                    };
+                    map.add(id, plan_node_id);
                 }
                 Type::Projection => {
                     let ast_child_id = node.children.first().ok_or_else(|| {

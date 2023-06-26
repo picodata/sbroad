@@ -186,7 +186,8 @@ impl Plan {
                     Relational::Selection { filter: tree, .. }
                     | Relational::Join {
                         condition: tree, ..
-                    },
+                    }
+                    | Relational::Having { filter: tree, .. },
                 ) => {
                     let capacity = self.nodes.len();
                     let mut expr_post = PostOrder::with_capacity(
@@ -233,7 +234,9 @@ impl Plan {
             // Append sub-query to relational node if it is not already there (can happen with BETWEEN).
             match self.get_mut_node(sq.relational)? {
                 Node::Relational(
-                    Relational::Selection { children, .. } | Relational::Join { children, .. },
+                    Relational::Selection { children, .. }
+                    | Relational::Join { children, .. }
+                    | Relational::Having { children, .. },
                 ) => {
                     // O(n) can become a problem.
                     if !children.contains(&sq.sq) {
@@ -251,7 +254,9 @@ impl Plan {
             // Generate a reference to the sub-query.
             let row_id: usize = match self.get_node(sq.relational)? {
                 Node::Relational(
-                    Relational::Selection { children, .. } | Relational::Join { children, .. },
+                    Relational::Selection { children, .. }
+                    | Relational::Join { children, .. }
+                    | Relational::Having { children, .. },
                 ) => {
                     let nodes = children.clone();
                     let sq_output = self.get_relation_node(sq.sq)?.output();

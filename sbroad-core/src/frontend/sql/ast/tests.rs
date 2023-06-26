@@ -71,7 +71,22 @@ fn transform_select_3_group_by() {
 }
 
 #[test]
-fn transform_select_4() {
+fn transform_select_3_having() {
+    let query = r#"select sum("a") from t having sum("a") > 1"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_3_having.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_3_join() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
@@ -79,7 +94,7 @@ fn transform_select_4() {
         .join("artifactory")
         .join("frontend")
         .join("sql")
-        .join("transform_select_4.yaml");
+        .join("transform_select_3_join.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
     assert_eq!(expected, ast);
@@ -101,8 +116,98 @@ fn transform_select_4_1() {
 }
 
 #[test]
-fn transform_select_5() {
+fn transform_select_4_having_1() {
+    let query = r#"select sum("a") from t1 where "a" > 1 having sum("a") > 1"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_having_1.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_4_having_2() {
+    let query = r#"select sum("a") from t1 group by "a" having sum("a") > 1"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_having_2.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_4_join_filter() {
     let query = r#"select * from t1 inner join t2 on t1.a = t2.a where t1.a > 0"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_join_filter.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_4_join_groupby() {
+    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a group by t1.a, t2.b"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_join_groupby.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_4_join_having() {
+    let query = r#"select sum(a) from t1 inner join t2 on t1.a = t2.a having sum(t1.a) > 1"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_join_having.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_4_selection_having() {
+    let query = r#"select sum(a) from t1 where "a" > 1 group by a having sum(t1.a) > 1"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_4_selection_having.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_5() {
+    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a where t1.a > 1 group by t1.a, t2.b"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
@@ -116,15 +221,30 @@ fn transform_select_5() {
 }
 
 #[test]
-fn transform_select_5_1() {
-    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a group by t1.a, t2.b"#;
+fn transform_select_5_having_1() {
+    let query = r#"select sum(a) + f(b) from t1 inner join t2 on t1.a = t2.a group by t1.a, t2.b having sum(t1.a) > 1 and avg(t2.b) > 10"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")
         .join("artifactory")
         .join("frontend")
         .join("sql")
-        .join("transform_select_5_1.yaml");
+        .join("transform_select_5_having_1.yaml");
+    let s = fs::read_to_string(path).unwrap();
+    let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
+    assert_eq!(expected, ast);
+}
+
+#[test]
+fn transform_select_5_having_2() {
+    let query = r#"select sum(a) from t1 inner join t2 on t1.a = t2.a where a + b / 2 > 1 having avg(t2.b) > 10"#;
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let path = Path::new("")
+        .join("tests")
+        .join("artifactory")
+        .join("frontend")
+        .join("sql")
+        .join("transform_select_5_having_2.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected: AbstractSyntaxTree = AbstractSyntaxTree::from_yaml(&s).unwrap();
     assert_eq!(expected, ast);
@@ -132,7 +252,7 @@ fn transform_select_5_1() {
 
 #[test]
 fn transform_select_6() {
-    let query = r#"select t1.a, t2.b from t1 inner join t2 on t1.a = t2.a where t1.a > 1 group by t1.a, t2.b"#;
+    let query = r#"select sum(a) from t1 inner join t2 on t1.a = t2.a where a + b / 2 > 1 group by a having avg(t2.b) > 10"#;
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let path = Path::new("")
         .join("tests")

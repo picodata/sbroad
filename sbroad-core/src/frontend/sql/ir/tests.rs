@@ -1531,6 +1531,210 @@ motion [policy: full]
 }
 
 #[test]
+fn front_sql_having1() {
+    let input = r#"SELECT "a", sum("b") FROM "t"
+        group by "a"
+        having "a" > 1 and sum(distinct "b") > 1
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "a", sum(("sum_52")) -> "COL_1")
+    having ROW("column_12") > ROW(1) and ROW(sum(distinct ("column_30"))) > ROW(1)
+        group by ("column_12") output: ("column_30" -> "column_30", "column_12" -> "column_12", "sum_52" -> "sum_52")
+            motion [policy: segment([ref("column_12")])]
+                scan
+                    projection ("t"."b" -> "column_30", "t"."a" -> "column_12", sum(("t"."b")) -> "sum_52")
+                        group by ("t"."a", "t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                            scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_having2() {
+    let input = r#"SELECT sum("a") * count(distinct "b"), sum("a") FROM "t"
+        having sum(distinct "b") > 1 and sum("a") > 1
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection ((sum(("sum_38"))) * (count(distinct ("column_39"))) -> "COL_1", sum(("sum_38")) -> "COL_2")
+    having ROW(sum(distinct ("column_39"))) > ROW(1) and ROW(sum(("sum_38"))) > ROW(1)
+        motion [policy: full]
+            scan
+                projection ("t"."b" -> "column_39", sum(("t"."a")) -> "sum_38")
+                    group by ("t"."b") output: ("t"."a" -> "a", "t"."b" -> "b", "t"."c" -> "c", "t"."d" -> "d", "t"."bucket_id" -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_having3() {
+    let input = r#"SELECT sum("a") FROM "t"
+        having sum("a") > 1
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection (sum(("sum_31")) -> "COL_1")
+    having ROW(sum(("sum_31"))) > ROW(1)
+        motion [policy: full]
+            scan
+                projection (sum(("t"."a")) -> "sum_31")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_having4() {
+    let input = r#"SELECT sum("a") FROM "t"
+        having sum("a") > 1 and "b" > 1
+    "#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.replace_in_operator().unwrap();
+    plan.split_columns().unwrap();
+    plan.set_dnf().unwrap();
+    plan.derive_equalities().unwrap();
+    plan.merge_tuples().unwrap();
+    let err = plan.add_motions().unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("HAVING argument must appear in the GROUP BY clause or be used in an aggregate function")
+    );
+}
+
+#[test]
+fn front_sql_having_with_sq() {
+    let input = r#"
+        SELECT "sysFrom", sum(distinct "id") as "sum", count(distinct "id") as "count" from "test_space"
+        group by "sysFrom"
+        having (select "sysFrom" from "test_space" where "sysFrom" = 2) > count(distinct "id")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "sysFrom", sum(distinct ("column_80")) -> "sum", count(distinct ("column_80")) -> "count")
+    having ROW($0) > ROW(count(distinct ("column_80")))
+        group by ("column_12") output: ("column_12" -> "column_12", "column_80" -> "column_80")
+            motion [policy: segment([ref("column_12")])]
+                scan
+                    projection ("test_space"."sysFrom" -> "column_12", "test_space"."id" -> "column_80")
+                        group by ("test_space"."sysFrom", "test_space"."id") output: ("test_space"."id" -> "id", "test_space"."sysFrom" -> "sysFrom", "test_space"."FIRST_NAME" -> "FIRST_NAME", "test_space"."sys_op" -> "sys_op", "test_space"."bucket_id" -> "bucket_id")
+                            scan "test_space"
+subquery $0:
+motion [policy: full]
+            scan
+                projection ("test_space"."sysFrom" -> "sysFrom")
+                    selection ROW("test_space"."sysFrom") = ROW(2)
+                        scan "test_space"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_unmatched_column_in_having() {
+    let input = r#"SELECT sum("a"), "a" FROM "t"
+        group by "a"
+        having sum("a") > 1 and "a" > 1 or "c" = 1
+    "#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.replace_in_operator().unwrap();
+    plan.split_columns().unwrap();
+    plan.set_dnf().unwrap();
+    plan.derive_equalities().unwrap();
+    plan.merge_tuples().unwrap();
+    let err = plan.add_motions().unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("column \"c\" is not found in grouping expressions!")
+    );
+}
+
+#[test]
+fn front_sql_having_with_sq_segment_motion() {
+    // check subquery has Segment Motion on groupby columns
+    let input = r#"
+        SELECT "sysFrom", "sys_op", sum(distinct "id") as "sum", count(distinct "id") as "count" from "test_space"
+        group by "sysFrom", "sys_op"
+        having ("sysFrom", "sys_op") in (select "a", "d" from "t")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "sysFrom", "column_13" -> "sys_op", sum(distinct ("column_70")) -> "sum", count(distinct ("column_70")) -> "count")
+    having ROW("column_12", "column_13") in ROW($0, $0)
+        group by ("column_12", "column_13") output: ("column_12" -> "column_12", "column_70" -> "column_70", "column_13" -> "column_13")
+            motion [policy: segment([ref("column_12"), ref("column_13")])]
+                scan
+                    projection ("test_space"."sysFrom" -> "column_12", "test_space"."id" -> "column_70", "test_space"."sys_op" -> "column_13")
+                        group by ("test_space"."sysFrom", "test_space"."sys_op", "test_space"."id") output: ("test_space"."id" -> "id", "test_space"."sysFrom" -> "sysFrom", "test_space"."FIRST_NAME" -> "FIRST_NAME", "test_space"."sys_op" -> "sys_op", "test_space"."bucket_id" -> "bucket_id")
+                            scan "test_space"
+subquery $0:
+motion [policy: segment([ref("a"), ref("d")])]
+            scan
+                projection ("t"."a" -> "a", "t"."d" -> "d")
+                    scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_having_with_sq_segment_local_motion() {
+    // check subquery has no Motion, as it has the same distribution
+    // as columns used in GroupBy
+    let input = r#"
+        SELECT "sysFrom", "sys_op", sum(distinct "id") as "sum", count(distinct "id") as "count" from "test_space"
+        group by "sysFrom", "sys_op"
+        having ("sysFrom", "sys_op") in (select "a", "b" from "t")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_12" -> "sysFrom", "column_13" -> "sys_op", sum(distinct ("column_70")) -> "sum", count(distinct ("column_70")) -> "count")
+    having ROW("column_12", "column_13") in ROW($0, $0)
+        group by ("column_12", "column_13") output: ("column_12" -> "column_12", "column_70" -> "column_70", "column_13" -> "column_13")
+            motion [policy: segment([ref("column_12"), ref("column_13")])]
+                scan
+                    projection ("test_space"."sysFrom" -> "column_12", "test_space"."id" -> "column_70", "test_space"."sys_op" -> "column_13")
+                        group by ("test_space"."sysFrom", "test_space"."sys_op", "test_space"."id") output: ("test_space"."id" -> "id", "test_space"."sysFrom" -> "sysFrom", "test_space"."FIRST_NAME" -> "FIRST_NAME", "test_space"."sys_op" -> "sys_op", "test_space"."bucket_id" -> "bucket_id")
+                            scan "test_space"
+subquery $0:
+scan
+            projection ("t"."a" -> "a", "t"."b" -> "b")
+                scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_unique_local_aggregates() {
     // make sure we don't compute extra aggregates at local stage
     let input = r#"SELECT sum("a"), count("a"), sum("a") + count("a") FROM "t""#;

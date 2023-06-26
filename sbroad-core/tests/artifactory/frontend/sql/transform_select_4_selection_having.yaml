@@ -1,0 +1,120 @@
+---
+nodes:
+  arena:
+    - children: #0
+        - 19
+      rule: Select
+      value: ~
+    - children: #1
+        - 9
+        - 2
+      rule: Having
+      value: ~
+    - children: #2
+        - 4
+        - 3
+      rule: Gt
+      value: ~
+    - children: [] #3
+      rule: Unsigned
+      value: "1"
+    - children: #4
+        - 8
+        - 5
+      rule: Function
+      value: ~
+    - children: #5
+        - 7
+        - 6
+      rule: Reference
+      value: ~
+    - children: [] #6
+      rule: ColumnName
+      value: a
+    - children: [] #7
+      rule: ScanName
+      value: t1
+    - children: [] #8
+      rule: FunctionName
+      value: sum
+    - children: #9
+        - 12
+        - 10
+      rule: GroupBy
+      value: ~
+    - children: #10
+        - 11
+      rule: Reference
+      value: ~
+    - children: [] #11
+      rule: ColumnName
+      value: a
+    - children: #12
+        - 17
+        - 13
+      rule: Selection
+      value: ~
+    - children: #13
+        - 15
+        - 14
+      rule: Gt
+      value: ~
+    - children: [] #14
+      rule: Unsigned
+      value: "1"
+    - children: #15
+        - 16
+      rule: Reference
+      value: ~
+    - children: [] #16
+      rule: ColumnName
+      value: "\"a\""
+    - children: #17
+        - 18
+      rule: Scan
+      value: ~
+    - children: [] #18
+      rule: Table
+      value: t1
+    - children: #19
+        - 1
+        - 20
+      rule: Projection
+      value: ~
+    - children: #20
+        - 26
+      rule: Column
+      value: ~
+    - children: #21
+        - 24
+        - 22
+      rule: Function
+      value: ~
+    - children: #22
+        - 23
+      rule: Reference
+      value: ~
+    - children: [] #23
+      rule: ColumnName
+      value: a
+    - children: [] #24
+      rule: FunctionName
+      value: sum
+    - children: [] #25
+      rule: AliasName
+      value: COL_1
+    - children: #26
+        - 21
+        - 25
+      rule: Alias
+      value: ~
+top: 19
+map:
+  5:
+    - 9
+  15:
+    - 17
+  10:
+    - 12
+  22:
+    - 1

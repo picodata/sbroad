@@ -5,7 +5,7 @@ use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Strategy, Target};
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
 
@@ -283,7 +283,24 @@ impl<'plan> AggrCollector<'plan> {
     }
 }
 
+/// Maps id of `GroupBy` expression used in `GroupBy` (from local stage)
+/// to list of locations where this expression is used in other relational
+/// operators like `Having`, `Projection`.
+///
+/// For example:
+/// `select a from t group by a having a = 1`
+/// Here expression in `GroupBy` is mapped to `a` in `Projection` and `a` in `Having`
 type GroupbyExpressionsMap = HashMap<usize, Vec<ExpressionLocation>>;
+/// Maps id of `GroupBy` expression used in `GroupBy` (from local stage)
+/// to corresponding local alias used in local Projection. Note:
+/// this map does not contain mappings between grouping expressions from
+/// distinct aggregates (it is stored in corresponding `AggrInfo` for that
+/// aggregate)
+///
+/// For example:
+/// initial query: `select a, count(distinct b) from t group by a`
+/// map query: `select a as l1, b group by a, b`
+/// Then this map will map id of `a` to `l1`
 type LocalAliasesMap = HashMap<usize, Rc<String>>;
 type LocalAggrInfo = (AggregateKind, Vec<usize>, Rc<String>);
 
@@ -292,11 +309,9 @@ type LocalAggrInfo = (AggregateKind, Vec<usize>, Rc<String>);
 struct ExpressionMapper<'plan> {
     /// List of expressions ids of `GroupBy`
     gr_exprs: &'plan Vec<usize>,
-    /// Maps `GroupBy` expression to expressions used `Projection`
-    /// First element in pair is `Projection` column id,
-    /// second one is the id of expression
     map: GroupbyExpressionsMap,
     plan: &'plan Plan,
+    /// Id of relational node (`Projection`, `Having`, `OrderBy`)
     node_id: Option<usize>,
 }
 
@@ -316,6 +331,11 @@ impl<'plan> ExpressionMapper<'plan> {
     /// when match is found it is stored in map passed to [`ExpressionMapper`]'s
     /// constructor.
     ///
+    /// # Arguments
+    /// * `expr_root` - expression id from which matching will start
+    /// * `node_id` - id of relational node (`Having`, `Projection`, `OrderBy`),
+    /// where expression pointed by `expr_root` is located
+    ///
     /// # Errors
     /// - invalid references in any expression (`GroupBy`'s or node's one)
     /// - invalid query: node expression contains references that are not
@@ -331,6 +351,23 @@ impl<'plan> ExpressionMapper<'plan> {
     /// Helper function for `find_matches` which compares current node to `GroupBy` expressions
     /// and if no match is found recursively calls itself.
     fn find(&mut self, current: usize, parent: Option<usize>) -> Result<(), SbroadError> {
+        let Some(node_id) = self.node_id else {
+            return Err(SbroadError::Invalid(Entity::ExpressionMapper, None))
+        };
+        let is_ref = matches!(
+            self.plan.get_expression_node(current),
+            Ok(Expression::Reference { .. })
+        );
+        let is_sq_ref = is_ref
+            && self.plan.is_additional_child_of_rel(
+                node_id,
+                *self.plan.get_relational_from_reference_node(current)?,
+            )?;
+        // Because subqueries are replaced with References, we must not
+        // try to match these references against any GroupBy expressions
+        if is_sq_ref {
+            return Ok(());
+        }
         if let Some(gr_expr) = self
             .gr_exprs
             .iter()
@@ -341,9 +378,6 @@ impl<'plan> ExpressionMapper<'plan> {
             })
             .copied()
         {
-            let Some(node_id) = self.node_id else {
-                return Err(SbroadError::Invalid(Entity::ExpressionMapper, None))
-            };
             let location = ExpressionLocation::new(current, parent, node_id);
             if let Some(v) = self.map.get_mut(&gr_expr) {
                 v.push(location);
@@ -352,12 +386,12 @@ impl<'plan> ExpressionMapper<'plan> {
             }
             return Ok(());
         }
-        let node = self.plan.get_expression_node(current)?;
-        if let Expression::Reference { .. } = node {
+        if is_ref {
             // We found a column which is not inside aggregate function
             // and it is not a grouping expression:
             // select a from t group by b - is invalid
             let column_name = {
+                let node = self.plan.get_expression_node(current)?;
                 self.plan
                     .get_alias_from_reference_node(node)
                     .unwrap_or("'failed to get column name'")
@@ -652,12 +686,13 @@ impl Plan {
                         collector.collect_aggregates(*col, *node_id)?;
                     }
                 }
+                Relational::Having { filter, .. } => {
+                    collector.collect_aggregates(*filter, *node_id)?;
+                }
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!(
-                            "collect_aggregates: unexpected relational node ({node_id}): {node:?}"
-                        )),
+                        Some(format!("unexpected relational node ({node_id}): {node:?}")),
                     ))
                 }
             }
@@ -718,24 +753,22 @@ impl Plan {
                 .get_relational_children(rel_id)?
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format!(
-                        "split_reduce_stage: expected relation node ({rel_id}) to have children!"
+                        "expected relation node ({rel_id}) to have children!"
                     ))
                 })?
                 .first()
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format!(
-                        "split_reduce_stage: expected relation node ({rel_id}) to have children!"
+                        "expected relation node ({rel_id}) to have children!"
                     ))
                 })?;
             Ok(c)
         };
         let mut next: usize = final_proj_id;
-        // Currently in Reduce stage only Projection is possible.
-        // When any Having, OrderBy, Limit will be added this will change.
-        let max_reduce_nodes = 1;
+        let max_reduce_nodes = 2;
         for _ in 0..=max_reduce_nodes {
             match self.get_relation_node(next)? {
-                Relational::Projection { .. } => {
+                Relational::Projection { .. } | Relational::Having { .. } => {
                     finals.push(next);
                     next = get_first_child(next)?;
                 }
@@ -799,10 +832,16 @@ impl Plan {
 
             let mut mapper = ExpressionMapper::new(&grouping_expr, self);
             for node_id in finals {
-                if let Relational::Projection { output, .. } = self.get_relation_node(*node_id)? {
-                    for col in self.get_row_list(*output)? {
-                        mapper.find_matches(*col, *node_id)?;
+                match self.get_relation_node(*node_id)? {
+                    Relational::Projection { output, .. } => {
+                        for col in self.get_row_list(*output)? {
+                            mapper.find_matches(*col, *node_id)?;
+                        }
                     }
+                    Relational::Having { filter, .. } => {
+                        mapper.find_matches(*filter, *node_id)?;
+                    }
+                    _ => {}
                 }
             }
             gr_expr_map = mapper.get_matches();
@@ -812,26 +851,46 @@ impl Plan {
             // check that all column references are inside aggregate functions
             for id in finals {
                 let node = self.get_relation_node(*id)?;
-                if let Relational::Projection { output, .. } = node {
-                    for col in self.get_row_list(*output)? {
-                        let mut dfs = PostOrder::with_capacity(
-                            |x| self.nodes.aggregate_iter(x, false),
-                            EXPR_CAPACITY,
-                        );
-                        dfs.populate_nodes(*col);
-                        let nodes = dfs.take_nodes();
-                        for (_, id) in nodes {
-                            let n = self.get_expression_node(id)?;
-                            if let Expression::Reference { .. } = n {
-                                let alias = match self.get_alias_from_reference_node(n) {
-                                    Ok(v) => v.to_string(),
-                                    Err(e) => e.to_string(),
-                                };
-                                return Err(SbroadError::Invalid(Entity::Query,
-                                                                Some(format!("found column reference ({alias}) outside aggregate function"))));
+                match node {
+                    Relational::Projection { output, .. } => {
+                        for col in self.get_row_list(*output)? {
+                            let mut dfs = PostOrder::with_capacity(
+                                |x| self.nodes.aggregate_iter(x, false),
+                                EXPR_CAPACITY,
+                            );
+                            dfs.populate_nodes(*col);
+                            let nodes = dfs.take_nodes();
+                            for (_, id) in nodes {
+                                let n = self.get_expression_node(id)?;
+                                if let Expression::Reference { .. } = n {
+                                    let alias = match self.get_alias_from_reference_node(n) {
+                                        Ok(v) => v.to_string(),
+                                        Err(e) => e.to_string(),
+                                    };
+                                    return Err(SbroadError::Invalid(Entity::Query,
+                                                                    Some(format!("found column reference ({alias}) outside aggregate function"))));
+                                }
                             }
                         }
                     }
+                    Relational::Having { filter, .. } => {
+                        let mut bfs = BreadthFirst::with_capacity(
+                            |x| self.nodes.aggregate_iter(x, false),
+                            EXPR_CAPACITY,
+                            EXPR_CAPACITY,
+                        );
+                        bfs.populate_nodes(*filter);
+                        let nodes = bfs.take_nodes();
+                        for (_, id) in nodes {
+                            if let Expression::Reference { .. } = self.get_expression_node(id)? {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Query,
+                                    Some("HAVING argument must appear in the GROUP BY clause or be used in an aggregate function".into())
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1208,6 +1267,18 @@ impl Plan {
         Ok(())
     }
 
+    /// Add final `GroupBy` node in case `grouping_exprs` are not empty
+    ///
+    /// # Arguments
+    /// * `child_id` - id if relational node that will the child of `GroupBy`
+    /// * `grouping_exprs` - list of grouping expressions ids (which does not include
+    /// grouping expressions from distinct arguments)
+    /// * `local_aliases_map` - map between expression from `GroupBy` to alias used
+    /// at local stage
+    ///
+    /// # Returns
+    /// - if `GroupBy` node was created, return its id
+    /// - if `GroupBy` node was not created, return `child_id`
     fn add_final_groupby(
         &mut self,
         child_id: usize,
@@ -1215,7 +1286,7 @@ impl Plan {
         local_aliases_map: &LocalAliasesMap,
     ) -> Result<usize, SbroadError> {
         if grouping_exprs.is_empty() {
-            // no GroupBy in the original query nothing to do
+            // no GroupBy in the original query, nothing to do
             return Ok(child_id);
         }
         let mut gr_cols: Vec<usize> = Vec::with_capacity(grouping_exprs.len());
@@ -1228,12 +1299,12 @@ impl Plan {
         for expr_id in grouping_exprs {
             let Some(local_alias) = local_aliases_map.get(expr_id) else {
                 return Err(SbroadError::Invalid(Entity::Plan,
-                Some(format!("add_final_groupby: could not find local alias for GroupBy expr ({expr_id})"))))
+                Some(format!("could not find local alias for GroupBy expr ({expr_id})"))))
             };
             let Some(position) = child_map.get(&*(*local_alias)) else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("add_final_groupby: did not find alias: {local_alias} in child ({child_id}) output!")))
+                    Some(format!("did not find alias: {local_alias} in child ({child_id}) output!")))
                 )
             };
             let new_col = Expression::Reference {
@@ -1282,9 +1353,9 @@ impl Plan {
             HashMap<RelationalID, Vec<(GroupByExpressionID, ExpressionID, ExpressionParent)>>;
         let map: ParentExpressionMap = {
             let mut new_map: ParentExpressionMap = HashMap::with_capacity(map.len());
-            for (k, v) in map {
-                for location in v {
-                    let rec = (k, location.expr_id, location.parent_expr_id);
+            for (groupby_expr_id, locations) in map {
+                for location in locations {
+                    let rec = (groupby_expr_id, location.expr_id, location.parent_expr_id);
                     if let Some(u) = new_map.get_mut(&location.rel_id) {
                         u.push(rec);
                     } else {
@@ -1300,13 +1371,13 @@ impl Plan {
                 .get_relational_children(rel_id)?
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format!(
-                        "patch_grouping_exprs: expected relation node ({rel_id}) to have children!"
+                        "expected relation node ({rel_id}) to have children!"
                     ))
                 })?
                 .first()
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format!(
-                        "patch_grouping_exprs: expected relation node ({rel_id}) to have children!"
+                        "expected relation node ({rel_id}) to have children!"
                     ))
                 })?;
             let alias_to_pos_map = self
@@ -1319,11 +1390,11 @@ impl Plan {
                 let Some(local_alias) = local_aliases_map.get(&gr_expr_id) else {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("patch_finals: failed to find local alias for groupby expression {gr_expr_id}"))))
+                        Some(format!("failed to find local alias for groupby expression {gr_expr_id}"))))
                 };
                 let Some(pos) = alias_to_pos_map.get(&*(*local_alias)).copied() else {
                     return Err(SbroadError::Invalid(Entity::Plan,
-                                                    Some(format!("patch_finals: failed to find alias '{local_alias}' in ({child_id}). Aliases: {}", alias_to_pos_map.keys().join(" ")))))
+                                                    Some(format!("failed to find alias '{local_alias}' in ({child_id}). Aliases: {}", alias_to_pos_map.keys().join(" ")))))
                 };
                 let new_ref = Expression::Reference {
                     parent: Some(rel_id),
@@ -1338,13 +1409,16 @@ impl Plan {
                         Relational::Projection { .. } => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!("patch_finals: invalid mapping between groupby expression {gr_expr_id} and projection one: expression {expr_id} has no parent"))
+                                Some(format!("invalid mapping between groupby expression {gr_expr_id} and projection one: expression {expr_id} has no parent"))
                             ))
+                        }
+                        Relational::Having { filter, .. } => {
+                            *filter = ref_id;
                         }
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!("patch_finals: unexpected node in Reduce stage: {rel_id}"))
+                                Some(format!("unexpected node in Reduce stage: {rel_id}"))
                             ))
                         }
                     }
@@ -1388,19 +1462,34 @@ impl Plan {
         // After we added a Map stage, we need to update output
         // of nodes in Reduce stage
         if let Some(last) = finals.last() {
-            self.get_mut_relation_node(*last)?
-                .set_children(vec![finals_child_id])?;
+            if let Some(children) = self.get_mut_relation_node(*last)?.mut_children() {
+                if let Some(first) = children.get_mut(0) {
+                    *first = finals_child_id;
+                }
+            }
         }
         for node_id in finals.iter().rev() {
             let node = self.get_relation_node(*node_id)?;
             match node {
+                // Projection node is the top node in finals: its aliases
+                // must not be changed (because those are user aliases), so
+                // nothing to do here
                 Relational::Projection { .. } => {}
+                Relational::Having { children, .. } => {
+                    let child_id = *children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!("Having ({node_id}) has no children!")),
+                        )
+                    })?;
+                    let output = self.add_row_for_output(child_id, &[], true)?;
+                    *self.get_mut_relation_node(*node_id)?.mut_output() = output;
+                    self.replace_parent_in_subtree(output, None, Some(*node_id))?;
+                }
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!(
-                            "patch_finals: Unexpected node in reduce stage: {node:?}"
-                        )),
+                        Some(format!("Unexpected node in reduce stage: {node:?}")),
                     ))
                 }
             }
@@ -1441,7 +1530,7 @@ impl Plan {
                 .map(|(k, v)| (k.to_string(), v))
                 .collect::<HashMap<String, usize>>();
             for info in infos {
-                let final_expr = info.aggr.create_column_for_final_projection(
+                let final_expr = info.aggr.create_final_aggregate_expr(
                     parent,
                     self,
                     &alias_to_pos_map,
@@ -1449,14 +1538,12 @@ impl Plan {
                 )?;
                 if let Some(parent_expr) = info.parent_expr {
                     self.replace_expression(parent_expr, info.aggr.fun_id, final_expr)?;
-                } else if let Relational::Projection { .. } = self.get_mut_relation_node(parent)? {
-                    // currently final stage may contain only Projection node,
-                    // when Having will be added, here will be the logic of replacing
-                    // its filter
+                } else {
+                    let node = self.get_mut_relation_node(parent)?;
                     return Err(SbroadError::Invalid(
                         Entity::Aggregate,
                         Some(format!(
-                            "aggregate info from Projection has no parent! Info: {info:?}"
+                            "aggregate info for {node:?} that hat no parent! Info: {info:?}"
                         )),
                     ));
                 }
@@ -1562,9 +1649,13 @@ impl Plan {
         )?;
         self.add_motion_to_2stage(&grouping_positions, finals_child_id, &finals)?;
 
+        let mut having_id: Option<usize> = None;
         // skip Projection
         for node_id in finals.iter().skip(1).rev() {
             self.set_distribution(self.get_relational_output(*node_id)?)?;
+            if let Relational::Having { .. } = self.get_relation_node(*node_id)? {
+                having_id = Some(*node_id);
+            }
         }
 
         if matches!(
@@ -1577,6 +1668,14 @@ impl Plan {
                 self.get_relational_output(final_proj_id)?,
                 Distribution::Single,
             )?;
+        }
+
+        // resolve subquery conflicts in HAVING
+        if let Some(having_id) = having_id {
+            if let Relational::Having { filter, .. } = self.get_relation_node(having_id)? {
+                let strategy = self.resolve_sub_query_conflicts(having_id, *filter)?;
+                self.create_motion_nodes(&strategy)?;
+            }
         }
 
         Ok(true)

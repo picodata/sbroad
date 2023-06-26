@@ -204,6 +204,12 @@ impl Plan {
                     writeln!(buf, "Filter")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *filter)?;
                 }
+                Relational::Having { filter, .. } => {
+                    writeln!(buf, "Having")?;
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Filter")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *filter)?;
+                }
                 Relational::GroupBy {
                     gr_cols, is_final, ..
                 } => {
@@ -240,6 +246,7 @@ impl Plan {
                 | Relational::Values { children, .. }
                 | Relational::Motion { children, .. }
                 | Relational::UnionAll { children, .. }
+                | Relational::Having { children, .. }
                 | Relational::GroupBy { children, .. }
                 | Relational::ValuesRow { children, .. } => {
                     formatted_tabulate(buf, tabulation_number + 1)?;
@@ -264,6 +271,7 @@ impl Plan {
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::GroupBy { output, .. }
                 | Relational::Selection { output, .. }
+                | Relational::Having { output, .. }
                 | Relational::Values { output, .. }
                 | Relational::Motion { output, .. }
                 | Relational::UnionAll { output, .. }

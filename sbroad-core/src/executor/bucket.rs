@@ -351,6 +351,9 @@ where
                 | Relational::GroupBy {
                     children, output, ..
                 }
+                | Relational::Having {
+                    children, output, ..
+                }
                 | Relational::ScanSubQuery {
                     children, output, ..
                 } => {

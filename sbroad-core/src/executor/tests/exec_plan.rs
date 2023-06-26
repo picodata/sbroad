@@ -660,3 +660,191 @@ fn exec_plan_subtree_count_asterisk() {
         )
     );
 }
+
+#[test]
+fn exec_plan_subtree_having() {
+    let sql = format!(
+        "{} {} {}",
+        r#"SELECT t1."sys_op" || t1."sys_op", count(t1."sys_op"*2) + count(distinct t1."sys_op"*2)"#,
+        r#"FROM "test_space" as t1 group by t1."sys_op""#,
+        r#"HAVING sum(distinct t1."sys_op"*2) > 1"#
+    );
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql.as_str(), vec![]).unwrap();
+    let motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "column_63".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "column_12".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "count_58".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        virtual_table.reshard(key, &query.coordinator).unwrap();
+    }
+
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+
+    // Check groupby local stage
+    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
+    let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
+    } else {
+        panic!("Expected MotionPolicy::Segment for local aggregation stage");
+    };
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{} {} {}",
+                r#"SELECT "T1"."sys_op" as "column_12", ("T1"."sys_op") * (?) as "column_63","#,
+                r#"count (("T1"."sys_op") * (?)) as "count_58" FROM "test_space" as "T1""#,
+                r#"GROUP BY "T1"."sys_op", ("T1"."sys_op") * (?)"#,
+            ),
+            vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
+        )
+    );
+
+    // Check main query
+    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
+    let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{} {} {} {}",
+                r#"SELECT ("column_12") || ("column_12") as "COL_1","#,
+                r#"(sum ("count_58")) + (count (DISTINCT "column_63")) as "COL_2" FROM"#,
+                r#"(SELECT "column_63","column_12","count_58" FROM "TMP_test_22")"#,
+                r#"GROUP BY "column_12" HAVING (sum (DISTINCT "column_63")) > (?)"#
+            ),
+            vec![Value::Unsigned(1u64)]
+        )
+    );
+}
+
+#[test]
+fn exec_plan_subtree_having_without_groupby() {
+    let sql = format!(
+        "{} {} {}",
+        r#"SELECT count(t1."sys_op"*2) + count(distinct t1."sys_op"*2)"#,
+        r#"FROM "test_space" as t1"#,
+        r#"HAVING sum(distinct t1."sys_op"*2) > 1"#
+    );
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql.as_str(), vec![]).unwrap();
+    let motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(Column {
+        name: "column_63".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "column_12".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    virtual_table.add_column(Column {
+        name: "count_58".into(),
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+    });
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        virtual_table.reshard(key, &query.coordinator).unwrap();
+    }
+
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+
+    // Check groupby local stage
+    let subplan1 = exec_plan.take_subtree(motion_child_id).unwrap();
+    let subplan1_top_id = subplan1.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
+    } else {
+        panic!("Expected MotionPolicy::Full after local stage");
+    };
+
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{} {} {}",
+                r#"SELECT ("T1"."sys_op") * (?) as "column_44","#,
+                r#"count (("T1"."sys_op") * (?)) as "count_39" FROM "test_space" as "T1""#,
+                r#"GROUP BY ("T1"."sys_op") * (?)"#,
+            ),
+            vec![Value::Unsigned(2), Value::Unsigned(2), Value::Unsigned(2)]
+        )
+    );
+
+    // Check main query
+    let subplan2 = exec_plan.take_subtree(top_id).unwrap();
+    let subplan2_top_id = subplan2.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{} {} {}",
+                r#"SELECT (sum ("count_39")) + (count (DISTINCT "column_44")) as "COL_1""#,
+                r#"FROM (SELECT "column_63","column_12","count_58" FROM "TMP_test_14")"#,
+                r#"HAVING (sum (DISTINCT "column_44")) > (?)"#,
+            ),
+            vec![Value::Unsigned(1u64)]
+        )
+    );
+}

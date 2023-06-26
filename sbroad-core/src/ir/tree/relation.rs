@@ -63,6 +63,7 @@ fn relational_next<'nodes>(
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
             | Relational::Selection { children, .. }
+            | Relational::Having { children, .. }
             | Relational::UnionAll { children, .. }
             | Relational::Values { children, .. }
             | Relational::ValuesRow { children, .. },

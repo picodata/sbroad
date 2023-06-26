@@ -251,7 +251,11 @@ fn subtree_next<'plan>(
                                     // Check if the sub-query is an additional one.
                                     let parent = iter.get_plan().get_relation_node(parent_id);
                                     let mut is_additional = false;
-                                    if let Ok(Relational::Selection { children, .. }) = parent {
+                                    if let Ok(
+                                        Relational::Selection { children, .. }
+                                        | Relational::Having { children, .. },
+                                    ) = parent
+                                    {
                                         if children.iter().skip(1).any(|&c| c == *rel_id) {
                                             is_additional = true;
                                         }
@@ -398,6 +402,11 @@ fn subtree_next<'plan>(
                     filter,
                     output,
                     ..
+                }
+                | Relational::Having {
+                    children,
+                    filter,
+                    output,
                 } => {
                     let step = *iter.get_child().borrow();
 

@@ -1423,6 +1423,7 @@ impl Plan {
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::Values { output, .. }
                 | Relational::GroupBy { output, .. }
+                | Relational::Having { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
                 }

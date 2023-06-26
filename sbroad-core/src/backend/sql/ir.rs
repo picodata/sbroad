@@ -302,6 +302,7 @@ impl ExecutionPlan {
                             Node::Relational(rel) => match rel {
                                 Relational::Except { .. } => sql.push_str("EXCEPT"),
                                 Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
+                                Relational::Having { .. } => sql.push_str("HAVING"),
                                 Relational::Insert { relation, .. } => {
                                     sql.push_str("INSERT INTO ");
                                     sql.push_str(relation.as_str());

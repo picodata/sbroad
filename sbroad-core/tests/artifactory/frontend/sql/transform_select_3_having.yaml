@@ -1,0 +1,80 @@
+---
+nodes:
+  arena:
+    - children: #0
+        - 10
+      rule: Select
+      value: ~
+    - children: #1
+        - 8
+        - 2
+      rule: Having
+      value: ~
+    - children: #2
+        - 4
+        - 3
+      rule: Gt
+      value: ~
+    - children: [] #3
+      rule: Unsigned
+      value: "1"
+    - children: #4
+        - 7
+        - 5
+      rule: Function
+      value: ~
+    - children: #5
+        - 6
+      rule: Reference
+      value: ~
+    - children: [] #6
+      rule: ColumnName
+      value: "\"a\""
+    - children: [] #7
+      rule: FunctionName
+      value: sum
+    - children: #8
+        - 9
+      rule: Scan
+      value: ~
+    - children: [] #9
+      rule: Table
+      value: t
+    - children: #10
+        - 1
+        - 11
+      rule: Projection
+      value: ~
+    - children: #11
+        - 17
+      rule: Column
+      value: ~
+    - children: #12
+        - 15
+        - 13
+      rule: Function
+      value: ~
+    - children: #13
+        - 14
+      rule: Reference
+      value: ~
+    - children: [] #14
+      rule: ColumnName
+      value: "\"a\""
+    - children: [] #15
+      rule: FunctionName
+      value: sum
+    - children: [] #16
+      rule: AliasName
+      value: COL_1
+    - children: #17
+        - 12
+        - 16
+      rule: Alias
+      value: ~
+top: 10
+map:
+  5:
+    - 8
+  13:
+    - 1
