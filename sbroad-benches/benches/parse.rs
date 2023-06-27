@@ -1,11 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::executor::engine::mock::RouterRuntimeMock;
 use sbroad::executor::Query;
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::frontend::Ast;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
-use sbroad_benches::engine::RouterRuntimeMock;
 
 #[allow(clippy::too_many_lines)]
 fn query_sql() -> String {

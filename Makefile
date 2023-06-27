@@ -14,11 +14,11 @@ build_debug:
 
 bench:
 	make clean
-	cargo bench -p sbroad-benches
+	cargo bench --features mock
 
 bench_check:
 	make clean
-	cargo bench -p sbroad-benches --no-run
+	cargo bench --features mock --no-run
 
 clean:
 	rm -rf $(TARGET_ROOT)/release/libsbroad*

@@ -21,7 +21,7 @@ use super::ir::{ConnectionType, QueryType};
 use super::protocol::Binary;
 
 pub mod helpers;
-#[cfg(test)]
+#[cfg(feature = "mock")]
 pub mod mock;
 
 /// A metadata trait of the cluster (getters for tables, functions, etc.).

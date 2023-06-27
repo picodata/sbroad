@@ -49,7 +49,8 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                         ));
                     }
                 };
-                let mut query = match Query::new(&runtime, &lua_params.pattern, lua_params.params) {
+                let mut query = match Query::new(&*runtime, &lua_params.pattern, lua_params.params)
+                {
                     Ok(q) => q,
                     Err(e) => {
                         error!(Option::from("query dispatch"), &format!("{e:?}"));
