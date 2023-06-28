@@ -639,8 +639,7 @@ impl Default for RouterRuntimeMock {
 }
 
 impl RouterRuntimeMock {
-    #[allow(dead_code)]
-    #[allow(clippy::missing_panics_doc)]
+    #[allow(dead_code, clippy::missing_panics_doc, clippy::too_many_lines)]
     #[must_use]
     pub fn new() -> Self {
         let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
@@ -915,7 +914,7 @@ impl Router for RouterRuntimeMock {
 
     fn materialize_motion(
         &self,
-        plan: &mut ExecutionPlan,
+        _plan: &mut ExecutionPlan,
         motion_node_id: usize,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
@@ -1035,7 +1034,7 @@ impl Statistics for RouterRuntimeMock {
         if let Ok(mut borrow_res) = self.table_statistics_cache.try_borrow_mut() {
             let value = borrow_res.get_mut(table_name.as_str());
             if let Some(value) = value {
-                *value = Rc::new(table_stats)
+                *value = Rc::new(table_stats);
             } else {
                 borrow_res.insert(table_name, Rc::new(table_stats));
             }
@@ -1056,7 +1055,7 @@ impl Statistics for RouterRuntimeMock {
         if let Ok(mut borrow_res) = self.initial_column_statistics_cache.try_borrow_mut() {
             let value = borrow_res.get_mut(&table_column_pair);
             if let Some(value) = value {
-                *value = Rc::new(initial_column_stats)
+                *value = Rc::new(initial_column_stats);
             } else {
                 borrow_res.insert(table_column_pair, Rc::new(initial_column_stats));
             }
