@@ -13,7 +13,7 @@ use crate::{
     errors::{Entity, SbroadError},
     executor::{
         bucket::Buckets,
-        engine::{Metadata, Vshard},
+        engine::{helpers::empty_query_result, Metadata, Vshard},
         ir::{ConnectionType, ExecutionPlan, QueryType},
         protocol::{Binary, Message},
     },
@@ -148,19 +148,16 @@ pub fn exec_with_filtered_buckets(
             Some(format!("Expected Buckets::Filtered, got {buckets:?}")),
         ))
     };
+    let mut buckets = buckets;
     let random_bucket = runtime.get_random_bucket();
-    let buckets = if bucket_set.is_empty() {
-        // There are no buckets to execute the query on.
-        // At the moment we don't keep types inside our IR tree and
-        // there is no easy way to get column types in the result.
-        // So we just choose a random bucket and to execute the query on,
-        // as we are sure that any bucket returns an empty result.
-
-        // TODO: return an empty result without actual execution.
-        &random_bucket
-    } else {
-        buckets
-    };
+    if bucket_set.is_empty() {
+        match empty_query_result(&sub_plan)? {
+            Some(res) => return Ok(res),
+            None => {
+                buckets = &random_bucket;
+            }
+        }
+    }
 
     let mut rs_ir: HashMap<String, Message> = HashMap::new();
     let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();

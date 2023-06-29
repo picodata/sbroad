@@ -152,6 +152,8 @@ impl Serialize for ProducerResult {
     }
 }
 
+impl Encode for ProducerResult {}
+
 /// Results of query execution for `INSERT`.
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, PartialEq, Eq, Clone)]

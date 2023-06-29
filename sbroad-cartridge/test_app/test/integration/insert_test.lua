@@ -360,3 +360,13 @@ g.test_insert_8 = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 4})
 end
+
+g.test_insert_9 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
+    SELECT * FROM "space_simple_shard_key_hist" WHERE "id" = ? AND "id" = ?]], { 1, 2 } })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 0})
+end

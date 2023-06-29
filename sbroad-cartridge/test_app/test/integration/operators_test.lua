@@ -85,6 +85,26 @@ g.after_all(function()
     helper.stop_test_cluster()
 end)
 
+g.test_operator_1 = function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call(
+        "sbroad.execute",
+        {
+            [[SELECT * FROM "testing_space" where "id" = 1 AND "id" = 2]],
+            {}
+        }
+    )
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {},
+    })
+end
+
 g.test_not_eq = function()
     local api = cluster:server("api-1").net_box
     -- id=1 already in space

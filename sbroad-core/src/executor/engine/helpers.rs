@@ -28,10 +28,11 @@ use crate::{
         engine::helpers::storage::runtime::read_unprepared,
         ir::{ExecutionPlan, QueryType},
         protocol::{Binary, EncodedOptionalData, EncodedRequiredData, OptionalData, RequiredData},
-        result::{ConsumerResult, ProducerResult},
+        result::{ConsumerResult, MetadataColumn, ProducerResult},
         vtable::{VTableTuple, VirtualTable},
     },
     ir::{
+        distribution::Distribution,
         expression::Expression,
         helpers::RepeatableState,
         operator::Relational,
@@ -262,6 +263,61 @@ fn insert_tuple_builder(plan: &Plan, insert_id: usize) -> Result<TupleBuilderPat
         }
     }
     Ok(commands)
+}
+
+/// Generate an empty result for the specified plan.
+/// Returns None if the plan is a DQL with replicated output
+/// of the top node (i.e. `select from values`).
+///
+/// # Errors
+/// - failed to get query type;
+/// - failed to get top node;
+/// - the top node is not a valid relation node;
+pub fn empty_query_result(plan: &ExecutionPlan) -> Result<Option<Box<dyn Any>>, SbroadError> {
+    let query_type = plan.query_type()?;
+    match query_type {
+        QueryType::DML => {
+            let result = ConsumerResult::default();
+            let tuple = Tuple::new(&(result,))
+                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}"))))?;
+            Ok(Some(Box::new(tuple) as Box<dyn Any>))
+        }
+        QueryType::DQL => {
+            // Get metadata (column types) from the top node's output tuple.
+            let ir_plan = plan.get_ir_plan();
+            let top_id = ir_plan.get_top()?;
+            let top_output_id = ir_plan.get_relation_node(top_id)?.output();
+            if let Distribution::Segment { .. } = ir_plan.get_distribution(top_output_id)? {
+            } else {
+                // We can have some `select values` query that should be executed on a random
+                // node rather then returning an empty result.
+                return Ok(None);
+            }
+            let columns = ir_plan.get_row_list(top_output_id)?;
+            let mut metadata = Vec::with_capacity(columns.len());
+            for col_id in columns {
+                let column = ir_plan.get_expression_node(*col_id)?;
+                let column_type = column.get_type(ir_plan)?;
+                let column_name = if let Expression::Alias { name, .. } = column {
+                    name.clone()
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some(format!("expected alias, got {column:?}")),
+                    ));
+                };
+                metadata.push(MetadataColumn::new(column_name, column_type.to_string()));
+            }
+            let result = ProducerResult {
+                metadata,
+                ..Default::default()
+            };
+
+            let tuple = Tuple::new(&(result,))
+                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}"))))?;
+            Ok(Some(Box::new(tuple) as Box<dyn Any>))
+        }
+    }
 }
 
 /// Execute DML on the storage.
