@@ -70,7 +70,7 @@ pub fn normalize_name_for_space_api(s: &str) -> String {
     s.to_uppercase()
 }
 
-/// A helper function to encode the execution plan into a pair of binary data:
+/// A helper function to encode the execution plan into a pair of binary data (see `Message`):
 /// * required data (plan id, parameters, etc.)
 /// * optional data (execution plan, etc.)
 ///
@@ -265,9 +265,11 @@ fn insert_tuple_builder(plan: &Plan, insert_id: usize) -> Result<TupleBuilderPat
     Ok(commands)
 }
 
-/// Generate an empty result for the specified plan.
-/// Returns None if the plan is a DQL with replicated output
-/// of the top node (i.e. `select from values`).
+/// Generate an empty result for the specified plan:
+/// * In case of DML (INSERT) return result with `row_count` equal to 0.
+/// * In case of DQL (SELECT) return columns metadata with no result tuples.
+///   * **Note**: Returns `None` if the plan is with replicated output (another words query
+///     that may be executed on any node) of the top node (i.e. `select from values`).
 ///
 /// # Errors
 /// - failed to get query type;
@@ -297,7 +299,7 @@ pub fn empty_query_result(plan: &ExecutionPlan) -> Result<Option<Box<dyn Any>>, 
             let mut metadata = Vec::with_capacity(columns.len());
             for col_id in columns {
                 let column = ir_plan.get_expression_node(*col_id)?;
-                let column_type = column.get_type(ir_plan)?;
+                let column_type = column.calculate_type(ir_plan)?;
                 let column_name = if let Expression::Alias { name, .. } = column {
                     name.clone()
                 } else {
@@ -646,7 +648,7 @@ pub fn materialize_motion(
 ) -> Result<VirtualTable, SbroadError> {
     let top_id = plan.get_motion_subtree_root(motion_node_id)?;
     let column_names = plan.get_ir_plan().get_relational_aliases(top_id)?;
-    // We should get a motion alias name before we take the subtree in dispatch.
+    // We should get a motion alias name before we take the subtree in `dispatch` method.
     let alias = plan.get_motion_alias(motion_node_id)?.map(String::from);
     // We also need to find out, if the motion subtree contains values node
     // (as a result we can retrieve incorrect types from the result metadata).
@@ -680,6 +682,11 @@ pub fn materialize_motion(
     Ok(vtable)
 }
 
+/// Function that is called from `exec_ir_on_some_buckets`.
+/// Its purpose is to iterate through every vtable presented in `plan` subtree and
+/// to replace them by new vtables. New vtables indices (map bucket id -> tuples) will contain
+/// only pairs corresponding to buckets, that are presented in given `bucket_ids` (as we are going
+/// to execute `plan` subtree only on them).
 pub fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
     if let Some(vtables) = plan.get_mut_vtables() {
         for rc_vtable in vtables.values_mut() {

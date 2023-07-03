@@ -636,7 +636,7 @@ impl Plan {
                         // Reference in union tuple points to **both** left and right children.
                         targets.to_vec()
                     };
-                    let col_type = expr.get_type(self)?;
+                    let col_type = expr.calculate_type(self)?;
                     // Adds new references and aliases to arena (if we need them).
                     let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
                     if need_aliases {
@@ -726,7 +726,7 @@ impl Plan {
                 )
             })?;
             let col_expr = self.get_expression_node(col_id)?;
-            let col_type = col_expr.get_type(self)?;
+            let col_type = col_expr.calculate_type(self)?;
             let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
             if need_aliases {
                 let a_id = self.nodes.add_alias(col, r_id)?;

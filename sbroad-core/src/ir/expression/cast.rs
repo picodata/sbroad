@@ -95,7 +95,7 @@ impl Display for Type {
 
 impl Type {
     #[must_use]
-    pub fn as_type(&self) -> RelationType {
+    pub fn as_relation_type(&self) -> RelationType {
         match self {
             Type::Any | Type::Scalar => RelationType::Scalar,
             Type::Boolean => RelationType::Boolean,

@@ -1,4 +1,11 @@
 //! Relation module.
+//!
+//! Contains following structs:
+//! * Column type (`Type`)
+//! * Table column (`Column`)
+//! * Engine (memtx/vinyl), used by a table (`SpaceEngine`)
+//! * Table, representing unnamed tuples storage (`Table`)
+//! * Relation, representing named tables (`Relations` as a map of { name -> table })
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -111,7 +118,7 @@ pub enum ColumnRole {
     Sharding,
 }
 
-/// Relation column.
+/// Table column.
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
@@ -329,8 +336,6 @@ impl TryFrom<&str> for SpaceEngine {
 }
 
 /// Table is a tuple storage in the cluster.
-///
-/// Tables are tuple storages in the cluster.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Table {
     /// List of the columns.
@@ -356,7 +361,7 @@ impl Table {
     pub fn new_seg(
         name: &str,
         columns: Vec<Column>,
-        keys: &[&str],
+        sharding_keys: &[&str],
         engine: SpaceEngine,
     ) -> Result<Self, SbroadError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
@@ -371,7 +376,7 @@ impl Table {
             ));
         }
 
-        let positions = keys
+        let positions = sharding_keys
             .iter()
             .map(|name| match pos_map.get(*name) {
                 Some(pos) => {

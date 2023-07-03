@@ -35,6 +35,8 @@ impl Plan {
     }
 
     /// Substitute parameters to the plan.
+    /// The purpose of this function is to find every `Parameter` node and replace it
+    /// with `Expression::Constant` (under the row).
     ///
     /// # Errors
     /// - Invalid amount of parameters.
@@ -53,7 +55,7 @@ impl Plan {
         tree.populate_nodes(top_id);
         let nodes = tree.take_nodes();
 
-        // Transform parameters to values. The result values are stored in the
+        // Transform parameters to values (plan constants). The result values are stored in the
         // opposite to parameters order.
         let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
         while let Some(param) = params.pop() {
@@ -67,8 +69,10 @@ impl Plan {
             HashMap::with_hasher(RandomState::new());
 
         // Gather all parameter nodes from the tree to a hash set.
-        let mut param_set_values = self.get_param_set();
-        let mut param_set_params = param_set_values.clone();
+        // `param_node_ids` is used during first plan traversal (`row_ids` populating).
+        // `param_set_params` is used during second plan traversal (nodes transformation).
+        let mut param_node_ids = self.get_param_set();
+        let mut param_node_ids_cloned = param_node_ids.clone();
 
         // Closure to retrieve a corresponding value for a parameter node.
         let get_value = |pos: usize| -> Result<usize, SbroadError> {
@@ -82,6 +86,8 @@ impl Plan {
         let mut new_types = HashMap::with_capacity_and_hasher(nodes.len(), RandomState::new());
 
         // Populate rows.
+        // Number of parameters - `idx` - 1 = index in params we are currently binding.
+        // Initially pointing to nowhere.
         let mut idx = value_ids.len();
         for (_, id) in &nodes {
             let node = self.get_node(*id)?;
@@ -99,7 +105,7 @@ impl Plan {
                         output: ref param_id,
                         ..
                     } => {
-                        if param_set_values.take(param_id).is_some() {
+                        if param_node_ids.take(param_id).is_some() {
                             idx -= 1;
                             let val_id = get_value(idx)?;
                             row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
@@ -120,7 +126,7 @@ impl Plan {
                         child: ref param_id,
                         ..
                     } => {
-                        if param_set_values.take(param_id).is_some() {
+                        if param_node_ids.take(param_id).is_some() {
                             idx -= 1;
                         }
                     }
@@ -139,7 +145,7 @@ impl Plan {
                         ref right,
                     } => {
                         for param_id in &[*left, *right] {
-                            if param_set_values.take(param_id).is_some() {
+                            if param_node_ids.take(param_id).is_some() {
                                 idx -= 1;
                                 let val_id = get_value(idx)?;
                                 row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
@@ -151,14 +157,16 @@ impl Plan {
                         children: ref list, ..
                     } => {
                         for param_id in list {
-                            if param_set_values.take(param_id).is_some() {
+                            if param_node_ids.take(param_id).is_some() {
+                                // Parameter is already under row/function so that we don't
+                                // have to cover it with `add_row` call.
                                 idx -= 1;
                             }
                         }
                     }
                     Expression::Reference { .. } => {
                         // Remember to recalculate type.
-                        new_types.insert(id, expr.get_recalculated_type(self)?);
+                        new_types.insert(id, expr.recalculate_type(self)?);
                     }
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
@@ -166,6 +174,7 @@ impl Plan {
             }
         }
 
+        // Closure to retrieve a corresponding row for a parameter node.
         let get_row = |idx: usize| -> Result<usize, SbroadError> {
             let row_id = row_ids.get(&idx).ok_or_else(|| {
                 SbroadError::NotFound(Entity::Node, format!("(Row) at position {idx}"))
@@ -191,7 +200,7 @@ impl Plan {
                         output: ref mut param_id,
                         ..
                     } => {
-                        if param_set_params.take(param_id).is_some() {
+                        if param_node_ids_cloned.take(param_id).is_some() {
                             idx -= 1;
                             let row_id = get_row(idx)?;
                             *param_id = row_id;
@@ -212,7 +221,7 @@ impl Plan {
                         child: ref mut param_id,
                         ..
                     } => {
-                        if param_set_params.take(param_id).is_some() {
+                        if param_node_ids_cloned.take(param_id).is_some() {
                             idx -= 1;
                             let val_id = get_value(idx)?;
                             *param_id = val_id;
@@ -233,7 +242,7 @@ impl Plan {
                         ref mut right,
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
-                            if param_set_params.take(param_id).is_some() {
+                            if param_node_ids_cloned.take(param_id).is_some() {
                                 idx -= 1;
                                 let row_id = get_row(idx)?;
                                 **param_id = row_id;
@@ -246,7 +255,7 @@ impl Plan {
                         ..
                     } => {
                         for param_id in list {
-                            if param_set_params.take(param_id).is_some() {
+                            if param_node_ids_cloned.take(param_id).is_some() {
                                 idx -= 1;
                                 let val_id = get_value(idx)?;
                                 *param_id = val_id;
@@ -264,7 +273,7 @@ impl Plan {
                                 )
                             })?
                             .clone();
-                        expr.set_type(new_type);
+                        expr.set_ref_type(new_type);
                     }
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },

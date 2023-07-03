@@ -19,7 +19,7 @@ impl Expression {
         ))
     }
 
-    /// Gets reference value from const node
+    /// Gets reference to value from const node
     ///
     /// # Errors
     /// - node isn't constant type
@@ -34,7 +34,7 @@ impl Expression {
         ))
     }
 
-    /// The node is a constant expression.
+    /// Check whether the node is a constant expression.
     #[must_use]
     pub fn is_const(&self) -> bool {
         matches!(self, Expression::Constant { .. })

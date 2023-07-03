@@ -117,14 +117,14 @@ impl EqClassRef {
             targets: expr_tgt,
             position: expr_pos,
             parent: expr_prt,
-            col_type: expr_typ,
+            col_type: expr_type,
         } = expr
         {
             return Ok(EqClassRef {
                 targets: expr_tgt.clone(),
                 position: *expr_pos,
                 parent: *expr_prt,
-                col_type: expr_typ.clone(),
+                col_type: expr_type.clone(),
             });
         }
         Err(SbroadError::Invalid(Entity::Expression, None))

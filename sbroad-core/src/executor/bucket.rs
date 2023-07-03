@@ -98,7 +98,15 @@ where
     T: Router + Vshard,
     &'a T: Vshard,
 {
+    /// Inner logic of `get_expression_tree_buckets` for simple expressions (without OR and AND
+    /// operators).
+    /// In general it returns `Buckets::All`, but in some cases (e.g. `Eq` and `In` operators) it
+    /// will return `Buckets::Filtered` (if such a result is met in SELECT or JOIN filter, it means
+    /// that we can execute the query only on some of the replicasets).
     fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
+        // Vec of `Buckets` that would be con conjucted later in case the vec is not empty.
+        // The only possible case there will be several `Buckets` in the vec is when we have `Eq`.
+        // See the logic of its handling below.
         let mut buckets: Vec<Buckets> = Vec::new();
         let ir_plan = self.exec_plan.get_ir_plan();
         let expr = ir_plan.get_expression_node(expr_id)?;
@@ -146,20 +154,30 @@ where
 
                 // Gather buckets from the right row.
                 if let Distribution::Segment { keys } = left_dist {
-                    // If the right side is a row referencing to the motion
+                    // If the right side is a row referencing the motion
                     // it means that the corresponding virtual table contains
-                    // tuple with the same distribution as the left side.
+                    // tuple with the same distribution as the left side (because this motion
+                    // was specially added in order to fulfill `Eq` of `In` conditions).
                     if let Some(motion_id) = ir_plan.get_motion_from_row(right_id)? {
                         let virtual_table = self.exec_plan.get_motion_vtable(motion_id)?;
                         let bucket_ids: HashSet<u64, RepeatableState> =
                             virtual_table.get_index().keys().copied().collect();
                         if !bucket_ids.is_empty() {
-                            buckets.push(Buckets::new_filtered(bucket_ids));
+                            return Ok(Buckets::new_filtered(bucket_ids));
                         }
                     }
 
-                    // The right side is a regular row with constants
-                    // on the positions of the left keys (if we are lucky).
+                    // The right side is a regular row. So we have a case of `Eq` operator.
+                    // If we have a case of constants on the positions of the left keys,
+                    // we can return `Buckets::Filtered`.
+                    // E.g. we have query
+                    // `SELECT * FROM (SELECT A.a, B.b FROM A JOIN B ON A.a = B.b)
+                    //  WHERE (a, b) = (0, 1)`.
+                    // Here (a, b) row will have Distribution::Segment(keys = {[a], [b]}).
+                    // After handling key "a" we will leave buckets which satisfy `a = 0`.
+                    // After handling key "b" we will leave buckets which satisfy `b = 1`.
+                    // In the end (when `conjuct` function is called) we will leave buckets
+                    // which satisfy `(a, b) = (0, 1)`.
                     for key in keys.iter() {
                         let mut values: Vec<&Value> = Vec::new();
                         for position in &key.positions {
@@ -201,6 +219,10 @@ where
         }
     }
 
+    /// Inner logic of `bucket_discovery` for expressions (currently it's called only on SELECTION's
+    /// and JOIN's filters).
+    /// It splits given expression into DNF chains and calls `get_buckets_from_expr` on each simple
+    /// chain subexpression, later conjucting results.
     fn get_expression_tree_buckets(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;

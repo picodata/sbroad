@@ -38,6 +38,9 @@ where
 
 impl<L> PushOneInto<L> for Binary where L: AsLua {}
 
+/// Set of fields needed for query execution.
+/// See `RequiredData` and `OptionalData` for more info (they are transformed from `Binary`
+/// and backwards).
 #[derive(PushInto, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Message {
     required: Binary,

@@ -1314,7 +1314,7 @@ impl Plan {
                     Some(format!("did not find alias: {local_alias} in child ({child_id}) output!")))
                 )
             };
-            let col_type = self.get_expression_node(*expr_id)?.get_type(self)?;
+            let col_type = self.get_expression_node(*expr_id)?.calculate_type(self)?;
             if !col_type.is_scalar() {
                 return Err(SbroadError::Invalid(
                     Entity::Type,
@@ -1413,7 +1413,7 @@ impl Plan {
                     return Err(SbroadError::Invalid(Entity::Plan,
                                                     Some(format!("failed to find alias '{local_alias}' in ({child_id}). Aliases: {}", alias_to_pos_map.keys().join(" ")))))
                 };
-                let col_type = self.get_expression_node(expr_id)?.get_type(self)?;
+                let col_type = self.get_expression_node(expr_id)?.calculate_type(self)?;
                 if !col_type.is_scalar() {
                     return Err(SbroadError::Invalid(
                         Entity::Type,

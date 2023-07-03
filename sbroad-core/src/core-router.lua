@@ -1,3 +1,6 @@
+-- Intermediate layer of communication between Sbroad and vshard.
+-- Function, described in this file are called from `vshard` Sbroad module.
+
 local vshard = require('vshard')
 local helper = require('sbroad.helper')
 

@@ -6,23 +6,24 @@ use crate::{
 impl Plan {
     fn get_node_type(&self, node_id: usize) -> Result<Type, SbroadError> {
         match self.get_node(node_id)? {
-            Node::Expression(expr) => expr.get_type(self),
+            Node::Expression(expr) => expr.calculate_type(self),
             Node::Relational(relational) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format!("relational node {relational:?} has no type")),
             )),
-            // Parameter nodes must recalculate their type during binding.
+            // Parameter nodes must recalculate their type during
+            // binding (see `bind_params` function).
             Node::Parameter => Ok(Type::Scalar),
         }
     }
 }
 
 impl Expression {
-    /// Returns the type of the expression.
+    /// Calculate the type of the expression.
     ///
     /// # Errors
-    /// - the row list containes non-expression nodes;
-    pub fn get_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
+    /// - the row list contains non-expression nodes;
+    pub fn calculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
         match self {
             Expression::Alias { child, .. } => plan.get_node_type(*child),
             Expression::Bool { .. } | Expression::Unary { .. } => Ok(Type::Boolean),
@@ -48,14 +49,14 @@ impl Expression {
                     )),
                 }
             }
-            Expression::Cast { to, .. } => Ok(to.as_type()),
+            Expression::Cast { to, .. } => Ok(to.as_relation_type()),
             Expression::Concat { .. } => Ok(Type::String),
             Expression::Constant { value, .. } => Ok(value.get_type()),
             Expression::Reference { col_type, .. } => Ok(col_type.clone()),
             Expression::Row { list, .. } => {
                 if let (Some(expr_id), None) = (list.first(), list.get(1)) {
                     let expr = plan.get_expression_node(*expr_id)?;
-                    expr.get_type(plan)
+                    expr.calculate_type(plan)
                 } else {
                     Ok(Type::Array)
                 }
@@ -65,13 +66,23 @@ impl Expression {
         }
     }
 
-    /// Returns the recalculated type of the expression. At the moment
-    /// we recalculate only references, because they can change their
+    /// Returns the recalculated type of the expression.
+    /// At the moment we recalculate only references, because they can change their
     /// type during binding.
+    /// E.g. in case of query like
+    /// `SELECT "COL_1" FROM (
+    ///     SELECT * FROM (
+    ///         VALUES ((?))
+    ///     ))`,
+    /// where we can't calculate type of
+    /// upper reference, because we don't know what value will be
+    /// passed as an argument.
+    /// When `resolve_metadata` is called references are typed with `Scalar`.
+    /// When `bind_params` is called references types are refined.
     ///
     /// # Errors
     /// - if the reference is invalid;
-    pub fn get_recalculated_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
+    pub fn recalculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
         if let Expression::Reference {
             parent,
             targets,
@@ -117,13 +128,13 @@ impl Expression {
                     )
                 })?;
                 let col_expr = plan.get_expression_node(column_id)?;
-                return col_expr.get_type(plan);
+                return col_expr.calculate_type(plan);
             }
         }
-        self.get_type(plan)
+        self.calculate_type(plan)
     }
 
-    pub fn set_type(&mut self, new_type: Type) {
+    pub fn set_ref_type(&mut self, new_type: Type) {
         if let Expression::Reference { col_type, .. } = self {
             *col_type = new_type;
         }

@@ -1,3 +1,14 @@
+//! Result module.
+//! Result is everything that is returned from the query execution.
+//!
+//! When executing DQL (SELECT) we will get `ProducerResult`, which fields are:
+//! * `metadata` (Vec of `MetadataColumn`): information about
+//!   names and types of gotten columns (even if the number of returned columns is 0)
+//! * `rows` (Vec of `ExecutorTuple` (Vec of `LuaValue`)): resulting tuples of values
+//!
+//! When executing DML (INSERT) we will get `ConsumerResult`, which fields are:
+//! * `row_count` (u64): the number of tuples inserted (that may be equal to 0)
+
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
@@ -152,6 +163,7 @@ impl Serialize for ProducerResult {
     }
 }
 
+/// This impl allows to convert `ProducerResult` into `Tuple`, using `Tuple::new` method.
 impl Encode for ProducerResult {}
 
 /// Results of query execution for `INSERT`.
@@ -187,6 +199,7 @@ impl Serialize for ConsumerResult {
     }
 }
 
+/// This impl allows to convert `ConsumerResult` into `Tuple`, using `Tuple::new` method.
 impl Encode for ConsumerResult {}
 
 impl Plan {

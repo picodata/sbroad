@@ -14,6 +14,9 @@ use crate::ir::value::Value;
 type ShardingKey = Vec<Value>;
 pub type VTableTuple = Vec<Value>;
 
+/// Helper struct to group tuples by buckets.
+/// key:   bucket id.
+/// value: list of positions in the `tuples` list (see `VirtualTable`) corresponding to the bucket.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VTableIndex {
     value: HashMap<u64, Vec<usize>>,
@@ -221,21 +224,26 @@ impl VirtualTable {
 
     /// Create a new virtual table from an original one with
     /// a list of tuples corresponding to some exact buckets.
+    ///
+    /// The thing is that given `self` vtable may contain (bucket id -> tuples) pair in its index
+    /// for some bucket that is not present in given `bucket_ids`.
+    /// We won't add tuples corresponding to such pair into new vtable.
     #[must_use]
-    pub fn new_with_buckets(&self, buckets: &[u64]) -> Self {
+    pub fn new_with_buckets(&self, bucket_ids: &[u64]) -> Self {
         let mut result = Self::new();
         result.columns = self.columns.clone();
         result.distribution_key = self.distribution_key.clone();
         result.name = self.name.clone();
 
-        for bucket in buckets {
-            if let Some(positions) = self.index.value.get(bucket) {
+        for bucket_id in bucket_ids {
+            // If bucket_id is met among those that are present in self.
+            if let Some(positions) = self.index.value.get(bucket_id) {
                 let mut new_positions: Vec<usize> = Vec::with_capacity(positions.len());
                 for pos in positions {
                     result.tuples.push(self.tuples[*pos].clone());
                     new_positions.push(result.tuples.len() - 1);
                 }
-                result.index.value.insert(*bucket, new_positions);
+                result.index.value.insert(*bucket_id, new_positions);
             }
         }
 

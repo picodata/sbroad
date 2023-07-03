@@ -21,9 +21,17 @@ use crate::{
 
 use super::{encode_plan, filter_vtable};
 
+/// Map between replicaset uuid and plan subtree (with additional info), sending to it.
+/// (see `Message`documentation for more info).
+type ReplicasetMessage = HashMap<String, Message>;
+
+/// Function to execute DQL (SELECT) query only on some replicasets (which uuid's are
+/// present in the `rs_ir` argument).
+///
+/// Rust binding to Lua `dql_on_some` function.
 fn dql_on_some(
     metadata: &impl Metadata,
-    rs_ir: HashMap<String, Message>,
+    rs_ir: ReplicasetMessage,
     is_readonly: bool,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
@@ -47,9 +55,13 @@ fn dql_on_some(
     }
 }
 
+/// Function to execute DML (INSERT) query only on some replicasets (which uuid's are
+/// present in the `rs_ir` argument).
+///
+/// Rust binding to Lua `dml_on_some` function.
 fn dml_on_some(
     metadata: &impl Metadata,
-    rs_ir: HashMap<String, Message>,
+    rs_ir: ReplicasetMessage,
     is_readonly: bool,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
@@ -70,6 +82,9 @@ fn dml_on_some(
     }
 }
 
+/// Function to execute DQL (SELECT) query on all replicasets.
+///
+/// Rust binding to Lua `dql_on_all` function.
 fn dql_on_all(
     metadata: &impl Metadata,
     required: Binary,
@@ -96,6 +111,9 @@ fn dql_on_all(
     }
 }
 
+/// Function to execute DML (INSERT) query on all replicasets.
+///
+/// Rust binding to Lua `dml_on_all` function.
 fn dml_on_all(
     metadata: &impl Metadata,
     required: Binary,
@@ -120,8 +138,10 @@ fn dml_on_all(
     }
 }
 
+/// Generic function over `dql_on_all` and `dml_on_all` functions.
+/// Used to execute IR on all replicasets.
 #[otm_child_span("query.dispatch.all")]
-pub fn exec_ir_on_all(
+pub fn exec_ir_on_all_buckets(
     metadata: &impl Metadata,
     required: Binary,
     optional: Binary,
@@ -134,8 +154,10 @@ pub fn exec_ir_on_all(
     }
 }
 
+/// Generic function over `dql_on_some` and `dml_on_some` functions.
+/// Used to execute IR on some replicasets (that are discovered from given `buckets`).
 #[otm_child_span("query.dispatch.cartridge.some")]
-pub fn exec_with_filtered_buckets(
+pub fn exec_ir_on_some_buckets(
     runtime: &(impl Router + Vshard),
     mut sub_plan: ExecutionPlan,
     buckets: &Buckets,
@@ -159,7 +181,7 @@ pub fn exec_with_filtered_buckets(
         }
     }
 
-    let mut rs_ir: HashMap<String, Message> = HashMap::new();
+    let mut rs_ir: ReplicasetMessage = HashMap::new();
     let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
     if rs_bucket_vec.is_empty() {
         return Err(SbroadError::UnexpectedNumberOfValues(format!(
@@ -168,6 +190,7 @@ pub fn exec_with_filtered_buckets(
     }
     rs_ir.reserve(rs_bucket_vec.len());
 
+    // We split last pair in order not to call extra `clone` method.
     if let Some((last, other)) = rs_bucket_vec.split_last() {
         for (rs, bucket_ids) in other {
             let mut rs_plan = sub_plan.clone();
@@ -185,10 +208,17 @@ pub fn exec_with_filtered_buckets(
     }
 }
 
+/// Map between replicaset uuid and the set of buckets (their ids) which correspond to that replicaset.
+/// This set is defined by vshard `router.route` function call. See `group_buckets_by_replicasets`
+/// function for more details.
 type GroupedBuckets = HashMap<String, Vec<u64>>;
 
+/// Function that transforms `Buckets` (set of bucket_ids)
+/// into `GroupedBuckets` (map from replicaset uuid to set of bucket_ids).
+///
+/// Rust binding to Lua `group_buckets_by_replicasets` function.
 #[otm_child_span("buckets.group")]
-fn group(buckets: &Buckets) -> Result<HashMap<String, Vec<u64>>, SbroadError> {
+fn group(buckets: &Buckets) -> Result<GroupedBuckets, SbroadError> {
     let lua_buckets: Vec<u64> = match buckets {
         Buckets::All | Buckets::Single => {
             return Err(SbroadError::Unsupported(

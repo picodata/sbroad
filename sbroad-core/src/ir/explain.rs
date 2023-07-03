@@ -88,7 +88,7 @@ impl ColExpr {
                 Expression::CountAsterisk => {
                     stack.push(ColExpr::Column(
                         "*".to_string(),
-                        current_node.get_type(plan)?,
+                        current_node.calculate_type(plan)?,
                     ));
                 }
                 Expression::Reference { position, .. } => {
@@ -105,7 +105,10 @@ impl ColExpr {
                     let alias = plan.get_alias_from_reference_node(current_node)?;
                     col_name.push_str(alias);
 
-                    stack.push(ColExpr::Column(col_name, current_node.get_type(plan)?));
+                    stack.push(ColExpr::Column(
+                        col_name,
+                        current_node.calculate_type(plan)?,
+                    ));
                 }
                 Expression::Concat { .. } => {
                     let right = stack.pop().ok_or_else(|| {
@@ -122,7 +125,8 @@ impl ColExpr {
                     stack.push(concat_expr);
                 }
                 Expression::Constant { value } => {
-                    let expr = ColExpr::Column(value.to_string(), current_node.get_type(plan)?);
+                    let expr =
+                        ColExpr::Column(value.to_string(), current_node.calculate_type(plan)?);
                     stack.push(expr);
                 }
                 Expression::StableFunction {

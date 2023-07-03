@@ -2,7 +2,7 @@
 
 use sbroad::cbo::{TableColumnPair, TableStats};
 use sbroad::executor::engine::helpers::vshard::{
-    exec_ir_on_all, exec_with_filtered_buckets, get_random_bucket,
+    exec_ir_on_all_buckets, exec_ir_on_some_buckets, get_random_bucket,
 };
 use sbroad::executor::engine::{InitialColumnStats, QueryCache, Vshard};
 
@@ -322,7 +322,7 @@ impl Vshard for RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        exec_ir_on_all(
+        exec_ir_on_all_buckets(
             &*self.metadata()?,
             required,
             optional,
@@ -348,7 +348,7 @@ impl Vshard for RouterRuntime {
         sub_plan: ExecutionPlan,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        exec_with_filtered_buckets(self, sub_plan, buckets)
+        exec_ir_on_some_buckets(self, sub_plan, buckets)
     }
 }
 
@@ -360,7 +360,7 @@ impl Vshard for &RouterRuntime {
         query_type: QueryType,
         conn_type: ConnectionType,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        exec_ir_on_all(
+        exec_ir_on_all_buckets(
             &*self.metadata()?,
             required,
             optional,
@@ -386,6 +386,6 @@ impl Vshard for &RouterRuntime {
         sub_plan: ExecutionPlan,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        exec_with_filtered_buckets(*self, sub_plan, buckets)
+        exec_ir_on_some_buckets(*self, sub_plan, buckets)
     }
 }

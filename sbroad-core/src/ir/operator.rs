@@ -1226,7 +1226,7 @@ impl Plan {
                 ))
             })?;
             let col_expr = self.get_expression_node(col_id)?;
-            let col_type = col_expr.get_type(self)?;
+            let col_type = col_expr.calculate_type(self)?;
             let ref_id = self.nodes.add_ref(
                 None,
                 Some((0..value_rows.len()).collect::<Vec<usize>>()),
