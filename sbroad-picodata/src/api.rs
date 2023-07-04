@@ -3,7 +3,7 @@ use crate::runtime::storage::StorageRuntime;
 use sbroad::backend::sql::ir::PatternWithParams;
 use sbroad::debug;
 use sbroad::errors::{Action, SbroadError};
-use sbroad::executor::engine::{helpers::decode_msgpack, Vshard};
+use sbroad::executor::engine::helpers::decode_msgpack;
 use sbroad::executor::protocol::{EncodedRequiredData, RequiredData};
 use sbroad::executor::Query;
 use sbroad::otm::query_span;
@@ -88,13 +88,4 @@ pub fn execute_sql(tuple_buf: &[u8]) -> Result<Vec<u8>, SbroadError> {
             Err(e) => Err(e),
         }
     })
-}
-
-/// Determine bucket id for the given values.
-///
-/// # Errors
-/// - Failed to initialize router runtime.
-pub fn determine_bucket_id(values: &[&sbroad::ir::value::Value]) -> Result<u64, SbroadError> {
-    let runtime = RouterRuntime::new()?;
-    runtime.determine_bucket_id(values)
 }
