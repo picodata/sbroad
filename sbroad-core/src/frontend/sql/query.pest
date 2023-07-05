@@ -1,4 +1,32 @@
-Command = _{ SOI ~ (ExplainQuery | Query) ~ EOF }
+Command = _{ SOI ~ (ExplainQuery | Query | DDL) ~ EOF }
+
+DDL = _{ CreateTable }
+    CreateTable = {
+        ^"create" ~ ^"table" ~ Table ~
+        "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
+        Engine? ~ Distribution ~ Option?
+    }
+    Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
+        ColumnDef = { ColumnDefName ~ ColumnDefType ~ ColumnDefIsNull? }
+        ColumnDefName = @{ ColumnName }
+        ColumnDefType = _{ TypeBool | TypeDecimal | TypeDouble
+             | TypeInt | TypeNumber | TypeScalar | TypeString
+             | TypeText | TypeUnsigned | TypeVarchar }
+        ColumnDefIsNull = { ColumnIsNull | ColumnIsNotNull }
+            ColumnIsNull = { ^"null" }
+            ColumnIsNotNull = { ^"not" ~ ^"null" }
+    PrimaryKey = {
+        ^"primary" ~ ^"key" ~
+        "(" ~ PrimaryKeyColumn ~ ("," ~ PrimaryKeyColumn)* ~ ")"
+    }
+       PrimaryKeyColumn = @{ ColumnName }
+    Engine = { ^"using" ~ (Memtx | Vinyl) }
+        Memtx = { ^"memtx" }
+        Vinyl = { ^"vinyl" }
+    Distribution = { ^"distributed" ~ (Global | Sharding) }
+    Global = { ^"globally" }
+    Sharding = { ^"by" ~ "(" ~ ShardingColumn ~ ("," ~ ShardingColumn)* ~ ")"}
+       ShardingColumn = @{ ColumnName }
 
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
@@ -36,6 +64,10 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
         ValuesRow = { Row }
+    Option = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
+    OptionParam = { Timeout }
+    Timeout = { ^"timeout" ~ "=" ~ Duration}
+       Duration = @{ Unsigned ~ ("." ~ Unsigned)? }
 
 Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
