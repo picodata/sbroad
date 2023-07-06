@@ -25,7 +25,7 @@ rmp-serde = "1.0"
 sbroad-proc = { path = "../sbroad-proc", version = "0.1" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.8"
-tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git", features = ["picodata"] }
+tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git" }
 uuid = { version = "1.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
 
 [dev-dependencies]

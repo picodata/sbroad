@@ -638,6 +638,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - Failed to translate an IR plan node to a syntax node.
     #[allow(clippy::too_many_lines)]
+    #[allow(unused_variables)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, SbroadError> {
         let ir_plan = self.plan.get_ir_plan();
         let node = ir_plan.get_node(id)?;
