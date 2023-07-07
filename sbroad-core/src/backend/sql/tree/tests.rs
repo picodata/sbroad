@@ -33,7 +33,7 @@ fn sql_order_selection() {
     let eq_id = plan.nodes.add_bool(a_id, Bool::Eq, const_row).unwrap();
     let select_id = plan.add_select(&[scan_id], eq_id).unwrap();
 
-    let proj_id = plan.add_proj(select_id, &["a"]).unwrap();
+    let proj_id = plan.add_proj(select_id, &["a"], false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan
@@ -153,7 +153,7 @@ fn sql_arithmetic_selection_plan() {
     // where a + (b/c + d*e) * f - b = 1
     let select_id = plan.add_select(&[scan_id], equal_id).unwrap();
 
-    let proj_id = plan.add_proj(select_id, &["a"]).unwrap();
+    let proj_id = plan.add_proj(select_id, &["a"], false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan
@@ -341,7 +341,7 @@ fn sql_arithmetic_projection_plan() {
         .unwrap();
 
     let proj_id = plan
-        .add_proj_internal(scan_id, &[arith_subract_id])
+        .add_proj_internal(scan_id, &[arith_subract_id], false)
         .unwrap();
     plan.set_top(proj_id).unwrap();
 
@@ -501,7 +501,7 @@ fn sql_arbitrary_projection_plan() {
     // a + b > c and d is not null
     let and_id = plan.nodes.add_bool(gt_id, Bool::And, unary_id).unwrap();
 
-    let proj_id = plan.add_proj_internal(scan_id, &[and_id]).unwrap();
+    let proj_id = plan.add_proj_internal(scan_id, &[and_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan

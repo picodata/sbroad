@@ -83,6 +83,7 @@ nodes:
           children:
             - 9
           output: 12
+          is_distinct: false
     - Expression:
         Reference:
           targets:
@@ -164,6 +165,7 @@ nodes:
           children:
             - 23
           output: 26
+          is_distinct: false
     - Expression:
         Reference:
           targets:

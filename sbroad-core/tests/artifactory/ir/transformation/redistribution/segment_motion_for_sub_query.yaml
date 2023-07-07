@@ -82,6 +82,7 @@ nodes:
           children:
             - 9
           output: 12
+          is_distinct: false
     - Expression:
         Reference:
           targets:

@@ -840,12 +840,33 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_node_id);
                 }
                 Type::Projection => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
-                    })?;
-                    let plan_child_id = map.get(*ast_child_id)?;
-                    let mut proj_columns: Vec<usize> = Vec::with_capacity(node.children.len());
-                    for ast_column_id in node.children.iter().skip(1) {
+                    let (child_id, ast_columns_ids, is_distinct) = if let Some((first, other)) =
+                        node.children.split_first()
+                    {
+                        let mut is_distinct: bool = false;
+                        let mut other = other;
+                        let first_col_ast_id = other.first().ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::AST,
+                                Some("projection ast has no columns!".into()),
+                            )
+                        })?;
+                        if let Type::Distinct = self.nodes.get_node(*first_col_ast_id)?.rule {
+                            is_distinct = true;
+                            (_, other) = other.split_first().ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::AST,
+                                    Some("projection ast has no children except distinct".into()),
+                                )
+                            })?;
+                        }
+                        (*first, other, is_distinct)
+                    } else {
+                        return Err(SbroadError::Invalid(Entity::AST, None));
+                    };
+                    let plan_child_id = map.get(child_id)?;
+                    let mut proj_columns: Vec<usize> = Vec::with_capacity(ast_columns_ids.len());
+                    for ast_column_id in ast_columns_ids {
                         let ast_column = self.nodes.get_node(*ast_column_id)?;
                         match ast_column.rule {
                             Type::Column => {
@@ -887,7 +908,8 @@ impl Ast for AbstractSyntaxTree {
                             }
                         }
                     }
-                    let projection_id = plan.add_proj_internal(plan_child_id, &proj_columns)?;
+                    let projection_id =
+                        plan.add_proj_internal(plan_child_id, &proj_columns, is_distinct)?;
                     map.add(id, projection_id);
                 }
                 Type::Multiplication | Type::Addition => {

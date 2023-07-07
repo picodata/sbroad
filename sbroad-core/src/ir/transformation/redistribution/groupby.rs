@@ -641,7 +641,7 @@ impl Plan {
             }
         }
 
-        let groupby_id = self.add_groupby(*first_child, other, false)?;
+        let groupby_id = self.add_groupby(*first_child, other, false, None)?;
         Ok(groupby_id)
     }
 
@@ -655,6 +655,7 @@ impl Plan {
         child_id: usize,
         grouping_exprs: &[usize],
         is_final: bool,
+        expr_parent: Option<usize>,
     ) -> Result<usize, SbroadError> {
         let final_output = self.add_row_for_output(child_id, &[], true)?;
         let groupby = Relational::GroupBy {
@@ -668,7 +669,7 @@ impl Plan {
 
         self.replace_parent_in_subtree(final_output, None, Some(groupby_id))?;
         for expr in grouping_exprs.iter() {
-            self.replace_parent_in_subtree(*expr, None, Some(groupby_id))?;
+            self.replace_parent_in_subtree(*expr, expr_parent, Some(groupby_id))?;
         }
 
         Ok(groupby_id)
@@ -788,11 +789,14 @@ impl Plan {
     }
 
     /// Collects information about grouping expressions for future use.
+    /// In case there is a `Projection` with `distinct` modifier and
+    /// no `GroupBy` node, a `GroupBy` node with projection expressions
+    /// will be created.
     /// This function also does all the validation of incorrect usage of
     /// expressions used outside of aggregate functions.
     ///
-    ///
     /// # Returns
+    /// - id of `GroupBy` node if is was created or `upper` otherwise
     /// - list of ids of expressions used in `GroupBy`. Duplicate expressions are removed.
     /// - mapping between `GroupBy` expressions and corresponding expressions in final nodes
     /// (`Projection`, `Having`, `GroupBy`, `OrderBy`).
@@ -811,16 +815,51 @@ impl Plan {
     /// - invalid query with `Having`: in case there's no `GroupBy`, `Having` may contain
     /// only expressions with constants and aggregates. References outside of aggregate functions
     /// are illegal.
+    #[allow(clippy::too_many_lines)]
     fn collect_grouping_expressions(
         &mut self,
         upper: usize,
         finals: &Vec<usize>,
         has_aggregates: bool,
-    ) -> Result<(Vec<usize>, GroupbyExpressionsMap), SbroadError> {
+    ) -> Result<(usize, Vec<usize>, GroupbyExpressionsMap), SbroadError> {
         let mut grouping_expr = vec![];
         let mut gr_expr_map: GroupbyExpressionsMap = HashMap::new();
+        let mut upper = upper;
 
-        let has_groupby = matches!(self.get_relation_node(upper)?, Relational::GroupBy { .. });
+        let mut has_groupby = matches!(self.get_relation_node(upper)?, Relational::GroupBy { .. });
+
+        if !has_groupby && !has_aggregates {
+            if let Some(proj_id) = finals.first() {
+                if let Relational::Projection {
+                    is_distinct,
+                    output,
+                    ..
+                } = self.get_relation_node(*proj_id)?
+                {
+                    if *is_distinct {
+                        let proj_cols_len = self.get_row_list(*output)?.len();
+                        let mut grouping_exprs: Vec<usize> = Vec::with_capacity(proj_cols_len);
+                        for i in 0..proj_cols_len {
+                            let aliased_col = self.get_proj_col(*proj_id, i)?;
+                            let proj_col_id = if let Expression::Alias { child, .. } =
+                                self.get_expression_node(aliased_col)?
+                            {
+                                *child
+                            } else {
+                                aliased_col
+                            };
+                            // Copy expression from Projection to GroupBy.
+                            let col = self.clone_expr_subtree(proj_col_id)?;
+                            grouping_exprs.push(col);
+                        }
+                        upper = self.add_groupby(upper, &grouping_exprs, false, Some(*proj_id))?;
+
+                        has_groupby = true;
+                    }
+                }
+            }
+        }
+
         if has_groupby {
             let old_gr_cols = self.get_grouping_cols(upper)?;
             // remove duplicate expressions
@@ -901,7 +940,7 @@ impl Plan {
             }
         }
 
-        Ok((grouping_expr, gr_expr_map))
+        Ok((upper, grouping_expr, gr_expr_map))
     }
 
     /// Add expressions used as arguments to distinct aggregates to `GroupBy` in reduce stage
@@ -922,7 +961,8 @@ impl Plan {
             {
                 gr_cols.extend(additional_grouping_exprs.into_iter());
             } else {
-                local_proj_child_id = self.add_groupby(upper, &additional_grouping_exprs, true)?;
+                local_proj_child_id =
+                    self.add_groupby(upper, &additional_grouping_exprs, true, None)?;
                 self.set_distribution(self.get_relational_output(local_proj_child_id)?)?;
             }
         }
@@ -999,6 +1039,7 @@ impl Plan {
         let proj = Relational::Projection {
             output: proj_output,
             children: vec![child_id],
+            is_distinct: false,
         };
         let proj_id = self.nodes.push(Node::Relational(proj));
         for info in aggr_infos {
@@ -1657,7 +1698,7 @@ impl Plan {
         let (finals, upper) = self.split_reduce_stage(final_proj_id)?;
         let mut aggr_infos = self.collect_aggregates(&finals)?;
         let has_aggregates = !aggr_infos.is_empty();
-        let (grouping_exprs, gr_expr_map) =
+        let (upper, grouping_exprs, gr_expr_map) =
             self.collect_grouping_expressions(upper, &finals, has_aggregates)?;
         if grouping_exprs.is_empty() && aggr_infos.is_empty() {
             return Ok(false);

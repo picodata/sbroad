@@ -1818,6 +1818,107 @@ ON "t3"."a" = "ij"."id"
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_sql_select_distinct() {
+    // make sure we don't compute extra group by columns at local stage
+    let input = r#"SELECT distinct "a", "a" + "b" FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    // here we must compute only two groupby columns at local stage: a, b
+    let expected_explain = String::from(
+        r#"projection ("column_22"::unsigned -> "a", "column_27"::unsigned -> "COL_1")
+    group by ("column_22"::unsigned, "column_27"::unsigned) output: ("column_22"::unsigned -> "column_22", "column_27"::unsigned -> "column_27")
+        motion [policy: segment([ref("column_22"), ref("column_27")])]
+            scan
+                projection ("t"."a"::unsigned -> "column_22", ("t"."a"::unsigned) + ("t"."b"::unsigned) -> "column_27")
+                    group by ("t"."a"::unsigned, ("t"."a"::unsigned) + ("t"."b"::unsigned)) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_select_distinct_asterisk() {
+    let input = r#"SELECT distinct * FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection ("column_23"::unsigned -> "a", "column_24"::unsigned -> "b", "column_25"::unsigned -> "c", "column_26"::unsigned -> "d")
+    group by ("column_24"::unsigned, "column_26"::unsigned, "column_23"::unsigned, "column_25"::unsigned) output: ("column_24"::unsigned -> "column_24", "column_23"::unsigned -> "column_23", "column_26"::unsigned -> "column_26", "column_25"::unsigned -> "column_25")
+        motion [policy: segment([ref("column_24"), ref("column_26"), ref("column_23"), ref("column_25")])]
+            scan
+                projection ("t"."b"::unsigned -> "column_24", "t"."a"::unsigned -> "column_23", "t"."d"::unsigned -> "column_26", "t"."c"::unsigned -> "column_25")
+                    group by ("t"."b"::unsigned, "t"."d"::unsigned, "t"."a"::unsigned, "t"."c"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_invalid_select_distinct() {
+    let input = r#"SELECT distinct "a" FROM "t"
+        group by "b"
+    "#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.replace_in_operator().unwrap();
+    plan.split_columns().unwrap();
+    plan.set_dnf().unwrap();
+    plan.derive_equalities().unwrap();
+    plan.merge_tuples().unwrap();
+    let err = plan.add_motions().unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("column \"a\" is not found in grouping expressions!")
+    );
+}
+
+#[test]
+fn front_sql_select_distinct_with_aggr() {
+    let input = r#"SELECT distinct sum("a"), "b" FROM "t"
+    group by "b"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection (sum(("sum_26"::decimal))::decimal -> "COL_1", "column_12"::unsigned -> "b")
+    group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "sum_26"::decimal -> "sum_26")
+        motion [policy: segment([ref("column_12")])]
+            scan
+                projection ("t"."b"::unsigned -> "column_12", sum(("t"."a"::unsigned))::decimal -> "sum_26")
+                    group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                        scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_select_distinct_with_aggr2() {
+    let input = r#"SELECT distinct sum("a") FROM "t""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"projection (sum(("sum_13"::decimal))::decimal -> "COL_1")
+    motion [policy: full]
+        scan
+            projection (sum(("t"."a"::unsigned))::decimal -> "sum_13")
+                scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 #[cfg(test)]
 mod params;
 mod single;

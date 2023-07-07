@@ -39,7 +39,7 @@ fn full_motion_less_for_sub_query() {
     .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
+    let proj_id = plan.add_proj(scan_t2_id, &["b"], false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
@@ -100,7 +100,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
     .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
+    let proj_id = plan.add_proj(scan_t2_id, &["a"], false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
@@ -158,7 +158,7 @@ fn local_sub_query() {
     .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["a"]).unwrap();
+    let proj_id = plan.add_proj(scan_t2_id, &["a"], false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 
@@ -218,13 +218,13 @@ fn multiple_sub_queries() {
     .unwrap();
     plan.add_rel(t2);
     let sq1_scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let sq1_proj_id = plan.add_proj(sq1_scan_t2_id, &["a"]).unwrap();
+    let sq1_proj_id = plan.add_proj(sq1_scan_t2_id, &["a"], false).unwrap();
     let sq1_id = plan.add_sub_query(sq1_proj_id, None).unwrap();
     children.push(sq1_id);
     let sq1_pos = children.len() - 1;
 
     let sq2_scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let sq2_proj_id = plan.add_proj(sq2_scan_t2_id, &["b"]).unwrap();
+    let sq2_proj_id = plan.add_proj(sq2_scan_t2_id, &["b"], false).unwrap();
     let sq2_id = plan.add_sub_query(sq2_proj_id, None).unwrap();
     children.push(sq2_id);
     let sq2_pos = children.len() - 1;

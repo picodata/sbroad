@@ -143,7 +143,7 @@ fn selection_subquery_dfs_post() {
     let const1 = plan.add_const(Value::from(1_u64));
     let eq_op = plan.nodes.add_bool(b, Bool::Eq, const1).unwrap();
     let selection_t2_id = plan.add_select(&[scan_t2_id], eq_op).unwrap();
-    let proj_id = plan.add_proj(selection_t2_id, &["c"]).unwrap();
+    let proj_id = plan.add_proj(selection_t2_id, &["c"], false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     let c = plan.get_row_from_rel_node(sq_id).unwrap();
 
@@ -217,7 +217,7 @@ fn subtree_dfs_post() {
     let const1 = plan.add_const(Value::from(1_i64));
     let eq_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
     let selection_t1_id = plan.add_select(&[scan_t1_id], eq_op).unwrap();
-    let proj_id = plan.add_proj(selection_t1_id, &["c"]).unwrap();
+    let proj_id = plan.add_proj(selection_t1_id, &["c"], false).unwrap();
 
     plan.set_top(proj_id).unwrap();
     let top = plan.get_top().unwrap();

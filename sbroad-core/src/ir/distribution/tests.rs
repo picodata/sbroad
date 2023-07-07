@@ -26,7 +26,7 @@ fn proj_preserve_dist_key() {
     plan.add_rel(t);
 
     let scan_id = plan.add_scan("t", None).unwrap();
-    let proj_id = plan.add_proj(scan_id, &["a", "b"]).unwrap();
+    let proj_id = plan.add_proj(scan_id, &["a", "b"], false).unwrap();
 
     plan.top = Some(proj_id);
 

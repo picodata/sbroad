@@ -107,7 +107,7 @@ fn projection() {
     // Invalid alias names in the output
     assert_eq!(
         SbroadError::NotFound(Entity::Column, r#"with name a, e"#.into()),
-        plan.add_proj(scan_id, &["a", "e"]).unwrap_err()
+        plan.add_proj(scan_id, &["a", "e"], false).unwrap_err()
     );
 
     // Expression node instead of relational one
@@ -116,13 +116,13 @@ fn projection() {
             Entity::Node,
             Some("node is not Relational type: Expression(Alias { name: \"a\", child: 0 })".into())
         ),
-        plan.add_proj(1, &["a"]).unwrap_err()
+        plan.add_proj(1, &["a"], false).unwrap_err()
     );
 
     // Try to build projection from the non-existing node
     assert_eq!(
         SbroadError::NotFound(Entity::Node, "from arena with index 42".to_string()),
-        plan.add_proj(42, &["a"]).unwrap_err()
+        plan.add_proj(42, &["a"], false).unwrap_err()
     );
 }
 
@@ -448,7 +448,7 @@ fn selection_with_sub_query() {
     .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["b"]).unwrap();
+    let proj_id = plan.add_proj(scan_t2_id, &["b"], false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 

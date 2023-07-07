@@ -1395,6 +1395,88 @@ groupby_queries.test_aggr_distinct_without_groupby = function()
     })
 end
 
+groupby_queries.test_select_distinct = function()
+    local api = cluster:server("api-1").net_box
+
+
+    local distinct_resp, err = api:call("sbroad.execute", {
+        [[
+        SELECT distinct "a"*2 from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    local groupby_resp, err = api:call("sbroad.execute", {
+        [[
+        SELECT "a"*2 from "arithmetic_space"
+        group by "a"*2
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(distinct_resp.rows, groupby_resp.rows)
+end
+
+groupby_queries.test_select_distinct2 = function()
+    local api = cluster:server("api-1").net_box
+
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT distinct * from
+        (select "e", "f" from "arithmetic_space")
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "e", type = "integer" },
+        { name = "f", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        {2, 2}
+    })
+end
+
+groupby_queries.test_select_distinct3 = function()
+    local api = cluster:server("api-1").net_box
+
+
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT distinct sum("e") from
+        (select "e" from "arithmetic_space")
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "COL_1", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 8 }
+    })
+end
+
+groupby_queries.test_select_distinct4 = function()
+    local api = cluster:server("api-1").net_box
+
+
+    local with_distinct, err = api:call("sbroad.execute", {
+        [[
+        SELECT distinct sum("e") from
+        (select "e", "f" from "arithmetic_space")
+        group by "f"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    local without_distinct, err = api:call("sbroad.execute", {
+        [[
+        SELECT sum("e") from
+        (select "e", "f" from "arithmetic_space")
+        group by "f"
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(with_distinct.rows, without_distinct.rows)
+end
+
 groupby_queries.test_count_asterisk = function()
     local api = cluster:server("api-1").net_box
 

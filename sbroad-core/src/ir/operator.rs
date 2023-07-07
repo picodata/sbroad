@@ -256,6 +256,8 @@ pub enum Relational {
         children: Vec<usize>,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
+        /// Wheter the select was marked with `distinct` keyword
+        is_distinct: bool,
     },
     ScanRelation {
         // Scan name.
@@ -832,7 +834,7 @@ impl Plan {
                 } else {
                     relation.clone()
                 };
-                let proj_id = self.add_proj(*child, &[])?;
+                let proj_id = self.add_proj(*child, &[], false)?;
                 let sq_id = self.add_sub_query(proj_id, Some(&scan_name))?;
                 children.push(sq_id);
 
@@ -955,11 +957,17 @@ impl Plan {
     /// - child node is not relational
     /// - child output tuple is invalid
     /// - column name do not match the ones in the child output tuple
-    pub fn add_proj(&mut self, child: usize, col_names: &[&str]) -> Result<usize, SbroadError> {
+    pub fn add_proj(
+        &mut self,
+        child: usize,
+        col_names: &[&str],
+        is_distinct: bool,
+    ) -> Result<usize, SbroadError> {
         let output = self.add_row_for_output(child, col_names, false)?;
         let proj = Relational::Projection {
             children: vec![child],
             output,
+            is_distinct,
         };
 
         let proj_id = self.nodes.push(Node::Relational(proj));
@@ -977,11 +985,13 @@ impl Plan {
         &mut self,
         child: usize,
         columns: &[usize],
+        is_distinct: bool,
     ) -> Result<usize, SbroadError> {
         let output = self.nodes.add_row_of_aliases(columns.to_vec(), None)?;
         let proj = Relational::Projection {
             children: vec![child],
             output,
+            is_distinct,
         };
 
         let proj_id = self.nodes.push(Node::Relational(proj));

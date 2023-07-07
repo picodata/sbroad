@@ -86,6 +86,7 @@ nodes:
           children:
             - 9
           output: 14
+          is_distinct: false
 relations:
   tables:
     t:

@@ -617,6 +617,27 @@ impl Plan {
         ))
     }
 
+    /// Gets `Projection` column by idx
+    ///
+    /// # Errors
+    /// - supplied index is out of range
+    /// - node is not `Projection`
+    pub fn get_proj_col(&self, proj_id: usize, col_idx: usize) -> Result<usize, SbroadError> {
+        let node = self.get_relation_node(proj_id)?;
+        if let Relational::Projection { output, .. } = node {
+            let col_id = self.get_row_list(*output)?.get(col_idx).ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(format!(
+                    "projection column index out of range. Node: {node:?}"
+                ))
+            })?;
+            return Ok(*col_id);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("Expected Projection node. Got: {node:?}")),
+        ))
+    }
+
     /// Gets `GroupBy` columns
     ///
     /// # Errors

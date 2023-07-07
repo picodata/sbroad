@@ -163,6 +163,7 @@ nodes:
           children:
             - 11
           output: 24
+          is_distinct: false
 relations:
   tables:
     t:
