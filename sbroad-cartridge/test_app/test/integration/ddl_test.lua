@@ -211,3 +211,25 @@ g.test_insert_after_index = function()
         },
     })
 end
+
+g.test_create_table = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call(
+        "sbroad.execute",
+        { [[
+            CREATE TABLE t (
+                a INT,
+                b TEXT,
+                PRIMARY KEY (a, b)
+            )
+            USING memtx
+            DISTRIBUTED BY (b, a)
+            OPTION (timeout = 1)
+        ]], {} }
+    )
+    t.assert_equals(
+        string.format("%s", err),
+        [[Sbroad Error: DDL queries are not supported]]
+    )
+end

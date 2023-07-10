@@ -2,14 +2,15 @@ Command = _{ SOI ~ (ExplainQuery | Query | DDL) ~ EOF }
 
 DDL = _{ CreateTable }
     CreateTable = {
-        ^"create" ~ ^"table" ~ Table ~
+        ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
         Engine? ~ Distribution ~ Option?
     }
+    NewTable = @{ Table }
     Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
         ColumnDef = { ColumnDefName ~ ColumnDefType ~ ColumnDefIsNull? }
         ColumnDefName = @{ ColumnName }
-        ColumnDefType = _{ TypeBool | TypeDecimal | TypeDouble
+        ColumnDefType = { TypeBool | TypeDecimal | TypeDouble
              | TypeInt | TypeNumber | TypeScalar | TypeString
              | TypeText | TypeUnsigned | TypeVarchar }
         ColumnDefIsNull = { ColumnIsNull | ColumnIsNotNull }

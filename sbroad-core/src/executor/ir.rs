@@ -512,6 +512,10 @@ impl ExecutionPlan {
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
                 Node::Parameter { .. } => {}
+                Node::Ddl { .. } => Err(SbroadError::Invalid(
+                    Entity::SubTree,
+                    Some("DDL node".to_string()),
+                ))?,
             }
             new_plan.nodes.push(node);
             translation.insert(node_id, next_id);

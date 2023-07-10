@@ -179,7 +179,8 @@ fn expression_next<'nodes>(
                 | Expression::CountAsterisk,
             )
             | Node::Relational(_)
-            | Node::Parameter,
+            | Node::Parameter
+            | Node::Ddl(_),
         )
         | None => None,
     }

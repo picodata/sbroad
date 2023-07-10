@@ -86,7 +86,8 @@ fn relational_next<'nodes>(
         Some(
             Node::Relational(Relational::ScanRelation { .. })
             | Node::Expression(_)
-            | Node::Parameter,
+            | Node::Parameter
+            | Node::Ddl(_),
         )
         | None => None,
     }

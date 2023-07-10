@@ -290,6 +290,12 @@ impl ExecutionPlan {
                     SyntaxData::PlanId(id) => {
                         let node = ir_plan.get_node(*id)?;
                         match node {
+                            Node::Ddl(_) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some("DDL nodes are not supported in the generated SQL".into()),
+                                ));
+                            }
                             Node::Parameter => {
                                 return Err(SbroadError::Unsupported(
                                     Entity::Node,

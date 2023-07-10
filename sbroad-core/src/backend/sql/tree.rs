@@ -643,6 +643,12 @@ impl<'p> SyntaxPlan<'p> {
         let ir_plan = self.plan.get_ir_plan();
         let node = ir_plan.get_node(id)?;
         match node {
+            Node::Ddl(..) => Err(SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some(format!(
+                    "DDL node {node:?} is not supported in the syntax plan"
+                )),
+            )),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
                 Ok(self.nodes.push_syntax_node(sn))

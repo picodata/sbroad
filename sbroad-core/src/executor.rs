@@ -112,10 +112,14 @@ where
             let ast = C::ParseTree::new(sql)?;
             let metadata = &*coordinator.metadata()?;
             plan = ast.resolve_metadata(metadata)?;
-            cache.put(key, plan.clone())?;
+            if !plan.is_ddl()? {
+                cache.put(key, plan.clone())?;
+            }
         }
-        plan.bind_params(params)?;
-        plan.optimize()?;
+        if !plan.is_ddl()? {
+            plan.bind_params(params)?;
+            plan.optimize()?;
+        }
         let query = Query {
             is_explain: plan.is_expain(),
             exec_plan: ExecutionPlan::from(plan),
@@ -237,6 +241,14 @@ where
     /// Checks that query is explain and have not to be executed
     fn is_explain(&self) -> bool {
         self.is_explain
+    }
+
+    /// Checks that query is DDL.
+    ///
+    /// # Errors
+    /// - Plan is invalid.
+    pub fn is_ddl(&self) -> Result<bool, SbroadError> {
+        self.exec_plan.get_ir_plan().is_ddl()
     }
 }
 

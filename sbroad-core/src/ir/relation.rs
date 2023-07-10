@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Formatter};
 use tarantool::{
-    space::{Field, SpaceEngineType},
+    space::{Field, FieldType as SpaceFieldType, SpaceEngineType},
     tuple::{FieldType, KeyDef, KeyDefPart},
 };
 
@@ -28,13 +28,14 @@ const DEFAULT_VALUE: Value = Value::Null;
 
 /// Supported column types, which is used in a schema only.
 /// This `Type` is derived from the result's metadata.
-#[derive(Serialize, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]
+#[derive(Serialize, Default, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]
 pub enum Type {
     Array,
     Boolean,
     Decimal,
     Double,
     Integer,
+    #[default]
     Scalar,
     String,
     Number,
@@ -53,6 +54,38 @@ impl fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Number => write!(f, "number"),
             Type::Unsigned => write!(f, "unsigned"),
+        }
+    }
+}
+
+impl From<&Type> for FieldType {
+    fn from(data_type: &Type) -> Self {
+        match data_type {
+            Type::Boolean => FieldType::Boolean,
+            Type::Decimal => FieldType::Decimal,
+            Type::Double => FieldType::Double,
+            Type::Integer => FieldType::Integer,
+            Type::Number => FieldType::Number,
+            Type::Scalar => FieldType::Scalar,
+            Type::String => FieldType::String,
+            Type::Unsigned => FieldType::Unsigned,
+            Type::Array => FieldType::Array,
+        }
+    }
+}
+
+impl From<&Type> for SpaceFieldType {
+    fn from(data_type: &Type) -> Self {
+        match data_type {
+            Type::Boolean => SpaceFieldType::Boolean,
+            Type::Decimal => SpaceFieldType::Decimal,
+            Type::Double => SpaceFieldType::Double,
+            Type::Integer => SpaceFieldType::Integer,
+            Type::Number => SpaceFieldType::Number,
+            Type::Scalar => SpaceFieldType::Scalar,
+            Type::String => SpaceFieldType::String,
+            Type::Unsigned => SpaceFieldType::Unsigned,
+            Type::Array => SpaceFieldType::Array,
         }
     }
 }
@@ -148,17 +181,7 @@ impl From<Column> for Field {
 
 impl From<&Column> for FieldType {
     fn from(column: &Column) -> Self {
-        match column.r#type {
-            Type::Boolean => FieldType::Boolean,
-            Type::Decimal => FieldType::Decimal,
-            Type::Double => FieldType::Double,
-            Type::Integer => FieldType::Integer,
-            Type::Number => FieldType::Number,
-            Type::Scalar => FieldType::Scalar,
-            Type::String => FieldType::String,
-            Type::Unsigned => FieldType::Unsigned,
-            Type::Array => FieldType::Array,
-        }
+        FieldType::from(&column.r#type)
     }
 }
 

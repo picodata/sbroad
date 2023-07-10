@@ -633,6 +633,10 @@ impl Plan {
                 Entity::Distribution,
                 Some("Failed to get distribution for a parameter node.".to_string()),
             )),
+            Node::Ddl(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for a DDL node.".to_string()),
+            )),
         }
     }
 

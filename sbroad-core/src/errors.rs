@@ -35,6 +35,8 @@ pub enum Entity {
     Distribution,
     /// tarantool distribution key
     DistributionKey,
+    /// tarantool engine (memtx, vinyl)
+    Engine,
     /// corresponds to enum Expression
     Expression,
     /// corresponds to struct ExpressionMapper
@@ -73,6 +75,8 @@ pub enum Entity {
     Rule,
     /// corresponds to struct RouterRuntime
     Runtime,
+    /// Metadata schema
+    Schema,
     /// sharding key of tarantool space
     ShardingKey,
     /// tarantool space
@@ -129,6 +133,7 @@ impl fmt::Display for Entity {
             Entity::Column => "column".to_string(),
             Entity::Distribution => "distribution".to_string(),
             Entity::DistributionKey => "distribution key".to_string(),
+            Entity::Engine => "engine".to_string(),
             Entity::Expression => "expression".to_string(),
             Entity::ExpressionMapper => "expression mapper".to_string(),
             Entity::Histogram => "histogram".to_string(),
@@ -149,6 +154,7 @@ impl fmt::Display for Entity {
             Entity::RequiredData => "required data".to_string(),
             Entity::Rule => "rule".to_string(),
             Entity::Runtime => "runtime".to_string(),
+            Entity::Schema => "schema".to_string(),
             Entity::ShardingKey => "sharding key".to_string(),
             Entity::Space => "space".to_string(),
             Entity::SpaceEngine => "space engine".to_string(),
@@ -185,10 +191,11 @@ pub enum Action {
     Deserialize,
     Drop,
     Find,
-    Replace,
     Get,
     Insert,
+    Prepare,
     Put,
+    Replace,
     Retrieve,
     Serialize,
 }
@@ -207,9 +214,10 @@ impl fmt::Display for Action {
             Action::Deserialize => "deserialize".to_string(),
             Action::Get => "get".to_string(),
             Action::Insert => "insert".to_string(),
+            Action::Prepare => "prepare".to_string(),
             Action::Put => "put".to_string(),
-            Action::Retrieve => "retrieve".to_string(),
             Action::Replace => "replace".to_string(),
+            Action::Retrieve => "retrieve".to_string(),
             Action::Serialize => "serialize".to_string(),
         };
         write!(f, "{p}")

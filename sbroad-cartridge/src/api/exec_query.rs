@@ -57,6 +57,9 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                         return tarantool_error(&e.to_string());
                     }
                 };
+                if let Ok(true) = query.is_ddl() {
+                    return tarantool_error("DDL queries are not supported");
+                }
 
                 match query.dispatch() {
                     Ok(result) => child_span("\"tarantool.tuple.return\"", || {
