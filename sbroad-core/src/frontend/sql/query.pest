@@ -1,6 +1,6 @@
 Command = _{ SOI ~ (ExplainQuery | Query | DDL) ~ EOF }
 
-DDL = _{ CreateTable }
+DDL = _{ CreateTable | DropTable }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
@@ -28,6 +28,9 @@ DDL = _{ CreateTable }
     Global = { ^"globally" }
     Sharding = { ^"by" ~ "(" ~ ShardingColumn ~ ("," ~ ShardingColumn)* ~ ")"}
        ShardingColumn = @{ ColumnName }
+
+    DropTable = { ^"drop" ~ ^"table" ~ DeletedTable ~ Option? }
+    	DeletedTable = @{ Table }
 
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }

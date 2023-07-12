@@ -225,6 +225,44 @@ impl Ast for AbstractSyntaxTree {
             Ok::<usize, SbroadError>(op_id)
         };
 
+        let default_timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
+            .map_err(|_| SbroadError::Invalid(Entity::Type, Some("timeout option".into())))?;
+        let get_timeout = |node_id: usize| -> Result<Decimal, SbroadError> {
+            let mut timeout = default_timeout;
+            let option_node = self.nodes.get_node(node_id)?;
+            if let Some(param_id) = option_node.children.first() {
+                let param_node = self.nodes.get_node(*param_id)?;
+                if param_node.rule != Type::Timeout {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "AST table option node {param_node:?} contains unexpected children"
+                        )),
+                    ));
+                }
+                if let (Some(duration_id), None) =
+                    (param_node.children.first(), param_node.children.get(1))
+                {
+                    let duration_node = self.nodes.get_node(*duration_id)?;
+                    if duration_node.rule != Type::Duration {
+                        return Err(SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!("AST table option duration node {duration_node:?} contains unexpected children")),
+                        ));
+                    }
+                    if let Some(duration_value) = duration_node.value.as_ref() {
+                        timeout = Decimal::from_str(duration_value).map_err(|_| {
+                            SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!("AST table option duration node {duration_node:?} contains invalid value (not a valid decimal)")),
+                            )
+                        })?;
+                    }
+                }
+            }
+            Ok(timeout)
+        };
+
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
             match &node.rule {
@@ -1072,13 +1110,7 @@ impl Ast for AbstractSyntaxTree {
                     let mut columns: Vec<ColumnDef> = Vec::new();
                     let mut pk_keys: Vec<String> = Vec::new();
                     let mut shard_keys: Vec<String> = Vec::new();
-                    let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
-                        .map_err(|_| {
-                            SbroadError::Invalid(
-                                Entity::Type,
-                                Some("timeout value in create table".into()),
-                            )
-                        })?;
+                    let mut timeout = default_timeout;
                     for child_id in &node.children {
                         let child_node = self.nodes.get_node(*child_id)?;
                         match child_node.rule {
@@ -1288,35 +1320,7 @@ impl Ast for AbstractSyntaxTree {
                                 }
                             }
                             Type::OptionParam => {
-                                let option_node = self.nodes.get_node(*child_id)?;
-                                if let Some(param_id) = option_node.children.first() {
-                                    let param_node = self.nodes.get_node(*param_id)?;
-                                    if param_node.rule != Type::Timeout {
-                                        return Err(SbroadError::Invalid(
-                                            Entity::Node,
-                                            Some(format!("AST table option node {param_node:?} contains unexpected children")),
-                                        ));
-                                    }
-                                    if let (Some(duration_id), None) =
-                                        (param_node.children.first(), param_node.children.get(1))
-                                    {
-                                        let duration_node = self.nodes.get_node(*duration_id)?;
-                                        if duration_node.rule != Type::Duration {
-                                            return Err(SbroadError::Invalid(
-                                                Entity::Node,
-                                                Some(format!("AST table option duration node {duration_node:?} contains unexpected children")),
-                                            ));
-                                        }
-                                        if let Some(duration_value) = duration_node.value.as_ref() {
-                                            timeout = Decimal::from_str(duration_value).map_err(|_| {
-                                                SbroadError::Invalid(
-                                                    Entity::Node,
-                                                    Some(format!("AST table option duration node {duration_node:?} contains invalid value (not a valid decimal)")),
-                                                )
-                                            })?;
-                                        }
-                                    }
-                                }
+                                timeout = get_timeout(*child_id)?;
                             }
                             _ => {
                                 return Err(SbroadError::Invalid(
@@ -1336,6 +1340,40 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
                     map.add(id, plan_id);
                 }
+                Type::DropTable => {
+                    let mut table_name: String = String::new();
+                    let mut timeout = default_timeout;
+                    for child_id in &node.children {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Type::DeletedTable => {
+                                table_name = normalize_name_for_space_api(
+                                    child_node.value.as_ref().ok_or_else(|| {
+                                        SbroadError::NotFound(
+                                            Entity::Node,
+                                            "table name in the drop table AST".into(),
+                                        )
+                                    })?,
+                                );
+                            }
+                            Type::OptionParam => {
+                                timeout = get_timeout(*child_id)?;
+                            }
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format!("AST drop table node {child_node:?} contains unexpected children")),
+                                ));
+                            }
+                        }
+                    }
+                    let drop_table = Ddl::DropTable {
+                        name: table_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Ddl(drop_table));
+                    map.add(id, plan_id);
+                }
                 Type::Add
                 | Type::AliasName
                 | Type::Columns
@@ -1346,6 +1384,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ColumnIsNull
                 | Type::ColumnIsNotNull
                 | Type::ColumnName
+                | Type::DeletedTable
                 | Type::Divide
                 | Type::Distinct
                 | Type::Distribution

@@ -21,6 +21,32 @@ pub enum Ddl {
         sharding_key: Vec<String>,
         timeout: Decimal,
     },
+    DropTable {
+        name: String,
+        timeout: Decimal,
+    },
+}
+
+impl Ddl {
+    /// Return DDL node timeout.
+    ///
+    /// # Errors
+    /// - timeout parsing error
+    pub fn timeout(&self) -> Result<f64, SbroadError> {
+        match self {
+            Ddl::CreateShardedTable { ref timeout, .. } | Ddl::DropTable { ref timeout, .. } => {
+                timeout
+            }
+        }
+        .to_string()
+        .parse()
+        .map_err(|e| {
+            SbroadError::Invalid(
+                Entity::SpaceMetadata,
+                Some(format!("timeout parsing error {e:?}")),
+            )
+        })
+    }
 }
 
 impl Plan {
