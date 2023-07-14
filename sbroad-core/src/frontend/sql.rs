@@ -55,6 +55,348 @@ impl Between {
     }
 }
 
+fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, SbroadError> {
+    let option_node = ast.nodes.get_node(node_id)?;
+    if option_node.rule != Type::OptionParam {
+        return Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!(
+                "AST table option parameter node {:?} contains unexpected children",
+                option_node,
+            )),
+        ));
+    }
+    let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
+        .map_err(|_| SbroadError::Invalid(Entity::Type, Some("timeout option".into())))?;
+    if let Some(param_id) = option_node.children.first() {
+        let param_node = ast.nodes.get_node(*param_id)?;
+        if param_node.rule != Type::Timeout {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!(
+                    "AST table option node {:?} contains unexpected children",
+                    param_node,
+                )),
+            ));
+        }
+        if let (Some(duration_id), None) = (param_node.children.first(), param_node.children.get(1))
+        {
+            let duration_node = ast.nodes.get_node(*duration_id)?;
+            if duration_node.rule != Type::Duration {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!(
+                        "AST table option duration node {:?} contains unexpected children",
+                        duration_node,
+                    )),
+                ));
+            }
+            if let Some(duration_value) = duration_node.value.as_ref() {
+                timeout = Decimal::from_str(duration_value).map_err(|_| {
+                    SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "AST table duration node {:?} contains invalid value",
+                            duration_node,
+                        )),
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(timeout)
+}
+
+#[allow(clippy::too_many_lines)]
+fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    if node.rule != Type::CreateTable {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("create table".into()),
+        ));
+    }
+    let mut table_name: String = String::new();
+    let mut columns: Vec<ColumnDef> = Vec::new();
+    let mut pk_keys: Vec<String> = Vec::new();
+    let mut shard_keys: Vec<String> = Vec::new();
+    let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
+        SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
+    })?;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::NewTable => {
+                table_name =
+                    normalize_name_for_space_api(child_node.value.as_ref().ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "table name in the create table AST".into(),
+                        )
+                    })?);
+            }
+            Type::Columns => {
+                let columns_node = ast.nodes.get_node(*child_id)?;
+                for col_id in &columns_node.children {
+                    let mut column_def = ColumnDef::default();
+                    let column_def_node = ast.nodes.get_node(*col_id)?;
+                    for def_child_id in &column_def_node.children {
+                        let def_child_node = ast.nodes.get_node(*def_child_id)?;
+                        match def_child_node.rule {
+                            Type::ColumnDefName => {
+                                column_def.name = normalize_name_for_space_api(
+                                    def_child_node.value.as_ref().ok_or_else(|| {
+                                        SbroadError::Invalid(
+                                            Entity::Column,
+                                            Some(
+                                                "column name is empty in the create table AST"
+                                                    .into(),
+                                            ),
+                                        )
+                                    })?,
+                                );
+                            }
+                            Type::ColumnDefType => {
+                                if let (Some(type_id), None) = (
+                                    def_child_node.children.first(),
+                                    def_child_node.children.get(1),
+                                ) {
+                                    let type_node = ast.nodes.get_node(*type_id)?;
+                                    match type_node.rule {
+                                        Type::TypeBool => {
+                                            column_def.data_type = RelationType::Boolean;
+                                        }
+                                        Type::Decimal => {
+                                            column_def.data_type = RelationType::Decimal;
+                                        }
+                                        Type::TypeDouble => {
+                                            column_def.data_type = RelationType::Double;
+                                        }
+                                        Type::TypeInt => {
+                                            column_def.data_type = RelationType::Integer;
+                                        }
+                                        Type::TypeNumber => {
+                                            column_def.data_type = RelationType::Number;
+                                        }
+                                        Type::TypeScalar => {
+                                            column_def.data_type = RelationType::Scalar;
+                                        }
+                                        Type::TypeString | Type::TypeText | Type::TypeVarchar => {
+                                            column_def.data_type = RelationType::String;
+                                        }
+                                        Type::TypeUnsigned => {
+                                            column_def.data_type = RelationType::Unsigned;
+                                        }
+                                        _ => {
+                                            return Err(SbroadError::Invalid(
+                                                Entity::Node,
+                                                Some(format!(
+                                                    "AST column type node {:?} has unexpected type",
+                                                    type_node,
+                                                )),
+                                            ));
+                                        }
+                                    }
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some(format!(
+                                            "AST column type node {:?} contains unexpected children",
+                                            def_child_node,
+                                        )),
+                                    ));
+                                }
+                            }
+                            Type::ColumnDefIsNull => {
+                                let is_null_node = ast.nodes.get_node(*def_child_id)?;
+                                if let (Some(null_id), None) =
+                                    (is_null_node.children.first(), is_null_node.children.get(1))
+                                {
+                                    let null_node = ast.nodes.get_node(*null_id)?;
+                                    match null_node.rule {
+                                        Type::ColumnIsNull => {
+                                            column_def.is_nullable = true;
+                                        }
+                                        Type::ColumnIsNotNull => {
+                                            column_def.is_nullable = false;
+                                        }
+                                        _ => {
+                                            return Err(SbroadError::Invalid(
+                                                Entity::Node,
+                                                Some(format!(
+                                                    "AST column null node {:?} has unexpected type",
+                                                    null_node,
+                                                )),
+                                            ));
+                                        }
+                                    }
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some(format!(
+                                            "AST column null node {:?} contains unexpected children",
+                                            def_child_node,
+                                        )),
+                                    ));
+                                }
+                            }
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format!(
+                                        "AST column def node {:?} contains unexpected children",
+                                        def_child_node,
+                                    )),
+                                ));
+                            }
+                        }
+                    }
+                    columns.push(column_def);
+                }
+            }
+            Type::PrimaryKey => {
+                let pk_node = ast.nodes.get_node(*child_id)?;
+                for pk_col_id in &pk_node.children {
+                    let pk_col_node = ast.nodes.get_node(*pk_col_id)?;
+                    if pk_col_node.rule != Type::PrimaryKeyColumn {
+                        return Err(SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!(
+                                "AST primary key node {:?} contains unexpected children",
+                                pk_col_node,
+                            )),
+                        ));
+                    }
+                    let pk_col_name = normalize_name_for_space_api(
+                        pk_col_node.value.as_ref().ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::Column,
+                                Some(
+                                    "primary key column name is empty in the create table AST"
+                                        .into(),
+                                ),
+                            )
+                        })?,
+                    );
+                    pk_keys.push(pk_col_name);
+                }
+            }
+            Type::Engine => {
+                if let (Some(engine_type_id), None) =
+                    (child_node.children.first(), child_node.children.get(1))
+                {
+                    let engine_type_node = ast.nodes.get_node(*engine_type_id)?;
+                    match engine_type_node.rule {
+                        Type::Memtx => {}
+                        Type::Vinyl => {
+                            // TODO: improve picodata's DDL API to support vinyl engine.
+                            return Err(SbroadError::NotImplemented(
+                                Entity::Engine,
+                                "vinyl".into(),
+                            ));
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!(
+                                    "AST table engine node {:?} contains unexpected children",
+                                    engine_type_node,
+                                )),
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "AST table engine node {:?} contains unexpected children",
+                            child_node,
+                        )),
+                    ));
+                }
+            }
+            Type::Distribution => {
+                let distribution_node = ast.nodes.get_node(*child_id)?;
+                if let (Some(distribution_type_id), None) = (
+                    distribution_node.children.first(),
+                    distribution_node.children.get(1),
+                ) {
+                    let distribution_type_node = ast.nodes.get_node(*distribution_type_id)?;
+                    match distribution_type_node.rule {
+                        Type::Global => {
+                            // TODO: support global spaces via SQL API.
+                            return Err(SbroadError::NotImplemented(
+                                Entity::Node,
+                                "global spaces are not supported yet".into(),
+                            ));
+                        }
+                        Type::Sharding => {
+                            let shard_node = ast.nodes.get_node(*distribution_type_id)?;
+                            for shard_col_id in &shard_node.children {
+                                let shard_col_node = ast.nodes.get_node(*shard_col_id)?;
+                                if shard_col_node.rule != Type::ShardingColumn {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Node,
+                                        Some(format!(
+                                            "AST shard key node {:?} contains unexpected children",
+                                            shard_col_node,
+                                        )),
+                                    ));
+                                }
+                                let shard_col_name = normalize_name_for_space_api(
+                                    shard_col_node.value.as_ref().ok_or_else(|| {
+                                        SbroadError::Invalid(
+                                            Entity::Column,
+                                            Some("AST shard key column name is empty".into()),
+                                        )
+                                    })?,
+                                );
+                                shard_keys.push(shard_col_name);
+                            }
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!(
+                                    "AST table distribution node {:?} contains unexpected children",
+                                    distribution_type_node,
+                                )),
+                            ));
+                        }
+                    }
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "AST table distribution node {:?} contains unexpected children",
+                            child_node,
+                        )),
+                    ));
+                }
+            }
+            Type::OptionParam => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!(
+                        "AST create table node {:?} contains unexpected children",
+                        child_node,
+                    )),
+                ));
+            }
+        }
+    }
+    let create_sharded_table = Ddl::CreateShardedTable {
+        name: table_name,
+        format: columns,
+        primary_key: pk_keys,
+        sharding_key: shard_keys,
+        timeout,
+    };
+    Ok(create_sharded_table)
+}
+
 impl Ast for AbstractSyntaxTree {
     /// Build an empty AST.
     fn empty() -> Self {
@@ -227,41 +569,6 @@ impl Ast for AbstractSyntaxTree {
 
         let default_timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
             .map_err(|_| SbroadError::Invalid(Entity::Type, Some("timeout option".into())))?;
-        let get_timeout = |node_id: usize| -> Result<Decimal, SbroadError> {
-            let mut timeout = default_timeout;
-            let option_node = self.nodes.get_node(node_id)?;
-            if let Some(param_id) = option_node.children.first() {
-                let param_node = self.nodes.get_node(*param_id)?;
-                if param_node.rule != Type::Timeout {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some(format!(
-                            "AST table option node {param_node:?} contains unexpected children"
-                        )),
-                    ));
-                }
-                if let (Some(duration_id), None) =
-                    (param_node.children.first(), param_node.children.get(1))
-                {
-                    let duration_node = self.nodes.get_node(*duration_id)?;
-                    if duration_node.rule != Type::Duration {
-                        return Err(SbroadError::Invalid(
-                            Entity::Node,
-                            Some(format!("AST table option duration node {duration_node:?} contains unexpected children")),
-                        ));
-                    }
-                    if let Some(duration_value) = duration_node.value.as_ref() {
-                        timeout = Decimal::from_str(duration_value).map_err(|_| {
-                            SbroadError::Invalid(
-                                Entity::Node,
-                                Some(format!("AST table option duration node {duration_node:?} contains invalid value (not a valid decimal)")),
-                            )
-                        })?;
-                    }
-                }
-            }
-            Ok(timeout)
-        };
 
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
@@ -422,7 +729,12 @@ impl Ast for AbstractSyntaxTree {
                                 } else {
                                     return Err(SbroadError::Invalid(
                                         Entity::Plan,
-                                        Some(format!("left {left_name:?} and right {right_name:?} plan nodes do not match the AST scan name: {ast_scan_name:?}")),
+                                        Some(format!(
+                                            "left {:?} and right {:?} plan nodes do not match the AST scan name: {:?}",
+                                            left_name,
+                                            right_name,
+                                            ast_scan_name,
+                                            )),
                                     ));
                                 }
                             } else {
@@ -492,9 +804,12 @@ impl Ast for AbstractSyntaxTree {
                                 let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
                                 if plan_scan_name != ast_scan_name {
                                     return Err(SbroadError::UnexpectedNumberOfValues(
-                                            format!("Scan name for the column {:?} doesn't match: expected {plan_scan_name:?}, found {ast_scan_name:?}",
-                                            get_column_name(*ast_col_id)
-                                        )));
+                                        format!(
+                                            "Scan name for the column {:?} doesn't match: expected {:?}, found {:?}",
+                                            get_column_name(*ast_col_id),
+                                            plan_scan_name,
+                                            ast_scan_name,
+                                    )));
                                 }
                             } else {
                                 return Err(SbroadError::Invalid(
@@ -769,7 +1084,10 @@ impl Ast for AbstractSyntaxTree {
                                     if "count" != normalized_name.as_str() {
                                         return Err(SbroadError::Invalid(
                                             Entity::Query,
-                                            Some(format!("\"*\" is allowed only inside \"count\" aggregate function. Got: {normalized_name}"))
+                                            Some(format!(
+                                                "\"*\" is allowed only inside \"count\" aggregate function. Got: {}",
+                                                normalized_name,
+                                            ))
                                         ));
                                     }
                                 }
@@ -861,8 +1179,15 @@ impl Ast for AbstractSyntaxTree {
                     let kind = match ast_kind_node.rule {
                         Type::LeftJoinKind => JoinKind::LeftOuter,
                         Type::InnerJoinKind => JoinKind::Inner,
-                        _ => return Err(SbroadError::Invalid(Entity::AST,
-                        Some(format!("expected join kind node as 1 child of join. Got: {ast_kind_node:?}"))))
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::AST,
+                                Some(format!(
+                                    "expected join kind node as 1 child of join. Got: {:?}",
+                                    ast_kind_node,
+                                )),
+                            ))
+                        }
                     };
                     let plan_cond_id = map.get(*ast_cond_id)?;
                     let plan_join_id =
@@ -1106,237 +1431,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Type::CreateTable => {
-                    let mut table_name: String = String::new();
-                    let mut columns: Vec<ColumnDef> = Vec::new();
-                    let mut pk_keys: Vec<String> = Vec::new();
-                    let mut shard_keys: Vec<String> = Vec::new();
-                    let mut timeout = default_timeout;
-                    for child_id in &node.children {
-                        let child_node = self.nodes.get_node(*child_id)?;
-                        match child_node.rule {
-                            Type::NewTable => {
-                                table_name = normalize_name_for_space_api(
-                                    child_node.value.as_ref().ok_or_else(|| {
-                                        SbroadError::NotFound(
-                                            Entity::Node,
-                                            "table name in the create table AST".into(),
-                                        )
-                                    })?,
-                                );
-                            }
-                            Type::Columns => {
-                                let columns_node = self.nodes.get_node(*child_id)?;
-                                for col_id in &columns_node.children {
-                                    let mut column_def = ColumnDef::default();
-                                    let column_def_node = self.nodes.get_node(*col_id)?;
-                                    for def_child_id in &column_def_node.children {
-                                        let def_child_node = self.nodes.get_node(*def_child_id)?;
-                                        match def_child_node.rule {
-                                            Type::ColumnDefName => column_def.name = normalize_name_for_space_api(
-                                                def_child_node.value.as_ref().ok_or_else(|| {
-                                                SbroadError::Invalid(
-                                                    Entity::Column,
-                                                    Some("column name is empty in the create table AST".into())
-                                                )
-                                            })?),
-                                            Type::ColumnDefType => {
-                                                if let (Some(type_id), None) = (def_child_node.children.first(), def_child_node.children.get(1)) {
-                                                    let type_node = self.nodes.get_node(*type_id)?;
-                                                    match type_node.rule {
-                                                        Type::TypeBool => {
-                                                            column_def.data_type = RelationType::Boolean;
-                                                        }
-                                                        Type::Decimal => {
-                                                            column_def.data_type = RelationType::Decimal;
-                                                        }
-                                                        Type::TypeDouble => {
-                                                            column_def.data_type = RelationType::Double;
-                                                        }
-                                                        Type::TypeInt => {
-                                                            column_def.data_type = RelationType::Integer;
-                                                        }
-                                                        Type::TypeNumber => {
-                                                            column_def.data_type = RelationType::Number;
-                                                        }
-                                                        Type::TypeScalar => {
-                                                            column_def.data_type = RelationType::Scalar;
-                                                        }
-                                                        Type::TypeString | Type::TypeText | Type::TypeVarchar => {
-                                                            column_def.data_type = RelationType::String;
-                                                        }
-                                                        Type::TypeUnsigned => {
-                                                            column_def.data_type = RelationType::Unsigned;
-                                                        }
-                                                        _ => {
-                                                            return Err(SbroadError::Invalid(
-                                                                Entity::Node,
-                                                                Some(format!("AST column type node {type_node:?} has unexpected type")),
-                                                            ));
-                                                        }
-                                                    }
-                                                } else {
-                                                    return Err(SbroadError::Invalid(
-                                                        Entity::Node,
-                                                        Some(format!("AST column type node {def_child_node:?} contains unexpected children")),
-                                                    ));
-                                                }
-                                            }
-                                            Type::ColumnDefIsNull => {
-                                                let is_null_node = self.nodes.get_node(*def_child_id)?;
-                                                if let (Some(null_id), None) = (is_null_node.children.first(), is_null_node.children.get(1)) {
-                                                    let null_node = self.nodes.get_node(*null_id)?;
-                                                    match null_node.rule {
-                                                        Type::ColumnIsNull => {
-                                                            column_def.is_nullable = true;
-                                                        }
-                                                        Type::ColumnIsNotNull => {
-                                                            column_def.is_nullable = false;
-                                                        }
-                                                        _ => {
-                                                            return Err(SbroadError::Invalid(
-                                                                Entity::Node,
-                                                                Some(format!("AST column null node {null_node:?} has unexpected type")),
-                                                            ));
-                                                        }
-                                                    }
-                                                } else {
-                                                    return Err(SbroadError::Invalid(
-                                                        Entity::Node,
-                                                        Some(format!("AST column null node {def_child_node:?} contains unexpected children")),
-                                                    ));
-                                                }
-                                            }
-                                            _ => {
-                                                return Err(SbroadError::Invalid(
-                                                    Entity::Node,
-                                                    Some(format!("AST column def node {def_child_node:?} contains unexpected children")),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    columns.push(column_def);
-                                }
-                            }
-                            Type::PrimaryKey => {
-                                let pk_node = self.nodes.get_node(*child_id)?;
-                                for pk_col_id in &pk_node.children {
-                                    let pk_col_node = self.nodes.get_node(*pk_col_id)?;
-                                    if pk_col_node.rule != Type::PrimaryKeyColumn {
-                                        return Err(SbroadError::Invalid(
-                                            Entity::Node,
-                                            Some(format!("AST primary key node {pk_col_node:?} contains unexpected children")),
-                                        ));
-                                    }
-                                    let pk_col_name = normalize_name_for_space_api(
-                                        pk_col_node.value.as_ref().ok_or_else(|| {
-                                            SbroadError::Invalid(
-                                                Entity::Column,
-                                                Some("primary key column name is empty in the create table AST".into())
-                                            )
-                                        })?,
-                                    );
-                                    pk_keys.push(pk_col_name);
-                                }
-                            }
-                            Type::Engine => {
-                                if let (Some(engine_type_id), None) =
-                                    (child_node.children.first(), child_node.children.get(1))
-                                {
-                                    let engine_type_node = self.nodes.get_node(*engine_type_id)?;
-                                    match engine_type_node.rule {
-                                        Type::Memtx => {}
-                                        Type::Vinyl => {
-                                            // TODO: improve picodata's DDL API to support vinyl engine.
-                                            return Err(SbroadError::NotImplemented(
-                                                Entity::Engine,
-                                                "vinyl".into(),
-                                            ));
-                                        }
-                                        _ => {
-                                            return Err(SbroadError::Invalid(
-                                                Entity::Node,
-                                                Some(format!("AST table engine node {engine_type_node:?} contains unexpected children")),
-                                            ));
-                                        }
-                                    }
-                                } else {
-                                    return Err(SbroadError::Invalid(
-                                        Entity::Node,
-                                        Some(format!("AST table engine node {child_node:?} contains unexpected children")),
-                                    ));
-                                }
-                            }
-                            Type::Distribution => {
-                                let distribution_node = self.nodes.get_node(*child_id)?;
-                                if let (Some(distribution_type_id), None) = (
-                                    distribution_node.children.first(),
-                                    distribution_node.children.get(1),
-                                ) {
-                                    let distribution_type_node =
-                                        self.nodes.get_node(*distribution_type_id)?;
-                                    match distribution_type_node.rule {
-                                        Type::Global => {
-                                            // TODO: support global spaces via SQL API.
-                                            return Err(SbroadError::NotImplemented(
-                                                Entity::Node,
-                                                "global spaces are not supported yet".into(),
-                                            ));
-                                        }
-                                        Type::Sharding => {
-                                            let shard_node =
-                                                self.nodes.get_node(*distribution_type_id)?;
-                                            for shard_col_id in &shard_node.children {
-                                                let shard_col_node =
-                                                    self.nodes.get_node(*shard_col_id)?;
-                                                if shard_col_node.rule != Type::ShardingColumn {
-                                                    return Err(SbroadError::Invalid(
-                                                        Entity::Node,
-                                                        Some(format!("AST shard key node {shard_col_node:?} contains unexpected children")),
-                                                    ));
-                                                }
-                                                let shard_col_name = normalize_name_for_space_api(
-                                                    shard_col_node.value.as_ref().ok_or_else(|| {
-                                                        SbroadError::Invalid(
-                                                            Entity::Column,
-                                                            Some("shard key column name is empty in the create table AST".into())
-                                                        )
-                                                    })?,
-                                                );
-                                                shard_keys.push(shard_col_name);
-                                            }
-                                        }
-                                        _ => {
-                                            return Err(SbroadError::Invalid(
-                                                Entity::Node,
-                                                Some(format!("AST table distribution node {distribution_type_node:?} contains unexpected children")),
-                                            ));
-                                        }
-                                    }
-                                } else {
-                                    return Err(SbroadError::Invalid(
-                                        Entity::Node,
-                                        Some(format!("AST table distribution node {child_node:?} contains unexpected children")),
-                                    ));
-                                }
-                            }
-                            Type::OptionParam => {
-                                timeout = get_timeout(*child_id)?;
-                            }
-                            _ => {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Node,
-                                    Some(format!("AST create table node {child_node:?} contains unexpected children")),
-                                ));
-                            }
-                        }
-                    }
-                    let create_sharded_table = Ddl::CreateShardedTable {
-                        name: table_name,
-                        format: columns,
-                        primary_key: pk_keys,
-                        sharding_key: shard_keys,
-                        timeout,
-                    };
+                    let create_sharded_table = parse_create_table(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
                     map.add(id, plan_id);
                 }
@@ -1357,12 +1452,15 @@ impl Ast for AbstractSyntaxTree {
                                 );
                             }
                             Type::OptionParam => {
-                                timeout = get_timeout(*child_id)?;
+                                timeout = get_timeout(self, *child_id)?;
                             }
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
-                                    Some(format!("AST drop table node {child_node:?} contains unexpected children")),
+                                    Some(format!(
+                                        "AST drop table node {:?} contains unexpected children",
+                                        child_node,
+                                    )),
                                 ));
                             }
                         }
