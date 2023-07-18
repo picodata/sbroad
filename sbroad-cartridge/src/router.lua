@@ -1,6 +1,7 @@
 require('strict').on()
 require('sbroad')
 require('sbroad.core-router')
+local helper = require('sbroad.helper')
 
 local cartridge = require('cartridge')
 
@@ -65,7 +66,7 @@ local function trace(query, params, context, id)
         return nil, parser_res
     end
 
-    return parser_res[1]
+    return helper.format_result(parser_res[1])
 end
 
 local function execute(query, params)
@@ -79,7 +80,7 @@ local function execute(query, params)
         return nil, parser_res
     end
 
-    return parser_res[1]
+    return helper.format_result(parser_res[1])
 end
 
 return {
