@@ -165,7 +165,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         Type::TypeBool => {
                                             column_def.data_type = RelationType::Boolean;
                                         }
-                                        Type::Decimal => {
+                                        Type::TypeDecimal => {
                                             column_def.data_type = RelationType::Decimal;
                                         }
                                         Type::TypeDouble => {
