@@ -19,7 +19,7 @@ impl Policy {
     fn new_seg(targets: &[&str]) -> Policy {
         Policy::Segment(
             targets
-                .into_iter()
+                .iter()
                 .map(|x| x.to_string())
                 .collect::<Vec<String>>(),
         )
@@ -41,8 +41,8 @@ impl Plan {
                         match t {
                             Target::Reference(position) => {
                                 let a = aliases.get(*position).unwrap();
-                                let striped_alias = if let Some(s) = a.strip_prefix("\"") {
-                                    if let Some(ss) = s.strip_suffix("\"") {
+                                let striped_alias = if let Some(s) = a.strip_prefix('\"') {
+                                    if let Some(ss) = s.strip_suffix('\"') {
                                         ss.to_string()
                                     } else {
                                         a.to_string()

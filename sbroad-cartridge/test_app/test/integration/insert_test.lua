@@ -4,6 +4,7 @@ local g = t.group('integration_api.insert')
 local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
 
+
 g.before_all(function()
     helper.start_test_cluster(helper.cluster_config)
     cluster = helper.cluster
@@ -42,6 +43,16 @@ g.before_each(
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
+
+        r, err = api:call("sbroad.execute", {
+            [[insert into "unique_secondary_index" values (?, ?, ?), (?, ?, ?)]],
+            {
+                1, 1, 1,
+                2, 1, 2,
+            }
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
     end
 )
 
@@ -51,11 +62,13 @@ g.after_each(
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage1:call("box.execute", { [[truncate table "t"]] })
+        storage1:call("box.execute", { [[truncate table "unique_secondary_index"]] })
 
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage2:call("box.execute", { [[truncate table "t"]] })
+        storage2:call("box.execute", { [[truncate table "unique_secondary_index"]] })
     end
 )
 
@@ -369,4 +382,127 @@ g.test_insert_9 = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {row_count = 0})
+end
+
+g.test_insert_on_conflict_do_nothing = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+    SELECT * FROM "space_simple_shard_key"
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert(r.rows ~= nil)
+    local before_insert_rows = r.rows
+
+    r, err = api:call("sbroad.execute", { [[
+    INSERT INTO "space_simple_shard_key" VALUES (1, '1', 1)
+    ON CONFLICT DO NOTHING
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 0})
+
+    r, err = api:call("sbroad.execute", { [[
+    select * from "space_simple_shard_key"
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r.rows, before_insert_rows)
+end
+
+g.test_insert_select_on_conflict_do_nothing = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+    SELECT * FROM "space_simple_shard_key"
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert(r.rows ~= nil)
+    local before_insert_rows = r.rows
+
+    r, err = api:call("sbroad.execute", { [[
+    INSERT INTO "space_simple_shard_key"
+    SELECT * FROM "space_simple_shard_key"
+    ON CONFLICT DO NOTHING
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 0})
+
+    r, err = api:call("sbroad.execute", { [[
+    select * from "space_simple_shard_key"
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r.rows, before_insert_rows)
+end
+
+g.test_insert_on_conflict_do_replace = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+    INSERT INTO "space_simple_shard_key" ("id", "name", "sysOp")
+    VALUES (1, '1', 1)
+    ON CONFLICT DO REPLACE
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    -- check the row was replaced
+    r, err = api:call("sbroad.execute", { [[
+    select * from "space_simple_shard_key" ]] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+        },
+        rows = {
+            {1, "1", 1},
+            {10, nil, 0},
+        },
+    })
+end
+
+g.test_insert_select_on_conflict_do_replace = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+    INSERT INTO "space_simple_shard_key" ("id", "name", "sysOp")
+    SELECT "id", "name" || '1', "sysOp" + 4
+    FROM "space_simple_shard_key"
+    ON CONFLICT DO REPLACE
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+
+    -- check all rows were replaced
+    r, err = api:call("sbroad.execute", { [[
+    select * from "space_simple_shard_key" ]] })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+        },
+        rows = {
+            {1, "ok1", 5},
+            {10, nil, 4},
+        },
+    })
+end
+
+g.test_insert_on_conflict_do_replace_fails_for_secondary_unique_index = function()
+    local api = cluster:server("api-1").net_box
+
+    -- unique_secondary_index contains on the same storage
+    -- 1, 1, 1
+    -- 2, 1, 2
+    -- It has primary index on the 1-st column, and unique secondary
+    -- index on the 3-rd column, so the insert should fail
+    local _, err = api:call("sbroad.execute", { [[
+    INSERT INTO "unique_secondary_index"
+    VALUES (2, 1, 1)
+    ON CONFLICT DO REPLACE
+    ]]})
+    t.assert_str_contains(err.message,
+            "TupleFound: Duplicate key exists in unique index \\\\\\\"secondary\\\\\\\"")
 end

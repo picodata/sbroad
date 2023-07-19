@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{JoinKind, Relational};
+use crate::ir::operator::{ConflictStrategy, JoinKind, Relational};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
@@ -739,7 +739,7 @@ enum ExplainNode {
     InnerJoin(InnerJoin),
     ValueRow(Row),
     Value,
-    Insert(String),
+    Insert(String, ConflictStrategy),
     Projection(Projection),
     Scan(Scan),
     Selection(Selection),
@@ -756,7 +756,7 @@ impl Display for ExplainNode {
             ExplainNode::InnerJoin(i) => i.to_string(),
             ExplainNode::ValueRow(r) => format!("value row (data={r})"),
             ExplainNode::Value => "values".to_string(),
-            ExplainNode::Insert(s) => format!("insert {s}"),
+            ExplainNode::Insert(s, conflict) => format!("insert {s} on conflict: {conflict}"),
             ExplainNode::Projection(e) => e.to_string(),
             ExplainNode::GroupBy(p) => p.to_string(),
             ExplainNode::Scan(s) => s.to_string(),
@@ -1094,7 +1094,11 @@ impl FullExplain {
                     }
                     Some(ExplainNode::Value)
                 }
-                Relational::Insert { relation, .. } => {
+                Relational::Insert {
+                    relation,
+                    conflict_strategy,
+                    ..
+                } => {
                     let values = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "Insert node failed to pop a value row.".into(),
@@ -1103,7 +1107,10 @@ impl FullExplain {
 
                     current_node.children.push(values);
 
-                    Some(ExplainNode::Insert(relation.into()))
+                    Some(ExplainNode::Insert(
+                        relation.into(),
+                        conflict_strategy.clone(),
+                    ))
                 }
             };
             stack.push(current_node);

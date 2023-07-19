@@ -1297,3 +1297,44 @@ schema:
       engine: memtx
       sharding_key:
       - na
+    unique_secondary_index:
+      format:
+        - type: integer
+          name: ua
+          is_nullable: false
+        - type: integer
+          name: ub
+          is_nullable: false
+        - type: integer
+          name: uc
+          is_nullable: false
+        - type: unsigned
+          name: bucket_id
+          is_nullable: false
+      temporary: false
+      indexes:
+        - unique: true
+          parts:
+            - path: ua
+              is_nullable: false
+              type: integer
+          type: TREE
+          name: primary
+        - unique: true
+          parts:
+            - path: uc
+              is_nullable: false
+              type: integer
+          type: TREE
+          name: secondary
+        - unique: false
+          parts:
+            - path: bucket_id
+              is_nullable: false
+              type: unsigned
+          type: TREE
+          name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+        - ub

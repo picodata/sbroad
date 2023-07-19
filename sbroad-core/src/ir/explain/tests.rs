@@ -314,7 +314,7 @@ fn insert_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"insert "test_space"
+        r#"insert "test_space" on conflict: fail
     motion [policy: local segment([ref("COLUMN_1")])]
         values
             value row (data=ROW(1::unsigned, '123'::string))
@@ -335,7 +335,7 @@ fn multiply_insert_plan() {
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"insert "test_space"
+        r#"insert "test_space" on conflict: fail
     motion [policy: local segment([ref("COLUMN_5")])]
         values
             value row (data=ROW(1::unsigned, '123'::string))
@@ -359,7 +359,7 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
 
     let mut actual_explain = String::new();
     actual_explain.push_str(
-        r#"insert "test_space"
+        r#"insert "test_space" on conflict: fail
     motion [policy: segment([ref("identification_number")])]
         projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
             scan "hash_testing"

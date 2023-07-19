@@ -194,6 +194,34 @@ impl Display for JoinKind {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum ConflictStrategy {
+    /// Swallow the error, do not insert the conflicting tuple
+    DoNothing,
+    /// Replace the conflicting tuple with the new one
+    DoReplace,
+    /// Throw the error, no tuples will be inserted for this
+    /// storage. But for other storages the insertion may be successful.
+    DoFail,
+}
+
+impl Default for ConflictStrategy {
+    fn default() -> Self {
+        ConflictStrategy::DoFail
+    }
+}
+
+impl Display for ConflictStrategy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            ConflictStrategy::DoNothing => "nothing",
+            ConflictStrategy::DoReplace => "replace",
+            ConflictStrategy::DoFail => "fail",
+        };
+        write!(f, "{s}")
+    }
+}
+
 /// Relational algebra operator returning a new tuple.
 ///
 /// Transforms input tuple(s) into the output one using the
@@ -217,6 +245,8 @@ pub enum Relational {
         children: Vec<usize>,
         /// The output tuple (need for `insert returning`).
         output: usize,
+        /// What to do in case there is a conflict during insert on storage
+        conflict_strategy: ConflictStrategy,
     },
     Join {
         /// Contains at least two elements: left and right node indexes
@@ -682,6 +712,7 @@ impl Plan {
         relation: &str,
         child: usize,
         columns: &[&str],
+        conflict_strategy: ConflictStrategy,
     ) -> Result<usize, SbroadError> {
         let rel = self.relations.get(relation).ok_or_else(|| {
             SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
@@ -750,6 +781,7 @@ impl Plan {
             columns,
             children: vec![child],
             output,
+            conflict_strategy,
         });
         let insert_id = self.nodes.push(insert);
         self.replace_parent_in_subtree(output, None, Some(insert_id))?;

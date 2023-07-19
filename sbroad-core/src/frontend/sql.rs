@@ -22,7 +22,7 @@ use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Arithmetic, Bool, JoinKind, Unary};
+use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Unary};
 use crate::ir::relation::Type as RelationType;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
@@ -1375,6 +1375,28 @@ impl Ast for AbstractSyntaxTree {
                             "(second child) among insert children".into(),
                         )
                     })?;
+                    let get_conflict_strategy =
+                        |child_idx: usize| -> Result<ConflictStrategy, SbroadError> {
+                            let Some(child_id) = node.children.get(child_idx).copied() else {
+                            return Ok(ConflictStrategy::DoFail)
+                        };
+                            let rule = &self.nodes.get_node(child_id)?.rule;
+                            let res = match rule {
+                                Type::DoNothing => ConflictStrategy::DoNothing,
+                                Type::DoReplace => ConflictStrategy::DoReplace,
+                                Type::DoFail => ConflictStrategy::DoFail,
+                                _ => {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::AST,
+                                        Some(format!(
+                                            "expected conflict strategy on \
+                                AST id ({child_id}). Got: {rule:?}"
+                                        )),
+                                    ))
+                                }
+                            };
+                            Ok(res)
+                        };
                     let ast_child = self.nodes.get_node(*ast_child_id)?;
                     let plan_insert_id = if let Type::TargetColumns = ast_child.rule {
                         // insert into t (a, b, c) ...
@@ -1402,11 +1424,18 @@ impl Ast for AbstractSyntaxTree {
                             )
                         })?;
                         let plan_rel_child_id = map.get(*ast_rel_child_id)?;
-                        plan.add_insert(&relation, plan_rel_child_id, &col_names)?
+                        let conflict_strategy = get_conflict_strategy(3)?;
+                        plan.add_insert(
+                            &relation,
+                            plan_rel_child_id,
+                            &col_names,
+                            conflict_strategy,
+                        )?
                     } else {
                         // insert into t ...
                         let plan_child_id = map.get(*ast_child_id)?;
-                        plan.add_insert(&relation, plan_child_id, &[])?
+                        let conflict_strategy = get_conflict_strategy(2)?;
+                        plan.add_insert(&relation, plan_child_id, &[], conflict_strategy)?
                     };
                     map.add(id, plan_insert_id);
                 }
@@ -1487,6 +1516,9 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Distinct
                 | Type::Distribution
                 | Type::Duration
+                | Type::DoNothing
+                | Type::DoReplace
+                | Type::DoFail
                 | Type::Engine
                 | Type::FunctionName
                 | Type::Global

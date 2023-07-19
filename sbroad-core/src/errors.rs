@@ -196,6 +196,7 @@ pub enum Action {
     Prepare,
     Put,
     Replace,
+    ReplaceOnConflict,
     Retrieve,
     Serialize,
 }
@@ -217,6 +218,7 @@ impl fmt::Display for Action {
             Action::Prepare => "prepare".to_string(),
             Action::Put => "put".to_string(),
             Action::Replace => "replace".to_string(),
+            Action::ReplaceOnConflict => "replace on conflict".to_string(),
             Action::Retrieve => "retrieve".to_string(),
             Action::Serialize => "serialize".to_string(),
         };

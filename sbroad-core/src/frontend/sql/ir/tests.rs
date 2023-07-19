@@ -231,7 +231,7 @@ fn front_sql10() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"insert "t"
+        r#"insert "t" on conflict: fail
     motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned, 3::unsigned, 4::unsigned))
@@ -248,7 +248,7 @@ fn front_sql11() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"insert "t"
+        r#"insert "t" on conflict: fail
     motion [policy: local segment([ref("COLUMN_1"), value(NULL)])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
@@ -265,7 +265,7 @@ fn front_sql14() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"insert "t"
+        r#"insert "t" on conflict: fail
     motion [policy: segment([ref("b"), value(NULL)])]
         projection ("t"."b"::unsigned -> "b", "t"."d"::unsigned -> "d")
             scan "t"
@@ -631,11 +631,12 @@ fn front_sql_join() {
 
 #[test]
 fn front_sql_groupby_insert() {
-    let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t" group by "b", "d""#;
+    let input = r#"INSERT INTO "t" ("a", "c") 
+    SELECT "b", "d" FROM "t" group by "b", "d" ON CONFLICT DO FAIL"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
-        r#"insert "t"
+        r#"insert "t" on conflict: fail
     motion [policy: segment([ref("b"), value(NULL)])]
         projection ("column_24"::unsigned -> "b", "column_25"::unsigned -> "d")
             group by ("column_24"::unsigned, "column_25"::unsigned) output: ("column_25"::unsigned -> "column_25", "column_24"::unsigned -> "column_24")
@@ -1126,7 +1127,7 @@ fn front_sql_insert_single() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"insert "t"
+        r#"insert "t" on conflict: fail
     motion [policy: segment([ref("COL_1"), value(NULL)])]
         projection (sum(("sum_25"::decimal))::decimal -> "COL_1", sum(("count_28"::integer))::decimal -> "COL_2")
             motion [policy: full]
@@ -1913,6 +1914,33 @@ fn front_sql_select_distinct_with_aggr2() {
         scan
             projection (sum(("t"."a"::unsigned))::decimal -> "sum_13")
                 scan "t"
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_on_conflict() {
+    let mut input = r#"insert into "t" values (1, 1, 1, 1) on conflict do nothing"#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let mut expected_explain = String::from(
+        r#"insert "t" on conflict: nothing
+    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+        values
+            value row (data=ROW(1::unsigned, 1::unsigned, 1::unsigned, 1::unsigned))
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+
+    input = r#"insert into "t" values (1, 1, 1, 1) on conflict do replace"#;
+    plan = sql_to_optimized_ir(input, vec![]);
+    expected_explain = String::from(
+        r#"insert "t" on conflict: replace
+    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+        values
+            value row (data=ROW(1::unsigned, 1::unsigned, 1::unsigned, 1::unsigned))
 "#,
     );
 

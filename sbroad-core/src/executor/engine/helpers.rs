@@ -7,6 +7,7 @@ use std::{
     rc::Rc,
 };
 
+use tarantool::error::{Error, TarantoolErrorCode};
 use tarantool::{
     space::Space,
     transaction::transaction,
@@ -16,6 +17,7 @@ use tarantool::{
     },
 };
 
+use crate::ir::operator::ConflictStrategy;
 use crate::{
     backend::sql::{
         ir::{PatternWithParams, TmpSpaceMap},
@@ -93,14 +95,11 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
             // TODO: refactor this code when we'll support other DML statements.
             let motion_id = plan.insert_child_id(sp_top_id)?;
             let motion = plan.get_relation_node(motion_id)?;
-            let policy = if let Relational::Motion { policy, .. } = motion {
-                policy
-            } else {
+            let Relational::Motion { policy, .. } = motion else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format!(
-                        "expected motion node under insert node, got: {:?}",
-                        motion
+                        "expected motion node under insert node, got: {motion:?}",
                     )),
                 ));
             };
@@ -120,8 +119,7 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format!(
-                        "unsupported motion policy under insert node: {:?}",
-                        policy
+                        "unsupported motion policy under insert node: {policy:?}",
                     )),
                 ));
             };
@@ -405,6 +403,10 @@ pub fn execute_dml(
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
     })?;
+    let conflict_strategy = optional
+        .exec_plan
+        .get_ir_plan()
+        .insert_conflict_strategy(insert_id)?;
     transaction(|| -> Result<(), SbroadError> {
         for (bucket_id, positions) in vtable.get_index().iter() {
             for pos in positions {
@@ -441,7 +443,56 @@ pub fn execute_dml(
                         }
                     }
                 }
-                space.insert(&insert_tuple).map_err(|e| {
+                let insert_result = space.insert(&insert_tuple);
+                if let Err(Error::Tarantool(tnt_err)) = &insert_result {
+                    if tnt_err.error_code() == TarantoolErrorCode::TupleFound as u32 {
+                        match conflict_strategy {
+                            ConflictStrategy::DoNothing => {
+                                debug!(
+                                    Option::from("execute_dml"),
+                                    &format!(
+                                        "{} {:?}. {}",
+                                        "failed to insert tuple:",
+                                        insert_tuple,
+                                        "Skipping according to conflict strategy"
+                                    )
+                                );
+                            }
+                            ConflictStrategy::DoReplace => {
+                                debug!(
+                                    Option::from("execute_dml"),
+                                    &format!(
+                                        "{} {:?}. {}",
+                                        "failed to insert tuple:",
+                                        insert_tuple,
+                                        "Trying to replace according to conflict strategy"
+                                    )
+                                );
+                                space.replace(&insert_tuple).map_err(|e| {
+                                    SbroadError::FailedTo(
+                                        Action::ReplaceOnConflict,
+                                        Some(Entity::Space),
+                                        format!("{e}"),
+                                    )
+                                })?;
+                                result.row_count += 1;
+                            }
+                            ConflictStrategy::DoFail => {
+                                return Err(SbroadError::FailedTo(
+                                    Action::Insert,
+                                    Some(Entity::Space),
+                                    format!("{tnt_err}"),
+                                ))
+                            }
+                        }
+                        // if either DoReplace or DoNothing was done,
+                        // jump to next tuple iteration. Otherwise
+                        // the error is not DuplicateKey, and we
+                        // should throw it back to user.
+                        continue;
+                    };
+                }
+                insert_result.map_err(|e| {
                     SbroadError::FailedTo(Action::Insert, Some(Entity::Space), format!("{e}"))
                 })?;
                 result.row_count += 1;

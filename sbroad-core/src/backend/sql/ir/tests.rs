@@ -2,9 +2,9 @@ use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::mock::RouterConfigurationMock;
+
 use crate::executor::ir::ExecutionPlan;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
+
 use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::tree::Snapshot;

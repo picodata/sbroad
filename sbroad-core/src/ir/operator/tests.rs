@@ -288,7 +288,8 @@ fn insert() {
 
     assert_eq!(
         SbroadError::NotFound(Entity::Table, "t4 among plan relations".into()),
-        plan.add_insert("t4", scan_t1_id, &["a"]).unwrap_err()
+        plan.add_insert("t4", scan_t1_id, &["a"], ConflictStrategy::default())
+            .unwrap_err()
     );
 
     assert_eq!(
@@ -297,18 +298,25 @@ fn insert() {
             Some(Entity::Column),
             "system column c cannot be inserted".into(),
         ),
-        plan.add_insert("t2", scan_t1_id, &["a", "b", "c"])
-            .unwrap_err()
+        plan.add_insert(
+            "t2",
+            scan_t1_id,
+            &["a", "b", "c"],
+            ConflictStrategy::default()
+        )
+        .unwrap_err()
     );
 
     assert_eq!(
         SbroadError::UnexpectedNumberOfValues(
             "invalid number of values: 1. Table t2 expects 2 column(s).".into()
         ),
-        plan.add_insert("t2", scan_t1_id, &["a", "b"]).unwrap_err()
+        plan.add_insert("t2", scan_t1_id, &["a", "b"], ConflictStrategy::default())
+            .unwrap_err()
     );
 
-    plan.add_insert("t1", scan_t1_id, &["a"]).unwrap();
+    plan.add_insert("t1", scan_t1_id, &["a"], ConflictStrategy::default())
+        .unwrap();
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::errors::{Entity, SbroadError};
-use crate::ir::operator::Relational;
+use crate::ir::operator::{ConflictStrategy, Relational};
 use crate::ir::relation::{Column, Table};
 use crate::ir::Plan;
 use ahash::AHashMap;
@@ -17,6 +17,23 @@ impl Plan {
                 Entity::Operator,
                 Some("INSERT must have exactly a single child node".to_string()),
             ));
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("INSERT with id {insert_id}")),
+        ))
+    }
+
+    pub(crate) fn insert_conflict_strategy(
+        &self,
+        insert_id: usize,
+    ) -> Result<&ConflictStrategy, SbroadError> {
+        let insert = self.get_relation_node(insert_id)?;
+        if let Relational::Insert {
+            conflict_strategy, ..
+        } = insert
+        {
+            return Ok(conflict_strategy);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
