@@ -307,7 +307,7 @@ where
                     output,
                     ..
                 } => match policy {
-                    MotionPolicy::Full => {
+                    MotionPolicy::Full | MotionPolicy::Local => {
                         self.bucket_map.insert(*output, Buckets::new_all());
                     }
                     MotionPolicy::Segment(_) => {
@@ -357,14 +357,17 @@ where
                             self.bucket_map.insert(*output, child_buckets);
                         }
                     }
-                    MotionPolicy::Local => {
+                    MotionPolicy::None => {
                         return Err(SbroadError::Invalid(
                             Entity::Motion,
                             Some("local motion policy should never appear in the plan".to_string()),
                         ));
                     }
                 },
-                Relational::Insert {
+                Relational::Delete {
+                    children, output, ..
+                }
+                | Relational::Insert {
                     children, output, ..
                 }
                 | Relational::Projection {

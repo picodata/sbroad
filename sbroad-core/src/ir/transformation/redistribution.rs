@@ -17,6 +17,7 @@ use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
+pub(crate) mod delete;
 pub(crate) mod eq_cols;
 pub(crate) mod groupby;
 pub(crate) mod insert;
@@ -73,11 +74,13 @@ impl From<&Key> for MotionKey {
 /// Determinate what portion of data to move between data nodes in cluster.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionPolicy {
+    /// Nothing to move.
+    None,
     /// Move all data.
     Full,
     /// Move only a segment of data according to the motion key.
     Segment(MotionKey),
-    /// No need to move data.
+    /// Materialize a virtual table on the data node.
     Local,
     /// Materialize a virtual table on the data node and calculate
     /// tuple buckets.
@@ -87,7 +90,10 @@ pub enum MotionPolicy {
 impl MotionPolicy {
     #[must_use]
     pub fn is_local(&self) -> bool {
-        matches!(self, MotionPolicy::Local | MotionPolicy::LocalSegment(_))
+        matches!(
+            self,
+            MotionPolicy::Local | MotionPolicy::LocalSegment(_) | MotionPolicy::None
+        )
     }
 }
 
@@ -156,15 +162,14 @@ fn join_policy_for_or(
     right_policy: &MotionPolicy,
 ) -> Result<MotionPolicy, SbroadError> {
     match (left_policy, right_policy) {
-        (MotionPolicy::LocalSegment(_), _) | (_, MotionPolicy::LocalSegment(_)) => {
-            Err(SbroadError::Invalid(
-                Entity::Motion,
-                Some("LocalSegment motion is not supported for joins".to_string()),
-            ))
-        }
+        (MotionPolicy::LocalSegment(_) | MotionPolicy::Local, _)
+        | (_, MotionPolicy::LocalSegment(_) | MotionPolicy::Local) => Err(SbroadError::Invalid(
+            Entity::Motion,
+            Some("LocalSegment motion is not supported for joins".to_string()),
+        )),
         (MotionPolicy::Full, _) | (_, MotionPolicy::Full) => Ok(MotionPolicy::Full),
-        (MotionPolicy::Local, _) => Ok(right_policy.clone()),
-        (_, MotionPolicy::Local) => Ok(left_policy.clone()),
+        (MotionPolicy::None, _) => Ok(right_policy.clone()),
+        (_, MotionPolicy::None) => Ok(left_policy.clone()),
         (MotionPolicy::Segment(key_left), MotionPolicy::Segment(key_right)) => {
             if key_left == key_right {
                 Ok(left_policy.clone())
@@ -181,15 +186,14 @@ fn join_policy_for_and(
     right_policy: &MotionPolicy,
 ) -> Result<MotionPolicy, SbroadError> {
     match (left_policy, right_policy) {
-        (MotionPolicy::LocalSegment(_), _) | (_, MotionPolicy::LocalSegment(_)) => {
-            Err(SbroadError::Invalid(
-                Entity::Motion,
-                Some("LocalSegment motion is not supported for joins".to_string()),
-            ))
-        }
+        (MotionPolicy::LocalSegment(_) | MotionPolicy::Local, _)
+        | (_, MotionPolicy::LocalSegment(_) | MotionPolicy::Local) => Err(SbroadError::Invalid(
+            Entity::Motion,
+            Some("LocalSegment motion is not supported for joins".to_string()),
+        )),
         (MotionPolicy::Full, _) => Ok(right_policy.clone()),
         (_, MotionPolicy::Full) => Ok(left_policy.clone()),
-        (MotionPolicy::Local, _) | (_, MotionPolicy::Local) => Ok(MotionPolicy::Local),
+        (MotionPolicy::None, _) | (_, MotionPolicy::None) => Ok(MotionPolicy::None),
         (MotionPolicy::Segment(key_left), MotionPolicy::Segment(key_right)) => {
             if key_left == key_right {
                 Ok(left_policy.clone())
@@ -378,7 +382,7 @@ impl Plan {
                 } = inner_dist
                 {
                     if keys_outer.intersection(keys_inner).iter().next().is_some() {
-                        return Ok(MotionPolicy::Local);
+                        return Ok(MotionPolicy::None);
                     }
                 }
                 // Redistribute the inner tuples using the first key from the outer tuple.
@@ -428,7 +432,7 @@ impl Plan {
         for child in children {
             if let Some((policy, ref mut program)) = strategy.children_policy.get_mut(&child) {
                 let program = std::mem::take(program);
-                if let MotionPolicy::Local = policy {
+                if let MotionPolicy::None = policy {
                     children_with_motions.push(child);
                 } else {
                     children_with_motions.push(self.add_motion(child, policy, program)?);
@@ -823,7 +827,7 @@ impl Plan {
                     for outer_key in *outer_keys {
                         for inner_key in *inner_keys {
                             if outer_key == inner_key {
-                                return Ok(MotionPolicy::Local);
+                                return Ok(MotionPolicy::None);
                             }
                         }
                     }
@@ -1040,8 +1044,8 @@ impl Plan {
         join_kind: &JoinKind,
     ) -> (MotionPolicy, MotionPolicy) {
         let (mut outer_policy, mut inner_policy) = match segmented_child {
-            JoinChild::Outer => (MotionPolicy::Local, MotionPolicy::Full),
-            JoinChild::Inner => (MotionPolicy::Full, MotionPolicy::Local),
+            JoinChild::Outer => (MotionPolicy::None, MotionPolicy::Full),
+            JoinChild::Inner => (MotionPolicy::Full, MotionPolicy::None),
         };
         if let Some(eq_cols) = condition_eq_cols {
             for key in keys.iter() {
@@ -1199,7 +1203,7 @@ impl Plan {
                 )
             }
             (Distribution::Replicated | Distribution::Any, Distribution::Single) => {
-                (MotionPolicy::Local, MotionPolicy::Full)
+                (MotionPolicy::None, MotionPolicy::Full)
             }
             (Distribution::Single, Distribution::Replicated | Distribution::Any) => {
                 if let JoinKind::LeftOuter = join_kind {
@@ -1213,7 +1217,7 @@ impl Plan {
                         MotionPolicy::Full,
                     )
                 } else {
-                    (MotionPolicy::Full, MotionPolicy::Local)
+                    (MotionPolicy::Full, MotionPolicy::None)
                 }
             }
             // above we checked that at least one child has Distribution::Single
@@ -1234,6 +1238,29 @@ impl Plan {
             strategy.add_child(*sq, MotionPolicy::Full, Program::new());
         }
         Ok(Some(strategy))
+    }
+
+    fn resolve_delete_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+        let mut map = Strategy::new(rel_id);
+        let child_id = self.delete_child_id(rel_id)?;
+        let space = self.delete_table(rel_id)?;
+        let pk_len = space.primary_key.positions.len();
+        if pk_len == 0 {
+            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "empty primary key for space {}",
+                space.name()
+            )));
+        }
+        // We expect that the columns in the child projection of the DELETE operator
+        let pk_pos: Vec<usize> = (0..pk_len).collect();
+
+        // Mark primary keys in the motion's virtual table.
+        let program = vec![MotionOpcode::PrimaryKey(pk_pos)];
+
+        // Delete node alway produce a local segment policy
+        // (i.e. materialization without bucket calculation).
+        map.add_child(child_id, MotionPolicy::Local, program);
+        Ok(map)
     }
 
     fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
@@ -1338,7 +1365,7 @@ impl Plan {
                                         )),
                                         Program::new(),
                                     );
-                                    map.add_child(*right, MotionPolicy::Local, Program::new());
+                                    map.add_child(*right, MotionPolicy::None, Program::new());
                                 }
                                 Distribution::Single => {
                                     // we could redistribute both children by any combination of columns,
@@ -1491,6 +1518,10 @@ impl Plan {
                 } => {
                     self.resolve_join_conflicts(*id, condition, &kind)?;
                     self.set_distribution(output)?;
+                }
+                Relational::Delete { .. } => {
+                    let strategy = self.resolve_delete_conflicts(*id)?;
+                    self.create_motion_nodes(strategy)?;
                 }
                 Relational::Insert { .. } => {
                     // Insert output tuple already has relation's distribution.

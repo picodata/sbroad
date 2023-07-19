@@ -235,6 +235,14 @@ pub enum Relational {
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
+    Delete {
+        /// Relation name.
+        relation: String,
+        /// Contains exactly one single element.
+        children: Vec<usize>,
+        /// The output tuple (reserved for `delete returning`).
+        output: usize,
+    },
     Insert {
         /// Relation name.
         relation: String,
@@ -243,7 +251,7 @@ pub enum Relational {
         columns: Vec<usize>,
         /// Contains exactly one single element.
         children: Vec<usize>,
-        /// The output tuple (need for `insert returning`).
+        /// The output tuple (reserved for `insert returning`).
         output: usize,
         /// What to do in case there is a conflict during insert on storage
         conflict_strategy: ConflictStrategy,
@@ -410,6 +418,7 @@ impl Relational {
             | Relational::GroupBy { output, .. }
             | Relational::Having { output, .. }
             | Relational::Join { output, .. }
+            | Relational::Delete { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
@@ -430,6 +439,7 @@ impl Relational {
             | Relational::GroupBy { output, .. }
             | Relational::Having { output, .. }
             | Relational::Join { output, .. }
+            | Relational::Delete { output, .. }
             | Relational::Insert { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
@@ -450,6 +460,7 @@ impl Relational {
             | Relational::GroupBy { children, .. }
             | Relational::Join { children, .. }
             | Relational::Having { children, .. }
+            | Relational::Delete { children, .. }
             | Relational::Insert { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
@@ -476,6 +487,9 @@ impl Relational {
                 ref mut children, ..
             }
             | Relational::Join {
+                ref mut children, ..
+            }
+            | Relational::Delete {
                 ref mut children, ..
             }
             | Relational::Insert {
@@ -506,6 +520,11 @@ impl Relational {
         }
     }
 
+    /// Checks if the node is deletion.
+    #[must_use]
+    pub fn is_delete(&self) -> bool {
+        matches!(self, Relational::Delete { .. })
+    }
     /// Checks if the node is an insertion.
     #[must_use]
     pub fn is_insert(&self) -> bool {
@@ -535,6 +554,10 @@ impl Relational {
                 ..
             }
             | Relational::Join {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Delete {
                 children: ref mut old,
                 ..
             }
@@ -598,7 +621,9 @@ impl Relational {
         position: usize,
     ) -> Result<Option<&'n str>, SbroadError> {
         match self {
-            Relational::Insert { relation, .. } => Ok(Some(relation.as_str())),
+            Relational::Insert { relation, .. } | Relational::Delete { relation, .. } => {
+                Ok(Some(relation.as_str()))
+            }
             Relational::ScanRelation {
                 alias, relation, ..
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
@@ -671,6 +696,22 @@ impl Relational {
 }
 
 impl Plan {
+    /// Adds delete node.
+    ///
+    /// # Errors
+    /// - child id pointes to non-existing or non-relational node.
+    pub fn add_delete(&mut self, table: String, child_id: usize) -> Result<usize, SbroadError> {
+        let output = self.add_row_for_output(child_id, &[], true)?;
+        let delete = Relational::Delete {
+            relation: table,
+            children: vec![child_id],
+            output,
+        };
+        let delete_id = self.nodes.push(Node::Relational(delete));
+        self.replace_parent_in_subtree(output, None, Some(delete_id))?;
+        Ok(delete_id)
+    }
+
     /// Adds except node.
     ///
     /// # Errors
@@ -948,11 +989,11 @@ impl Plan {
 
         let output = self.add_row_for_output(child_id, &[], true)?;
         match policy {
-            MotionPolicy::Local => {
+            MotionPolicy::None => {
                 return Err(SbroadError::Invalid(
                     Entity::Motion,
                     Some(format!(
-                        "add_motion: got MotionPolicy::Local for child_id: {child_id}"
+                        "add_motion: got MotionPolicy::None for child_id: {child_id}"
                     )),
                 ))
             }
@@ -966,8 +1007,10 @@ impl Plan {
             MotionPolicy::Full => {
                 self.set_const_dist(output)?;
             }
+            MotionPolicy::Local => {
+                self.set_dist(output, Distribution::Any)?;
+            }
         }
-        self.set_const_dist(output)?;
 
         let child = self.get_relation_node(child_id)?;
         let is_child_subquery = matches!(child, Relational::ScanSubQuery { .. });

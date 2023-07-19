@@ -305,6 +305,15 @@ impl ExecutionPlan {
                                 Relational::Except { .. } => sql.push_str("EXCEPT"),
                                 Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
                                 Relational::Having { .. } => sql.push_str("HAVING"),
+                                Relational::Delete { .. } => {
+                                    return Err(SbroadError::Unsupported(
+                                        Entity::Node,
+                                        Some(
+                                            "DML nodes are not supported in the generated SQL"
+                                                .into(),
+                                        ),
+                                    ));
+                                }
                                 Relational::Insert { relation, .. } => {
                                     sql.push_str("INSERT INTO ");
                                     sql.push_str(relation.as_str());

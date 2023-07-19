@@ -22,8 +22,8 @@ use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Unary};
-use crate::ir::relation::Type as RelationType;
+use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
+use crate::ir::relation::{Column, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, OptionKind, OptionSpec, Plan};
@@ -440,6 +440,7 @@ impl Ast for AbstractSyntaxTree {
 
         ast.set_top(0)?;
 
+        ast.transform_delete()?;
         ast.transform_select()?;
         ast.add_aliases_to_projection()?;
         ast.build_ref_to_relation_map()?;
@@ -1432,6 +1433,115 @@ impl Ast for AbstractSyntaxTree {
                     let plan_values_id = plan.add_values(plan_value_row_ids)?;
                     map.add(id, plan_values_id);
                 }
+                Type::Delete => {
+                    // Get table name and selection plan node id.
+                    let (proj_child_id, table_name) = if let Some(child_id) = node.children.first()
+                    {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Type::Table => {
+                                let plan_scan_id = map.get(*child_id)?;
+                                let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
+                                let table = if let Relational::ScanRelation { relation, .. } =
+                                    plan_scan_node
+                                {
+                                    relation.clone()
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::AST,
+                                        Some(format!(
+                                            "{}, got {plan_scan_node:?}",
+                                            "expected scan as the first child of the delete node",
+                                        )),
+                                    ));
+                                };
+                                (plan_scan_id, table)
+                            }
+                            Type::DeleteFilter => {
+                                let ast_table_id =
+                                    *child_node.children.first().ok_or_else(|| {
+                                        SbroadError::NotFound(
+                                            Entity::Node,
+                                            "(Table) among DeleteFilter children".into(),
+                                        )
+                                    })?;
+                                let plan_scan_id = map.get(ast_table_id)?;
+                                let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
+                                let table = if let Relational::ScanRelation { relation, .. } =
+                                    plan_scan_node
+                                {
+                                    relation.clone()
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::AST,
+                                        Some(format!(
+                                            "{}, got {plan_scan_node:?}",
+                                            "expected scan as the first child in delete filter",
+                                        )),
+                                    ));
+                                };
+                                let ast_filter_id =
+                                    child_node.children.get(1).ok_or_else(|| {
+                                        SbroadError::NotFound(
+                                            Entity::Node,
+                                            "(Expr) among DeleteFilter children".into(),
+                                        )
+                                    })?;
+                                let plan_filter_id = map.get(*ast_filter_id)?;
+                                let plan_select_id =
+                                    plan.add_select(&[plan_scan_id], plan_filter_id)?;
+                                (plan_select_id, table)
+                            }
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format!(
+                                        "AST delete node {:?} contains unexpected children",
+                                        child_node,
+                                    )),
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "AST delete node has no children.".into(),
+                        ));
+                    };
+                    let table = metadata.table(&table_name)?;
+                    // The projection in the delete operator contains only the primary key columns.
+                    let mut pk_columns = Vec::with_capacity(table.primary_key.positions.len());
+                    for pos in &table.primary_key.positions {
+                        let column: &Column = table.columns.get(*pos).ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::Table,
+                                Some(format!(
+                                    "{} {} {pos}",
+                                    "primary key refers to non-existing column", "at position",
+                                )),
+                            )
+                        })?;
+                        pk_columns.push(column.name.as_str());
+                    }
+                    let pk_column_ids = plan.new_columns(
+                        &[proj_child_id],
+                        false,
+                        &[0],
+                        pk_columns.as_ref(),
+                        false,
+                        false,
+                    )?;
+                    let mut alias_ids = Vec::with_capacity(pk_column_ids.len());
+                    for (pk_pos, pk_column_id) in pk_column_ids.iter().enumerate() {
+                        let pk_alias_id = plan
+                            .nodes
+                            .add_alias(&format!("pk_col_{pk_pos}"), *pk_column_id)?;
+                        alias_ids.push(pk_alias_id);
+                    }
+                    let plan_proj_id = plan.add_proj_internal(proj_child_id, &alias_ids, false)?;
+                    let plan_delete_id = plan.add_delete(table.name, plan_proj_id)?;
+
+                    map.add(id, plan_delete_id);
+                }
                 Type::Insert => {
                     let ast_table_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Insert has no children.".into())
@@ -1600,6 +1710,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ColumnIsNull
                 | Type::ColumnIsNotNull
                 | Type::ColumnName
+                | Type::DeleteFilter
                 | Type::DeletedTable
                 | Type::Divide
                 | Type::Distinct

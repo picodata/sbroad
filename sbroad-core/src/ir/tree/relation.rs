@@ -59,6 +59,7 @@ fn relational_next<'nodes>(
             Relational::Except { children, .. }
             | Relational::Join { children, .. }
             | Relational::Insert { children, .. }
+            | Relational::Delete { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }

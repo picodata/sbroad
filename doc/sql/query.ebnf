@@ -1,7 +1,7 @@
 STATEMENT   ::= EXPLAIN | DDL | DML | DQL
 EXPLAIN     ::= 'EXPLAIN' ( DML | DQL )
 DQL         ::= (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' 'DISTINCT'? ) SELECT )
-DML         ::= INSERT
+DML         ::= DELETE | INSERT
 DDL         ::= CreateTable | DropTable
 CreateTable ::= 'create table' table '(' Column (',' Column)* ',' PrimaryKey ')' ('using' ('memtx' | 'vinyl'))? Distribution Option?
 Column      ::= name ('Bool' | 'Decimal' | 'Double' | 'Int' | 'Number' | 'Scalar' | 'String' | 'Text' | 'Unsigned' | 'Varchar') ('null' | 'not null')?
@@ -45,4 +45,5 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
+DELETE      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? ('VALUES' row | SELECT )  ('on conflict' 'do'  ('nothing' | 'replace' | 'fail'))?

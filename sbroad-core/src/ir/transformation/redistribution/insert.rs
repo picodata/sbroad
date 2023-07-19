@@ -25,7 +25,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("INSERT with id {insert_id}")),
+            Some(format!("INSERT with id {insert_id} (child)")),
         ))
     }
 
@@ -46,7 +46,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("INSERT with id {insert_id}")),
+            Some(format!("INSERT with id {insert_id} (conflict strategy))")),
         ))
     }
 
@@ -115,7 +115,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("INSERT with id {insert_id}")),
+            Some(format!("INSERT with id {insert_id} (columns)")),
         ))
     }
 
@@ -132,7 +132,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("INSERT with id {insert_id}")),
+            Some(format!("INSERT with id {insert_id} (table)")),
         ))
     }
 }

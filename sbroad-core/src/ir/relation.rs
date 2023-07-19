@@ -369,7 +369,7 @@ pub struct Table {
     /// Primary key of the table (column positions).
     pub primary_key: Key,
     /// Unique table name.
-    name: String,
+    pub(crate) name: String,
     /// Table engine.
     pub engine: SpaceEngine,
 }

@@ -50,6 +50,8 @@ pub enum Type {
     Condition,
     CountAsterisk,
     Decimal,
+    Delete,
+    DeleteFilter,
     DeletedTable,
     Distinct,
     Distribution,
@@ -169,6 +171,8 @@ impl Type {
             Rule::CountAsterisk => Ok(Type::CountAsterisk),
             Rule::Condition => Ok(Type::Condition),
             Rule::Decimal => Ok(Type::Decimal),
+            Rule::Delete => Ok(Type::Delete),
+            Rule::DeleteFilter => Ok(Type::DeleteFilter),
             Rule::DeletedTable => Ok(Type::DeletedTable),
             Rule::Divide => Ok(Type::Divide),
             Rule::Double => Ok(Type::Double),
@@ -293,6 +297,8 @@ impl fmt::Display for Type {
             Type::CountAsterisk => "CountAsterisk".to_string(),
             Type::Condition => "Condition".to_string(),
             Type::Decimal => "Decimal".to_string(),
+            Type::Delete => "Delete".to_string(),
+            Type::DeleteFilter => "DeleteFilter".to_string(),
             Type::DeletedTable => "DeletedTable".to_string(),
             Type::Distinct => "Distinct".to_string(),
             Type::Distribution => "Distribution".to_string(),
@@ -639,6 +645,39 @@ impl AbstractSyntaxTree {
                 Entity::ParseNode,
                 Some(format!("expected join parse node, got: {node:?}")),
             ));
+        }
+        Ok(())
+    }
+
+    /// Put delete table under delete filter to support reference resolution.
+    pub(super) fn transform_delete(&mut self) -> Result<(), SbroadError> {
+        let arena_len = self.nodes.arena.len();
+        for id in 0..arena_len {
+            let node = self.nodes.get_node(id)?;
+            if node.rule != Type::Delete {
+                continue;
+            }
+            let (table_id, filter_id) = if let (Some(table_id), Some(filter_id)) =
+                (node.children.first(), node.children.get(1))
+            {
+                (*table_id, *filter_id)
+            } else {
+                continue;
+            };
+            let filter_node = self.nodes.get_node(filter_id)?;
+            if filter_node.rule != Type::DeleteFilter {
+                return Err(SbroadError::Invalid(
+                    Entity::ParseNode,
+                    Some(format!(
+                        "expected delete filter as a second child, got: {filter_node:?}"
+                    )),
+                ));
+            }
+            let mut new_filter_children = Vec::with_capacity(filter_node.children.len() + 1);
+            new_filter_children.push(table_id);
+            new_filter_children.extend(filter_node.children.iter().copied());
+            self.nodes.set_children(filter_id, new_filter_children)?;
+            self.nodes.set_children(id, vec![filter_id])?;
         }
         Ok(())
     }
@@ -1016,7 +1055,7 @@ impl AbstractSyntaxTree {
                         }
                     }
                 }
-                Type::Selection | Type::Having => {
+                Type::Selection | Type::Having | Type::DeleteFilter => {
                     let rel_id = rel_node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(format!(
                             "AST {:?} has no children.",

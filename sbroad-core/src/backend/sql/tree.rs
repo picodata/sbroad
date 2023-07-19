@@ -654,6 +654,7 @@ impl<'p> SyntaxPlan<'p> {
                 Ok(self.nodes.push_syntax_node(sn))
             }
             Node::Relational(rel) => match rel {
+                // TODO: throw an error instead (rewrite insert tests)
                 Relational::Insert {
                     columns,
                     children,
@@ -714,6 +715,12 @@ impl<'p> SyntaxPlan<'p> {
                     let sn = SyntaxNode::new_pointer(id, None, nodes);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
+                Relational::Delete { .. } => Err(SbroadError::Invalid(
+                    Entity::SyntaxPlan,
+                    Some(format!(
+                        "DML node {node:?} is not supported in the syntax plan"
+                    )),
+                )),
                 Relational::Join {
                     children,
                     condition,

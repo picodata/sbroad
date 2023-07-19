@@ -554,3 +554,6 @@ pub(crate) fn explain_check(sql: &str, explain: &str) {
 
 #[cfg(test)]
 mod concat;
+
+#[cfg(test)]
+mod delete;

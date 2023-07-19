@@ -188,29 +188,33 @@ where
                     continue;
                 }
 
-                // Local segment motions should be treated as a special case.
-                // 1. If we can materialize it on the router, then we should do it
-                //    (the child node is `VALUES` of constants).
-                // 2. Otherwise we should skip it and dispatch the query to the segments
-                //    (materialization would be done on the segments).
                 let motion = self.exec_plan.get_ir_plan().get_relation_node(*motion_id)?;
-                if let Relational::Motion {
-                    policy: MotionPolicy::LocalSegment(_),
-                    ..
-                } = motion
-                {
-                    if let Some(virtual_table) =
-                        materialize_values(&mut self.exec_plan, *motion_id)?
-                    {
-                        self.exec_plan.set_motion_vtable(
-                            *motion_id,
-                            virtual_table,
-                            &self.coordinator,
-                        )?;
-                        self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
-                        already_materialized.insert(top_id, *motion_id);
+                if let Relational::Motion { policy, .. } = motion {
+                    match policy {
+                        // Local segment motions should be treated as a special case.
+                        // 1. If we can materialize it on the router, then we should do it
+                        //    (the child node is `VALUES` of constants).
+                        // 2. Otherwise we should skip it and dispatch the query to the segments
+                        //    (materialization would be done on the segments).
+                        MotionPolicy::LocalSegment(_) => {
+                            if let Some(virtual_table) =
+                                materialize_values(&mut self.exec_plan, *motion_id)?
+                            {
+                                self.exec_plan.set_motion_vtable(
+                                    *motion_id,
+                                    virtual_table,
+                                    &self.coordinator,
+                                )?;
+                                self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
+                                already_materialized.insert(top_id, *motion_id);
+                            }
+                            continue;
+                        }
+                        // Local policy should be skipped and dispatched to the segments:
+                        // materialization would be done there.
+                        MotionPolicy::Local => continue,
+                        _ => {}
                     }
-                    continue;
                 }
 
                 let buckets = self.bucket_discovery(top_id)?;

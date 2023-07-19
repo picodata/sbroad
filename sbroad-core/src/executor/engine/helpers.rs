@@ -105,9 +105,25 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
         QueryType::DML => {
             let plan = exec_plan.get_ir_plan();
             let sp_top_id = plan.get_top()?;
-            // At the moment we support only `INSERT` statement for DML.
-            // TODO: refactor this code when we'll support other DML statements.
-            let motion_id = plan.insert_child_id(sp_top_id)?;
+            let sp_top = plan.get_relation_node(sp_top_id)?;
+            let motion_id = match sp_top {
+                Relational::Insert { children, .. } | Relational::Delete { children, .. } => {
+                    *children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!(
+                                "expected at least one child under DML node {sp_top:?}",
+                            )),
+                        )
+                    })?
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Plan,
+                        Some(format!("unsupported DML statement: {sp_top:?}",)),
+                    ));
+                }
+            };
             let motion = plan.get_relation_node(motion_id)?;
             let Relational::Motion { policy, .. } = motion else {
                 return Err(SbroadError::Invalid(
@@ -124,7 +140,7 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
             let already_materialized = exec_plan.get_motion_vtable(motion_id).is_ok();
             let ordered = if already_materialized {
                 OrderedSyntaxNodes::empty()
-            } else if let MotionPolicy::LocalSegment { .. } = policy {
+            } else if let MotionPolicy::LocalSegment { .. } | MotionPolicy::Local = policy {
                 let proj_id = exec_plan.get_motion_subtree_root(motion_id)?;
                 sub_plan_id = exec_plan.get_ir_plan().pattern_id(proj_id)?;
                 let motion_child_id = exec_plan.get_motion_child(motion_id)?;
@@ -134,7 +150,7 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format!(
-                        "unsupported motion policy under insert node: {policy:?}",
+                        "unsupported motion policy under DML node: {policy:?}",
                     )),
                 ));
             };
@@ -271,13 +287,25 @@ pub enum TupleBuilderCommands {
 
 pub type TupleBuilderPattern = Vec<TupleBuilderCommands>;
 
+fn init_delete_tuple_builder(
+    plan: &Plan,
+    delete_id: usize,
+) -> Result<TupleBuilderPattern, SbroadError> {
+    let table = plan.delete_table(delete_id)?;
+    let mut commands = Vec::with_capacity(table.primary_key.positions.len());
+    for pos in &table.primary_key.positions {
+        commands.push(TupleBuilderCommands::TakePosition(*pos));
+    }
+    Ok(commands)
+}
+
 /// Create commands to build the tuple for insertion,
 /// which does not take into account types of the virtual
 /// table.
 ///
 /// # Errors
 /// - Invalid insert node or plan
-pub fn init_insert_tuple_builder(
+fn init_insert_tuple_builder(
     plan: &Plan,
     insert_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
@@ -927,11 +955,131 @@ pub fn execute_dml_on_storage(
     let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
     let plan = optional.exec_plan.get_ir_plan();
+    let top_id = plan.get_top()?;
+    let top = plan.get_relation_node(top_id)?;
+    match top {
+        Relational::Insert { .. } => execute_insert_on_storage(runtime, &mut optional, required),
+        Relational::Delete { .. } => execute_delete_on_storage(runtime, &mut optional, required),
+        _ => Err(SbroadError::Invalid(
+            Entity::Plan,
+            Some(format!("expected DML node on the plan top, got {top:?}")),
+        )),
+    }
+}
 
-    // At the moment the only supported DML query is `INSERT`.
+fn materialize_vtable_locally(
+    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+    optional: &mut OptionalData,
+    required: &mut RequiredData,
+    child_id: usize,
+) -> Result<(), SbroadError> {
+    let subplan_top_id = optional.exec_plan.get_motion_subtree_root(child_id)?;
+    let plan = optional.exec_plan.get_ir_plan();
+    let column_names = plan.get_relational_aliases(subplan_top_id)?;
+    optional.exec_plan.get_mut_ir_plan().restore_constants()?;
+    let result = if required.can_be_cached {
+        execute_cacheable_dql(runtime, required, optional)?
+    } else {
+        let opts = std::mem::take(&mut required.options.execute_options);
+        execute_non_cacheable_dql(optional, required.options.vtable_max_rows, opts)?
+    };
+    let tuple = result.downcast::<Tuple>().map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Deserialize,
+            Some(Entity::Tuple),
+            format!("motion node {child_id}. {e:?}"),
+        )
+    })?;
+    let mut data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::Tuple),
+            format!("motion node {child_id}. {e}"),
+        )
+    })?;
+    let vtable = data
+        .get_mut(0)
+        .ok_or_else(|| SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into()))?
+        // It is a DML query, so we don't need to care about the column types
+        // in response. So, simply use scalar type for all the columns.
+        .as_virtual_table(column_names, true)?;
+    optional
+        .exec_plan
+        .set_motion_vtable(child_id, vtable, runtime)?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_delete_on_storage(
+    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+    optional: &mut OptionalData,
+    required: &mut RequiredData,
+) -> Result<ConsumerResult, SbroadError> {
+    let plan = optional.exec_plan.get_ir_plan();
+    let delete_id = plan.get_top()?;
+    let delete_child_id = plan.delete_child_id(delete_id)?;
+    let builder = init_delete_tuple_builder(plan, delete_id)?;
+    let space_name = normalize_name_for_space_api(plan.delete_table(delete_id)?.name());
+    let mut result = ConsumerResult::default();
+    let build_vtable_locally = optional
+        .exec_plan
+        .get_motion_vtable(delete_child_id)
+        .is_err();
+    if build_vtable_locally {
+        materialize_vtable_locally(runtime, optional, required, delete_child_id)?;
+    }
+    let vtable = optional.exec_plan.get_motion_vtable(delete_child_id)?;
+    let space = Space::find(&space_name).ok_or_else(|| {
+        SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
+    })?;
+    transaction(|| -> Result<(), SbroadError> {
+        for vt_tuple in vtable.get_tuples() {
+            let mut delete_tuple = Vec::with_capacity(builder.len());
+            for cmd in &builder {
+                if let TupleBuilderCommands::TakePosition(pos) = cmd {
+                    let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "column at position {pos} not found in the delete virtual table"
+                            )),
+                        )
+                    })?;
+                    delete_tuple.push(EncodedValue::Ref(value.into()));
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format!(
+                            "unexpected tuple builder cmd for delete primary key: {cmd:?}"
+                        )),
+                    ));
+                }
+            }
+            if let Err(Error::Tarantool(tnt_err)) = space.delete(&delete_tuple) {
+                return Err(SbroadError::FailedTo(
+                    Action::Delete,
+                    Some(Entity::Tuple),
+                    format!("{tnt_err:?}"),
+                ));
+            }
+            result.row_count += 1;
+        }
+        Ok(())
+    })?;
+
+    Ok(result)
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_insert_on_storage(
+    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+    optional: &mut OptionalData,
+    required: &mut RequiredData,
+) -> Result<ConsumerResult, SbroadError> {
     // We always generate a virtual table under the `INSERT` node
     // of the execution plan and prefer to execute it via space API
     // instead of SQL (for performance reasons).
+    let plan = optional.exec_plan.get_ir_plan();
     let insert_id = plan.get_top()?;
     let insert_child_id = plan.insert_child_id(insert_id)?;
     let builder = init_insert_tuple_builder(plan, insert_id)?;
@@ -972,40 +1120,7 @@ pub fn execute_dml_on_storage(
         .get_motion_vtable(insert_child_id)
         .is_err();
     if build_vtable_locally {
-        let subplan_top_id = optional
-            .exec_plan
-            .get_motion_subtree_root(insert_child_id)?;
-        let column_names = plan.get_relational_aliases(subplan_top_id)?;
-        optional.exec_plan.get_mut_ir_plan().restore_constants()?;
-        let result = if required.can_be_cached {
-            execute_cacheable_dql(runtime, required, &mut optional)?
-        } else {
-            let opts = std::mem::take(&mut required.options.execute_options);
-            execute_non_cacheable_dql(&mut optional, required.options.vtable_max_rows, opts)?
-        };
-        let tuple = result.downcast::<Tuple>().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Deserialize,
-                Some(Entity::Tuple),
-                format!("motion node {insert_child_id}. {e:?}"),
-            )
-        })?;
-        let mut data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Decode,
-                Some(Entity::Tuple),
-                format!("motion node {insert_child_id}. {e}"),
-            )
-        })?;
-        let vtable = data
-            .get_mut(0)
-            .ok_or_else(|| SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into()))?
-            // It is a DML query, so we don't need to care about the column types
-            // in response. So, simply use scalar type for all the columns.
-            .as_virtual_table(column_names, true)?;
-        optional
-            .exec_plan
-            .set_motion_vtable(insert_child_id, vtable, runtime)?;
+        materialize_vtable_locally(runtime, optional, required, insert_child_id)?;
     }
 
     // Check if the virtual table have been dispatched (case 2) or built locally (case 1).

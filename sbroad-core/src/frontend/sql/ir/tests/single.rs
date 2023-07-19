@@ -10,6 +10,7 @@ use crate::ir::Plan;
 /// It is intended only for testing purposes.
 #[derive(PartialEq, Eq, Debug)]
 enum Policy {
+    None,
     Local,
     Full,
     Segment(Vec<String>),
@@ -31,6 +32,7 @@ impl Plan {
         let node = self.get_relation_node(node_id).unwrap();
         let policy = match node {
             Relational::Motion { policy, .. } => match policy {
+                MotionPolicy::None => Policy::None,
                 MotionPolicy::Full => Policy::Full,
                 MotionPolicy::Local => Policy::Local,
                 MotionPolicy::Segment(MotionKey { targets })
@@ -58,7 +60,7 @@ impl Plan {
                     Policy::Segment(new_targets)
                 }
             },
-            _ => Policy::Local,
+            _ => Policy::None,
         };
         policy
     }
@@ -278,7 +280,7 @@ fn front_sql_join_single_both_13() {
             where o.a > 5
     "#;
 
-    check_join_motions(input, Policy::Local, Policy::Full, Some(vec![Policy::Full]));
+    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
 }
 
 #[test]
@@ -289,7 +291,7 @@ fn front_sql_join_single_both_14() {
             on o.a = i.d or o.b = i.c and i.c in (select sum("a") from "t")
     "#;
 
-    check_join_motions(input, Policy::Local, Policy::Full, Some(vec![Policy::Full]));
+    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
 }
 
 #[test]
@@ -299,7 +301,7 @@ fn front_sql_join_single_left_1() {
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
-    check_join_motions(input, Policy::Full, Policy::Local, None);
+    check_join_motions(input, Policy::Full, Policy::None, None);
 }
 
 #[test]
@@ -309,7 +311,7 @@ fn front_sql_join_single_left_2() {
         on (o.a, o.b) = (i.c, i.d)
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A", "B"]), Policy::Local, None);
+    check_join_motions(input, Policy::new_seg(&["A", "B"]), Policy::None, None);
 }
 
 #[test]
@@ -319,7 +321,7 @@ fn front_sql_join_single_left_3() {
         on (o.a, o.b) = (cast(i.c as number), i.d)
     "#;
 
-    check_join_motions(input, Policy::Full, Policy::Local, None);
+    check_join_motions(input, Policy::Full, Policy::None, None);
 }
 
 #[test]
@@ -334,7 +336,7 @@ fn front_sql_join_single_left_4() {
     check_join_motions(
         input,
         Policy::new_seg(&["A", "B"]),
-        Policy::Local,
+        Policy::None,
         Some(vec![Policy::Full]),
     );
 }
@@ -346,7 +348,7 @@ fn front_sql_join_single_left_5() {
         on o.a = i."id" and (i."sysFrom" = i."sys_op" and o.a = cast(o.a as number) + 1)
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Local, None);
+    check_join_motions(input, Policy::new_seg(&["A"]), Policy::None, None);
 }
 
 #[test]
@@ -359,7 +361,7 @@ fn front_sql_join_single_left_6() {
     check_join_motions(
         input,
         Policy::new_seg(&["A"]),
-        Policy::Local,
+        Policy::None,
         Some(vec![Policy::Full]),
     );
 }

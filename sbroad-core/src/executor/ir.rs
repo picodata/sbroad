@@ -134,7 +134,7 @@ impl ExecutionPlan {
                 MotionPolicy::Segment(shard_key) | MotionPolicy::LocalSegment(shard_key) => {
                     vtable.reshard(shard_key, runtime)?;
                 }
-                MotionPolicy::Full | MotionPolicy::Local => {}
+                MotionPolicy::Full | MotionPolicy::Local | MotionPolicy::None => {}
             }
             for opcode in program {
                 match opcode {
@@ -225,10 +225,12 @@ impl ExecutionPlan {
             | Relational::Values { .. }
             | Relational::Having { .. }
             | Relational::ValuesRow { .. } => Ok(*top_id),
-            Relational::Motion { .. } | Relational::Insert { .. } => Err(SbroadError::Invalid(
-                Entity::Relational,
-                Some("invalid motion child node".to_string()),
-            )),
+            Relational::Motion { .. } | Relational::Insert { .. } | Relational::Delete { .. } => {
+                Err(SbroadError::Invalid(
+                    Entity::Relational,
+                    Some("invalid motion child node".to_string()),
+                ))
+            }
         }
     }
 
@@ -454,7 +456,8 @@ impl ExecutionPlan {
                     }
 
                     if let Relational::ScanRelation { relation, .. }
-                    | Relational::Insert { relation, .. } = rel
+                    | Relational::Insert { relation, .. }
+                    | Relational::Delete { relation, .. } = rel
                     {
                         let table = ir_plan
                             .relations
@@ -571,7 +574,7 @@ impl ExecutionPlan {
     pub fn query_type(&self) -> Result<QueryType, SbroadError> {
         let top_id = self.get_ir_plan().get_top()?;
         let top = self.get_ir_plan().get_relation_node(top_id)?;
-        if top.is_insert() {
+        if top.is_insert() || top.is_delete() {
             Ok(QueryType::DML)
         } else {
             Ok(QueryType::DQL)

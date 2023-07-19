@@ -317,6 +317,9 @@ fn subtree_next<'plan>(
                 | Relational::Insert {
                     children, output, ..
                 }
+                | Relational::Delete {
+                    children, output, ..
+                }
                 | Relational::ScanSubQuery {
                     children, output, ..
                 }

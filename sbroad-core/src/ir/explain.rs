@@ -661,6 +661,7 @@ impl Display for Motion {
 
 #[derive(Debug, Serialize)]
 enum MotionPolicy {
+    None,
     Full,
     Segment(MotionKey),
     Local,
@@ -670,6 +671,7 @@ enum MotionPolicy {
 impl Display for MotionPolicy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
+            MotionPolicy::None => write!(f, "none"),
             MotionPolicy::Full => write!(f, "full"),
             MotionPolicy::Segment(mk) => write!(f, "segment({mk})"),
             MotionPolicy::Local => write!(f, "local"),
@@ -734,6 +736,7 @@ impl Display for InnerJoin {
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
+    Delete(String),
     Except,
     GroupBy(GroupBy),
     InnerJoin(InnerJoin),
@@ -752,6 +755,7 @@ enum ExplainNode {
 impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ExplainNode::Delete(s) => format!("delete {s}"),
             ExplainNode::Except => "except".to_string(),
             ExplainNode::InnerJoin(i) => i.to_string(),
             ExplainNode::ValueRow(r) => format!("value row (data={r})"),
@@ -1017,6 +1021,7 @@ impl FullExplain {
                     };
 
                     let p = match policy {
+                        IrMotionPolicy::None => MotionPolicy::None,
                         IrMotionPolicy::Segment(s) => {
                             let targets = collect_targets(s)?;
                             MotionPolicy::Segment(MotionKey { targets })
@@ -1126,6 +1131,17 @@ impl FullExplain {
                         relation.into(),
                         conflict_strategy.clone(),
                     ))
+                }
+                Relational::Delete { relation, .. } => {
+                    let values = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Delete node failed to pop a value row.".into(),
+                        )
+                    })?;
+
+                    current_node.children.push(values);
+
+                    Some(ExplainNode::Delete(relation.into()))
                 }
             };
             stack.push(current_node);

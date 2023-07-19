@@ -236,6 +236,7 @@ impl Plan {
                     writeln!(buf, "Motion [policy = {policy:?}]")?;
                 }
                 Relational::UnionAll { .. } => writeln!(buf, "UnionAll")?,
+                Relational::Delete { .. } => writeln!(buf, "Delete")?,
                 Relational::Insert { .. } => writeln!(buf, "Insert")?,
                 Relational::Except { .. } => writeln!(buf, "Except")?,
             }
@@ -244,6 +245,7 @@ impl Plan {
                 Relational::Join { children, .. }
                 | Relational::Projection { children, .. }
                 | Relational::Except { children, .. }
+                | Relational::Delete { children, .. }
                 | Relational::Insert { children, .. }
                 | Relational::ScanSubQuery { children, .. }
                 | Relational::Selection { children, .. }
@@ -270,6 +272,7 @@ impl Plan {
                 Relational::ScanRelation { output, .. }
                 | Relational::Join { output, .. }
                 | Relational::Except { output, .. }
+                | Relational::Delete { output, .. }
                 | Relational::Insert { output, .. }
                 | Relational::Projection { output, .. }
                 | Relational::ScanSubQuery { output, .. }
