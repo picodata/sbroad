@@ -33,7 +33,8 @@ use crate::ir::aggregates::AggregateKind;
 use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
 
-const DEFAULT_TIMEOUT: f64 = 1.0;
+// DDL timeout in seconds (1 day).
+const DEFAULT_TIMEOUT: f64 = 24.0 * 60.0 * 60.0;
 
 /// Helper structure to fix the double linking
 /// problem in the BETWEEN operator.
