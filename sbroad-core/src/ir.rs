@@ -14,6 +14,7 @@ use relation::Table;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression::StableFunction;
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::undo::TransformationLog;
 
 use self::parameters::Parameters;
@@ -794,39 +795,21 @@ impl Plan {
 
     /// # Errors
     /// - serialization error (to binary)
-    pub fn pattern_id(&self) -> Result<String, SbroadError> {
-        let mut bytes: Vec<u8> = bincode::serialize(&self.nodes).map_err(|e| {
+    pub fn pattern_id(&self, top_id: usize) -> Result<String, SbroadError> {
+        let mut dfs = PostOrder::with_capacity(|x| self.subtree_iter(x), self.nodes.next_id());
+        dfs.populate_nodes(top_id);
+        let nodes = dfs.take_nodes();
+        let mut plan_nodes: Vec<&Node> = Vec::with_capacity(nodes.len());
+        for (_, id) in nodes {
+            plan_nodes.push(self.get_node(id)?);
+        }
+        let bytes: Vec<u8> = bincode::serialize(&plan_nodes).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Serialize,
                 None,
                 format!("plan nodes to binary: {e:?}"),
             )
         })?;
-        let mut relation_bytes: Vec<u8> = bincode::serialize(&self.relations).map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Serialize,
-                None,
-                format!("plan relations to binary: {e:?}"),
-            )
-        })?;
-        let mut slice_bytes: Vec<u8> = bincode::serialize(&self.slices).map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Serialize,
-                None,
-                format!("plan slices to binary: {e:?}"),
-            )
-        })?;
-        let mut top_bytes: Vec<u8> = bincode::serialize(&self.top).map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Serialize,
-                None,
-                format!("plan top to binary: {e:?}"),
-            )
-        })?;
-        bytes.append(&mut relation_bytes);
-        bytes.append(&mut slice_bytes);
-        bytes.append(&mut top_bytes);
-
         let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes());
         Ok(hash)
     }

@@ -8,9 +8,7 @@ use crate::debug;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
-use crate::otm::{
-    current_id, extract_context, force_trace, get_tracer, inject_context, QueryTracer,
-};
+use crate::otm::{current_id, current_tracer, extract_context, inject_context, QueryTracer};
 
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
@@ -63,7 +61,7 @@ pub struct RequiredData {
     pub query_type: QueryType,
     pub can_be_cached: bool,
     context: ContextCarrier,
-    force_trace: bool,
+    tracer: QueryTracer,
     trace_id: Option<String>,
 }
 
@@ -75,7 +73,7 @@ impl Default for RequiredData {
             query_type: QueryType::DQL,
             can_be_cached: true,
             context: ContextCarrier::empty(),
-            force_trace: false,
+            tracer: QueryTracer::default(),
             trace_id: None,
         }
     }
@@ -119,7 +117,7 @@ impl RequiredData {
     ) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
-        let force_trace = force_trace();
+        let tracer = current_tracer();
         if carrier.is_empty() {
             RequiredData {
                 plan_id,
@@ -127,7 +125,7 @@ impl RequiredData {
                 query_type,
                 can_be_cached,
                 context: ContextCarrier::empty(),
-                force_trace,
+                tracer,
                 trace_id: None,
             }
         } else {
@@ -137,7 +135,7 @@ impl RequiredData {
                 query_type,
                 can_be_cached,
                 context: ContextCarrier::new(carrier),
-                force_trace,
+                tracer,
                 trace_id: Some(current_id()),
             }
         }
@@ -145,11 +143,7 @@ impl RequiredData {
 
     #[must_use]
     pub fn tracer(&self) -> QueryTracer {
-        get_tracer(
-            self.force_trace,
-            self.trace_id.as_ref(),
-            Some(&self.context.payload),
-        )
+        self.tracer.clone()
     }
 
     #[must_use]
@@ -259,7 +253,7 @@ impl OptionalData {
         bincode::deserialize(bytes).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Deserialize,
-                Some(Entity::RequiredData),
+                Some(Entity::OptionalData),
                 format!("{e:?}"),
             )
         })

@@ -23,9 +23,11 @@ use opentelemetry::trace::{SpanBuilder, SpanKind, TraceContextExt, Tracer};
 #[allow(unused_imports)]
 use opentelemetry::{Context, KeyValue};
 
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
+use tarantool::tlua::{self, Push};
 
 pub mod fiber;
 pub mod statistics;
@@ -37,6 +39,7 @@ mod prod_imports {
     pub use tarantool::error::Error as TntError;
 }
 
+use crate::errors::{Entity, SbroadError};
 #[cfg(not(feature = "mock"))]
 use prod_imports::*;
 
@@ -61,13 +64,61 @@ lazy_static! {
         .build();
     #[derive(Debug)]
     static ref STATISTICS_TRACER: SdkTracer = STATISTICS_PROVIDER.versioned_tracer("stat", None, None);
+    /// Like statistic tracer but always create traces. Used only for testing purposes.
+    static ref TEST_STATISTICS_PROVIDER: SdkTracerProvider = SdkTracerProvider::builder()
+        .with_span_processor(statistics::StatCollector::new())
+        .build();
+    static ref TEST_STATISTICS_TRACER: SdkTracer = TEST_STATISTICS_PROVIDER.versioned_tracer("test_stat", None, None);
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Push)]
 #[allow(dead_code)]
 pub enum QueryTracer {
+    /// Sends all metrics to Jaeger agent
     Global,
+    /// Gathers stats about spans and saves them to temporary spaces
+    /// on each node, but does it only for 1% of the queries.
     Statistics,
+    /// Like STAT_TRACER but saves stats for each query.
+    /// It is used only for tests.
+    TestStatistics,
+}
+
+impl Default for QueryTracer {
+    fn default() -> Self {
+        QueryTracer::Statistics
+    }
+}
+
+impl Display for QueryTracer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            QueryTracer::Global => "global",
+            QueryTracer::Statistics => "stat",
+            QueryTracer::TestStatistics => "test_stat",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl TryFrom<String> for QueryTracer {
+    type Error = SbroadError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let normalized = value.to_lowercase();
+        let res = match normalized.as_str() {
+            "global" => QueryTracer::Global,
+            "stat" => QueryTracer::Statistics,
+            "test_stat" => QueryTracer::TestStatistics,
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::PatternWithParams,
+                    Some(format!("unknown tracer: {value}")),
+                ))
+            }
+        };
+        Ok(res)
+    }
 }
 
 #[allow(dead_code)]
@@ -147,6 +198,10 @@ fn build_ctx(tracer: &QueryTracer, sb: SpanBuilder, ctx: &Context) -> Context {
     match tracer {
         QueryTracer::Statistics => {
             let span = STATISTICS_TRACER.build_with_context(sb, ctx);
+            ctx.with_span(span)
+        }
+        QueryTracer::TestStatistics => {
+            let span = TEST_STATISTICS_TRACER.build_with_context(sb, ctx);
             ctx.with_span(span)
         }
         QueryTracer::Global => {
@@ -340,17 +395,17 @@ pub fn update_global_tracer() {
 
 #[must_use]
 #[allow(unreachable_code)]
-pub fn force_trace() -> bool {
+pub fn current_tracer() -> QueryTracer {
     #[cfg(not(feature = "mock"))]
     {
         let fid = fiber_id();
         return TRACE_MANAGER.with(|tm| {
             tm.borrow()
                 .get(fid)
-                .map_or(false, |ti| ti.tracer() == &QueryTracer::Global)
+                .map_or(QueryTracer::default(), |ti| ti.tracer().clone())
         });
     }
-    false
+    QueryTracer::default()
 }
 
 #[allow(unused_variables)]
@@ -391,25 +446,6 @@ pub fn extract_context(carrier: &mut dyn Extractor) -> Context {
         });
     }
     f(&Context::new())
-}
-
-#[must_use]
-pub fn get_tracer<S: ::std::hash::BuildHasher>(
-    force_trace: bool,
-    id: Option<&String>,
-    context: Option<&HashMap<String, String, S>>,
-) -> QueryTracer {
-    match (force_trace, id, context) {
-        (_, None, None) | (false, _, _) => QueryTracer::Statistics,
-        (_, None, Some(carrier)) => {
-            if carrier.is_empty() {
-                QueryTracer::Statistics
-            } else {
-                QueryTracer::Global
-            }
-        }
-        _ => QueryTracer::Global,
-    }
 }
 
 pub fn deserialize_context<S: ::std::hash::BuildHasher>(

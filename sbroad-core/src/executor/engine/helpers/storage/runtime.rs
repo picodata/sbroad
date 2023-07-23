@@ -3,7 +3,7 @@ use std::any::Any;
 use sbroad_proc::otm_child_span;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
-use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span};
+use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span, warn};
 
 use super::{PreparedStmt, Statement};
 
@@ -70,6 +70,10 @@ pub fn read_prepared(
 
 #[otm_child_span("tarantool.statement.unprepared.read")]
 pub fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
+    warn!(
+        Option::from("read_unprepared"),
+        &format!("SQL pattern: {}", stmt),
+    );
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua

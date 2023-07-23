@@ -16,7 +16,7 @@ use crate::ir::operator::Relational;
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
 use crate::otm::{
-    child_span, current_id, deserialize_context, force_trace, get_tracer, inject_context, query_id,
+    child_span, current_id, current_tracer, deserialize_context, inject_context, query_id,
     QueryTracer,
 };
 
@@ -29,7 +29,7 @@ pub struct PatternWithParams {
     pub params: Vec<Value>,
     pub context: Option<HashMap<String, String>>,
     pub id: Option<String>,
-    pub force_trace: bool,
+    pub tracer: QueryTracer,
 }
 
 impl PartialEq for PatternWithParams {
@@ -47,7 +47,7 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
             &format!("Query parameters: {value:?}"),
         );
         match Tuple::from(value).decode::<EncodedPatternWithParams>() {
-            Ok(encoded) => Ok(PatternWithParams::from(encoded)),
+            Ok(encoded) => Ok(PatternWithParams::try_from(encoded)?),
             Err(e) => Err(SbroadError::ParsingError(
                 Entity::PatternWithParams,
                 format!("{e:?}"),
@@ -62,7 +62,7 @@ pub struct EncodedPatternWithParams(
     Option<Vec<LuaValue>>,
     Option<HashMap<String, String>>,
     Option<String>,
-    bool,
+    String,
 );
 
 impl From<PatternWithParams> for EncodedPatternWithParams {
@@ -73,13 +73,14 @@ impl From<PatternWithParams> for EncodedPatternWithParams {
             Some(encoded_params),
             value.context,
             value.id,
-            value.force_trace,
+            value.tracer.to_string(),
         )
     }
 }
 
-impl From<EncodedPatternWithParams> for PatternWithParams {
-    fn from(mut value: EncodedPatternWithParams) -> Self {
+impl TryFrom<EncodedPatternWithParams> for PatternWithParams {
+    type Error = SbroadError;
+    fn try_from(mut value: EncodedPatternWithParams) -> Result<Self, Self::Error> {
         let params: Vec<Value> = match value.1.take() {
             Some(mut encoded_params) => encoded_params
                 .drain(..)
@@ -87,13 +88,14 @@ impl From<EncodedPatternWithParams> for PatternWithParams {
                 .collect::<Vec<Value>>(),
             None => Vec::new(),
         };
-        PatternWithParams {
+        let res = PatternWithParams {
             pattern: value.0,
             params,
             context: value.2,
             id: value.3,
-            force_trace: value.4,
-        }
+            tracer: value.4.try_into()?,
+        };
+        Ok(res)
     }
 }
 
@@ -102,14 +104,14 @@ impl PatternWithParams {
     pub fn new(pattern: String, params: Vec<Value>) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
-        let force_trace = force_trace();
+        let tracer = current_tracer();
         if carrier.is_empty() {
             PatternWithParams {
                 pattern,
                 params,
                 context: None,
                 id: None,
-                force_trace,
+                tracer,
             }
         } else {
             PatternWithParams {
@@ -117,14 +119,9 @@ impl PatternWithParams {
                 params,
                 context: Some(carrier),
                 id: Some(current_id()),
-                force_trace,
+                tracer,
             }
         }
-    }
-
-    #[must_use]
-    pub fn get_tracer(&self) -> QueryTracer {
-        get_tracer(self.force_trace, self.id.as_ref(), self.context.as_ref())
     }
 
     #[must_use]

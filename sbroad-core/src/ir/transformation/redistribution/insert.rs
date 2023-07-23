@@ -7,7 +7,12 @@ use ahash::AHashMap;
 use super::{MotionKey, Target};
 
 impl Plan {
-    pub(crate) fn insert_child_id(&self, insert_id: usize) -> Result<usize, SbroadError> {
+    /// Return first child of `Insert` node
+    ///
+    /// # Errors
+    /// - node is not `Insert`
+    /// - `Insert` has 0 or more than 1 child
+    pub fn insert_child_id(&self, insert_id: usize) -> Result<usize, SbroadError> {
         let insert = self.get_relation_node(insert_id)?;
         if let Relational::Insert { children, .. } = insert {
             if let (Some(child), None) = (children.first(), children.get(1)) {
@@ -24,7 +29,11 @@ impl Plan {
         ))
     }
 
-    pub(crate) fn insert_conflict_strategy(
+    /// Return `ConflictStrategy` for given insert node
+    ///
+    /// # Errors
+    /// - node is not an `Insert`
+    pub fn insert_conflict_strategy(
         &self,
         insert_id: usize,
     ) -> Result<&ConflictStrategy, SbroadError> {
@@ -95,6 +104,10 @@ impl Plan {
         Ok(motion_key)
     }
 
+    /// Return ids of `Insert` columns
+    ///
+    /// # Errors
+    /// - node is not `Insert`
     pub(crate) fn insert_columns(&self, insert_id: usize) -> Result<&[usize], SbroadError> {
         let insert = self.get_relation_node(insert_id)?;
         if let Relational::Insert { columns, .. } = insert {
@@ -106,7 +119,11 @@ impl Plan {
         ))
     }
 
-    pub(crate) fn insert_table(&self, insert_id: usize) -> Result<&Table, SbroadError> {
+    /// Return the table for given `Insert` node
+    ///
+    /// # Errors
+    /// - Node is not an `Insert`
+    pub fn insert_table(&self, insert_id: usize) -> Result<&Table, SbroadError> {
         let insert = self.get_relation_node(insert_id)?;
         if let Relational::Insert { relation, .. } = insert {
             return self

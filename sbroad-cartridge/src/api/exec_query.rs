@@ -8,7 +8,7 @@ use sbroad::backend::sql::ir::PatternWithParams;
 use sbroad::executor::protocol::{EncodedRequiredData, RequiredData};
 use sbroad::executor::Query;
 use sbroad::log::tarantool_error;
-use sbroad::otm::{child_span, query_span};
+use sbroad::otm::{child_span, query_span, QueryTracer};
 use sbroad::{debug, error};
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
@@ -28,7 +28,7 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
 
     let id = lua_params.clone_id();
     let ctx = lua_params.extract_context();
-    let tracer = lua_params.get_tracer();
+    let tracer: QueryTracer = lua_params.tracer.clone();
 
     query_span(
         "\"api.router\"",

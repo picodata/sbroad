@@ -506,3 +506,79 @@ g.test_insert_on_conflict_do_replace_fails_for_secondary_unique_index = function
     t.assert_str_contains(err.message,
             "TupleFound: Duplicate key exists in unique index \\\\\\\"secondary\\\\\\\"")
 end
+
+local function assert_cache_hit(query_id)
+    local storage1 = cluster:server("storage-1-1").net_box
+    local r, err = storage1:call("box.execute", { [[
+    select span, query_id from "__SBROAD_STAT"
+    where span = '"tarantool.cache.hit.read.prepared"' and query_id = ? ]], { query_id } })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "SPAN", type = "string" },
+        { name = "QUERY_ID", type = "string" },
+    })
+    t.assert_equals(#r.rows, 1)
+end
+
+local function assert_cache_miss(query_id)
+    local storage1 = cluster:server("storage-1-1").net_box
+    local r, err = storage1:call("box.execute", { [[
+    select span, query_id from "__SBROAD_STAT"
+    where span = '"tarantool.cache.miss.read.prepared"' and query_id = ?
+    ]] , { query_id }})
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "SPAN", type = "string" },
+        { name = "QUERY_ID", type = "string" },
+    })
+    t.assert_equals(#r.rows, 1)
+end
+
+g.test_cache_works_insert = function()
+    local api = cluster:server("api-1").net_box
+
+    local query_id, query = "id", [[
+    INSERT INTO "space_simple_shard_key"
+    SELECT "id"+"id", "name" || "name", "sysOp" + "sysOp"
+    FROM "space_simple_shard_key"
+    ON CONFLICT DO REPLACE
+    ]]
+    local params = { query, {}, nil, query_id }
+
+    local r, err = api:call("sbroad.const_trace", params)
+    t.assert_equals(err, nil)
+    t.assert_not_equals(r, {})
+    assert_cache_miss(query_id)
+
+    r, err = api:call("sbroad.const_trace", params)
+    t.assert_equals(err, nil)
+    t.assert_not_equals(r, {})
+    assert_cache_hit(query_id)
+end
+
+g.test_only_executed_part_is_cached = function()
+    local api = cluster:server("api-1").net_box
+
+    -- test only select part of the insert is being cached
+    local select_part = [[
+    SELECT "id"*"id", "name" || "name", "sysOp" + "sysOp"
+    FROM "space_simple_shard_key"
+    ]]
+    local query_id, query = "id1", string.format([[
+    INSERT INTO "space_simple_shard_key"
+    %s
+    ON CONFLICT DO REPLACE
+    ]], select_part)
+    local params = { query, {}, nil, query_id }
+
+    local r, err = api:call("sbroad.const_trace", params)
+    t.assert_equals(err, nil)
+    t.assert_not_equals(r, {})
+    assert_cache_miss(query_id)
+
+    params[1] = select_part
+    r, err = api:call("sbroad.const_trace", params)
+    t.assert_equals(err, nil)
+    t.assert_not_equals(r, {})
+    assert_cache_hit(query_id)
+end
