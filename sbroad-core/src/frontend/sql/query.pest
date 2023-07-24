@@ -80,15 +80,18 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
 
 Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | ArithmeticExpr | Value }
+    Primary = _{ SubQuery | ArithmeticExpr | Concat | Cast | Row | Function | Value }
+    Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
+        ConcatLeft = _{ Cast | Function | Reference | SingleQuotedString }
+        ConcatRight = _{ Concat | ConcatLeft }
     ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
         ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
-        ArithELeft = _{ ArithParentheses | Value }
+        ArithELeft = _{ Cast | Row | Function | ArithParentheses | Value }
         Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
             MultiplicationRight = _{ Multiplication | ArithELeft }
         Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
             AdditionLeft = _{ MultiplicationRight }
-            AdditionRight = _{ Addition | Multiplication | ArithELeft }
+            AdditionRight = _{ Addition | MultiplicationRight }
         Multiply = { "*" }
         Divide = { "/" }
         Add = { "+" }
@@ -98,31 +101,16 @@ Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
         NotExists = { ^"not" ~ ^"exists" ~ SubQuery }
         IsNull = { Primary ~ ^"is" ~ ^"null" }
         IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
-    Cmp = _{ Eq | In | Gt | GtEq | Lt | LtEq | NotEq | NotIn }
-    Eq = { EqLeft ~ "=" ~ EqRight }
-        EqLeft = _{ Primary }
-        EqRight = _{ Eq | EqLeft }
-    In = { InLeft ~ ^"in" ~ InRight }
-        InLeft = _{ Primary }
-        InRight = _{ In | InLeft }
-    Gt = { GtLeft ~ ">" ~ GtRight }
-        GtLeft = _{ Primary }
-        GtRight = _{ Gt | GtLeft }
-    GtEq = { GtEqLeft ~ ">=" ~ GtEqRight }
-        GtEqLeft = _{ Primary }
-        GtEqRight = _{ GtEq | GtEqLeft }
-    Lt = { LtLeft ~ "<" ~ LtRight }
-        LtLeft = _{ Primary }
-        LtRight = _{ Lt | LtLeft }
-    LtEq = { LtEqLeft ~ "<=" ~ LtEqRight }
-        LtEqLeft = _{ Primary }
-        LtEqRight = _{ LtEq | LtEqLeft }
-    NotEq = { NotEqLeft ~ ("<>" | "!=") ~ NotEqRight }
-        NotEqLeft = _{ Primary }
-        NotEqRight = _{ NotEq | NotEqLeft }
-    NotIn = { NotInLeft ~ ^"not" ~ ^"in" ~ NotInRight }
-        NotInLeft = _{ Primary }
-        NotInRight = _{ NotIn | NotInLeft }
+    Cmp = { Primary ~ CmpOp ~ Primary }
+        CmpOp = _{ Eq | In | NotEq | NotIn | GtEq | Gt | LtEq | Lt }
+        Eq = { "=" }
+        In = { ^"in" }
+        Gt = { ">" }
+        GtEq = { ">=" }
+        Lt = { "<" }
+        LtEq = { "<=" }
+        NotEq = { "<>" | "!=" }
+        NotIn = { ^"not" ~ ^"in" }
     Between = { BetweenLeft ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
         BetweenLeft = _{ Primary }
         BetweenCenter = _{ Primary }
@@ -143,7 +131,7 @@ Function = { FunctionName ~ "(" ~ (CountAsterisk | (Distinct? ~  FunctionArgs)) 
 Distinct = { ^"distinct" }
 
 Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
-    CastExpr = _{ FunctionExpr | Cast }
+    CastExpr = _{ Parentheses | Primary }
     Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble
              | TypeInt | TypeNumber | TypeScalar | TypeString
              | TypeText | TypeUnsigned | TypeVarchar }
@@ -159,10 +147,6 @@ Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
     TypeUnsigned = { ^"unsigned" }
     TypeVarchar = { ^"varchar" ~ "(" ~ Length ~ ")" }
         Length = @{ Unsigned }
-
-Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
-    ConcatLeft = _{ Cast | Function | Reference | SingleQuotedString }
-    ConcatRight = _{ Concat | ConcatLeft }
 
 GroupingElement = _{ Expr }
 
@@ -181,7 +165,7 @@ Punctuation = _{
 }
 Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | "»" | WHITESPACE }
 
-Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned | Integer | Concat | ConcatLeft }
+Value = _{ Parameter | True | False | Null | Decimal | Double | Unsigned | Integer | Reference | SingleQuotedString }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }
@@ -191,9 +175,10 @@ Value = _{ Parameter | Row | True | False | Null | Decimal | Double | Unsigned |
     Unsigned = @{ ASCII_DIGIT+ }
     SingleQuotedString = ${ "'" ~ String ~ "'" }
     Row = {
-        ("(" ~ Value ~ ("," ~ Value)* ~ ")")
-        | (^"row" ~ "(" ~ Value ~ ("," ~ Value)* ~ ")")
+        ("(" ~ RowElem ~ ("," ~ RowElem)* ~ ")")
+        | (^"row" ~ "(" ~ RowElem ~ ("," ~ RowElem)* ~ ")")
     }
+    RowElem = _{ Concat | Cast | Row | Function | Value }
     Parameter = @{ "?" }
 
 EOF = { EOI | ";" }

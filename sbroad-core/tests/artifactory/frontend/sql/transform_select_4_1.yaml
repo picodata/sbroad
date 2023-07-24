@@ -2,7 +2,7 @@
 nodes:
   arena:
     - children: #0
-        - 13
+        - 14
       rule: Select
       value: ~
     - children: #1
@@ -26,85 +26,89 @@ nodes:
       rule: ColumnName
       value: a
     - children: #6
-        - 11
+        - 12
         - 7
       rule: Selection
       value: ~
     - children: #7
+        - 10
         - 9
         - 8
-      rule: Gt
+      rule: Cmp
       value: ~
     - children: [] #8
       rule: Unsigned
       value: "1"
-    - children: #9
-        - 10
+    - children: [] #9
+      rule: Gt
+      value: ">"
+    - children: #10
+        - 11
       rule: Reference
       value: ~
-    - children: [] #10
+    - children: [] #11
       rule: ColumnName
       value: a
-    - children: #11
-        - 12
+    - children: #12
+        - 13
       rule: Scan
       value: ~
-    - children: [] #12
+    - children: [] #13
       rule: Table
       value: t1
-    - children: #13
+    - children: #14
         - 1
-        - 17
-        - 14
+        - 18
+        - 15
       rule: Projection
       value: ~
-    - children: #14
-        - 23
-      rule: Column
-      value: ~
     - children: #15
-        - 16
-      rule: Reference
-      value: ~
-    - children: [] #16
-      rule: ColumnName
-      value: b
-    - children: #17
-        - 21
+        - 24
       rule: Column
       value: ~
-    - children: #18
-        - 19
+    - children: #16
+        - 17
       rule: Reference
       value: ~
-    - children: [] #19
+    - children: [] #17
+      rule: ColumnName
+      value: b
+    - children: #18
+        - 22
+      rule: Column
+      value: ~
+    - children: #19
+        - 20
+      rule: Reference
+      value: ~
+    - children: [] #20
       rule: ColumnName
       value: a
-    - children: [] #20
+    - children: [] #21
       rule: AliasName
       value: a
-    - children: #21
-        - 18
-        - 20
+    - children: #22
+        - 19
+        - 21
       rule: Alias
       value: ~
-    - children: [] #22
+    - children: [] #23
       rule: AliasName
       value: b
-    - children: #23
-        - 15
-        - 22
+    - children: #24
+        - 16
+        - 23
       rule: Alias
       value: ~
-top: 13
+top: 14
 map:
   2:
     - 6
   4:
     - 6
-  9:
-    - 11
-  15:
+  10:
+    - 12
+  16:
     - 1
-  18:
+  19:
     - 1

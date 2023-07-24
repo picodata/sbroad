@@ -2,31 +2,35 @@
 nodes:
   arena:
     - children:
-        - 8
+        - 9
       rule: Select
       value: ~
     - children:
-        - 6
+        - 7
         - 2
       rule: Selection
       value: ~
     - children:
+        - 5
         - 4
         - 3
-      rule: Eq
+      rule: Cmp 
       value: ~
     - children: []
       rule: Unsigned 
       value: 1
+    - children: []
+      rule: Eq
+      value: "="
     - children:
-        - 5
+        - 6
       rule: Reference
       value: ~
     - children: []
       rule: ColumnName
       value: "\"identification_number\""
     - children:
-        - 7
+        - 8
       rule: Scan
       value: ~
     - children: []
@@ -34,53 +38,53 @@ nodes:
       value: "\"test_space\""
     - children:
         - 1
-        - 12
-        - 9
+        - 13
+        - 10 
       rule: Projection
       value: ~
     - children:
-        - 18
+        - 19
       rule: Column
       value: ~
     - children:
-        - 11
+        - 12
       rule: Reference
       value: ~
     - children: []
       rule: ColumnName
       value: "\"product_code\""
     - children:
-        - 16
+        - 17
       rule: Column
       value: ~
+    - children:
+        - 15
+      rule: Reference
+      value: ~
+    - children: []
+      rule: ColumnName
+      value: "\"identification_number\""
+    - children: []
+      rule: AliasName
+      value: "\"identification_number\""
     - children:
         - 14
-      rule: Reference
-      value: ~
-    - children: []
-      rule: ColumnName
-      value: "\"identification_number\""
-    - children: []
-      rule: AliasName
-      value: "\"identification_number\""
-    - children:
-        - 13
-        - 15
+        - 16
       rule: Alias
       value: ~
     - children: []
       rule: AliasName
       value: "\"product_code\""
     - children:
-        - 10
-        - 17
+        - 11
+        - 18
       rule: Alias
       value: ~
-top: 8
+top: 9
 map:
-  10:
+  11:
     - 1
-  13:
+  14:
     - 1
-  4:
-    - 6
+  5:
+    - 7

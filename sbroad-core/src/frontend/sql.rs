@@ -933,16 +933,7 @@ impl Ast for AbstractSyntaxTree {
                     let plan_row_id = plan.nodes.add_row(plan_col_list, None);
                     map.add(id, plan_row_id);
                 }
-                Type::And
-                | Type::Or
-                | Type::Eq
-                | Type::In
-                | Type::Gt
-                | Type::GtEq
-                | Type::Lt
-                | Type::LtEq
-                | Type::NotEq
-                | Type::NotIn => {
+                Type::And | Type::Or => {
                     let ast_left_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Comparison has no children.".into())
                     })?;
@@ -955,6 +946,29 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let op = Bool::from_node_type(&node.rule)?;
+                    let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
+                    map.add(id, cond_id);
+                }
+                Type::Cmp => {
+                    let ast_left_id = node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues("Comparison has no children.".into())
+                    })?;
+                    let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
+                    let ast_right_id = node.children.get(2).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is right node with index 2 among comparison children".into(),
+                        )
+                    })?;
+                    let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
+                    let ast_op_id = node.children.get(1).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Node,
+                            "that is operator node with index 1 among comparison children".into(),
+                        )
+                    })?;
+                    let op_node = self.nodes.get_node(*ast_op_id)?;
+                    let op = Bool::from_node_type(&op_node.rule)?;
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(id, cond_id);
                 }
@@ -1521,14 +1535,22 @@ impl Ast for AbstractSyntaxTree {
                 | Type::DoReplace
                 | Type::DoFail
                 | Type::Engine
+                | Type::Eq
                 | Type::FunctionName
                 | Type::Global
+                | Type::Gt
+                | Type::GtEq
+                | Type::In
                 | Type::InnerJoinKind
                 | Type::LeftJoinKind
                 | Type::Length
+                | Type::Lt
+                | Type::LtEq
                 | Type::Memtx
                 | Type::Multiply
                 | Type::NewTable
+                | Type::NotEq
+                | Type::NotIn
                 | Type::OptionParam
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn

@@ -2,31 +2,35 @@
 nodes:
   arena:
     - children:
-        - 8
+        - 9
       rule: Select
       value: ~
     - children:
-        - 6
+        - 7
         - 2
       rule: Selection
       value: ~
     - children:
+        - 5
         - 4
         - 3
-      rule: Eq
+      rule: Cmp 
       value: ~
     - children: []
       rule: Unsigned
       value: 1
+    - children: []
+      rule: Eq
+      value: "="
     - children:
-        - 5
+        - 6
       rule: Reference
       value: ~
     - children: []
       rule: ColumnName
       value: a
     - children:
-        - 7
+        - 8
       rule: Scan
       value: ~
     - children: []
@@ -34,15 +38,15 @@ nodes:
       value: t
     - children:
         - 1
-        - 9
+        - 10
       rule: Projection
       value: ~
     - children:
-        - 13
+        - 14
       rule: Column
       value: ~
     - children:
-        - 11
+        - 12
       rule: Reference
       value: ~
     - children: []
@@ -52,13 +56,13 @@ nodes:
       rule: AliasName
       value: a
     - children:
-        - 10
-        - 12
+        - 11
+        - 13
       rule: Alias
       value: ~
-top: 8
+top: 9
 map:
-  4:
-    - 6
-  10:
+  5:
+    - 7
+  11:
     - 1

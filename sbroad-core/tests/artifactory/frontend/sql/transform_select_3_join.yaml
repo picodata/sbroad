@@ -2,13 +2,13 @@
 nodes:
   arena:
     - children: #0
-        - 15
+        - 16
       rule: Select
       value: ~
     - children: #1
+        - 14
         - 13
-        - 12
-        - 10
+        - 11
         - 2
       rule: Join
       value: ~
@@ -17,9 +17,10 @@ nodes:
       rule: Condition
       value: ~
     - children: #3
+        - 8
         - 7
         - 4
-      rule: Eq
+      rule: Cmp 
       value: ~
     - children: #4
         - 6
@@ -32,49 +33,52 @@ nodes:
     - children: [] #6
       rule: ScanName
       value: t2
-    - children: #7
+    - children: [] #7
+      rule: Eq
+      value: "="
+    - children: #8
+        - 10
         - 9
-        - 8
       rule: Reference
       value: ~
-    - children: [] #8
+    - children: [] #9
       rule: ColumnName
       value: a
-    - children: [] #9
+    - children: [] #10
       rule: ScanName
       value: t1
-    - children: #10
-        - 11
+    - children: #11
+        - 12
       rule: Scan
       value: ~
-    - children: [] #11
+    - children: [] #12
       rule: Table
       value: t2
-    - children: [] #12
+    - children: [] #13
       rule: InnerJoinKind
       value: inner
-    - children: #13
-        - 14
+    - children: #14
+        - 15
       rule: Scan
       value: ~
-    - children: [] #14
+    - children: [] #15
       rule: Table
       value: t1
-    - children: #15
+    - children: #16
         - 1
-        - 16
+        - 17
       rule: Projection
       value: ~
-    - children: [] #16
+    - children: [] #17
       rule: Asterisk
       value: "*"
-top: 15
+top: 16
 map:
   4:
-    - 13
-    - 10
-  7:
-    - 13
-    - 10
-  16:
+    - 14
+    - 11
+  8:
+    - 14
+    - 11
+  17:
     - 1

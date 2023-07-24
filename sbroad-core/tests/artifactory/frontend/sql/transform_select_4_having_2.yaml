@@ -2,93 +2,97 @@
 nodes:
   arena:
     - children: #0
-        - 13
+        - 14
       rule: Select
       value: ~
     - children: #1
-        - 8
+        - 9
         - 2
       rule: Having
       value: ~
     - children: #2
+        - 5
         - 4
         - 3
-      rule: Gt
+      rule: Cmp
       value: ~
     - children: [] #3
       rule: Unsigned
       value: "1"
-    - children: #4
-        - 7
-        - 5
+    - children: [] #4
+      rule: Gt
+      value: ">"
+    - children: #5
+        - 8
+        - 6
       rule: Function
       value: ~
-    - children: #5
-        - 6
+    - children: #6
+        - 7
       rule: Reference
       value: ~
-    - children: [] #6
+    - children: [] #7
       rule: ColumnName
       value: "\"a\""
-    - children: [] #7
+    - children: [] #8
       rule: FunctionName
       value: sum
-    - children: #8
-        - 11
-        - 9
+    - children: #9
+        - 12
+        - 10
       rule: GroupBy
       value: ~
-    - children: #9
-        - 10
+    - children: #10
+        - 11
       rule: Reference
       value: ~
-    - children: [] #10
+    - children: [] #11
       rule: ColumnName
       value: "\"a\""
-    - children: #11
-        - 12
+    - children: #12
+        - 13
       rule: Scan
       value: ~
-    - children: [] #12
+    - children: [] #13
       rule: Table
       value: t1
-    - children: #13
+    - children: #14
         - 1
-        - 14
+        - 15
       rule: Projection
       value: ~
-    - children: #14
-        - 20
+    - children: #15
+        - 21
       rule: Column
       value: ~
-    - children: #15
-        - 18
-        - 16
+    - children: #16
+        - 19
+        - 17
       rule: Function
       value: ~
-    - children: #16
-        - 17
+    - children: #17
+        - 18
       rule: Reference
       value: ~
-    - children: [] #17
+    - children: [] #18
       rule: ColumnName
       value: "\"a\""
-    - children: [] #18
+    - children: [] #19
       rule: FunctionName
       value: sum
-    - children: [] #19
+    - children: [] #20
       rule: AliasName
       value: COL_1
-    - children: #20
-        - 15
-        - 19
+    - children: #21
+        - 16
+        - 20
       rule: Alias
       value: ~
-top: 13
+top: 14
 map:
-  9:
-    - 11
-  16:
+  10:
+    - 12
+  17:
     - 1
-  5:
-    - 8
+  6:
+    - 9

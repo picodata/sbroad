@@ -2,101 +2,109 @@
 nodes:
   arena:
     - children: #0
-        - 15
+        - 17
       rule: Select
       value: ~
     - children: #1
-        - 8
+        - 9
         - 2
       rule: Having
       value: ~
     - children: #2
+        - 5
         - 4
         - 3
-      rule: Gt
+      rule: Cmp
       value: ~
     - children: [] #3
       rule: Unsigned
       value: "1"
-    - children: #4
-        - 7
-        - 5
+    - children: [] #4
+      rule: Gt
+      value: ">"
+    - children: #5
+        - 8
+        - 6
       rule: Function
       value: ~
-    - children: #5
-        - 6
+    - children: #6
+        - 7
       rule: Reference
       value: ~
-    - children: [] #6
+    - children: [] #7
       rule: ColumnName
       value: "\"a\""
-    - children: [] #7
+    - children: [] #8
       rule: FunctionName
       value: sum
-    - children: #8
-        - 13
-        - 9
+    - children: #9
+        - 15
+        - 10
       rule: Selection
       value: ~
-    - children: #9
+    - children: #10
+        - 13
+        - 12
         - 11
-        - 10
-      rule: Gt
+      rule: Cmp
       value: ~
-    - children: [] #10
+    - children: [] #11
       rule: Unsigned
       value: "1"
-    - children: #11
-        - 12
+    - children: []
+      rule: Gt
+      value: ">"
+    - children: #12
+        - 14
       rule: Reference
       value: ~
-    - children: [] #12
+    - children: [] #13
       rule: ColumnName
       value: "\"a\""
-    - children: #13
-        - 14
+    - children: #14
+        - 16
       rule: Scan
       value: ~
-    - children: [] #14
+    - children: [] #15
       rule: Table
       value: t1
-    - children: #15
+    - children: #16
         - 1
-        - 16
+        - 18
       rule: Projection
       value: ~
-    - children: #16
-        - 22
+    - children: #17
+        - 24
       rule: Column
       value: ~
-    - children: #17
+    - children: #18
+        - 22
         - 20
-        - 18
       rule: Function
       value: ~
-    - children: #18
-        - 19
+    - children: #19
+        - 21
       rule: Reference
       value: ~
-    - children: [] #19
+    - children: [] #20
       rule: ColumnName
       value: "\"a\""
-    - children: [] #20
+    - children: [] #21
       rule: FunctionName
       value: sum
-    - children: [] #21
+    - children: [] #22
       rule: AliasName
       value: COL_1
-    - children: #22
-        - 17
-        - 21
+    - children: #23
+        - 19
+        - 23
       rule: Alias
       value: ~
-top: 15
+top: 17
 map:
-  18:
+  20:
     - 1
-  5:
-    - 8
-  11:
-    - 13
+  6:
+    - 9
+  13:
+    - 15

@@ -2,30 +2,34 @@
 nodes:
   arena:
     - children: #0
-        - 23
+        - 25
       rule: Select
       value: ~
     - children: #1
-        - 9
+        - 10
         - 2
       rule: Having
       value: ~
     - children: #2
+        - 5
         - 4
         - 3
-      rule: Gt
+      rule: Cmp
       value: ~
     - children: [] #3
       rule: Unsigned
       value: "1"
+    - children: [] #4
+      rule: Gt
+      value: ">"
     - children: #4
-        - 8
-        - 5
+        - 9
+        - 6
       rule: Function
       value: ~
     - children: #5
+        - 8
         - 7
-        - 6
       rule: Reference
       value: ~
     - children: [] #6
@@ -38,24 +42,25 @@ nodes:
       rule: FunctionName
       value: sum
     - children: #9
-        - 21
+        - 23
+        - 22
         - 20
-        - 18
-        - 10
+        - 11
       rule: Join
       value: ~
     - children: #10
-        - 11
+        - 12
       rule: Condition
       value: ~
     - children: #11
-        - 15
-        - 12
-      rule: Eq
+        - 17
+        - 16
+        - 13
+      rule: Cmp
       value: ~
     - children: #12
+        - 15
         - 14
-        - 13
       rule: Reference
       value: ~
     - children: [] #13
@@ -64,75 +69,78 @@ nodes:
     - children: [] #14
       rule: ScanName
       value: t2
-    - children: #15
-        - 17
-        - 16
+    - children: [] #15
+      rule: Eq
+      value: "="
+    - children: #16
+        - 19
+        - 18
       rule: Reference
       value: ~
-    - children: [] #16
+    - children: [] #17
       rule: ColumnName
       value: a
-    - children: [] #17
+    - children: [] #18
       rule: ScanName
       value: t1
-    - children: #18
-        - 19
+    - children: #19
+        - 21
       rule: Scan
       value: ~
-    - children: [] #19
+    - children: [] #20
       rule: Table
       value: t2
-    - children: [] #20
+    - children: [] #21
       rule: InnerJoinKind
       value: inner
-    - children: #21
-        - 22
+    - children: #22
+        - 24
       rule: Scan
       value: ~
-    - children: [] #22
+    - children: [] #23
       rule: Table
       value: t1
-    - children: #23
+    - children: #24
         - 1
-        - 24
+        - 26
       rule: Projection
       value: ~
-    - children: #24
-        - 30
+    - children: #25
+        - 32
       rule: Column
       value: ~
-    - children: #25
+    - children: #26
+        - 30
         - 28
-        - 26
       rule: Function
       value: ~
-    - children: #26
-        - 27
+    - children: #27
+        - 29
       rule: Reference
       value: ~
-    - children: [] #27
+    - children: [] #28
       rule: ColumnName
       value: a
-    - children: [] #28
+    - children: [] #29
       rule: FunctionName
       value: sum
-    - children: [] #29
+    - children: [] #30
       rule: AliasName
       value: COL_1
-    - children: #30
-        - 25
-        - 29
+    - children: #31
+        - 27
+        - 31
       rule: Alias
       value: ~
-top: 23
+top: 25
 map:
-  12:
-    - 21
-    - 18
-  15:
-    - 21
-    - 18
-  26:
+  13:
+    - 23
+    - 20
+  17:
+    - 23
+    - 20
+  28:
     - 1
-  5:
-    - 9
+  6:
+    - 10

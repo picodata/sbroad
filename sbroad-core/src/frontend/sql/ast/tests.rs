@@ -305,13 +305,17 @@ fn traversal() {
     let node = ast.nodes.get_node(a_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
+    let (_, gt_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(gt_id).unwrap();
+    assert_eq!(node.rule, Type::Eq);
+
     let (_, num_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(num_id).unwrap();
     assert_eq!(node.rule, Type::Unsigned);
 
-    let (_, eq_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(eq_id).unwrap();
-    assert_eq!(node.rule, Type::Eq);
+    let (_, cmp_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(cmp_id).unwrap();
+    assert_eq!(node.rule, Type::Cmp);
 
     let (_, selection_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(selection_id).unwrap();
@@ -355,7 +359,7 @@ fn invalid_query() {
 1 | select a frAm t
   |          ^---
   |
-  = expected Multiply, Divide, Add, or Subtract"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
         ),
         format!("{ast}"),
     );
@@ -453,14 +457,18 @@ fn sql_arithmetic_selection_ast() {
     let node = ast.nodes.get_node(addition_id).unwrap();
     assert_eq!(node.rule, Type::Addition);
 
+    let (_, eq_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(eq_id).unwrap();
+    assert_eq!(node.rule, Type::Eq);
+
     let (_, num_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(num_id).unwrap();
     assert_eq!(node.rule, Type::Unsigned);
     assert_eq!(node.value, Some("1".to_string()));
 
-    let (_, eq_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(eq_id).unwrap();
-    assert_eq!(node.rule, Type::Eq);
+    let (_, cmp_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(cmp_id).unwrap();
+    assert_eq!(node.rule, Type::Cmp);
 
     let (_, selection_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(selection_id).unwrap();
@@ -579,7 +587,7 @@ fn sql_arithmetic_projection_alias_ast() {
 1 | select a as alias1 + b as alias2 from t
   |          ^---
   |
-  = expected Multiply, Divide, Add, or Subtract"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
         ),
         format!("{ast}"),
     );
@@ -700,6 +708,10 @@ fn sql_arbitrary_projection_ast() {
     let node = ast.nodes.get_node(addition_id).unwrap();
     assert_eq!(node.rule, Type::Addition);
 
+    let (_, gt_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(gt_id).unwrap();
+    assert_eq!(node.rule, Type::Gt);
+
     let (_, col_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(col_name_id).unwrap();
     assert_eq!(node.rule, Type::ColumnName);
@@ -708,9 +720,9 @@ fn sql_arbitrary_projection_ast() {
     let node = ast.nodes.get_node(b_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, b_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(b_id).unwrap();
-    assert_eq!(node.rule, Type::Gt);
+    let (_, cmp_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(cmp_id).unwrap();
+    assert_eq!(node.rule, Type::Cmp);
 
     let (_, alias_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_name_id).unwrap();
@@ -742,7 +754,7 @@ fn sql_arbitrary_projection_alias_ast() {
 1 | select a as alias1 + b as alias2 from t
   |          ^---
   |
-  = expected Multiply, Divide, Add, or Subtract"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
         ),
         format!("{ast}"),
     );
@@ -788,6 +800,10 @@ fn sql_arbitrary_projection_alias_ast() {
     let node = ast.nodes.get_node(col_id).unwrap();
     assert_eq!(node.rule, Type::Addition);
 
+    let (_, gt_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(gt_id).unwrap();
+    assert_eq!(node.rule, Type::Gt);
+
     let (_, col_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(col_name_id).unwrap();
     assert_eq!(node.rule, Type::ColumnName);
@@ -796,9 +812,9 @@ fn sql_arbitrary_projection_alias_ast() {
     let node = ast.nodes.get_node(b_id).unwrap();
     assert_eq!(node.rule, Type::Reference);
 
-    let (_, b_id) = iter.next().unwrap();
-    let node = ast.nodes.get_node(b_id).unwrap();
-    assert_eq!(node.rule, Type::Gt);
+    let (_, cmp_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(cmp_id).unwrap();
+    assert_eq!(node.rule, Type::Cmp);
 
     let (_, alias_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(alias_id).unwrap();
