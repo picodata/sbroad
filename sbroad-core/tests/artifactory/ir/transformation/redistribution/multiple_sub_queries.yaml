@@ -353,7 +353,10 @@ relations:
       columns:
         - name: a
           type: integer
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t1
@@ -364,7 +367,10 @@ relations:
           type: integer
         - name: b
           type: integer
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t2

@@ -30,6 +30,7 @@ fn rel_nodes_from_reference_in_scan() {
         "t",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -50,6 +51,7 @@ fn rel_nodes_from_reference_in_proj() {
     let t = Table::new_seg(
         "t",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )

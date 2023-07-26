@@ -99,10 +99,13 @@ relations:
           type: String
         - name: d
           type: String
-      key:
+      shard_key:
         positions:
           - 1
           - 0
+      primary_key:
+        positions:
+          - 1
       name: t
       engine: Memtx
 slices:

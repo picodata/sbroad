@@ -10,10 +10,10 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Formatter};
-use tarantool::{
-    space::{Field, FieldType as SpaceFieldType, SpaceEngineType},
-    tuple::{FieldType, KeyDef, KeyDefPart},
-};
+use tarantool::index::Metadata as IndexMetadata;
+use tarantool::space::{Field, FieldType as SpaceFieldType, Space, SpaceEngineType, SystemSpace};
+use tarantool::tuple::{FieldType, KeyDef, KeyDefPart};
+use tarantool::util::NumOrStr;
 
 use serde::de::{Error, MapAccess, Visitor};
 use serde::ser::{Serialize as SerSerialize, SerializeMap, Serializer};
@@ -363,8 +363,10 @@ impl TryFrom<&str> for SpaceEngine {
 pub struct Table {
     /// List of the columns.
     pub columns: Vec<Column>,
-    /// Distribution key of the output tuples (column positions).
-    pub key: Key,
+    /// Sharding key of the output tuples (column positions).
+    pub shard_key: Key,
+    /// Primary key of the table (column positions).
+    pub primary_key: Key,
     /// Unique table name.
     name: String,
     /// Table engine.
@@ -384,7 +386,8 @@ impl Table {
     pub fn new_seg(
         name: &str,
         columns: Vec<Column>,
-        sharding_keys: &[&str],
+        sharding_key: &[&str],
+        primary_key: &[&str],
         engine: SpaceEngine,
     ) -> Result<Self, SbroadError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
@@ -399,7 +402,7 @@ impl Table {
             ));
         }
 
-        let positions = sharding_keys
+        let shard_positions = sharding_key
             .iter()
             .map(|name| match pos_map.get(*name) {
                 Some(pos) => {
@@ -424,10 +427,28 @@ impl Table {
             })
             .collect::<Result<Vec<usize>, _>>()?;
 
+        let primary_positions = primary_key
+            .iter()
+            .map(|name| match pos_map.get(*name) {
+                Some(pos) => {
+                    let _ = &columns.get(*pos).ok_or_else(|| {
+                        SbroadError::FailedTo(
+                            Action::Create,
+                            Some(Entity::Column),
+                            format!("column {name} not found at position {pos}"),
+                        )
+                    })?;
+                    Ok(*pos)
+                }
+                None => Err(SbroadError::Invalid(Entity::PrimaryKey, None)),
+            })
+            .collect::<Result<Vec<usize>, _>>()?;
+
         Ok(Table {
             name: name.into(),
             columns,
-            key: Key::new(positions),
+            shard_key: Key::new(shard_positions),
+            primary_key: Key::new(primary_positions),
             engine,
         })
     }
@@ -458,7 +479,7 @@ impl Table {
             ));
         }
 
-        let in_range = ts.key.positions.iter().all(|pos| *pos < cols.len());
+        let in_range = ts.shard_key.positions.iter().all(|pos| *pos < cols.len());
 
         if !in_range {
             return Err(SbroadError::Invalid(
@@ -498,8 +519,8 @@ impl Table {
     /// # Errors
     /// - Table internal inconsistency.
     pub fn get_sharding_column_names(&self) -> Result<Vec<String>, SbroadError> {
-        let mut names: Vec<String> = Vec::with_capacity(self.key.positions.len());
-        for pos in &self.key.positions {
+        let mut names: Vec<String> = Vec::with_capacity(self.shard_key.positions.len());
+        for pos in &self.shard_key.positions {
             names.push(
                 self.columns
                     .get(*pos)
@@ -521,7 +542,7 @@ impl Table {
 
     #[must_use]
     pub fn get_sharding_positions(&self) -> &[usize] {
-        &self.key.positions
+        &self.shard_key.positions
     }
 
     /// Get a sharding key definition for the table.
@@ -592,5 +613,55 @@ impl Relations {
     }
 }
 
+/// Retrieve primary key columns for a space.
+///
+/// # Errors
+/// - Space not found or invalid.
+pub fn space_pk_columns(
+    space_name: &str,
+    space_columns: &[Column],
+) -> Result<Vec<String>, SbroadError> {
+    let space = Space::find(space_name)
+        .ok_or_else(|| SbroadError::NotFound(Entity::Space, space_name.to_string()))?;
+    let index: Space = SystemSpace::Index.into();
+    let tuple = index
+        .get(&[space.id(), 0])
+        .map_err(|e| SbroadError::FailedTo(Action::Get, Some(Entity::Index), format!("{e}")))?
+        .ok_or_else(|| {
+            SbroadError::NotFound(Entity::PrimaryKey, format!("for space {space_name}"))
+        })?;
+    let pk_meta = tuple.decode::<IndexMetadata>().map_err(|e| {
+        SbroadError::FailedTo(Action::Decode, Some(Entity::PrimaryKey), format!("{e}"))
+    })?;
+    let mut primary_key = Vec::with_capacity(pk_meta.parts.len());
+    for part in pk_meta.parts {
+        let col_pos = if let NumOrStr::Num(pos) = part.field {
+            pos as usize
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::PrimaryKey,
+                Some(format!(
+                    "part of {} has unexpected format: {part:?}",
+                    space_name
+                )),
+            ));
+        };
+        let col = space_columns
+            .get(col_pos)
+            .ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::PrimaryKey,
+                    Some(format!(
+                        "{} part referes to unknown column position: {}",
+                        space_name, col_pos
+                    )),
+                )
+            })?
+            .name
+            .clone();
+        primary_key.push(col);
+    }
+    Ok(primary_key)
+}
 #[cfg(test)]
 mod tests;

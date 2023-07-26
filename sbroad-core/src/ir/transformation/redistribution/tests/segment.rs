@@ -26,6 +26,7 @@ fn sub_query1() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -39,6 +40,7 @@ fn sub_query1() {
             Column::new("a", Type::Integer, ColumnRole::User),
             Column::new("b", Type::Integer, ColumnRole::User),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )

@@ -151,6 +151,7 @@ fn test_getting_table_segment() {
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["\"identification_number\"", "\"product_code\""],
+        &["\"identification_number\""],
         SpaceEngine::Memtx,
     )
     .unwrap();

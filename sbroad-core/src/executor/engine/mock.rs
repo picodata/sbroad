@@ -104,13 +104,15 @@ impl RouterConfigurationMock {
             Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
-        let sharding_key = vec!["\"identification_number\"", "\"product_code\""];
+        let sharding_key = &["\"identification_number\"", "\"product_code\""];
+        let primary_key = &["\"product_code\"", "\"identification_number\""];
         tables.insert(
             "\"hash_testing\"".to_string(),
             Table::new_seg(
                 "\"hash_testing\"",
                 columns.clone(),
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
@@ -121,19 +123,21 @@ impl RouterConfigurationMock {
             Table::new_seg(
                 "\"hash_testing_hist\"",
                 columns.clone(),
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
         );
 
-        let sharding_key = vec!["\"identification_number\""];
+        let sharding_key = &["\"identification_number\""];
         tables.insert(
             "\"hash_single_testing\"".to_string(),
             Table::new_seg(
                 "\"hash_single_testing\"",
                 columns.clone(),
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
@@ -144,7 +148,8 @@ impl RouterConfigurationMock {
             Table::new_seg(
                 "\"hash_single_testing_hist\"",
                 columns,
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
@@ -157,14 +162,16 @@ impl RouterConfigurationMock {
             Column::new("\"sys_op\"", Type::Unsigned, ColumnRole::User),
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
-        let sharding_key = vec!["\"id\""];
+        let sharding_key = &["\"id\""];
+        let primary_key = &["\"id\""];
 
         tables.insert(
             "\"test_space\"".to_string(),
             Table::new_seg(
                 "\"test_space\"",
                 columns.clone(),
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
@@ -175,7 +182,8 @@ impl RouterConfigurationMock {
             Table::new_seg(
                 "\"test_space_hist\"",
                 columns,
-                &sharding_key,
+                sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
@@ -186,9 +194,17 @@ impl RouterConfigurationMock {
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"id\""];
+        let primary_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
-            Table::new_seg("\"history\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
+            Table::new_seg(
+                "\"history\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -199,9 +215,17 @@ impl RouterConfigurationMock {
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
+        let primary_key: &[&str] = &["\"b\""];
         tables.insert(
             "\"t\"".to_string(),
-            Table::new_seg("\"t\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
+            Table::new_seg(
+                "\"t\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -210,9 +234,17 @@ impl RouterConfigurationMock {
             Column::new("\"b\"", Type::Integer, ColumnRole::User),
         ];
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
+        let primary_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t1\"".to_string(),
-            Table::new_seg("\"t1\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
+            Table::new_seg(
+                "\"t1\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -223,9 +255,17 @@ impl RouterConfigurationMock {
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"e\"", "\"f\""];
+        let primary_key: &[&str] = &["\"g\"", "\"h\""];
         tables.insert(
             "\"t2\"".to_string(),
-            Table::new_seg("\"t2\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
+            Table::new_seg(
+                "\"t2\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         let columns = vec![
@@ -234,9 +274,17 @@ impl RouterConfigurationMock {
             Column::new("\"b\"", Type::Integer, ColumnRole::User),
         ];
         let sharding_key: &[&str] = &["\"a\""];
+        let primary_key: &[&str] = &["\"a\""];
         tables.insert(
             "\"t3\"".to_string(),
-            Table::new_seg("\"t3\"", columns, sharding_key, SpaceEngine::Memtx).unwrap(),
+            Table::new_seg(
+                "\"t3\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
         );
 
         // Table for sbroad-benches
@@ -459,23 +507,25 @@ impl RouterConfigurationMock {
             Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
         ];
         let sharding_key: &[&str] = &["\"reestrid\""];
+        let primary_key: &[&str] = &["\"reestrid\""];
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_string(),
             Table::new_seg(
                 "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
                 columns.clone(),
                 sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),
         );
-        let sharding_key: &[&str] = &["\"reestrid\""];
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_string(),
             Table::new_seg(
                 "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
                 columns,
                 sharding_key,
+                primary_key,
                 SpaceEngine::Memtx,
             )
             .unwrap(),

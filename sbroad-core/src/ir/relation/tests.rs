@@ -28,13 +28,14 @@ fn table_seg() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        &["b", "a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
 
-    assert_eq!(2, t.key.positions.len());
-    assert_eq!(0, t.key.positions[1]);
-    assert_eq!(1, t.key.positions[0]);
+    assert_eq!(2, t.shard_key.positions.len());
+    assert_eq!(0, t.shard_key.positions[1]);
+    assert_eq!(1, t.shard_key.positions[0]);
 }
 
 #[test]
@@ -42,6 +43,7 @@ fn table_seg_name() {
     let t = Table::new_seg(
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -61,6 +63,7 @@ fn table_seg_duplicate_columns() {
                 Column::new("a", Type::String, ColumnRole::User),
             ],
             &["b", "a"],
+            &["b", "a"],
             SpaceEngine::Memtx,
         )
         .unwrap_err(),
@@ -77,6 +80,7 @@ fn table_seg_dno_bucket_id_column() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
             Column::new("c", Type::String, ColumnRole::User),
         ],
+        &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
     )
@@ -96,6 +100,7 @@ fn table_seg_dno_bucket_id_column() {
             Column::new("bucket_id", Type::String, ColumnRole::Sharding),
             Column::new("bucket_id2", Type::String, ColumnRole::Sharding),
         ],
+        &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
     )
@@ -119,6 +124,7 @@ fn table_seg_wrong_key() {
                 Column::new("d", Type::String, ColumnRole::User),
             ],
             &["a", "e"],
+            &["a", "e"],
             SpaceEngine::Memtx,
         )
         .unwrap_err(),
@@ -135,6 +141,7 @@ fn table_seg_compound_type_in_key() {
                 Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
                 Column::new("a", Type::Array, ColumnRole::User),
             ],
+            &["a"],
             &["a"],
             SpaceEngine::Memtx,
         )
@@ -158,6 +165,7 @@ fn table_seg_serialized() {
             Column::new("e", Type::Integer, ColumnRole::User),
             Column::new("f", Type::Unsigned, ColumnRole::User),
         ],
+        &["a", "d"],
         &["a", "d"],
         SpaceEngine::Memtx,
     )
@@ -221,7 +229,7 @@ fn table_seg_serialized_no_key() {
     assert_eq!(t.unwrap_err(), SbroadError::FailedTo(
         Action::Serialize,
         Some(Entity::Table),
-        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 52, line: 5, col: 5 }, path: \"key\" }))".into())
+        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 58, line: 5, col: 11 }, path: \"shard_key\" }))".into())
     );
 }
 
@@ -354,6 +362,7 @@ fn table_converting() {
             Column::new("c", Type::String, ColumnRole::User),
             Column::new("d", Type::String, ColumnRole::User),
         ],
+        &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
     )

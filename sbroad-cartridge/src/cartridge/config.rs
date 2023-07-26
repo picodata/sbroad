@@ -10,7 +10,7 @@ use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_na
 use sbroad::executor::engine::Metadata;
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
-use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use sbroad::ir::relation::{space_pk_columns, Column, ColumnRole, SpaceEngine, Table, Type};
 use sbroad::{debug, warn};
 
 /// Cluster metadata information
@@ -145,9 +145,11 @@ impl RouterConfiguration {
                     continue;
                 };
 
-                let keys: Vec<String> = if let Some(keys) = params["sharding_key"].as_vec() {
+                let shard_key: Vec<String> = if let Some(shard_key) =
+                    params["sharding_key"].as_vec()
+                {
                     let mut result = Vec::new();
-                    for k in keys {
+                    for k in shard_key {
                         let key: &str = if let Some(k) = k.as_str() {
                             k
                         } else {
@@ -166,6 +168,37 @@ impl RouterConfiguration {
                     warn!(
                         Option::from("configuration parsing"),
                         &format!("Skip space {current_space_name}: keys not found."),
+                    );
+                    continue;
+                };
+
+                let primary_key = if let Some(indexes) = params["indexes"].as_vec() {
+                    let pk = indexes.first().ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::PrimaryKey,
+                            format!("for space {current_space_name}"),
+                        )
+                    })?;
+                    let pk_parts = pk["parts"].as_vec().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::PrimaryKey,
+                            Some(format!(
+                                "for space {current_space_name}: failed to get index parts"
+                            )),
+                        )
+                    })?;
+                    let pk_columns = pk_parts.iter().map(|p| {
+                        let name = p["path"].as_str().ok_or_else(|| SbroadError::Invalid(
+                           Entity::PrimaryKey,
+                           Some(format!("for space {current_space_name}: failed to get index part field")))
+                        )?;
+                        Ok(normalize_name_from_schema(name))
+                    }).collect::<Result<Vec<String>, SbroadError>>()?;
+                    pk_columns
+                } else {
+                    warn!(
+                        Option::from("configuration parsing"),
+                        &format!("Skip space {current_space_name}: primary key not found."),
                     );
                     continue;
                 };
@@ -195,8 +228,18 @@ impl RouterConfiguration {
                         "Table's original name: {current_space_name}, qualified name {table_name}"
                     ),
                 );
-                let keys_str = keys.iter().map(String::as_str).collect::<Vec<&str>>();
-                let t = Table::new_seg(&table_name, fields, keys_str.as_slice(), engine)?;
+                let shard_key_str = shard_key.iter().map(String::as_str).collect::<Vec<&str>>();
+                let primary_key_str = primary_key
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<&str>>();
+                let t = Table::new_seg(
+                    &table_name,
+                    fields,
+                    shard_key_str.as_slice(),
+                    primary_key_str.as_slice(),
+                    engine,
+                )?;
                 self.tables.insert(table_name, t);
             } else {
                 return Err(SbroadError::Invalid(

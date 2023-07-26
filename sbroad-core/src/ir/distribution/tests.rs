@@ -20,6 +20,7 @@ fn proj_preserve_dist_key() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        &["b", "a"],
         SpaceEngine::Memtx,
     )
     .unwrap();

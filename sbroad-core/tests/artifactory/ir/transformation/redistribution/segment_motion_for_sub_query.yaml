@@ -203,7 +203,10 @@ relations:
       columns:
         - name: a
           type: Integer
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t1
@@ -214,7 +217,10 @@ relations:
           type: Integer
         - name: b
           type: Integer
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t2

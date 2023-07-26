@@ -20,6 +20,7 @@ fn full_motion_less_for_sub_query() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Vinyl,
     )
     .unwrap();
@@ -33,6 +34,7 @@ fn full_motion_less_for_sub_query() {
             Column::new("a", Type::Integer, ColumnRole::User),
             Column::new("b", Type::Integer, ColumnRole::User),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Vinyl,
     )
@@ -84,6 +86,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
             Column::new("b", Type::Integer, ColumnRole::User),
         ],
         &["a"],
+        &["a"],
         SpaceEngine::Vinyl,
     )
     .unwrap();
@@ -94,6 +97,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Vinyl,
     )
@@ -142,6 +146,7 @@ fn local_sub_query() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -152,6 +157,7 @@ fn local_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -199,6 +205,7 @@ fn multiple_sub_queries() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -212,6 +219,7 @@ fn multiple_sub_queries() {
             Column::new("a", Type::Integer, ColumnRole::User),
             Column::new("b", Type::Integer, ColumnRole::User),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )

@@ -80,7 +80,10 @@ relations:
           type: Boolean
         - name: b
           type: Number
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t

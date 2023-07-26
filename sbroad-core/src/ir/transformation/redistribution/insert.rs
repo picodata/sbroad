@@ -81,7 +81,7 @@ impl Plan {
 
         let mut motion_key: MotionKey = MotionKey::new();
         let table = self.insert_table(insert_id)?;
-        for pos in &table.key.positions {
+        for pos in &table.shard_key.positions {
             if let Some(child_pos) = columns_map.get(pos) {
                 // We can use insert column's position instead of
                 // the position in the child node as their lengths

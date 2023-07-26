@@ -113,7 +113,10 @@ relations:
       columns:
         - name: a
           type: boolean
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t

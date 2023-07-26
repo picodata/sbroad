@@ -25,6 +25,7 @@ fn scan_rel() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        &["b", "a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -62,6 +63,7 @@ fn scan_rel_serialized() {
             Column::new("d", Type::String, ColumnRole::User),
         ],
         &["b", "a"],
+        &["b", "a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -96,6 +98,7 @@ fn projection() {
             Column::new("c", Type::String, ColumnRole::User),
             Column::new("d", Type::String, ColumnRole::User),
         ],
+        &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
     )
@@ -152,6 +155,7 @@ fn selection() {
             Column::new("c", Type::String, ColumnRole::User),
             Column::new("d", Type::String, ColumnRole::User),
         ],
+        &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
     )
@@ -211,6 +215,7 @@ fn except() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -221,6 +226,7 @@ fn except() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -242,6 +248,7 @@ fn except() {
             Column::new("a", Type::Unsigned, ColumnRole::User),
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -266,6 +273,7 @@ fn insert() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -280,6 +288,7 @@ fn insert() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
             Column::new("c", Type::Unsigned, ColumnRole::Sharding),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -327,6 +336,7 @@ fn union_all() {
         "t1",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -336,6 +346,7 @@ fn union_all() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -357,6 +368,7 @@ fn union_all_col_amount_mismatch() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -368,6 +380,7 @@ fn union_all_col_amount_mismatch() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("b", Type::Unsigned, ColumnRole::User)],
+        &["b"],
         &["b"],
         SpaceEngine::Memtx,
     )
@@ -395,6 +408,7 @@ fn sub_query() {
             Column::new("b", Type::Unsigned, ColumnRole::User),
         ],
         &["a"],
+        &["b"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -440,6 +454,7 @@ fn selection_with_sub_query() {
         "t1",
         vec![Column::new("a", Type::Integer, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -450,6 +465,7 @@ fn selection_with_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("b", Type::Integer, ColumnRole::User)],
+        &["b"],
         &["b"],
         SpaceEngine::Memtx,
     )
@@ -498,6 +514,7 @@ fn join() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -511,6 +528,7 @@ fn join() {
             Column::new("d", Type::Unsigned, ColumnRole::User),
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
+        &["d"],
         &["d"],
         SpaceEngine::Memtx,
     )
@@ -557,6 +575,7 @@ fn join_duplicate_columns() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -570,6 +589,7 @@ fn join_duplicate_columns() {
             Column::new("d", Type::Unsigned, ColumnRole::User),
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
+        &["d"],
         &["d"],
         SpaceEngine::Memtx,
     )

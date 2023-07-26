@@ -57,6 +57,7 @@ fn relational_post() {
         "t1",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -66,6 +67,7 @@ fn relational_post() {
     let t2 = Table::new_seg(
         "t2",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -119,6 +121,7 @@ fn selection_subquery_dfs_post() {
         "t1",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -132,6 +135,7 @@ fn selection_subquery_dfs_post() {
             Column::new("b", Type::Boolean, ColumnRole::User),
             Column::new("c", Type::Boolean, ColumnRole::User),
         ],
+        &["b"],
         &["b"],
         SpaceEngine::Memtx,
     )
@@ -206,6 +210,7 @@ fn subtree_dfs_post() {
             Column::new("a", Type::Boolean, ColumnRole::User),
             Column::new("c", Type::Boolean, ColumnRole::User),
         ],
+        &["a", "c"],
         &["a", "c"],
         SpaceEngine::Memtx,
     )

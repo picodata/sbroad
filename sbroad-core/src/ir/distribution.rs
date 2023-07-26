@@ -555,7 +555,7 @@ impl Plan {
             SbroadError::NotFound(Entity::Table, format!("{table_name} among plan relations"))
         })?;
         let mut new_key: Key = Key::new(Vec::new());
-        let all_found = table.key.positions.iter().all(|pos| {
+        let all_found = table.shard_key.positions.iter().all(|pos| {
             table_pos_map.get(pos).map_or(false, |v| {
                 new_key.positions.push(*v);
                 true

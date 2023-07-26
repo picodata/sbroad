@@ -21,6 +21,7 @@ fn sql_order_selection() {
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -106,6 +107,7 @@ fn sql_arithmetic_selection_plan() {
             Column::new("f", Type::Integer, ColumnRole::User),
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )
@@ -303,6 +305,7 @@ fn sql_arithmetic_projection_plan() {
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();
@@ -473,6 +476,7 @@ fn sql_arbitrary_projection_plan() {
             Column::new("d", Type::Integer, ColumnRole::User),
             Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
         ],
+        &["a"],
         &["a"],
         SpaceEngine::Memtx,
     )

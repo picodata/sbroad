@@ -12,7 +12,11 @@ columns:
   - name: f
     type: Unsigned
 name: t
-key:
+shard_key:
+  positions:
+    - 0
+    - 3
+primary_key:
   positions:
     - 0
     - 3

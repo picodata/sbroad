@@ -1,6 +1,9 @@
 columns: ~
 name: t
-key:
+shard_key:
+  positions:
+    - 0
+primary_key:
   positions:
     - 0
 engine: Memtx

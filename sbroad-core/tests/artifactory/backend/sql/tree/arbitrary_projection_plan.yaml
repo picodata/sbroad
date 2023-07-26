@@ -183,7 +183,10 @@ relations:
         - name: bucket_id
           type: Unsigned
           role: Sharding
-      key:
+      shard_key:
+        positions:
+          - 0
+      primary_key:
         positions:
           - 0
       name: t

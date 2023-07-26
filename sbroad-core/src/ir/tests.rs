@@ -40,6 +40,7 @@ fn get_node() {
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User)],
         &["a"],
+        &["a"],
         SpaceEngine::Memtx,
     )
     .unwrap();

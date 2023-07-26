@@ -771,7 +771,7 @@ impl Plan {
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
-        let keys: HashSet<_, RepeatableState> = collection! { rel.key.clone() };
+        let keys: HashSet<_, RepeatableState> = collection! { rel.shard_key.clone() };
         let dist = Distribution::Segment {
             keys: KeySet::from(keys),
         };

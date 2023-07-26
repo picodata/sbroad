@@ -2,7 +2,10 @@ columns:
   - name: a
     type: Boolean
 name: t
-key:
+shard_key:
   positions:
     - 10
+primary_key:
+  positions:
+    - 0
 engine: Memtx
