@@ -582,3 +582,15 @@ g.test_only_executed_part_is_cached = function()
     t.assert_not_equals(r, {})
     assert_cache_hit(query_id)
 end
+
+g.test_double_conversion = function()
+    local api = cluster:server("api-1").net_box
+    local query_id, query = "id1", [[
+    INSERT INTO "double_t" values (1, 2.5, 2.5e-1), (1, 2.5e-1, 2.5)
+    ON CONFLICT DO REPLACE
+    ]]
+    local params = { query, {}, nil, query_id }
+    local r, err = api:call("sbroad.execute", params)
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 2})
+end

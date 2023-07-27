@@ -167,7 +167,7 @@ Punctuation = _{
 }
 Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | "»" | WHITESPACE }
 
-Value = _{ Parameter | True | False | Null | Decimal | Double | Unsigned | Integer | Reference | SingleQuotedString }
+Value = _{ Parameter | True | False | Null | Double | Decimal | Unsigned | Integer | Reference | SingleQuotedString }
     True = @{ ^"true" }
     False = @{ ^"false" }
     Null = @{ ^"null" }

@@ -4,6 +4,7 @@
 
 use ahash::RandomState;
 
+use crate::collection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -14,7 +15,6 @@ use super::expression::Expression;
 use super::transformation::redistribution::MotionPolicy;
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
-use crate::collection;
 use crate::ir::distribution::{Distribution, KeySet};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::ColumnRole;

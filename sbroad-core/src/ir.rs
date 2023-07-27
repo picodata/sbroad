@@ -754,11 +754,12 @@ impl Plan {
         &mut self,
         node_id: usize,
     ) -> Result<&mut Expression, SbroadError> {
-        match self.get_mut_node(node_id)? {
+        let node = self.get_mut_node(node_id)?;
+        match node {
             Node::Expression(exp) => Ok(exp),
             Node::Relational(_) | Node::Parameter | Node::Ddl(..) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("node is not expression type".into()),
+                Some(format!("node ({node_id}) is not expression type: {node:?}")),
             )),
         }
     }

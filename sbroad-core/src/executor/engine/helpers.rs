@@ -10,12 +10,13 @@ use tarantool::error::{Error, TarantoolErrorCode};
 use tarantool::space::Space;
 use tarantool::transaction::transaction;
 
+use crate::errors::Action::Find;
 use crate::executor::engine::helpers::storage::runtime::{prepare, read_prepared, read_unprepared};
 use crate::executor::engine::helpers::storage::PreparedStmt;
 use crate::executor::engine::QueryCache;
 use crate::executor::lru::Cache;
 use crate::ir::operator::ConflictStrategy;
-use crate::ir::value::MsgPackValue;
+use crate::ir::value::{EncodedValue, MsgPackValue};
 use crate::ir::ExecuteOptions;
 use crate::otm::child_span;
 use crate::{
@@ -256,6 +257,7 @@ pub enum TupleBuilderCommands {
     /// Take a value from the original tuple
     /// at the specified position.
     TakePosition(usize),
+    TakeAndCastPosition(usize, Type),
     /// Set a specified value.
     SetValue(Value),
     /// Calculate a bucket id for the new tuple
@@ -265,11 +267,13 @@ pub enum TupleBuilderCommands {
 
 type TupleBuilderPattern = Vec<TupleBuilderCommands>;
 
-/// Create commands to build the tuple for insertion
+/// Create commands to build the tuple for insertion,
+/// which does not take into account types of the virtual
+/// table.
 ///
 /// # Errors
 /// - Invalid insert node or plan
-pub fn insert_tuple_builder(
+pub fn init_insert_tuple_builder(
     plan: &Plan,
     insert_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
@@ -296,6 +300,50 @@ pub fn insert_tuple_builder(
         }
     }
     Ok(commands)
+}
+
+/// Replace `TakePosition` command to `TakeAndCastPosition`,
+/// if types in virtual table and actual table do not match.
+///
+/// # Arguments
+/// * `builder`-  insert builder commands
+/// * `tuple_pos_to_type` - mapping between position in virtual table
+/// tuple and corresponding type in actual table.
+/// * `vtable` - virtual table to be inserted
+///
+/// # Errors
+/// - invalid mapping between tuple index and insert table type
+/// - invalid `TakePosition` command
+#[allow(clippy::implicit_hasher)]
+pub fn add_casts_to_builder(
+    mut builder: TupleBuilderPattern,
+    tuple_pos_to_type: &HashMap<usize, Type>,
+    vtable: &VirtualTable,
+) -> Result<TupleBuilderPattern, SbroadError> {
+    for c in &mut builder {
+        if let TupleBuilderCommands::TakePosition(pos) = c {
+            let table_type = tuple_pos_to_type.get(pos).ok_or_else(|| {
+                SbroadError::FailedTo(Find, None, "table type for tuple position in map".into())
+            })?;
+            let vtable_col_type = &vtable
+                .get_columns()
+                .get(*pos)
+                .ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::VirtualTable,
+                        Some(format!(
+                            "expected at least ({}) columns based on tuple builder",
+                            *pos + 1
+                        )),
+                    )
+                })?
+                .r#type;
+            if table_type != vtable_col_type {
+                *c = TupleBuilderCommands::TakeAndCastPosition(*pos, table_type.clone());
+            }
+        }
+    }
+    Ok(builder)
 }
 
 /// Generate an empty result for the specified plan:
@@ -878,9 +926,31 @@ pub fn execute_dml_on_storage(
     // instead of SQL (for performance reasons).
     let insert_id = plan.get_top()?;
     let insert_child_id = plan.insert_child_id(insert_id)?;
-    let builder = insert_tuple_builder(plan, insert_id)?;
+    let builder = init_insert_tuple_builder(plan, insert_id)?;
     let space_name = normalize_name_for_space_api(plan.insert_table(insert_id)?.name());
     let mut result = ConsumerResult::default();
+    // we have to remember the mapping, because the plan can be moved when
+    // building vtable locally. Map position in VTable tuple to corresponding
+    // type in insert table.
+    let tuple_pos_to_type = {
+        let mut tuple_pos_to_type: HashMap<usize, Type> =
+            HashMap::with_capacity(plan.insert_columns(insert_id)?.len());
+        for (pos, table_pos) in plan.insert_columns(insert_id)?.iter().enumerate() {
+            let table_type = plan
+                .insert_table(insert_id)?
+                .columns
+                .get(*table_pos)
+                .map(|c| c.r#type.clone())
+                .ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Plan,
+                        Some(format!("invalid insert column: ({pos}, {table_pos})")),
+                    )
+                })?;
+            tuple_pos_to_type.insert(pos, table_type);
+        }
+        tuple_pos_to_type
+    };
 
     // There are two ways to execute an `INSERT` query:
     // 1. Execute SQL subtree under the `INSERT` node (`INSERT .. SELECT ..`)
@@ -935,6 +1005,7 @@ pub fn execute_dml_on_storage(
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
     })?;
+    let builder = add_casts_to_builder(builder, &tuple_pos_to_type, vtable.as_ref())?;
     let conflict_strategy = optional
         .exec_plan
         .get_ir_plan()
@@ -956,8 +1027,8 @@ pub fn execute_dml_on_storage(
                     // a reference to the original value. The only allocation is for message
                     // pack serialization, but it is unavoidable.
                     match command {
-                        TupleBuilderCommands::TakePosition(pos) => {
-                            let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        TupleBuilderCommands::TakePosition(tuple_pos) => {
+                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
                                     Entity::Tuple,
                                     Some(format!(
@@ -965,13 +1036,24 @@ pub fn execute_dml_on_storage(
                                     )),
                                 )
                             })?;
-                            insert_tuple.push(MsgPackValue::from(value));
+                            insert_tuple.push(EncodedValue::Ref(value.into()));
+                        }
+                        TupleBuilderCommands::TakeAndCastPosition(tuple_pos, table_type) => {
+                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::Tuple,
+                                    Some(format!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
+                                )
+                            })?;
+                            insert_tuple.push(value.cast(table_type)?);
                         }
                         TupleBuilderCommands::SetValue(value) => {
-                            insert_tuple.push(MsgPackValue::from(value));
+                            insert_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
                         }
                         TupleBuilderCommands::CalculateBucketId(_) => {
-                            insert_tuple.push(MsgPackValue::Unsigned(bucket_id));
+                            insert_tuple.push(EncodedValue::Ref(MsgPackValue::Unsigned(bucket_id)));
                         }
                     }
                 }
