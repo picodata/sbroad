@@ -12,7 +12,7 @@ use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
 };
-use crate::ir::Plan;
+use crate::ir::{OptionKind, Plan};
 
 use super::operator::{Arithmetic, Bool, Unary};
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
@@ -829,6 +829,8 @@ struct FullExplain {
     main_query: ExplainTreePart,
     /// Related part of query which describe as `WHERE` cause subqueries
     subqueries: Vec<ExplainTreePart>,
+    /// Options imposed during query execution
+    exec_options: Vec<(OptionKind, Value)>,
 }
 
 impl Display for FullExplain {
@@ -838,6 +840,12 @@ impl Display for FullExplain {
         for (pos, sq) in self.subqueries.iter().enumerate() {
             writeln!(s, "subquery ${pos}:")?;
             s.push_str(&sq.to_string());
+        }
+        if !self.exec_options.is_empty() {
+            writeln!(s, "execution options:")?;
+            for opt in &self.exec_options {
+                writeln!(s, "{} = {}", opt.0, opt.1)?;
+            }
         }
         write!(f, "{s}")
     }
@@ -849,6 +857,13 @@ impl FullExplain {
     pub fn new(ir: &Plan, top_id: usize) -> Result<Self, SbroadError> {
         let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
         let mut result = FullExplain::default();
+        result
+            .exec_options
+            .extend(ir.options.execute_options.clone().to_iter());
+        result.exec_options.push((
+            OptionKind::VTableMaxRows,
+            Value::Unsigned(ir.options.vtable_max_rows),
+        ));
 
         let mut dft_post = PostOrder::with_capacity(|node| ir.nodes.rel_iter(node), REL_CAPACITY);
         for (level, id) in dft_post.iter(top_id) {

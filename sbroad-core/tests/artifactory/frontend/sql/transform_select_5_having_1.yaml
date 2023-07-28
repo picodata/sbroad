@@ -1,242 +1,246 @@
 ---
 nodes:
   arena:
-    - children: #0 
-        - 41
-      rule: Select
+    - children: #0
+        - 42
+      rule: Query
       value: ~
     - children: #1
-        - 19
-        - 2
-      rule: Having
+        - 42
+      rule: Select
       value: ~
     - children: #2
-        - 11
+        - 20
         - 3
-      rule: And
+      rule: Having
       value: ~
     - children: #3
+        - 12
+        - 4
+      rule: And
+      value: ~
+    - children: #4
+        - 7
         - 6
         - 5
-        - 4
       rule: Cmp
       value: ~
-    - children: [] #4
+    - children: [] #5
       rule: Unsigned
       value: "10"
-    - children: [] #5
+    - children: [] #6
       rule: Gt
       value: ">"
-    - children: #6
-        - 10
-        - 7
+    - children: #7
+        - 11
+        - 8
       rule: Function
       value: ~
-    - children: #7
+    - children: #8
+        - 10
         - 9
-        - 8
       rule: Reference
       value: ~
-    - children: [] #8
+    - children: [] #9
       rule: ColumnName
       value: b
-    - children: [] #9
+    - children: [] #10
       rule: ScanName
       value: t2
-    - children: [] #10
+    - children: [] #11
       rule: FunctionName
       value: avg
-    - children: #11
+    - children: #12
+        - 15
         - 14
         - 13
-        - 12
       rule: Cmp
       value: ~
-    - children: [] #12
+    - children: [] #13
       rule: Unsigned
       value: "1"
-    - children: [] #13
+    - children: [] #14
       rule: Gt
       value: ">"
-    - children: #14
-        - 18
-        - 15
+    - children: #15
+        - 19
+        - 16
       rule: Function
       value: ~
-    - children: #15
+    - children: #16
+        - 18
         - 17
-        - 16
       rule: Reference
       value: ~
-    - children: [] #16
+    - children: [] #17
       rule: ColumnName
       value: a
-    - children: [] #17
+    - children: [] #18
       rule: ScanName
       value: t1
-    - children: [] #18
+    - children: [] #19
       rule: FunctionName
       value: sum
-    - children: #19
-        - 26
-        - 23
-        - 20
+    - children: #20
+        - 27
+        - 24
+        - 21
       rule: GroupBy
       value: ~
-    - children: #20
+    - children: #21
+        - 23
         - 22
-        - 21
       rule: Reference
       value: ~
-    - children: [] #21
+    - children: [] #22
       rule: ColumnName
       value: b
-    - children: [] #22
+    - children: [] #23
       rule: ScanName
       value: t2
-    - children: #23
+    - children: #24
+        - 26
         - 25
-        - 24
       rule: Reference
       value: ~
-    - children: [] #24
+    - children: [] #25
       rule: ColumnName
       value: a
-    - children: [] #25
+    - children: [] #26
       rule: ScanName
       value: t1
-    - children: #26
+    - children: #27
+        - 40
         - 39
-        - 38
-        - 36
-        - 27
+        - 37
+        - 28
       rule: Join
       value: ~
-    - children: #27
-        - 28
+    - children: #28
+        - 29
       rule: Condition
       value: ~
-    - children: #28
+    - children: #29
+        - 34
         - 33
-        - 32
-        - 29
+        - 30
       rule: Cmp
       value: ~
-    - children: #29
+    - children: #30
+        - 32
         - 31
-        - 30
       rule: Reference
       value: ~
-    - children: [] #30
+    - children: [] #31
       rule: ColumnName
       value: a
-    - children: [] #31
+    - children: [] #32
       rule: ScanName
       value: t2
-    - children: [] #32
+    - children: [] #33
       rule: Eq
       value: "="
-    - children: #33
+    - children: #34
+        - 36
         - 35
-        - 34
       rule: Reference
       value: ~
-    - children: [] #34
+    - children: [] #35
       rule: ColumnName
       value: a
-    - children: [] #35
+    - children: [] #36
       rule: ScanName
       value: t1
-    - children: #36
-        - 37
+    - children: #37
+        - 38
       rule: Scan
       value: ~
-    - children: [] #37
+    - children: [] #38
       rule: Table
       value: t2
-    - children: [] #38
+    - children: [] #39
       rule: InnerJoinKind
       value: inner
-    - children: #39
-        - 40
+    - children: #40
+        - 41
       rule: Scan
       value: ~
-    - children: [] #40
+    - children: [] #41
       rule: Table
       value: t1
-    - children: #41
-        - 1
-        - 42
+    - children: #42
+        - 2
+        - 43
       rule: Projection
       value: ~
-    - children: #42
-        - 54
+    - children: #43
+        - 55
       rule: Column
       value: ~
-    - children: #43
+    - children: #44
+        - 50
         - 49
-        - 48
-        - 44
+        - 45
       rule: Addition
       value: ~
-    - children: #44
-        - 47
-        - 45
+    - children: #45
+        - 48
+        - 46
       rule: Function
       value: ~
-    - children: #45
-        - 46
+    - children: #46
+        - 47
       rule: Reference
       value: ~
-    - children: [] #46
+    - children: [] #47
       rule: ColumnName
       value: b
-    - children: [] #47
+    - children: [] #48
       rule: FunctionName
       value: f
-    - children: [] #48
+    - children: [] #49
       rule: Add
       value: +
-    - children: #49
-        - 52
-        - 50
+    - children: #50
+        - 53
+        - 51
       rule: Function
       value: ~
-    - children: #50
-        - 51
+    - children: #51
+        - 52
       rule: Reference
       value: ~
-    - children: [] #51
+    - children: [] #52
       rule: ColumnName
       value: a
-    - children: [] #52
+    - children: [] #53
       rule: FunctionName
       value: sum
-    - children: [] #53
+    - children: [] #54
       rule: AliasName
       value: COL_1
-    - children: #54
-        - 43
-        - 53
+    - children: #55
+        - 44
+        - 54
       rule: Alias
       value: ~
-top: 41
+top: 0
 map:
-  33:
-    - 39
-    - 36
-  7:
-    - 19
-  20:
-    - 26
-  23:
-    - 26
-  50:
-    - 1
-  29:
-    - 39
-    - 36
-  15:
-    - 19
-  45:
-    - 1
+  30:
+    - 40
+    - 37
+  24:
+    - 27
+  21:
+    - 27
+  8:
+    - 20
+  46:
+    - 2
+  34:
+    - 40
+    - 37
+  16:
+    - 20
+  51:
+    - 2

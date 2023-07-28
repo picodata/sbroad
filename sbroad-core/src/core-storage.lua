@@ -1,3 +1,5 @@
+local helper = require('sbroad.helper')
+
 _G.prepare = function(pattern)
     local prep, err = box.prepare(pattern)
     if err ~= nil then
@@ -10,8 +12,8 @@ _G.unprepare = function(stmt_id)
     box.unprepare(stmt_id)
 end
 
-_G.read = function(stmt_id, stmt, params)
-    local res, err = box.execute(stmt_id, params)
+_G.read = function(stmt_id, stmt, params, max_rows, options)
+    local res, err = box.execute(stmt_id, params, options)
     if err ~= nil then
         -- We don't have SQL query for retrying,
         -- so simply return an error
@@ -21,10 +23,14 @@ _G.read = function(stmt_id, stmt, params)
         -- The statement can be evicted from the cache,
         -- while we were yielding in Lua. So we execute
         -- it without the cache.
-        res, err = box.execute(stmt, params)
+        res, err = box.execute(stmt, params, options)
         if err ~= nil then
             error(err)
         end
+    end
+
+    if max_rows ~= 0 and #res.rows > max_rows then
+        error(helper.vtable_limit_exceeded(max_rows, #res.rows))
     end
 
     local result = {}
@@ -41,8 +47,8 @@ _G.read = function(stmt_id, stmt, params)
     return box.tuple.new{result}
 end
 
-_G.write = function(stmt_id, stmt, params)
-    local res, err = box.execute(stmt_id, params)
+_G.write = function(stmt_id, stmt, params, options)
+    local res, err = box.execute(stmt_id, params, options)
     if err ~= nil then
         -- We don't have SQL query for retrying,
         -- so simply return an error
@@ -52,7 +58,7 @@ _G.write = function(stmt_id, stmt, params)
         -- The statement can be evicted from the cache,
         -- while we were yielding in Lua. So we execute
         -- it without the cache.
-        res, err = box.execute(stmt, params)
+        res, err = box.execute(stmt, params, options)
         if err ~= nil then
             error(err)
         end

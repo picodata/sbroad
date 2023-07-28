@@ -167,6 +167,9 @@ fn projection_any_dist_for_expr() {
         scan
             projection (count(("test_space"."id"::unsigned))::integer -> "count_13")
                 scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -290,7 +293,6 @@ fn join_unite_keys() {
         .join("join_unite_keys.yaml");
     let s = fs::read_to_string(path).unwrap();
     let mut plan = Plan::from_yaml(&s).unwrap();
-
     let scan_t1_output = 4;
     let scan_t2_output = 10;
     let join_output = 27;

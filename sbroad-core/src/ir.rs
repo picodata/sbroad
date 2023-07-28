@@ -4,18 +4,26 @@
 
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::IntoIter;
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 
 use std::slice::Iter;
+use tarantool::tlua;
 
 use ddl::Ddl;
 use expression::Expression;
 use operator::{Arithmetic, Relational};
 use relation::Table;
 
+use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression::StableFunction;
-use crate::ir::tree::traversal::PostOrder;
+use crate::ir::helpers::RepeatableState;
+use crate::ir::tree::traversal::{BreadthFirst, PostOrder, REL_CAPACITY};
 use crate::ir::undo::TransformationLog;
+use crate::ir::value::Value;
+use crate::{collection, error, warn};
 
 use self::parameters::Parameters;
 use self::relation::Relations;
@@ -33,6 +41,9 @@ pub mod transformation;
 pub mod tree;
 pub mod undo;
 pub mod value;
+
+const DEFAULT_VTABLE_MAX_ROWS: u64 = 5000;
+const DEFAULT_VDBE_MAX_STEPS: u64 = 45000;
 
 /// Plan tree node.
 ///
@@ -195,6 +206,123 @@ impl Slices {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Deserialize, Serialize)]
+pub struct OptionSpec {
+    pub kind: OptionKind,
+    pub val: Option<Value>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Deserialize, Serialize)]
+pub enum OptionKind {
+    SqlVdbeMaxSteps,
+    VTableMaxRows,
+}
+
+impl Display for OptionKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            OptionKind::SqlVdbeMaxSteps => "sql_vdbe_max_steps",
+            OptionKind::VTableMaxRows => "vtable_max_rows",
+        };
+        write!(f, "{s}")
+    }
+}
+
+/// Options passed to `box.execute`
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Eq)]
+pub struct ExecuteOptions(HashMap<OptionKind, Value, RepeatableState>);
+
+impl ExecuteOptions {
+    #[must_use]
+    pub fn new(opts: HashMap<OptionKind, Value, RepeatableState>) -> Self {
+        ExecuteOptions(opts)
+    }
+
+    #[must_use]
+    pub fn to_iter(self) -> IntoIter<OptionKind, Value> {
+        self.0.into_iter()
+    }
+
+    pub fn insert(&mut self, kind: OptionKind, value: Value) -> Option<Value> {
+        self.0.insert(kind, value)
+    }
+}
+
+impl<L: tarantool::tlua::AsLua> tlua::PushInto<L> for ExecuteOptions
+where
+    L: tlua::AsLua,
+{
+    type Err = String;
+
+    #[allow(unreachable_code)]
+    fn push_into_lua(self, lua: L) -> Result<tlua::PushGuard<L>, (Self::Err, L)> {
+        let to_push: Vec<Vec<(String, Value)>> = if self.0.is_empty() {
+            vec![]
+        } else {
+            vec![self
+                .0
+                .into_iter()
+                .map(|(kind, value)| (kind.to_string(), value))
+                .collect()]
+        };
+        match to_push.push_into_lua(lua) {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                error!(
+                    Option::from("push ExecuteOptions into lua"),
+                    &format!("{:?}", e.0),
+                );
+                Err((e.0.to_string(), e.1))
+            }
+        }
+    }
+}
+
+impl Default for ExecuteOptions {
+    fn default() -> Self {
+        let exec_opts: HashMap<OptionKind, Value, RepeatableState> = collection!((
+            OptionKind::SqlVdbeMaxSteps,
+            Value::Unsigned(DEFAULT_VDBE_MAX_STEPS)
+        ));
+        ExecuteOptions(exec_opts)
+    }
+}
+
+/// SQL options specified by user in `option(..)` clause.
+///
+/// Note: ddl options are handled separately.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Options {
+    /// Maximum size of the virtual table that this query can produce or use during
+    /// query execution. This limit is checked on storage before sending a result table,
+    /// and on router before appending the result from one storage to results from other
+    /// storages. Value of `0` indicates that this limit is disabled.
+    ///
+    /// Note: this limit allows the out of memory error for query execution in the following
+    /// scenario: if already received vtable has `X` rows and `X + a` causes the OOM, then
+    /// if one of the storages returns `a` or more rows, the OOM will occur.
+    pub vtable_max_rows: u64,
+    /// Options passed to `box.execute` function on storages. Currently there is only one option
+    /// `sql_vdbe_max_steps`.
+    pub execute_options: ExecuteOptions,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options::new(DEFAULT_VTABLE_MAX_ROWS, ExecuteOptions::default())
+    }
+}
+
+impl Options {
+    #[must_use]
+    pub fn new(vtable_max_rows: u64, execute_options: ExecuteOptions) -> Self {
+        Options {
+            vtable_max_rows,
+            execute_options,
+        }
+    }
+}
+
 /// Logical plan tree structure.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Plan {
@@ -222,6 +350,15 @@ pub struct Plan {
     pub(crate) undo: TransformationLog,
     /// Maps parameter to the corresponding constant node.
     pub(crate) constants: Parameters,
+    /// Options that were passed by user in `Option` clause. Does not include
+    /// options for DDL as those are handled separately. This field is used only
+    /// for storing the order of options in `Option` clause, after `bind_params` is
+    /// called this field is not used and becomes empty.
+    pub raw_options: Vec<OptionSpec>,
+    /// SQL options. Initiliazed to defaults upon IR creation. Then bound to actual
+    /// values after `bind_params` these options are set to their actual values.
+    /// See `apply_options`.
+    pub options: Options,
 }
 
 impl Default for Plan {
@@ -277,7 +414,92 @@ impl Plan {
             is_explain: false,
             undo: TransformationLog::new(),
             constants: Parameters::new(),
+            raw_options: vec![],
+            options: Options::default(),
         }
+    }
+
+    /// Validate options stored in `Plan.raw_options` and initialize
+    /// `Plan`'s fields for corresponding options
+    ///
+    /// # Errors
+    /// - Invalid parameter value for given option
+    /// - The same option used more than once in `Plan.raw_options`
+    /// - Option value already violated in current `Plan`
+    /// - The given option does not work for this specific query
+    pub fn apply_options(&mut self) -> Result<(), SbroadError> {
+        let mut used_options: HashSet<OptionKind> = HashSet::new();
+        let options = std::mem::take(&mut self.raw_options);
+        let values_count = {
+            let mut values_count: Option<usize> = None;
+            let mut bfs =
+                BreadthFirst::with_capacity(|x| self.nodes.rel_iter(x), REL_CAPACITY, REL_CAPACITY);
+            bfs.populate_nodes(self.get_top()?);
+            let nodes = bfs.take_nodes();
+            for (_, id) in nodes {
+                if let Relational::Insert { .. } = self.get_relation_node(id)? {
+                    let child_id = self.get_relational_child(id, 0)?;
+                    if let Relational::Values { children, .. } = self.get_relation_node(child_id)? {
+                        values_count = Some(children.len());
+                    }
+                }
+            }
+            values_count
+        };
+        for opt in options {
+            if !used_options.insert(opt.kind.clone()) {
+                return Err(SbroadError::Invalid(
+                    Query,
+                    Some(format!("option {} specified more than once!", opt.kind)),
+                ));
+            }
+            let Some(val) = opt.val else {
+                return Err(SbroadError::Invalid(Entity::OptionSpec, None))
+            };
+            match opt.kind {
+                OptionKind::SqlVdbeMaxSteps => {
+                    if values_count.is_some() {
+                        warn!(
+                            Option::from("apply_options"),
+                            &format!("Option {} does not apply for insert with values", opt.kind)
+                        );
+                    }
+                    if let Value::Unsigned(_) = val {
+                        self.options.execute_options.insert(opt.kind, val);
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::OptionSpec,
+                            Some(format!(
+                                "expected option {} to be unsigned got: {val:?}",
+                                opt.kind
+                            )),
+                        ));
+                    }
+                }
+                OptionKind::VTableMaxRows => {
+                    if let Value::Unsigned(limit) = val {
+                        if let Some(vtable_rows_count) = values_count {
+                            if limit < vtable_rows_count as u64 {
+                                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                                    "Exceeded maximum number of rows ({limit}) in virtual table: {}",
+                                    vtable_rows_count
+                                )));
+                            }
+                        }
+                        self.options.vtable_max_rows = limit;
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::OptionSpec,
+                            Some(format!(
+                                "expected option {} to be unsigned got: {val:?}",
+                                opt.kind
+                            )),
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Check if the plan arena is empty.

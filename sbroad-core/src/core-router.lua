@@ -18,7 +18,7 @@ _G.group_buckets_by_replicasets = function(buckets)
     return map
 end
 
-_G.dql_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
+_G.dql_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout, vtable_max_rows)
     local result = nil
     local futures = {}
 
@@ -58,10 +58,15 @@ _G.dql_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
             error(err)
         end
 
+        local data = res[1][1][1]
         if result == nil then
-            result = res[1][1][1]
+            result = data
         else
-            for _, row in ipairs(res[1][1][1].rows) do
+            local new_vt_rows = #data.rows + #result.rows
+            if vtable_max_rows ~= 0 and vtable_max_rows < new_vt_rows then
+                error(helper.vtable_limit_exceeded(vtable_max_rows, new_vt_rows))
+            end
+            for _, row in ipairs(data.rows) do
                 table.insert(result.rows, row)
             end
         end
@@ -120,7 +125,7 @@ _G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
     return box.tuple.new{result}
 end
 
-_G.dql_on_all = function(required, optional, is_readonly, waiting_timeout)
+_G.dql_on_all = function(required, optional, is_readonly, waiting_timeout, vtable_max_rows)
     local replicas = vshard.router.routeall()
     local result = nil
     local futures = {}
@@ -158,10 +163,15 @@ _G.dql_on_all = function(required, optional, is_readonly, waiting_timeout)
             error(err)
         end
 
+        local data = res[1][1][1]
         if result == nil then
-            result = res[1][1][1]
+            result = data
         else
-            for _, row in ipairs(res[1][1][1].rows) do
+            local new_vt_rows = #data.rows + #result.rows
+            if vtable_max_rows ~= 0 and vtable_max_rows < new_vt_rows then
+                error(helper.vtable_limit_exceeded(vtable_max_rows, new_vt_rows))
+            end
+            for _, row in ipairs(data.rows) do
                 table.insert(result.rows, row)
             end
         end

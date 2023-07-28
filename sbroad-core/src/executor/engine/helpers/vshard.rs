@@ -33,6 +33,7 @@ fn dql_on_some(
     metadata: &impl Metadata,
     rs_ir: ReplicasetMessage,
     is_readonly: bool,
+    vtable_max_rows: u64,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
@@ -41,7 +42,12 @@ fn dql_on_some(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_some` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
+    match exec_sql.call_with_args::<Tuple, _>((
+        rs_ir,
+        is_readonly,
+        waiting_timeout,
+        vtable_max_rows,
+    )) {
         Ok(v) => {
             debug!(Option::from("dql_on_some"), &format!("Result: {:?}", &v));
             Ok(Box::new(v))
@@ -90,6 +96,7 @@ fn dql_on_all(
     required: Binary,
     optional: Binary,
     is_readonly: bool,
+    vtable_max_rows: u64,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
     let exec_sql: LuaFunction<_> = lua
@@ -97,7 +104,13 @@ fn dql_on_all(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_all` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((required, optional, is_readonly, waiting_timeout)) {
+    match exec_sql.call_with_args::<Tuple, _>((
+        required,
+        optional,
+        is_readonly,
+        waiting_timeout,
+        vtable_max_rows,
+    )) {
         Ok(v) => {
             debug!(Option::from("dql_on_all"), &format!("Result: {:?}", &v));
             Ok(Box::new(v))
@@ -147,9 +160,16 @@ pub fn exec_ir_on_all_buckets(
     optional: Binary,
     query_type: QueryType,
     conn_type: ConnectionType,
+    vtable_max_rows: u64,
 ) -> Result<Box<dyn Any>, SbroadError> {
     match &query_type {
-        QueryType::DQL => dql_on_all(metadata, required, optional, conn_type.is_readonly()),
+        QueryType::DQL => dql_on_all(
+            metadata,
+            required,
+            optional,
+            conn_type.is_readonly(),
+            vtable_max_rows,
+        ),
         QueryType::DML => dml_on_all(metadata, required, optional, conn_type.is_readonly()),
     }
 }
@@ -164,6 +184,7 @@ pub fn exec_ir_on_some_buckets(
 ) -> Result<Box<dyn Any>, SbroadError> {
     let query_type = sub_plan.query_type()?;
     let conn_type = sub_plan.connection_type()?;
+    let vtable_max_rows = sub_plan.get_vtable_max_rows();
     let Buckets::Filtered(bucket_set) = buckets else {
         return Err(SbroadError::Invalid(
             Entity::Buckets,
@@ -189,7 +210,6 @@ pub fn exec_ir_on_some_buckets(
         )));
     }
     rs_ir.reserve(rs_bucket_vec.len());
-
     // We split last pair in order not to call extra `clone` method.
     if let Some((last, other)) = rs_bucket_vec.split_last() {
         for (rs, bucket_ids) in other {
@@ -203,7 +223,12 @@ pub fn exec_ir_on_some_buckets(
         rs_ir.insert(rs.clone(), Message::from(encode_plan(sub_plan)?));
     }
     match &query_type {
-        QueryType::DQL => dql_on_some(&*runtime.metadata()?, rs_ir, conn_type.is_readonly()),
+        QueryType::DQL => dql_on_some(
+            &*runtime.metadata()?,
+            rs_ir,
+            conn_type.is_readonly(),
+            vtable_max_rows,
+        ),
         QueryType::DML => dml_on_some(&*runtime.metadata()?, rs_ir, conn_type.is_readonly()),
     }
 }

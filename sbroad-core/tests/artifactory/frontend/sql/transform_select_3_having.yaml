@@ -2,83 +2,87 @@
 nodes:
   arena:
     - children: #0
-        - 11
-      rule: Select
+        - 12
+      rule: Query
       value: ~
     - children: #1
-        - 9
-        - 2
-      rule: Having
+        - 12
+      rule: Select
       value: ~
     - children: #2
+        - 10
+        - 3
+      rule: Having
+      value: ~
+    - children: #3
+        - 6
         - 5
         - 4
-        - 3
-      rule: Cmp 
+      rule: Cmp
       value: ~
-    - children: [] #3
+    - children: [] #4
       rule: Unsigned
       value: "1"
-    - children: [] #4
+    - children: [] #5
       rule: Gt
       value: ">"
-    - children: #5
-        - 8
-        - 6
+    - children: #6
+        - 9
+        - 7
       rule: Function
       value: ~
-    - children: #6
-        - 7
+    - children: #7
+        - 8
       rule: Reference
       value: ~
-    - children: [] #7
+    - children: [] #8
       rule: ColumnName
       value: "\"a\""
-    - children: [] #8
+    - children: [] #9
       rule: FunctionName
       value: sum
-    - children: #9
-        - 10
+    - children: #10
+        - 11
       rule: Scan
       value: ~
-    - children: [] #10
+    - children: [] #11
       rule: Table
       value: t
-    - children: #11
-        - 1
-        - 12
+    - children: #12
+        - 2
+        - 13
       rule: Projection
       value: ~
-    - children: #12
-        - 18
+    - children: #13
+        - 19
       rule: Column
       value: ~
-    - children: #13
-        - 16
-        - 14
+    - children: #14
+        - 17
+        - 15
       rule: Function
       value: ~
-    - children: #14
-        - 15
+    - children: #15
+        - 16
       rule: Reference
       value: ~
-    - children: [] #15
+    - children: [] #16
       rule: ColumnName
       value: "\"a\""
-    - children: [] #16
+    - children: [] #17
       rule: FunctionName
       value: sum
-    - children: [] #17
+    - children: [] #18
       rule: AliasName
       value: COL_1
-    - children: #18
-        - 13
-        - 17
+    - children:
+        - 14
+        - 18
       rule: Alias
       value: ~
-top: 11
+top: 0
 map:
-  6:
-    - 9
-  14:
-    - 1
+  15:
+    - 2
+  7:
+    - 10

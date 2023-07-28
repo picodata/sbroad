@@ -1,78 +1,82 @@
 ---
 nodes:
   arena:
-    - children:
-        - 3
+    - children: #0
+        - 4
+      rule: Query
+      value: ~
+    - children: #1
+        - 4
       rule: Select
       value: ~
-    - children:
-        - 2
+    - children: #2
+        - 3
       rule: Scan
       value: ~
-    - children: []
+    - children: [] #3
       rule: Table
       value: t
-    - children:
-        - 1
-        - 4
+    - children: #4
+        - 2
+        - 5
       rule: Projection
       value: ~
-    - children:
-      - 16
+    - children: #5
+        - 17
       rule: Column
       value: ~
-    - children:
+    - children: #6
+        - 10
         - 9
-        - 8
-        - 6
+        - 7
       rule: Cmp
       value: ~
-    - children:
-        - 7
+    - children: #7
+        - 8
       rule: Reference
       value: ~
-    - children: []
+    - children: [] #8
       rule: ColumnName
-      value: "c"
-    - children: []
+      value: c
+    - children: [] #9
       rule: Gt
       value: ">"
-    - children:
+    - children: #10
+        - 14
         - 13
-        - 12
-        - 10
+        - 11
       rule: Addition
       value: ~
-    - children:
-        - 11
+    - children: #11
+        - 12
       rule: Reference
       value: ~
-    - children: []
+    - children: [] #12
       rule: ColumnName
-      value: "b"
-    - children: []
+      value: b
+    - children: [] #13
       rule: Add
-      value: "+"
-    - children:
-        - 14
+      value: +
+    - children: #14
+        - 15
       rule: Reference
       value: ~
-    - children: []
+    - children: [] #15
       rule: ColumnName
-      value: "a"
-    - children: []
+      value: a
+    - children: [] #16
       rule: AliasName
-      value: "COL_1"
-    - children:
-        - 5
-        - 15
+      value: COL_1
+    - children: #17
+        - 6
+        - 16
       rule: Alias
       value: ~
-top: 3
+top: 0
 map:
-  6:
-    - 1
-  10:
-    - 1
-  13:
-    - 1
+  14:
+    - 2
+  7:
+    - 2
+  11:
+    - 2

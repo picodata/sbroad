@@ -12,7 +12,7 @@ use crate::ir::operator::Relational;
 use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::traversal::PostOrder;
-use crate::ir::{Node, Plan};
+use crate::ir::{ExecuteOptions, Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -64,6 +64,16 @@ impl ExecutionPlan {
     #[must_use]
     pub fn get_ir_plan(&self) -> &Plan {
         &self.plan
+    }
+
+    #[must_use]
+    pub fn get_vtable_max_rows(&self) -> u64 {
+        self.plan.options.vtable_max_rows
+    }
+
+    #[must_use]
+    pub fn get_execute_options(&self) -> &ExecuteOptions {
+        &self.plan.options.execute_options
     }
 
     #[allow(dead_code)]
@@ -526,6 +536,7 @@ impl ExecutionPlan {
 
         new_plan.stash_constants()?;
         new_plan.nodes.shrink_to_fit();
+        new_plan.options = self.get_ir_plan().options.clone();
 
         let vtables = if new_vtables.is_empty() {
             None

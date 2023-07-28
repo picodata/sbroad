@@ -26,9 +26,10 @@ use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Unary};
 use crate::ir::relation::Type as RelationType;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
-use crate::ir::{Node, Plan};
+use crate::ir::{Node, OptionKind, OptionSpec, Plan};
 use crate::otm::child_span;
 
+use crate::errors::Entity::AST;
 use crate::ir::aggregates::AggregateKind;
 use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
@@ -57,55 +58,39 @@ impl Between {
 }
 
 fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, SbroadError> {
-    let option_node = ast.nodes.get_node(node_id)?;
-    if option_node.rule != Type::OptionParam {
-        return Err(SbroadError::Invalid(
-            Entity::Node,
-            Some(format!(
-                "AST table option parameter node {:?} contains unexpected children",
-                option_node,
-            )),
-        ));
-    }
-    let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
-        .map_err(|_| SbroadError::Invalid(Entity::Type, Some("timeout option".into())))?;
-    if let Some(param_id) = option_node.children.first() {
-        let param_node = ast.nodes.get_node(*param_id)?;
-        if param_node.rule != Type::Timeout {
+    let param_node = ast.nodes.get_node(node_id)?;
+    if let (Some(duration_id), None) = (param_node.children.first(), param_node.children.get(1)) {
+        let duration_node = ast.nodes.get_node(*duration_id)?;
+        if duration_node.rule != Type::Duration {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format!(
-                    "AST table option node {:?} contains unexpected children",
-                    param_node,
+                    "AST table option duration node {:?} contains unexpected children",
+                    duration_node,
                 )),
             ));
         }
-        if let (Some(duration_id), None) = (param_node.children.first(), param_node.children.get(1))
-        {
-            let duration_node = ast.nodes.get_node(*duration_id)?;
-            if duration_node.rule != Type::Duration {
-                return Err(SbroadError::Invalid(
+        if let Some(duration_value) = duration_node.value.as_ref() {
+            let res = Decimal::from_str(duration_value).map_err(|_| {
+                SbroadError::Invalid(
                     Entity::Node,
                     Some(format!(
-                        "AST table option duration node {:?} contains unexpected children",
+                        "AST table duration node {:?} contains invalid value",
                         duration_node,
                     )),
-                ));
-            }
-            if let Some(duration_value) = duration_node.value.as_ref() {
-                timeout = Decimal::from_str(duration_value).map_err(|_| {
-                    SbroadError::Invalid(
-                        Entity::Node,
-                        Some(format!(
-                            "AST table duration node {:?} contains invalid value",
-                            duration_node,
-                        )),
-                    )
-                })?;
-            }
+                )
+            })?;
+            return Ok(res);
         }
+        return Err(SbroadError::Invalid(
+            Entity::AST,
+            Some("Duration node has no value".into()),
+        ));
     }
-    Ok(timeout)
+    Err(SbroadError::Invalid(
+        Entity::AST,
+        Some("expected Timeout node to have exactly one child".into()),
+    ))
 }
 
 #[allow(clippy::too_many_lines)]
@@ -374,7 +359,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                     ));
                 }
             }
-            Type::OptionParam => {
+            Type::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
             _ => {
@@ -859,6 +844,86 @@ impl Ast for AbstractSyntaxTree {
                 | Type::False => {
                     let val = Value::from_node(node)?;
                     map.add(id, plan.add_const(val));
+                }
+                Type::VTableMaxRows => {
+                    let ast_child_id = *node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::AST,
+                            Some("no children for sql_vdbe_max_steps option".into()),
+                        )
+                    })?;
+                    let ast_child_node = self.nodes.get_node(ast_child_id)?;
+                    let val: Option<Value> = match ast_child_node.rule {
+                        Type::Parameter => None,
+                        Type::Unsigned => {
+                            let v = {
+                                if let Some(str_value) = ast_child_node.value.as_ref() {
+                                    str_value.parse::<u64>().map_err(|_|
+                                        SbroadError::Invalid(Entity::Query,
+                                                             Some(format!("sql_vdbe_max_steps value is not unsigned integer: {str_value}")))
+                                    )?
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        AST,
+                                        Some("Unsigned node has value".into()),
+                                    ));
+                                }
+                            };
+                            Some(Value::Unsigned(v))
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                AST,
+                                Some(format!(
+                                "unexpected child of sql_vdbe_max_steps option. id: {ast_child_id}"
+                            )),
+                            ))
+                        }
+                    };
+                    plan.raw_options.push(OptionSpec {
+                        kind: OptionKind::VTableMaxRows,
+                        val,
+                    });
+                }
+                Type::SqlVdbeMaxSteps => {
+                    let ast_child_id = *node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::AST,
+                            Some("no children for sql_vdbe_max_steps option".into()),
+                        )
+                    })?;
+                    let ast_child_node = self.nodes.get_node(ast_child_id)?;
+                    let val: Option<Value> = match ast_child_node.rule {
+                        Type::Parameter => None,
+                        Type::Unsigned => {
+                            let v = {
+                                if let Some(str_value) = ast_child_node.value.as_ref() {
+                                    str_value.parse::<u64>().map_err(|_|
+                                    SbroadError::Invalid(Entity::Query,
+                                                         Some(format!("sql_vdbe_max_steps value is not unsigned integer: {str_value}")))
+                                    )?
+                                } else {
+                                    return Err(SbroadError::Invalid(
+                                        AST,
+                                        Some("Unsigned node has value".into()),
+                                    ));
+                                }
+                            };
+                            Some(Value::Unsigned(v))
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                AST,
+                                Some(format!(
+                                "unexpected child of sql_vdbe_max_steps option. id: {ast_child_id}"
+                            )),
+                            ))
+                        }
+                    };
+                    plan.raw_options.push(OptionSpec {
+                        kind: OptionKind::SqlVdbeMaxSteps,
+                        val,
+                    });
                 }
                 Type::Parameter => {
                     map.add(id, plan.add_param());
@@ -1474,6 +1539,15 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
                     map.add(id, plan_id);
                 }
+                Type::Query => {
+                    // Query may have two children:
+                    // 1. select | insert | except | ..
+                    // 2. Option child - for which no plan node is created
+                    let child_id = map.get(*node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(Entity::AST, Some("no children for Query rule".into()))
+                    })?)?;
+                    map.add(id, child_id);
+                }
                 Type::CreateTable => {
                     let create_sharded_table = parse_create_table(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
@@ -1495,7 +1569,7 @@ impl Ast for AbstractSyntaxTree {
                                     })?,
                                 );
                             }
-                            Type::OptionParam => {
+                            Type::Timeout => {
                                 timeout = get_timeout(self, *child_id)?;
                             }
                             _ => {
@@ -1551,7 +1625,6 @@ impl Ast for AbstractSyntaxTree {
                 | Type::NewTable
                 | Type::NotEq
                 | Type::NotIn
-                | Type::OptionParam
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn
                 | Type::ScanName
@@ -1581,7 +1654,6 @@ impl Ast for AbstractSyntaxTree {
                 }
             }
         }
-
         // get root node id
         let plan_top_id = map
             .get(self.top.ok_or_else(|| {

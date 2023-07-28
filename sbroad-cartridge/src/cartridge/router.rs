@@ -321,6 +321,7 @@ impl Vshard for RouterRuntime {
         optional: Binary,
         query_type: QueryType,
         conn_type: ConnectionType,
+        vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError> {
         exec_ir_on_all_buckets(
             &*self.metadata()?,
@@ -328,6 +329,7 @@ impl Vshard for RouterRuntime {
             optional,
             query_type,
             conn_type,
+            vtable_max_rows,
         )
     }
 
@@ -359,6 +361,7 @@ impl Vshard for &RouterRuntime {
         optional: Binary,
         query_type: QueryType,
         conn_type: ConnectionType,
+        vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError> {
         exec_ir_on_all_buckets(
             &*self.metadata()?,
@@ -366,6 +369,7 @@ impl Vshard for &RouterRuntime {
             optional,
             query_type,
             conn_type,
+            vtable_max_rows,
         )
     }
 

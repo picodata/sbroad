@@ -35,7 +35,7 @@ DDL = _{ CreateTable | DropTable }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
-Query = _{ Except | UnionAll | Select | Values | Insert }
+Query = { (Except | UnionAll | Select | Values | Insert) ~ Option? }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         Join? ~ (^"where" ~ Selection)? ~ 
@@ -74,9 +74,11 @@ Query = _{ Except | UnionAll | Select | Values | Insert }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
         ValuesRow = { Row }
     Option = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
-    OptionParam = { Timeout }
+    OptionParam = _{ Timeout | SqlVdbeMaxSteps | VTableMaxRows }
     Timeout = { ^"timeout" ~ "=" ~ Duration}
        Duration = @{ Unsigned ~ ("." ~ Unsigned)? }
+    SqlVdbeMaxSteps = { ^"sql_vdbe_max_steps" ~ "=" ~ (Unsigned | Parameter) }
+    VTableMaxRows = { ^"vtable_max_rows" ~ "=" ~ (Unsigned | Parameter) }
 
 Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
     Parentheses = _{ "(" ~ Expr ~ ")" }

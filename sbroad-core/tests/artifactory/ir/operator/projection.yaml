@@ -84,3 +84,9 @@ is_explain: false
 undo:
   log: {}
 constants: {}
+raw_options: []
+options:
+  vtable_max_rows: 5000
+  execute_options:
+    SqlVdbeMaxSteps:
+      Unsigned: 45000

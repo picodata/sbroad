@@ -16,6 +16,7 @@ use crate::executor::engine::QueryCache;
 use crate::executor::lru::Cache;
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::MsgPackValue;
+use crate::ir::ExecuteOptions;
 use crate::otm::child_span;
 use crate::{
     backend::sql::{
@@ -145,7 +146,13 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
     let nodes = ordered.to_syntax_data()?;
     // Virtual tables in the plan must be already filtered, so we can use all buckets here.
     let params = exec_plan.to_params(&nodes, &Buckets::All)?;
-    let required_data = RequiredData::new(sub_plan_id, params, query_type, can_be_cached);
+    let required_data = RequiredData::new(
+        sub_plan_id,
+        params,
+        query_type,
+        can_be_cached,
+        exec_plan.get_ir_plan().options.clone(),
+    );
     let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
     let raw_required_data: Vec<u8> = encoded_required_data.into();
     let optional_data = OptionalData::new(exec_plan, ordered);
@@ -408,8 +415,9 @@ pub fn dispatch(
                 let all_buckets = Buckets::new_filtered(bucket_set);
                 return runtime.exec_ir_on_some(sub_plan, &all_buckets);
             }
+            let vtable_max_rows = sub_plan.get_vtable_max_rows();
             let (required, optional) = encode_plan(sub_plan)?;
-            runtime.exec_ir_on_all(required, optional, query_type, conn_type)
+            runtime.exec_ir_on_all(required, optional, query_type, conn_type, vtable_max_rows)
         }
     }
 }
@@ -678,6 +686,8 @@ pub fn exec_if_in_cache(
     runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
     params: &[Value],
     plan_id: &String,
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
 ) -> Result<Option<Box<dyn Any>>, SbroadError> {
     // Look for the prepared statement in the cache.
     if let Some(stmt) = runtime
@@ -692,7 +702,7 @@ pub fn exec_if_in_cache(
             Option::from("execute plan"),
             &format!("Execute prepared statement: {stmt:?}"),
         );
-        let result = cache_hit_read_prepared(stmt_id, params);
+        let result = cache_hit_read_prepared(stmt_id, params, vtable_max_rows, opts);
 
         // If prepared statement is invalid for some reason, fallback to the long pass
         // and recompile the query.
@@ -709,8 +719,13 @@ pub fn exec_if_in_cache(
 
 /// Helper func to create span for cache hit read.
 #[otm_child_span("tarantool.cache.hit.read.prepared")]
-fn cache_hit_read_prepared(stmt_id: u32, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
-    read_prepared(stmt_id, "", params)
+fn cache_hit_read_prepared(
+    stmt_id: u32,
+    params: &[Value],
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
+) -> Result<Box<dyn Any>, SbroadError> {
+    read_prepared(stmt_id, "", params, vtable_max_rows, opts)
 }
 
 /// Helper func to create span for cache miss read.
@@ -719,8 +734,10 @@ fn cache_miss_read_prepared(
     stmt_id: u32,
     pattern: &str,
     params: &[Value],
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    read_prepared(stmt_id, pattern, params)
+    read_prepared(stmt_id, pattern, params, vtable_max_rows, opts)
 }
 
 /// Tries to prepare read statement and then execute it.
@@ -738,6 +755,8 @@ pub fn prepare_and_read(
     runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
     pattern_with_params: &PatternWithParams,
     plan_id: &String,
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
     match prepare(&pattern_with_params.pattern) {
         Ok(stmt) => {
@@ -770,6 +789,8 @@ pub fn prepare_and_read(
                 stmt_id,
                 &pattern_with_params.pattern,
                 &pattern_with_params.params,
+                vtable_max_rows,
+                opts,
             )
         }
         Err(e) => {
@@ -783,7 +804,12 @@ pub fn prepare_and_read(
                     pattern_with_params.pattern, e
                 ),
             );
-            read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
+            read_unprepared(
+                &pattern_with_params.pattern,
+                &pattern_with_params.params,
+                vtable_max_rows,
+                opts,
+            )
         }
     }
 }
@@ -811,11 +837,24 @@ pub fn execute_cacheable_dql(
     required: &mut RequiredData,
     optional: &mut OptionalData,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    if let Some(res) = exec_if_in_cache(runtime, &required.parameters, &required.plan_id)? {
+    let opts = std::mem::take(&mut required.options.execute_options);
+    if let Some(res) = exec_if_in_cache(
+        runtime,
+        &required.parameters,
+        &required.plan_id,
+        required.options.vtable_max_rows,
+        opts.clone(),
+    )? {
         return Ok(res);
     }
     let (pattern_with_params, _tmp_spaces) = compile_optional(optional)?;
-    prepare_and_read(runtime, &pattern_with_params, &required.plan_id)
+    prepare_and_read(
+        runtime,
+        &pattern_with_params,
+        &required.plan_id,
+        required.options.vtable_max_rows,
+        opts,
+    )
 }
 
 /// Execute DML on the storage.
@@ -863,7 +902,8 @@ pub fn execute_dml_on_storage(
         let result = if required.can_be_cached {
             execute_cacheable_dql(runtime, required, &mut optional)?
         } else {
-            execute_non_cacheable_dql(&mut optional)?
+            let opts = std::mem::take(&mut required.options.execute_options);
+            execute_non_cacheable_dql(&mut optional, required.options.vtable_max_rows, opts)?
         };
         let tuple = result.downcast::<Tuple>().map_err(|e| {
             SbroadError::FailedTo(
@@ -1024,9 +1064,18 @@ pub fn execute_dml(
 /// # Errors
 /// - failed to compile optional data
 /// - Tarantool execution error
-pub fn execute_non_cacheable_dql(optional: &mut OptionalData) -> Result<Box<dyn Any>, SbroadError> {
+pub fn execute_non_cacheable_dql(
+    optional: &mut OptionalData,
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
+) -> Result<Box<dyn Any>, SbroadError> {
     let (pattern_with_params, _tmp_spaces) = compile_optional(optional)?;
-    read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
+    read_unprepared(
+        &pattern_with_params.pattern,
+        &pattern_with_params.params,
+        vtable_max_rows,
+        opts,
+    )
 }
 
 /// Execute non-cacheable read statement
@@ -1036,9 +1085,16 @@ pub fn execute_non_cacheable_dql(optional: &mut OptionalData) -> Result<Box<dyn 
 /// - Tarantool execution error
 pub fn execute_non_cacheable_dql_with_raw_optional(
     raw_optional: &mut Vec<u8>,
+    vtable_max_rows: u64,
+    opts: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
-    read_unprepared(&pattern_with_params.pattern, &pattern_with_params.params)
+    read_unprepared(
+        &pattern_with_params.pattern,
+        &pattern_with_params.params,
+        vtable_max_rows,
+        opts,
+    )
 }
 
 /// The same as `execute_cacheable_dql` but accepts raw optional data.
@@ -1055,11 +1111,24 @@ pub fn execute_cacheable_dql_with_raw_optional(
     required: &mut RequiredData,
     raw_optional: &mut Vec<u8>,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    if let Some(res) = exec_if_in_cache(runtime, &required.parameters, &required.plan_id)? {
+    let opts = std::mem::take(&mut required.options.execute_options);
+    if let Some(res) = exec_if_in_cache(
+        runtime,
+        &required.parameters,
+        &required.plan_id,
+        required.options.vtable_max_rows,
+        opts.clone(),
+    )? {
         return Ok(res);
     }
     let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
-    prepare_and_read(runtime, &pattern_with_params, &required.plan_id)
+    prepare_and_read(
+        runtime,
+        &pattern_with_params,
+        &required.plan_id,
+        required.options.vtable_max_rows,
+        opts,
+    )
 }
 
 /// A common function for all engines to calculate the sharding key value from a map.

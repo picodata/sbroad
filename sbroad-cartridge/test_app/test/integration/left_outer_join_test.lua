@@ -212,6 +212,9 @@ left_join.test_left_join_local_execution = function()
         "        scan \"T2\"",
         "            projection (\"arithmetic_space2\".\"id\"::integer -> \"B\")",
         "                scan \"arithmetic_space2\"",
+        "execution options:",
+        "sql_vdbe_max_steps = 45000",
+        "vtable_max_rows = 5000",
     })
 end
 
@@ -251,6 +254,9 @@ left_join.test_inner_segment_motion = function()
         "            scan \"T2\"",
         "                projection (\"arithmetic_space2\".\"a\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
+        "execution options:",
+        "sql_vdbe_max_steps = 45000",
+        "vtable_max_rows = 5000",
     })
 end
 
@@ -289,6 +295,9 @@ left_join.test_inner_full_motion = function()
         "            scan \"T2\"",
         "                projection (\"arithmetic_space2\".\"a\"::integer -> \"B\")",
         "                    scan \"arithmetic_space2\"",
+        "execution options:",
+        "sql_vdbe_max_steps = 45000",
+        "vtable_max_rows = 5000",
     })
 end
 
@@ -410,6 +419,9 @@ left_join.test_sq_with_full_motion = function()
         "            scan",
         "                projection ((\"arithmetic_space\".\"a\"::integer) + (1::unsigned) -> \"COL_1\")",
         "                    scan \"arithmetic_space\"",
+        "execution options:",
+        "sql_vdbe_max_steps = 45000",
+        "vtable_max_rows = 5000",
     })
 end
 
@@ -455,6 +467,9 @@ left_join.test_sq_with_segment_motion = function()
         "            scan",
         "                projection (\"arithmetic_space\".\"c\"::integer -> \"c\")",
         "                    scan \"arithmetic_space\"",
+        "execution options:",
+        "sql_vdbe_max_steps = 45000",
+        "vtable_max_rows = 5000",
     })
 end
 

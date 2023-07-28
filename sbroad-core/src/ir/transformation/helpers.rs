@@ -33,6 +33,7 @@ pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
     let ast = AbstractSyntaxTree::new(query).unwrap();
     let mut plan = ast.resolve_metadata(metadata).unwrap();
     plan.bind_params(params).unwrap();
+    plan.apply_options().unwrap();
     plan
 }
 

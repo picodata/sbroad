@@ -345,6 +345,10 @@ fn traversal() {
     let node = ast.nodes.get_node(projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
+
     assert_eq!(None, iter.next());
 }
 
@@ -499,6 +503,10 @@ fn sql_arithmetic_selection_ast() {
     let node = ast.nodes.get_node(projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
+
     assert_eq!(None, iter.next());
 }
 
@@ -573,6 +581,10 @@ fn sql_arithmetic_projection_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
 
     assert_eq!(None, iter.next());
 }
@@ -649,6 +661,10 @@ fn sql_arithmetic_projection_alias_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
 
     assert_eq!(None, iter.next());
 }
@@ -741,6 +757,10 @@ fn sql_arbitrary_projection_ast() {
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
 
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
+
     assert_eq!(None, iter.next());
 }
 
@@ -832,6 +852,10 @@ fn sql_arbitrary_projection_alias_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, query_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(query_id).unwrap();
+    assert_eq!(node.rule, Type::Query);
 
     assert_eq!(None, iter.next());
 }

@@ -71,8 +71,12 @@ pub enum Entity {
     Relational,
     /// corresponds to struct RequiredData
     RequiredData,
+    /// corresponds to enum OptionKind
+    Option,
     /// corresponds to struct OptionalData
     OptionalData,
+    /// corresponds to struct OptionSpec
+    OptionSpec,
     /// parser rule
     Rule,
     /// corresponds to struct RouterRuntime
@@ -156,7 +160,9 @@ impl fmt::Display for Entity {
             Entity::RequiredData => "required data".to_string(),
             Entity::Rule => "rule".to_string(),
             Entity::Runtime => "runtime".to_string(),
+            Entity::Option => "option".to_string(),
             Entity::OptionalData => "optional data".to_string(),
+            Entity::OptionSpec => "OptionSpec".to_string(),
             Entity::Schema => "schema".to_string(),
             Entity::ShardingKey => "sharding key".to_string(),
             Entity::Space => "space".to_string(),

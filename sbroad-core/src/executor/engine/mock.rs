@@ -563,6 +563,7 @@ impl Vshard for RouterRuntimeMock {
         _optional: Binary,
         _query_type: QueryType,
         _conn_type: ConnectionType,
+        _vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
@@ -601,6 +602,7 @@ impl Vshard for &RouterRuntimeMock {
         _optional: Binary,
         _query_type: QueryType,
         _conn_type: ConnectionType,
+        _vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,

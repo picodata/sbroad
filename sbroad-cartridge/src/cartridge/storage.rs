@@ -13,7 +13,8 @@ use sbroad::executor::engine::{QueryCache, Vshard};
 use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
-use sbroad::executor::protocol::{Binary, EncodedOptionalData, OptionalData, RequiredData};
+use sbroad::executor::protocol::{Binary, RequiredData};
+use sbroad::executor::protocol::{EncodedOptionalData, OptionalData};
 use sbroad::executor::result::{ConsumerResult, ProducerResult};
 use sbroad::ir::operator::ConflictStrategy;
 use sbroad::ir::value::{MsgPackValue, Value};
@@ -170,6 +171,7 @@ impl Vshard for StorageRuntime {
         _optional: Binary,
         _query_type: QueryType,
         _conn_type: ConnectionType,
+        _vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
@@ -230,7 +232,11 @@ impl StorageRuntime {
                 if required.can_be_cached {
                     helpers::execute_cacheable_dql_with_raw_optional(self, required, raw_optional)
                 } else {
-                    helpers::execute_non_cacheable_dql_with_raw_optional(raw_optional)
+                    helpers::execute_non_cacheable_dql_with_raw_optional(
+                        raw_optional,
+                        required.options.vtable_max_rows,
+                        std::mem::take(&mut required.options.execute_options),
+                    )
                 }
             }
         }

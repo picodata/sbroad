@@ -55,6 +55,10 @@ impl Plan {
         tree.populate_nodes(top_id);
         let nodes = tree.take_nodes();
 
+        if !self.raw_options.is_empty() {
+            self.bind_option_params(&mut params)?;
+        }
+
         // Transform parameters to values (plan constants). The result values are stored in the
         // opposite to parameters order.
         let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
@@ -288,6 +292,32 @@ impl Plan {
             }
         }
 
+        Ok(())
+    }
+
+    /// Bind params related to `Option` clause
+    ///
+    /// # Errors
+    /// - User didn't provide parameter value for corresponding option parameter
+    pub fn bind_option_params(&mut self, params: &mut Vec<Value>) -> Result<(), SbroadError> {
+        // Bind parameters in options to values.
+        // Because the Option clause is the last clause in the
+        // query the parameters are located in the end of params list.
+        for opt in self.raw_options.iter_mut().rev() {
+            if opt.val.is_none() {
+                if let Some(v) = params.pop() {
+                    opt.val = Some(v);
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Query,
+                        Some(format!(
+                            "no parameter value specified for option: {}",
+                            opt.kind
+                        )),
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }

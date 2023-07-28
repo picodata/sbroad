@@ -10,6 +10,7 @@ use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
 use crate::otm::{current_id, current_tracer, extract_context, inject_context, QueryTracer};
 
+use crate::ir::Options;
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
 
@@ -63,6 +64,7 @@ pub struct RequiredData {
     context: ContextCarrier,
     tracer: QueryTracer,
     trace_id: Option<String>,
+    pub options: Options,
 }
 
 impl Default for RequiredData {
@@ -75,6 +77,7 @@ impl Default for RequiredData {
             context: ContextCarrier::empty(),
             tracer: QueryTracer::default(),
             trace_id: None,
+            options: Options::default(),
         }
     }
 }
@@ -114,6 +117,7 @@ impl RequiredData {
         parameters: Vec<Value>,
         query_type: QueryType,
         can_be_cached: bool,
+        options: Options,
     ) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
@@ -127,6 +131,7 @@ impl RequiredData {
                 context: ContextCarrier::empty(),
                 tracer,
                 trace_id: None,
+                options,
             }
         } else {
             RequiredData {
@@ -137,6 +142,7 @@ impl RequiredData {
                 context: ContextCarrier::new(carrier),
                 tracer,
                 trace_id: Some(current_id()),
+                options,
             }
         }
     }

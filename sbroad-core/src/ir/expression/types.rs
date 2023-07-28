@@ -115,8 +115,7 @@ impl Expression {
                     SbroadError::Invalid(
                         Entity::Expression,
                         Some(format!(
-                            "reference expression has no target relation at position {}",
-                            target
+                            "reference expression has no target relation at position {target}"
                         )),
                     )
                 })?;
@@ -126,8 +125,7 @@ impl Expression {
                     SbroadError::Invalid(
                         Entity::Expression,
                         Some(format!(
-                            "reference expression has no target column at position {}",
-                            position
+                            "reference expression has no target column at position {position}"
                         )),
                     )
                 })?;

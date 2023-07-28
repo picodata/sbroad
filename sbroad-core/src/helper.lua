@@ -44,8 +44,13 @@ local function format_result(result)
     return formatted
 end
 
+local function vtable_limit_exceeded(limit, current_val)
+    return string.format("Exceeded maximum number of rows (%d) in virtual table: %d", limit, current_val)
+end
+
 return {
     module_name = module_name,
+    vtable_limit_exceeded = vtable_limit_exceeded,
     format_result = format_result,
     constants = constants
 }

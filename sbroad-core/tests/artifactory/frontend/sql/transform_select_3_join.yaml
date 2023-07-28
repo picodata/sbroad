@@ -2,83 +2,87 @@
 nodes:
   arena:
     - children: #0
-        - 16
-      rule: Select
+        - 17
+      rule: Query
       value: ~
     - children: #1
-        - 14
-        - 13
-        - 11
-        - 2
-      rule: Join
+        - 17
+      rule: Select
       value: ~
     - children: #2
+        - 15
+        - 14
+        - 12
         - 3
-      rule: Condition
+      rule: Join
       value: ~
     - children: #3
-        - 8
-        - 7
         - 4
-      rule: Cmp 
+      rule: Condition
       value: ~
     - children: #4
-        - 6
+        - 9
+        - 8
         - 5
+      rule: Cmp
+      value: ~
+    - children: #5
+        - 7
+        - 6
       rule: Reference
       value: ~
-    - children: [] #5
+    - children: [] #6
       rule: ColumnName
       value: a
-    - children: [] #6
+    - children: [] #7
       rule: ScanName
       value: t2
-    - children: [] #7
+    - children: [] #8
       rule: Eq
       value: "="
-    - children: #8
+    - children: #9
+        - 11
         - 10
-        - 9
       rule: Reference
       value: ~
-    - children: [] #9
+    - children: [] #10
       rule: ColumnName
       value: a
-    - children: [] #10
+    - children: [] #11
       rule: ScanName
       value: t1
-    - children: #11
-        - 12
+    - children: #12
+        - 13
       rule: Scan
       value: ~
-    - children: [] #12
+    - children: [] #13
       rule: Table
       value: t2
-    - children: [] #13
+    - children: [] #14
       rule: InnerJoinKind
       value: inner
-    - children: #14
-        - 15
+    - children: #15
+        - 16
       rule: Scan
       value: ~
-    - children: [] #15
+    - children: [] #16
       rule: Table
       value: t1
-    - children: #16
-        - 1
-        - 17
+    - children: #17
+        - 2
+        - 18
       rule: Projection
       value: ~
-    - children: [] #17
+    - children: [] #18
       rule: Asterisk
       value: "*"
-top: 16
+top: 0
 map:
-  4:
-    - 14
-    - 11
-  8:
-    - 14
-    - 11
-  17:
-    - 1
+  18:
+    - 2
+  9:
+    - 15
+    - 12
+  5:
+    - 15
+    - 12

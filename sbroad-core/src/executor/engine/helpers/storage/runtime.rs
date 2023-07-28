@@ -3,6 +3,7 @@ use std::any::Any;
 use sbroad_proc::otm_child_span;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
+use crate::ir::ExecuteOptions;
 use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span, warn};
 
 use super::{PreparedStmt, Statement};
@@ -52,6 +53,8 @@ pub fn read_prepared(
     stmt_id: u32,
     stmt: &str,
     params: &[Value],
+    max_rows: u64,
+    options: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
@@ -59,7 +62,7 @@ pub fn read_prepared(
         .get("read")
         .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, max_rows, options)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_prepared"), &format!("{e:?}"));
@@ -69,7 +72,12 @@ pub fn read_prepared(
 }
 
 #[otm_child_span("tarantool.statement.unprepared.read")]
-pub fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
+pub fn read_unprepared(
+    stmt: &str,
+    params: &[Value],
+    max_rows: u64,
+    options: ExecuteOptions,
+) -> Result<Box<dyn Any>, SbroadError> {
     warn!(
         Option::from("read_unprepared"),
         &format!("SQL pattern: {}", stmt),
@@ -80,7 +88,7 @@ pub fn read_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, Sbr
         .get("read")
         .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params, max_rows, options)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_unprepared"), &format!("{e:?}"));
@@ -94,6 +102,7 @@ pub fn write_prepared(
     stmt_id: u32,
     stmt: &str,
     params: &[Value],
+    options: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
@@ -101,7 +110,7 @@ pub fn write_prepared(
         .get("write")
         .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, options)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_prepared"), &format!("{e:?}"));
@@ -111,14 +120,18 @@ pub fn write_prepared(
 }
 
 #[otm_child_span("tarantool.statement.unprepared.write")]
-pub fn write_unprepared(stmt: &str, params: &[Value]) -> Result<Box<dyn Any>, SbroadError> {
+pub fn write_unprepared(
+    stmt: &str,
+    params: &[Value],
+    options: ExecuteOptions,
+) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua
         .get("write")
         .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params)) {
+    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params, options)) {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_unprepared"), &format!("{e:?}"));

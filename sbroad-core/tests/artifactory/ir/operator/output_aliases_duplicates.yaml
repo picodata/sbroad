@@ -48,3 +48,8 @@ relations:
 slices: ~
 top: 5
 undo: {}
+options:
+  vtable_max_rows: 5000
+  execute_options:
+    SqlVdbeMaxSteps:
+      Unsigned: 45000

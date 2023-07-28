@@ -1342,6 +1342,41 @@ impl Plan {
         }
     }
 
+    /// Gets child with specified index
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - node does not have child with specified index
+    pub fn get_relational_child(
+        &self,
+        rel_id: usize,
+        child_idx: usize,
+    ) -> Result<usize, SbroadError> {
+        if let Node::Relational(rel) = self.get_node(rel_id)? {
+            let children = rel.children();
+            return if let Some(children) = children {
+                let child_id = *children.get(child_idx).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Relational,
+                        Some(format!(
+                            "rel node {rel:?} has no child with idx ({child_idx})"
+                        )),
+                    )
+                })?;
+                Ok(child_id)
+            } else {
+                Err(SbroadError::Invalid(
+                    Entity::Relational,
+                    Some(format!("rel node {rel:?} has no children. Id: ({rel_id})")),
+                ))
+            };
+        }
+        Err(SbroadError::NotFound(
+            Entity::Relational,
+            format!("with id ({rel_id})"),
+        ))
+    }
+
     /// Synchronize values row output with the data tuple after parameter binding.
     ///
     /// # Errors

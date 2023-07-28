@@ -118,6 +118,7 @@ where
         }
         if !plan.is_ddl()? {
             plan.bind_params(params)?;
+            plan.apply_options()?;
             plan.optimize()?;
         }
         let query = Query {

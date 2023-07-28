@@ -17,6 +17,9 @@ fn simple_query_without_cond_plan() {
     actual_explain.push_str(
         r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
     scan "hash_testing" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -37,6 +40,9 @@ fn simple_query_with_cond_plan() {
         r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
     selection ROW("t"."identification_number"::integer) = ROW(1::unsigned) and ROW("t"."product_code"::string) = ROW('222'::string)
         scan "hash_testing" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -55,12 +61,15 @@ fn union_query_plan() {
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let expected = format!(
-        "{}\n{}\n{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"union all"#,
         r#"    projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing" -> "t""#,
         r#"    projection ("t2"."identification_number"::integer -> "identification_number", "t2"."product_code"::string -> "product_code")"#,
         r#"        scan "hash_testing_hist" -> "t2""#,
+        r#"execution options:"#,
+        r#"sql_vdbe_max_steps = 45000"#,
+        r#"vtable_max_rows = 5000"#,
     );
     assert_eq!(expected, explain_tree.to_string());
 }
@@ -90,6 +99,9 @@ WHERE "id" = 1"#;
                 projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
                     selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                         scan "test_space_hist"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#);
 
     assert_eq!(actual_explain, explain_tree.to_string());
@@ -139,6 +151,9 @@ scan
                             projection ("test_space_hist"."id"::unsigned -> "id", "test_space_hist"."FIRST_NAME"::string -> "FIRST_NAME")
                                 selection ROW("test_space_hist"."sys_op"::unsigned) < ROW(0::unsigned)
                                     scan "test_space_hist"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#);
 
     assert_eq!(actual_explain, explain_tree.to_string());
@@ -155,13 +170,16 @@ fn explain_except1() {
     let explain_tree = FullExplain::new(&plan, *top).unwrap();
 
     let expected = format!(
-        "{}\n{}\n{}\n{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"except"#,
         r#"    projection ("t"."product_code"::string -> "pc")"#,
         r#"        scan "hash_testing" -> "t""#,
         r#"    motion [policy: full]"#,
         r#"        projection ("hash_testing_hist"."identification_number"::integer -> "identification_number")"#,
         r#"            scan "hash_testing_hist""#,
+        r#"execution options:"#,
+        r#"sql_vdbe_max_steps = 45000"#,
+        r#"vtable_max_rows = 5000"#,
     );
     assert_eq!(expected, explain_tree.to_string());
 }
@@ -217,6 +235,9 @@ motion [policy: segment([ref("identification_number")])]
                 projection ("hash_testing"."identification_number"::integer -> "identification_number")
                     selection ROW("hash_testing"."identification_number"::integer) = ROW(5::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('123'::string)
                         scan "hash_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#);
 
     assert_eq!(actual_explain, explain_tree.to_string());
@@ -246,6 +267,9 @@ WHERE "t2"."product_code" = '123'"#;
                 scan "t2"
                     projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
                         scan "hash_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#);
 
     assert_eq!(actual_explain, explain_tree.to_string());
@@ -278,6 +302,9 @@ motion [policy: segment([ref("identification_number")])]
             scan
                 projection ("hash_testing"."identification_number"::integer -> "identification_number")
                     scan "hash_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#);
 
     assert_eq!(actual_explain, explain_tree.to_string());
@@ -297,6 +324,9 @@ fn unary_condition_plan() {
         r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
     selection ROW("test_space"."id"::unsigned) is null and ROW("test_space"."FIRST_NAME"::string) is not null
         scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -318,6 +348,9 @@ fn insert_plan() {
     motion [policy: local segment([ref("COLUMN_1")])]
         values
             value row (data=ROW(1::unsigned, '123'::string))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -341,6 +374,9 @@ fn multiply_insert_plan() {
             value row (data=ROW(1::unsigned, '123'::string))
             value row (data=ROW(2::unsigned, '456'::string))
             value row (data=ROW(3::unsigned, '789'::string))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -363,6 +399,9 @@ SELECT "identification_number", "product_code" FROM "hash_testing""#;
     motion [policy: segment([ref("identification_number")])]
         projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
             scan "hash_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -384,6 +423,9 @@ fn select_value_plan() {
     scan
         values
             value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -403,6 +445,9 @@ fn select_cast_plan1() {
     actual_explain.push_str(
         r#"projection ("test_space"."id"::unsigned::unsigned -> "b")
     scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -423,6 +468,9 @@ fn select_cast_plan2() {
         r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
     selection ROW("test_space"."id"::unsigned::int) = ROW(1::unsigned)
         scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -442,6 +490,9 @@ fn select_cast_plan_nested() {
     actual_explain.push_str(
         r#"projection ("FUNC"(("test_space"."id"::unsigned))::integer::string -> "COL_1")
     scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -462,6 +513,9 @@ fn select_cast_plan_nested_where() {
         r#"projection ("test_space"."id"::unsigned -> "id")
     selection ROW("FUNC"(("test_space"."id"::unsigned))::integer::string) = ROW(1::unsigned)
         scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 
@@ -482,6 +536,9 @@ fn select_cast_plan_nested_where2() {
         r#"projection ("test_space"."id"::unsigned -> "id")
     selection ROW("FUNC"((42::unsigned::string))::integer) = ROW(1::unsigned)
         scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
 "#,
     );
 

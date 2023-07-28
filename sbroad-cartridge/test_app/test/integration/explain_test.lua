@@ -117,6 +117,9 @@ g.test_motion_explain = function()
             "                projection (\"space_simple_shard_key_hist\".\"id\"::integer -> \"id\")",
             "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\"::integer) < ROW(0::unsigned)",
             "                        scan \"space_simple_shard_key_hist\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 end
@@ -154,6 +157,9 @@ WHERE "t3"."name" = '123']], {} })
             "                    projection (\"testing_space\".\"id\"::integer -> \"tid\")",
             "                        selection ROW(\"testing_space\".\"id\"::integer) <> ROW(1::unsigned)",
             "                            scan \"testing_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 end
@@ -183,6 +189,9 @@ g.test_valid_explain = function()
             "                projection (\"space_simple_shard_key_hist\".\"id\"::integer -> \"id\", \"space_simple_shard_key_hist\".\"name\"::string -> \"name\")",
             "                    selection ROW(\"space_simple_shard_key_hist\".\"sysOp\"::integer) > ROW(0::unsigned)",
             "                        scan \"space_simple_shard_key_hist\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 end
@@ -202,6 +211,9 @@ g.test_explain_arithmetic_selection = function()
             "projection (\"arithmetic_space\".\"id\"::integer -> \"id\")",
             "    selection ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) = ROW(\"arithmetic_space\".\"b\"::integer) + ROW(\"arithmetic_space\".\"a\"::integer)",
             "        scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 
@@ -215,6 +227,9 @@ g.test_explain_arithmetic_selection = function()
             "projection (\"arithmetic_space\".\"id\"::integer -> \"id\")",
             "    selection ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) > ROW(0::unsigned) and ROW(\"arithmetic_space\".\"b\"::integer) * ROW(\"arithmetic_space\".\"a\"::integer) = ROW(5::unsigned)",
             "        scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 
@@ -251,6 +266,9 @@ WHERE "t3"."id" = 2
             "                    projection (\"arithmetic_space2\".\"id\"::integer -> \"id1\")",
             "                        selection ROW(\"arithmetic_space2\".\"c\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space2\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 
@@ -287,6 +305,9 @@ WHERE "t3"."id" = 2
             "                    projection (\"arithmetic_space2\".\"id\"::integer -> \"id1\")",
             "                        selection ROW(\"arithmetic_space2\".\"c\"::integer) < ROW(0::unsigned)",
             "                            scan \"arithmetic_space2\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 end
@@ -305,6 +326,9 @@ g.test_explain_arithmetic_projection = function()
         {
             "projection ((\"arithmetic_space\".\"id\"::integer) + (2::unsigned) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 
@@ -318,6 +342,9 @@ g.test_explain_arithmetic_projection = function()
         {
             "projection ((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 
@@ -331,6 +358,9 @@ g.test_explain_arithmetic_projection = function()
         {
             "projection (((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer)) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
         }
     )
 end

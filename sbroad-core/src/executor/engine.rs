@@ -240,6 +240,7 @@ pub trait Vshard {
         optional: Binary,
         query_type: QueryType,
         conn_type: ConnectionType,
+        vtable_max_rows: u64,
     ) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Execute a query on a some of the shards in the cluster.
