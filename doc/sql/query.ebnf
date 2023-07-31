@@ -1,6 +1,13 @@
-STATEMENT   ::= EXPLAIN | DML
+STATEMENT   ::= EXPLAIN | DML | DDL
 EXPLAIN     ::= 'EXPLAIN' DML
 DML         ::= (SELECT | SELECT 'UNION ALL' SELECT | SELECT ('EXCEPT' 'DISTINCT'? ) SELECT  | INSERT)
+DDL	    ::= CreateTable | DropTable
+CreateTable ::= 'create table' table '(' Column (',' Column)* ',' PrimaryKey ')' ('using' ('memtx' | 'vinyl'))? Distribution Option?
+Column      ::= name ('Bool' | 'Decimal' | 'Double' | 'Int' | 'Number' | 'Scalar' | 'String' | 'Text' | 'Unsigned' | 'Varchar') ('null' | 'not null')?
+PrimaryKey  ::= 'primary key' '(' name (',' name)* ')'
+Distribution ::= 'global' | ('distributed by' '(' name (',' name)*  ')')
+DropTable   ::= 'drop table' table Option?
+Option      ::= 'option' '(' 'timeout' '=' DOUBLE ')'
 SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' 'AS' name) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' 'AS' name))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
 VALUES      ::= 'VALUES' '(' row (',' row)* ')'
 row         ::= '(' (value (',' value)*) ')'
