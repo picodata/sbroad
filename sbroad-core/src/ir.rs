@@ -248,7 +248,7 @@ impl ExecuteOptions {
     }
 }
 
-impl<L: tarantool::tlua::AsLua> tlua::PushInto<L> for ExecuteOptions
+impl<L> tlua::PushInto<L> for ExecuteOptions
 where
     L: tlua::AsLua,
 {

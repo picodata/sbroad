@@ -10,7 +10,7 @@ use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_na
 use sbroad::executor::engine::Metadata;
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
-use sbroad::ir::relation::{space_pk_columns, Column, ColumnRole, SpaceEngine, Table, Type};
+use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use sbroad::{debug, warn};
 
 /// Cluster metadata information
