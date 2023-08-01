@@ -49,12 +49,12 @@ pub struct VirtualTable {
     tuples: Vec<VTableTuple>,
     /// Unique table name (we need to generate it ourselves).
     name: Option<String>,
-    /// Unique distribution keys of virtual table tuples
-    distribution_key: Option<MotionKey>,
+    /// Motion key used to calculate the bucket index and resharding.
+    motion_key: Option<MotionKey>,
     /// Index groups tuples by the buckets:
     /// the key is a bucket id, the value is a list of positions
     /// in the `tuples` list corresponding to the bucket.
-    index: VTableIndex,
+    bucket_index: VTableIndex,
 }
 
 impl Default for VirtualTable {
@@ -83,8 +83,8 @@ impl VirtualTable {
             columns: vec![],
             tuples: vec![],
             name: None,
-            distribution_key: None,
-            index: VTableIndex::new(),
+            motion_key: None,
+            bucket_index: VTableIndex::new(),
         }
     }
 
@@ -126,25 +126,25 @@ impl VirtualTable {
     }
 
     /// Sets virtual table motion key
-    pub fn set_motion_key(&mut self, sharding_key: &MotionKey) {
-        self.distribution_key = Some(sharding_key.clone());
+    pub fn set_motion_key(&mut self, motion_key: &MotionKey) {
+        self.motion_key = Some(motion_key.clone());
     }
 
-    /// Gets virtual table index
+    /// Gets virtual table's buket index
     #[must_use]
-    pub fn get_index(&self) -> &HashMap<u64, Vec<usize>> {
-        &self.index.value
+    pub fn get_bucket_index(&self) -> &HashMap<u64, Vec<usize>> {
+        &self.bucket_index.value
     }
 
-    /// Gets virtual table mutable index
+    /// Gets virtual table mutable bucket index
     #[must_use]
-    pub fn get_mut_index(&mut self) -> &mut HashMap<u64, Vec<usize>> {
-        &mut self.index.value
+    pub fn get_mut_bucket_index(&mut self) -> &mut HashMap<u64, Vec<usize>> {
+        &mut self.bucket_index.value
     }
 
     /// Set vtable index
-    pub fn set_index(&mut self, index: HashMap<u64, Vec<usize>>) {
-        self.index = index.into();
+    pub fn set_bucket_index(&mut self, index: HashMap<u64, Vec<usize>>) {
+        self.bucket_index = index.into();
     }
 
     /// Get vtable's tuples corresponding to the buckets.
@@ -153,13 +153,13 @@ impl VirtualTable {
         let tuples: Vec<&VTableTuple> = match buckets {
             Buckets::All | Buckets::Single => self.get_tuples().iter().collect(),
             Buckets::Filtered(bucket_ids) => {
-                if self.get_index().is_empty() {
+                if self.get_bucket_index().is_empty() {
                     // TODO: Implement selection push-down (join_linker3_test).
                     self.get_tuples().iter().collect()
                 } else {
                     bucket_ids
                         .iter()
-                        .filter_map(|bucket_id| self.get_index().get(bucket_id))
+                        .filter_map(|bucket_id| self.get_bucket_index().get(bucket_id))
                         .flatten()
                         .filter_map(|pos| self.get_tuples().get(*pos))
                         .collect()
@@ -178,7 +178,7 @@ impl VirtualTable {
 
         for tuple in &self.tuples {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            if let Some(k) = &self.distribution_key {
+            if let Some(k) = &self.motion_key {
                 for target in &k.targets {
                     match target {
                         Target::Reference(pos) => {
@@ -232,18 +232,20 @@ impl VirtualTable {
     pub fn new_with_buckets(&self, bucket_ids: &[u64]) -> Self {
         let mut result = Self::new();
         result.columns = self.columns.clone();
-        result.distribution_key = self.distribution_key.clone();
+        result.motion_key = self.motion_key.clone();
         result.name = self.name.clone();
 
         for bucket_id in bucket_ids {
             // If bucket_id is met among those that are present in self.
-            if let Some(positions) = self.index.value.get(bucket_id) {
+            if let Some(positions) = self.get_bucket_index().get(bucket_id) {
                 let mut new_positions: Vec<usize> = Vec::with_capacity(positions.len());
                 for pos in positions {
                     result.tuples.push(self.tuples[*pos].clone());
                     new_positions.push(result.tuples.len() - 1);
                 }
-                result.index.value.insert(*bucket_id, new_positions);
+                result
+                    .get_mut_bucket_index()
+                    .insert(*bucket_id, new_positions);
             }
         }
 
@@ -256,15 +258,15 @@ impl VirtualTable {
     /// - Motion key is invalid.
     pub fn reshard(
         &mut self,
-        sharding_key: &MotionKey,
+        motion_key: &MotionKey,
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
-        self.set_motion_key(sharding_key);
+        self.set_motion_key(motion_key);
 
         let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
         for (pos, tuple) in self.get_tuples().iter().enumerate() {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            for target in &sharding_key.targets {
+            for target in &motion_key.targets {
                 match target {
                     Target::Reference(col_idx) => {
                         let part = tuple.get(*col_idx).ok_or_else(|| {
@@ -293,7 +295,7 @@ impl VirtualTable {
             }
         }
 
-        self.set_index(index);
+        self.set_bucket_index(index);
         Ok(())
     }
 }

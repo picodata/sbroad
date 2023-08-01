@@ -161,7 +161,7 @@ where
                     if let Some(motion_id) = ir_plan.get_motion_from_row(right_id)? {
                         let virtual_table = self.exec_plan.get_motion_vtable(motion_id)?;
                         let bucket_ids: HashSet<u64, RepeatableState> =
-                            virtual_table.get_index().keys().copied().collect();
+                            virtual_table.get_bucket_index().keys().copied().collect();
                         if !bucket_ids.is_empty() {
                             return Ok(Buckets::new_filtered(bucket_ids));
                         }
@@ -312,11 +312,11 @@ where
                     }
                     MotionPolicy::Segment(_) => {
                         let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
-                        let buckets = virtual_table.get_index().keys().copied().collect::<HashSet<
-                            u64,
-                            RepeatableState,
-                        >>(
-                        );
+                        let buckets = virtual_table
+                            .get_bucket_index()
+                            .keys()
+                            .copied()
+                            .collect::<HashSet<u64, RepeatableState>>();
                         self.bucket_map
                             .insert(*output, Buckets::new_filtered(buckets));
                     }
@@ -326,7 +326,7 @@ where
                             // segmented virtual table right on the router. So, we can use its
                             // buckets from the index to determine the buckets for the insert.
                             let buckets = virtual_table
-                                .get_index()
+                                .get_bucket_index()
                                 .keys()
                                 .copied()
                                 .collect::<HashSet<u64, RepeatableState>>();

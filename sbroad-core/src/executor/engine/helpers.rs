@@ -446,7 +446,7 @@ pub fn dispatch(
             // they will be filtered later by filter_vtable
             if let Some(vtables) = &sub_plan.vtables {
                 for (motion_id, vtable) in vtables.map() {
-                    if !vtable.get_index().is_empty() {
+                    if !vtable.get_bucket_index().is_empty() {
                         return Err(SbroadError::Invalid(
                                 Entity::Motion,
                                 Some(format!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!"))
@@ -643,7 +643,7 @@ pub fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
         for rc_vtable in vtables.values_mut() {
             // If the virtual table id hashed by the bucket_id, we can filter its tuples.
             // Otherwise (full motion policy) we need to preserve all tuples.
-            if !rc_vtable.get_index().is_empty() {
+            if !rc_vtable.get_bucket_index().is_empty() {
                 *rc_vtable = Rc::new(rc_vtable.new_with_buckets(bucket_ids));
             }
         }
@@ -1011,7 +1011,7 @@ pub fn execute_dml_on_storage(
         .get_ir_plan()
         .insert_conflict_strategy(insert_id)?;
     transaction(|| -> Result<(), SbroadError> {
-        for (bucket_id, positions) in vtable.get_index().iter() {
+        for (bucket_id, positions) in vtable.get_bucket_index().iter() {
             for pos in positions {
                 let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
                     SbroadError::Invalid(
