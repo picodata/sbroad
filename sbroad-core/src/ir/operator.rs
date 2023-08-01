@@ -12,7 +12,7 @@ use std::fmt::{Display, Formatter};
 use crate::errors::{Action, Entity, SbroadError};
 
 use super::expression::Expression;
-use super::transformation::redistribution::MotionPolicy;
+use super::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
 use crate::ir::distribution::{Distribution, KeySet};
@@ -269,6 +269,8 @@ pub enum Relational {
         children: Vec<usize>,
         /// Motion policy - the amount of data to be moved.
         policy: MotionPolicy,
+        /// A sequence of opcodes that transform the data.
+        program: Vec<MotionOpcode>,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
         /// A helper field indicating whether first element of
@@ -936,6 +938,7 @@ impl Plan {
         &mut self,
         child_id: usize,
         policy: &MotionPolicy,
+        program: Vec<MotionOpcode>,
     ) -> Result<usize, SbroadError> {
         let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
             rel.scan_name(self, 0)?.map(String::from)
@@ -973,6 +976,7 @@ impl Plan {
             alias,
             children: vec![child_id],
             policy: policy.clone(),
+            program,
             output,
             is_child_subquery,
         };

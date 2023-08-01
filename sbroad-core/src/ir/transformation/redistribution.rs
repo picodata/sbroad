@@ -91,6 +91,14 @@ impl MotionPolicy {
     }
 }
 
+pub type ColumnPosition = usize;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum MotionOpcode {
+    PrimaryKey(Vec<ColumnPosition>),
+    Projection(Vec<ColumnPosition>),
+}
+
 /// Helper struct that unwraps `Expression::Bool` fields.
 struct BoolOp {
     left: usize,
@@ -116,13 +124,14 @@ impl BoolOp {
 }
 
 type ChildId = usize;
+type DataTransformation = (MotionPolicy, Vec<MotionOpcode>);
 
 /// Helper struct to store motion policy for every child of
 /// relational node with `parent_id`.
 #[derive(Debug)]
 struct Strategy {
     parent_id: usize,
-    children_policy: HashMap<ChildId, MotionPolicy>,
+    children_policy: HashMap<ChildId, DataTransformation>,
 }
 
 impl Strategy {
@@ -135,8 +144,8 @@ impl Strategy {
 
     /// Add motion policy for child node.
     /// Update policy in case `child_id` key is already in the `children_policy` map.
-    fn add_child(&mut self, child_id: usize, policy: MotionPolicy) {
-        self.children_policy.insert(child_id, policy);
+    fn add_child(&mut self, child_id: usize, policy: MotionPolicy, program: Vec<MotionOpcode>) {
+        self.children_policy.insert(child_id, (policy, program));
     }
 }
 
@@ -386,7 +395,7 @@ impl Plan {
     }
 
     /// Create Motions from the strategy map.
-    fn create_motion_nodes(&mut self, strategy: &Strategy) -> Result<(), SbroadError> {
+    fn create_motion_nodes(&mut self, mut strategy: Strategy) -> Result<(), SbroadError> {
         let parent_id = strategy.parent_id;
         let children: Vec<usize> =
             if let Some(children) = self.get_relational_children(parent_id)? {
@@ -416,11 +425,12 @@ impl Plan {
         // Add motions.
         let mut children_with_motions: Vec<usize> = Vec::new();
         for child in children {
-            if let Some(policy) = strategy.children_policy.get(&child) {
+            if let Some((policy, ref mut program)) = strategy.children_policy.get_mut(&child) {
+                let program = std::mem::take(program);
                 if let MotionPolicy::Local = policy {
                     children_with_motions.push(child);
                 } else {
-                    children_with_motions.push(self.add_motion(child, policy)?);
+                    children_with_motions.push(self.add_motion(child, policy, program)?);
                 }
             } else {
                 children_with_motions.push(child);
@@ -536,7 +546,7 @@ impl Plan {
         for bool_node in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
-                strategy.add_child(id, policy);
+                strategy.add_child(id, policy, Vec::new());
             }
         }
 
@@ -544,7 +554,7 @@ impl Plan {
         for unary_node in &unary_nodes {
             let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, *unary_node)?;
             if let Some((id, policy)) = unary_strategy {
-                strategy.add_child(id, policy);
+                strategy.add_child(id, policy, Vec::new());
             }
         }
 
@@ -872,7 +882,7 @@ impl Plan {
         if let Some(strategy) =
             self.calculate_strategy_for_single_distribution(rel_id, cond_id, join_kind)?
         {
-            self.create_motion_nodes(&strategy)?;
+            self.create_motion_nodes(strategy)?;
             let nodes = self.get_bool_nodes_with_row_children(cond_id)?;
             for node in &nodes {
                 let bool_op = BoolOp::from_expr(self, *node)?;
@@ -897,7 +907,7 @@ impl Plan {
         let mut strategy = Strategy::new(rel_id);
         if let Some((_, children)) = join_children.split_first() {
             for child_id in children {
-                strategy.add_child(*child_id, MotionPolicy::Full);
+                strategy.add_child(*child_id, MotionPolicy::Full, Vec::new());
             }
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -935,7 +945,7 @@ impl Plan {
             let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
-                strategy.add_child(id, policy);
+                strategy.add_child(id, policy, Vec::new());
             }
             if sq_strategies_len > 0 {
                 continue;
@@ -1015,8 +1025,8 @@ impl Plan {
             };
             inner_map.insert(node_id, new_inner_policy.clone());
         }
-        strategy.add_child(inner_child, new_inner_policy);
-        self.create_motion_nodes(&strategy)?;
+        strategy.add_child(inner_child, new_inner_policy, Vec::new());
+        self.create_motion_nodes(strategy)?;
         Ok(())
     }
 
@@ -1208,8 +1218,8 @@ impl Plan {
             // above we checked that at least one child has Distribution::Single
             (_, _) => return Err(SbroadError::Invalid(Entity::Distribution, None)),
         };
-        strategy.add_child(outer_id, outer_policy);
-        strategy.add_child(inner_id, inner_policy);
+        strategy.add_child(outer_id, outer_policy, Vec::new());
+        strategy.add_child(inner_id, inner_policy, Vec::new());
 
         let subqueries = self
             .get_relational_children(join_id)?
@@ -1220,7 +1230,7 @@ impl Plan {
             .1;
         for sq in subqueries {
             // todo: improve subqueries motions
-            strategy.add_child(*sq, MotionPolicy::Full);
+            strategy.add_child(*sq, MotionPolicy::Full, Vec::new());
         }
         Ok(Some(strategy))
     }
@@ -1237,19 +1247,19 @@ impl Plan {
             for key in keys.iter() {
                 let insert_mkey = MotionKey::from(key);
                 if insert_mkey == motion_key {
-                    map.add_child(child_id, MotionPolicy::LocalSegment(motion_key));
+                    map.add_child(child_id, MotionPolicy::LocalSegment(motion_key), Vec::new());
                     return Ok(map);
                 }
             }
         }
         if let Relational::Values { .. } = self.get_relation_node(child_id)? {
             if let Distribution::Replicated = child_dist {
-                map.add_child(child_id, MotionPolicy::LocalSegment(motion_key));
+                map.add_child(child_id, MotionPolicy::LocalSegment(motion_key), Vec::new());
                 return Ok(map);
             }
         }
 
-        map.add_child(child_id, MotionPolicy::Segment(motion_key));
+        map.add_child(child_id, MotionPolicy::Segment(motion_key), Vec::new());
 
         Ok(map)
     }
@@ -1293,21 +1303,28 @@ impl Plan {
                                 Entity::Distribution,
                                 Some("left child's segment distribution is invalid: no keys found in the set".into())
                             ))?;
-                            map.add_child(*right, MotionPolicy::Segment(key.into()));
+                            map.add_child(*right, MotionPolicy::Segment(key.into()), Vec::new());
                         }
                         Distribution::Single => {
                             match right_dist {
                                 Distribution::Segment { keys: right_keys } => {
-                                    map.add_child(*left, MotionPolicy::Segment(
-                                        MotionKey::from(right_keys.iter()
-                                            .next()
-                                            .ok_or_else(|| SbroadError::Invalid(
-                                                Entity::Distribution,
-                                                Some(format!("Segment distribution with no keys. Except right child: {right}")))
-                                            )?
-                                        )
-                                    ));
-                                    map.add_child(*right, MotionPolicy::Local);
+                                    map.add_child(
+                                        *left,
+                                        MotionPolicy::Segment(MotionKey::from(
+                                            right_keys.iter().next().ok_or_else(|| {
+                                                SbroadError::Invalid(
+                                                    Entity::Distribution,
+                                                    Some(format!(
+                                                        "{} {} {right}",
+                                                        "Segment distribution with no keys.",
+                                                        "Except right child:"
+                                                    )),
+                                                )
+                                            })?,
+                                        )),
+                                        Vec::new(),
+                                    );
+                                    map.add_child(*right, MotionPolicy::Local, Vec::new());
                                 }
                                 Distribution::Single => {
                                     // we could redistribute both children by any combination of columns,
@@ -1317,12 +1334,14 @@ impl Plan {
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)],
                                         }),
+                                        Vec::new(),
                                     );
                                     map.add_child(
                                         *right,
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)],
                                         }),
+                                        Vec::new(),
                                     );
                                 }
                                 _ => {
@@ -1332,13 +1351,14 @@ impl Plan {
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)], // any combination of columns would suffice
                                         }),
+                                        Vec::new(),
                                     );
-                                    map.add_child(*right, MotionPolicy::Full);
+                                    map.add_child(*right, MotionPolicy::Full, Vec::new());
                                 }
                             }
                         }
                         _ => {
-                            map.add_child(*right, MotionPolicy::Full);
+                            map.add_child(*right, MotionPolicy::Full, Vec::new());
                         }
                     }
                     return Ok(map);
@@ -1382,6 +1402,7 @@ impl Plan {
                             MotionPolicy::Segment(MotionKey {
                                 targets: vec![Target::Reference(0)],
                             }),
+                            Vec::new(),
                         );
                     }
                     if let Distribution::Single = right_dist {
@@ -1390,6 +1411,7 @@ impl Plan {
                             MotionPolicy::Segment(MotionKey {
                                 targets: vec![Target::Reference(0)],
                             }),
+                            Vec::new(),
                         );
                     }
                     return Ok(map);
@@ -1445,7 +1467,7 @@ impl Plan {
                 Relational::Selection { output, filter, .. } => {
                     self.set_distribution(output)?;
                     let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
-                    self.create_motion_nodes(&strategy)?;
+                    self.create_motion_nodes(strategy)?;
                 }
                 Relational::Join {
                     output,
@@ -1459,16 +1481,16 @@ impl Plan {
                 Relational::Insert { .. } => {
                     // Insert output tuple already has relation's distribution.
                     let strategy = self.resolve_insert_conflicts(*id)?;
-                    self.create_motion_nodes(&strategy)?;
+                    self.create_motion_nodes(strategy)?;
                 }
                 Relational::Except { output, .. } => {
                     let strategy = self.resolve_except_conflicts(*id)?;
-                    self.create_motion_nodes(&strategy)?;
+                    self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
                 Relational::UnionAll { output, .. } => {
                     let strategy = self.resolve_union_conflicts(*id)?;
-                    self.create_motion_nodes(&strategy)?;
+                    self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
             }

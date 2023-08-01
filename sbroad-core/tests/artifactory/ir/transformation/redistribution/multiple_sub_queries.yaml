@@ -312,7 +312,7 @@ nodes:
           children:
             - 17
           policy: Full
-          generation: none
+          program: []
           output: 49
           is_child_subquery: true
     - Expression:
@@ -344,7 +344,7 @@ nodes:
               targets:
                 - Reference:  
                     0
-          generation: none
+          program: []
           output: 53
           is_child_subquery: true
 relations:

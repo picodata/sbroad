@@ -1642,8 +1642,8 @@ impl Plan {
                 SbroadError::Invalid(Entity::Plan, Some("Reduce stage has no nodes!".into()))
             })?;
             let mut strategy = Strategy::new(last_final_id);
-            strategy.add_child(motion_parent, MotionPolicy::Full);
-            self.create_motion_nodes(&strategy)?;
+            strategy.add_child(motion_parent, MotionPolicy::Full, Vec::new());
+            self.create_motion_nodes(strategy)?;
 
             self.set_dist(self.get_relational_output(proj_id)?, Distribution::Single)?;
         } else {
@@ -1674,8 +1674,9 @@ impl Plan {
                         .map(|x| Target::Reference(*x))
                         .collect::<Vec<Target>>(),
                 }),
+                Vec::new(),
             );
-            self.create_motion_nodes(&strategy)?;
+            self.create_motion_nodes(strategy)?;
 
             // When we created final GroupBy we didn't set its distribution, because its
             // actual child (Motion) wasn't created yet.
@@ -1742,7 +1743,7 @@ impl Plan {
         if let Some(having_id) = having_id {
             if let Relational::Having { filter, .. } = self.get_relation_node(having_id)? {
                 let strategy = self.resolve_sub_query_conflicts(having_id, *filter)?;
-                self.create_motion_nodes(&strategy)?;
+                self.create_motion_nodes(strategy)?;
             }
         }
 
