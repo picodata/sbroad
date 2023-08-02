@@ -44,5 +44,5 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
-INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')?  'VALUES' row
+INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? ('VALUES' row | SELECT )  ('on conflict' 'do'  ('nothing' | 'replace' | 'fail'))?
 
