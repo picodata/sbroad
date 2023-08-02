@@ -5,7 +5,9 @@ use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::operator::Relational;
 use crate::ir::relation::Type;
-use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Strategy, Target};
+use crate::ir::transformation::redistribution::{
+    MotionKey, MotionPolicy, Program, Strategy, Target,
+};
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
@@ -1642,7 +1644,7 @@ impl Plan {
                 SbroadError::Invalid(Entity::Plan, Some("Reduce stage has no nodes!".into()))
             })?;
             let mut strategy = Strategy::new(last_final_id);
-            strategy.add_child(motion_parent, MotionPolicy::Full, Vec::new());
+            strategy.add_child(motion_parent, MotionPolicy::Full, Program::new());
             self.create_motion_nodes(strategy)?;
 
             self.set_dist(self.get_relational_output(proj_id)?, Distribution::Single)?;
@@ -1674,7 +1676,7 @@ impl Plan {
                         .map(|x| Target::Reference(*x))
                         .collect::<Vec<Target>>(),
                 }),
-                Vec::new(),
+                Program::new(),
             );
             self.create_motion_nodes(strategy)?;
 

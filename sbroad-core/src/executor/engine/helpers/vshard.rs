@@ -214,12 +214,12 @@ pub fn exec_ir_on_some_buckets(
     if let Some((last, other)) = rs_bucket_vec.split_last() {
         for (rs, bucket_ids) in other {
             let mut rs_plan = sub_plan.clone();
-            filter_vtable(&mut rs_plan, bucket_ids);
+            filter_vtable(&mut rs_plan, bucket_ids)?;
             rs_ir.insert(rs.clone(), Message::from(encode_plan(rs_plan)?));
         }
 
         let (rs, bucket_ids) = last;
-        filter_vtable(&mut sub_plan, bucket_ids);
+        filter_vtable(&mut sub_plan, bucket_ids)?;
         rs_ir.insert(rs.clone(), Message::from(encode_plan(sub_plan)?));
     }
     match &query_type {

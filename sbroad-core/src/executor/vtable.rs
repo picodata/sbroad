@@ -1,4 +1,5 @@
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use ahash::AHashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::vec;
@@ -6,9 +7,11 @@ use std::vec;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::{TupleBuilderCommands, TupleBuilderPattern};
 use crate::executor::{bucket::Buckets, Vshard};
+use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
-use crate::ir::transformation::redistribution::{MotionKey, Target};
+use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
 use crate::ir::value::Value;
 
 type ShardingKey = Vec<Value>;
@@ -19,19 +22,19 @@ pub type VTableTuple = Vec<Value>;
 /// value: list of positions in the `tuples` list (see `VirtualTable`) corresponding to the bucket.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VTableIndex {
-    value: HashMap<u64, Vec<usize>>,
+    value: HashMap<u64, Vec<usize>, RepeatableState>,
 }
 
 impl VTableIndex {
     fn new() -> Self {
         Self {
-            value: HashMap::new(),
+            value: HashMap::with_hasher(RepeatableState),
         }
     }
 }
 
-impl From<HashMap<u64, Vec<usize>>> for VTableIndex {
-    fn from(value: HashMap<u64, Vec<usize>>) -> Self {
+impl From<HashMap<u64, Vec<usize>, RepeatableState>> for VTableIndex {
+    fn from(value: HashMap<u64, Vec<usize>, RepeatableState>) -> Self {
         Self { value }
     }
 }
@@ -49,8 +52,8 @@ pub struct VirtualTable {
     tuples: Vec<VTableTuple>,
     /// Unique table name (we need to generate it ourselves).
     name: Option<String>,
-    /// Motion key used to calculate the bucket index and resharding.
-    motion_key: Option<MotionKey>,
+    /// Column positions that form a primary key.
+    primary_key: Option<Vec<ColumnPosition>>,
     /// Index groups tuples by the buckets:
     /// the key is a bucket id, the value is a list of positions
     /// in the `tuples` list corresponding to the bucket.
@@ -83,7 +86,7 @@ impl VirtualTable {
             columns: vec![],
             tuples: vec![],
             name: None,
-            motion_key: None,
+            primary_key: None,
             bucket_index: VTableIndex::new(),
         }
     }
@@ -125,25 +128,20 @@ impl VirtualTable {
         &mut self.columns
     }
 
-    /// Sets virtual table motion key
-    pub fn set_motion_key(&mut self, motion_key: &MotionKey) {
-        self.motion_key = Some(motion_key.clone());
-    }
-
     /// Gets virtual table's buket index
     #[must_use]
-    pub fn get_bucket_index(&self) -> &HashMap<u64, Vec<usize>> {
+    pub fn get_bucket_index(&self) -> &HashMap<u64, Vec<usize>, RepeatableState> {
         &self.bucket_index.value
     }
 
     /// Gets virtual table mutable bucket index
     #[must_use]
-    pub fn get_mut_bucket_index(&mut self) -> &mut HashMap<u64, Vec<usize>> {
+    pub fn get_mut_bucket_index(&mut self) -> &mut HashMap<u64, Vec<usize>, RepeatableState> {
         &mut self.bucket_index.value
     }
 
     /// Set vtable index
-    pub fn set_bucket_index(&mut self, index: HashMap<u64, Vec<usize>>) {
+    pub fn set_bucket_index(&mut self, index: HashMap<u64, Vec<usize>, RepeatableState>) {
         self.bucket_index = index.into();
     }
 
@@ -169,44 +167,6 @@ impl VirtualTable {
         tuples
     }
 
-    /// Get virtual table tuples' values, participating in the distribution key.
-    ///
-    /// # Errors
-    /// - Failed to find a distribution key.
-    pub fn get_tuple_distribution(&self) -> Result<HashSet<Vec<&Value>>, SbroadError> {
-        let mut result: HashSet<Vec<&Value>> = HashSet::with_capacity(self.tuples.len());
-
-        for tuple in &self.tuples {
-            let mut shard_key_tuple: Vec<&Value> = Vec::new();
-            if let Some(k) = &self.motion_key {
-                for target in &k.targets {
-                    match target {
-                        Target::Reference(pos) => {
-                            let part = tuple.get(*pos).ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::DistributionKey,
-                                    format!("column {pos} in the tuple {tuple:?}."),
-                                )
-                            })?;
-                            shard_key_tuple.push(part);
-                        }
-                        Target::Value(ref val) => {
-                            shard_key_tuple.push(val);
-                        }
-                    }
-                }
-            } else {
-                return Err(SbroadError::NotFound(
-                    Entity::DistributionKey,
-                    "for virtual table".into(),
-                ));
-            }
-            result.insert(shard_key_tuple);
-        }
-
-        Ok(result)
-    }
-
     /// Set vtable alias name
     ///
     /// # Errors
@@ -222,34 +182,40 @@ impl VirtualTable {
         self.name.as_ref()
     }
 
-    /// Create a new virtual table from an original one with
-    /// a list of tuples corresponding to some exact buckets.
+    /// Create a new virtual table from the original one with
+    /// a list of tuples corresponding only to the passed buckets.
     ///
-    /// The thing is that given `self` vtable may contain (bucket id -> tuples) pair in its index
-    /// for some bucket that is not present in given `bucket_ids`.
-    /// We won't add tuples corresponding to such pair into new vtable.
-    #[must_use]
-    pub fn new_with_buckets(&self, bucket_ids: &[u64]) -> Self {
+    /// # Errors
+    /// - bucket index is corrupted
+    pub fn new_with_buckets(&self, bucket_ids: &[u64]) -> Result<Self, SbroadError> {
         let mut result = Self::new();
         result.columns = self.columns.clone();
-        result.motion_key = self.motion_key.clone();
         result.name = self.name.clone();
 
+        result.primary_key = self.primary_key.clone();
         for bucket_id in bucket_ids {
             // If bucket_id is met among those that are present in self.
-            if let Some(positions) = self.get_bucket_index().get(bucket_id) {
-                let mut new_positions: Vec<usize> = Vec::with_capacity(positions.len());
-                for pos in positions {
-                    result.tuples.push(self.tuples[*pos].clone());
-                    new_positions.push(result.tuples.len() - 1);
+            if let Some(pointers) = self.get_bucket_index().get(bucket_id) {
+                let mut new_pointers: Vec<usize> = Vec::with_capacity(pointers.len());
+                for pointer in pointers {
+                    let tuple = self.tuples.get(*pointer).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::VirtualTable,
+                            Some(format!(
+                                "Tuple with position {} in the bucket index not found",
+                                pointer
+                            )),
+                        )
+                    })?;
+                    result.tuples.push(tuple.clone());
+                    new_pointers.push(result.tuples.len() - 1);
                 }
                 result
                     .get_mut_bucket_index()
-                    .insert(*bucket_id, new_positions);
+                    .insert(*bucket_id, new_pointers);
             }
         }
-
-        result
+        Ok(result)
     }
 
     /// Reshard a virtual table (i.e. build a bucket index).
@@ -261,9 +227,7 @@ impl VirtualTable {
         motion_key: &MotionKey,
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
-        self.set_motion_key(motion_key);
-
-        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
+        let mut index = HashMap::with_hasher(RepeatableState);
         for (pos, tuple) in self.get_tuples().iter().enumerate() {
             let mut shard_key_tuple: Vec<&Value> = Vec::new();
             for target in &motion_key.targets {
@@ -273,7 +237,8 @@ impl VirtualTable {
                             SbroadError::NotFound(
                                 Entity::DistributionKey,
                                 format!(
-                                "failed to find a distribution key column {pos} in the tuple {tuple:?}."
+                                "failed to find a distribution key column {} in the tuple {:?}.",
+                                pos, tuple
                             ),
                             )
                         })?;
@@ -296,6 +261,157 @@ impl VirtualTable {
         }
 
         self.set_bucket_index(index);
+        Ok(())
+    }
+
+    /// Set primary key in the virtual table.
+    ///
+    /// # Errors
+    /// - primary key refers invalid column positions
+    pub fn set_primary_key(&mut self, pk: &[ColumnPosition]) -> Result<(), SbroadError> {
+        for pos in pk {
+            if pos >= &self.columns.len() {
+                return Err(SbroadError::NotFound(
+                    Entity::Column,
+                    format!(
+                        "primary key in the virtual table {:?} contains invalid position {pos}.",
+                        self.name
+                    ),
+                ));
+            }
+        }
+        self.primary_key = Some(pk.to_vec());
+        Ok(())
+    }
+
+    fn pk_positions_in_projection(
+        &self,
+        old_to_new_pos_map: &AHashMap<ColumnPosition, ColumnPosition>,
+    ) -> Result<Option<Vec<ColumnPosition>>, SbroadError> {
+        if let Some(pk) = &self.primary_key {
+            let mut new_pk = Vec::with_capacity(pk.len());
+            for old_pk_pos in pk {
+                match old_to_new_pos_map.get(old_pk_pos) {
+                    Some(new_pos) => new_pk.push(*new_pos),
+                    None => {
+                        return Err(SbroadError::NotFound(
+                            Entity::Column,
+                            format!(
+                                "{} {old_pk_pos} {} {old_to_new_pos_map:?}.",
+                                "primary key contains a column position",
+                                "that is not present in the projection column map",
+                            ),
+                        ));
+                    }
+                }
+            }
+            return Ok(Some(new_pk));
+        }
+        Ok(None)
+    }
+
+    /// Remove columns from the virtual table other then declared in projection.
+    ///
+    /// # Errors
+    /// - projection refers invalid column positions
+    /// - projection removes primary key columns
+    pub fn project(&mut self, projection: &[ColumnPosition]) -> Result<(), SbroadError> {
+        let mut old_to_new_pos_map = AHashMap::with_capacity(projection.len());
+        let mut pattern = TupleBuilderPattern::with_capacity(self.columns.len());
+        for (pos, pointer) in projection.iter().enumerate() {
+            if pointer >= &self.columns.len() {
+                return Err(SbroadError::NotFound(
+                    Entity::Column,
+                    format!(
+                        "projection in the virtual table {:?} contains invalid position {pointer}.",
+                        self.name
+                    ),
+                ));
+            }
+            if let Some(dup_pos) = old_to_new_pos_map.get(pointer) {
+                pattern.push(TupleBuilderCommands::CloneSelfPosition(*dup_pos));
+            } else {
+                old_to_new_pos_map.insert(*pointer, pos);
+                pattern.push(TupleBuilderCommands::TakePosition(*pointer));
+            }
+        }
+        self.primary_key = self.pk_positions_in_projection(&old_to_new_pos_map)?;
+        for old_tuple in &mut self.tuples {
+            let mut new_tuple = VTableTuple::with_capacity(pattern.len());
+            for command in &pattern {
+                match command {
+                    TupleBuilderCommands::TakePosition(pos) => {
+                        let column = old_tuple.get_mut(*pos).ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Column,
+                                format!("at position {pos} in the tuple"),
+                            )
+                        })?;
+                        new_tuple.push(std::mem::take(column));
+                    }
+                    TupleBuilderCommands::CloneSelfPosition(pos) => {
+                        let column = new_tuple.get(*pos).ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Column,
+                                format!(
+                                    "at position {pos} in the constructing tuple {new_tuple:?}"
+                                ),
+                            )
+                        })?;
+                        new_tuple.push(column.clone());
+                    }
+                    _ => {
+                        return Err(SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "tuple builder command {:?} is not supported",
+                                command
+                            )),
+                        ))
+                    }
+                }
+            }
+            *old_tuple = new_tuple;
+        }
+        let mut new_columns = Vec::with_capacity(pattern.len());
+        for command in &pattern {
+            match command {
+                TupleBuilderCommands::TakePosition(pos) => {
+                    let column = self.columns.get_mut(*pos).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Column,
+                            format!(
+                                "at position {pos} in the column metadata of the virtual table"
+                            ),
+                        )
+                    })?;
+                    new_columns.push(std::mem::take(column));
+                }
+                TupleBuilderCommands::CloneSelfPosition(pos) => {
+                    let column = new_columns.get(*pos).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Column,
+                            format!(
+                                "{} {self:?}",
+                                "at position {pos} in the new column metadata of the virtual table",
+                            ),
+                        )
+                    })?;
+                    new_columns.push(column.clone());
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format!(
+                            "tuple builder command {:?} is not supported",
+                            command
+                        )),
+                    ))
+                }
+            }
+        }
+        self.columns = new_columns;
+
         Ok(())
     }
 }

@@ -10,7 +10,7 @@ use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::relation::SpaceEngine;
-use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::{ExecuteOptions, Node, Plan};
 use crate::otm::child_span;
@@ -123,22 +123,35 @@ impl ExecutionPlan {
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
         let mut vtable = vtable;
-        let policy = if let Relational::Motion { policy, .. } =
-            self.get_ir_plan().get_relation_node(motion_id)?
+        if let Relational::Motion {
+            policy, program, ..
+        } = self.get_ir_plan().get_relation_node(motion_id)?
         {
-            policy.clone()
+            // Resharding must be done before applying opcodes
+            // to the virtual table. Otherwise projection can
+            // remove sharding columns.
+            match policy {
+                MotionPolicy::Segment(shard_key) | MotionPolicy::LocalSegment(shard_key) => {
+                    vtable.reshard(shard_key, runtime)?;
+                }
+                MotionPolicy::Full | MotionPolicy::Local => {}
+            }
+            for opcode in program {
+                match opcode {
+                    MotionOpcode::PrimaryKey(positions) => {
+                        vtable.set_primary_key(positions)?;
+                    }
+                    MotionOpcode::Projection(positions) => {
+                        vtable.project(positions)?;
+                    }
+                }
+            }
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("invalid motion node".to_string()),
             ));
         };
-        match policy {
-            MotionPolicy::Segment(shard_key) | MotionPolicy::LocalSegment(shard_key) => {
-                vtable.reshard(&shard_key, runtime)?;
-            }
-            MotionPolicy::Full | MotionPolicy::Local => {}
-        }
 
         let need_init = self.get_vtables().is_none();
         if need_init {

@@ -5,7 +5,6 @@ use crate::executor::bucket::Buckets;
 
 use crate::executor::ir::ExecutionPlan;
 
-use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::tree::Snapshot;
 

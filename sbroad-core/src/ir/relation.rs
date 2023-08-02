@@ -143,16 +143,17 @@ impl Type {
 }
 
 /// A role of the column in the relation.
-#[derive(PartialEq, Debug, Eq, Clone)]
+#[derive(Default, PartialEq, Debug, Eq, Clone)]
 pub enum ColumnRole {
     /// General purpose column available for the user.
+    #[default]
     User,
     /// Column is used for sharding (contains `bucket_id` in terms of `vshard`).
     Sharding,
 }
 
 /// Table column.
-#[derive(PartialEq, Debug, Eq, Clone)]
+#[derive(Default, PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,

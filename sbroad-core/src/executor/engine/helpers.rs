@@ -254,9 +254,13 @@ pub fn compile_optional(
 
 #[derive(Debug)]
 pub enum TupleBuilderCommands {
+    /// Clone a value from currently constructing tuple.
+    CloneSelfPosition(usize),
     /// Take a value from the original tuple
     /// at the specified position.
     TakePosition(usize),
+    /// Take a value from the original tuple and cast
+    /// it into specified type.
     TakeAndCastPosition(usize, Type),
     /// Set a specified value.
     SetValue(Value),
@@ -265,7 +269,7 @@ pub enum TupleBuilderCommands {
     CalculateBucketId(MotionKey),
 }
 
-type TupleBuilderPattern = Vec<TupleBuilderCommands>;
+pub type TupleBuilderPattern = Vec<TupleBuilderCommands>;
 
 /// Create commands to build the tuple for insertion,
 /// which does not take into account types of the virtual
@@ -638,16 +642,20 @@ pub fn materialize_motion(
 /// to replace them by new vtables. New vtables indices (map bucket id -> tuples) will contain
 /// only pairs corresponding to buckets, that are presented in given `bucket_ids` (as we are going
 /// to execute `plan` subtree only on them).
-pub fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) {
+///
+/// # Errors
+/// - failed to build a new virtual table with the passed set of buckets
+pub fn filter_vtable(plan: &mut ExecutionPlan, bucket_ids: &[u64]) -> Result<(), SbroadError> {
     if let Some(vtables) = plan.get_mut_vtables() {
         for rc_vtable in vtables.values_mut() {
             // If the virtual table id hashed by the bucket_id, we can filter its tuples.
             // Otherwise (full motion policy) we need to preserve all tuples.
             if !rc_vtable.get_bucket_index().is_empty() {
-                *rc_vtable = Rc::new(rc_vtable.new_with_buckets(bucket_ids));
+                *rc_vtable = Rc::new(rc_vtable.new_with_buckets(bucket_ids)?);
             }
         }
     }
+    Ok(())
 }
 
 /// A common function for all engines to calculate the sharding key value from a tuple.
@@ -1027,6 +1035,14 @@ pub fn execute_dml_on_storage(
                     // a reference to the original value. The only allocation is for message
                     // pack serialization, but it is unavoidable.
                     match command {
+                        TupleBuilderCommands::CloneSelfPosition(_) => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Tuple,
+                                Some(
+                                    "unexpected tuple builder command: clone self position".into(),
+                                ),
+                            ));
+                        }
                         TupleBuilderCommands::TakePosition(tuple_pos) => {
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
