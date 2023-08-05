@@ -35,10 +35,10 @@ DDL = _{ CreateTable | DropTable }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
-Query = { (Except | UnionAll | Select | Values | Insert | Delete) ~ Option? }
+Query = { (Except | UnionAll | Select | Values | Insert | Update | Delete) ~ Option? }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        Join? ~ (^"where" ~ Selection)? ~ 
+        Join? ~ WhereClause? ~ 
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)?
     }
@@ -51,6 +51,7 @@ Query = { (Except | UnionAll | Select | Values | Insert | Delete) ~ Option? }
                     ScanName = @{ Name }
                     Name = @{ NameString | ("\"" ~ NameString ~ "\"") }
                 Asterisk = { "*" }
+        WhereClause = _{ ^"where" ~ Selection }
         Selection = { Expr }
         Scan = { (SubQuery | Table) ~ (^"as" ~ ScanName)? }
             Table = @{ Name }
@@ -71,6 +72,12 @@ Query = { (Except | UnionAll | Select | Values | Insert | Delete) ~ Option? }
         DoReplace = { ^"replace" }
         DoNothing = { ^"nothing" }
         DoFail = { ^"fail" }
+    Update = { ^"update" ~ Table ~ ^"set" ~ UpdateList ~ (UpdateFrom | WhereClause)? }
+        UpdateList = { UpdateItem ~ ("," ~ UpdateItem)* }
+        UpdateItem = { ColumnName ~ "=" ~ ExprNotSubQuery }
+        // Condition is used intentionally here for implementation
+        // of Update transform.
+        UpdateFrom = _{ ^"from" ~ Scan ~ (^"where" ~ Condition)? }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
         ValuesRow = { Row }
     Option = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
@@ -82,7 +89,9 @@ Query = { (Except | UnionAll | Select | Values | Insert | Delete) ~ Option? }
     Delete = { ^"delete" ~ ^"from" ~ Table ~ (^"where" ~ DeleteFilter)? }
     	DeleteFilter = { Expr }
 
-Expr = _{ Or | And | Unary | Between | Cmp | Primary | Parentheses }
+Expr = _{ BoolOp | Primary | Parentheses }
+    BoolOp = _{ Or | And | Unary | Between | Cmp }
+    ExprNotSubQuery =  _{ !SubQuery ~ Expr }
     Parentheses = _{ "(" ~ Expr ~ ")" }
     Primary = _{ SubQuery | ArithmeticExpr | Concat | Cast | Row | Function | Value }
     Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }

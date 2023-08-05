@@ -9,7 +9,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::errors::{Entity, SbroadError};
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::{
     helpers::{normalize_name_for_space_api, normalize_name_from_sql},
     Metadata,
@@ -21,9 +21,9 @@ use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, ExpressionId};
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
-use crate::ir::relation::{Column, Type as RelationType};
+use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::{Node, OptionKind, OptionSpec, Plan};
@@ -31,6 +31,8 @@ use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
 use crate::ir::aggregates::AggregateKind;
+use crate::ir::helpers::RepeatableState;
+use crate::ir::transformation::redistribution::ColumnPosition;
 use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
@@ -108,7 +110,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut columns: Vec<ColumnDef> = Vec::new();
     let mut pk_keys: Vec<String> = Vec::new();
     let mut shard_keys: Vec<String> = Vec::new();
-    let mut engine_type = SpaceEngineType::default();
+    let mut engine_type: SpaceEngineType = SpaceEngineType::default();
     let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
         SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
     })?;
@@ -445,6 +447,7 @@ impl Ast for AbstractSyntaxTree {
 
         ast.set_top(0)?;
 
+        ast.transform_update()?;
         ast.transform_delete()?;
         ast.transform_select()?;
         ast.add_aliases_to_projection()?;
@@ -1441,6 +1444,114 @@ impl Ast for AbstractSyntaxTree {
                     let plan_values_id = plan.add_values(plan_value_row_ids)?;
                     map.add(id, plan_values_id);
                 }
+                Type::Update => {
+                    let rel_child_ast_id = *node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues("Update has no children.".into())
+                    })?;
+                    let rel_child_id = map.get(rel_child_ast_id)?;
+                    let ast_table_id = *node.children.get(1).ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues("Update has no children.".into())
+                    })?;
+                    let ast_table = self.nodes.get_node(ast_table_id)?;
+                    if let Type::Table = ast_table.rule {
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Type,
+                            Some(format!("expected a Table in update, got {ast_table:?}.",)),
+                        ));
+                    }
+                    let relation =
+                        normalize_name_from_sql(ast_table.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(Entity::Name, "of table in the AST".into())
+                        })?);
+                    let update_list_id = node.children.get(2).unwrap();
+                    let update_list = self.nodes.get_node(*update_list_id)?;
+                    // Maps position of column in table to corresponding update expression
+                    let mut update_defs: HashMap<ColumnPosition, ExpressionId, RepeatableState> =
+                        HashMap::with_capacity_and_hasher(
+                            update_list.children.len(),
+                            RepeatableState,
+                        );
+                    let mut names: HashMap<&str, (&ColumnRole, usize)> = HashMap::new();
+                    let rel = plan.relations.get(&relation).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Table,
+                            format!("{relation} among plan relations"),
+                        )
+                    })?;
+                    rel.columns.iter().enumerate().for_each(|(i, c)| {
+                        names.insert(c.name.as_str(), (c.get_role(), i));
+                    });
+                    let mut pk_positions: HashSet<usize> =
+                        HashSet::with_capacity(rel.primary_key.positions.len());
+                    rel.primary_key.positions.iter().for_each(|pos| {
+                        pk_positions.insert(*pos);
+                    });
+                    for update_item_id in &update_list.children {
+                        let update_item = self.nodes.get_node(*update_item_id)?;
+                        let ast_column_id = update_item.children.first().unwrap();
+                        let expr_ast_id = *update_item.children.get(1).unwrap();
+                        let expr_id = map.get(expr_ast_id)?;
+                        if plan.contains_aggregates(expr_id, true)? {
+                            return Err(SbroadError::Invalid(
+                                Entity::Query,
+                                Some(
+                                    "aggregate functions are not supported in update expression."
+                                        .into(),
+                                ),
+                            ));
+                        }
+                        let col = self.nodes.get_node(*ast_column_id)?;
+                        let name = col.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Name,
+                                "of Column among the AST target columns (update)".into(),
+                            )
+                        })?;
+                        if let Type::ColumnName = col.rule {
+                            match names.get(name.as_str()) {
+                                Some((&ColumnRole::User, pos)) => {
+                                    if pk_positions.contains(pos) {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::Query,
+                                            Some(format!(
+                                                "it is illegal to update primary key column: {}",
+                                                name
+                                            )),
+                                        ));
+                                    }
+                                    if update_defs.contains_key(pos) {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::Query,
+                                            Some(format!("The same column is specified twice in update list: {}", name))
+                                        ));
+                                    }
+                                    update_defs.insert(*pos, expr_id);
+                                }
+                                Some((&ColumnRole::Sharding, _)) => {
+                                    return Err(SbroadError::FailedTo(
+                                        Action::Update,
+                                        Some(Entity::Column),
+                                        format!("system column {name} cannot be updated"),
+                                    ))
+                                }
+                                None => {
+                                    return Err(SbroadError::NotFound(
+                                        Entity::Column,
+                                        (*name).to_string(),
+                                    ))
+                                }
+                            }
+                        } else {
+                            return Err(SbroadError::Invalid(
+                                Entity::Type,
+                                Some(format!("expected a Column name in insert, got {col:?}.")),
+                            ));
+                        }
+                    }
+                    let update_id = plan.add_update(&relation, &update_defs, rel_child_id)?;
+                    map.add(id, update_id);
+                }
                 Type::Delete => {
                     // Get table name and selection plan node id.
                     let (proj_child_id, table_name) = if let Some(child_id) = node.children.first()
@@ -1764,6 +1875,8 @@ impl Ast for AbstractSyntaxTree {
                 | Type::TypeText
                 | Type::TypeUnsigned
                 | Type::TypeVarchar
+                | Type::UpdateList
+                | Type::UpdateItem
                 | Type::Vinyl => {}
                 rule => {
                     return Err(SbroadError::NotImplemented(

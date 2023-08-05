@@ -236,6 +236,22 @@ impl Plan {
                     writeln!(buf, "Motion [policy = {policy:?}]")?;
                 }
                 Relational::UnionAll { .. } => writeln!(buf, "UnionAll")?,
+                Relational::Update {
+                    relation,
+                    update_columns_map,
+                    ..
+                } => {
+                    writeln!(buf, "Update")?;
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Update columns map:")?;
+                    for (rel_pos, proj_pos) in update_columns_map {
+                        formatted_tabulate(buf, tabulation_number + 2)?;
+                        writeln!(
+                            buf,
+                            "Update {relation} column on pos {rel_pos} to child projection column on pos {proj_pos}"
+                        )?;
+                    }
+                }
                 Relational::Delete { .. } => writeln!(buf, "Delete")?,
                 Relational::Insert { .. } => writeln!(buf, "Insert")?,
                 Relational::Except { .. } => writeln!(buf, "Except")?,
@@ -252,6 +268,7 @@ impl Plan {
                 | Relational::Values { children, .. }
                 | Relational::Motion { children, .. }
                 | Relational::UnionAll { children, .. }
+                | Relational::Update { children, .. }
                 | Relational::Having { children, .. }
                 | Relational::GroupBy { children, .. }
                 | Relational::ValuesRow { children, .. } => {
@@ -282,6 +299,7 @@ impl Plan {
                 | Relational::Values { output, .. }
                 | Relational::Motion { output, .. }
                 | Relational::UnionAll { output, .. }
+                | Relational::Update { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "Output_id: {output}")?;

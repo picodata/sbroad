@@ -20,7 +20,10 @@ use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::tree::traversal::{BreadthFirst, PostOrder, REL_CAPACITY};
+use crate::ir::relation::Column;
+use crate::ir::tree::traversal::{
+    BreadthFirst, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
+};
 use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
@@ -147,6 +150,8 @@ impl Nodes {
     }
 }
 
+/// One level of `Slices`.
+/// Element of `slice` vec is a `motion_id` to execute.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Slice {
     slice: Vec<usize>,
@@ -170,6 +175,8 @@ impl Slice {
     }
 }
 
+/// Vec of `motion_id` levels (see `slices` field of `Plan` structure for more information).
+/// Element of `slices` vec is one level containing several `motion_id`s to execute.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Slices {
     pub slices: Vec<Slice>,
@@ -554,10 +561,74 @@ impl Plan {
         self.slices.clone()
     }
 
-    /// Get relation in the plan by its name.
-    #[must_use]
-    pub fn get_relation(&self, name: &str) -> Option<&Table> {
-        self.relations.get(name)
+    /// Get relation in the plan by its name or returns error.
+    ///
+    /// # Errors
+    /// - no relation with given name
+    pub fn get_relation_or_error(&self, name: &str) -> Result<&Table, SbroadError> {
+        self.relations
+            .get(name)
+            .ok_or_else(|| SbroadError::NotFound(Entity::Table, format!("with name {name}")))
+    }
+
+    /// Get relation in the plan by its name or returns error.
+    ///
+    /// # Errors
+    /// - invalid table name
+    /// - invalid column index
+    pub fn get_relation_column(
+        &self,
+        table_name: &str,
+        col_idx: usize,
+    ) -> Result<&Column, SbroadError> {
+        self.get_relation_or_error(table_name)?
+            .columns
+            .get(col_idx)
+            .ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Column,
+                    Some(format!(
+                        "invalid column position {col_idx} for table {table_name}"
+                    )),
+                )
+            })
+    }
+
+    /// Check whether given expression contains aggregates.
+    /// If `check_top` is false, the root expression node is not
+    /// checked.
+    ///
+    /// # Errors
+    /// - node is not an expression
+    /// - invalid expression tree
+    pub fn contains_aggregates(
+        &self,
+        expr_id: usize,
+        check_top: bool,
+    ) -> Result<bool, SbroadError> {
+        let filter = |id: usize| -> bool {
+            matches!(
+                self.get_node(id),
+                Ok(Node::Expression(Expression::StableFunction { .. }))
+            )
+        };
+        let mut dfs = PostOrderWithFilter::with_capacity(
+            |x| self.nodes.expr_iter(x, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        for (_, id) in dfs.iter(expr_id) {
+            if !check_top && id == expr_id {
+                continue;
+            }
+            if let Node::Expression(Expression::StableFunction { name, .. }) = self.get_node(id)? {
+                if Expression::is_aggregate_name(name) {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     /// Construct a plan from the YAML file.
@@ -771,6 +842,14 @@ impl Plan {
     /// - supplied id does not correspond to `Row` node
     pub fn get_row_list(&self, row_id: usize) -> Result<&[usize], SbroadError> {
         self.get_expression_node(row_id)?.get_row_list()
+    }
+
+    /// Gets mut list of `Row` children ids
+    ///
+    /// # Errors
+    /// - supplied id does not correspond to `Row` node
+    pub fn get_mut_row_list(&mut self, row_id: usize) -> Result<&mut Vec<usize>, SbroadError> {
+        self.get_mut_expression_node(row_id)?.get_mut_row_list()
     }
 
     /// Replace expression that is not root of the tree (== has parent)

@@ -378,6 +378,9 @@ where
                 | Relational::Having {
                     children, output, ..
                 }
+                | Relational::Update {
+                    children, output, ..
+                }
                 | Relational::ScanSubQuery {
                     children, output, ..
                 } => {

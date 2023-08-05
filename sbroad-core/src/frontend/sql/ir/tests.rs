@@ -1085,7 +1085,10 @@ fn front_sql_aggregate_inside_aggregate() {
         .optimize()
         .unwrap_err();
 
-    assert_eq!("invalid query: aggregate function inside aggregate function is not allowed. Got `sum` inside `count`", err.to_string());
+    assert_eq!(
+        "invalid query: aggregate function inside aggregate function is not allowed.",
+        err.to_string()
+    );
 }
 
 #[test]
@@ -2396,6 +2399,156 @@ fn front_sql_insert_9() {
     motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update1() {
+    let input = r#"update "t" set "a" = 1"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t"
+"b" = COL_1
+"d" = COL_3
+"a" = COL_0
+"c" = COL_2
+    motion [policy: segment([])]
+        projection (1::unsigned -> COL_0, "t"."b"::unsigned -> COL_1, "t"."c"::unsigned -> COL_2, "t"."d"::unsigned -> COL_3, "t"."a"::unsigned -> COL_4, "t"."b"::unsigned -> COL_5)
+            scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update2() {
+    let input = r#"update "t" set "c" = "a" + "b""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t"
+"c" = COL_0
+    motion [policy: local]
+        projection (("t"."a"::unsigned) + ("t"."b"::unsigned) -> COL_0, "t"."b"::unsigned -> COL_1)
+            scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update3() {
+    let input = r#"update "t" set "c" = "a" + "b" where "c" = 1"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t"
+"c" = COL_0
+    motion [policy: local]
+        projection (("t"."a"::unsigned) + ("t"."b"::unsigned) -> COL_0, "t"."b"::unsigned -> COL_1)
+            selection ROW("t"."c"::unsigned) = ROW(1::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update4() {
+    let input = r#"update "t" set
+    "d" = "b1"*2,
+    "c" = "b1"*2
+    from (select "a" as "a1", "b" as "b1" from "t1")
+    where "c" = "b1""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t"
+"d" = COL_0
+"c" = COL_0
+    motion [policy: local]
+        projection (("b1"::integer) * (2::unsigned) -> COL_0, "t"."b"::unsigned -> COL_1)
+            join on ROW("t"."c"::unsigned) = ROW("b1"::integer)
+                scan "t"
+                    projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d")
+                        scan "t"
+                motion [policy: full]
+                    scan
+                        projection ("t1"."a"::string -> "a1", "t1"."b"::integer -> "b1")
+                            scan "t1"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update5() {
+    let input = r#"update "t3" set
+    "b" = "id"
+    from "test_space"
+    where "a" = "id""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t3"
+"b" = COL_0
+    motion [policy: local]
+        projection ("test_space"."id"::unsigned -> COL_0, "t3"."a"::string -> COL_1)
+            join on ROW("t3"."a"::string) = ROW("test_space"."id"::unsigned)
+                scan "t3"
+                    projection ("t3"."a"::string -> "a", "t3"."b"::integer -> "b")
+                        scan "t3"
+                scan "test_space"
+                    projection ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op")
+                        scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_update6() {
+    let input = r#"update "t3" set
+    "b" = 2
+    where "b" in (select sum("b") as s from "t3")"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"update "t3"
+"b" = COL_0
+    motion [policy: local]
+        projection (2::unsigned -> COL_0, "t3"."a"::string -> COL_1)
+            selection ROW("t3"."b"::integer) in ROW($0)
+                scan "t3"
+subquery $0:
+motion [policy: full]
+                    scan
+                        projection (sum(("sum_18"::decimal))::decimal -> "S")
+                            motion [policy: full]
+                                scan
+                                    projection (sum(("t3"."b"::integer))::decimal -> "sum_18")
+                                        scan "t3"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

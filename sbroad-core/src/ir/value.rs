@@ -885,7 +885,7 @@ impl From<Value> for EncodedValue<'_> {
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(untagged)]
 pub enum MsgPackValue<'v> {
     Boolean(&'v bool),

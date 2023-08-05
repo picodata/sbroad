@@ -51,6 +51,8 @@ pub enum Entity {
     Metadata,
     /// corresponds to enum MotionPolicy
     Motion,
+    /// corresponds to enum MotionOpcode
+    MotionOpcode,
     /// tarantool msgpack
     MsgPack,
     /// general variant for Name of some object
@@ -115,14 +117,20 @@ pub enum Entity {
     Target,
     /// tarantool transaction
     Transaction,
+    /// Tuple builder command
+    TupleBuilderCommand,
     /// general variant for tuple
     Tuple,
     /// general variant for type of some object
     Type,
+    /// corresponds to relational node Update
+    Update,
     /// general variant for value of some object
     Value,
     /// corresponds to struct VirtualTable
     VirtualTable,
+    /// corresponds to struct VTableKey
+    VTableKey,
 }
 
 impl fmt::Display for Entity {
@@ -149,6 +157,7 @@ impl fmt::Display for Entity {
             Entity::KeyDef => "key definition".to_string(),
             Entity::Metadata => "metadata".to_string(),
             Entity::Motion => "motion".to_string(),
+            Entity::MotionOpcode => "motion opcode".to_string(),
             Entity::MsgPack => "msgpack".to_string(),
             Entity::Name => "name".to_string(),
             Entity::Node => "node".to_string(),
@@ -183,9 +192,12 @@ impl fmt::Display for Entity {
             Entity::Target => "target".to_string(),
             Entity::Transaction => "transaction".to_string(),
             Entity::Tuple => "tuple".to_string(),
+            Entity::TupleBuilderCommand => "TupleBuilderCommand".to_string(),
             Entity::Type => "type".to_string(),
+            Entity::Update => "Update node".to_string(),
             Entity::Value => "value".to_string(),
             Entity::VirtualTable => "virtual table".to_string(),
+            Entity::VTableKey => "virtual table key".to_string(),
         };
         write!(f, "{p}")
     }
@@ -212,6 +224,8 @@ pub enum Action {
     ReplaceOnConflict,
     Retrieve,
     Serialize,
+    Update,
+    Upsert,
 }
 
 impl fmt::Display for Action {
@@ -235,6 +249,8 @@ impl fmt::Display for Action {
             Action::ReplaceOnConflict => "replace on conflict".to_string(),
             Action::Retrieve => "retrieve".to_string(),
             Action::Serialize => "serialize".to_string(),
+            Action::Update => "update".to_string(),
+            Action::Upsert => "upsert".to_string(),
         };
         write!(f, "{p}")
     }

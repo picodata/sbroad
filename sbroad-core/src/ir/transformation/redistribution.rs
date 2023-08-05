@@ -8,7 +8,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
-use crate::ir::operator::{Bool, JoinKind, Relational, Unary};
+use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
@@ -19,10 +19,9 @@ use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
-pub(crate) mod delete;
+pub(crate) mod dml;
 pub(crate) mod eq_cols;
 pub(crate) mod groupby;
-pub(crate) mod insert;
 
 pub(crate) enum JoinChild {
     Inner,
@@ -104,7 +103,12 @@ pub type ColumnPosition = usize;
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionOpcode {
     PrimaryKey(Vec<ColumnPosition>),
-    Projection(Vec<ColumnPosition>),
+    ReshardIfNeeded,
+    RearrangeForShardedUpdate {
+        update_id: usize,
+        old_shard_columns_len: usize,
+        new_shard_columns_positions: Vec<ColumnPosition>,
+    },
 }
 
 /// Helper struct that unwraps `Expression::Bool` fields.
@@ -131,7 +135,22 @@ impl BoolOp {
     }
 }
 
-pub type Program = Vec<MotionOpcode>;
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Program(pub Vec<MotionOpcode>);
+
+impl Default for Program {
+    fn default() -> Self {
+        Program(vec![MotionOpcode::ReshardIfNeeded])
+    }
+}
+
+impl Program {
+    #[must_use]
+    pub fn new(program: Vec<MotionOpcode>) -> Self {
+        Program(program)
+    }
+}
+
 type ChildId = usize;
 type DataTransformation = (MotionPolicy, Program);
 
@@ -543,7 +562,7 @@ impl Plan {
         for (_, bool_node) in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
-                strategy.add_child(id, policy, Program::new());
+                strategy.add_child(id, policy, Program::default());
             }
         }
 
@@ -551,7 +570,7 @@ impl Plan {
         for (_, unary_node) in &unary_nodes {
             let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, *unary_node)?;
             if let Some((id, policy)) = unary_strategy {
-                strategy.add_child(id, policy, Program::new());
+                strategy.add_child(id, policy, Program::default());
             }
         }
 
@@ -904,7 +923,7 @@ impl Plan {
         let mut strategy = Strategy::new(rel_id);
         if let Some((_, children)) = join_children.split_first() {
             for child_id in children {
-                strategy.add_child(*child_id, MotionPolicy::Full, Program::new());
+                strategy.add_child(*child_id, MotionPolicy::Full, Program::default());
             }
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -954,7 +973,7 @@ impl Plan {
             let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
-                strategy.add_child(id, policy, Program::new());
+                strategy.add_child(id, policy, Program::default());
             }
             if sq_strategies_len > 0 {
                 continue;
@@ -1034,7 +1053,7 @@ impl Plan {
             };
             inner_map.insert(node_id, new_inner_policy.clone());
         }
-        strategy.add_child(inner_child, new_inner_policy, Program::new());
+        strategy.add_child(inner_child, new_inner_policy, Program::default());
         self.create_motion_nodes(strategy)?;
         Ok(())
     }
@@ -1227,8 +1246,8 @@ impl Plan {
             // above we checked that at least one child has Distribution::Single
             (_, _) => return Err(SbroadError::Invalid(Entity::Distribution, None)),
         };
-        strategy.add_child(outer_id, outer_policy, Program::new());
-        strategy.add_child(inner_id, inner_policy, Program::new());
+        strategy.add_child(outer_id, outer_policy, Program::default());
+        strategy.add_child(inner_id, inner_policy, Program::default());
 
         let subqueries = self
             .get_relational_children(join_id)?
@@ -1239,15 +1258,157 @@ impl Plan {
             .1;
         for sq in subqueries {
             // todo: improve subqueries motions
-            strategy.add_child(*sq, MotionPolicy::Full, Program::new());
+            strategy.add_child(*sq, MotionPolicy::Full, Program::default());
         }
         Ok(Some(strategy))
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn resolve_update_conflicts(&mut self, update_id: usize) -> Result<Strategy, SbroadError> {
+        if let Relational::Update { strategy: kind, .. } = self.get_relation_node(update_id)? {
+            let mut map = Strategy::new(update_id);
+            let table = self.dml_node_table(update_id)?;
+            let child_id = self.get_relational_child(update_id, 0)?;
+            if !matches!(
+                self.get_relation_node(child_id)?,
+                Relational::Projection { .. }
+            ) {
+                return Err(SbroadError::Invalid(
+                    Entity::Update,
+                    Some(format!("expected Projection under Update ({update_id})")),
+                ));
+            }
+            match kind {
+                UpdateStrategy::ShardedUpdate { .. } => {
+                    let new_shard_cols_positions = table.get_sharding_positions().to_vec();
+                    let op = MotionOpcode::RearrangeForShardedUpdate {
+                        update_id,
+                        old_shard_columns_len: table.shard_key.positions.len(),
+                        new_shard_columns_positions: new_shard_cols_positions,
+                    };
+
+                    // Check child distribution.
+
+                    // Projection for sharded update always looks like this:
+                    // `select new_tuple, old_shard_key from t`
+                    // So the child must always have distribution on `old_shard_key`.
+
+                    let child_output_id = self.get_relation_node(child_id)?.output();
+                    let child_dist = self.get_distribution(child_output_id)?;
+                    // Len of the new tuple, 1 is subtracted because new tuple does not
+                    // contain bucket_id.
+                    let projection_len = self.get_row_list(child_output_id)?.len();
+                    let new_tuple_len = table.columns.len() - 1;
+                    let old_shard_key_positions =
+                        (new_tuple_len..projection_len).collect::<Vec<usize>>();
+                    let expected_key = Key::new(old_shard_key_positions);
+                    if let Distribution::Segment { keys } = child_dist {
+                        if !keys.iter().any(|key| *key == expected_key) {
+                            return Err(SbroadError::Invalid(
+                                Entity::Update,
+                                Some(format!(
+                                    "expected sharded update child to be \
+                                 always distributed on old sharding key. Child dist: {child_dist:?}"
+                                )),
+                            ));
+                        }
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Update,
+                            Some("expected update child to have segment distribution".into()),
+                        ));
+                    }
+                    let pk_op = MotionOpcode::PrimaryKey(table.primary_key.positions.clone());
+
+                    map.add_child(
+                        child_id,
+                        MotionPolicy::Segment(MotionKey::new()),
+                        Program(vec![pk_op, op]),
+                    );
+                }
+                UpdateStrategy::LocalUpdate { .. } => {
+                    // NB: currently when sharding column is not updated,
+                    // the children below projection will always have the same distribution
+                    // as update table, but this may change in the future: e.g. if join children
+                    // will be reordered. The projection itself may have different distribution:
+                    // Any/Segment, because it only contains needed update expressions and
+                    // pk key columns.
+
+                    // Check child below projection has update table distribution.
+                    // projection child
+                    let pr_child = self.get_relational_child(child_id, 0)?;
+                    let pr_child_output_id = self.get_relational_output(pr_child)?;
+                    let pr_child_dist = self.get_distribution(pr_child_output_id)?;
+                    if let Distribution::Segment { keys, .. } = pr_child_dist {
+                        // Some nodes below projection (projection for Join) may
+                        // remove bucket_id position, and shard_key.positions
+                        // can't be used directly.
+                        let expected_positions = {
+                            let child_alias_map = self
+                                .get_relation_node(pr_child)?
+                                .output_alias_position_map(&self.nodes)?;
+                            let mut expected_positions =
+                                Vec::with_capacity(table.shard_key.positions.len());
+                            for pos in &table.shard_key.positions {
+                                let col_name = &table
+                                    .columns
+                                    .get(*pos)
+                                    .ok_or_else(|| {
+                                        SbroadError::Invalid(
+                                            Entity::Table,
+                                            Some(format!("invalid shar key position: {pos}")),
+                                        )
+                                    })?
+                                    .name;
+                                let col_pos =
+                                    *child_alias_map.get(col_name.as_str()).ok_or_else(|| {
+                                        SbroadError::Invalid(
+                                            Entity::Update,
+                                            Some(format!(
+                                                "no shard column {} in projection child's output",
+                                                &col_name
+                                            )),
+                                        )
+                                    })?;
+                                expected_positions.push(col_pos);
+                            }
+                            expected_positions
+                        };
+                        if !keys.iter().any(|key| key.positions == expected_positions) {
+                            return Err(SbroadError::Invalid(
+                                Entity::Update,
+                                Some(format!(
+                                    "for local update expected children below \
+                                  Projection to have update table dist. Got: {pr_child_dist:?}"
+                                )),
+                            ));
+                        }
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Update,
+                            Some(format!(
+                                "expected child below projection to have Segment dist,\
+                             got: {pr_child_dist:?}"
+                            )),
+                        ));
+                    }
+
+                    map.add_child(child_id, MotionPolicy::Local, Program::default());
+                }
+            }
+            Ok(map)
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("expected Update node on id {update_id}")),
+            ))
+        }
+    }
+
     fn resolve_delete_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
         let mut map = Strategy::new(rel_id);
-        let child_id = self.delete_child_id(rel_id)?;
-        let space = self.delete_table(rel_id)?;
+        let child_id = self.dml_child_id(rel_id)?;
+        let space = self.dml_node_table(rel_id)?;
         let pk_len = space.primary_key.positions.len();
         if pk_len == 0 {
             return Err(SbroadError::UnexpectedNumberOfValues(format!(
@@ -1259,18 +1420,21 @@ impl Plan {
         let pk_pos: Vec<usize> = (0..pk_len).collect();
 
         // Mark primary keys in the motion's virtual table.
-        let program = vec![MotionOpcode::PrimaryKey(pk_pos)];
+        let program = vec![
+            MotionOpcode::PrimaryKey(pk_pos),
+            MotionOpcode::ReshardIfNeeded,
+        ];
 
         // Delete node alway produce a local segment policy
         // (i.e. materialization without bucket calculation).
-        map.add_child(child_id, MotionPolicy::Local, program);
+        map.add_child(child_id, MotionPolicy::Local, Program(program));
         Ok(map)
     }
 
     fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
         let mut map = Strategy::new(rel_id);
-        let motion_key = self.insert_child_motion_key(rel_id)?;
-        let child_id = self.insert_child_id(rel_id)?;
+        let motion_key = self.insert_motion_key(rel_id)?;
+        let child_id = self.dml_child_id(rel_id)?;
         let child_output_id = self.get_relation_node(child_id)?.output();
         let child_dist = self.get_distribution(child_output_id)?;
 
@@ -1282,7 +1446,7 @@ impl Plan {
                     map.add_child(
                         child_id,
                         MotionPolicy::LocalSegment(motion_key),
-                        Program::new(),
+                        Program::default(),
                     );
                     return Ok(map);
                 }
@@ -1293,13 +1457,17 @@ impl Plan {
                 map.add_child(
                     child_id,
                     MotionPolicy::LocalSegment(motion_key),
-                    Program::new(),
+                    Program::default(),
                 );
                 return Ok(map);
             }
         }
 
-        map.add_child(child_id, MotionPolicy::Segment(motion_key), Program::new());
+        map.add_child(
+            child_id,
+            MotionPolicy::Segment(motion_key),
+            Program::default(),
+        );
 
         Ok(map)
     }
@@ -1347,7 +1515,7 @@ impl Plan {
                             map.add_child(
                                 *right,
                                 MotionPolicy::Segment(key.into()),
-                                Program::new(),
+                                Program::default(),
                             );
                         }
                         Distribution::Single => {
@@ -1367,9 +1535,9 @@ impl Plan {
                                                 )
                                             })?,
                                         )),
-                                        Program::new(),
+                                        Program::default(),
                                     );
-                                    map.add_child(*right, MotionPolicy::None, Program::new());
+                                    map.add_child(*right, MotionPolicy::None, Program::default());
                                 }
                                 Distribution::Single => {
                                     // we could redistribute both children by any combination of columns,
@@ -1379,14 +1547,14 @@ impl Plan {
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)],
                                         }),
-                                        Program::new(),
+                                        Program::default(),
                                     );
                                     map.add_child(
                                         *right,
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)],
                                         }),
-                                        Program::new(),
+                                        Program::default(),
                                     );
                                 }
                                 _ => {
@@ -1396,14 +1564,14 @@ impl Plan {
                                         MotionPolicy::Segment(MotionKey {
                                             targets: vec![Target::Reference(0)], // any combination of columns would suffice
                                         }),
-                                        Program::new(),
+                                        Program::default(),
                                     );
-                                    map.add_child(*right, MotionPolicy::Full, Program::new());
+                                    map.add_child(*right, MotionPolicy::Full, Program::default());
                                 }
                             }
                         }
                         _ => {
-                            map.add_child(*right, MotionPolicy::Full, Program::new());
+                            map.add_child(*right, MotionPolicy::Full, Program::default());
                         }
                     }
                     return Ok(map);
@@ -1447,7 +1615,7 @@ impl Plan {
                             MotionPolicy::Segment(MotionKey {
                                 targets: vec![Target::Reference(0)],
                             }),
-                            Program::new(),
+                            Program::default(),
                         );
                     }
                     if let Distribution::Single = right_dist {
@@ -1456,7 +1624,7 @@ impl Plan {
                             MotionPolicy::Segment(MotionKey {
                                 targets: vec![Target::Reference(0)],
                             }),
-                            Program::new(),
+                            Program::default(),
                         );
                     }
                     return Ok(map);
@@ -1535,6 +1703,11 @@ impl Plan {
                     // Insert output tuple already has relation's distribution.
                     let strategy = self.resolve_insert_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
+                }
+                Relational::Update { output, .. } => {
+                    let strategy = self.resolve_update_conflicts(id)?;
+                    self.create_motion_nodes(strategy)?;
+                    self.set_distribution(output)?;
                 }
                 Relational::Except { output, .. } => {
                     let strategy = self.resolve_except_conflicts(id)?;

@@ -1,8 +1,8 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
-use crate::ir::expression::Expression;
 use crate::ir::expression::Expression::StableFunction;
+use crate::ir::expression::{Comparator, Expression, ReferencePolicy, EXPR_HASH_DEPTH};
 use crate::ir::operator::Relational;
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
@@ -19,7 +19,6 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 const AGGR_CAPACITY: usize = 10;
-const EXPR_HASH_DEPTH: usize = 5;
 
 /// Helper struct to store metadata about aggregates
 #[derive(Clone, Debug)]
@@ -99,122 +98,12 @@ impl<'plan, 'args> AggregateSignature<'plan, 'args> {
     }
 }
 
-struct GroupingExpression<'plan> {
-    pub id: usize,
-    pub plan: &'plan Plan,
-}
-
-impl<'plan> GroupingExpression<'plan> {
-    pub fn new(id: usize, plan: &'plan Plan) -> Self {
-        GroupingExpression { id, plan }
-    }
-}
-
-impl<'plan> Hash for GroupingExpression<'plan> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.plan.hash_for_expr(self.id, state, EXPR_HASH_DEPTH);
-    }
-}
-
-impl<'plan> PartialEq for GroupingExpression<'plan> {
-    fn eq(&self, other: &Self) -> bool {
-        self.plan
-            .are_subtrees_equal(self.id, other.id)
-            .unwrap_or(false)
-    }
-}
-
-impl<'plan> Eq for GroupingExpression<'plan> {}
-
-impl Plan {
-    /// Compute hash from plan expression
-    ///
-    /// # Note
-    /// This function assumes that `Reference`s may come from different relational nodes,
-    /// and therefore hash for `Reference` is computed by hash from corresponding alias.
-    ///
-    /// This behavior is needed to filter duplicate `GroupBy` expressions/aggregates that may
-    /// come from different relational nodes. For example, you may have an aggregate that comes
-    /// from projection and the same aggregate from having:
-    /// `select sum(a) from t having sum(a) > 1`
-    fn hash_for_expr<H: Hasher>(&self, top: usize, state: &mut H, depth: usize) {
-        if depth == 0 {
-            return;
-        }
-        let Ok(node) = self.get_expression_node(top) else {
-            return;
-        };
-        match node {
-            Expression::Alias { child, name } => {
-                name.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
-            }
-            Expression::Bool { op, left, right } => {
-                op.hash(state);
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
-            }
-            Expression::Arithmetic {
-                op,
-                left,
-                right,
-                with_parentheses,
-            } => {
-                op.hash(state);
-                with_parentheses.hash(state);
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
-            }
-            Expression::Cast { child, to } => {
-                to.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
-            }
-            Expression::Concat { left, right } => {
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
-            }
-            Expression::Constant { value } => {
-                value.hash(state);
-            }
-            Expression::Reference { .. } => {
-                self.get_alias_from_reference_node(node)
-                    .unwrap_or("")
-                    .hash(state);
-            }
-            Expression::Row { list, .. } => {
-                for child in list {
-                    self.hash_for_expr(*child, state, depth - 1);
-                }
-            }
-            StableFunction {
-                name,
-                children,
-                is_distinct,
-                func_type,
-            } => {
-                is_distinct.hash(state);
-                func_type.hash(state);
-                name.hash(state);
-                for child in children {
-                    self.hash_for_expr(*child, state, depth - 1);
-                }
-            }
-            Expression::Unary { child, op } => {
-                op.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
-            }
-            Expression::CountAsterisk => {
-                "CountAsterisk".hash(state);
-            }
-        }
-    }
-}
-
 impl<'plan, 'args> Hash for AggregateSignature<'plan, 'args> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
+        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
         for arg in self.arguments {
-            self.plan.hash_for_expr(*arg, state, EXPR_HASH_DEPTH);
+            comp.hash_for_expr(*arg, state, EXPR_HASH_DEPTH);
         }
     }
 }
@@ -231,6 +120,33 @@ impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
 }
 
 impl<'plan, 'args> Eq for AggregateSignature<'plan, 'args> {}
+
+struct GroupingExpression<'plan> {
+    pub id: usize,
+    pub plan: &'plan Plan,
+}
+
+impl<'plan> GroupingExpression<'plan> {
+    pub fn new(id: usize, plan: &'plan Plan) -> Self {
+        GroupingExpression { id, plan }
+    }
+}
+
+impl<'plan> Hash for GroupingExpression<'plan> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        comp.hash_for_expr(self.id, state, EXPR_HASH_DEPTH);
+    }
+}
+
+impl<'plan> PartialEq for GroupingExpression<'plan> {
+    fn eq(&self, other: &Self) -> bool {
+        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        comp.are_subtrees_equal(self.id, other.id).unwrap_or(false)
+    }
+}
+
+impl<'plan> Eq for GroupingExpression<'plan> {}
 
 impl<'plan> AggrCollector<'plan> {
     pub fn with_capacity(plan: &'plan Plan, capacity: usize) -> AggrCollector<'plan> {
@@ -730,31 +646,11 @@ impl Plan {
     fn validate_aggregates(&self, aggr_infos: &Vec<AggrInfo>) -> Result<(), SbroadError> {
         for info in aggr_infos {
             let top = info.aggr.fun_id;
-            let filter = |node_id: usize| -> bool {
-                matches!(
-                    self.get_node(node_id),
-                    Ok(Node::Expression(Expression::StableFunction { .. }))
-                )
-            };
-            let mut dfs = PostOrderWithFilter::with_capacity(
-                |x| self.nodes.expr_iter(x, false),
-                EXPR_CAPACITY,
-                Box::new(filter),
-            );
-            for (_, id) in dfs.iter(top) {
-                if id == top {
-                    continue;
-                }
-                if let Node::Expression(Expression::StableFunction { name, .. }) =
-                    self.get_node(id)?
-                {
-                    if Expression::is_aggregate_name(name) {
-                        return Err(SbroadError::Invalid(
-                            Entity::Query,
-                            Some(format!("aggregate function inside aggregate function is not allowed. Got `{name}` inside `{}`", info.aggr.kind))
-                        ));
-                    }
-                }
+            if self.contains_aggregates(top, false)? {
+                return Err(SbroadError::Invalid(
+                    Entity::Query,
+                    Some("aggregate function inside aggregate function is not allowed.".into()),
+                ));
             }
         }
 
@@ -1671,7 +1567,7 @@ impl Plan {
                 SbroadError::Invalid(Entity::Plan, Some("Reduce stage has no nodes!".into()))
             })?;
             let mut strategy = Strategy::new(last_final_id);
-            strategy.add_child(motion_parent, MotionPolicy::Full, Program::new());
+            strategy.add_child(motion_parent, MotionPolicy::Full, Program::default());
             self.create_motion_nodes(strategy)?;
 
             self.set_dist(self.get_relational_output(proj_id)?, Distribution::Single)?;
@@ -1703,7 +1599,7 @@ impl Plan {
                         .map(|x| Target::Reference(*x))
                         .collect::<Vec<Target>>(),
                 }),
-                Program::new(),
+                Program::default(),
             );
             self.create_motion_nodes(strategy)?;
 

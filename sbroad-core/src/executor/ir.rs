@@ -123,35 +123,53 @@ impl ExecutionPlan {
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
         let mut vtable = vtable;
-        if let Relational::Motion {
-            policy, program, ..
-        } = self.get_ir_plan().get_relation_node(motion_id)?
+        let program_len = if let Relational::Motion { program, .. } =
+            self.get_ir_plan().get_relation_node(motion_id)?
         {
-            // Resharding must be done before applying opcodes
-            // to the virtual table. Otherwise projection can
-            // remove sharding columns.
-            match policy {
-                MotionPolicy::Segment(shard_key) | MotionPolicy::LocalSegment(shard_key) => {
-                    vtable.reshard(shard_key, runtime)?;
-                }
-                MotionPolicy::Full | MotionPolicy::Local | MotionPolicy::None => {}
-            }
-            for opcode in program {
-                match opcode {
-                    MotionOpcode::PrimaryKey(positions) => {
-                        vtable.set_primary_key(positions)?;
-                    }
-                    MotionOpcode::Projection(positions) => {
-                        vtable.project(positions)?;
-                    }
-                }
-            }
+            program.0.len()
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("invalid motion node".to_string()),
             ));
         };
+        for op_idx in 0..program_len {
+            let plan = self.get_ir_plan();
+            let opcode = plan.get_motion_opcode(motion_id, op_idx)?;
+            match opcode {
+                MotionOpcode::ReshardIfNeeded => {
+                    // Resharding must be done before applying projection
+                    // to the virtual table. Otherwise projection can
+                    // remove sharding columns.
+                    match plan.get_motion_policy(motion_id)? {
+                        MotionPolicy::Segment(shard_key)
+                        | MotionPolicy::LocalSegment(shard_key) => {
+                            vtable.reshard(shard_key, runtime)?;
+                        }
+                        MotionPolicy::Full | MotionPolicy::Local | MotionPolicy::None => {}
+                    }
+                }
+                MotionOpcode::PrimaryKey(positions) => {
+                    vtable.set_primary_key(positions)?;
+                }
+                MotionOpcode::RearrangeForShardedUpdate {
+                    update_id,
+                    old_shard_columns_len,
+                    new_shard_columns_positions,
+                } => {
+                    let update_id = *update_id;
+
+                    if let Some(v) = vtable.rearrange_for_update(
+                        runtime,
+                        *old_shard_columns_len,
+                        new_shard_columns_positions,
+                    )? {
+                        let plan = self.get_mut_ir_plan();
+                        plan.set_update_delete_tuple_len(update_id, v)?;
+                    }
+                }
+            }
+        }
 
         let need_init = self.get_vtables().is_none();
         if need_init {
@@ -222,6 +240,7 @@ impl ExecutionPlan {
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::UnionAll { .. }
+            | Relational::Update { .. }
             | Relational::Values { .. }
             | Relational::Having { .. }
             | Relational::ValuesRow { .. } => Ok(*top_id),
@@ -457,7 +476,8 @@ impl ExecutionPlan {
 
                     if let Relational::ScanRelation { relation, .. }
                     | Relational::Insert { relation, .. }
-                    | Relational::Delete { relation, .. } = rel
+                    | Relational::Delete { relation, .. }
+                    | Relational::Update { relation, .. } = rel
                     {
                         let table = ir_plan
                             .relations
@@ -574,7 +594,7 @@ impl ExecutionPlan {
     pub fn query_type(&self) -> Result<QueryType, SbroadError> {
         let top_id = self.get_ir_plan().get_top()?;
         let top = self.get_ir_plan().get_relation_node(top_id)?;
-        if top.is_insert() || top.is_delete() {
+        if top.is_dml() {
             Ok(QueryType::DML)
         } else {
             Ok(QueryType::DQL)

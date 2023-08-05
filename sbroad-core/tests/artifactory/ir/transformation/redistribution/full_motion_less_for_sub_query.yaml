@@ -183,7 +183,7 @@ nodes:
           children:
             - 17
           policy: Full
-          program: []
+          program: [ReshardIfNeeded]
           output: 29
           is_child_subquery: true
 relations:

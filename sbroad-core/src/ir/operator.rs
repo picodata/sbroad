@@ -6,6 +6,7 @@ use ahash::RandomState;
 
 use crate::collection;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
@@ -16,9 +17,10 @@ use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
 use crate::ir::distribution::{Distribution, KeySet};
+use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
-use crate::ir::relation::ColumnRole;
-use crate::ir::transformation::redistribution::JoinChild;
+use crate::ir::relation::{Column, ColumnRole};
+use crate::ir::transformation::redistribution::{ColumnPosition, JoinChild};
 
 /// Binary operator returning Bool expression.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
@@ -217,6 +219,72 @@ impl Display for ConflictStrategy {
     }
 }
 
+/// Execution strategy for update node.
+///
+/// Depending on whether some sharding column
+/// is updated or not, the update will be executed
+/// differently.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum UpdateStrategy {
+    /// Strategy when some sharding column is updated.
+    /// When some sharding column is changed, it changes
+    /// the bucket_id of the tuple. When this happens
+    /// tuple may be needed to relocated on the other
+    /// replicaset. This works as first selecting needed
+    /// tuples, redistributing them and then deletion and insertion
+    /// in the same local transaction on each storage.
+    ///
+    /// # Details
+    /// Update works as follows:
+    /// 1. Projection below update selects whole table tuple
+    /// with updated columns (but without bucket_id) and
+    /// old values for sharding columns.
+    /// 2. Then on the router each tuple is transformed into two
+    /// tuples (one for insertion and one for deletion):
+    ///     *  old values of sharding columns are popped out from original tuple
+    /// and used to calculate the bucket_id for deletion tuple. The original
+    /// tuple becomes the tuple for insertion.
+    ///     * deletion tuple is created from primary keys of insertion tuple.
+    ///     * bucket_id for insertion tuple is calculated using new shard key values.
+    /// 3. Because pk key can't be updated and insertion tuple contains
+    /// primary key + at least 1 sharding column and deletion tuple consists only from primary key
+    /// => len of insertion tuple > len of deletion tuple.
+    /// This invariant will be used to distinguish between these tuples on the storage (tuples are
+    /// stored in the same table, because currently whole sbroad assumes that motion
+    /// produces only one table). The len of deletion tuple is saved in this struct
+    /// variant
+    /// 4. On storages the table is traversed and in transaction first tuples are deleted,
+    /// then insertion tuples are inserted.
+    ShardedUpdate { delete_tuple_len: Option<usize> },
+    /// Strategy when no sharding column is updated.
+    ///
+    /// In this case because join/selection does not change
+    /// the distribution of data, update can be performed
+    /// locally, without any data motion. NB: this may
+    /// change if join children are reordered (update table scan
+    /// is not inner child) or join conflict resolution changes.
+    ///
+    /// Projection below update has the following structure:
+    /// ```sql
+    /// select upd_expr1, .., upd_expr, pk_col1, .., pk_col
+    /// ```
+    /// If some expressions are the same, the column is reused.
+    ///
+    /// # Example
+    /// ```sql
+    /// update t set
+    /// a = c + d
+    /// b = c + d
+    /// c = d
+    /// ```
+    /// Table t has pk columns `d, e`.
+    /// Then the following projection will be created:
+    /// ```sql
+    /// select c + d, d, e
+    /// ```
+    LocalUpdate,
+}
+
 /// Relational algebra operator returning a new tuple.
 ///
 /// Transforms input tuple(s) into the output one using the
@@ -250,6 +318,25 @@ pub enum Relational {
         output: usize,
         /// What to do in case there is a conflict during insert on storage
         conflict_strategy: ConflictStrategy,
+    },
+    Update {
+        /// Relation name.
+        relation: String,
+        /// Children ids. Update has exactly one child.
+        children: Vec<usize>,
+        /// Maps position of column being updated in table to corresponding position
+        /// in `Projection` below `Update`.
+        ///
+        /// For sharded `Update`, it will contain every table column except `bucket_id`
+        /// column. For local `Update` it will contain only update table columns.
+        update_columns_map: HashMap<ColumnPosition, ColumnPosition, RepeatableState>,
+        /// How this update must be executed.
+        strategy: UpdateStrategy,
+        /// Positions of primary columns in `Projection`
+        /// below `Update`.
+        pk_positions: Vec<ColumnPosition>,
+        /// Output id.
+        output: usize,
     },
     Join {
         /// Contains at least two elements: left and right node indexes
@@ -412,6 +499,7 @@ impl Relational {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
             | Relational::Having { output, .. }
+            | Relational::Update { output, .. }
             | Relational::Join { output, .. }
             | Relational::Delete { output, .. }
             | Relational::Insert { output, .. }
@@ -432,6 +520,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
+            | Relational::Update { output, .. }
             | Relational::Having { output, .. }
             | Relational::Join { output, .. }
             | Relational::Delete { output, .. }
@@ -453,6 +542,7 @@ impl Relational {
         match self {
             Relational::Except { children, .. }
             | Relational::GroupBy { children, .. }
+            | Relational::Update { children, .. }
             | Relational::Join { children, .. }
             | Relational::Having { children, .. }
             | Relational::Delete { children, .. }
@@ -476,6 +566,9 @@ impl Relational {
                 ref mut children, ..
             }
             | Relational::GroupBy {
+                ref mut children, ..
+            }
+            | Relational::Update {
                 ref mut children, ..
             }
             | Relational::Having {
@@ -526,6 +619,15 @@ impl Relational {
         matches!(self, Relational::Insert { .. })
     }
 
+    /// Checks if the node is dml node
+    #[must_use]
+    pub fn is_dml(&self) -> bool {
+        matches!(
+            self,
+            Relational::Insert { .. } | Relational::Update { .. } | Relational::Delete { .. }
+        )
+    }
+
     /// Checks that the node is a motion.
     #[must_use]
     pub fn is_motion(&self) -> bool {
@@ -553,6 +655,10 @@ impl Relational {
                 ..
             }
             | Relational::Delete {
+                children: ref mut old,
+                ..
+            }
+            | Relational::Update {
                 children: ref mut old,
                 ..
             }
@@ -626,6 +732,7 @@ impl Relational {
             | Relational::GroupBy { .. }
             | Relational::Having { .. }
             | Relational::Selection { .. }
+            | Relational::Update { .. }
             | Relational::Join { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
@@ -739,6 +846,256 @@ impl Plan {
         let except_id = self.nodes.push(Node::Relational(except));
         self.replace_parent_in_subtree(output, None, Some(except_id))?;
         Ok(except_id)
+    }
+
+    /// Add `Update` relational node.
+    ///
+    /// This function first looks whether some sharding column is
+    /// updated and then creates `Projection` and `Update` nodes
+    /// according to that. For details, see [`UpdateStrategy`].
+    ///
+    /// # Projection format
+    /// For sharded update:
+    /// ```text
+    /// table_tuple, old_shard_key
+    /// ```
+    /// `table_tuple` consists from table columns in the same order but:
+    /// 1. If column is updated, it is replaced with corresponding update expression
+    /// 2. `bucket_id` column is skipped
+    /// For example:
+    /// ```text
+    /// t: a b bucket_id c
+    /// shard_key: b c
+    /// pk: a b
+    ///
+    /// update t set c = 20
+    /// projection: a, b, 20, b, c
+    /// ```
+    ///
+    /// For local update:
+    /// ```text
+    /// update_exprs, pk_exprs
+    /// ```
+    /// All expressions are unique. Therefore `pk_exprs`
+    /// contains expression not present in `update_exprs`.
+    /// Example:
+    /// ```text
+    /// t: a b c d bucket_id
+    /// shard_key: a
+    /// pk: a
+    /// update t set
+    /// c = a,
+    /// b = a + 1
+    /// c = a + 1
+    ///             upd_exprs pk_exprs
+    /// projection: a,   a+1
+    /// ```
+    /// Note that here `pk_expr` are empty, because all pk columns are already
+    /// present in `upd_exps`.
+    ///
+    ///
+    /// # Arguments
+    /// * `update_defs` - mapping between column position in table
+    /// and corresponding update expression.
+    /// * `relation` - name of the table being updated.
+    /// * `rel_child_id` - id of `Update` child
+    ///
+    /// # Errors
+    /// - invalid update table
+    /// - invalid table columns positions in `update_defs`
+    #[allow(clippy::too_many_lines)]
+    pub fn add_update(
+        &mut self,
+        relation: &str,
+        update_defs: &HashMap<ColumnPosition, ExpressionId, RepeatableState>,
+        rel_child_id: usize,
+    ) -> Result<usize, SbroadError> {
+        // Create Reference node from given table column.
+        fn create_ref_from_column(
+            plan: &mut Plan,
+            relation: &str,
+            table_position_map: &HashMap<ColumnPosition, ColumnPosition>,
+            col_pos: usize,
+        ) -> Result<usize, SbroadError> {
+            let table = plan.get_relation_or_error(relation)?;
+            let col: &Column = table.columns.get(col_pos).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Table,
+                    Some(format!("expected to have at least {} columns", col_pos + 1)),
+                )
+            })?;
+            let output_pos = *table_position_map.get(&col_pos).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!(
+                        "Expected {} column in update child output",
+                        &col.name
+                    )),
+                )
+            })?;
+            let col_type = col.r#type.clone();
+            let node = Expression::Reference {
+                parent: None,
+                targets: Some(vec![0]),
+                position: output_pos,
+                col_type,
+            };
+            let id = plan.nodes.push(Node::Expression(node));
+            Ok(id)
+        }
+
+        let table = self.get_relation_or_error(relation)?;
+        // is shard key column updated
+        let is_sharded_update = table
+            .shard_key
+            .positions
+            .iter()
+            .any(|col| update_defs.contains_key(col));
+        // Columns of Projection that will be created
+        let mut projection_cols: Vec<usize> = Vec::with_capacity(update_defs.len());
+        // Positions of columns in Projection that constitute the primary key
+        let mut primary_key_positions: Vec<usize> =
+            Vec::with_capacity(table.primary_key.positions.len());
+        // Maps position in table of column being updated to corresponding position in Projection
+        let mut update_columns_map =
+            HashMap::with_capacity_and_hasher(update_defs.len(), RepeatableState);
+        // Helper map between table column position and corresponding column position in child's output
+        let child_map = self.table_position_map(relation, rel_child_id)?;
+
+        let update_kind = if is_sharded_update {
+            // For sharded Update Projection has the following format:
+            // table_tuple , sharding_key_columns
+            // table tuple is without bucket_id column
+
+            // Calculate primary key positions in table_tuple
+            let bucket_id_pos = table.get_bucket_id_position()?;
+            table.primary_key.positions.iter().for_each(|pos| {
+                if *pos < bucket_id_pos {
+                    primary_key_positions.push(*pos);
+                } else {
+                    primary_key_positions.push(*pos - 1);
+                }
+            });
+
+            // Create projection columns for table_tuple
+            let cols_len = table.columns.len();
+            // current projection column position
+            let mut proj_pos = 0;
+            for table_col in 0..cols_len {
+                let column = self.get_relation_column(relation, table_col)?;
+                // skip bucket_id
+                if let ColumnRole::Sharding = column.role {
+                    continue;
+                }
+                update_columns_map.insert(table_col, proj_pos);
+                let expr_id = if let Some(id) = update_defs.get(&table_col) {
+                    *id
+                } else {
+                    create_ref_from_column(self, relation, &child_map, table_col)?
+                };
+                projection_cols.push(expr_id);
+                proj_pos += 1;
+            }
+
+            // Create projection columns for sharding_key_columns
+            // todo(ars): some sharding column maybe already present in projection_cols
+            let table = self.get_relation_or_error(relation)?;
+            let shard_key_len = table.shard_key.positions.len();
+            for i in 0..shard_key_len {
+                let table = self.get_relation_or_error(relation)?;
+                let col_pos = *table.shard_key.positions.get(i).ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(format!("invalid shard col position {i}"))
+                })?;
+                let shard_col_expr_id =
+                    create_ref_from_column(self, relation, &child_map, col_pos)?;
+                projection_cols.push(shard_col_expr_id);
+            }
+            UpdateStrategy::ShardedUpdate {
+                delete_tuple_len: None,
+            }
+        } else {
+            // For local Update, projection has the following format:
+            // update_expressions, pk_expressions (not present in update_expressions)
+
+            // Helper map between expression and its position in projection.
+            let mut expr_to_col_pos: HashMap<PlanExpr, ColumnPosition> =
+                HashMap::with_capacity(update_defs.len());
+            // Expressions that form primary key of updated table.
+            let pk_expressions = table
+                .primary_key
+                .positions
+                .clone()
+                .iter()
+                .map(|pos| create_ref_from_column(self, relation, &child_map, *pos))
+                .collect::<Result<Vec<usize>, SbroadError>>()?;
+
+            let mut pos = 0;
+            // Add update_expressions
+            for (table_col, expr_id) in update_defs {
+                let expr = PlanExpr::new(*expr_id, self);
+                match expr_to_col_pos.entry(expr) {
+                    Entry::Occupied(o) => {
+                        let column_pos = *o.get();
+                        update_columns_map.insert(*table_col, column_pos);
+                    }
+                    Entry::Vacant(v) => {
+                        projection_cols.push(*expr_id);
+                        update_columns_map.insert(*table_col, pos);
+                        v.insert(pos);
+                        pos += 1;
+                    }
+                }
+            }
+
+            // Add pk_expressions
+            for expr_id in pk_expressions {
+                let expr = PlanExpr::new(expr_id, self);
+                match expr_to_col_pos.entry(expr) {
+                    Entry::Vacant(e) => {
+                        projection_cols.push(expr_id);
+                        primary_key_positions.push(pos);
+                        e.insert(pos);
+                        pos += 1;
+                    }
+                    Entry::Occupied(o) => {
+                        let column_pos = *o.get();
+                        primary_key_positions.push(column_pos);
+                    }
+                }
+            }
+            UpdateStrategy::LocalUpdate
+        };
+
+        // Generate aliases to projection expressions, because
+        // it is assumed that any projection column always has an alias.
+        for (pos, expr_id) in projection_cols.iter_mut().enumerate() {
+            let alias = format!("COL_{pos}");
+            let alias_id = self.nodes.push(Node::Expression(Expression::Alias {
+                child: *expr_id,
+                name: alias,
+            }));
+            *expr_id = alias_id;
+        }
+        let proj_output = self.nodes.add_row(projection_cols, None);
+        let proj_node = Relational::Projection {
+            children: vec![rel_child_id],
+            output: proj_output,
+            is_distinct: false,
+        };
+        let proj_id = self.nodes.push(Node::Relational(proj_node));
+        self.replace_parent_in_subtree(proj_output, None, Some(proj_id))?;
+        let upd_output = self.add_row_for_output(proj_id, &[], false)?;
+        let update_node = Relational::Update {
+            relation: relation.to_string(),
+            pk_positions: primary_key_positions,
+            children: vec![proj_id],
+            update_columns_map,
+            output: upd_output,
+            strategy: update_kind,
+        };
+        let update_id = self.nodes.push(Node::Relational(update_node));
+
+        Ok(update_id)
     }
 
     /// Adds insert node.
@@ -893,9 +1250,7 @@ impl Plan {
             } = child_node
             {
                 // We'll need it later to update the condition expression (borrow checker).
-                let table = self.get_relation(relation).ok_or_else(|| {
-                    SbroadError::NotFound(Entity::Table, format!("{relation} among plan relations"))
-                })?;
+                let table = self.get_relation_or_error(relation)?;
                 let sharding_column_pos = table.get_bucket_id_position()?;
 
                 // Wrap relation with sub-query scan.
@@ -1419,6 +1774,41 @@ impl Plan {
         ))
     }
 
+    /// Create a mapping between column positions
+    /// in table and corresponding positions in
+    /// relational node's output. Sharding
+    /// column is skipped.
+    ///
+    /// # Errors
+    /// - Node is not relational
+    /// - Output tuple is invalid
+    /// - Some table column is not found among output columns
+    pub fn table_position_map(
+        &self,
+        table_name: &str,
+        rel_id: usize,
+    ) -> Result<HashMap<ColumnPosition, ColumnPosition>, SbroadError> {
+        let table = self.get_relation_or_error(table_name)?;
+        let alias_to_pos = self
+            .get_relation_node(rel_id)?
+            .output_alias_position_map(&self.nodes)?;
+        let mut map: HashMap<ColumnPosition, ColumnPosition> =
+            HashMap::with_capacity(table.columns.len());
+        for (table_pos, col) in table.columns.iter().enumerate() {
+            if let ColumnRole::Sharding = col.role {
+                continue;
+            }
+            let output_pos = *alias_to_pos.get(col.name.as_str()).ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(format!(
+                    "no column with name {} in relational's ({}) output",
+                    &col.name, rel_id
+                ))
+            })?;
+            map.insert(table_pos, output_pos);
+        }
+        Ok(map)
+    }
+
     /// Synchronize values row output with the data tuple after parameter binding.
     ///
     /// # Errors
@@ -1534,6 +1924,21 @@ impl Plan {
             }
             _ => Ok(false),
         }
+    }
+
+    /// Get `Motion`'s node policy
+    ///
+    /// # Errors
+    /// - node is not motion
+    pub fn get_motion_policy(&self, motion_id: usize) -> Result<&MotionPolicy, SbroadError> {
+        let node = self.get_relation_node(motion_id)?;
+        if let Relational::Motion { policy, .. } = node {
+            return Ok(policy);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("expected Motion, got: {node:?}")),
+        ))
     }
 }
 

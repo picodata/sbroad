@@ -136,12 +136,19 @@ fn virtual_table_3() {
     assert_eq!(expected, vtable);
 }
 
-/// Test projecting a virtual table:
-/// - no duplicating columns in projection
-/// - no primary key
 #[test]
-fn virtual_table_4() {
+fn vtable_rearrange_for_update() {
     let mut vtable = VirtualTable::new();
+
+    // t: a (pk) b (shard key)
+    let pk_value = Value::from(1_u64);
+    let new_sh_key_value = Value::from(1_u64);
+    let old_sh_key_value = Value::from(2_u64);
+    let tuple = vec![
+        pk_value.clone(),
+        new_sh_key_value.clone(),
+        old_sh_key_value.clone(),
+    ];
     vtable.add_column(Column {
         name: "a".into(),
         r#type: Type::Integer,
@@ -152,55 +159,25 @@ fn virtual_table_4() {
         r#type: Type::Integer,
         role: ColumnRole::User,
     });
-    let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
-    let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
-    vtable.add_tuple(tuple1);
-    vtable.add_tuple(tuple2);
     vtable.set_alias("t").unwrap();
-    vtable.project(&[1]).unwrap();
+    vtable.add_tuple(tuple);
 
-    let tuple3 = vec![Value::from(2_u64)];
-    let tuple4 = vec![Value::from(4_u64)];
-    let expected = VirtualTable {
-        columns: vec![Column {
-            name: "b".into(),
-            r#type: Type::Integer,
-            role: ColumnRole::User,
-        }],
-        tuples: vec![tuple3, tuple4],
-        name: Some(String::from("t")),
-        primary_key: None,
-        bucket_index: VTableIndex::new(),
-    };
+    vtable.set_primary_key(&[0]).unwrap();
 
-    assert_eq!(expected, vtable);
-}
+    let engine = RouterRuntimeMock::new();
 
-/// Test projecting a virtual table:
-/// - there are some duplicating columns in projection
-/// - no primary key
-#[test]
-fn virtual_table_5() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
-    let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
-    vtable.add_tuple(tuple1);
-    vtable.add_tuple(tuple2);
-    vtable.set_alias("t").unwrap();
-    vtable.project(&[0, 0]).unwrap();
+    let old_shard_cols_len = 1;
+    let new_shard_cols_positions: Vec<usize> = vec![1];
+    vtable
+        .rearrange_for_update(&engine, old_shard_cols_len, &new_shard_cols_positions)
+        .unwrap();
 
-    let tuple3 = vec![Value::from(1_u64), Value::from(1_u64)];
-    let tuple4 = vec![Value::from(3_u64), Value::from(3_u64)];
+    let mut expected_index = VTableIndex::new();
+    let delete_tuple_bucket = engine.determine_bucket_id(&[&old_sh_key_value]).unwrap();
+    let insert_tuple_bucket = engine.determine_bucket_id(&[&new_sh_key_value]).unwrap();
+    expected_index.add_entry(delete_tuple_bucket, 1);
+    expected_index.add_entry(insert_tuple_bucket, 0);
+
     let expected = VirtualTable {
         columns: vec![
             Column {
@@ -209,164 +186,16 @@ fn virtual_table_5() {
                 role: ColumnRole::User,
             },
             Column {
-                name: "a".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
-        ],
-        tuples: vec![tuple3, tuple4],
-        name: Some(String::from("t")),
-        primary_key: None,
-        bucket_index: VTableIndex::new(),
-    };
-
-    assert_eq!(expected, vtable);
-}
-
-/// Test projecting a virtual table:
-/// - no duplicating columns in projection
-/// - primary key changes column order after projection
-#[test]
-fn virtual_table_6() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
-    let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
-    vtable.add_tuple(tuple1);
-    vtable.add_tuple(tuple2);
-    vtable.set_alias("t").unwrap();
-    vtable.set_primary_key(&[1]).unwrap();
-    vtable.project(&[1]).unwrap();
-
-    let tuple3 = vec![Value::from(2_u64)];
-    let tuple4 = vec![Value::from(4_u64)];
-    let expected = VirtualTable {
-        columns: vec![Column {
-            name: "b".into(),
-            r#type: Type::Integer,
-            role: ColumnRole::User,
-        }],
-        tuples: vec![tuple3, tuple4],
-        name: Some(String::from("t")),
-        primary_key: Some(vec![0]),
-        bucket_index: VTableIndex::new(),
-    };
-
-    assert_eq!(expected, vtable);
-}
-
-/// Test projecting a virtual table:
-/// - some duplicating columns in projection
-/// - primary key is one of duplicated columns
-#[test]
-fn virtual_table_7() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
-    let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
-    vtable.add_tuple(tuple1);
-    vtable.add_tuple(tuple2);
-    vtable.set_alias("t").unwrap();
-    vtable.set_primary_key(&[1]).unwrap();
-    vtable.project(&[1, 1, 0]).unwrap();
-
-    let tuple3 = vec![Value::from(2_u64), Value::from(2_u64), Value::from(1_u64)];
-    let tuple4 = vec![Value::from(4_u64), Value::from(4_u64), Value::from(3_u64)];
-    let expected = VirtualTable {
-        columns: vec![
-            Column {
                 name: "b".into(),
                 r#type: Type::Integer,
                 role: ColumnRole::User,
             },
-            Column {
-                name: "b".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
-            Column {
-                name: "a".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
         ],
-        tuples: vec![tuple3, tuple4],
+        tuples: vec![vec![pk_value.clone(), new_sh_key_value], vec![pk_value]],
         name: Some(String::from("t")),
         primary_key: Some(vec![0]),
-        bucket_index: VTableIndex::new(),
+        bucket_index: expected_index,
     };
 
     assert_eq!(expected, vtable);
-}
-
-/// Test projecting a virtual table:
-/// - primary key is not in projection
-#[test]
-fn virtual_table_8() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.set_alias("t").unwrap();
-    vtable.set_primary_key(&[1]).unwrap();
-    let err_msg = vtable.project(&[0]).unwrap_err().to_string();
-    assert_eq!(
-        err_msg.contains("not present in the projection column"),
-        true
-    );
-}
-
-/// Test projecting a virtual table:
-/// - projection points to a column that does not exist
-#[test]
-fn virtual_table_9() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.set_alias("t").unwrap();
-    let err_msg = vtable.project(&[1]).unwrap_err().to_string();
-    assert_eq!(err_msg.contains("invalid position 1"), true);
-}
-
-/// Test setting a primary key in a virtual table:
-/// - primary key points to a column that does not exist
-#[test]
-fn virtual_table_10() {
-    let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.set_alias("t").unwrap();
-    let err_msg = vtable.set_primary_key(&[1]).unwrap_err().to_string();
-    assert_eq!(err_msg.contains("invalid position 1"), true);
 }

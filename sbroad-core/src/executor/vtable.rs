@@ -1,4 +1,3 @@
-use ahash::AHashMap;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -29,6 +28,17 @@ impl VTableIndex {
     fn new() -> Self {
         Self {
             value: HashMap::with_hasher(RepeatableState),
+        }
+    }
+
+    pub fn add_entry(&mut self, bucket_id: u64, position: usize) {
+        match self.value.entry(bucket_id) {
+            Entry::Vacant(entry) => {
+                entry.insert(vec![position]);
+            }
+            Entry::Occupied(entry) => {
+                entry.into_mut().push(position);
+            }
         }
     }
 }
@@ -282,133 +292,148 @@ impl VirtualTable {
         Ok(())
     }
 
-    fn pk_positions_in_projection(
-        &self,
-        old_to_new_pos_map: &AHashMap<ColumnPosition, ColumnPosition>,
-    ) -> Result<Option<Vec<ColumnPosition>>, SbroadError> {
-        if let Some(pk) = &self.primary_key {
-            let mut new_pk = Vec::with_capacity(pk.len());
-            for old_pk_pos in pk {
-                match old_to_new_pos_map.get(old_pk_pos) {
-                    Some(new_pos) => new_pk.push(*new_pos),
-                    None => {
-                        return Err(SbroadError::NotFound(
-                            Entity::Column,
-                            format!(
-                                "{} {old_pk_pos} {} {old_to_new_pos_map:?}.",
-                                "primary key contains a column position",
-                                "that is not present in the projection column map",
-                            ),
-                        ));
-                    }
-                }
-            }
-            return Ok(Some(new_pk));
-        }
-        Ok(None)
-    }
-
-    /// Remove columns from the virtual table other then declared in projection.
+    /// Set primary key in the virtual table.
     ///
     /// # Errors
-    /// - projection refers invalid column positions
-    /// - projection removes primary key columns
-    pub fn project(&mut self, projection: &[ColumnPosition]) -> Result<(), SbroadError> {
-        let mut old_to_new_pos_map = AHashMap::with_capacity(projection.len());
-        let mut pattern = TupleBuilderPattern::with_capacity(self.columns.len());
-        for (pos, pointer) in projection.iter().enumerate() {
-            if pointer >= &self.columns.len() {
-                return Err(SbroadError::NotFound(
-                    Entity::Column,
-                    format!(
-                        "projection in the virtual table {:?} contains invalid position {pointer}.",
-                        self.name
-                    ),
-                ));
-            }
-            if let Some(dup_pos) = old_to_new_pos_map.get(pointer) {
-                pattern.push(TupleBuilderCommands::CloneSelfPosition(*dup_pos));
-            } else {
-                old_to_new_pos_map.insert(*pointer, pos);
-                pattern.push(TupleBuilderCommands::TakePosition(*pointer));
-            }
+    /// - primary key refers invalid column positions
+    pub fn get_primary_key(&self) -> Result<&[ColumnPosition], SbroadError> {
+        if let Some(cols) = &self.primary_key {
+            return Ok(cols);
         }
-        self.primary_key = self.pk_positions_in_projection(&old_to_new_pos_map)?;
-        for old_tuple in &mut self.tuples {
-            let mut new_tuple = VTableTuple::with_capacity(pattern.len());
-            for command in &pattern {
-                match command {
-                    TupleBuilderCommands::TakePosition(pos) => {
-                        let column = old_tuple.get_mut(*pos).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Column,
-                                format!("at position {pos} in the tuple"),
-                            )
-                        })?;
-                        new_tuple.push(std::mem::take(column));
-                    }
-                    TupleBuilderCommands::CloneSelfPosition(pos) => {
-                        let column = new_tuple.get(*pos).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Column,
-                                format!(
-                                    "at position {pos} in the constructing tuple {new_tuple:?}"
-                                ),
-                            )
-                        })?;
-                        new_tuple.push(column.clone());
-                    }
-                    _ => {
-                        return Err(SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format!(
-                                "tuple builder command {command:?} is not supported"
-                            )),
-                        ))
-                    }
-                }
-            }
-            *old_tuple = new_tuple;
-        }
-        let mut new_columns = Vec::with_capacity(pattern.len());
-        for command in &pattern {
-            match command {
-                TupleBuilderCommands::TakePosition(pos) => {
-                    let column = self.columns.get_mut(*pos).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Column,
-                            format!(
-                                "at position {pos} in the column metadata of the virtual table"
-                            ),
-                        )
-                    })?;
-                    new_columns.push(std::mem::take(column));
-                }
-                TupleBuilderCommands::CloneSelfPosition(pos) => {
-                    let column = new_columns.get(*pos).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Column,
-                            format!(
-                                "{} {self:?}",
-                                "at position {pos} in the new column metadata of the virtual table",
-                            ),
-                        )
-                    })?;
-                    new_columns.push(column.clone());
-                }
-                _ => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Tuple,
-                        Some(format!(
-                            "tuple builder command {command:?} is not supported"
-                        )),
-                    ))
-                }
-            }
-        }
-        self.columns = new_columns;
+        Err(SbroadError::Invalid(
+            Entity::VirtualTable,
+            Some("expected to have primary key!".into()),
+        ))
+    }
 
-        Ok(())
+    fn create_delete_tuples(
+        &mut self,
+        runtime: &(impl Vshard + Sized),
+        old_shard_columns_len: usize,
+    ) -> Result<(Vec<VTableTuple>, VTableIndex), SbroadError> {
+        let mut index = VTableIndex::new();
+        let delete_tuple_pattern: TupleBuilderPattern = {
+            let pk_positions = self.get_primary_key()?;
+            let mut res = Vec::with_capacity(old_shard_columns_len + pk_positions.len());
+            for pos in pk_positions.iter() {
+                res.push(TupleBuilderCommands::TakePosition(*pos));
+            }
+            res
+        };
+        let mut delete_tuple: VTableTuple = vec![Value::Null; delete_tuple_pattern.len()];
+        let mut delete_tuples: Vec<VTableTuple> = Vec::with_capacity(self.get_tuples().len());
+        let tuples_len = self.get_tuples().len();
+        for (pos, insert_tuple) in self.get_mut_tuples().iter_mut().enumerate() {
+            for (idx, c) in delete_tuple_pattern.iter().enumerate() {
+                if let TupleBuilderCommands::TakePosition(pos) = c {
+                    let value = insert_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::TupleBuilderCommand,
+                            Some(format!(
+                                "expected position {pos} with tuple len: {}",
+                                insert_tuple.len()
+                            )),
+                        )
+                    })?;
+                    if let Some(elem) = delete_tuple.get_mut(idx) {
+                        *elem = value.clone();
+                    }
+                };
+            }
+            let mut old_shard_key: VTableTuple = Vec::with_capacity(old_shard_columns_len);
+            for _ in 0..old_shard_columns_len {
+                let Some(v) = insert_tuple.pop() else {
+                    return Err(SbroadError::Invalid(Entity::MotionOpcode,
+                                                    Some(format!("invalid number of old shard columns: {old_shard_columns_len}"))))
+                };
+                old_shard_key.push(v);
+            }
+            old_shard_key.reverse();
+            let bucket_id =
+                runtime.determine_bucket_id(&old_shard_key.iter().collect::<Vec<&Value>>())?;
+            index.add_entry(bucket_id, tuples_len + pos);
+            delete_tuples.push(delete_tuple.clone());
+        }
+
+        Ok((delete_tuples, index))
+    }
+
+    /// Rearrange virtual table under sharded `Update`.
+    ///
+    /// For more details, see [`UpdateStrategy`].
+    ///
+    /// # Tuple format
+    /// Each tuple in table will be used to create delete tuple
+    /// and will be transformed to insert tuple itself.
+    ///
+    /// Original tuple format:
+    /// ```text
+    /// table_columns, old_shard_key_columns
+    /// ```
+    ///
+    /// Insert tuple:
+    /// ```text
+    /// table_columns
+    /// ```
+    /// Bucket is calculated using `new_shard_columns_positions` and
+    /// values from `table_columns`.
+    ///
+    /// Delete tuple:
+    /// ```text
+    /// pk_columns
+    /// ```
+    /// Values of `pk_columns` are taken from `table_columns`.
+    /// Bucket is calculated using `old_shard_key_columns`.
+    ///
+    /// # Errors
+    /// - invalid len of old shard key
+    /// - invalid new shard key positions
+    pub fn rearrange_for_update(
+        &mut self,
+        runtime: &(impl Vshard + Sized),
+        old_shard_columns_len: usize,
+        new_shard_columns_positions: &Vec<ColumnPosition>,
+    ) -> Result<Option<usize>, SbroadError> {
+        if new_shard_columns_positions.is_empty() {
+            return Err(SbroadError::Invalid(
+                Entity::Update,
+                Some("No positions for new shard key!".into()),
+            ));
+        }
+        if old_shard_columns_len == 0 {
+            return Err(SbroadError::Invalid(
+                Entity::Update,
+                Some("Invalid len of old shard key: 0".into()),
+            ));
+        }
+        if self.tuples.is_empty() {
+            return Ok(None);
+        };
+        let (delete_tuples, mut index) =
+            self.create_delete_tuples(runtime, old_shard_columns_len)?;
+
+        // Index insert tuple, using new shard key values.
+        for (pointer, update_tuple) in self.get_mut_tuples().iter_mut().enumerate() {
+            let mut update_tuple_shard_key = Vec::with_capacity(new_shard_columns_positions.len());
+            for pos in new_shard_columns_positions {
+                let value = update_tuple.get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::TupleBuilderCommand,
+                        Some(format!(
+                            "invalid pos: {pos} for update tuple with len: {}",
+                            update_tuple.len()
+                        )),
+                    )
+                })?;
+                update_tuple_shard_key.push(value);
+            }
+            let bucket_id = runtime.determine_bucket_id(&update_tuple_shard_key)?;
+            index.add_entry(bucket_id, pointer);
+        }
+        let delete_tuple_len = delete_tuples.first().map(Vec::len);
+        self.set_bucket_index(index.value);
+        self.get_mut_tuples().extend(delete_tuples.into_iter());
+        Ok(delete_tuple_len)
     }
 }
 

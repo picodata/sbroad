@@ -357,6 +357,94 @@ impl Display for GroupBy {
 }
 
 #[derive(Debug, Serialize)]
+struct Update {
+    /// List of colums in sql query
+    table: String,
+    update_statements: Vec<(String, String)>,
+}
+
+impl Update {
+    #[allow(dead_code)]
+    fn new(plan: &Plan, update_id: usize) -> Result<Self, SbroadError> {
+        if let Relational::Update {
+            relation: ref rel,
+            update_columns_map,
+            output: ref output_id,
+            ..
+        } = plan.get_relation_node(update_id)?
+        {
+            let mut update_statements: Vec<(String, String)> =
+                Vec::with_capacity(update_columns_map.len());
+            let table = plan.relations.get(rel).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!("invalid table {rel} in Update node")),
+                )
+            })?;
+            let output_list = plan.get_row_list(*output_id)?;
+            for (col_idx, proj_col) in update_columns_map {
+                let col_name = table
+                    .columns
+                    .get(*col_idx)
+                    .map(|c| c.name.clone())
+                    .ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!("invalid column index {col_idx} in Update node")),
+                        )
+                    })?;
+                let proj_alias = {
+                    let alias_id = *output_list.get(*proj_col).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!(
+                                "invalid update projection position {proj_col} in Update node"
+                            )),
+                        )
+                    })?;
+                    let node = plan.get_expression_node(alias_id)?;
+                    if let Expression::Alias { name, .. } = node {
+                        name.clone()
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Node,
+                            Some(format!(
+                                "expected alias as top in Update output, got: {node:?}"
+                            )),
+                        ));
+                    }
+                };
+                update_statements.push((col_name, proj_alias));
+            }
+            let result = Update {
+                table: rel.to_string(),
+                update_statements,
+            };
+            return Ok(result);
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("explain: expected Update node on id: {update_id}")),
+        ))
+    }
+}
+
+impl Display for Update {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut s = "update ".to_string();
+
+        write!(s, "{}", &self.table)?;
+        let update_statements = self
+            .update_statements
+            .iter()
+            .map(|(col, alias)| format!("{col} = {alias}"))
+            .join("\n");
+        write!(s, "\n{update_statements}")?;
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct Scan {
     /// Table name
     table: String,
@@ -748,6 +836,7 @@ enum ExplainNode {
     Selection(Selection),
     Having(Selection),
     UnionAll,
+    Update(Update),
     SubQuery(SubQuery),
     Motion(Motion),
 }
@@ -767,6 +856,7 @@ impl Display for ExplainNode {
             ExplainNode::Selection(s) => format!("selection {s}"),
             ExplainNode::Having(s) => format!("having {s}"),
             ExplainNode::UnionAll => "union all".to_string(),
+            ExplainNode::Update(u) => u.to_string(),
             ExplainNode::SubQuery(s) => s.to_string(),
             ExplainNode::Motion(m) => m.to_string(),
         };
@@ -1131,6 +1221,17 @@ impl FullExplain {
                         relation.into(),
                         conflict_strategy.clone(),
                     ))
+                }
+                Relational::Update { .. } => {
+                    let values = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Insert node failed to pop a value row.".into(),
+                        )
+                    })?;
+
+                    current_node.children.push(values);
+
+                    Some(ExplainNode::Update(Update::new(ir, id)?))
                 }
                 Relational::Delete { relation, .. } => {
                     let values = stack.pop().ok_or_else(|| {

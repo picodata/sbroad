@@ -66,6 +66,7 @@ fn relational_next<'nodes>(
             | Relational::Selection { children, .. }
             | Relational::Having { children, .. }
             | Relational::UnionAll { children, .. }
+            | Relational::Update { children, .. }
             | Relational::Values { children, .. }
             | Relational::ValuesRow { children, .. },
         )) => {

@@ -9,6 +9,7 @@
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::AggregateKind;
@@ -23,6 +24,8 @@ use super::{operator, Node, Nodes, Plan};
 pub mod cast;
 pub mod concat;
 pub mod types;
+
+pub(crate) type ExpressionId = usize;
 
 /// Tuple tree build blocks.
 ///
@@ -215,6 +218,20 @@ impl Expression {
     pub fn get_row_list(&self) -> Result<&[usize], SbroadError> {
         match self {
             Expression::Row { ref list, .. } => Ok(list),
+            _ => Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some("node isn't Row type".into()),
+            )),
+        }
+    }
+
+    /// Get a mut reference to the row children list.
+    ///
+    /// # Errors
+    /// - node isn't `Row`
+    pub fn get_mut_row_list(&mut self) -> Result<&mut Vec<usize>, SbroadError> {
+        match self {
+            Expression::Row { ref mut list, .. } => Ok(list),
             _ => Err(SbroadError::Invalid(
                 Entity::Expression,
                 Some("node isn't Row type".into()),
@@ -483,6 +500,300 @@ impl Nodes {
     }
 }
 
+// todo(ars): think how to refactor, ideally we must not store
+// plan for PlanExpression, try to put it into hasher? but what do
+// with equality?
+pub struct PlanExpr<'plan> {
+    pub id: usize,
+    pub plan: &'plan Plan,
+}
+
+impl<'plan> PlanExpr<'plan> {
+    #[must_use]
+    pub fn new(id: usize, plan: &'plan Plan) -> Self {
+        PlanExpr { id, plan }
+    }
+}
+
+impl<'plan> Hash for PlanExpr<'plan> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
+        comp.hash_for_expr(self.id, state, EXPR_HASH_DEPTH);
+    }
+}
+
+impl<'plan> PartialEq for PlanExpr<'plan> {
+    fn eq(&self, other: &Self) -> bool {
+        let comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
+        comp.are_subtrees_equal(self.id, other.id).unwrap_or(false)
+    }
+}
+
+impl<'plan> Eq for PlanExpr<'plan> {}
+
+pub enum ReferencePolicy {
+    /// References are considered equal,
+    /// if their subfields are equal (parent, position, target)
+    ///
+    /// Reference's hash is computed by hashing all subfields
+    ByFields,
+    /// References are considered equal,
+    /// if they refer to the same alias
+    ///
+    /// Reference's hash is computed by hashing alias.
+    ByAliases,
+}
+
+pub struct Comparator<'plan> {
+    policy: ReferencePolicy,
+    plan: &'plan Plan,
+}
+
+pub const EXPR_HASH_DEPTH: usize = 5;
+
+impl<'plan> Comparator<'plan> {
+    #[must_use]
+    pub fn new(policy: ReferencePolicy, plan: &'plan Plan) -> Self {
+        Comparator { policy, plan }
+    }
+
+    /// Checks whether expression subtrees [`lhs`] and [`rhs`] are equal.
+    /// This function traverses both trees comparing their nodes.
+    ///
+    /// # Errors
+    /// - invalid [`Expression::Reference`]s in either of subtrees
+    /// - invalid children in some expression
+    #[allow(clippy::too_many_lines)]
+    pub fn are_subtrees_equal(&self, lhs: usize, rhs: usize) -> Result<bool, SbroadError> {
+        let l = self.plan.get_node(lhs)?;
+        let r = self.plan.get_node(rhs)?;
+        if let Node::Expression(left) = l {
+            if let Node::Expression(right) = r {
+                match left {
+                    Expression::Alias { .. } => {}
+                    Expression::CountAsterisk => {
+                        return Ok(matches!(right, Expression::CountAsterisk))
+                    }
+                    Expression::Bool {
+                        left: left_left,
+                        op: op_left,
+                        right: right_left,
+                    } => {
+                        if let Expression::Bool {
+                            left: left_right,
+                            op: op_right,
+                            right: right_right,
+                        } = right
+                        {
+                            return Ok(*op_left == *op_right
+                                && self.are_subtrees_equal(*left_left, *left_right)?
+                                && self.are_subtrees_equal(*right_left, *right_right)?);
+                        }
+                    }
+                    Expression::Arithmetic {
+                        op: op_left,
+                        left: l_left,
+                        right: r_left,
+                        with_parentheses: parens_left,
+                    } => {
+                        if let Expression::Arithmetic {
+                            op: op_right,
+                            left: l_right,
+                            right: r_right,
+                            with_parentheses: parens_right,
+                        } = right
+                        {
+                            return Ok(*op_left == *op_right
+                                && *parens_left == *parens_right
+                                && self.are_subtrees_equal(*l_left, *l_right)?
+                                && self.are_subtrees_equal(*r_left, *r_right)?);
+                        }
+                    }
+                    Expression::Cast {
+                        child: child_left,
+                        to: to_left,
+                    } => {
+                        if let Expression::Cast {
+                            child: child_right,
+                            to: to_right,
+                        } = right
+                        {
+                            return Ok(*to_left == *to_right
+                                && self.are_subtrees_equal(*child_left, *child_right)?);
+                        }
+                    }
+                    Expression::Concat {
+                        left: left_left,
+                        right: right_left,
+                    } => {
+                        if let Expression::Concat {
+                            left: left_right,
+                            right: right_right,
+                        } = right
+                        {
+                            return Ok(self.are_subtrees_equal(*left_left, *left_right)?
+                                && self.are_subtrees_equal(*right_left, *right_right)?);
+                        }
+                    }
+                    Expression::Constant { value: value_left } => {
+                        if let Expression::Constant { value: value_right } = right {
+                            return Ok(*value_left == *value_right);
+                        }
+                    }
+                    Expression::Reference { .. } => {
+                        if let Expression::Reference { .. } = right {
+                            return match self.policy {
+                                ReferencePolicy::ByAliases => {
+                                    let alias_left =
+                                        self.plan.get_alias_from_reference_node(left)?;
+                                    let alias_right =
+                                        self.plan.get_alias_from_reference_node(right)?;
+                                    Ok(alias_left == alias_right)
+                                }
+                                ReferencePolicy::ByFields => Ok(left == right),
+                            };
+                        }
+                    }
+                    Expression::Row {
+                        list: list_left, ..
+                    } => {
+                        if let Expression::Row {
+                            list: list_right, ..
+                        } = right
+                        {
+                            return Ok(list_left
+                                .iter()
+                                .zip(list_right.iter())
+                                .all(|(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false)));
+                        }
+                    }
+                    Expression::StableFunction {
+                        name: name_left,
+                        children: children_left,
+                        is_distinct: distinct_left,
+                        func_type: func_type_left,
+                    } => {
+                        if let Expression::StableFunction {
+                            name: name_right,
+                            children: children_right,
+                            is_distinct: distinct_right,
+                            func_type: func_type_right,
+                        } = right
+                        {
+                            return Ok(name_left == name_right
+                                && distinct_left == distinct_right
+                                && func_type_left == func_type_right
+                                && children_left.iter().zip(children_right.iter()).all(
+                                    |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
+                                ));
+                        }
+                    }
+                    Expression::Unary {
+                        op: op_left,
+                        child: child_left,
+                    } => {
+                        if let Expression::Unary {
+                            op: op_right,
+                            child: child_right,
+                        } = right
+                        {
+                            return Ok(*op_left == *op_right
+                                && self.are_subtrees_equal(*child_left, *child_right)?);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    pub fn hash_for_expr<H: Hasher>(&self, top: usize, state: &mut H, depth: usize) {
+        if depth == 0 {
+            return;
+        }
+        let Ok(node) = self.plan.get_expression_node(top) else {
+            return;
+        };
+        match node {
+            Expression::Alias { child, name } => {
+                name.hash(state);
+                self.hash_for_expr(*child, state, depth - 1);
+            }
+            Expression::Bool { op, left, right } => {
+                op.hash(state);
+                self.hash_for_expr(*left, state, depth - 1);
+                self.hash_for_expr(*right, state, depth - 1);
+            }
+            Expression::Arithmetic {
+                op,
+                left,
+                right,
+                with_parentheses,
+            } => {
+                op.hash(state);
+                with_parentheses.hash(state);
+                self.hash_for_expr(*left, state, depth - 1);
+                self.hash_for_expr(*right, state, depth - 1);
+            }
+            Expression::Cast { child, to } => {
+                to.hash(state);
+                self.hash_for_expr(*child, state, depth - 1);
+            }
+            Expression::Concat { left, right } => {
+                self.hash_for_expr(*left, state, depth - 1);
+                self.hash_for_expr(*right, state, depth - 1);
+            }
+            Expression::Constant { value } => {
+                value.hash(state);
+            }
+            Expression::Reference {
+                parent,
+                position,
+                targets,
+                col_type,
+            } => match self.policy {
+                ReferencePolicy::ByAliases => {
+                    self.plan
+                        .get_alias_from_reference_node(node)
+                        .unwrap_or("")
+                        .hash(state);
+                }
+                ReferencePolicy::ByFields => {
+                    parent.hash(state);
+                    position.hash(state);
+                    targets.hash(state);
+                    col_type.hash(state);
+                }
+            },
+            Expression::Row { list, .. } => {
+                for child in list {
+                    self.hash_for_expr(*child, state, depth - 1);
+                }
+            }
+            Expression::StableFunction {
+                name,
+                children,
+                is_distinct,
+                func_type,
+            } => {
+                is_distinct.hash(state);
+                func_type.hash(state);
+                name.hash(state);
+                for child in children {
+                    self.hash_for_expr(*child, state, depth - 1);
+                }
+            }
+            Expression::Unary { child, op } => {
+                op.hash(state);
+                self.hash_for_expr(*child, state, depth - 1);
+            }
+            Expression::CountAsterisk => {
+                "CountAsterisk".hash(state);
+            }
+        }
+    }
+}
+
 impl Plan {
     /// Returns a list of columns from the child node outputs.
     /// If the column list is empty then copies all the non-sharding columns
@@ -590,12 +901,7 @@ impl Plan {
                             _ => None,
                         };
                         if let Some(relation) = table_name {
-                            let table = self.get_relation(relation).ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::Table,
-                                    format!("{relation} among the plan relations"),
-                                )
-                            })?;
+                            let table = self.get_relation_or_error(relation)?;
                             let sharding_column_pos = table.get_bucket_id_position()?;
                             // Take an advantage of the fact that the output aliases
                             // in the relation scan are in the same order as its columns.

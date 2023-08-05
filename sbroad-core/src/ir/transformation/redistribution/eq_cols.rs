@@ -1,5 +1,5 @@
 use crate::errors::SbroadError;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, ExpressionId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::redistribution::BoolOp;
 use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
@@ -38,9 +38,8 @@ impl Referred {
     }
 }
 
-type ExpressionID = usize;
 /// Maps expression in join condition to `Referred`
-struct ReferredMap(HashMap<ExpressionID, Referred>);
+struct ReferredMap(HashMap<ExpressionId, Referred>);
 
 impl ReferredMap {
     #[allow(dead_code)]
@@ -52,15 +51,15 @@ impl ReferredMap {
         ReferredMap(HashMap::with_capacity(capacity))
     }
 
-    pub fn get(&self, id: ExpressionID) -> Option<&Referred> {
+    pub fn get(&self, id: ExpressionId) -> Option<&Referred> {
         self.0.get(&id)
     }
 
-    pub fn insert(&mut self, id: ExpressionID, referred: Referred) -> Option<Referred> {
+    pub fn insert(&mut self, id: ExpressionId, referred: Referred) -> Option<Referred> {
         self.0.insert(id, referred)
     }
 
-    pub fn get_or_none(&self, id: ExpressionID) -> &Referred {
+    pub fn get_or_none(&self, id: ExpressionId) -> &Referred {
         self.get(id).unwrap_or(&Referred::None)
     }
 
@@ -160,26 +159,26 @@ pub struct EqualityCols {
 /// On the other hand, if the join condition consists only of left side of `and`:
 /// `... on i.a = 3`
 /// Then repartition join is not possible for such condition.
-pub struct EqualityColsMap(HashMap<ExpressionID, EqualityCols>);
+pub struct EqualityColsMap(HashMap<ExpressionId, EqualityCols>);
 
 impl EqualityColsMap {
     pub fn new() -> EqualityColsMap {
         EqualityColsMap(HashMap::new())
     }
 
-    pub fn remove_or_default(&mut self, expr_id: ExpressionID) -> EqualityCols {
+    pub fn remove_or_default(&mut self, expr_id: ExpressionId) -> EqualityCols {
         self.0.remove(&expr_id).unwrap_or_default()
     }
 
-    pub fn insert(&mut self, expr_id: ExpressionID, eq_cols: EqualityCols) -> Option<EqualityCols> {
+    pub fn insert(&mut self, expr_id: ExpressionId, eq_cols: EqualityCols) -> Option<EqualityCols> {
         self.0.insert(expr_id, eq_cols)
     }
 
-    pub fn remove_expr(&mut self, expr_id: ExpressionID) -> Option<EqualityCols> {
+    pub fn remove_expr(&mut self, expr_id: ExpressionId) -> Option<EqualityCols> {
         self.0.remove(&expr_id)
     }
 
-    pub fn remove(&mut self, expr_id: ExpressionID) -> Option<EqualityCols> {
+    pub fn remove(&mut self, expr_id: ExpressionId) -> Option<EqualityCols> {
         self.0.remove(&expr_id)
     }
 }

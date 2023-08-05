@@ -304,27 +304,32 @@ impl Plan {
         };
 
         let mut parent_node = None;
-        let mut contains_expr = false;
+        let mut only_expr_row = true;
+        let mut contains_non_const_expr = false;
         for id in row_children.iter() {
             let child_id = row_child_id(*id)?;
             match self.get_expression_node(child_id)? {
                 Expression::Reference { parent, .. } => {
                     parent_node = *parent;
+                    only_expr_row = false;
                     break;
                 }
-                Expression::Constant { .. } => {}
+                Expression::Constant { .. } => {
+                    only_expr_row = false;
+                }
                 _ => {
-                    contains_expr = true;
-                    break;
+                    contains_non_const_expr = true;
                 }
             }
         }
 
-        // if node's output has non-const expression, we can't
-        // make any assumptions about its distribution.
+        // if node's output consists ONLY of non-const expressions,
+        // we can't make any assumptions about its distribution.
         // e.g select a + b from t
         // Here Projection must have Distribution::Any
-        if contains_expr {
+        // but: select a + b, a from t
+        // maybe distributed by a
+        if only_expr_row {
             self.set_dist(row_id, Distribution::Any)?;
             return Ok(());
         }
@@ -332,9 +337,16 @@ impl Plan {
         let parent_id: usize = if let Some(parent_id) = parent_node {
             parent_id
         } else {
-            // There are no references in the row, so it is a row of constants
-            // with replicated distribution.
-            self.set_const_dist(row_id)?;
+            if contains_non_const_expr {
+                // Row does not contain standalone references, but
+                // contains some non-const expression:
+                // select a+b, 1 from t
+                self.set_dist(row_id, Distribution::Any)?;
+            } else {
+                // All children are constants:
+                // select 1 from t
+                self.set_const_dist(row_id)?;
+            }
             return Ok(());
         };
         let parent = self.get_relation_node(parent_id)?;

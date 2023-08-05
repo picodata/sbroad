@@ -387,6 +387,9 @@ fn subtree_next<'plan>(
                 Relational::Values {
                     output, children, ..
                 }
+                | Relational::Update {
+                    output, children, ..
+                }
                 | Relational::Projection {
                     output, children, ..
                 } => {

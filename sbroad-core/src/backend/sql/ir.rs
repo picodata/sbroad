@@ -330,6 +330,7 @@ impl ExecutionPlan {
                                 | Relational::ValuesRow { .. } => {}
                                 Relational::Selection { .. } => sql.push_str("WHERE"),
                                 Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
+                                Relational::Update { .. } => sql.push_str("UPDATE"),
                                 Relational::Values { .. } => sql.push_str("VALUES"),
                             },
                             Node::Expression(expr) => {
@@ -470,7 +471,7 @@ impl ExecutionPlan {
         // with `RETURNING` clause. That is why it is enough to check if the top
         // node is a data modification statement or not.
         let top = self.get_ir_plan().get_relation_node(top_id)?;
-        Ok(top.is_insert())
+        Ok(top.is_dml())
     }
 }
 

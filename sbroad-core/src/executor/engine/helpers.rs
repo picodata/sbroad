@@ -10,13 +10,13 @@ use tarantool::error::{Error, TarantoolErrorCode};
 use tarantool::space::Space;
 use tarantool::transaction::transaction;
 
-use crate::errors::Action::Find;
+use crate::errors::Entity::TupleBuilderCommand;
 use crate::executor::engine::helpers::storage::runtime::{prepare, read_prepared, read_unprepared};
 use crate::executor::engine::helpers::storage::PreparedStmt;
 use crate::executor::engine::QueryCache;
 use crate::executor::lru::Cache;
 use crate::ir::operator::ConflictStrategy;
-use crate::ir::value::{EncodedValue, MsgPackValue};
+use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
 use crate::ir::ExecuteOptions;
 use crate::otm::child_span;
 use crate::{
@@ -107,16 +107,16 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
             let sp_top_id = plan.get_top()?;
             let sp_top = plan.get_relation_node(sp_top_id)?;
             let motion_id = match sp_top {
-                Relational::Insert { children, .. } | Relational::Delete { children, .. } => {
-                    *children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(format!(
-                                "expected at least one child under DML node {sp_top:?}",
-                            )),
-                        )
-                    })?
-                }
+                Relational::Insert { children, .. }
+                | Relational::Delete { children, .. }
+                | Relational::Update { children, .. } => *children.first().ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Plan,
+                        Some(format!(
+                            "expected at least one child under DML node {sp_top:?}",
+                        )),
+                    )
+                })?,
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
@@ -129,7 +129,7 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format!(
-                        "expected motion node under insert node, got: {motion:?}",
+                        "expected motion node under dml node, got: {motion:?}",
                     )),
                 ));
             };
@@ -283,15 +283,113 @@ pub enum TupleBuilderCommands {
     /// Calculate a bucket id for the new tuple
     /// using the specified motion key.
     CalculateBucketId(MotionKey),
+    /// Update table column to specified position.
+    /// Needed only for `Update`.
+    UpdateColToPos(usize, usize),
+    /// Update table column to specified position.
+    /// Needed only for `Update`.
+    UpdateColToCastedPos(usize, usize, Type),
 }
 
 pub type TupleBuilderPattern = Vec<TupleBuilderCommands>;
 
+fn init_local_update_tuple_builder(
+    plan: &Plan,
+    vtable: &VirtualTable,
+    update_id: usize,
+) -> Result<TupleBuilderPattern, SbroadError> {
+    if let Relational::Update {
+        relation,
+        update_columns_map,
+        pk_positions,
+        ..
+    } = plan.get_relation_node(update_id)?
+    {
+        let mut commands: TupleBuilderPattern =
+            Vec::with_capacity(update_columns_map.len() + pk_positions.len());
+        let rel = plan.get_relation_or_error(relation)?;
+        for (table_pos, tuple_pos) in update_columns_map {
+            let rel_type = &rel
+                .columns
+                .get(*table_pos)
+                .ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(format!(
+                        "invalid position in update table: {table_pos}"
+                    ))
+                })?
+                .r#type;
+            let vtable_type = &vtable
+                .get_columns()
+                .get(*tuple_pos)
+                .ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(format!(
+                        "invalid position in update vtable: {tuple_pos}"
+                    ))
+                })?
+                .r#type;
+            if rel_type == vtable_type {
+                commands.push(TupleBuilderCommands::UpdateColToPos(*table_pos, *tuple_pos));
+            } else {
+                commands.push(TupleBuilderCommands::UpdateColToCastedPos(
+                    *table_pos,
+                    *tuple_pos,
+                    rel_type.clone(),
+                ));
+            }
+        }
+        for (idx, pk_pos) in pk_positions.iter().enumerate() {
+            let table_pos = *rel.primary_key.positions.get(idx).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Update,
+                    Some(format!(
+                        "invalid primary key positions: len: {}, expected len: {}",
+                        pk_positions.len(),
+                        rel.primary_key.positions.len()
+                    )),
+                )
+            })?;
+            let rel_type = &rel
+                .columns
+                .get(table_pos)
+                .ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(format!(
+                        "invalid primary key position in table: {table_pos}"
+                    ))
+                })?
+                .r#type;
+            let vtable_type = &vtable
+                .get_columns()
+                .get(*pk_pos)
+                .ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Update,
+                        Some(format!("invalid pk position: {pk_pos}")),
+                    )
+                })?
+                .r#type;
+            if rel_type == vtable_type {
+                commands.push(TupleBuilderCommands::TakePosition(*pk_pos));
+            } else {
+                commands.push(TupleBuilderCommands::TakeAndCastPosition(
+                    *pk_pos,
+                    rel_type.clone(),
+                ));
+            }
+        }
+        return Ok(commands);
+    }
+    Err(SbroadError::Invalid(
+        Entity::Node,
+        Some(format!("expected Update on id ({update_id})")),
+    ))
+}
+
+/// Create commands to build the tuple for insertion
 fn init_delete_tuple_builder(
     plan: &Plan,
     delete_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
-    let table = plan.delete_table(delete_id)?;
+    let table = plan.dml_node_table(delete_id)?;
     let mut commands = Vec::with_capacity(table.primary_key.positions.len());
     for pos in &table.primary_key.positions {
         commands.push(TupleBuilderCommands::TakePosition(*pos));
@@ -300,13 +398,12 @@ fn init_delete_tuple_builder(
 }
 
 /// Create commands to build the tuple for insertion,
-/// which does not take into account types of the virtual
-/// table.
 ///
 /// # Errors
 /// - Invalid insert node or plan
 fn init_insert_tuple_builder(
     plan: &Plan,
+    vtable: &VirtualTable,
     insert_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     let columns = plan.insert_columns(insert_id)?;
@@ -315,17 +412,34 @@ fn init_insert_tuple_builder(
         .enumerate()
         .map(|(pos, id)| (*id, pos))
         .collect::<AHashMap<_, _>>();
-    let table = plan.insert_table(insert_id)?;
-    let mut commands = Vec::with_capacity(table.columns.len());
-    for (pos, table_col) in table.columns.iter().enumerate() {
+    let relation = plan.dml_node_table(insert_id)?;
+    let mut commands = Vec::with_capacity(relation.columns.len());
+    for (pos, table_col) in relation.columns.iter().enumerate() {
         if table_col.role == ColumnRole::Sharding {
-            let motion_key = plan.insert_child_motion_key(insert_id)?;
+            let motion_key = plan.insert_motion_key(insert_id)?;
             commands.push(TupleBuilderCommands::CalculateBucketId(motion_key));
         } else if columns_map.contains_key(&pos) {
             // It is safe to unwrap here because we have checked that
             // the column is present in the tuple.
             let tuple_pos = columns_map[&pos];
-            commands.push(TupleBuilderCommands::TakePosition(tuple_pos));
+            let vtable_type = &vtable
+                .get_columns()
+                .get(tuple_pos)
+                .ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues(format!(
+                        "invalid index in virtual table: {tuple_pos}"
+                    ))
+                })?
+                .r#type;
+            let rel_type = &table_col.r#type;
+            if vtable_type == rel_type {
+                commands.push(TupleBuilderCommands::TakePosition(tuple_pos));
+            } else {
+                commands.push(TupleBuilderCommands::TakeAndCastPosition(
+                    tuple_pos,
+                    rel_type.clone(),
+                ));
+            }
         } else {
             // FIXME: support default values other then NULL (issue #442).
             commands.push(TupleBuilderCommands::SetValue(Column::default_value()));
@@ -334,48 +448,62 @@ fn init_insert_tuple_builder(
     Ok(commands)
 }
 
-/// Replace `TakePosition` command to `TakeAndCastPosition`,
-/// if types in virtual table and actual table do not match.
-///
-/// # Arguments
-/// * `builder`-  insert builder commands
-/// * `tuple_pos_to_type` - mapping between position in virtual table
-/// tuple and corresponding type in actual table.
-/// * `vtable` - virtual table to be inserted
+/// Create commands to build the tuple for sharded `Update`,
 ///
 /// # Errors
-/// - invalid mapping between tuple index and insert table type
-/// - invalid `TakePosition` command
-#[allow(clippy::implicit_hasher)]
-pub fn add_casts_to_builder(
-    mut builder: TupleBuilderPattern,
-    tuple_pos_to_type: &HashMap<usize, Type>,
+/// - Invalid insert node or plan
+fn init_sharded_update_tuple_builder(
+    plan: &Plan,
     vtable: &VirtualTable,
+    update_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
-    for c in &mut builder {
-        if let TupleBuilderCommands::TakePosition(pos) = c {
-            let table_type = tuple_pos_to_type.get(pos).ok_or_else(|| {
-                SbroadError::FailedTo(Find, None, "table type for tuple position in map".into())
-            })?;
-            let vtable_col_type = &vtable
+    let Relational::Update {
+        update_columns_map,
+        ..
+    } = plan.get_relation_node(update_id)? else {
+        return Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!(
+                "update tuple builder: expected update node on id: {update_id}"
+            )),
+        ));
+    };
+    let relation = plan.dml_node_table(update_id)?;
+    let mut commands = Vec::with_capacity(relation.columns.len());
+    for (pos, table_col) in relation.columns.iter().enumerate() {
+        if table_col.role == ColumnRole::Sharding {
+            // the bucket is taken from the index, no need to specify motion key
+            commands.push(TupleBuilderCommands::CalculateBucketId(MotionKey {
+                targets: vec![],
+            }));
+        } else if update_columns_map.contains_key(&pos) {
+            let tuple_pos = update_columns_map[&pos];
+            let vtable_type = &vtable
                 .get_columns()
-                .get(*pos)
+                .get(tuple_pos)
                 .ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::VirtualTable,
-                        Some(format!(
-                            "expected at least ({}) columns based on tuple builder",
-                            *pos + 1
-                        )),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format!(
+                        "invalid index in virtual table: {tuple_pos}"
+                    ))
                 })?
                 .r#type;
-            if table_type != vtable_col_type {
-                *c = TupleBuilderCommands::TakeAndCastPosition(*pos, table_type.clone());
+            let rel_type = &table_col.r#type;
+            if vtable_type == rel_type {
+                commands.push(TupleBuilderCommands::TakePosition(tuple_pos));
+            } else {
+                commands.push(TupleBuilderCommands::TakeAndCastPosition(
+                    tuple_pos,
+                    rel_type.clone(),
+                ));
             }
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Update,
+                Some(format!("user column {pos} not found in update column map")),
+            ));
         }
     }
-    Ok(builder)
+    Ok(commands)
 }
 
 /// Generate an empty result for the specified plan:
@@ -960,6 +1088,7 @@ pub fn execute_dml_on_storage(
     match top {
         Relational::Insert { .. } => execute_insert_on_storage(runtime, &mut optional, required),
         Relational::Delete { .. } => execute_delete_on_storage(runtime, &mut optional, required),
+        Relational::Update { .. } => execute_update_on_storage(runtime, &mut optional, required),
         _ => Err(SbroadError::Invalid(
             Entity::Plan,
             Some(format!("expected DML node on the plan top, got {top:?}")),
@@ -1010,6 +1139,220 @@ fn materialize_vtable_locally(
 }
 
 #[allow(clippy::too_many_lines)]
+fn execute_update_on_storage(
+    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+    optional: &mut OptionalData,
+    required: &mut RequiredData,
+) -> Result<ConsumerResult, SbroadError> {
+    let plan = optional.exec_plan.get_ir_plan();
+    let update_id = plan.get_top()?;
+    let update_child_id = plan.dml_child_id(update_id)?;
+    let space_name = normalize_name_for_space_api(plan.dml_node_table(update_id)?.name());
+    let mut result = ConsumerResult::default();
+    let is_sharded = plan.is_sharded_update(update_id)?;
+    let build_vtable_locally = optional
+        .exec_plan
+        .get_motion_vtable(update_child_id)
+        .is_err();
+    if build_vtable_locally {
+        // it is relevant only for local Update.
+        if is_sharded {
+            return Err(SbroadError::Invalid(
+                Entity::Update,
+                Some("sharded Update's vtable must be already materialized".into()),
+            ));
+        }
+        materialize_vtable_locally(runtime, optional, required, update_child_id)?;
+    }
+    let vtable = optional.exec_plan.get_motion_vtable(update_child_id)?;
+    let space = Space::find(&space_name).ok_or_else(|| {
+        SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
+    })?;
+    transaction(|| -> Result<(), SbroadError> {
+        let plan = optional.exec_plan.get_ir_plan();
+        if is_sharded {
+            let delete_tuple_len = plan.get_update_delete_tuple_len(update_id)?;
+            let builder = init_sharded_update_tuple_builder(plan, &vtable, update_id)?;
+            execute_sharded_update(&mut result, &vtable, &space, &builder, delete_tuple_len)?;
+        } else {
+            let builder = init_local_update_tuple_builder(plan, &vtable, update_id)?;
+            execute_local_update(&mut result, &builder, &vtable, &space)?;
+        }
+        Ok(())
+    })?;
+
+    Ok(result)
+}
+
+fn execute_sharded_update(
+    result: &mut ConsumerResult,
+    vtable: &VirtualTable,
+    space: &Space,
+    builder: &TupleBuilderPattern,
+    delete_tuple_len: usize,
+) -> Result<(), SbroadError> {
+    for tuple in vtable.get_tuples() {
+        if tuple.len() == delete_tuple_len {
+            let pk: Vec<EncodedValue> = tuple
+                .iter()
+                .map(|val| EncodedValue::Ref(MsgPackValue::from(val)))
+                .collect();
+            if let Err(Error::Tarantool(tnt_err)) = space.delete(&pk) {
+                return Err(SbroadError::FailedTo(
+                    Action::Delete,
+                    Some(Entity::Tuple),
+                    format!("{tnt_err:?}"),
+                ));
+            }
+        }
+    }
+    for (bucket_id, positions) in vtable.get_bucket_index() {
+        for pos in positions {
+            let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::VirtualTable,
+                    Some(format!("invalid tuple position in index: {pos}")),
+                )
+            })?;
+
+            if vt_tuple.len() != delete_tuple_len {
+                let mut insert_tuple: Vec<EncodedValue> = Vec::with_capacity(builder.len());
+                for command in builder {
+                    match command {
+                        TupleBuilderCommands::TakePosition(tuple_pos) => {
+                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::Tuple,
+                                    Some(format!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
+                                )
+                            })?;
+                            insert_tuple.push(EncodedValue::Ref(value.into()));
+                        }
+                        TupleBuilderCommands::TakeAndCastPosition(tuple_pos, table_type) => {
+                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::Tuple,
+                                    Some(format!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
+                                )
+                            })?;
+                            insert_tuple.push(value.cast(table_type)?);
+                        }
+                        TupleBuilderCommands::CalculateBucketId(_) => {
+                            insert_tuple.push(EncodedValue::Ref(MsgPackValue::Unsigned(bucket_id)));
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                TupleBuilderCommand,
+                                Some(format!("got command {command:?} for update insert")),
+                            ))
+                        }
+                    }
+                }
+                // We can have multiple rows with the same primary key,
+                // so replace is used.
+                if let Err(e) = space.replace(&insert_tuple) {
+                    return Err(SbroadError::FailedTo(
+                        Action::Insert,
+                        Some(Entity::Tuple),
+                        format!("{e:?}"),
+                    ));
+                }
+                result.row_count += 1;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn execute_local_update(
+    result: &mut ConsumerResult,
+    builder: &TupleBuilderPattern,
+    vtable: &VirtualTable,
+    space: &Space,
+) -> Result<(), SbroadError> {
+    let eq_value = Value::String("=".into());
+    for vt_tuple in vtable.get_tuples() {
+        let mut update_tuple = Vec::with_capacity(builder.len());
+        let mut key_tuple = Vec::with_capacity(builder.len());
+        for command in builder {
+            match command {
+                TupleBuilderCommands::UpdateColToPos(table_col, pos) => {
+                    let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "column at position {pos} not found in virtual table"
+                            )),
+                        )
+                    })?;
+                    let op = [
+                        EncodedValue::Ref(MsgPackValue::from(&eq_value)),
+                        EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
+                        EncodedValue::Ref(MsgPackValue::from(value)),
+                    ];
+                    update_tuple.push(op);
+                }
+                TupleBuilderCommands::TakePosition(pos) => {
+                    let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "column at position {pos} not found in virtual table"
+                            )),
+                        )
+                    })?;
+                    key_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
+                }
+                TupleBuilderCommands::TakeAndCastPosition(pos, table_type) => {
+                    let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "column at position {pos} not found in virtual table"
+                            )),
+                        )
+                    })?;
+                    key_tuple.push(value.cast(table_type)?);
+                }
+                TupleBuilderCommands::UpdateColToCastedPos(table_col, pos, table_type) => {
+                    let value = vt_tuple.get(*pos).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Tuple,
+                            Some(format!(
+                                "column at position {pos} not found in virtual table"
+                            )),
+                        )
+                    })?;
+                    let op = [
+                        EncodedValue::Ref(MsgPackValue::from(&eq_value)),
+                        EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
+                        value.cast(table_type)?,
+                    ];
+                    update_tuple.push(op);
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::TupleBuilderCommand,
+                        Some(format!("got command {command:?} for update")),
+                    ))
+                }
+            }
+        }
+        let update_res = space.update(&key_tuple, &update_tuple);
+        update_res.map_err(|e| {
+            SbroadError::FailedTo(Action::Update, Some(Entity::Space), format!("{e}"))
+        })?;
+        result.row_count += 1;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
 fn execute_delete_on_storage(
     runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
     optional: &mut OptionalData,
@@ -1017,9 +1360,9 @@ fn execute_delete_on_storage(
 ) -> Result<ConsumerResult, SbroadError> {
     let plan = optional.exec_plan.get_ir_plan();
     let delete_id = plan.get_top()?;
-    let delete_child_id = plan.delete_child_id(delete_id)?;
+    let delete_child_id = plan.dml_child_id(delete_id)?;
     let builder = init_delete_tuple_builder(plan, delete_id)?;
-    let space_name = normalize_name_for_space_api(plan.delete_table(delete_id)?.name());
+    let space_name = normalize_name_for_space_api(plan.dml_node_table(delete_id)?.name());
     let mut result = ConsumerResult::default();
     let build_vtable_locally = optional
         .exec_plan
@@ -1081,38 +1424,16 @@ fn execute_insert_on_storage(
     // instead of SQL (for performance reasons).
     let plan = optional.exec_plan.get_ir_plan();
     let insert_id = plan.get_top()?;
-    let insert_child_id = plan.insert_child_id(insert_id)?;
-    let builder = init_insert_tuple_builder(plan, insert_id)?;
-    let space_name = normalize_name_for_space_api(plan.insert_table(insert_id)?.name());
+    let insert_child_id = plan.dml_child_id(insert_id)?;
+    let space_name = normalize_name_for_space_api(plan.dml_node_table(insert_id)?.name());
     let mut result = ConsumerResult::default();
-    // we have to remember the mapping, because the plan can be moved when
-    // building vtable locally. Map position in VTable tuple to corresponding
-    // type in insert table.
-    let tuple_pos_to_type = {
-        let mut tuple_pos_to_type: HashMap<usize, Type> =
-            HashMap::with_capacity(plan.insert_columns(insert_id)?.len());
-        for (pos, table_pos) in plan.insert_columns(insert_id)?.iter().enumerate() {
-            let table_type = plan
-                .insert_table(insert_id)?
-                .columns
-                .get(*table_pos)
-                .map(|c| c.r#type.clone())
-                .ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Plan,
-                        Some(format!("invalid insert column: ({pos}, {table_pos})")),
-                    )
-                })?;
-            tuple_pos_to_type.insert(pos, table_type);
-        }
-        tuple_pos_to_type
-    };
 
     // There are two ways to execute an `INSERT` query:
     // 1. Execute SQL subtree under the `INSERT` node (`INSERT .. SELECT ..`)
     //    and then repack and insert results into the space.
     // 2. A virtual table was dispatched under the `INSERT` node.
     //    Simply insert its tuples into the space.
+    // The same for `UPDATE`.
 
     // Check is we need to execute an SQL subtree (case 1).
     let build_vtable_locally = optional
@@ -1128,7 +1449,9 @@ fn execute_insert_on_storage(
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(Entity::Space, Some(format!("space {space_name} not found")))
     })?;
-    let builder = add_casts_to_builder(builder, &tuple_pos_to_type, vtable.as_ref())?;
+    let plan = optional.exec_plan.get_ir_plan();
+    // let builder = add_casts_to_builder(builder, &tuple_pos_to_type, vtable.as_ref())?;
+    let builder = init_insert_tuple_builder(plan, vtable.as_ref(), insert_id)?;
     let conflict_strategy = optional
         .exec_plan
         .get_ir_plan()
@@ -1150,14 +1473,6 @@ fn execute_insert_on_storage(
                     // a reference to the original value. The only allocation is for message
                     // pack serialization, but it is unavoidable.
                     match command {
-                        TupleBuilderCommands::CloneSelfPosition(_) => {
-                            return Err(SbroadError::Invalid(
-                                Entity::Tuple,
-                                Some(
-                                    "unexpected tuple builder command: clone self position".into(),
-                                ),
-                            ));
-                        }
                         TupleBuilderCommands::TakePosition(tuple_pos) => {
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
@@ -1185,6 +1500,14 @@ fn execute_insert_on_storage(
                         }
                         TupleBuilderCommands::CalculateBucketId(_) => {
                             insert_tuple.push(EncodedValue::Ref(MsgPackValue::Unsigned(bucket_id)));
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Tuple,
+                                Some(format!(
+                                    "unexpected tuple builder command for insert: {command:?}"
+                                )),
+                            ));
                         }
                     }
                 }
@@ -1344,7 +1667,10 @@ pub fn execute_cacheable_dql_with_raw_optional(
     )
 }
 
-/// A common function for all engines to calculate the sharding key value from a map.
+/// A common function for all engines to calculate the sharding key value from a `map`
+/// of { `column_name` -> value }. Used as a helper function of `extract_sharding_keys_from_map`
+/// that is called from `calculate_bucket_id`. `map` must contain a value for each sharding
+/// column that is present in `space`.
 ///
 /// # Errors
 /// - The space was not found in the metadata.

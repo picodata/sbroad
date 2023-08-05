@@ -134,6 +134,9 @@ pub enum Type {
     TypeUnsigned,
     TypeVarchar,
     UnionAll,
+    Update,
+    UpdateList,
+    UpdateItem,
     Unsigned,
     Value,
     Values,
@@ -255,6 +258,9 @@ impl Type {
             Rule::TypeUnsigned => Ok(Type::TypeUnsigned),
             Rule::TypeVarchar => Ok(Type::TypeVarchar),
             Rule::UnionAll => Ok(Type::UnionAll),
+            Rule::Update => Ok(Type::Update),
+            Rule::UpdateList => Ok(Type::UpdateList),
+            Rule::UpdateItem => Ok(Type::UpdateItem),
             Rule::Unsigned => Ok(Type::Unsigned),
             Rule::Value => Ok(Type::Value),
             Rule::Values => Ok(Type::Values),
@@ -379,6 +385,9 @@ impl fmt::Display for Type {
             Type::TypeUnsigned => "TypeUnsigned".to_string(),
             Type::TypeVarchar => "TypeVarchar".to_string(),
             Type::UnionAll => "UnionAll".to_string(),
+            Type::Update => "Update".to_string(),
+            Type::UpdateItem => "UpdateItem".to_string(),
+            Type::UpdateList => "UpdateList".to_string(),
             Type::Unsigned => "Unsigned".to_string(),
             Type::Value => "Value".to_string(),
             Type::Values => "Values".to_string(),
@@ -645,6 +654,146 @@ impl AbstractSyntaxTree {
                 Entity::ParseNode,
                 Some(format!("expected join parse node, got: {node:?}")),
             ));
+        }
+        Ok(())
+    }
+
+    /// Rewrite `Update` AST to IR friendly one.
+    ///
+    /// `update t .. from s where expr` is transformed into
+    /// ```text
+    /// update t ..
+    ///     join
+    ///         scan t
+    ///         s
+    ///         condition expr
+    /// ```
+    ///
+    /// `update t .. where expr` ->
+    /// ```text
+    /// update t ..
+    ///     where expr
+    ///         scan t
+    /// ```
+    ///
+    /// `update t .. from s` ->
+    /// ```text
+    /// update t ..
+    ///     join
+    ///         scan t
+    ///         s
+    ///         condition true
+    /// ```
+    ///
+    /// # Errors
+    /// - invalid number of children for Update
+    /// - unexpected rule of some child
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn transform_update(&mut self) -> Result<(), SbroadError> {
+        let update_id: usize = {
+            let mut update_id: Option<usize> = None;
+            for id in 0..self.nodes.arena.len() {
+                let node = self.nodes.get_node(id)?;
+                if node.rule == Type::Update {
+                    update_id = Some(id);
+                    break;
+                }
+            }
+            if let Some(id) = update_id {
+                id
+            } else {
+                return Ok(());
+            }
+        };
+        let node = self.nodes.get_node(update_id)?;
+        let table_id = *node.children.first().ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues(
+                "expected Update ast node to have at least two children!".into(),
+            )
+        })?;
+        let update_list_id = *node.children.get(1).ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues(
+                "expected Update ast node to have at least two children!".into(),
+            )
+        })?;
+        let upd_table_scan = ParseNode {
+            children: vec![table_id],
+            rule: Type::Scan,
+            value: None,
+        };
+        let upd_table_scan_id = self.nodes.push_node(upd_table_scan);
+        let node = self.nodes.get_node(update_id)?;
+        match node.children.len() {
+            // update t set ..
+            2 => {
+                self.nodes
+                    .set_children(update_id, vec![upd_table_scan_id, table_id, update_list_id])?;
+            }
+            // update t set .. from .. OR update t set .. where ..
+            3 => {
+                // update t set a = 1 where id = 1
+                let child_id = *node.children.get(2).unwrap();
+                let is_selection = matches!(self.nodes.get_node(child_id)?.rule, Type::Selection);
+                let update_child_id = if is_selection {
+                    self.nodes.push_front_child(child_id, upd_table_scan_id)?;
+                    child_id
+                } else {
+                    // update t set a = t.a + t1.b from t1
+                    let condition_expr = ParseNode {
+                        children: vec![],
+                        rule: Type::True,
+                        value: Some("true".into()),
+                    };
+                    let condition_expr_id = self.nodes.push_node(condition_expr);
+                    let condition = ParseNode {
+                        children: vec![condition_expr_id],
+                        rule: Type::Condition,
+                        value: None,
+                    };
+                    let inner_kind_id = self.nodes.push_node(ParseNode {
+                        children: vec![],
+                        rule: Type::InnerJoinKind,
+                        value: None,
+                    });
+                    let condition_id = self.nodes.push_node(condition);
+                    let join_node = ParseNode {
+                        children: vec![upd_table_scan_id, inner_kind_id, child_id, condition_id],
+                        rule: Type::Join,
+                        value: None,
+                    };
+                    self.nodes.push_node(join_node)
+                };
+                self.nodes
+                    .set_children(update_id, vec![update_child_id, table_id, update_list_id])?;
+            }
+            4 => {
+                // update t set a = t.a + t1.b from t1 where expr
+                let condition_id = *node.children.get(3).unwrap();
+                let right_scan_id = *node.children.get(2).unwrap();
+                let inner_kind_id = self.nodes.push_node(ParseNode {
+                    children: vec![],
+                    rule: Type::InnerJoinKind,
+                    value: None,
+                });
+                let join_node = ParseNode {
+                    children: vec![
+                        upd_table_scan_id,
+                        inner_kind_id,
+                        right_scan_id,
+                        condition_id,
+                    ],
+                    rule: Type::Join,
+                    value: None,
+                };
+                let update_child_id = self.nodes.push_node(join_node);
+                self.nodes
+                    .set_children(update_id, vec![update_child_id, table_id, update_list_id])?;
+            }
+            _ => {
+                return Err(SbroadError::UnexpectedNumberOfValues(
+                    "expected Update ast node to have at most 4 children!".into(),
+                ))
+            }
         }
         Ok(())
     }
@@ -1151,6 +1300,25 @@ impl AbstractSyntaxTree {
                         for (_, id) in subtree.iter(*top) {
                             if let Entry::Vacant(entry) = map.entry(id) {
                                 entry.insert(vec![*rel_id]);
+                            }
+                        }
+                    }
+                }
+                Type::Update => {
+                    let rel_id = rel_node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Update AST doesn't have any children.".into(),
+                        )
+                    })?;
+                    for top in rel_node.children.iter().skip(1) {
+                        let mut subtree =
+                            PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+                        for (_, id) in subtree.iter(*top) {
+                            let node = self.nodes.get_node(id)?;
+                            if let Type::Reference = node.rule {
+                                if let Entry::Vacant(entry) = map.entry(id) {
+                                    entry.insert(vec![*rel_id]);
+                                }
                             }
                         }
                     }

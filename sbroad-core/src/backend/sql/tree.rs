@@ -654,7 +654,9 @@ impl<'p> SyntaxPlan<'p> {
                 Ok(self.nodes.push_syntax_node(sn))
             }
             Node::Relational(rel) => match rel {
-                Relational::Insert { .. } | Relational::Delete { .. } => Err(SbroadError::Invalid(
+                Relational::Insert { .. }
+                | Relational::Delete { .. }
+                | Relational::Update { .. } => Err(SbroadError::Invalid(
                     Entity::SyntaxPlan,
                     Some(format!(
                         "DML node {node:?} is not supported in the syntax plan"
