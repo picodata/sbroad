@@ -4,6 +4,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
+use tarantool::space::SpaceEngineType;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
@@ -19,6 +20,7 @@ pub enum Ddl {
         format: Vec<ColumnDef>,
         primary_key: Vec<String>,
         sharding_key: Vec<String>,
+        engine_type: SpaceEngineType,
         timeout: Decimal,
     },
     DropTable {

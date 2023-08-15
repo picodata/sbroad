@@ -33,6 +33,7 @@ use crate::errors::Entity::AST;
 use crate::ir::aggregates::AggregateKind;
 use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
+use tarantool::space::SpaceEngineType;
 
 // DDL timeout in seconds (1 day).
 const DEFAULT_TIMEOUT: f64 = 24.0 * 60.0 * 60.0;
@@ -105,6 +106,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut columns: Vec<ColumnDef> = Vec::new();
     let mut pk_keys: Vec<String> = Vec::new();
     let mut shard_keys: Vec<String> = Vec::new();
+    let mut engine_type: SpaceEngineType = Default::default();
     let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
         SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
     })?;
@@ -272,13 +274,13 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 {
                     let engine_type_node = ast.nodes.get_node(*engine_type_id)?;
                     match engine_type_node.rule {
-                        Type::Memtx => {}
+                        Type::Memtx => {
+                            engine_type = SpaceEngineType::Memtx;
+                        }
                         Type::Vinyl => {
-                            // TODO: improve picodata's DDL API to support vinyl engine.
-                            return Err(SbroadError::NotImplemented(
-                                Entity::Engine,
-                                "vinyl".into(),
-                            ));
+                            // todo: when global spaces will be supported
+                            // check that vinyl space is not global.
+                            engine_type = SpaceEngineType::Vinyl;
                         }
                         _ => {
                             return Err(SbroadError::Invalid(
@@ -378,6 +380,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
         format: columns,
         primary_key: pk_keys,
         sharding_key: shard_keys,
+        engine_type,
         timeout,
     };
     Ok(create_sharded_table)
