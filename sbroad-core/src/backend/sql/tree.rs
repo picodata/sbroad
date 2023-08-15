@@ -654,68 +654,7 @@ impl<'p> SyntaxPlan<'p> {
                 Ok(self.nodes.push_syntax_node(sn))
             }
             Node::Relational(rel) => match rel {
-                // TODO: throw an error instead (rewrite insert tests)
-                Relational::Insert {
-                    columns,
-                    children,
-                    output,
-                    ..
-                } => {
-                    let row = ir_plan.get_expression_node(*output)?;
-                    let aliases: &[usize] = row.get_row_list()?;
-
-                    let get_col_sn = |col_pos: &usize| -> Result<SyntaxNode, SbroadError> {
-                        let alias_id = *aliases.get(*col_pos).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Get,
-                                None,
-                                format!("insert output column at position {col_pos}"),
-                            )
-                        })?;
-                        let alias = ir_plan.get_expression_node(alias_id)?;
-                        if let Expression::Alias { child, .. } = alias {
-                            let col_ref = ir_plan.get_expression_node(*child)?;
-                            if let Expression::Reference { .. } = col_ref {
-                                Ok(SyntaxNode::new_pointer(*child, None, vec![]))
-                            } else {
-                                Err(SbroadError::Invalid(
-                                    Entity::Expression,
-                                    Some("expected a reference expression".into()),
-                                ))
-                            }
-                        } else {
-                            Err(SbroadError::Invalid(
-                                Entity::Expression,
-                                Some("expected an alias expression".into()),
-                            ))
-                        }
-                    };
-                    let mut nodes: Vec<usize> = Vec::new();
-                    if let Some((last, cols)) = columns.split_last() {
-                        nodes.reserve(columns.len() * 2 + 1);
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
-                        for col_pos in cols {
-                            nodes.push(self.nodes.push_syntax_node(get_col_sn(col_pos)?));
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                        }
-                        nodes.push(self.nodes.push_syntax_node(get_col_sn(last)?));
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                    }
-
-                    if children.is_empty() {
-                        return Err(SbroadError::Invalid(
-                            Entity::Node,
-                            Some("insert node has no children".into()),
-                        ));
-                    }
-                    nodes.reserve(children.len());
-                    for child_id in children {
-                        nodes.push(self.nodes.get_syntax_node_id(*child_id)?);
-                    }
-                    let sn = SyntaxNode::new_pointer(id, None, nodes);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::Delete { .. } => Err(SbroadError::Invalid(
+                Relational::Insert { .. } | Relational::Delete { .. } => Err(SbroadError::Invalid(
                     Entity::SyntaxPlan,
                     Some(format!(
                         "DML node {node:?} is not supported in the syntax plan"

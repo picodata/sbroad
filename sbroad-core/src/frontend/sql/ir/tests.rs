@@ -1,3 +1,4 @@
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
@@ -2225,6 +2226,182 @@ vtable_max_rows = 5000
 "#,
     );
 
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_1() {
+    let input = r#"insert into "t" ("b") select "a" from "t"
+        where "a" = 1 and "b" = 2 or "a" = 2 and "b" = 3"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: segment([value(NULL), ref("a")])]
+        projection ("t"."a"::unsigned -> "a")
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(2::unsigned) and ROW("t"."b"::unsigned) = ROW(3::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_2() {
+    let input = r#"insert into "t" ("a", "b") select "a", "b" from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: local segment([ref("a"), ref("b")])]
+        projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b")
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_3() {
+    // check different column order leads to Segment motion
+    let input = r#"insert into "t" ("b", "a") select "a", "b" from "t"
+        where "a" = 1 and "b" = 2 or "a" = 3 and "b" = 4"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: segment([ref("b"), ref("a")])]
+        projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b")
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(3::unsigned) and ROW("t"."b"::unsigned) = ROW(4::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_4() {
+    let input = r#"insert into "t" ("b", "a") select "b", "a" from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: local segment([ref("a"), ref("b")])]
+        projection ("t"."b"::unsigned -> "b", "t"."a"::unsigned -> "a")
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_5() {
+    let input = r#"insert into "t" ("b", "a") select 5, 6 from "t"
+        where "a" = 1 and "b" = 2"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: segment([ref("COL_2"), ref("COL_1")])]
+        projection (5::unsigned -> "COL_1", 6::unsigned -> "COL_2")
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned)
+                scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_6() {
+    // The values should be materialized on the router, and
+    // then dispatched to storages.
+    let input = r#"insert into "t" ("a", "b") values (1, 2), (1, 2), (3, 4)"#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: local segment([ref("COLUMN_5"), ref("COLUMN_6")])]
+        values
+            value row (data=ROW(1::unsigned, 2::unsigned))
+            value row (data=ROW(1::unsigned, 2::unsigned))
+            value row (data=ROW(3::unsigned, 4::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_7() {
+    // Check system column can't be inserted
+    let input = r#"insert into "hash_testing" ("sys_op", "bucket_id" ) values (1, 2)"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let mut plan = ast.resolve_metadata(metadata);
+    let err = plan.unwrap_err();
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("system column \"bucket_id\" cannot be inserted")
+    );
+}
+
+#[test]
+fn front_sql_insert_8() {
+    // Both table have the same columns, but hash_single_testing has different shard key
+    let input = r#"insert into "hash_testing" select * from "hash_single_testing""#;
+
+    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"insert "hash_testing" on conflict: fail
+    motion [policy: segment([ref("identification_number"), ref("product_code")])]
+        projection ("hash_single_testing"."identification_number"::integer -> "identification_number", "hash_single_testing"."product_code"::string -> "product_code", "hash_single_testing"."product_units"::boolean -> "product_units", "hash_single_testing"."sys_op"::unsigned -> "sys_op")
+            scan "hash_single_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_insert_9() {
+    let input = r#"insert into "t" ("a", "b") values (?, ?)"#;
+
+    let plan = sql_to_optimized_ir(input, vec![Value::from(1_u64), Value::from(2_u64)]);
+    let mut expected_explain = String::from(
+        r#"insert "t" on conflict: fail
+    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+        values
+            value row (data=ROW(1::unsigned, 2::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
