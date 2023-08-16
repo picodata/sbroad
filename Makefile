@@ -32,7 +32,8 @@ clean:
 
 lint:
 	cargo fmt --all -- --check
-	cargo clippy -- -Dclippy::all -Wclippy::pedantic
+	RUSTFLAGS="-D warnings" cargo clippy -- -Dclippy::all -Wclippy::pedantic
+	RUSTDOCFLAGS="-D warnings" cargo doc
 	cargo audit -f audit.toml
 	./deps.sh
 	./.rocks/bin/luacheck .

@@ -106,7 +106,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut columns: Vec<ColumnDef> = Vec::new();
     let mut pk_keys: Vec<String> = Vec::new();
     let mut shard_keys: Vec<String> = Vec::new();
-    let mut engine_type: SpaceEngineType = Default::default();
+    let mut engine_type = SpaceEngineType::default();
     let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
         SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
     })?;

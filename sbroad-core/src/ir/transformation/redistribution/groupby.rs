@@ -430,7 +430,7 @@ impl Plan {
     }
 
     #[allow(clippy::too_many_lines)]
-    /// Checks whether subtrees [`lhs`] and [`rhs`] are equal.
+    /// Checks whether subtrees `lhs` and `rhs` are equal.
     /// This function traverses both trees comparing their nodes.
     ///
     /// # References Equality
