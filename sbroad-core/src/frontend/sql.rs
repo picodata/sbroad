@@ -749,23 +749,25 @@ impl Ast for AbstractSyntaxTree {
                                 )?;
                                 rows.insert(ref_id);
                                 map.add(id, ref_id);
+                            } else {
+                                let right_col_map = plan
+                                    .get_relation_node(*plan_right_id)?
+                                    .output_alias_position_map(&plan.nodes)?;
+                                if right_col_map.get(&col_name.as_str()).is_some() {
+                                    let ref_id = plan.add_row_from_right_branch(
+                                        *plan_left_id,
+                                        *plan_right_id,
+                                        &[&col_name],
+                                    )?;
+                                    rows.insert(ref_id);
+                                    map.add(id, ref_id);
+                                } else {
+                                    return Err(SbroadError::NotFound(
+                                        Entity::Column,
+                                        format!("'{col_name}' for the join left or right children"),
+                                    ));
+                                }
                             }
-                            let right_col_map = plan
-                                .get_relation_node(*plan_right_id)?
-                                .output_alias_position_map(&plan.nodes)?;
-                            if right_col_map.get(&col_name.as_str()).is_some() {
-                                let ref_id = plan.add_row_from_right_branch(
-                                    *plan_left_id,
-                                    *plan_right_id,
-                                    &[&col_name],
-                                )?;
-                                rows.insert(ref_id);
-                                map.add(id, ref_id);
-                            }
-                            return Err(SbroadError::NotFound(
-                                Entity::Column,
-                                format!("'{col_name}' for the join left or right children"),
-                            ));
                         } else {
                             return Err(SbroadError::UnexpectedNumberOfValues(
                                 "expected children nodes contain a column name.".into(),

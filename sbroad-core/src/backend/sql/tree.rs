@@ -963,7 +963,10 @@ impl<'p> SyntaxPlan<'p> {
 
                         // Replace motion node to virtual table node
                         let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        if vtable.get_alias().is_none() && first_child_is_ref {
+                        let needs_replacement = vtable.get_alias().is_none()
+                            && first_child_is_ref
+                            && ir_plan.is_additional_child(motion_id)?;
+                        if needs_replacement {
                             let sn = SyntaxNode::new_pointer(
                                 id,
                                 None,

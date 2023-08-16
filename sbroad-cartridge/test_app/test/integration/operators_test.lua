@@ -631,3 +631,23 @@ g.test_between2 = function()
         },
     })
 end
+
+g.test_join_inner_sq_no_alias = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+    select "i" from "testing_space" inner join
+    (select "id" as "i", "a" as a from "t")
+    on "id" = "i"
+]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "i", type = "integer"},
+        },
+        rows = {
+            {1}
+        },
+    })
+end
