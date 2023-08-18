@@ -222,17 +222,17 @@ pub trait Statistics {
     /// Get `TableStats` for table by its name from storages.
     ///
     /// # Errors
-    /// - Table statistics can not be gathered neither from the cache nor from the storages.
-    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError>;
+    /// - Low-level statistics retriever error.
+    fn get_table_stats(&self, table_name: &str) -> Result<Option<Rc<TableStats>>, SbroadError>;
 
     /// Get upcasted `ColumnStats` for column by its table name and column name from storages.
     ///
     /// # Errors
-    /// - Initial column statistics can not be gathered neither from the cache nor from the storages.
+    /// - Low-level statistics retriever error.
     fn get_column_stats(
         &self,
-        table_column_pair: TableColumnPair,
-    ) -> Result<Rc<Box<dyn Any>>, SbroadError>;
+        table_column_pair: &TableColumnPair,
+    ) -> Result<Option<Rc<Box<dyn Any>>>, SbroadError>;
 
     /// Update `TableStats` cache with given table statistics.
     ///

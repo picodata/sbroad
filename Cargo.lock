@@ -1110,6 +1110,7 @@ dependencies = [
  "criterion",
  "pest",
  "pest_derive",
+ "rand",
  "sbroad-core",
  "tarantool",
 ]

@@ -9,6 +9,7 @@ use tarantool::decimal;
 use tarantool::decimal::Decimal;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use crate::cbo::histogram::normalization::DEFAULT_HISTOGRAM_BUCKETS_NUMBER;
 use crate::cbo::histogram::HistogramBuckets;
 use crate::cbo::histogram::{Histogram, Mcv, McvSet, Scalar};
 use crate::cbo::tests::construct_i64_buckets;
@@ -1225,8 +1226,7 @@ impl RouterRuntimeMock {
                 Decimal::try_from(1000.0 / hash_testing_rows_number).unwrap(),
             ),
         ];
-        let default_histogram_buckets_number = 100;
-        let buckets = construct_i64_buckets(default_histogram_buckets_number, 5, 1005).unwrap();
+        let buckets = construct_i64_buckets(DEFAULT_HISTOGRAM_BUCKETS_NUMBER, 5, 1005).unwrap();
         let boxed_column_stats = Box::new(ColumnStats::new(
             0i64,
             1005i64,
@@ -1302,26 +1302,26 @@ impl RouterRuntimeMock {
         //   - buckets_boundaries: [0, 78, 200, 780, 1800]
         let mcv_vec = vec![
             Mcv::new(
-                3i64,
+                3u64,
                 Decimal::try_from(2500.0 / test_space_rows_number).unwrap(),
             ),
             Mcv::new(
-                4i64,
+                4u64,
                 Decimal::try_from(500.0 / test_space_rows_number).unwrap(),
             ),
             Mcv::new(
-                5i64,
+                5u64,
                 Decimal::try_from(500.0 / test_space_rows_number).unwrap(),
             ),
             Mcv::new(
-                6i64,
+                6u64,
                 Decimal::try_from(1500.0 / test_space_rows_number).unwrap(),
             ),
         ];
-        let mut boundaries = vec![0, 78, 200, 780, 1800];
+        let mut boundaries = vec![0u64, 78u64, 200u64, 780u64, 1800u64];
         let boxed_column_stats = Box::new(ColumnStats::new(
-            1i64,
-            2000i64,
+            1u64,
+            2000u64,
             8,
             Some(Histogram::new(
                 McvSet::from_vec(&mcv_vec),
@@ -1349,7 +1349,7 @@ impl RouterRuntimeMock {
         //   - buckets_count: 100
         //   - buckets_frequency: 200 (as only 20000 elements are stored in buckets)
         //   - buckets_boundaries: equally splitted [100; 400] range
-        let buckets = construct_i64_buckets(default_histogram_buckets_number, 100, 400).unwrap();
+        let buckets = construct_i64_buckets(DEFAULT_HISTOGRAM_BUCKETS_NUMBER, 100, 400).unwrap();
         let boxed_column_stats = Box::new(ColumnStats::new(
             100i64,
             400i64,
@@ -1527,15 +1527,12 @@ impl Router for RouterRuntimeMock {
 }
 
 impl Statistics for RouterRuntimeMock {
-    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
+    fn get_table_stats(&self, table_name: &str) -> Result<Option<Rc<TableStats>>, SbroadError> {
         if let Ok(borrow_res) = self.table_statistics_cache.try_borrow() {
-            if let Some(value) = borrow_res.get(table_name.as_str()) {
-                Ok(value.clone())
+            if let Some(value) = borrow_res.get(table_name) {
+                Ok(Some(value.clone()))
             } else {
-                Err(SbroadError::NotFound(
-                    Entity::Statistics,
-                    format!("Mocked statistics for table {table_name} wasn't found"),
-                ))
+                Ok(None)
             }
         } else {
             Err(SbroadError::Invalid(
@@ -1547,18 +1544,13 @@ impl Statistics for RouterRuntimeMock {
 
     fn get_column_stats(
         &self,
-        table_column_pair: TableColumnPair,
-    ) -> Result<Rc<Box<dyn Any>>, SbroadError> {
+        table_column_pair: &TableColumnPair,
+    ) -> Result<Option<Rc<Box<dyn Any>>>, SbroadError> {
         if let Ok(borrow_res) = self.initial_column_statistics_cache.try_borrow() {
-            if let Some(value) = borrow_res.get(&table_column_pair) {
-                Ok(value.clone())
+            if let Some(value) = borrow_res.get(table_column_pair) {
+                Ok(Some(value.clone()))
             } else {
-                Err(SbroadError::NotFound(
-                    Entity::Statistics,
-                    String::from(
-                        "Mocked statistics for table/column pair {table_column_paid} wasn't found",
-                    ),
-                ))
+                Ok(None)
             }
         } else {
             Err(SbroadError::Invalid(

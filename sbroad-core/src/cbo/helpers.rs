@@ -1,4 +1,5 @@
 use crate::errors::{Entity, SbroadError};
+use crate::ir::value::double::Double;
 use itertools::enumerate;
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
@@ -317,6 +318,27 @@ pub fn scale_strings(
     )?;
 
     Ok((value_decimal, low_bound_decimal, high_bound_decimal))
+}
+
+/// Helper function to convert `Double` into `f64` for selectivity estimation purposes
+/// (see `boundaries_occupied_fraction` implementation for `Double`).
+///
+/// `PostgreSQL` lines: `numeric_float8_no_overflow`, lines 4459-4482.
+#[must_use]
+pub fn clamp_double(value: &Double) -> f64 {
+    let inner_value = value.value;
+    let is_special = |f: f64| f.is_nan() || f.is_infinite();
+    if is_special(inner_value) {
+        if inner_value == f64::INFINITY {
+            f64::MAX
+        } else if inner_value == f64::NEG_INFINITY {
+            f64::MIN
+        } else {
+            f64::NAN
+        }
+    } else {
+        inner_value
+    }
 }
 
 /// Helper function for `Scalar` trait `find_boundaries_occupied_fraction` function

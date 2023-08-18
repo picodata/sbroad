@@ -248,7 +248,7 @@ impl Router for RouterRuntime {
 
 impl Statistics for RouterRuntime {
     #[allow(unused_variables)]
-    fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError> {
+    fn get_table_stats(&self, table_name: &str) -> Result<Option<Rc<TableStats>>, SbroadError> {
         // Will be added later.
         todo!()
     }
@@ -256,8 +256,8 @@ impl Statistics for RouterRuntime {
     #[allow(unused_variables)]
     fn get_column_stats(
         &self,
-        table_column_pair: TableColumnPair,
-    ) -> Result<Rc<Box<dyn Any>>, SbroadError> {
+        table_column_pair: &TableColumnPair,
+    ) -> Result<Option<Rc<Box<dyn Any>>>, SbroadError> {
         // Will be added later.
         todo!()
     }

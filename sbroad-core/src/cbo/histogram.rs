@@ -2,9 +2,15 @@
 //!
 //! Module used to represent logic of applying and transforming histogram statistics during
 //! CBO algorithms.
-use crate::cbo::helpers::{decimal_boundaries_occupied_fraction, scale_strings};
+use crate::cbo::helpers::{clamp_double, decimal_boundaries_occupied_fraction, scale_strings};
+use crate::cbo::histogram::normalization::{
+    merge_buckets, BoundaryWithFrequency, BucketsFrequencyPair,
+};
 use crate::errors::{Entity, SbroadError};
+use crate::ir::value::double::Double;
+use itertools::enumerate;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
@@ -78,6 +84,108 @@ impl Scalar for Decimal {
         right_boundary: &Self::Other,
     ) -> Result<Decimal, SbroadError> {
         decimal_boundaries_occupied_fraction(*self, *left_boundary, *right_boundary)
+    }
+}
+impl Eq for Double {}
+impl PartialOrd for Double {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Double {
+    /// `PostgreSQL` lines: `cmp_numerics`, lines 2422-2473.
+    fn cmp(&self, other: &Self) -> Ordering {
+        let self_value = self.value;
+        let other_value = other.value;
+        let is_special = |f: f64| f.is_nan() || f.is_infinite();
+        let self_is_special = is_special(self_value);
+        let other_is_special = is_special(other_value);
+
+        if self_is_special {
+            if self_value.is_nan() {
+                if other_value.is_nan() {
+                    Ordering::Equal
+                } else {
+                    Ordering::Greater
+                }
+            } else if self_value == f64::INFINITY {
+                if other_value.is_nan() {
+                    Ordering::Less
+                } else if other_value == f64::INFINITY {
+                    Ordering::Equal
+                } else {
+                    Ordering::Greater
+                }
+            } else if other_value == f64::NEG_INFINITY {
+                Ordering::Equal
+            } else {
+                Ordering::Less
+            }
+        } else if other_is_special {
+            if other_value == f64::NEG_INFINITY {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        } else {
+            let self_decimal = Decimal::try_from(self_value).unwrap();
+            let other_decimal = Decimal::try_from(other_value).unwrap();
+            self_decimal.cmp(&other_decimal)
+        }
+    }
+}
+impl Scalar for Double {
+    type Other = Double;
+
+    /// TODO: debug `PostgreSQL` `ineq_histogram_selectivity` in order to check `binfrac` is
+    ///       calculated adequately. Builtin logic of f64 NaN comparison differs from one we've
+    ///       implemented in `Double` `cmp` method.
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        let clamped_self = clamp_double(self);
+        let clamped_left = clamp_double(left_boundary);
+        let clamped_right = clamp_double(right_boundary);
+        let fraction_f64 = if clamped_right <= clamped_left {
+            0.5
+        } else if clamped_self <= clamped_left {
+            0.0
+        } else if clamped_self >= clamped_right {
+            1.0
+        } else {
+            let fraction = (clamped_self - clamped_left) / (clamped_right - clamped_left);
+            if fraction.is_nan() || !(0.0..=1.0).contains(&fraction) {
+                0.5
+            } else {
+                fraction
+            }
+        };
+        if let Ok(fraction_decimal) = Decimal::try_from(fraction_f64) {
+            Ok(fraction_decimal)
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(format!("Boundaries occupied fraction calculation resulted in invalid f64 fraction: {fraction_f64}"))
+            ))
+        }
+    }
+}
+impl Scalar for bool {
+    type Other = bool;
+
+    fn boundaries_occupied_fraction(
+        &self,
+        _: &Self::Other,
+        _: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        Err(SbroadError::Invalid(
+            Entity::Statistics,
+            Some(String::from(
+                "There is no need to calculate buckets fraction for bool column",
+            )),
+        ))
     }
 }
 
@@ -264,7 +372,7 @@ impl<T: Scalar> Bucket<T> {
 
     /// Helper function to get `from` boundary in case we are dealing with a first bucket.
     #[allow(dead_code)]
-    fn get_from(&self) -> Result<T, SbroadError> {
+    fn get_from_boundary(&self) -> Result<T, SbroadError> {
         match &self.bucket_type {
             BucketType::First { from_boundary } => Ok(from_boundary.clone()),
             BucketType::NonFirst => Err(SbroadError::Invalid(
@@ -302,6 +410,38 @@ impl<T: Scalar> HistogramBuckets<T> {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+
+    /// Helper function for statistics normalization (merge) purposes.
+    /// Get pairs of (bucket's boundary, its frequency).
+    /// Note that for the purposes of algorithm `to` boundary of the last bucket is stored with
+    /// zero frequency.
+    #[must_use]
+    pub fn gather_boundaries_with_frequency(
+        &self,
+        frequency: u64,
+    ) -> Vec<BoundaryWithFrequency<T>> {
+        let mut boundaries = Vec::new();
+        for (index, bucket) in enumerate(&self.inner) {
+            match &bucket.bucket_type {
+                BucketType::First { from_boundary } => {
+                    boundaries.push(BoundaryWithFrequency::new(from_boundary.clone(), frequency));
+                }
+                BucketType::NonFirst => {}
+            }
+
+            let current_to_bound_frequency = if index == self.len() - 1 {
+                0
+            } else {
+                frequency
+            };
+            boundaries.push(BoundaryWithFrequency::new(
+                bucket.to_boundary.clone(),
+                current_to_bound_frequency,
+            ));
+        }
+
+        boundaries
     }
 }
 
@@ -420,8 +560,10 @@ impl<T: Scalar> Histogram<T> {
     pub fn calculate_buckets_frequency(&self, rows_number: u64) -> Result<u64, SbroadError> {
         let decimal_freq = Decimal::from(rows_number)
             * (Decimal::from(1) - self.null_fraction - self.mcv_frequencies_sum())
-            / self.buckets_number();
-        decimal_freq.to_u64().ok_or_else(|| {
+            / Decimal::from(self.buckets_number());
+
+        let floored_decimal_freq = decimal_freq.floor();
+        floored_decimal_freq.to_u64().ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statistics,
                 Some(String::from("Unable to calculate buckets frequency")),
@@ -458,3 +600,82 @@ impl<T: Scalar> Default for Histogram<T> {
         }
     }
 }
+
+/// Helper struct representing pair of (column `rows_number`, `Histogram`).
+#[allow(clippy::module_name_repetitions)]
+pub struct HistogramRowsNumberPair<'hist, T: Scalar>(pub u64, pub &'hist Histogram<T>);
+
+/// Function for merging histograms from several storages.
+///
+/// # Errors
+/// - Unable to merge buckets
+pub fn merge_histograms<T: Scalar>(
+    vec_of_infos: &Vec<HistogramRowsNumberPair<T>>,
+) -> Result<Histogram<T>, SbroadError> {
+    let total_rows_number: u64 = vec_of_infos
+        .iter()
+        .map(|HistogramRowsNumberPair(rows_number, _)| *rows_number)
+        .sum();
+
+    let merged_null_fraction = {
+        let mut sum_of_null_elements_count = Decimal::from(0);
+        for HistogramRowsNumberPair(rows_number, histogram) in vec_of_infos {
+            sum_of_null_elements_count += histogram.null_fraction * Decimal::from(*rows_number);
+        }
+        sum_of_null_elements_count / Decimal::from(total_rows_number)
+    };
+
+    let histograms: Vec<&Histogram<T>> = vec_of_infos
+        .iter()
+        .map(|HistogramRowsNumberPair(_, histogram)| *histogram)
+        .collect();
+
+    // Don't know how to estimate it better:
+    let merged_distinct_values_fraction = {
+        let mut summed_fractions = Decimal::from(0);
+        for histogram in &histograms {
+            summed_fractions += histogram.distinct_values_fraction;
+        }
+        summed_fractions / Decimal::from(histograms.len())
+    };
+
+    let most_common_capacity: usize = histograms.iter().map(|h| h.most_common_values.len()).sum();
+    let mut merged_most_common: McvSet<T> = McvSet::with_capacity(most_common_capacity);
+    for HistogramRowsNumberPair(rows_number, histogram) in vec_of_infos {
+        for mcv in &histogram.most_common_values.inner {
+            let frequency_adding =
+                (mcv.frequency * Decimal::from(*rows_number)) / Decimal::from(total_rows_number);
+            if let Some(Mcv { value, frequency }) = merged_most_common.get(mcv) {
+                let new_frequency = *frequency + frequency_adding;
+                let new_mcv = Mcv {
+                    value: value.clone(),
+                    frequency: new_frequency,
+                };
+                merged_most_common.remove(mcv);
+                merged_most_common.insert(new_mcv);
+            } else {
+                merged_most_common.insert(Mcv::new(mcv.value.clone(), frequency_adding));
+            }
+        }
+    }
+
+    let mut buckets_infos = Vec::with_capacity(histograms.len());
+    for HistogramRowsNumberPair(rows_number, histogram) in vec_of_infos {
+        buckets_infos.push(BucketsFrequencyPair(
+            histogram.calculate_buckets_frequency(*rows_number)?,
+            &histogram.buckets,
+        ));
+    }
+    let merged_buckets = merge_buckets(&buckets_infos)?;
+
+    Ok(Histogram {
+        most_common_values: merged_most_common,
+        buckets: merged_buckets,
+        null_fraction: merged_null_fraction,
+        distinct_values_fraction: merged_distinct_values_fraction,
+    })
+}
+
+pub mod normalization;
+#[cfg(test)]
+mod tests;
