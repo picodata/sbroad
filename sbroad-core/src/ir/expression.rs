@@ -16,7 +16,7 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Type;
 
 use super::distribution::Distribution;
-use super::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use super::value::Value;
 use super::{operator, Node, Nodes, Plan};
 
@@ -924,29 +924,38 @@ impl Plan {
     ) -> Result<HashSet<usize, RandomState>, SbroadError> {
         let row = self.get_expression_node(row_id)?;
         let capacity = if let Expression::Row { list, .. } = row {
-            list.len() * 2
+            list.len()
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("Node is not a row".into()),
             ));
         };
-        let mut post_tree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), capacity);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
+                return true;
+            }
+            false
+        };
+        let mut post_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            capacity,
+            Box::new(filter),
+        );
         post_tree.populate_nodes(row_id);
         let nodes = post_tree.take_nodes();
+        // We don't expect much relational references in a row (5 is a reasonable number).
         let mut rel_nodes: HashSet<usize, RandomState> =
-            HashSet::with_capacity_and_hasher(nodes.len(), RandomState::new());
+            HashSet::with_capacity_and_hasher(5, RandomState::new());
         for (_, id) in nodes {
             let reference = self.get_expression_node(id)?;
             if let Expression::Reference {
                 targets, parent, ..
             } = reference
             {
-                let referred_rel_id = parent.ok_or(SbroadError::NotFound(
-                    Entity::Node,
-                    format!("that is Reference ({id}) parent"),
-                ))?;
+                let referred_rel_id = parent.ok_or_else(|| {
+                    SbroadError::NotFound(Entity::Node, format!("that is Reference ({id}) parent"))
+                })?;
                 let rel = self.get_relation_node(referred_rel_id)?;
                 if let Some(children) = rel.children() {
                     if let Some(positions) = targets {
@@ -959,7 +968,6 @@ impl Plan {
                 }
             }
         }
-        rel_nodes.shrink_to_fit();
         Ok(rel_nodes)
     }
 
@@ -1071,15 +1079,21 @@ impl Plan {
         from_id: Option<usize>,
         to_id: Option<usize>,
     ) -> Result<(), SbroadError> {
-        let mut references: Vec<usize> = Vec::new();
-        let mut subtree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for (_, id) in subtree.iter(node_id) {
-            if let Node::Expression(Expression::Reference { .. }) = self.get_node(id)? {
-                references.push(id);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
+                return true;
             }
-        }
-        for id in references {
+            false
+        };
+        let mut subtree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        subtree.populate_nodes(node_id);
+        let references = subtree.take_nodes();
+        drop(subtree);
+        for (_, id) in references {
             let node = self.get_mut_expression_node(id)?;
             node.replace_parent_in_reference(from_id, to_id);
         }
@@ -1092,15 +1106,21 @@ impl Plan {
     /// - node is invalid
     /// - node is not an expression
     pub fn flush_parent_in_subtree(&mut self, node_id: usize) -> Result<(), SbroadError> {
-        let mut references: Vec<usize> = Vec::new();
-        let mut subtree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for (_, id) in subtree.iter(node_id) {
-            if let Node::Expression(Expression::Reference { .. }) = self.get_node(id)? {
-                references.push(id);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
+                return true;
             }
-        }
-        for id in references {
+            false
+        };
+        let mut subtree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        subtree.populate_nodes(node_id);
+        let references = subtree.take_nodes();
+        drop(subtree);
+        for (_, id) in references {
             let node = self.get_mut_expression_node(id)?;
             node.flush_parent_in_reference();
         }

@@ -20,9 +20,9 @@ use crate::errors::{Entity, SbroadError};
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
-use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
+use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::{LuaValue, Value};
-use crate::ir::Plan;
+use crate::ir::{Node, Plan};
 
 type ExecutorTuple = Vec<LuaValue>;
 
@@ -208,14 +208,18 @@ impl Plan {
     /// # Errors
     /// - If relational iterator fails to return a correct node.
     pub fn subtree_contains_values(&self, top_id: usize) -> Result<bool, SbroadError> {
-        let mut rel_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
-        for (_, node_id) in rel_tree.iter(top_id) {
-            let rel = self.get_relation_node(node_id)?;
-            if let Relational::Values { .. } = rel {
-                return Ok(true);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Relational(Relational::Values { .. })) = self.get_node(node_id) {
+                return true;
             }
-        }
-        Ok(false)
+            false
+        };
+        let mut rel_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.rel_iter(node),
+            REL_CAPACITY,
+            Box::new(filter),
+        );
+        Ok(rel_tree.iter(top_id).next().is_some())
     }
 }
 

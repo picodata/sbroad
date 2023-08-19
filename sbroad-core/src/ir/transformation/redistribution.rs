@@ -11,7 +11,9 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary};
 
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
-use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
+use crate::ir::tree::traversal::{
+    BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
+};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
@@ -205,18 +207,6 @@ fn join_policy_for_and(
 }
 
 impl Plan {
-    /// Get a list of relational nodes in a DFS post order.
-    ///
-    /// # Errors
-    /// - plan doesn't contain the top node
-    fn get_relational_nodes_dfs_post(&self) -> Result<Vec<usize>, SbroadError> {
-        let top = self.get_top()?;
-        let mut post_tree =
-            PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
-        let nodes: Vec<usize> = post_tree.iter(top).map(|(_, id)| id).collect();
-        Ok(nodes)
-    }
-
     /// Get boolean expressions with both row children in the sub-tree.
     /// It's a helper function for resolving subquery conflicts.
     /// E.g. boolean `In` operator will have both row children where
@@ -224,31 +214,33 @@ impl Plan {
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    pub(crate) fn get_bool_nodes_with_row_children(
-        &self,
-        top: usize,
-    ) -> Result<Vec<usize>, SbroadError> {
-        let mut nodes: Vec<usize> = Vec::new();
-
-        let mut post_tree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for (_, id) in post_tree.iter(top) {
+    pub(crate) fn get_bool_nodes_with_row_children(&self, top: usize) -> Vec<LevelNode> {
+        let filter = |node_id: usize| -> bool {
             // Append only booleans with row children.
-            if let Node::Expression(Expression::Bool { left, right, .. }) = self.get_node(id)? {
+            if let Ok(Node::Expression(Expression::Bool { left, right, .. })) =
+                self.get_node(node_id)
+            {
                 let left_is_row = matches!(
-                    self.get_node(*left)?,
-                    Node::Expression(Expression::Row { .. })
+                    self.get_node(*left),
+                    Ok(Node::Expression(Expression::Row { .. }))
                 );
                 let right_is_row = matches!(
-                    self.get_node(*right)?,
-                    Node::Expression(Expression::Row { .. })
+                    self.get_node(*right),
+                    Ok(Node::Expression(Expression::Row { .. }))
                 );
                 if left_is_row && right_is_row {
-                    nodes.push(id);
+                    return true;
                 }
             }
-        }
-        Ok(nodes)
+            false
+        };
+        let mut post_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        post_tree.populate_nodes(top);
+        post_tree.take_nodes()
     }
 
     /// Get unary expressions with both row children in the sub-tree.
@@ -258,27 +250,27 @@ impl Plan {
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    pub(crate) fn get_unary_nodes_with_row_children(
-        &self,
-        top: usize,
-    ) -> Result<Vec<usize>, SbroadError> {
-        let mut nodes: Vec<usize> = Vec::new();
-
-        let mut post_tree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for (_, id) in post_tree.iter(top) {
+    pub(crate) fn get_unary_nodes_with_row_children(&self, top: usize) -> Vec<LevelNode> {
+        let filter = |node_id: usize| -> bool {
             // Append only unaries with row children.
-            if let Node::Expression(Expression::Unary { child, .. }) = self.get_node(id)? {
+            if let Ok(Node::Expression(Expression::Unary { child, .. })) = self.get_node(node_id) {
                 let child_is_row = matches!(
-                    self.get_node(*child)?,
-                    Node::Expression(Expression::Row { .. })
+                    self.get_node(*child),
+                    Ok(Node::Expression(Expression::Row { .. }))
                 );
                 if child_is_row {
-                    nodes.push(id);
+                    return true;
                 }
             }
-        }
-        Ok(nodes)
+            false
+        };
+        let mut post_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        post_tree.populate_nodes(top);
+        post_tree.take_nodes()
     }
 
     /// Get a single sub-query from the row node.
@@ -542,21 +534,21 @@ impl Plan {
     ) -> Result<Strategy, SbroadError> {
         let mut strategy = Strategy::new(select_id);
 
-        let bool_nodes = self.get_bool_nodes_with_row_children(filter_id)?;
-        for bool_node in &bool_nodes {
+        let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
+        for (_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
-        for bool_node in &bool_nodes {
+        for (_, bool_node) in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
                 strategy.add_child(id, policy, Program::new());
             }
         }
 
-        let unary_nodes = self.get_unary_nodes_with_row_children(filter_id)?;
-        for unary_node in &unary_nodes {
+        let unary_nodes = self.get_unary_nodes_with_row_children(filter_id);
+        for (_, unary_node) in &unary_nodes {
             let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, *unary_node)?;
             if let Some((id, policy)) = unary_strategy {
                 strategy.add_child(id, policy, Program::new());
@@ -888,8 +880,8 @@ impl Plan {
             self.calculate_strategy_for_single_distribution(rel_id, cond_id, join_kind)?
         {
             self.create_motion_nodes(strategy)?;
-            let nodes = self.get_bool_nodes_with_row_children(cond_id)?;
-            for node in &nodes {
+            let nodes = self.get_bool_nodes_with_row_children(cond_id);
+            for (_, node) in &nodes {
                 let bool_op = BoolOp::from_expr(self, *node)?;
                 self.set_distribution(bool_op.left)?;
                 self.set_distribution(bool_op.right)?;
@@ -899,8 +891,8 @@ impl Plan {
 
         // First, we need to set the motion policy for each boolean expression in the join condition.
         {
-            let nodes = self.get_bool_nodes_with_row_children(cond_id)?;
-            for node in &nodes {
+            let nodes = self.get_bool_nodes_with_row_children(cond_id);
+            for (_, node) in &nodes {
                 let bool_op = BoolOp::from_expr(self, *node)?;
                 self.set_distribution(bool_op.left)?;
                 self.set_distribution(bool_op.right)?;
@@ -929,9 +921,21 @@ impl Plan {
         })?;
         let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
-        let mut expr_tree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, true), EXPR_CAPACITY);
-        for (_, node_id) in expr_tree.iter(cond_id) {
+        let filter = |node_id: usize| -> bool {
+            matches!(
+                self.get_node(node_id),
+                Ok(Node::Expression(Expression::Bool { .. }))
+            )
+        };
+        let mut expr_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, true),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        expr_tree.populate_nodes(cond_id);
+        let nodes = expr_tree.take_nodes();
+        drop(expr_tree);
+        for (_, node_id) in nodes {
             let expr = self.get_expression_node(node_id)?;
             let bool_op = if let Expression::Bool { .. } = expr {
                 BoolOp::from_expr(self, node_id)?
@@ -1476,9 +1480,13 @@ impl Plan {
     /// - failed to set distribution
     #[otm_child_span("plan.transformation.add_motions")]
     pub fn add_motions(&mut self) -> Result<(), SbroadError> {
-        let nodes = self.get_relational_nodes_dfs_post()?;
-        for id in &nodes {
-            match self.get_relation_node(*id)?.clone() {
+        let top = self.get_top()?;
+        let mut post_tree =
+            PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
+        post_tree.populate_nodes(top);
+        let nodes = post_tree.take_nodes();
+        for (_, id) in nodes {
+            match self.get_relation_node(id)?.clone() {
                 // At the moment our grammar and IR constructors
                 // don't allow projection and values row with
                 // sub queries.
@@ -1494,7 +1502,7 @@ impl Plan {
                     output: proj_output_id,
                     ..
                 } => {
-                    if !self.add_two_stage_aggregation(*id)? {
+                    if !self.add_two_stage_aggregation(id)? {
                         self.set_distribution(proj_output_id)?;
                     }
                 }
@@ -1507,7 +1515,7 @@ impl Plan {
                 }
                 Relational::Selection { output, filter, .. } => {
                     self.set_distribution(output)?;
-                    let strategy = self.resolve_sub_query_conflicts(*id, filter)?;
+                    let strategy = self.resolve_sub_query_conflicts(id, filter)?;
                     self.create_motion_nodes(strategy)?;
                 }
                 Relational::Join {
@@ -1516,25 +1524,25 @@ impl Plan {
                     kind,
                     ..
                 } => {
-                    self.resolve_join_conflicts(*id, condition, &kind)?;
+                    self.resolve_join_conflicts(id, condition, &kind)?;
                     self.set_distribution(output)?;
                 }
                 Relational::Delete { .. } => {
-                    let strategy = self.resolve_delete_conflicts(*id)?;
+                    let strategy = self.resolve_delete_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                 }
                 Relational::Insert { .. } => {
                     // Insert output tuple already has relation's distribution.
-                    let strategy = self.resolve_insert_conflicts(*id)?;
+                    let strategy = self.resolve_insert_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                 }
                 Relational::Except { output, .. } => {
-                    let strategy = self.resolve_except_conflicts(*id)?;
+                    let strategy = self.resolve_except_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
                 Relational::UnionAll { output, .. } => {
-                    let strategy = self.resolve_union_conflicts(*id)?;
+                    let strategy = self.resolve_union_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }

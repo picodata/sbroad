@@ -12,10 +12,10 @@ pub mod split_columns;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
-use crate::ir::Plan;
+use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 
-use super::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 
 impl Plan {
     /// Concatenates trivalents (boolean or NULL expressions) to the AND node.
@@ -142,10 +142,26 @@ impl Plan {
         ops: &[Bool],
     ) -> Result<usize, SbroadError> {
         let mut map: HashMap<usize, usize> = HashMap::new();
-        let mut subtree =
-            PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Expression(
+                Expression::Bool { .. }
+                | Expression::Arithmetic { .. }
+                | Expression::Alias { .. }
+                | Expression::Row { .. },
+            )) = self.get_node(node_id)
+            {
+                return true;
+            }
+            false
+        };
+        let mut subtree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
+        drop(subtree);
         for (_, id) in &nodes {
             let expr = self.get_expression_node(*id)?;
             if let Expression::Bool { op, .. } = expr {
@@ -160,6 +176,9 @@ impl Plan {
             let expr = self.get_mut_expression_node(*id)?;
             // For all expressions in the subtree tries to replace their children
             // with the new nodes from the map.
+            //
+            // XXX: If you add a new expression type to the match, make sure to
+            // add it to the filter above.
             match expr {
                 Expression::Alias { child, .. } => {
                     if let Some(new_id) = map.get(child) {

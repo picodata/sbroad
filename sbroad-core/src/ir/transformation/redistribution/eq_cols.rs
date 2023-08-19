@@ -2,8 +2,8 @@ use crate::errors::SbroadError;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
 use crate::ir::transformation::redistribution::BoolOp;
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
-use crate::ir::Plan;
+use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
+use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
 use std::slice::Iter;
 
@@ -469,16 +469,19 @@ impl EqualityCols {
     ) -> Result<Option<EqualityCols>, SbroadError> {
         let mut node_eq_cols: EqualityColsMap = EqualityColsMap::new();
         let refers_to = ReferredMap::new_from_join_condition(plan, condition_id, join_id)?;
-        let mut expr_tree =
-            PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, true), EXPR_CAPACITY);
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Expression(Expression::Bool { .. })) = plan.get_node(node_id) {
+                return true;
+            }
+            false
+        };
+        let mut expr_tree = PostOrderWithFilter::with_capacity(
+            |node| plan.nodes.expr_iter(node, true),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
         for (_, node_id) in expr_tree.iter(condition_id) {
-            let expr = plan.get_expression_node(node_id)?;
-            let bool_op = if let Expression::Bool { .. } = expr {
-                BoolOp::from_expr(plan, node_id)?
-            } else {
-                continue;
-            };
-
+            let bool_op = BoolOp::from_expr(plan, node_id)?;
             let left_expr = plan.get_expression_node(bool_op.left)?;
             let right_expr = plan.get_expression_node(bool_op.right)?;
             let new_eq_cols = match (left_expr, right_expr) {

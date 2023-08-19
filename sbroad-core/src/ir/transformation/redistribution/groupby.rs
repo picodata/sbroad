@@ -8,7 +8,7 @@ use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey, MotionPolicy, Program, Strategy, Target,
 };
-use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{BreadthFirst, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::{HashMap, HashSet};
 
@@ -615,8 +615,19 @@ impl Plan {
         // 1) aggregates are not allowed
         // 2) must contain at least one column (group by 1 - is not valid)
         for (pos, grouping_expr_id) in other.iter().enumerate() {
-            let mut dfs =
-                PostOrder::with_capacity(|x| self.nodes.expr_iter(x, false), EXPR_CAPACITY);
+            let filter = |node_id: usize| -> bool {
+                matches!(
+                    self.get_node(node_id),
+                    Ok(Node::Expression(
+                        Expression::StableFunction { .. } | Expression::Reference { .. }
+                    ))
+                )
+            };
+            let mut dfs = PostOrderWithFilter::with_capacity(
+                |x| self.nodes.expr_iter(x, false),
+                EXPR_CAPACITY,
+                Box::new(filter),
+            );
             let mut contains_at_least_one_col = false;
             for (_, node_id) in dfs.iter(*grouping_expr_id) {
                 let node = self.get_node(node_id)?;
@@ -719,8 +730,17 @@ impl Plan {
     fn validate_aggregates(&self, aggr_infos: &Vec<AggrInfo>) -> Result<(), SbroadError> {
         for info in aggr_infos {
             let top = info.aggr.fun_id;
-            let mut dfs =
-                PostOrder::with_capacity(|x| self.nodes.expr_iter(x, false), EXPR_CAPACITY);
+            let filter = |node_id: usize| -> bool {
+                matches!(
+                    self.get_node(node_id),
+                    Ok(Node::Expression(Expression::StableFunction { .. }))
+                )
+            };
+            let mut dfs = PostOrderWithFilter::with_capacity(
+                |x| self.nodes.expr_iter(x, false),
+                EXPR_CAPACITY,
+                Box::new(filter),
+            );
             for (_, id) in dfs.iter(top) {
                 if id == top {
                     continue;
@@ -901,9 +921,16 @@ impl Plan {
                 match node {
                     Relational::Projection { output, .. } => {
                         for col in self.get_row_list(*output)? {
-                            let mut dfs = PostOrder::with_capacity(
+                            let filter = |node_id: usize| -> bool {
+                                matches!(
+                                    self.get_node(node_id),
+                                    Ok(Node::Expression(Expression::Reference { .. }))
+                                )
+                            };
+                            let mut dfs = PostOrderWithFilter::with_capacity(
                                 |x| self.nodes.aggregate_iter(x, false),
                                 EXPR_CAPACITY,
+                                Box::new(filter),
                             );
                             dfs.populate_nodes(*col);
                             let nodes = dfs.take_nodes();

@@ -10,11 +10,52 @@ where
     F: FnMut(usize) -> I,
     I: Iterator<Item = usize>,
 {
-    iter_children: F,
-    nodes: Vec<LevelNode>,
+    inner: PostOrderWithFilter<'static, F, I>,
 }
 
 impl<F, I> PostOrder<F, I>
+where
+    F: FnMut(usize) -> I,
+    I: Iterator<Item = usize>,
+{
+    pub fn iter(&mut self, root: usize) -> impl Iterator<Item = LevelNode> {
+        self.inner.iter(root)
+    }
+
+    pub fn new(iter_children: F, nodes: Vec<LevelNode>) -> Self {
+        Self {
+            inner: PostOrderWithFilter::new(iter_children, nodes, Box::new(|_| true)),
+        }
+    }
+
+    pub fn populate_nodes(&mut self, root: usize) {
+        self.inner.populate_nodes(root);
+    }
+
+    pub fn take_nodes(&mut self) -> Vec<LevelNode> {
+        self.inner.take_nodes()
+    }
+
+    pub fn with_capacity(iter_children: F, capacity: usize) -> Self {
+        Self {
+            inner: PostOrderWithFilter::with_capacity(iter_children, capacity, Box::new(|_| true)),
+        }
+    }
+}
+
+pub type FilterFn<'filter> = Box<dyn Fn(usize) -> bool + 'filter>;
+
+pub struct PostOrderWithFilter<'filter, F, I>
+where
+    F: FnMut(usize) -> I,
+    I: Iterator<Item = usize>,
+{
+    iter_children: F,
+    nodes: Vec<LevelNode>,
+    filter_fn: FilterFn<'filter>,
+}
+
+impl<'filter, F, I> PostOrderWithFilter<'filter, F, I>
 where
     F: FnMut(usize) -> I,
     I: Iterator<Item = usize>,
@@ -24,10 +65,11 @@ where
         self.take_nodes().into_iter()
     }
 
-    pub fn new(iter_children: F, nodes: Vec<LevelNode>) -> Self {
+    pub fn new(iter_children: F, nodes: Vec<LevelNode>, filter_fn: FilterFn<'filter>) -> Self {
         Self {
             iter_children,
             nodes,
+            filter_fn,
         }
     }
 
@@ -44,13 +86,16 @@ where
         for child in (self.iter_children)(root) {
             self.traverse(child, level + 1);
         }
-        self.nodes.push((level, root));
+        if (self.filter_fn)(root) {
+            self.nodes.push((level, root));
+        }
     }
 
-    pub fn with_capacity(iter_children: F, capacity: usize) -> Self {
+    pub fn with_capacity(iter_children: F, capacity: usize, filter: FilterFn<'filter>) -> Self {
         Self {
             iter_children,
             nodes: Vec::with_capacity(capacity),
+            filter_fn: filter,
         }
     }
 }

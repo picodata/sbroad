@@ -487,7 +487,8 @@ impl Plan {
                         let mut new_keys: HashSet<Key, RepeatableState> =
                             HashSet::with_hasher(RepeatableState);
                         for key in keys.iter() {
-                            let mut new_key: Key = Key::new(Vec::new());
+                            let mut new_key: Key =
+                                Key::new(Vec::with_capacity(key.positions.len()));
                             let all_found = key.positions.iter().all(|pos| {
                                 child_pos_map.get(&(child_rel_node, *pos).into()).map_or(
                                     false,
@@ -554,7 +555,7 @@ impl Plan {
         let table: &Table = self.relations.get(table_name).ok_or_else(|| {
             SbroadError::NotFound(Entity::Table, format!("{table_name} among plan relations"))
         })?;
-        let mut new_key: Key = Key::new(Vec::new());
+        let mut new_key: Key = Key::new(Vec::with_capacity(table.shard_key.positions.len()));
         let all_found = table.shard_key.positions.iter().all(|pos| {
             table_pos_map.get(pos).map_or(false, |v| {
                 new_key.positions.push(*v);

@@ -8,8 +8,9 @@ use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, JoinKind, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::tree::traversal::PostOrder;
+use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::Value;
+use crate::ir::Node;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -275,23 +276,21 @@ where
         }
 
         let ir_plan = self.exec_plan.get_ir_plan();
-        // We use a `subtree_iter()` because we need DNF version of the filter/condition
-        // expressions to determine buckets.
-        let capacity = ir_plan.next_id();
-        let mut tree =
-            PostOrder::with_capacity(|node| ir_plan.exec_plan_subtree_iter(node), capacity);
-        let nodes: Vec<usize> = tree
-            .iter(top_id)
-            .filter_map(|(_, id)| {
-                if ir_plan.get_relation_node(id).is_ok() {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let filter = |node_id: usize| -> bool {
+            if let Ok(Node::Relational(_)) = ir_plan.get_node(node_id) {
+                return true;
+            }
+            false
+        };
+        // We use a `exec_plan_subtree_iter()` because we need DNF version of the
+        // filter/condition expressions to determine buckets.
+        let mut tree = PostOrderWithFilter::with_capacity(
+            |node| ir_plan.exec_plan_subtree_iter(node),
+            REL_CAPACITY,
+            Box::new(filter),
+        );
 
-        for node_id in nodes {
+        for (_, node_id) in tree.iter(top_id) {
             if self.bucket_map.get(&node_id).is_some() {
                 continue;
             }

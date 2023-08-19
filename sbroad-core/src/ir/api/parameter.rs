@@ -287,7 +287,7 @@ impl Plan {
 
         // Update values row output.
         for (_, id) in nodes {
-            if let Ok(Relational::ValuesRow { .. }) = self.get_relation_node(id) {
+            if let Ok(Node::Relational(Relational::ValuesRow { .. })) = self.get_node(id) {
                 self.update_values_row(id)?;
             }
         }

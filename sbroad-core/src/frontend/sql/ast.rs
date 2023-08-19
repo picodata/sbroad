@@ -13,7 +13,7 @@ use pest::iterators::Pair;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 
 /// Parse tree
 #[derive(Parser)]
@@ -1042,15 +1042,21 @@ impl AbstractSyntaxTree {
                         )
                     })?;
                     for top in rel_node.children.iter().skip(1) {
-                        let capacity = EXPR_CAPACITY * 3;
-                        let mut subtree =
-                            PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+                        let filter = |node_id: usize| -> bool {
+                            if let Ok(node) = self.nodes.get_node(node_id) {
+                                matches!(node.rule, Type::Reference | Type::Asterisk)
+                            } else {
+                                false
+                            }
+                        };
+                        let mut subtree = PostOrderWithFilter::with_capacity(
+                            |node| self.nodes.ast_iter(node),
+                            EXPR_CAPACITY,
+                            Box::new(filter),
+                        );
                         for (_, id) in subtree.iter(*top) {
-                            let node = self.nodes.get_node(id)?;
-                            if let Type::Reference | Type::Asterisk = node.rule {
-                                if let Entry::Vacant(entry) = map.entry(id) {
-                                    entry.insert(vec![*rel_id]);
-                                }
+                            if let Entry::Vacant(entry) = map.entry(id) {
+                                entry.insert(vec![*rel_id]);
                             }
                         }
                     }
@@ -1062,21 +1068,27 @@ impl AbstractSyntaxTree {
                             rel_node.rule
                         ))
                     })?;
-                    let filter = rel_node.children.get(1).ok_or_else(|| {
+                    let filter_id = rel_node.children.get(1).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
                             "that is AST selection filter child with index 1".into(),
                         )
                     })?;
-                    let capacity = EXPR_CAPACITY * 2;
-                    let mut subtree =
-                        PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
-                    for (_, id) in subtree.iter(*filter) {
-                        let node = self.nodes.get_node(id)?;
-                        if node.rule == Type::Reference {
-                            if let Entry::Vacant(entry) = map.entry(id) {
-                                entry.insert(vec![*rel_id]);
-                            }
+                    let filter = |node_id: usize| -> bool {
+                        if let Ok(node) = self.nodes.get_node(node_id) {
+                            matches!(node.rule, Type::Reference)
+                        } else {
+                            false
+                        }
+                    };
+                    let mut subtree = PostOrderWithFilter::with_capacity(
+                        |node| self.nodes.ast_iter(node),
+                        EXPR_CAPACITY,
+                        Box::new(filter),
+                    );
+                    for (_, id) in subtree.iter(*filter_id) {
+                        if let Entry::Vacant(entry) = map.entry(id) {
+                            entry.insert(vec![*rel_id]);
                         }
                     }
                 }
@@ -1099,15 +1111,21 @@ impl AbstractSyntaxTree {
                         )
                     })?;
                     // ast_iter is not working here - we have to ignore sub-queries in the join condition.
-                    let capacity = EXPR_CAPACITY * 4;
-                    let mut subtree =
-                        PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+                    let filter = |node_id: usize| -> bool {
+                        if let Ok(node) = self.nodes.get_node(node_id) {
+                            matches!(node.rule, Type::Reference)
+                        } else {
+                            false
+                        }
+                    };
+                    let mut subtree = PostOrderWithFilter::with_capacity(
+                        |node| self.nodes.ast_iter(node),
+                        EXPR_CAPACITY,
+                        Box::new(filter),
+                    );
                     for (_, id) in subtree.iter(*cond_id) {
-                        let node = self.nodes.get_node(id)?;
-                        if node.rule == Type::Reference {
-                            if let Entry::Vacant(entry) = map.entry(id) {
-                                entry.insert(vec![*left_id, *right_id]);
-                            }
+                        if let Entry::Vacant(entry) = map.entry(id) {
+                            entry.insert(vec![*left_id, *right_id]);
                         }
                     }
                 }
@@ -1118,14 +1136,21 @@ impl AbstractSyntaxTree {
                         )
                     })?;
                     for top in rel_node.children.iter().skip(1) {
-                        let mut subtree =
-                            PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
+                        let filter = |node_id: usize| -> bool {
+                            if let Ok(node) = self.nodes.get_node(node_id) {
+                                matches!(node.rule, Type::Reference)
+                            } else {
+                                false
+                            }
+                        };
+                        let mut subtree = PostOrderWithFilter::with_capacity(
+                            |node| self.nodes.ast_iter(node),
+                            EXPR_CAPACITY,
+                            Box::new(filter),
+                        );
                         for (_, id) in subtree.iter(*top) {
-                            let node = self.nodes.get_node(id)?;
-                            if let Type::Reference = node.rule {
-                                if let Entry::Vacant(entry) = map.entry(id) {
-                                    entry.insert(vec![*rel_id]);
-                                }
+                            if let Entry::Vacant(entry) = map.entry(id) {
+                                entry.insert(vec![*rel_id]);
                             }
                         }
                     }

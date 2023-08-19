@@ -1214,7 +1214,7 @@ impl<'p> SyntaxPlan<'p> {
 
     pub(crate) fn empty(plan: &'p ExecutionPlan) -> Self {
         SyntaxPlan {
-            nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id()),
+            nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id() * 2),
             top: None,
             plan,
             snapshot: Snapshot::Latest,
