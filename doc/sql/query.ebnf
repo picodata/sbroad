@@ -9,7 +9,7 @@ PrimaryKey  ::= 'primary key' '(' name (',' name)* ')'
 Distribution ::= 'global' | ('distributed by' '(' name (',' name)*  ')')
 DropTable   ::= 'drop table' table ('option' '(' ('timeout' '=' DOUBLE)')')?
 Options     ::= 'option' '(' ('vtable_max_rows' '=' UNSIGNED)? (',' 'sql_vdbe_max_steps' '=' UNSIGNED)? ')'
-SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' 'AS' name) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' 'AS' name))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' ('AS' name)?) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' ('AS' name)?))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
 VALUES      ::= 'VALUES' '(' row (',' row)* ')'
 row         ::= '(' (value (',' value)*) ')'
 column      ::= '*' | (table '.')? name ('AS' name)? |  table '.' '*' | expression ('AS' name)?
