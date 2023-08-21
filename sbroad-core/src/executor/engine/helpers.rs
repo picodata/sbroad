@@ -11,9 +11,8 @@ use tarantool::space::Space;
 use tarantool::transaction::transaction;
 
 use crate::executor::engine::helpers::storage::runtime::{prepare, read_prepared, read_unprepared};
-use crate::executor::engine::helpers::storage::PreparedStmt;
-use crate::executor::engine::QueryCache;
-use crate::executor::lru::Cache;
+use crate::executor::engine::{QueryCache, StorageCache};
+use crate::executor::protocol::SchemaInfo;
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
 use crate::ir::ExecuteOptions;
@@ -85,7 +84,7 @@ pub fn normalize_name_for_space_api(s: &str) -> String {
 ///
 /// # Errors
 /// - Failed to encode the execution plan.
-pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
+pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
     let query_type = exec_plan.query_type()?;
     let can_be_cached = exec_plan.vtables_empty();
     let (ordered, sub_plan_id) = match query_type {
@@ -167,12 +166,15 @@ pub fn encode_plan(exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadE
     let nodes = ordered.to_syntax_data()?;
     // Virtual tables in the plan must be already filtered, so we can use all buckets here.
     let params = exec_plan.to_params(&nodes, &Buckets::All)?;
+    let router_version_map = std::mem::take(&mut exec_plan.get_mut_ir_plan().version_map);
+    let schema_info = SchemaInfo::new(router_version_map);
     let required_data = RequiredData::new(
         sub_plan_id,
         params,
         query_type,
         can_be_cached,
         exec_plan.get_ir_plan().options.clone(),
+        schema_info,
     );
     let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
     let raw_required_data: Vec<u8> = encoded_required_data.into();
@@ -912,13 +914,16 @@ pub fn sharding_key_from_tuple<'tuple>(
 /// # Errors
 /// - Failed to borrow the cache
 /// - Failed to execute given statement.
-pub fn exec_if_in_cache(
-    runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
+pub fn exec_if_in_cache<R: QueryCache>(
+    runtime: &R,
     params: &[Value],
     plan_id: &String,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
-) -> Result<Option<Box<dyn Any>>, SbroadError> {
+) -> Result<Option<Box<dyn Any>>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     // Look for the prepared statement in the cache.
     if let Some(stmt) = runtime
         .cache()
@@ -981,13 +986,17 @@ fn cache_miss_read_prepared(
 /// - Failed to borrow runtime's cache
 /// - Tarantool execution error
 #[allow(unused_variables)]
-pub fn prepare_and_read(
-    runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
+pub fn prepare_and_read<R: Vshard + QueryCache>(
+    runtime: &R,
     pattern_with_params: &PatternWithParams,
     plan_id: &String,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
-) -> Result<Box<dyn Any>, SbroadError> {
+    schema_info: &SchemaInfo,
+) -> Result<Box<dyn Any>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     match prepare(&pattern_with_params.pattern) {
         Ok(stmt) => {
             let stmt_id = stmt.id()?;
@@ -1009,7 +1018,7 @@ pub fn prepare_and_read(
                         format!("prepared statement {stmt:?} into the cache: {e:?}"),
                     )
                 })?
-                .put(plan_id.to_string(), stmt)?;
+                .put(plan_id.to_string(), stmt, schema_info)?;
             // The statement was found in the cache, so we can execute it.
             debug!(
                 Option::from("execute plan"),
@@ -1062,11 +1071,14 @@ pub fn prepare_and_read(
 /// - Failed to compile the optional data
 /// - Failed to prepare the statement
 #[allow(unused_variables)]
-pub fn execute_cacheable_dql(
-    runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
+pub fn execute_cacheable_dql<R: Vshard + QueryCache>(
+    runtime: &R,
     required: &mut RequiredData,
     optional: &mut OptionalData,
-) -> Result<Box<dyn Any>, SbroadError> {
+) -> Result<Box<dyn Any>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let opts = std::mem::take(&mut required.options.execute_options);
     if let Some(res) = exec_if_in_cache(
         runtime,
@@ -1084,6 +1096,7 @@ pub fn execute_cacheable_dql(
         &required.plan_id,
         required.options.vtable_max_rows,
         opts,
+        &required.schema_info,
     )
 }
 
@@ -1092,11 +1105,14 @@ pub fn execute_cacheable_dql(
 /// # Errors
 /// - Failed to execute DML locally.
 #[allow(clippy::too_many_lines)]
-pub fn execute_dml_on_storage(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+pub fn execute_dml_on_storage<R: Vshard + QueryCache>(
+    runtime: &R,
     raw_optional: &mut Vec<u8>,
     required: &mut RequiredData,
-) -> Result<ConsumerResult, SbroadError> {
+) -> Result<ConsumerResult, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let data = std::mem::take(raw_optional);
     let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
@@ -1115,12 +1131,15 @@ pub fn execute_dml_on_storage(
 }
 
 /// Helper function to materialize vtable on storage (not on router).
-fn materialize_vtable_locally(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+fn materialize_vtable_locally<R: Vshard + QueryCache>(
+    runtime: &R,
     optional: &mut OptionalData,
     required: &mut RequiredData,
     child_id: usize,
-) -> Result<(), SbroadError> {
+) -> Result<(), SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let subplan_top_id = optional.exec_plan.get_motion_subtree_root(child_id)?;
     let plan = optional.exec_plan.get_ir_plan();
     let column_names = plan.get_relational_aliases(subplan_top_id)?;
@@ -1158,11 +1177,14 @@ fn materialize_vtable_locally(
 }
 
 #[allow(clippy::too_many_lines)]
-fn execute_update_on_storage(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+fn execute_update_on_storage<R: Vshard + QueryCache>(
+    runtime: &R,
     optional: &mut OptionalData,
     required: &mut RequiredData,
-) -> Result<ConsumerResult, SbroadError> {
+) -> Result<ConsumerResult, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let plan = optional.exec_plan.get_ir_plan();
     let update_id = plan.get_top()?;
     let update_child_id = plan.dml_child_id(update_id)?;
@@ -1376,11 +1398,14 @@ fn execute_local_update(
 }
 
 #[allow(clippy::too_many_lines)]
-fn execute_delete_on_storage(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+fn execute_delete_on_storage<R: Vshard + QueryCache>(
+    runtime: &R,
     optional: &mut OptionalData,
     required: &mut RequiredData,
-) -> Result<ConsumerResult, SbroadError> {
+) -> Result<ConsumerResult, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let plan = optional.exec_plan.get_ir_plan();
     let delete_id = plan.get_top()?;
     let delete_child_id = plan.dml_child_id(delete_id)?;
@@ -1437,11 +1462,14 @@ fn execute_delete_on_storage(
 }
 
 #[allow(clippy::too_many_lines)]
-fn execute_insert_on_storage(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+fn execute_insert_on_storage<R: Vshard + QueryCache>(
+    runtime: &R,
     optional: &mut OptionalData,
     required: &mut RequiredData,
-) -> Result<ConsumerResult, SbroadError> {
+) -> Result<ConsumerResult, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     // We always generate a virtual table under the `INSERT` node
     // of the execution plan and prefer to execute it via space API
     // instead of SQL (for performance reasons).
@@ -1600,11 +1628,14 @@ fn execute_insert_on_storage(
 /// # Errors
 /// - Failed to execute DML locally.
 #[allow(unused_variables)]
-pub fn execute_dml(
-    runtime: &(impl QueryCache<Cache = impl Cache<String, PreparedStmt>> + Vshard),
+pub fn execute_dml<R: Vshard + QueryCache>(
+    runtime: &R,
     required: &mut RequiredData,
     raw_optional: &mut Vec<u8>,
-) -> Result<Box<dyn Any>, SbroadError> {
+) -> Result<Box<dyn Any>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     if required.query_type != QueryType::DML {
         return Err(SbroadError::Invalid(
             Entity::Plan,
@@ -1665,11 +1696,14 @@ pub fn execute_non_cacheable_dql_with_raw_optional(
 /// - Failed to compile the optional data
 /// - Failed to prepare the statement
 #[allow(unused_variables)]
-pub fn execute_cacheable_dql_with_raw_optional(
-    runtime: &impl QueryCache<Cache = impl Cache<String, PreparedStmt>>,
+pub fn execute_cacheable_dql_with_raw_optional<R: Vshard + QueryCache>(
+    runtime: &R,
     required: &mut RequiredData,
     raw_optional: &mut Vec<u8>,
-) -> Result<Box<dyn Any>, SbroadError> {
+) -> Result<Box<dyn Any>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
     let opts = std::mem::take(&mut required.options.execute_options);
     if let Some(res) = exec_if_in_cache(
         runtime,
@@ -1687,6 +1721,7 @@ pub fn execute_cacheable_dql_with_raw_optional(
         &required.plan_id,
         required.options.vtable_max_rows,
         opts,
+        &required.schema_info,
     )
 }
 

@@ -10,6 +10,7 @@ use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
 use crate::otm::{current_id, current_tracer, extract_context, inject_context, QueryTracer};
 
+use crate::executor::engine::TableVersionMap;
 use crate::ir::Options;
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
@@ -55,6 +56,20 @@ impl From<(Binary, Binary)> for Message {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Default)]
+pub struct SchemaInfo {
+    pub router_version_map: TableVersionMap,
+}
+
+impl SchemaInfo {
+    #[must_use]
+    pub fn new(version_map: TableVersionMap) -> Self {
+        SchemaInfo {
+            router_version_map: version_map,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RequiredData {
     // Unique ID for concrete plan represented in a view of BLAKE3 hash.
@@ -68,6 +83,7 @@ pub struct RequiredData {
     tracer: QueryTracer,
     trace_id: Option<String>,
     pub options: Options,
+    pub schema_info: SchemaInfo,
 }
 
 impl Default for RequiredData {
@@ -81,6 +97,7 @@ impl Default for RequiredData {
             tracer: QueryTracer::default(),
             trace_id: None,
             options: Options::default(),
+            schema_info: SchemaInfo::default(),
         }
     }
 }
@@ -121,6 +138,7 @@ impl RequiredData {
         query_type: QueryType,
         can_be_cached: bool,
         options: Options,
+        schema_info: SchemaInfo,
     ) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
@@ -135,6 +153,7 @@ impl RequiredData {
                 tracer,
                 trace_id: None,
                 options,
+                schema_info,
             }
         } else {
             RequiredData {
@@ -146,6 +165,7 @@ impl RequiredData {
                 tracer,
                 trace_id: Some(current_id()),
                 options,
+                schema_info,
             }
         }
     }

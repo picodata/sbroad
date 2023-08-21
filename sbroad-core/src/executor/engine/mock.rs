@@ -604,6 +604,14 @@ impl QueryCache for RouterRuntimeMock {
             })?
             .capacity())
     }
+
+    fn provides_versions(&self) -> bool {
+        false
+    }
+
+    fn get_table_version(&self, _: &str) -> Result<u64, SbroadError> {
+        Err(SbroadError::DoSkip)
+    }
 }
 
 impl Vshard for RouterRuntimeMock {

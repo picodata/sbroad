@@ -1,3 +1,4 @@
+use crate::error;
 use crate::errors::{Action, Entity, SbroadError};
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::Debug;
@@ -26,6 +27,13 @@ pub trait Cache<Key, Value> {
     /// # Errors
     /// - Internal error (should never happen).
     fn put(&mut self, key: Key, value: Value) -> Result<(), SbroadError>;
+
+    /// Clears the cache, eviction function is
+    /// applied to each element (in unspecified order)
+    ///
+    /// # Errors
+    /// - errors caused by eviction function
+    fn clear(&mut self) -> Result<(), SbroadError>;
 }
 
 #[derive(Debug)]
@@ -189,6 +197,34 @@ where
     pub fn capacity(&self) -> usize {
         self.capacity
     }
+
+    /// Empties the cache, `evict_fn` is applied
+    /// to every element in the cache in unspecified
+    /// order.
+    ///
+    ///
+    /// # Errors
+    /// - error on applying `evict_fn` to some value
+    pub fn clear(&mut self) -> Result<(), SbroadError> {
+        let mut first_error = Ok(());
+        if let Some(evict) = &self.evict_fn {
+            for (key, lru_node) in &mut self.map {
+                if key.is_some() {
+                    let res = evict(&mut lru_node.value);
+                    if res.is_err() {
+                        if first_error.is_ok() {
+                            first_error = res.clone();
+                        }
+                        error!(Option::from("clear LRU cache"), &format!("{res:?}"));
+                    }
+                }
+            }
+        }
+        self.map.clear();
+        let head = LRUNode::sentinel();
+        self.map.insert(None, head);
+        first_error
+    }
 }
 
 impl<Key, Value> Cache<Key, Value> for LRUCache<Key, Value>
@@ -251,6 +287,10 @@ where
             self.remove_last()?;
         }
         Ok(())
+    }
+
+    fn clear(&mut self) -> Result<(), SbroadError> {
+        self.clear()
     }
 }
 

@@ -187,9 +187,12 @@ impl QueryCache for RouterRuntime {
     where
         Self: Sized,
     {
-        *self.ir_cache.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
-        })? = Self::Cache::new(self.cache_capacity()?, None)?;
+        self.ir_cache
+            .try_borrow_mut()
+            .map_err(|e| {
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
+            })?
+            .clear()?;
         Ok(())
     }
 
@@ -201,6 +204,14 @@ impl QueryCache for RouterRuntime {
                 SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}"))
             })?
             .capacity())
+    }
+
+    fn provides_versions(&self) -> bool {
+        false
+    }
+
+    fn get_table_version(&self, _: &str) -> Result<u64, SbroadError> {
+        Err(SbroadError::DoSkip)
     }
 }
 

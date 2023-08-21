@@ -2,15 +2,15 @@ use crate::cartridge::config::StorageConfiguration;
 use crate::cartridge::{bucket_count, update_tracing};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
-use sbroad::executor::engine::helpers;
 use sbroad::executor::engine::helpers::storage::runtime::unprepare;
 use sbroad::executor::engine::helpers::storage::PreparedStmt;
 use sbroad::executor::engine::helpers::vshard::get_random_bucket;
+use sbroad::executor::engine::{helpers, StorageCache};
 use sbroad::executor::engine::{QueryCache, Vshard};
 use sbroad::executor::hash::bucket_id_by_tuple;
 use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
-use sbroad::executor::protocol::{Binary, RequiredData};
+use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
 use sbroad::{debug, error, warn};
 use std::any::Any;
@@ -24,11 +24,32 @@ use super::ConfigurationProvider;
 pub struct StorageRuntime {
     metadata: RefCell<StorageConfiguration>,
     bucket_count: u64,
-    cache: RefCell<LRUCache<String, PreparedStmt>>,
+    cache: RefCell<CartridgeCache>,
+}
+
+pub struct CartridgeCache(LRUCache<String, PreparedStmt>);
+
+impl StorageCache for CartridgeCache {
+    fn put(
+        &mut self,
+        plan_id: String,
+        stmt: PreparedStmt,
+        _: &SchemaInfo,
+    ) -> Result<(), SbroadError> {
+        self.0.put(plan_id, stmt)
+    }
+
+    fn get(&mut self, plan_id: &String) -> Result<Option<&PreparedStmt>, SbroadError> {
+        self.0.get(plan_id)
+    }
+
+    fn clear(&mut self) -> Result<(), SbroadError> {
+        self.0.clear()
+    }
 }
 
 impl QueryCache for StorageRuntime {
-    type Cache = LRUCache<String, PreparedStmt>;
+    type Cache = CartridgeCache;
 
     fn cache(&self) -> &RefCell<Self::Cache> {
         &self.cache
@@ -41,14 +62,26 @@ impl QueryCache for StorageRuntime {
             .map_err(|e| {
                 SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
             })?
+            .0
             .capacity())
     }
 
     fn clear_cache(&self) -> Result<(), SbroadError> {
-        *self.cache.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
-        })? = Self::Cache::new(DEFAULT_CAPACITY, None)?;
+        self.cache
+            .try_borrow_mut()
+            .map_err(|e| {
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
+            })?
+            .clear()?;
         Ok(())
+    }
+
+    fn provides_versions(&self) -> bool {
+        false
+    }
+
+    fn get_table_version(&self, _: &str) -> Result<u64, SbroadError> {
+        Err(SbroadError::DoSkip)
     }
 }
 
@@ -203,7 +236,7 @@ impl StorageRuntime {
         let result = StorageRuntime {
             metadata: RefCell::new(StorageConfiguration::new()),
             bucket_count: bucket_count()?,
-            cache: RefCell::new(cache),
+            cache: RefCell::new(CartridgeCache(cache)),
         };
 
         Ok(result)

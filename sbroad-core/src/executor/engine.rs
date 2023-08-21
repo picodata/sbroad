@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 use crate::errors::SbroadError;
 use crate::executor::bucket::Buckets;
+use crate::executor::engine::helpers::storage::PreparedStmt;
 use crate::executor::ir::ExecutionPlan;
+use crate::executor::protocol::SchemaInfo;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::function::Function;
 use crate::ir::relation::Table;
@@ -61,6 +63,38 @@ pub trait Metadata: Sized {
     fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError>;
 }
 
+pub trait StorageCache {
+    /// Put the prepared statement with given key in cache,
+    /// remembering its version.
+    ///
+    /// # Errors
+    /// - failed to get schema version for some table
+    /// - invalid `schema_info`
+    fn put(
+        &mut self,
+        plan_id: String,
+        stmt: PreparedStmt,
+        schema_info: &SchemaInfo,
+    ) -> Result<(), SbroadError>;
+
+    /// Get the prepared statement from cache.
+    /// If the schema version for some table has
+    /// been changed, `None` is returned.
+    ///
+    /// # Errors
+    /// - failed to get schema version for some table
+    #[allow(clippy::ptr_arg)]
+    fn get(&mut self, plan_id: &String) -> Result<Option<&PreparedStmt>, SbroadError>;
+
+    /// Clears the cache.
+    ///
+    /// # Errors
+    /// - internal errors from implementation
+    fn clear(&mut self) -> Result<(), SbroadError>;
+}
+
+pub type TableVersionMap = HashMap<String, u64>;
+
 pub trait QueryCache {
     type Cache;
 
@@ -83,6 +117,21 @@ pub trait QueryCache {
     /// # Errors
     /// - Failed to clear the cache.
     fn clear_cache(&self) -> Result<(), SbroadError>;
+
+    /// `true` if cache can provide a schema version
+    /// for given table. Only used for picodata,
+    /// cartridge does not need this.
+    fn provides_versions(&self) -> bool;
+
+    /// Return current schema version of given table.
+    ///
+    /// Must be called only if `provides_versions` returns
+    /// `true`.
+    ///
+    /// # Errors
+    /// - table was not found in system space
+    /// - could not access the system space
+    fn get_table_version(&self, _: &str) -> Result<u64, SbroadError>;
 }
 
 /// A router trait.

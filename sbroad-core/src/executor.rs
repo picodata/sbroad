@@ -29,7 +29,8 @@ use std::rc::Rc;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::{helpers::materialize_values, Router, Vshard};
+use crate::executor::engine::helpers::normalize_name_for_space_api;
+use crate::executor::engine::{helpers::materialize_values, Router, TableVersionMap, Vshard};
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
 use crate::frontend::Ast;
@@ -112,6 +113,16 @@ where
             let ast = C::ParseTree::new(sql)?;
             let metadata = &*coordinator.metadata()?;
             plan = ast.resolve_metadata(metadata)?;
+            if coordinator.provides_versions() {
+                let mut table_version_map =
+                    TableVersionMap::with_capacity(plan.relations.tables.len());
+                for table in plan.relations.tables.keys() {
+                    let normalized = normalize_name_for_space_api(table);
+                    let version = coordinator.get_table_version(normalized.as_str())?;
+                    table_version_map.insert(normalized, version);
+                }
+                plan.version_map = table_version_map;
+            }
             if !plan.is_ddl()? {
                 cache.put(key, plan.clone())?;
             }

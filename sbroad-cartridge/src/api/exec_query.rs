@@ -118,7 +118,7 @@ pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
 
     query_span("\"api.storage\"", &id, &tracer, &ctx, "", || {
         SEGMENT_ENGINE.with(|engine| {
-            let runtime = match engine.try_borrow() {
+            let runtime = match engine.try_borrow_mut() {
                 Ok(runtime) => runtime,
                 Err(e) => {
                     return tarantool_error(&format!(

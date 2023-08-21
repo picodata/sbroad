@@ -289,6 +289,7 @@ pub enum SbroadError {
     /// Second param represents description or name that let to identify object.
     /// and can be empty (None).
     Unsupported(Entity, Option<String>),
+    OutdatedStorageSchema,
 }
 
 impl fmt::Display for SbroadError {
@@ -313,6 +314,9 @@ impl fmt::Display for SbroadError {
             },
             SbroadError::UnexpectedNumberOfValues(s) => format!("unexpected number of values: {s}"),
             SbroadError::LuaError(e) => e.clone(),
+            SbroadError::OutdatedStorageSchema => {
+                "storage schema version different from router".into()
+            }
         };
 
         write!(f, "{p}")

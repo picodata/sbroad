@@ -18,6 +18,7 @@ use relation::Table;
 
 use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError};
+use crate::executor::engine::TableVersionMap;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
@@ -337,7 +338,7 @@ pub struct Plan {
     pub(crate) nodes: Nodes,
     /// Relations are stored in a hash-map, with a table name acting as a
     /// key to guarantee its uniqueness across the plan.
-    pub(crate) relations: Relations,
+    pub relations: Relations,
     /// Slice is a plan subtree under Motion node, that can be executed
     /// on a single db instance without data distribution problems (we add
     /// Motions to resolve them). Them we traverse the plan tree and collect
@@ -366,6 +367,7 @@ pub struct Plan {
     /// values after `bind_params` these options are set to their actual values.
     /// See `apply_options`.
     pub options: Options,
+    pub version_map: TableVersionMap,
 }
 
 impl Default for Plan {
@@ -423,6 +425,7 @@ impl Plan {
             constants: Parameters::new(),
             raw_options: vec![],
             options: Options::default(),
+            version_map: TableVersionMap::new(),
         }
     }
 
