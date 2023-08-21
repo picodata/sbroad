@@ -804,10 +804,10 @@ impl Plan {
                 _ => return Ok((finals, next)),
             }
         }
-        return Err(SbroadError::Invalid(
+        Err(SbroadError::Invalid(
             Entity::Plan,
             Some(format!("too many nodes ({}) in Reduce stage", finals.len())),
-        ));
+        ))
     }
 
     /// Collects information about grouping expressions for future use.

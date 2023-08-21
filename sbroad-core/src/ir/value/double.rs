@@ -14,7 +14,7 @@ pub struct Double {
     pub value: f64,
 }
 
-#[allow(clippy::derive_hash_xor_eq)]
+#[allow(clippy::derived_hash_with_manual_eq)]
 impl Hash for Double {
     /// We get hash from the internal float64 bit representation.
     /// As a side effect, `hash(NaN) == hash(NaN)` is true. We

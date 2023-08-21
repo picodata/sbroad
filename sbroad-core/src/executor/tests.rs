@@ -891,7 +891,7 @@ fn sharding_column2_test() {
 }
 
 /// Helper function to create a test virtual table.
-/// Called `23` because it contains Integer values [2, 3] for "identification_number" column.
+/// Called `23` because it contains Integer values [2, 3] for `identification_number` column.
 fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
@@ -959,9 +959,10 @@ fn groupby_linker_test() {
         .position(0)
         .unwrap();
     let top_id = query.exec_plan.get_motion_subtree_root(motion_id).unwrap();
-    if Buckets::All != query.bucket_discovery(top_id).unwrap() {
-        panic!("Expected Buckets::All for local groupby")
-    };
+    assert!(
+        !(Buckets::All != query.bucket_discovery(top_id).unwrap()),
+        "Expected Buckets::All for local groupby"
+    );
     let mut virtual_t1 = VirtualTable::new();
     virtual_t1.add_column(Column {
         name: "id".into(),
@@ -972,7 +973,7 @@ fn groupby_linker_test() {
     let mut buckets: Vec<u64> = vec![];
     let tuples: Vec<Vec<Value>> = vec![vec![Value::from(1_u64)], vec![Value::from(2_u64)]];
 
-    for tuple in tuples.iter() {
+    for tuple in &tuples {
         virtual_t1.add_tuple(tuple.clone());
         let mut ref_tuple: Vec<&Value> = Vec::with_capacity(tuple.len());
         for v in tuple.iter() {

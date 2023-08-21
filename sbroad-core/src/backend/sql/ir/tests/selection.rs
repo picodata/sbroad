@@ -9,7 +9,7 @@ fn selection_column_from_values() {
     "#;
 
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "COLUMN_1" FROM (VALUES (?))"#,),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?))"#.to_string(),
         vec![Value::Unsigned(1)],
     );
     check_sql_with_snapshot(query, vec![], expected.clone(), Snapshot::Oldest);

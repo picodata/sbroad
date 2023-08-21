@@ -2,7 +2,6 @@ include sbroad-cartridge/Makefile
 
 all: build
 
-IMAGE_NAME=docker-public.binary.picodata.io/sbroad-builder:0.7.0
 TARGET_ROOT=target
 CARTRIDGE_MODULE=sbroad-cartridge
 
@@ -42,10 +41,6 @@ test:
 	cargo test --features mock -vv
 
 test_all: test bench_check test_integration
-
-update_ci_image:
-	docker build -f ci/Dockerfile -t $(IMAGE_NAME) .
-	docker push $(IMAGE_NAME)
 
 release_rock:
 	cd $(CARTRIDGE_MODULE) \

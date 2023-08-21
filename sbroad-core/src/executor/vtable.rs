@@ -202,8 +202,7 @@ impl VirtualTable {
                         SbroadError::Invalid(
                             Entity::VirtualTable,
                             Some(format!(
-                                "Tuple with position {} in the bucket index not found",
-                                pointer
+                                "Tuple with position {pointer} in the bucket index not found"
                             )),
                         )
                     })?;
@@ -237,8 +236,7 @@ impl VirtualTable {
                             SbroadError::NotFound(
                                 Entity::DistributionKey,
                                 format!(
-                                "failed to find a distribution key column {} in the tuple {:?}.",
-                                pos, tuple
+                                "failed to find a distribution key column {pos} in the tuple {tuple:?}."
                             ),
                             )
                         })?;
@@ -364,8 +362,7 @@ impl VirtualTable {
                         return Err(SbroadError::Invalid(
                             Entity::Tuple,
                             Some(format!(
-                                "tuple builder command {:?} is not supported",
-                                command
+                                "tuple builder command {command:?} is not supported"
                             )),
                         ))
                     }
@@ -403,8 +400,7 @@ impl VirtualTable {
                     return Err(SbroadError::Invalid(
                         Entity::Tuple,
                         Some(format!(
-                            "tuple builder command {:?} is not supported",
-                            command
+                            "tuple builder command {command:?} is not supported"
                         )),
                     ))
                 }

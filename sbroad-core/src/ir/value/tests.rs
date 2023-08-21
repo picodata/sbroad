@@ -447,9 +447,7 @@ fn arithmetic() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!(
-                "Can't cast Double(Double {{ value: NaN }}) to decimal"
-            )),
+            Some("Can't cast Double(Double { value: NaN }) to decimal".to_string()),
         )),
         Value::Double(Double::from(f64::NAN)).add(&Value::Integer(1))
     );
@@ -496,14 +494,14 @@ fn arithmetic() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("String(\"\") must be numerical"))
+            Some("String(\"\") must be numerical".to_string())
         )),
         Value::from("").div(&Value::Unsigned(2))
     );
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Can not divide Integer(1) by zero Integer(0)"))
+            Some("Can not divide Integer(1) by zero Integer(0)".to_string())
         )),
         Value::Integer(1).div(&Value::Integer(0))
     );
@@ -536,9 +534,7 @@ fn concatenation() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!(
-                "Integer(1) and String(\"b\") must be strings to be concatenated"
-            ))
+            Some("Integer(1) and String(\"b\") must be strings to be concatenated".to_string())
         )),
         Value::Integer(1).concat(&Value::from("b"))
     )
@@ -576,9 +572,10 @@ fn and_or() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!(
+            Some(
                 "Integer(1) and Boolean(false) must be booleans to be applied to OR operation"
-            ))
+                    .to_string()
+            )
         )),
         Value::Integer(1).or(&Value::from(false))
     );

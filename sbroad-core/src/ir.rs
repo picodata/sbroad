@@ -427,6 +427,7 @@ impl Plan {
     /// - The same option used more than once in `Plan.raw_options`
     /// - Option value already violated in current `Plan`
     /// - The given option does not work for this specific query
+    #[allow(clippy::uninlined_format_args)]
     pub fn apply_options(&mut self) -> Result<(), SbroadError> {
         let mut used_options: HashSet<OptionKind> = HashSet::new();
         let options = std::mem::take(&mut self.raw_options);
@@ -825,11 +826,11 @@ impl Plan {
             | Expression::Reference { .. }
             | Expression::CountAsterisk => {}
         }
-        return Err(SbroadError::FailedTo(
+        Err(SbroadError::FailedTo(
             Action::Replace,
             Some(Entity::Expression),
             format!("parent expression ({parent_id}) has no child with id {old_id}"),
-        ));
+        ))
     }
 
     /// Gets `GroupBy` column by idx

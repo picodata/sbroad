@@ -1269,7 +1269,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn reorder(&mut self, select: &Select) -> Result<(), SbroadError> {
         // Move projection under scan.
-        let mut proj = self.nodes.get_mut_syntax_node(select.proj)?;
+        let proj = self.nodes.get_mut_syntax_node(select.proj)?;
         let new_top = proj.left.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,
@@ -1277,12 +1277,12 @@ impl<'p> SyntaxPlan<'p> {
             )
         })?;
         proj.left = None;
-        let mut scan = self.nodes.get_mut_syntax_node(select.scan)?;
+        let scan = self.nodes.get_mut_syntax_node(select.scan)?;
         scan.left = Some(select.proj);
 
         // Try to move new top under parent.
         if let Some(id) = select.parent {
-            let mut parent = self.nodes.get_mut_syntax_node(id)?;
+            let parent = self.nodes.get_mut_syntax_node(id)?;
             match select.branch {
                 Some(Branch::Left) => {
                     parent.left = Some(new_top);

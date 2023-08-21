@@ -187,14 +187,14 @@ impl RouterConfiguration {
                             )),
                         )
                     })?;
-                    let pk_columns = pk_parts.iter().map(|p| {
+
+                    pk_parts.iter().map(|p| {
                         let name = p["path"].as_str().ok_or_else(|| SbroadError::Invalid(
                            Entity::PrimaryKey,
                            Some(format!("for space {current_space_name}: failed to get index part field")))
                         )?;
                         Ok(normalize_name_from_schema(name))
-                    }).collect::<Result<Vec<String>, SbroadError>>()?;
-                    pk_columns
+                    }).collect::<Result<Vec<String>, SbroadError>>()?
                 } else {
                     warn!(
                         Option::from("configuration parsing"),

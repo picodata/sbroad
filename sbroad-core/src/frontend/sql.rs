@@ -58,6 +58,7 @@ impl Between {
     }
 }
 
+#[allow(clippy::uninlined_format_args)]
 fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, SbroadError> {
     let param_node = ast.nodes.get_node(node_id)?;
     if let (Some(duration_id), None) = (param_node.children.first(), param_node.children.get(1)) {
@@ -95,6 +96,7 @@ fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, Sbro
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::uninlined_format_args)]
 fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     if node.rule != Type::CreateTable {
         return Err(SbroadError::Invalid(
@@ -458,6 +460,7 @@ impl Ast for AbstractSyntaxTree {
     /// Function that transforms `AbstractSyntaxTree` into `Plan`.
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
+    #[allow(clippy::uninlined_format_args)]
     #[otm_child_span("ast.resolve")]
     fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, SbroadError>
     where

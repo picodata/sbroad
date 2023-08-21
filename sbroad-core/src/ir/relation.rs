@@ -642,8 +642,7 @@ pub fn space_pk_columns(
             return Err(SbroadError::Invalid(
                 Entity::PrimaryKey,
                 Some(format!(
-                    "part of {} has unexpected format: {part:?}",
-                    space_name
+                    "part of {space_name} has unexpected format: {part:?}"
                 )),
             ));
         };
@@ -653,8 +652,7 @@ pub fn space_pk_columns(
                 SbroadError::Invalid(
                     Entity::PrimaryKey,
                     Some(format!(
-                        "{} part referes to unknown column position: {}",
-                        space_name, col_pos
+                        "{space_name} part referes to unknown column position: {col_pos}"
                     )),
                 )
             })?

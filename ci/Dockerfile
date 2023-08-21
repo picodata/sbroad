@@ -15,7 +15,7 @@ RUN yum -y remove git git-*; \
     tar -xzf gcc-4.9.2.tar.gz; cd gcc-4.9.2; ./contrib/download_prerequisites; \
     ./configure --enable-checking=release --enable-languages=c,c++ --disable-multilib; \
     make && make install; cd ..; rm -rf  gcc*; \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=1.66.0 -y --profile default; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=1.71.0 -y --profile default; \
     rustup component add rustfmt; \
     cargo install cargo-audit; \
     wget https://cmake.org/files/v3.17/cmake-3.17.3.tar.gz; \

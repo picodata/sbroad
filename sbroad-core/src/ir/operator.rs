@@ -194,7 +194,7 @@ impl Display for JoinKind {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Default)]
 pub enum ConflictStrategy {
     /// Swallow the error, do not insert the conflicting tuple
     DoNothing,
@@ -202,13 +202,8 @@ pub enum ConflictStrategy {
     DoReplace,
     /// Throw the error, no tuples will be inserted for this
     /// storage. But for other storages the insertion may be successful.
+    #[default]
     DoFail,
-}
-
-impl Default for ConflictStrategy {
-    fn default() -> Self {
-        ConflictStrategy::DoFail
-    }
 }
 
 impl Display for ConflictStrategy {
@@ -1366,12 +1361,12 @@ impl Plan {
                 })
                 .collect::<Result<Vec<String>, SbroadError>>();
         }
-        return Err(SbroadError::Invalid(
+        Err(SbroadError::Invalid(
             Entity::Node,
             Some(format!(
                 "expected output of Relational node {rel_id} to be Row"
             )),
-        ));
+        ))
     }
 
     /// Gets children from relational node.

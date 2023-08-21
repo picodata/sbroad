@@ -284,13 +284,9 @@ impl SimpleAggregate {
             }
         }
         let final_expr_id = if final_aggregates.len() == 1 {
-            *final_aggregates
-                .values()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues("final_aggregates is empty".into())
-                })?
+            *final_aggregates.values().next().ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues("final_aggregates is empty".into())
+            })?
         } else {
             match self.kind {
                 AggregateKind::AVG => {

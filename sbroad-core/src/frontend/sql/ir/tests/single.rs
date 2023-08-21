@@ -21,7 +21,7 @@ impl Policy {
         Policy::Segment(
             targets
                 .iter()
-                .map(|x| x.to_string())
+                .map(|x| (*x).to_string())
                 .collect::<Vec<String>>(),
         )
     }
@@ -30,7 +30,8 @@ impl Policy {
 impl Plan {
     fn to_test_motion(&self, node_id: usize) -> Policy {
         let node = self.get_relation_node(node_id).unwrap();
-        let policy = match node {
+
+        match node {
             Relational::Motion { policy, .. } => match policy {
                 MotionPolicy::None => Policy::None,
                 MotionPolicy::Full => Policy::Full,
@@ -61,8 +62,7 @@ impl Plan {
                 }
             },
             _ => Policy::None,
-        };
-        policy
+        }
     }
 }
 

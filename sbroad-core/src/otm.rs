@@ -73,21 +73,17 @@ lazy_static! {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Push)]
 #[allow(dead_code)]
+#[derive(Default)]
 pub enum QueryTracer {
     /// Sends all metrics to Jaeger agent
     Global,
     /// Gathers stats about spans and saves them to temporary spaces
     /// on each node, but does it only for 1% of the queries.
+    #[default]
     Statistics,
     /// Like STAT_TRACER but saves stats for each query.
     /// It is used only for tests.
     TestStatistics,
-}
-
-impl Default for QueryTracer {
-    fn default() -> Self {
-        QueryTracer::Statistics
-    }
 }
 
 impl Display for QueryTracer {

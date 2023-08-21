@@ -526,7 +526,7 @@ impl ParseNodes {
     /// # Errors
     /// - Target node is present in the arena.
     pub fn update_value(&mut self, node: usize, value: Option<String>) -> Result<(), SbroadError> {
-        let mut node = self.arena.get_mut(node).ok_or_else(|| {
+        let node = self.arena.get_mut(node).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
                 format!("(mutable) from arena with index {node}"),

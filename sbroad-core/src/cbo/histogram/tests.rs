@@ -37,7 +37,7 @@ fn values_scale() {
     );
 
     assert!(
-        (0.3333333333
+        (0.333_333_333_3
             - scale_values(
                 &Value::Decimal(decimal!(1)),
                 &Value::Double(Double::from(0.0)),
@@ -112,7 +112,7 @@ fn values_scale() {
     // 3.3) right_bound_f64 = (50 - 48) / 10 = 0.20000000000000001
     // 4.) result = (0.05000000000000001) / (0.1) =~ 0.5
     assert!(
-        (0.5000000000000001
+        (0.500_000_000_000_000_1
             - scale_values(
                 &Value::from("891215"), // "15" after prefix removal.
                 &Value::from("891210"), // "10" after prefix removal.
@@ -141,7 +141,7 @@ fn values_scale() {
 
     // Non-ASCII, russian chars.
     assert!(
-        (0.6938775510204116
+        (0.693_877_551_020_411_6
             - scale_values(&Value::from("р"), &Value::from("а"), &Value::from("я")).unwrap())
             < f64::EPSILON
     );
@@ -151,7 +151,7 @@ fn values_scale() {
     // Logic:
     // <The same calculations as in the example above>.
     assert!(
-        (0.6938775510204116
+        (0.693_877_551_020_411_6
             - scale_values(
                 &Value::from("пикр"),
                 &Value::from("пика"),
@@ -163,7 +163,7 @@ fn values_scale() {
 
     // Seems okay that sequence of "ж" letters lies nearer to "а" sequence than to "я" sequence.
     assert!(
-        (0.041379310344835614
+        (0.041_379_310_344_835_614
             - scale_values(
                 &Value::from("жжж жжж жжж"),
                 &Value::from("ааа ааа ааа"),
@@ -176,7 +176,7 @@ fn values_scale() {
     // In reverse.
     // Seems okay that sequence of "э" letters lies nearer to "я" sequence than to "а" sequence.
     assert!(
-        (0.9862068965517214
+        (0.986_206_896_551_721_4
             - scale_values(
                 &Value::from("эээ эээ эээ"),
                 &Value::from("ааа ааа ааа"),
@@ -189,7 +189,7 @@ fn values_scale() {
     // Emoji test.
     // Seems okay that very happy face lies nearer to happy face than to angry face.
     assert!(
-        (0.1212121212121212
+        (0.121_212_121_212_121_2
             - scale_values(&Value::from("😄"), &Value::from("😀"), &Value::from("😡")).unwrap())
             < f64::EPSILON
     );

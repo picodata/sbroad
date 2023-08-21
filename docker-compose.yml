@@ -3,7 +3,7 @@ version: '2.1'
 services:
 
   tarantool:
-    image: docker-public.binary.picodata.io/sbroad-builder:0.7.0
+    image: docker-public.binary.picodata.io/sbroad-builder:0.9.0
     command: bash -c "cd /sbroad && make start && make stress_init test=${test} && touch /etc/OK && sleep infinity"
     volumes:
       - "${PWD}:/sbroad"

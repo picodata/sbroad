@@ -491,7 +491,7 @@ pub fn dispatch(
         Buckets::All => {
             if sub_plan.has_segmented_tables() {
                 let bucket_set: HashSet<u64, RepeatableState> =
-                    (1..=runtime.bucket_count()).into_iter().collect();
+                    (1..=runtime.bucket_count()).collect();
                 let all_buckets = Buckets::new_filtered(bucket_set);
                 return runtime.exec_ir_on_some(sub_plan, &all_buckets);
             }

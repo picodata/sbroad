@@ -1,4 +1,3 @@
-use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
@@ -2295,7 +2294,7 @@ fn front_sql_insert_4() {
     let input = r#"insert into "t" ("b", "a") select "b", "a" from "t"
         where "a" = 1 and "b" = 2"#;
 
-    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
     motion [policy: local segment([ref("a"), ref("b")])]
@@ -2336,7 +2335,7 @@ fn front_sql_insert_6() {
     // then dispatched to storages.
     let input = r#"insert into "t" ("a", "b") values (1, 2), (1, 2), (3, 4)"#;
 
-    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
     motion [policy: local segment([ref("COLUMN_5"), ref("COLUMN_6")])]
@@ -2359,7 +2358,7 @@ fn front_sql_insert_7() {
 
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(input).unwrap();
-    let mut plan = ast.resolve_metadata(metadata);
+    let plan = ast.resolve_metadata(metadata);
     let err = plan.unwrap_err();
     assert_eq!(
         true,
@@ -2373,7 +2372,7 @@ fn front_sql_insert_8() {
     // Both table have the same columns, but hash_single_testing has different shard key
     let input = r#"insert into "hash_testing" select * from "hash_single_testing""#;
 
-    let mut plan = sql_to_optimized_ir(input, vec![]);
+    let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "hash_testing" on conflict: fail
     motion [policy: segment([ref("identification_number"), ref("product_code")])]
@@ -2392,7 +2391,7 @@ fn front_sql_insert_9() {
     let input = r#"insert into "t" ("a", "b") values (?, ?)"#;
 
     let plan = sql_to_optimized_ir(input, vec![Value::from(1_u64), Value::from(2_u64)]);
-    let mut expected_explain = String::from(
+    let expected_explain = String::from(
         r#"insert "t" on conflict: fail
     motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
