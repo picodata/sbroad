@@ -6,7 +6,7 @@ use std::vec;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Entity, SbroadError};
-use crate::executor::engine::helpers::{TupleBuilderCommands, TupleBuilderPattern};
+use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
 use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
@@ -292,7 +292,7 @@ impl VirtualTable {
         Ok(())
     }
 
-    /// Set primary key in the virtual table.
+    /// Get primary key in the virtual table.
     ///
     /// # Errors
     /// - primary key refers invalid column positions
@@ -306,6 +306,8 @@ impl VirtualTable {
         ))
     }
 
+    /// Helper logic of `rearrange_for_update` related to creation of delete tuples.
+    /// For more details see `rearrange_for_update`.
     fn create_delete_tuples(
         &mut self,
         runtime: &(impl Vshard + Sized),
@@ -316,7 +318,7 @@ impl VirtualTable {
             let pk_positions = self.get_primary_key()?;
             let mut res = Vec::with_capacity(old_shard_columns_len + pk_positions.len());
             for pos in pk_positions.iter() {
-                res.push(TupleBuilderCommands::TakePosition(*pos));
+                res.push(TupleBuilderCommand::TakePosition(*pos));
             }
             res
         };
@@ -325,7 +327,7 @@ impl VirtualTable {
         let tuples_len = self.get_tuples().len();
         for (pos, insert_tuple) in self.get_mut_tuples().iter_mut().enumerate() {
             for (idx, c) in delete_tuple_pattern.iter().enumerate() {
-                if let TupleBuilderCommands::TakePosition(pos) = c {
+                if let TupleBuilderCommand::TakePosition(pos) = c {
                     let value = insert_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::TupleBuilderCommand,
@@ -342,12 +344,16 @@ impl VirtualTable {
             }
             let mut old_shard_key: VTableTuple = Vec::with_capacity(old_shard_columns_len);
             for _ in 0..old_shard_columns_len {
+                // Note that we are getting values from the end of `insert_tuple` using `pop` method
+                // as soon as `old_shard_key_columns` are located in the end of `insert_tuple`
                 let Some(v) = insert_tuple.pop() else {
                     return Err(SbroadError::Invalid(Entity::MotionOpcode,
                                                     Some(format!("invalid number of old shard columns: {old_shard_columns_len}"))))
                 };
                 old_shard_key.push(v);
             }
+
+            // When popping we got these keys in reverse order. That's why we need to use `reverse`.
             old_shard_key.reverse();
             let bucket_id =
                 runtime.determine_bucket_id(&old_shard_key.iter().collect::<Vec<&Value>>())?;
@@ -360,7 +366,7 @@ impl VirtualTable {
 
     /// Rearrange virtual table under sharded `Update`.
     ///
-    /// For more details, see [`UpdateStrategy`].
+    /// For more details, see `UpdateStrategy`.
     ///
     /// # Tuple format
     /// Each tuple in table will be used to create delete tuple

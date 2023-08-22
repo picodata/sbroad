@@ -531,16 +531,23 @@ impl<'plan> PartialEq for PlanExpr<'plan> {
 
 impl<'plan> Eq for PlanExpr<'plan> {}
 
+/// Policy of comparing and hashing expressions under `Reference` nodes.
 pub enum ReferencePolicy {
     /// References are considered equal,
     /// if their subfields are equal (parent, position, target)
     ///
-    /// Reference's hash is computed by hashing all subfields
+    /// Reference's hash is computed by hashing all subfields.
+    /// E.g. used in `Update` logic for hashing expression in case we assigning several columns to
+    /// the same value (e.g. `b+c` expression will be hashed using `ByFields` policy in query
+    /// like `update T set a = b+c, d = b+c`).
     ByFields,
     /// References are considered equal,
     /// if they refer to the same alias
     ///
     /// Reference's hash is computed by hashing alias.
+    /// E.g. used in `GroupBy` logic for comparing expression in projection with one used in the
+    /// grouping expression (e.g. `"a"*2` expression will be hashed using `ByFields` policy in query
+    /// like `select "a"*2 from T group by "a"*2`).
     ByAliases,
 }
 
@@ -557,7 +564,7 @@ impl<'plan> Comparator<'plan> {
         Comparator { policy, plan }
     }
 
-    /// Checks whether expression subtrees [`lhs`] and [`rhs`] are equal.
+    /// Checks whether expression subtrees `lhs` and `rhs` are equal.
     /// This function traverses both trees comparing their nodes.
     ///
     /// # Errors

@@ -56,6 +56,8 @@ impl Plan {
 
     pub(crate) fn insert_motion_key(&self, insert_id: usize) -> Result<MotionKey, SbroadError> {
         let columns = self.insert_columns(insert_id)?;
+        // Revert map of { pos_in_child_node -> pos_in_relation }
+        // into map of { pos_in_relation -> pos_in_child_node }.
         let columns_map: AHashMap<usize, usize> = columns
             .iter()
             .enumerate()

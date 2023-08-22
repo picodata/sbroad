@@ -51,7 +51,7 @@ pub trait Metadata: Sized {
     ///
     /// # Errors
     /// - Metadata does not contain space
-    /// - Metadata contains incorrect sharding keys format
+    /// - Metadata contains incorrect sharding key format
     fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError>;
 
     /// Provides vector of the sharding key column positions in a tuple or an error
@@ -104,11 +104,11 @@ pub trait Router: QueryCache {
     ///   formatted explain successfully.
     fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError>;
 
-    /// Extract a list of the sharding keys from a map for the given space.
+    /// Extract a list of the sharding key values from a map for the given space.
     ///
     /// # Errors
     /// - Columns are not present in the sharding key of the space.
-    fn extract_sharding_keys_from_map<'rec>(
+    fn extract_sharding_key_from_map<'rec>(
         &self,
         space: String,
         args: &'rec HashMap<String, Value>,
@@ -118,7 +118,7 @@ pub trait Router: QueryCache {
     ///
     /// # Errors
     /// - Internal error in the table (should never happen, but we recheck).
-    fn extract_sharding_keys_from_tuple<'rec>(
+    fn extract_sharding_key_from_tuple<'rec>(
         &self,
         space: String,
         args: &'rec [Value],

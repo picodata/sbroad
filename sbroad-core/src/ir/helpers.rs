@@ -28,7 +28,7 @@ macro_rules! collection {
 
 /// By default, `HashSet` uses `RandomState` to initialize the hasher.
 /// Because of that, we can't get repeatable order in the set between
-/// runs that can cause flaky test results in some cases.
+/// test runs that can cause flaky test results in some cases.
 #[derive(Clone)]
 pub struct RepeatableState;
 

@@ -35,9 +35,10 @@ pub enum Target {
     Reference(usize),
     /// A value that should be used as a part of the
     /// redistribution key. We need it in a case of
-    /// `insert into t1 (b) ...` when a column `a` is
-    /// absent and should be generated from the default
-    /// value.
+    /// `insert into t1 (b) ...` when
+    /// table t1 consists of two columns `a` and `b`.
+    /// Column `a` is absent in insertion and should be generated
+    /// from the default value.
     Value(Value),
 }
 
@@ -81,10 +82,21 @@ pub enum MotionPolicy {
     Full,
     /// Move only a segment of data according to the motion key.
     Segment(MotionKey),
-    /// Materialize a virtual table on the data node.
+    /// Materialize a virtual table on the storage without `bucket_id`
+    /// calculation (see `LocalSegment` for opposite).
+    ///
+    /// E.g. we can see this policy when executing local update.
+    /// We can't update system `bucket_id` column and that's why its taken from the tuple we're
+    /// updating with no change.
     Local,
-    /// Materialize a virtual table on the data node and calculate
-    /// tuple buckets.
+    /// Materialize a virtual table on the storage and calculate `bucket_id` for each tuple.
+    ///
+    /// E.g. we can see this policy when executing local insert (`insert into T1 select * from T2`).
+    /// When inserting new tuple into `T1`, we need it to contain `bucket_id` field. That's why
+    /// we store motion key for its calculation.
+    /// The reason we don't get `bucket_id` from `T2` tuples is that such tuples may contain
+    /// corrupted `bucket_id` value (e.g. resulted from user's wrong actions). That's why we make a
+    /// decision to recalculate the value just in case.
     LocalSegment(MotionKey),
 }
 
@@ -100,10 +112,16 @@ impl MotionPolicy {
 
 pub type ColumnPosition = usize;
 
+/// Single instruction to execute during virtual table tinkering.
+/// See `Program` structure description.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum MotionOpcode {
+    /// Set `primary_key` field of virtual table to the given argument.
     PrimaryKey(Vec<ColumnPosition>),
+    /// Call `reshard` method on a vtable, if we met `Segment` or `LocalSegment` motion policy.
     ReshardIfNeeded,
+    /// Call `rearrange_for_update` method on vtable and then call `set_update_delete_tuple_len`
+    /// on `Update` relational node.
     RearrangeForShardedUpdate {
         update_id: usize,
         old_shard_columns_len: usize,
@@ -135,6 +153,11 @@ impl BoolOp {
     }
 }
 
+/// Vec of opcodes that are executed in a `set_motion_vtable` function call.
+/// We encapsulate the logic of virtual table tinkering into those opcodes.
+/// The idea is that such logic is met among several cases and that we can operate those opcodes
+/// instead of rewriting this logic everytime.
+/// See the description of each command in `MotionOpcode` enum.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Program(pub Vec<MotionOpcode>);
 
@@ -1291,7 +1314,7 @@ impl Plan {
 
                     // Projection for sharded update always looks like this:
                     // `select new_tuple, old_shard_key from t`
-                    // So the child must always have distribution on `old_shard_key`.
+                    // So the child must always have distribution of `old_shard_key`.
 
                     let child_output_id = self.get_relation_node(child_id)?.output();
                     let child_dist = self.get_distribution(child_output_id)?;

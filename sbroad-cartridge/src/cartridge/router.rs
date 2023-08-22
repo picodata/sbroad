@@ -24,7 +24,7 @@ use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     helpers::{
         dispatch, explain_format, materialize_motion, normalize_name_from_schema,
-        sharding_keys_from_map, sharding_keys_from_tuple,
+        sharding_key_from_map, sharding_key_from_tuple,
     },
     Router, Statistics,
 };
@@ -240,7 +240,7 @@ impl Router for RouterRuntime {
         materialize_motion(self, plan, motion_node_id, buckets)
     }
 
-    fn extract_sharding_keys_from_map<'rec>(
+    fn extract_sharding_key_from_map<'rec>(
         &self,
         space: String,
         map: &'rec HashMap<String, Value>,
@@ -248,15 +248,15 @@ impl Router for RouterRuntime {
         let metadata = self.metadata.try_borrow().map_err(|e| {
             SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
         })?;
-        sharding_keys_from_map(&*metadata, &space, map)
+        sharding_key_from_map(&*metadata, &space, map)
     }
 
-    fn extract_sharding_keys_from_tuple<'rec>(
+    fn extract_sharding_key_from_tuple<'rec>(
         &self,
         space: String,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_keys_from_tuple(&*self.cached_config()?, &space, rec)
+        sharding_key_from_tuple(&*self.cached_config()?, &space, rec)
     }
 }
 

@@ -328,7 +328,7 @@ impl Plan {
         // e.g select a + b from t
         // Here Projection must have Distribution::Any
         // but: select a + b, a from t
-        // maybe distributed by a
+        // may be distributed by a
         if only_expr_row {
             self.set_dist(row_id, Distribution::Any)?;
             return Ok(());

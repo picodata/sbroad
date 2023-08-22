@@ -91,14 +91,11 @@ fn bucket3_test() {
 }
 
 #[test]
-fn sharding_keys_from_tuple1() {
+fn sharding_key_from_tuple1() {
     let coordinator = RouterRuntimeMock::new();
     let tuple = vec![Value::from("123"), Value::from(1_u64)];
-    let sharding_keys = coordinator
-        .extract_sharding_keys_from_tuple("t1".into(), &tuple)
+    let sharding_key = coordinator
+        .extract_sharding_key_from_tuple("t1".into(), &tuple)
         .unwrap();
-    assert_eq!(
-        sharding_keys,
-        vec![&Value::from("123"), &Value::from(1_u64)]
-    );
+    assert_eq!(sharding_key, vec![&Value::from("123"), &Value::from(1_u64)]);
 }

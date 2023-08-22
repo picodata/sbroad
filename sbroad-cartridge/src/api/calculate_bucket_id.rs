@@ -135,13 +135,13 @@ pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c
                 runtime.determine_bucket_id(&[&bucket_str])
             }
             Ok(Args::Tuple(params)) => {
-                match runtime.extract_sharding_keys_from_tuple(params.space, &params.rec) {
+                match runtime.extract_sharding_key_from_tuple(params.space, &params.rec) {
                     Ok(tuple) => runtime.determine_bucket_id(&tuple),
                     Err(e) => Err(e),
                 }
             }
             Ok(Args::Map(params)) => {
-                match runtime.extract_sharding_keys_from_map(params.space, &params.rec) {
+                match runtime.extract_sharding_key_from_map(params.space, &params.rec) {
                     Ok(tuple) => runtime.determine_bucket_id(&tuple),
                     Err(e) => Err(e),
                 }

@@ -196,6 +196,7 @@ impl Display for JoinKind {
     }
 }
 
+/// Strategy applied on INSERT execution.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Default)]
 pub enum ConflictStrategy {
     /// Swallow the error, do not insert the conflicting tuple
@@ -241,9 +242,9 @@ pub enum UpdateStrategy {
     /// old values for sharding columns.
     /// 2. Then on the router each tuple is transformed into two
     /// tuples (one for insertion and one for deletion):
-    ///     *  old values of sharding columns are popped out from original tuple
-    /// and used to calculate the bucket_id for deletion tuple. The original
-    /// tuple becomes the tuple for insertion.
+    ///     * old values of sharding columns are popped out from original tuple
+    ///       and used to calculate the bucket_id for deletion tuple. The original
+    ///       tuple becomes the tuple for insertion.
     ///     * deletion tuple is created from primary keys of insertion tuple.
     ///     * bucket_id for insertion tuple is calculated using new shard key values.
     /// 3. Because pk key can't be updated and insertion tuple contains
@@ -935,6 +936,8 @@ impl Plan {
             })?;
             let col_type = col.r#type.clone();
             let node = Expression::Reference {
+                // It will be updated using `replace_parent_in_subtree`
+                // in the end of the function.
                 parent: None,
                 targets: Some(vec![0]),
                 position: output_pos,
@@ -965,7 +968,7 @@ impl Plan {
         let update_kind = if is_sharded_update {
             // For sharded Update Projection has the following format:
             // table_tuple , sharding_key_columns
-            // table tuple is without bucket_id column
+            // table_tuple is without bucket_id column
 
             // Calculate primary key positions in table_tuple
             let bucket_id_pos = table.get_bucket_id_position()?;
@@ -1018,6 +1021,8 @@ impl Plan {
             // update_expressions, pk_expressions (not present in update_expressions)
 
             // Helper map between expression and its position in projection.
+            // The logic is that we want to reuse expression calculation in case it's used twice
+            // (e.g. `update T set a = some_expr, b = some_expr`).
             let mut expr_to_col_pos: HashMap<PlanExpr, ColumnPosition> =
                 HashMap::with_capacity(update_defs.len());
             // Expressions that form primary key of updated table.

@@ -109,7 +109,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut table_name: String = String::new();
     let mut columns: Vec<ColumnDef> = Vec::new();
     let mut pk_keys: Vec<String> = Vec::new();
-    let mut shard_keys: Vec<String> = Vec::new();
+    let mut shard_key: Vec<String> = Vec::new();
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
     let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
         SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
@@ -342,7 +342,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         )
                                     })?,
                                 );
-                                shard_keys.push(shard_col_name);
+                                shard_key.push(shard_col_name);
                             }
                         }
                         _ => {
@@ -383,7 +383,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
         name: table_name,
         format: columns,
         primary_key: pk_keys,
-        sharding_key: shard_keys,
+        sharding_key: shard_key,
         engine_type,
         timeout,
     };
@@ -1472,6 +1472,7 @@ impl Ast for AbstractSyntaxTree {
                             update_list.children.len(),
                             RepeatableState,
                         );
+                    // Map of { column_name -> (column_role, column_position) }.
                     let mut names: HashMap<&str, (&ColumnRole, usize)> = HashMap::new();
                     let rel = plan.relations.get(&relation).ok_or_else(|| {
                         SbroadError::NotFound(

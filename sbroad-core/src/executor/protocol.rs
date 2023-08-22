@@ -57,6 +57,9 @@ impl From<(Binary, Binary)> for Message {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RequiredData {
+    // Unique ID for concrete plan represented in a view of BLAKE3 hash.
+    // Needed for plans execution results being cached
+    // (e.g. see `encode_plan` -> `QueryType::DQL` -> `pattern_id`).
     pub plan_id: String,
     pub parameters: Vec<Value>,
     pub query_type: QueryType,
