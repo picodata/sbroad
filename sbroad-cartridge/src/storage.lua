@@ -24,21 +24,23 @@ _G.get_storage_cache_size_bytes = function()
     return cfg["storage_cache_size_bytes"]
 end
 
-local function init()
-    box.schema.func.create(
-        'libsbroad.execute',
-        { if_not_exists = true, language = 'C' }
-    )
+local function init(is_master)
+    if is_master then
+        box.schema.func.create(
+            'libsbroad.execute',
+            { if_not_exists = true, language = 'C' }
+        )
 
-    box.schema.func.create(
-        'libsbroad.invalidate_segment_cache',
-        { if_not_exists = true, language = 'C' }
-    )
+        box.schema.func.create(
+            'libsbroad.invalidate_segment_cache',
+            { if_not_exists = true, language = 'C' }
+        )
 
-    box.schema.func.create(
-        'libsbroad.rpc_mock',
-        { if_not_exists = true, language = 'C' }
-    )
+        box.schema.func.create(
+            'libsbroad.rpc_mock',
+            { if_not_exists = true, language = 'C' }
+        )
+    end
 end
 
 local function invalidate_cache()

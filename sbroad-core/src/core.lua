@@ -17,8 +17,8 @@ local function init_statistics()
 end
 
 local function init()
-    init_bucket()
-    init_statistics()
+        init_bucket()
+        init_statistics()
 end
 
 return {

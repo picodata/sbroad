@@ -8,9 +8,9 @@ local function init(opts) -- luacheck: no unused args
 
     _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
 
-    sbroad_common.init()
+    sbroad_common.init(opts.is_master)
     sbroad_common.init_statistics()
-    sbroad_storage.init()
+    sbroad_storage.init(opts.is_master)
 
     return true
 end

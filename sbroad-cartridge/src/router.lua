@@ -39,16 +39,18 @@ _G.get_sharding_column = function()
     return cfg["executor_sharding_column"]
 end
 
-local function init()
-    box.schema.func.create(
-        'libsbroad.invalidate_coordinator_cache',
-        { if_not_exists = true, language = 'C' }
-    )
+local function init(if_master)
+    if if_master then
+        box.schema.func.create(
+            'libsbroad.invalidate_coordinator_cache',
+            { if_not_exists = true, language = 'C' }
+        )
 
-    box.schema.func.create(
-        'libsbroad.dispatch_query',
-        { if_not_exists = true, language = 'C' }
-    )
+        box.schema.func.create(
+            'libsbroad.dispatch_query',
+            { if_not_exists = true, language = 'C' }
+        )
+    end
 end
 
 local function invalidate_cache ()

@@ -2,8 +2,10 @@ local cartridge = require('cartridge')
 local checks = require('checks')
 local core = require('sbroad.core')
 
-local function init ()
-    core.init()
+local function init (is_master)
+    if is_master then
+        core.init()
+    end
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
