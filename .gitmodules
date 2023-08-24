@@ -1,3 +1,0 @@
-[submodule "protocol/test-run"]
-	path = protocol/test-run
-	url = https://github.com/tarantool/test-run.git
