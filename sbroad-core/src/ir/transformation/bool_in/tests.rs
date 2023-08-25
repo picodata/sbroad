@@ -69,3 +69,46 @@ fn bool_in3() {
         expected
     );
 }
+
+#[test]
+fn bool_in4() {
+    // check bool expression in cast expression will be replaced.
+    let input = r#"SELECT "a" FROM "t" WHERE cast(("a" IN (1, 2)) as integer) - 1 = 0"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" FROM "t""#,
+            r#"WHERE (CAST ((("t"."a") = (?) or ("t"."a") = (?)) as int)) - (?) = (?)"#,
+        ),
+        vec![
+            Value::from(1_u64),
+            Value::from(2_u64),
+            Value::from(1_u64),
+            Value::from(0_u64),
+        ],
+    );
+
+    assert_eq!(
+        check_transformation(input, vec![], &replace_in_operator),
+        expected
+    );
+}
+
+#[test]
+fn bool_in5() {
+    // check bool expression inside function expression will be replaced.
+    let input = r#"SELECT "a" FROM "t" WHERE func(("a" IN (1, 2))) < 1"#;
+    let expected = PatternWithParams::new(
+        format!(
+            "{} {}",
+            r#"SELECT "t"."a" FROM "t""#,
+            r#"WHERE ("FUNC" ((("t"."a") = (?) or ("t"."a") = (?)))) < (?)"#,
+        ),
+        vec![Value::from(1_u64), Value::from(2_u64), Value::from(1_u64)],
+    );
+
+    assert_eq!(
+        check_transformation(input, vec![], &replace_in_operator),
+        expected
+    );
+}

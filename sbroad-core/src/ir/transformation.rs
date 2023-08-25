@@ -147,7 +147,10 @@ impl Plan {
                 Expression::Bool { .. }
                 | Expression::Arithmetic { .. }
                 | Expression::Alias { .. }
-                | Expression::Row { .. },
+                | Expression::Row { .. }
+                | Expression::Cast { .. }
+                | Expression::StableFunction { .. }
+                | Expression::Unary { .. },
             )) = self.get_node(node_id)
             {
                 return true;
@@ -180,7 +183,9 @@ impl Plan {
             // XXX: If you add a new expression type to the match, make sure to
             // add it to the filter above.
             match expr {
-                Expression::Alias { child, .. } => {
+                Expression::Alias { child, .. }
+                | Expression::Cast { child, .. }
+                | Expression::Unary { child, .. } => {
                     if let Some(new_id) = map.get(child) {
                         *child = *new_id;
                     }
@@ -194,14 +199,18 @@ impl Plan {
                         *right = *new_id;
                     }
                 }
-                Expression::Row { list, .. } => {
+                Expression::Row { list, .. }
+                | Expression::StableFunction { children: list, .. } => {
                     for id in list {
                         if let Some(new_id) = map.get(id) {
                             *id = *new_id;
                         }
                     }
                 }
-                _ => {}
+                Expression::Concat { .. }
+                | Expression::Constant { .. }
+                | Expression::Reference { .. }
+                | Expression::CountAsterisk => {}
             }
         }
         // Checks if the top node is a new node.
