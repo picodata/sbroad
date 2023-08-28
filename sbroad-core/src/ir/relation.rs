@@ -308,19 +308,20 @@ pub enum SpaceEngine {
 }
 
 impl From<SpaceEngineType> for SpaceEngine {
+    #[inline]
     fn from(engine_type: SpaceEngineType) -> Self {
-        match engine_type {
-            SpaceEngineType::Memtx => SpaceEngine::Memtx,
-            SpaceEngineType::Vinyl => SpaceEngine::Vinyl,
-        }
+        Self::from(&engine_type)
     }
 }
 
 impl From<&SpaceEngineType> for SpaceEngine {
+    #[inline]
     fn from(engine_type: &SpaceEngineType) -> Self {
+        #[allow(unreachable_patterns)]
         match engine_type {
             SpaceEngineType::Memtx => SpaceEngine::Memtx,
             SpaceEngineType::Vinyl => SpaceEngine::Vinyl,
+            system_space => panic!("Space engine '{system_space:?}' is not supported"),
         }
     }
 }
