@@ -40,7 +40,7 @@ pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) ->
         Ok(runtime) => {
             if let Err(e) = runtime.clear_config() {
                 return tarantool_error(&format!(
-                    "Failed to clear the configuration on segment during cache invalidation: {e:?}"
+                    "Failed to clear the storage configuration: {e:?}"
                 ));
             }
             ctx.return_mp(&true).unwrap();

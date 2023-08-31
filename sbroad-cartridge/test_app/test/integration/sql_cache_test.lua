@@ -43,13 +43,14 @@ g.test_change_cache_by_config_replica = function()
     local cache_before_config = c["storage_cache_size_bytes"]
     t.assert_equals(20480000, cache_before_config)
 
-    -- here we check that storage-1-1 is master and that its config isn't updated
+    -- here we check that storage-1-1 is master
     t.assert_equals(false, storage11:eval("return box.info.ro"))
 
-    -- config was not applied on the master because the first query was 'select' and it was run on the replica
-    t.assert_not_equals(cache_before_config, storage11:eval("return box.cfg.sql_cache_size"))
-    -- but on the replica cache params must be updated
-    t.assert_equals(cache_before_config, storage12:eval("return box.cfg.sql_cache_size"))
+    -- config was applied on the master because the first query was 'select *' and it was run on the master
+    t.assert_equals(cache_before_config, storage11:eval("return box.cfg.sql_cache_size"))
+    -- but on the replica cache params won't be updated
+    t.assert_not_equals(cache_before_config, storage12:eval("return box.cfg.sql_cache_size"))
+    -- storage2 is master so the query was executed there and the cache was updated
     t.assert_equals(cache_before_config, storage2:eval("return box.cfg.sql_cache_size"))
 
     local cache_after_config = 4239361
@@ -62,9 +63,10 @@ g.test_change_cache_by_config_replica = function()
 
     t.assert_equals(false, storage11:eval("return box.info.ro"))
 
-    -- on the master config was not applied, because select query was ran on the replica
-    t.assert_not_equals(cache_after_config, storage11:eval("return box.cfg.sql_cache_size"))
-    -- but on the replica cache params must be updated
-    t.assert_equals(cache_after_config, storage12:eval("return box.cfg.sql_cache_size"))
+    -- on the master config was applied, because `select *` was executed on master
+    t.assert_equals(cache_after_config, storage11:eval("return box.cfg.sql_cache_size"))
+    -- but on the replica cache params were not updated
+    t.assert_not_equals(cache_after_config, storage12:eval("return box.cfg.sql_cache_size"))
+    -- storage2 is master so the query was executed there and the cache was updated
     t.assert_equals(cache_after_config, storage2:eval("return box.cfg.sql_cache_size"))
 end

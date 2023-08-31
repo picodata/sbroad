@@ -1,3 +1,4 @@
+use crate::debug;
 use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,6 @@ use std::fmt::Write as _;
 use tarantool::tlua::{self, Push};
 use tarantool::tuple::{FunctionArgs, Tuple};
 
-use crate::debug;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;

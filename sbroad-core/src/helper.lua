@@ -48,9 +48,26 @@ local function vtable_limit_exceeded(limit, current_val)
     return string.format("Exceeded maximum number of rows (%d) in virtual table: %d", limit, current_val)
 end
 
+local function dql_error(err, rs_uuid)
+    if type(err) ~= 'table' and type(err) ~= 'string' then
+        io.stderr:write(string.format("expected string or table, got: %s", type(err)))
+        error(err)
+    end
+    if type(err) == 'table' then
+        local meta_t = getmetatable(err)
+        meta_t.__tostring = function (self)
+            return self.message
+        end
+        err.uuid = rs_uuid
+        setmetatable(err, meta_t)
+    end
+    error(err)
+end
+
 return {
     module_name = module_name,
     vtable_limit_exceeded = vtable_limit_exceeded,
+    dql_error = dql_error,
     format_result = format_result,
     constants = constants
 }

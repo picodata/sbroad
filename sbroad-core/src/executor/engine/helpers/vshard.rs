@@ -95,7 +95,6 @@ fn dql_on_all(
     metadata: &impl Metadata,
     required: Binary,
     optional: Binary,
-    is_readonly: bool,
     vtable_max_rows: u64,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
@@ -107,7 +106,6 @@ fn dql_on_all(
     match exec_sql.call_with_args::<Tuple, _>((
         required,
         optional,
-        is_readonly,
         waiting_timeout,
         vtable_max_rows,
     )) {
@@ -163,13 +161,7 @@ pub fn exec_ir_on_all_buckets(
     vtable_max_rows: u64,
 ) -> Result<Box<dyn Any>, SbroadError> {
     match &query_type {
-        QueryType::DQL => dql_on_all(
-            metadata,
-            required,
-            optional,
-            conn_type.is_readonly(),
-            vtable_max_rows,
-        ),
+        QueryType::DQL => dql_on_all(metadata, required, optional, vtable_max_rows),
         QueryType::DML => dml_on_all(metadata, required, optional, conn_type.is_readonly()),
     }
 }
