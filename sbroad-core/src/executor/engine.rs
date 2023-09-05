@@ -2,8 +2,8 @@
 //!
 //! Traits that define an execution engine interface.
 
-use crate::cbo::histogram::MostCommonValueWithFrequency;
-use crate::cbo::{TableColumnPair, TableStats};
+use crate::cbo::histogram::Scalar;
+use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
@@ -196,48 +196,25 @@ pub trait Router: QueryCache {
     ) -> Result<VirtualTable, SbroadError>;
 }
 
-/// Enum that represents initial bucket gathered from storages.
-/// It copies `Bucket` enum, where all field are represented by value and not by reference.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-enum InitialBucket {
-    /// Representation of the first histogram bucket with inclusive `from` edge.
-    First {
-        from: Value,
-        to: Value,
-        frequency: usize,
-    },
-    /// Representation of a non-first histogram bucket with non-inclusive `from` edge.
-    NonFirst {
-        from: Value,
-        to: Value,
-        frequency: usize,
-    },
-}
-
-/// Struct that represents initial histogram gathered from storages.
-/// It copies `Histogram` structure, where all field are represented by value and not by reference.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-struct InitialHistogram {
-    most_common: Vec<MostCommonValueWithFrequency>,
-    buckets: Vec<InitialBucket>,
-    null_fraction: f64,
-    distinct_values_fraction: f64,
-}
-
-/// Struct that represents initial statistics gathered from storages.
-/// It copies `ColumnStats` structure, where all fields are represented by value and not by reference.
+/// Struct representing table stats that we get directly from replicaset system table.
+/// **Note**: `*_counter` fields are specific for each of the replicasets and should not be merged.
+/// Node that will make statistics calculations need only the `rows_number` field.
 ///
-/// **Note**: `rows_number` field is missing, because during `ColumnStats`
-/// structure initialization this information will be passed from `TableStats`.
+/// **Note**: All the statistics structures with a __Storage__ prefix represent structures that we construct
+/// on storages and then send to the router node (C structure may look differently).
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct InitialColumnStats {
-    min_value: Value,
-    max_value: Value,
-    avg_size: u64,
-    histogram: InitialHistogram,
+pub struct StorageTableStats {
+    /// Number of rows in the table.
+    rows_number: u64,
+    /// Counter of executed INSERT operations.
+    ///
+    /// We need to store counter in order to understand when to
+    /// actualize table statistics.
+    insert_counter: u64,
+    /// Counter of executed UPDATE operations.
+    update_counter: u64,
+    /// Counter of executed REMOVE operations.
+    remove_counter: u64,
 }
 
 /// A `CostBased` statistics trait.
@@ -248,33 +225,33 @@ pub trait Statistics {
     /// - Table statistics can not be gathered neither from the cache nor from the storages.
     fn get_table_stats(&self, table_name: String) -> Result<Rc<TableStats>, SbroadError>;
 
-    /// Get `InitialColumnStats` for column by its table name and column name from storages.
+    /// Get upcasted `ColumnStats` for column by its table name and column name from storages.
     ///
     /// # Errors
     /// - Initial column statistics can not be gathered neither from the cache nor from the storages.
-    fn get_initial_column_stats(
+    fn get_column_stats(
         &self,
         table_column_pair: TableColumnPair,
-    ) -> Result<Rc<InitialColumnStats>, SbroadError>;
+    ) -> Result<Rc<Box<dyn Any>>, SbroadError>;
 
     /// Update `TableStats` cache with given table statistics.
     ///
     /// # Errors
     /// - Table statistics couldn't be mutually borrowed.
-    fn update_table_stats_cache(
+    fn update_table_stats(
         &mut self,
         table_name: String,
         table_stats: TableStats,
     ) -> Result<(), SbroadError>;
 
-    /// Update `InitialColumnStats` cache with given initial column statistics.
+    /// Update `ColumnStats` cache with given initial column statistics.
     ///
     /// # Errors
     /// - Initial column statistics couldn't be mutually borrowed.
-    fn update_column_initial_stats_cache(
+    fn update_column_stats<T: Scalar>(
         &self,
         table_column_pair: TableColumnPair,
-        initial_column_stats: InitialColumnStats,
+        column_stats: ColumnStats<T>,
     ) -> Result<(), SbroadError>;
 }
 

@@ -1,83 +1,371 @@
-//! Equi-height histogram.
+//! Compressed histogram (Equi-height histogram with additional most common values array).
 //!
 //! Module used to represent logic of applying and transforming histogram statistics during
 //! CBO algorithms.
-
+use crate::cbo::helpers::{decimal_boundaries_occupied_fraction, scale_strings};
 use crate::errors::{Entity, SbroadError};
-use crate::ir::value::{value_to_decimal_or_error, TrivalentOrdering, Value};
-use itertools::enumerate;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt::Debug;
-use std::str::FromStr;
+use std::hash::{Hash, Hasher};
+use std::mem::take;
+use tarantool::decimal::Decimal;
 
-/// Helper structure that represents pair of most common value in the column and its frequency.
-#[derive(Debug, PartialEq, Clone)]
-pub struct MostCommonValueWithFrequency {
-    value: Value,
-    frequency: f64,
+/// Trait that denotes types applicable to be stored in the statistics.
+pub trait Scalar: Debug + Clone + PartialEq + Eq + PartialOrd + Ord + Hash + 'static {
+    /// This type should always represent Self type.
+    type Other;
+
+    /// Function needed for finding fraction of a bucket that value covers in case it falls into it.
+    ///
+    /// # Errors
+    /// - Error of casting to Decimal occurred.
+    /// - Unable to find Strings fraction.
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError>;
 }
+impl Scalar for i64 {
+    type Other = i64;
 
-impl MostCommonValueWithFrequency {
-    #[allow(dead_code)]
-    pub(crate) fn new(value: Value, frequency: f64) -> Self {
-        MostCommonValueWithFrequency { value, frequency }
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        decimal_boundaries_occupied_fraction(
+            Decimal::from(*self),
+            Decimal::from(*left_boundary),
+            Decimal::from(*right_boundary),
+        )
+    }
+}
+impl Scalar for u64 {
+    type Other = u64;
+
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        decimal_boundaries_occupied_fraction(
+            Decimal::from(*self),
+            Decimal::from(*left_boundary),
+            Decimal::from(*right_boundary),
+        )
+    }
+}
+impl Scalar for String {
+    type Other = String;
+
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        let (value, left, right) = scale_strings(self, left_boundary, right_boundary)?;
+        decimal_boundaries_occupied_fraction(value, left, right)
+    }
+}
+impl Scalar for Decimal {
+    type Other = Decimal;
+
+    fn boundaries_occupied_fraction(
+        &self,
+        left_boundary: &Self::Other,
+        right_boundary: &Self::Other,
+    ) -> Result<Decimal, SbroadError> {
+        decimal_boundaries_occupied_fraction(*self, *left_boundary, *right_boundary)
     }
 }
 
-/// Representation of histogram bucket.
-/// Fields:
-/// `from` -- left border value of the bucket.
-/// `to` -- right border value of the bucket (always inclusive).
-/// `frequency` -- number of elements stored in the bucket.
-#[derive(PartialEq, Debug, Clone)]
-#[allow(dead_code)]
-enum Bucket<'bucket> {
-    /// Representation of the first histogram bucket with inclusive `from` edge.
-    First {
-        from: &'bucket Value,
-        to: &'bucket Value,
-        frequency: usize,
-    },
+/// Compressed histogram Most Common Value (MCV) with corresponding frequency.
+#[derive(Clone, Debug)]
+pub struct Mcv<T: Scalar> {
+    pub(crate) value: T,
+    /// Number of such a value divided by the number of all values in a column.
+    ///
+    /// Represented not with `f64`, but with `Decimal` type because the former doesn't support NaNs
+    /// and implements `Eq` trait, that we need for putting this struct into the HashSet.
+    pub(crate) frequency: Decimal,
+}
+
+impl<T: Scalar> PartialEq for Mcv<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T: Scalar> Eq for Mcv<T> {}
+impl<T: Scalar> Hash for Mcv<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl<T: Scalar> Mcv<T> {
+    #[must_use]
+    pub fn new(value: T, frequency: Decimal) -> Self {
+        Mcv { value, frequency }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McvSet<T: Scalar> {
+    pub(crate) inner: HashSet<Mcv<T>>,
+}
+
+impl<T: Scalar> Default for McvSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Scalar> McvSet<T> {
+    #[must_use]
+    pub fn new() -> McvSet<T> {
+        McvSet {
+            inner: HashSet::new(),
+        }
+    }
+
+    /// Helper function to fill set from vec.
+    #[must_use]
+    pub fn from_vec(vec: &Vec<Mcv<T>>) -> McvSet<T> {
+        let mut mcv_vec = Self::new();
+        for mcv in vec {
+            mcv_vec.insert(mcv.clone());
+        }
+        mcv_vec
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> McvSet<T> {
+        McvSet {
+            inner: HashSet::with_capacity(capacity),
+        }
+    }
+
+    pub fn insert(&mut self, value: Mcv<T>) -> bool {
+        self.inner.insert(value)
+    }
+
+    pub fn get(&self, element: &Mcv<T>) -> Option<&Mcv<T>> {
+        self.inner.get(element)
+    }
+
+    pub fn remove(&mut self, element: &Mcv<T>) -> bool {
+        self.inner.remove(element)
+    }
+
+    pub fn contains(&self, element: &Mcv<T>) -> bool {
+        self.inner.contains(element)
+    }
+
+    /// Return the sum of all mcvs frequencies.
+    #[must_use]
+    pub fn frequencies_sum(&self) -> Decimal {
+        let mut sum = Decimal::from(0);
+        for mcv in &self.inner {
+            sum += mcv.frequency;
+        }
+        sum
+    }
+
+    /// Calculate absolute number of most common values.
+    ///
+    /// # Errors
+    /// - Cast errors appeared during values number calculation.
+    pub fn values_number(&self, rows_number: u64) -> Result<u64, SbroadError> {
+        let mut decimal_values_number = Decimal::from(0);
+        for mcv in &self.inner {
+            decimal_values_number += mcv.frequency * Decimal::from(rows_number);
+        }
+        let floored_values_number = decimal_values_number.floor();
+        floored_values_number.to_u64().ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Unable to calculate mcv value number")),
+            )
+        })
+    }
+}
+
+/// Type of a `Histogram` bucket (whether this bucket is (first in a whole sequence of buckets).
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+enum BucketType<T> {
+    /// Representation of the (first histogram bucket with inclusive `from` edge.
+    /// As soon as buckets sequence is represented in a view of a linked list, first bucket is the
+    /// only bucket that can't take `from` bound from the previous bucket. That's why it has to
+    /// store the value by itself.
+    First { from_boundary: T },
     /// Representation of a non-first histogram bucket with non-inclusive `from` edge.
-    NonFirst {
-        from: &'bucket Value,
-        to: &'bucket Value,
-        frequency: usize,
-    },
+    NonFirst,
 }
 
-/// Checks whether given value falls into the bucket.
+/// Histogram bucket structure.
 ///
-/// Returns `None` in case inner call to `partial_cmp` resulted to None.
-#[allow(dead_code)]
-fn value_falls_into_bucket(bucket: &Bucket, value: &Value) -> Option<bool> {
-    let (from, to, is_first) = match bucket {
-        Bucket::First { from, to, .. } => (from, to, true),
-        Bucket::NonFirst { from, to, .. } => (from, to, false),
-    };
-    let from_partial_cmp = value.partial_cmp(from)?;
-    let to_partial_cmp = value.partial_cmp(to)?;
-    if (TrivalentOrdering::Greater == from_partial_cmp
-        || (is_first && TrivalentOrdering::Equal == from_partial_cmp))
-        && (TrivalentOrdering::Less == to_partial_cmp || TrivalentOrdering::Equal == to_partial_cmp)
-    {
-        Some(true)
-    } else {
-        Some(false)
+/// Represented in a view of a linked list in order to maintain strictness of buckets' bounds.
+/// Every bucket must contain two fields: `from` (right bound) and `to` (left bound). As soon as
+/// `to` field of any bucket is equal to `from` field of following bucket (if one exists) we don't
+/// want to duplicate it (don't want to store buckets in a view of bounds array like
+/// [(`from_1`, `to_1`), (`from_2`, `to_2`), ...], where `from_i` = `from_(i-1)`).
+///
+/// Note, that the buckets' frequency is calculated as
+/// `number_of_rows_in_the_histogram / number_of_buckets`.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Bucket<T> {
+    /// Bucket type (whether this bucket is first in buckets sequence or not).
+    bucket_type: BucketType<T>,
+    /// Right bound of the bucket.
+    to_boundary: T,
+}
+
+impl<T: Scalar> Bucket<T> {
+    /// Checks that passed constant value falls into bucket boundaries.
+    /// `from_boundary` is taken as a `to` boundary of preceding bucket or as self `from` boundary
+    /// value, in case we deal with the first bucket.
+    #[allow(dead_code)]
+    fn constant_falls_into_bucket(
+        &self,
+        previous_bucket: Option<&Bucket<T>>,
+        value: &T,
+    ) -> Result<bool, SbroadError> {
+        let from_boundary = match &self.bucket_type {
+            BucketType::First { from_boundary } => from_boundary,
+            BucketType::NonFirst => {
+                if let Some(previous_bucket) = previous_bucket {
+                    &previous_bucket.to_boundary
+                } else {
+                    return Err(SbroadError::Invalid(
+                        Entity::Statistics,
+                        Some(String::from(
+                            "From boundary must have been passed for\
+                    NonFirst bucket",
+                        )),
+                    ));
+                }
+            }
+        };
+        Ok(value > from_boundary && value < &self.to_boundary)
+    }
+
+    /// Helper function to get `from` boundary in case we are dealing with a first bucket.
+    #[allow(dead_code)]
+    fn get_from(&self) -> Result<T, SbroadError> {
+        match &self.bucket_type {
+            BucketType::First { from_boundary } => Ok(from_boundary.clone()),
+            BucketType::NonFirst => Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Can't get from value of non first bucket")),
+            )),
+        }
     }
 }
 
-/// Representation of equi-height histogram.
-///
-/// It's assumed that if the histogram is present, then all
-/// its fields are filled.
+/// Histogram buckets sequence.
+/// For more details see `Bucket` structure comments.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[allow(clippy::module_name_repetitions)]
+pub struct HistogramBuckets<T: Scalar> {
+    pub(crate) inner: Vec<Bucket<T>>,
+}
+
+impl<T: Scalar> Default for HistogramBuckets<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Scalar> HistogramBuckets<T> {
+    pub(crate) fn new() -> Self {
+        Self { inner: Vec::new() }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl<T: Scalar> TryFrom<&mut Vec<T>> for HistogramBuckets<T> {
+    type Error = SbroadError;
+
+    /// Helper function to construct buckets vec from the boundaries array that was
+    /// gathered on storages.
+    ///
+    /// # Errors
+    /// - Passed boundaries array contains less than 2 values.
+    fn try_from(boundaries: &mut Vec<T>) -> Result<Self, Self::Error> {
+        let mut buckets = HistogramBuckets::new();
+        if boundaries.len() < 2 {
+            return Err(SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from(
+                    "Boundaries list must contain at least 2 values",
+                )),
+            ));
+        }
+
+        let mut prev_boundary: Option<T> = None;
+        // Flag, indicating whether first bucket is already created.
+        let mut first_added = false;
+
+        for boundary in take(boundaries) {
+            if first_added {
+                let new_bucket = Bucket {
+                    bucket_type: BucketType::NonFirst,
+                    to_boundary: boundary,
+                };
+                buckets.inner.push(new_bucket);
+            } else if let Some(ref prev_boundary) = prev_boundary {
+                first_added = true;
+                let new_bucket = Bucket {
+                    bucket_type: BucketType::First {
+                        // Trait `Default` is not satisfied for `Scalar` so that
+                        // we can't use `take` method here.
+                        from_boundary: prev_boundary.clone(),
+                    },
+                    to_boundary: boundary,
+                };
+                buckets.inner.push(new_bucket);
+            } else {
+                prev_boundary = Some(boundary);
+            }
+        }
+        Ok(buckets)
+    }
+}
+
+/// Representation of Compressed histogram.
 ///
 /// **Note**: We don't keep the number of rows stored in the corresponding column during the process
 /// of histogram creation in order to support cases of table size change. We always take the
-/// information about `rows_number` from `ColumnStats` of corresponding column.
-#[derive(Debug, PartialEq, Clone)]
-pub struct Histogram<'histogram> {
+/// information about `rows_number` from `TableStats` of column's table.
+///
+/// It's always implied that at least one of two `most_common` or `buckets` arrays is not empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::module_name_repetitions)]
+pub struct Histogram<T: Scalar> {
     // Most common values and their frequencies.
-    most_common: Vec<MostCommonValueWithFrequency>,
+    pub(crate) most_common_values: McvSet<T>,
     /// Histogram buckets.
     ///
     /// **Note**: Values from mcv are not included in histogram buckets.
@@ -87,360 +375,86 @@ pub struct Histogram<'histogram> {
     /// * i = 1 -> (b_1; b_2]
     /// * ...
     /// * i = n -> (b_(n-2); b_(n-1)]
-    buckets: Vec<Bucket<'histogram>>,
+    pub(crate) buckets: HistogramBuckets<T>,
     /// Fraction of NULL values among all column rows.
     /// Always positive value from 0 to 1.
-    null_fraction: f64,
+    ///
+    /// Calculated as `number_of_null_values / rows_number`.
+    pub(crate) null_fraction: Decimal,
     /// Number of distinct values divided by the number of rows.
     /// Always positive value from 0 to 1.
     ///
     /// **Note**: in order to calculate `number_of_distinct_values` (absolute value) we must
-    /// use formula `rows_number * (1 - null_fraction) * distinct_values_fraction`
-    distinct_values_fraction: f64,
+    /// use formula `rows_number * (1 - null_fraction) * distinct_values_fraction`.
+    /// In case this field is near 1.0 value, it means the column must contains unique values.
+    pub(crate) distinct_values_fraction: Decimal,
 }
 
-/// Helper structure that represents `String` char sequence.
-#[derive(Default, Debug, Clone)]
-struct CharSequence<'chars> {
-    inner: &'chars str,
-}
-
-impl<'chars> CharSequence<'chars> {
-    /// Len of `inner` char sequence in bytes.
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Min `u8` char stored in `inner`.
-    ///
-    /// Returns None in case `inner` is empty.
-    fn min(&self) -> Option<u8> {
-        self.inner.bytes().min().map_or_else(|| None, Some)
-    }
-
-    /// Max `u8` char stored in `inner`.
-    ///
-    /// Returns None in case `inner` is empty.
-    fn max(&self) -> Option<u8> {
-        self.inner.bytes().max().map_or_else(|| None, Some)
-    }
-
-    /// Helper function that converts `CharSequence` into `f64` value from 0 to 1
-    /// considering given range bounds.
-    /// It works with `CharSequence` subrange starting from the `from` index.
-    ///
-    /// It applies some kind of a reverse conversion algorithm.
-    /// E.g. straight algorithm for usual ASCII string "cba" with the base of 255 (from 0 to 255)
-    /// would traverse letters from right to left in a way like:
-    /// 1.) "a" equals to 97. result += 97 * 255^1
-    /// 2.) "b" equals to 98. result += 98 * 255^2
-    /// 3.) "c" equals to 99. result += 99 * 255^3
-    ///
-    /// In this case we traverse the string in reverse order, every time decreasing the base and
-    /// counting which part of the base range does our current char takes
-    /// (subtracting the value from the `low_bound`):
-    /// 1.) "c" equals to 99, the working range is [97, 122] so result += (99 - 97) / base^1
-    /// 2.) "b" equals to 98, the working range is [97, 122] so result += (98 - 97) / base^2
-    /// 3.) "a" equals to 97, the working range is [97, 122] so result += (97 - 97) / base^3
-    ///
-    /// Check the largest case (where all chars from the given char sequence equal to the
-    /// `high_bound` value) in order to show that the resulting value is less than 1
-    /// (here `base` considered to be just `high_bound - low_bound`):
-    /// 1.) `(high_bound - low_bound) / (base + 1)     = base / (base + 1)`
-    /// 2.) `(high_bound - low_bound) / (base + 1) ^ 2 = base / (base + 1)^2`
-    /// ...
-    /// `result = (base / (base + 1)) * (1 + 1/(base+1) + 1/(base+1)^2 + ...)`
-    /// considering the fact that `sum of 1 / ((base + 1)^j), j = 0 to infinity = (base + 1) / base`
-    /// we get that `result <= 1`
-    ///
-    /// `PostgreSQL` lines: `convert_one_string_to_scalar`, lines 4564-4603.
-    #[allow(clippy::cast_precision_loss)]
-    fn convert_chars_to_f64_from(&self, from: usize, low_bound: u8, high_bound: u8) -> f64 {
-        let base = f64::from(high_bound - low_bound + 1);
-        let mut result = 0.0;
-
-        for (index, char) in enumerate(self.inner.bytes().skip(from).take(12)) {
-            // We check that given `char` is in found bounds.
-            // If somehow (in case we broaden our range from 0 to 127)
-            // it's not, we made it equal to bound.
-            let constrained_char = char.clamp(low_bound, high_bound);
-            result +=
-                f64::from(constrained_char - low_bound) * f64::powf(base, -((index + 1) as f64));
+impl<T: Scalar> Histogram<T> {
+    #[must_use]
+    pub fn new(
+        most_common_values: McvSet<T>,
+        buckets: HistogramBuckets<T>,
+        null_fraction: Decimal,
+        distinct_values_fraction: Decimal,
+    ) -> Self {
+        Self {
+            most_common_values,
+            buckets,
+            null_fraction,
+            distinct_values_fraction,
         }
-        result
-    }
-}
-
-impl<'chars> From<&'chars String> for CharSequence<'chars> {
-    fn from(s: &'chars String) -> Self {
-        Self { inner: s.as_str() }
-    }
-}
-
-/// Helper structure that represents several `String`s packed in a vector.
-#[derive(Debug)]
-struct VecOfCharSequences<'chars> {
-    vec: Vec<&'chars CharSequence<'chars>>,
-}
-
-impl<'chars> VecOfCharSequences<'chars> {
-    fn new(bytes: Vec<&'chars CharSequence>) -> Self {
-        VecOfCharSequences { vec: bytes }
     }
 
-    /// Find the shortest bytes sequence len in `vec`.
-    fn min_len(&self) -> usize {
-        self.vec
-            .iter()
-            .map(|x| x.len())
-            .min()
-            .map_or_else(|| 0, |l| l)
+    #[must_use]
+    pub fn buckets_number(&self) -> usize {
+        self.buckets.len()
     }
 
-    /// Find the smallest `u8` value among all the `Bytes` stored in `vec`.
-    fn low_bound(&self) -> Option<u8> {
-        self.vec.iter().map(|x| x.min()).fold(None, |mut acc, x| {
-            if let Some(min) = x {
-                if let Some(value) = acc {
-                    if min < value {
-                        acc = Some(min);
-                    }
-                } else {
-                    acc = Some(min);
-                }
-            }
-            acc
+    /// Helper function to calculate the frequency of the histogram buckets.
+    /// **Note**: in the context of buckets __frequency__ is the number of elements stored in each
+    /// bucket. That's why it's an integer number and not float.
+    ///
+    /// # Errors
+    /// - Cast errors appeared during frequency calculation.
+    pub fn calculate_buckets_frequency(&self, rows_number: u64) -> Result<u64, SbroadError> {
+        let decimal_freq = Decimal::from(rows_number)
+            * (Decimal::from(1) - self.null_fraction - self.mcv_frequencies_sum())
+            / self.buckets_number();
+        decimal_freq.to_u64().ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::Statistics,
+                Some(String::from("Unable to calculate buckets frequency")),
+            )
         })
     }
 
-    /// Find the greatest `u8` value among all the `Bytes` stored in `vec`.
-    fn high_bound(&self) -> Option<u8> {
-        self.vec.iter().map(|x| x.max()).fold(None, |mut acc, x| {
-            if let Some(max) = x {
-                if let Some(value) = acc {
-                    if max > value {
-                        acc = Some(max);
-                    }
-                } else {
-                    acc = Some(max);
-                }
-            }
-            acc
-        })
+    /// Get mcv array frequencies sum.
+    /// **Note**: sum of frequencies and not of absolute number values.
+    #[allow(dead_code)]
+    fn mcv_frequencies_sum(&self) -> Decimal {
+        self.most_common_values.frequencies_sum()
     }
 
-    fn iter(&self) -> Iter {
-        Iter {
-            inner: self,
-            min_len: self.min_len(),
-            index: 0,
-        }
-    }
-
-    /// Find the greatest common prefix among all `Bytes` stored in `vec`.
-    fn common_bytes_len(&self) -> usize {
-        self.iter().count()
+    /// Get the number of most common values.
+    /// **Note**: in `Mcv` we store frequency of the value as a fraction from 0 to 1.
+    /// In order to get the number of most common elements we have to multiply this float value
+    /// on the number of rows in the column.
+    ///
+    /// # Errors
+    /// - Cast errors appeared during values number calculation.
+    pub fn most_common_values_number(&self, rows_number: u64) -> Result<u64, SbroadError> {
+        self.most_common_values.values_number(rows_number)
     }
 }
 
-/// Helper structure that represents iterator over `VecOfBytes`.
-/// Used in order to calculate longest common prefix of `String`s packed into `inner`.
-struct Iter<'bytes> {
-    inner: &'bytes VecOfCharSequences<'bytes>,
-    min_len: usize,
-    index: usize,
-}
-
-impl<'bytes> Iterator for Iter<'bytes> {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.min_len {
-            return None;
-        }
-
-        let mut byte_value: Option<u8> = None;
-        for bytes in &self.inner.vec {
-            match bytes.inner.as_bytes().get(self.index) {
-                Some(byte) => {
-                    if byte_value.is_none() {
-                        byte_value = Some(*byte);
-                    } else if byte_value != Some(*byte) {
-                        return None;
-                    }
-                }
-                None => return None,
-            }
-        }
-
-        self.index += 1;
-
-        byte_value
-    }
-}
-
-/// Helper function used to broaden working space bounds.
-/// We presume that in case [`low_bound`; `high_bound`] range cover some part of [`low_char`; `high_char`]
-/// range, then it should include it fully.
-fn broaden_bounds(low_bound: &mut u8, high_bound: &mut u8, low_char: char, high_char: char) {
-    let low_broadening = low_char as u8;
-    let high_broadening = high_char as u8;
-
-    if *low_bound <= high_broadening && *high_bound >= low_broadening {
-        if *low_bound > low_broadening {
-            *low_bound = low_broadening;
-        }
-        if *high_bound < high_broadening {
-            *high_bound = high_broadening;
+impl<T: Scalar> Default for Histogram<T> {
+    fn default() -> Self {
+        Self {
+            most_common_values: McvSet::default(),
+            buckets: HistogramBuckets::default(),
+            null_fraction: Decimal::from(0),
+            distinct_values_fraction: Decimal::from(0),
         }
     }
 }
-
-/// Sub-logic of `scale_value` related to Strings.
-///
-/// All the function main logic presumes that we are working with ASCII characters,
-/// 1-byte characters that are represented with `u8` values from 0 to 255.
-/// We transform given strings into such ASCII arrays, convert them into `f64` from 0 to 1 and
-/// finally calculate wanted fraction.
-///
-/// `PostgreSQL` lines: `convert_string_to_scalar`, lines 4484-4561.
-#[allow(dead_code)]
-fn scale_strings(
-    value: &String,
-    left_bound: &String,
-    right_bound: &String,
-) -> Result<f64, SbroadError> {
-    if value.is_empty() || left_bound.is_empty() || right_bound.is_empty() {
-        return Err(SbroadError::Invalid(
-            Entity::Value,
-            Some(String::from("One of the passed strings is empty")),
-        ));
-    }
-
-    let value_bytes = CharSequence::from(value);
-    let left_bound_bytes = CharSequence::from(left_bound);
-    let right_bound_bytes = CharSequence::from(right_bound);
-    let vec_of_bytes =
-        VecOfCharSequences::new(vec![&value_bytes, &left_bound_bytes, &right_bound_bytes]);
-
-    // As soon as not all strings contain all ASCII characters from 0 to 255,
-    // we want to reduce the range (base) that will be used for scaling.
-    let low_bound = vec_of_bytes.low_bound();
-    let high_bound = vec_of_bytes.high_bound();
-
-    let (Some(mut low_bound), Some(mut high_bound)) = (low_bound, high_bound) else {
-        return Err(SbroadError::Invalid(
-            Entity::Value,
-            Some(String::from("One of the passed strings is empty")),
-        ));
-    };
-
-    broaden_bounds(&mut low_bound, &mut high_bound, '0', '9');
-    broaden_bounds(&mut low_bound, &mut high_bound, 'A', 'Z');
-    broaden_bounds(&mut low_bound, &mut high_bound, 'a', 'z');
-
-    // In case our range is too small, we broaden it to the regular ASCII set.
-    //
-    // **Note**: In case our given values are smth like 230 (value), 235 and 240 (bounds)
-    // the range will become [0; 127] and during `convert_chars_to_f64` all the values will just
-    // be mapped to `high_bound` = 127. Nothing bad will happen.
-    if high_bound - low_bound < 9 {
-        low_bound = 0;
-        high_bound = 127;
-    }
-
-    // We want to remove the longest common prefix from all of the input strings in order to
-    // reduce the working chars space.
-    let greatest_common_prefix_length = vec_of_bytes.common_bytes_len();
-
-    // Convert strings with removed prefixes to `f64`.
-    let value_f64 =
-        value_bytes.convert_chars_to_f64_from(greatest_common_prefix_length, low_bound, high_bound);
-    let low_bound_f64 = left_bound_bytes.convert_chars_to_f64_from(
-        greatest_common_prefix_length,
-        low_bound,
-        high_bound,
-    );
-    let high_bound_f64 = right_bound_bytes.convert_chars_to_f64_from(
-        greatest_common_prefix_length,
-        low_bound,
-        high_bound,
-    );
-
-    // Check that converted values are located adequately.
-    if high_bound_f64 < low_bound_f64 {
-        Err(
-            SbroadError::Invalid(
-                Entity::Value,
-                Some(format!(
-                    "Converted high_bound {high_bound_f64} must be greater than converted low_bound {low_bound_f64}")
-                ),
-            )
-        )
-    } else if value_f64 < low_bound_f64 || value_f64 > high_bound_f64 {
-        Err(
-            SbroadError::Invalid(
-                Entity::Value,
-                Some(format!(
-                    "Converted value {value_f64} must lie between converted low_bound {low_bound_f64} and converted high_bound {high_bound_f64}")
-                ),
-            )
-        )
-    } else {
-        Ok((value_f64 - low_bound_f64) / (high_bound_f64 - low_bound_f64))
-    }
-}
-
-/// Helper function that calculates the fraction that value takes in a histogram bucket.
-/// [++++++++++++++++&-------------------------]
-/// `left_bound`   `value`                  `right_bound`
-///
-/// We assume here that only two value type categories are available for scaling:
-/// 1.) Strings   (that are scaled using `scale_strings` function)
-/// 2.) Numerical (that are scaled being casted to decimals)
-/// I.e. in case Boolean, Null or Tuple were passed, function will return an error.
-///
-/// `PostgreSQL` lines: `convert_to_scalar`, lines 4275-4461.
-#[allow(dead_code)]
-pub(crate) fn scale_values(
-    value: &Value,
-    left_bound: &Value,
-    right_bound: &Value,
-) -> Result<f64, SbroadError> {
-    if let (Value::String(v), Value::String(l), Value::String(r)) = (value, left_bound, right_bound)
-    {
-        scale_strings(v, l, r)
-    } else {
-        let value_decimal = value_to_decimal_or_error(value);
-        let left_decimal = value_to_decimal_or_error(left_bound);
-        let right_decimal = value_to_decimal_or_error(right_bound);
-        if let (Ok(value_decimal), Ok(left_decimal), Ok(right_decimal)) =
-            (value_decimal, left_decimal, right_decimal)
-        {
-            let decimal_res = (value_decimal - left_decimal) / (right_decimal - left_decimal);
-            let f64_res = f64::from_str(&decimal_res.to_string());
-            if let Ok(f64_res) = f64_res {
-                Ok(f64_res)
-            } else {
-                Err(SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format!(
-                        "Error occurred when trying to case decimal {decimal_res} to f64"
-                    )),
-                ))
-            }
-        } else {
-            Err(
-                SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format!(
-                        "Scaling may be done only String to String or Numerical to Numerical. Values {value:?}, {left_bound:?} and {right_bound:?} were passed"
-                    )),
-                )
-            )
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests;

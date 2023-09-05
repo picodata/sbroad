@@ -298,7 +298,9 @@ pub(crate) fn value_to_decimal_or_error(value: &Value) -> Result<Decimal, Sbroad
         Value::Decimal(s) => Ok(*s),
         _ => Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("{value:?} must be numerical")),
+            Some(format!(
+                "Only numerical values can be casted to Decimal. {value:?} was met"
+            )),
         )),
     }
 }
@@ -309,7 +311,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not numerical.
     #[allow(dead_code)]
-    fn add(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn add(&self, other: &Value) -> Result<Value, SbroadError> {
         let self_decimal = value_to_decimal_or_error(self)?;
         let other_decimal = value_to_decimal_or_error(other)?;
 
@@ -321,7 +323,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not numerical.
     #[allow(dead_code)]
-    fn sub(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn sub(&self, other: &Value) -> Result<Value, SbroadError> {
         let self_decimal = value_to_decimal_or_error(self)?;
         let other_decimal = value_to_decimal_or_error(other)?;
 
@@ -333,7 +335,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not numerical.
     #[allow(dead_code)]
-    fn mult(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn mult(&self, other: &Value) -> Result<Value, SbroadError> {
         let self_decimal = value_to_decimal_or_error(self)?;
         let other_decimal = value_to_decimal_or_error(other)?;
 
@@ -345,7 +347,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not numerical.
     #[allow(dead_code)]
-    fn div(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn div(&self, other: &Value) -> Result<Value, SbroadError> {
         let self_decimal = value_to_decimal_or_error(self)?;
         let other_decimal = value_to_decimal_or_error(other)?;
 
@@ -364,7 +366,7 @@ impl Value {
     /// # Errors
     /// - Passed value is not numerical.
     #[allow(dead_code)]
-    fn negate(&self) -> Result<Value, SbroadError> {
+    pub(crate) fn negate(&self) -> Result<Value, SbroadError> {
         let self_decimal = value_to_decimal_or_error(self)?;
 
         Ok(Value::from(-self_decimal))
@@ -375,7 +377,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not `Value::String`.
     #[allow(dead_code)]
-    fn concat(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn concat(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::String(s), Value::String(o)) = (self, other) else {
             return Err(
                 SbroadError::Invalid(
@@ -393,7 +395,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not `Value::Boolean`.
     #[allow(dead_code)]
-    fn and(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn and(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
             return Err(
                 SbroadError::Invalid(
@@ -411,7 +413,7 @@ impl Value {
     /// # Errors
     /// - Passed values are not `Value::Boolean`.
     #[allow(dead_code)]
-    fn or(&self, other: &Value) -> Result<Value, SbroadError> {
+    pub(crate) fn or(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
             return Err(
                 SbroadError::Invalid(
@@ -533,7 +535,7 @@ impl Value {
     ///
     /// Returns `None` in case of
     /// * String casting Error or types mismatch.
-    /// * Float `NaN` comparison occured.
+    /// * Float `NaN` comparison occurred.
     #[must_use]
     #[allow(clippy::too_many_lines)]
     pub fn partial_cmp(&self, other: &Value) -> Option<TrivalentOrdering> {

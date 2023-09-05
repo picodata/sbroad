@@ -1,10 +1,10 @@
 //! Tarantool cartridge engine module.
 
-use sbroad::cbo::{TableColumnPair, TableStats};
+use sbroad::cbo::{ColumnStats, TableColumnPair, TableStats};
 use sbroad::executor::engine::helpers::vshard::{
     exec_ir_on_all_buckets, exec_ir_on_some_buckets, get_random_bucket,
 };
-use sbroad::executor::engine::{InitialColumnStats, QueryCache, Vshard};
+use sbroad::executor::engine::{QueryCache, Vshard};
 
 use std::any::Any;
 use std::cell::{Ref, RefCell};
@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::rc::Rc;
 
+use sbroad::cbo::histogram::Scalar;
 use tarantool::tlua::LuaFunction;
 
 use crate::cartridge::config::RouterConfiguration;
@@ -279,16 +280,16 @@ impl Statistics for RouterRuntime {
     }
 
     #[allow(unused_variables)]
-    fn get_initial_column_stats(
+    fn get_column_stats(
         &self,
         table_column_pair: TableColumnPair,
-    ) -> Result<Rc<InitialColumnStats>, SbroadError> {
+    ) -> Result<Rc<Box<dyn Any>>, SbroadError> {
         // Will be added later.
         todo!()
     }
 
     #[allow(unused_variables)]
-    fn update_table_stats_cache(
+    fn update_table_stats(
         &mut self,
         table_name: String,
         table_stats: TableStats,
@@ -298,10 +299,10 @@ impl Statistics for RouterRuntime {
     }
 
     #[allow(unused_variables)]
-    fn update_column_initial_stats_cache(
+    fn update_column_stats<T: Scalar>(
         &self,
         table_column_pair: TableColumnPair,
-        initial_column_stats: InitialColumnStats,
+        column_stats: ColumnStats<T>,
     ) -> Result<(), SbroadError> {
         // Will be added later.
         todo!()

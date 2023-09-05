@@ -494,7 +494,9 @@ fn arithmetic() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some("String(\"\") must be numerical".to_string())
+            Some(
+                "Only numerical values can be casted to Decimal. String(\"\") was met".to_string()
+            )
         )),
         Value::from("").div(&Value::Unsigned(2))
     );
