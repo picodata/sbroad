@@ -1,7 +1,7 @@
 STATEMENT   ::= EXPLAIN | DDL | DML | DQL | ACL
 EXPLAIN     ::= 'EXPLAIN' ( DML | DQL )
 DQL         ::= (SELECT | SELECT UNION ALL SELECT | SELECT (EXCEPT 'DISTINCT'? ) SELECT ) Options?
-DML         ::= (DELETE | INSERT) Options?
+DML         ::= (DELETE | INSERT | UPDATE) Options?
 DDL         ::= CreateTable | DropTable
 ACL         ::= DropUser | CreateRole | CreateUser
 CreateRole  ::= `create role` role ('option' '(' ('timeout' '=' DOUBLE)')')?
@@ -55,4 +55,5 @@ type        ::= 'ANY'
                 | 'VARCHAR' ('(' length ')')?
 DELETE      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? (VALUES row | SELECT )  ('on conflict' 'do'  ('nothing' | 'replace' | 'fail'))?
+UPDATE      ::= 'UPDATE' table 'set' ( name '=' ((table '.')? name) (',' name '=' (table '.')? name)* ) ( 'FROM' '(' SELECT ')' ( 'AS' name )? )? ( 'WHERE' expression )?
 
