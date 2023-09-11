@@ -87,7 +87,12 @@ relations:
         positions:
           - 0
       name: t
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Memtx
 slices:
   slices: []
 top: 11

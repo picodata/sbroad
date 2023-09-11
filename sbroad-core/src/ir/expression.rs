@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use crate::errors::{Entity, SbroadError};
+use crate::executor::engine::helpers::is_sharding_column_name;
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Type;
@@ -876,58 +877,24 @@ impl Plan {
                 let child_row_list: Vec<(usize, usize)> = if let Expression::Row { list, .. } =
                     self.get_expression_node(relational_op.output())?
                 {
-                    // We have to filter the sharding column in the projection nearest
-                    // to the relational scan. We can have two possible combinations:
-                    // 1. projection -> selection -> scan
-                    // 2. projection -> scan
-                    // As a result `relational_op` can be either a selection or a scan.
                     if need_sharding_column {
                         list.iter()
                             .enumerate()
                             .map(|(pos, id)| (pos, *id))
                             .collect()
                     } else {
-                        let table_name: Option<&str> = match relational_op {
-                            Relational::ScanRelation { relation, .. } => Some(relation.as_str()),
-                            Relational::Selection {
-                                children: sel_child_ids,
-                                ..
-                            } => {
-                                let sel_child_id = if let (Some(sel_child_id), None) =
-                                    (sel_child_ids.first(), sel_child_ids.get(1))
-                                {
-                                    *sel_child_id
-                                } else {
-                                    return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                                        "Selection node has invalid children: {sel_child_ids:?}"
-                                    )));
-                                };
-                                let sel_child = self.get_relation_node(sel_child_id)?;
-                                match sel_child {
-                                    Relational::ScanRelation { relation, .. } => {
-                                        Some(relation.as_str())
-                                    }
-                                    _ => None,
+                        let mut new_list = Vec::with_capacity(list.len());
+                        for (pos, expr_id) in list.iter().enumerate() {
+                            if let Expression::Alias { name, .. } =
+                                self.get_expression_node(*expr_id)?
+                            {
+                                if is_sharding_column_name(name.as_str()) {
+                                    continue;
                                 }
                             }
-                            _ => None,
-                        };
-                        if let Some(relation) = table_name {
-                            let table = self.get_relation_or_error(relation)?;
-                            let sharding_column_pos = table.get_bucket_id_position()?;
-                            // Take an advantage of the fact that the output aliases
-                            // in the relation scan are in the same order as its columns.
-                            list.iter()
-                                .enumerate()
-                                .filter(|(pos, _)| sharding_column_pos.ne(pos))
-                                .map(|(pos, id)| (pos, *id))
-                                .collect()
-                        } else {
-                            list.iter()
-                                .enumerate()
-                                .map(|(pos, id)| (pos, *id))
-                                .collect()
+                            new_list.push((pos, *expr_id));
                         }
+                        new_list
                     }
                 } else {
                     return Err(SbroadError::Invalid(

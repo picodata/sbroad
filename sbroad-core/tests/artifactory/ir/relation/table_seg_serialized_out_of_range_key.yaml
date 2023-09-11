@@ -2,10 +2,12 @@ columns:
   - name: a
     type: Boolean
 name: t
-shard_key:
-  positions:
-    - 10
 primary_key:
   positions:
     - 0
-engine: Memtx
+kind:
+  ShardedSpace:
+    shard_key:
+      positions:
+        - 10
+    engine: Memtx

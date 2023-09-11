@@ -244,12 +244,13 @@ impl RouterConfiguration {
                     .iter()
                     .map(String::as_str)
                     .collect::<Vec<&str>>();
-                let t = Table::new_seg(
+                let t = Table::new(
                     &table_name,
                     fields,
                     shard_key_str.as_slice(),
                     primary_key_str.as_slice(),
                     engine,
+                    false,
                 )?;
                 self.tables.insert(table_name, t);
             } else {
@@ -340,7 +341,7 @@ impl Metadata for RouterConfiguration {
 
     fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
         let table = self.table(space)?;
-        Ok(table.get_sharding_positions().to_vec())
+        Ok(table.get_sk()?.to_vec())
     }
 }
 

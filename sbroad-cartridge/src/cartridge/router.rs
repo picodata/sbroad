@@ -345,6 +345,13 @@ impl Vshard for RouterRuntime {
         )
     }
 
+    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_locally is not supported for the cartridge runtime".to_string()),
+        ))
+    }
+
     fn bucket_count(&self) -> u64 {
         self.bucket_count
     }
@@ -403,5 +410,12 @@ impl Vshard for &RouterRuntime {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
         exec_ir_on_some_buckets(*self, sub_plan, buckets)
+    }
+
+    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_locally is not supported for the cartridge runtime".to_string()),
+        ))
     }
 }

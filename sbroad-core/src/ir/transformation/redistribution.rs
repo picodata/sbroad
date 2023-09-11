@@ -523,6 +523,17 @@ impl Plan {
         let bool_op = BoolOp::from_expr(self, op_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
         let right = self.get_additional_sq(rel_id, bool_op.right)?;
+        let is_global_child = {
+            let d = self.get_distribution(
+                self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
+            )?;
+            matches!(d, Distribution::Global)
+        };
+        if (left.is_some() || right.is_some()) && is_global_child {
+            return Err(SbroadError::UnsupportedOpForGlobalTables(
+                "Subquery in condition".to_string(),
+            ));
+        }
         match left {
             Some(left_sq) => {
                 match right {
@@ -941,6 +952,55 @@ impl Plan {
         }
     }
 
+    /// Check if using global tables is implemented for
+    /// given relational node.
+    ///
+    /// # Errors
+    /// - Relational operator is not supported.
+    pub(crate) fn check_global_tbl_support(&self, rel_id: usize) -> Result<(), SbroadError> {
+        let node = self.get_relation_node(rel_id)?;
+        match node {
+            Relational::Delete { .. }
+            | Relational::Insert { .. }
+            | Relational::Update { .. }
+            | Relational::Values { .. }
+            | Relational::GroupBy { .. }
+            | Relational::Having { .. } => {
+                let child_dist = self.get_distribution(
+                    self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
+                )?;
+                if let Distribution::Global = child_dist {
+                    return Err(SbroadError::UnsupportedOpForGlobalTables(
+                        node.name().to_string(),
+                    ));
+                }
+            }
+            Relational::UnionAll { .. } | Relational::Except { .. } | Relational::Join { .. } => {
+                let left_dist = self.get_distribution(
+                    self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
+                )?;
+                let right_dist = self.get_distribution(
+                    self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
+                )?;
+                if matches!(
+                    (left_dist, right_dist),
+                    (_, Distribution::Global) | (Distribution::Global, _)
+                ) {
+                    return Err(SbroadError::UnsupportedOpForGlobalTables(
+                        node.name().to_string(),
+                    ));
+                }
+            }
+            Relational::Projection { .. }
+            | Relational::ScanRelation { .. }
+            | Relational::ValuesRow { .. }
+            | Relational::Selection { .. }
+            | Relational::ScanSubQuery { .. }
+            | Relational::Motion { .. } => {}
+        }
+        Ok(())
+    }
+
     /// Derive the motion policy for the inner child and sub-queries in the join node.
     ///
     /// # Errors
@@ -1352,10 +1412,10 @@ impl Plan {
             }
             match kind {
                 UpdateStrategy::ShardedUpdate { .. } => {
-                    let new_shard_cols_positions = table.get_sharding_positions().to_vec();
+                    let new_shard_cols_positions = table.get_sk()?.to_vec();
                     let op = MotionOpcode::RearrangeForShardedUpdate {
                         update_id,
-                        old_shard_columns_len: table.shard_key.positions.len(),
+                        old_shard_columns_len: table.get_sk()?.len(),
                         new_shard_columns_positions: new_shard_cols_positions,
                     };
 
@@ -1419,9 +1479,8 @@ impl Plan {
                             let child_alias_map = self
                                 .get_relation_node(pr_child)?
                                 .output_alias_position_map(&self.nodes)?;
-                            let mut expected_positions =
-                                Vec::with_capacity(table.shard_key.positions.len());
-                            for pos in &table.shard_key.positions {
+                            let mut expected_positions = Vec::with_capacity(table.get_sk()?.len());
+                            for pos in table.get_sk()? {
                                 let col_name = &table
                                     .columns
                                     .get(*pos)
@@ -1726,6 +1785,7 @@ impl Plan {
         post_tree.populate_nodes(top);
         let nodes = post_tree.take_nodes();
         for (_, id) in nodes {
+            self.check_global_tbl_support(id)?;
             match self.get_relation_node(id)?.clone() {
                 // At the moment our grammar and IR constructors
                 // don't allow projection and values row with

@@ -194,26 +194,30 @@ relations:
           type: integer
         - name: b
           type: integer
-      shard_key:
-        positions:
-          - 0
       primary_key:
         positions:
           - 0
       name: t2
-      engine: Vinyl
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Vinyl
     t1:
       columns:
         - name: a
           type: integer
-      shard_key:
-        positions:
-          - 0
       primary_key:
         positions:
           - 0
       name: t1
-      engine: Vinyl
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Vinyl
 slices:
   slices:
     - slice:

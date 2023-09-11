@@ -237,11 +237,11 @@ type GroupedBuckets = HashMap<String, Vec<u64>>;
 #[otm_child_span("buckets.group")]
 fn group(buckets: &Buckets) -> Result<GroupedBuckets, SbroadError> {
     let lua_buckets: Vec<u64> = match buckets {
-        Buckets::All | Buckets::Single => {
+        Buckets::All | Buckets::Single | Buckets::Local => {
             return Err(SbroadError::Unsupported(
                 Entity::Buckets,
                 Some(
-                    "grouping buckets is not supported for Buckets::All or Buckets::Single".into(),
+                    "grouping buckets is not supported for Buckets::All, Buckets::Single or Buckets::Local".into(),
                 ),
             ))
         }

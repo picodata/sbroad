@@ -213,3 +213,32 @@ fn simple_except_query() {
 
     assert_eq!(expected, buckets);
 }
+
+#[test]
+fn global_tbl_selection() {
+    let query = r#"
+    select * from "global_t"
+    where "a" = 1 or "b" = 2"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Local, buckets);
+}
+
+#[test]
+fn global_tbl_scan() {
+    let query = r#"
+    select * from "global_t""#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Local, buckets);
+}

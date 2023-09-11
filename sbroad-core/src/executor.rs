@@ -117,8 +117,11 @@ where
             if coordinator.provides_versions() {
                 let mut table_version_map =
                     TableVersionMap::with_capacity(plan.relations.tables.len());
-                for table in plan.relations.tables.keys() {
-                    let normalized = normalize_name_for_space_api(table);
+                for (tbl_name, tbl) in &plan.relations.tables {
+                    if tbl.is_system() {
+                        continue;
+                    }
+                    let normalized = normalize_name_for_space_api(tbl_name);
                     let version = coordinator.get_table_version(normalized.as_str())?;
                     table_version_map.insert(normalized, version);
                 }

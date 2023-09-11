@@ -386,14 +386,18 @@ impl TryFrom<&str> for SpaceEngine {
 pub struct Table {
     /// List of the columns.
     pub columns: Vec<Column>,
-    /// Sharding key of the output tuples (column positions).
-    pub shard_key: Key,
     /// Primary key of the table (column positions).
     pub primary_key: Key,
     /// Unique table name.
-    pub(crate) name: String,
-    /// Table engine.
-    pub engine: SpaceEngine,
+    pub name: String,
+    pub kind: TableKind,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum TableKind {
+    ShardedSpace { shard_key: Key, engine: SpaceEngine },
+    GlobalSpace,
+    SystemSpace,
 }
 
 impl Table {
@@ -402,16 +406,17 @@ impl Table {
         &self.name
     }
 
-    /// Table segment constructor.
+    /// Table constructor.
     ///
     /// # Errors
     /// Returns `SbroadError` when the input arguments are invalid.
-    pub fn new_seg(
+    pub fn new(
         name: &str,
         columns: Vec<Column>,
         sharding_key: &[&str],
         primary_key: &[&str],
         engine: SpaceEngine,
+        is_system: bool,
     ) -> Result<Self, SbroadError> {
         let mut pos_map: HashMap<&str, usize> = HashMap::new();
         let no_duplicates = &columns
@@ -425,30 +430,48 @@ impl Table {
             ));
         }
 
-        let shard_positions = sharding_key
-            .iter()
-            .map(|name| match pos_map.get(*name) {
-                Some(pos) => {
-                    // Check that the column type is scalar.
-                    // Compound types are not supported as sharding keys.
-                    let column = &columns.get(*pos).ok_or_else(|| {
-                        SbroadError::FailedTo(
-                            Action::Create,
-                            Some(Entity::Column),
-                            format!("column {name} not found at position {pos}"),
-                        )
-                    })?;
-                    if !column.r#type.is_scalar() {
-                        return Err(SbroadError::Invalid(
-                            Entity::Column,
-                            Some(format!("column {name} at position {pos} is not scalar",)),
-                        ));
+        let table_kind = if sharding_key.is_empty() {
+            if engine != SpaceEngine::Memtx {
+                return Err(SbroadError::Unsupported(
+                    Entity::Table,
+                    Some("global table can only have memtx engine".into()),
+                ));
+            }
+            if is_system {
+                TableKind::SystemSpace
+            } else {
+                TableKind::GlobalSpace
+            }
+        } else {
+            let shard_positions = sharding_key
+                .iter()
+                .map(|name| match pos_map.get(*name) {
+                    Some(pos) => {
+                        // Check that the column type is scalar.
+                        // Compound types are not supported as sharding keys.
+                        let column = &columns.get(*pos).ok_or_else(|| {
+                            SbroadError::FailedTo(
+                                Action::Create,
+                                Some(Entity::Column),
+                                format!("column {name} not found at position {pos}"),
+                            )
+                        })?;
+                        if !column.r#type.is_scalar() {
+                            return Err(SbroadError::Invalid(
+                                Entity::Column,
+                                Some(format!("column {name} at position {pos} is not scalar",)),
+                            ));
+                        }
+                        Ok(*pos)
                     }
-                    Ok(*pos)
-                }
-                None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
-            })
-            .collect::<Result<Vec<usize>, _>>()?;
+                    None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
+                })
+                .collect::<Result<Vec<usize>, _>>()?;
+            TableKind::ShardedSpace {
+                shard_key: Key::new(shard_positions),
+                engine,
+            }
+        };
 
         let primary_positions = primary_key
             .iter()
@@ -470,9 +493,8 @@ impl Table {
         Ok(Table {
             name: name.into(),
             columns,
-            shard_key: Key::new(shard_positions),
             primary_key: Key::new(primary_positions),
-            engine,
+            kind: table_kind,
         })
     }
 
@@ -481,7 +503,7 @@ impl Table {
     /// # Errors
     /// Returns `SbroadError` when the YAML-serialized table is invalid.
     pub fn seg_from_yaml(s: &str) -> Result<Self, SbroadError> {
-        let ts: Table = match serde_yaml::from_str(s) {
+        let table: Table = match serde_yaml::from_str(s) {
             Ok(t) => t,
             Err(e) => {
                 return Err(SbroadError::FailedTo(
@@ -492,7 +514,7 @@ impl Table {
             }
         };
         let mut uniq_cols: HashSet<&str> = HashSet::new();
-        let cols = ts.columns.clone();
+        let cols = table.columns.clone();
 
         let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
 
@@ -502,23 +524,29 @@ impl Table {
             ));
         }
 
-        let in_range = ts.shard_key.positions.iter().all(|pos| *pos < cols.len());
+        if let TableKind::ShardedSpace { shard_key, .. } = &table.kind {
+            let in_range = shard_key.positions.iter().all(|pos| *pos < cols.len());
 
-        if !in_range {
-            return Err(SbroadError::Invalid(
-                Entity::Value,
-                Some(format!("key positions must be less than {}", cols.len())),
-            ));
+            if !in_range {
+                return Err(SbroadError::Invalid(
+                    Entity::Value,
+                    Some(format!("key positions must be less than {}", cols.len())),
+                ));
+            }
         }
 
-        Ok(ts)
+        Ok(table)
     }
 
     /// Get position of the `bucket_id` system column in the table.
+    /// Return `None` if table is global
     ///
     /// # Errors
     /// - Table doesn't have an exactly one `bucket_id` column.
-    pub fn get_bucket_id_position(&self) -> Result<usize, SbroadError> {
+    pub fn get_bucket_id_position(&self) -> Result<Option<usize>, SbroadError> {
+        if self.is_global() {
+            return Ok(None);
+        }
         let positions: Vec<usize> = self
             .columns
             .iter()
@@ -527,7 +555,7 @@ impl Table {
             .map(|(pos, _)| pos)
             .collect();
         match positions.len().cmp(&1) {
-            Ordering::Equal => Ok(positions[0]),
+            Ordering::Equal => Ok(Some(positions[0])),
             Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
                 "Table has more than one bucket_id column".into(),
             )),
@@ -537,13 +565,27 @@ impl Table {
         }
     }
 
+    #[must_use]
+    pub fn is_system(&self) -> bool {
+        matches!(self.kind, TableKind::SystemSpace)
+    }
+
+    #[must_use]
+    pub fn engine(&self) -> SpaceEngine {
+        match &self.kind {
+            TableKind::SystemSpace | TableKind::GlobalSpace => SpaceEngine::Memtx,
+            TableKind::ShardedSpace { engine, .. } => engine.clone(),
+        }
+    }
+
     /// Get a vector of the sharding column names.
     ///
     /// # Errors
     /// - Table internal inconsistency.
     pub fn get_sharding_column_names(&self) -> Result<Vec<String>, SbroadError> {
-        let mut names: Vec<String> = Vec::with_capacity(self.shard_key.positions.len());
-        for pos in &self.shard_key.positions {
+        let sk = self.get_sk()?;
+        let mut names: Vec<String> = Vec::with_capacity(sk.len());
+        for pos in sk {
             names.push(
                 self.columns
                     .get(*pos)
@@ -563,9 +605,18 @@ impl Table {
         Ok(names)
     }
 
-    #[must_use]
-    pub fn get_sharding_positions(&self) -> &[usize] {
-        &self.shard_key.positions
+    /// Get sharding key if this table is sharded.
+    ///
+    /// # Errors
+    /// - The table is global
+    pub fn get_sk(&self) -> Result<&[usize], SbroadError> {
+        match &self.kind {
+            TableKind::ShardedSpace { shard_key, .. } => Ok(&shard_key.positions),
+            TableKind::GlobalSpace | TableKind::SystemSpace => Err(SbroadError::Invalid(
+                Entity::Table,
+                Some(format!("expected sharded table. Name: {}", self.name)),
+            )),
+        }
     }
 
     /// Get a sharding key definition for the table.
@@ -574,8 +625,8 @@ impl Table {
     /// - Table internal inconsistency.
     /// - Invalid sharding key position.
     pub fn get_key_def(&self) -> Result<KeyDef, SbroadError> {
-        let mut parts = Vec::with_capacity(self.get_sharding_positions().len());
-        for pos in self.get_sharding_positions() {
+        let mut parts = Vec::with_capacity(self.get_sk()?.len());
+        for pos in self.get_sk()? {
             let column = self.columns.get(*pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Column,
@@ -600,6 +651,11 @@ impl Table {
             parts.push(part);
         }
         KeyDef::new(&parts).map_err(|e| SbroadError::Invalid(Entity::Table, Some(e.to_string())))
+    }
+
+    #[must_use]
+    pub fn is_global(&self) -> bool {
+        matches!(self.kind, TableKind::GlobalSpace | TableKind::SystemSpace)
     }
 }
 

@@ -293,6 +293,7 @@ pub enum SbroadError {
     /// and can be empty (None).
     Unsupported(Entity, Option<String>),
     OutdatedStorageSchema,
+    UnsupportedOpForGlobalTables(String),
 }
 
 impl fmt::Display for SbroadError {
@@ -319,6 +320,9 @@ impl fmt::Display for SbroadError {
             SbroadError::LuaError(e) => e.clone(),
             SbroadError::OutdatedStorageSchema => {
                 "storage schema version different from router".into()
+            }
+            SbroadError::UnsupportedOpForGlobalTables(op) => {
+                format!("{op} is not supported for global tables")
             }
         };
 

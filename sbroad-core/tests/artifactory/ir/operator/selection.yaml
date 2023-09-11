@@ -152,16 +152,18 @@ relations:
           type: String
         - name: d
           type: String
-      shard_key:
-        positions:
-          - 1
-          - 0
       primary_key:
         positions:
           - 1
           - 0
       name: t
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 1
+              - 0
+          engine: Memtx
 slices:
   slices: []
 top: 23

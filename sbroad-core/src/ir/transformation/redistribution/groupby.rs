@@ -1624,6 +1624,15 @@ impl Plan {
         let (finals, upper) = self.split_reduce_stage(final_proj_id)?;
         let mut aggr_infos = self.collect_aggregates(&finals)?;
         let has_aggregates = !aggr_infos.is_empty();
+        if has_aggregates {
+            if let Distribution::Global =
+                self.get_distribution(self.get_relational_output(upper)?)?
+            {
+                return Err(SbroadError::UnsupportedOpForGlobalTables(
+                    "Aggregate".to_string(),
+                ));
+            }
+        }
         let (upper, grouping_exprs, gr_expr_map) =
             self.collect_grouping_expressions(upper, &finals, has_aggregates)?;
         if grouping_exprs.is_empty() && aggr_infos.is_empty() {

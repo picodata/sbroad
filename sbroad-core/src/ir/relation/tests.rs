@@ -16,7 +16,7 @@ fn column() {
 
 #[test]
 fn table_seg() {
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -27,22 +27,25 @@ fn table_seg() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
 
-    assert_eq!(2, t.shard_key.positions.len());
-    assert_eq!(0, t.shard_key.positions[1]);
-    assert_eq!(1, t.shard_key.positions[0]);
+    let sk = t.get_sk().unwrap();
+    assert_eq!(2, sk.len());
+    assert_eq!(0, sk[1]);
+    assert_eq!(1, sk[0]);
 }
 
 #[test]
 fn table_seg_name() {
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     assert_eq!("t", t.name());
@@ -51,7 +54,7 @@ fn table_seg_name() {
 #[test]
 fn table_seg_duplicate_columns() {
     assert_eq!(
-        Table::new_seg(
+        Table::new(
             "t",
             vec![
                 column_user_non_null(String::from("a"), Type::Boolean),
@@ -62,6 +65,7 @@ fn table_seg_duplicate_columns() {
             &["b", "a"],
             &["b", "a"],
             SpaceEngine::Memtx,
+            false
         )
         .unwrap_err(),
         SbroadError::DuplicatedValue("Table has duplicated columns and couldn't be loaded".into())
@@ -70,7 +74,7 @@ fn table_seg_duplicate_columns() {
 
 #[test]
 fn table_seg_dno_bucket_id_column() {
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -80,6 +84,7 @@ fn table_seg_dno_bucket_id_column() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
 
@@ -88,7 +93,7 @@ fn table_seg_dno_bucket_id_column() {
         t1.get_bucket_id_position().unwrap_err()
     );
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -100,6 +105,7 @@ fn table_seg_dno_bucket_id_column() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
 
@@ -112,7 +118,7 @@ fn table_seg_dno_bucket_id_column() {
 #[test]
 fn table_seg_wrong_key() {
     assert_eq!(
-        Table::new_seg(
+        Table::new(
             "t",
             vec![
                 column_user_non_null(String::from("a"), Type::Boolean),
@@ -123,6 +129,7 @@ fn table_seg_wrong_key() {
             &["a", "e"],
             &["a", "e"],
             SpaceEngine::Memtx,
+            false
         )
         .unwrap_err(),
         SbroadError::Invalid(Entity::ShardingKey, None)
@@ -132,7 +139,7 @@ fn table_seg_wrong_key() {
 #[test]
 fn table_seg_compound_type_in_key() {
     assert_eq!(
-        Table::new_seg(
+        Table::new(
             "t",
             vec![
                 Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, false),
@@ -141,6 +148,7 @@ fn table_seg_compound_type_in_key() {
             &["a"],
             &["a"],
             SpaceEngine::Memtx,
+            false
         )
         .unwrap_err(),
         SbroadError::Invalid(
@@ -152,7 +160,7 @@ fn table_seg_compound_type_in_key() {
 
 #[test]
 fn table_seg_serialized() {
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -165,6 +173,7 @@ fn table_seg_serialized() {
         &["a", "d"],
         &["a", "d"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     let path = Path::new("")
@@ -226,7 +235,7 @@ fn table_seg_serialized_no_key() {
     assert_eq!(t.unwrap_err(), SbroadError::FailedTo(
         Action::Serialize,
         Some(Entity::Table),
-        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 58, line: 5, col: 11 }, path: \"shard_key\" }))".into())
+        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 118, line: 10, col: 15 }, path: \"kind.ShardedSpace.shard_key\" }))".into()),
     );
 }
 
@@ -327,7 +336,7 @@ fn column_msgpack_deserialize() {
 
 #[test]
 fn table_converting() {
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -338,6 +347,7 @@ fn table_converting() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
 

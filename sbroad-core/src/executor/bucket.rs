@@ -23,8 +23,11 @@ pub enum Buckets {
     All,
     // A filtered set of buckets.
     Filtered(HashSet<u64, RepeatableState>),
-    // Execute query only on a single node
+    // Execute query only on a single node.
     Single,
+    // Execute query locally on the router.
+    // Relevant only for picodata.
+    Local,
 }
 
 impl Buckets {
@@ -60,6 +63,7 @@ impl Buckets {
                     Some("can't conjuct Buckets::Single".into()),
                 ))
             }
+            (Buckets::Local, _) | (_, Buckets::Local) => Buckets::Local,
             (Buckets::All, Buckets::All) => Buckets::All,
             (Buckets::Filtered(b), Buckets::All) | (Buckets::All, Buckets::Filtered(b)) => {
                 Buckets::Filtered(b.clone())
@@ -89,6 +93,10 @@ impl Buckets {
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
                 Buckets::Filtered(a.union(b).copied().collect())
             }
+            (Buckets::Filtered(a), Buckets::Local) | (Buckets::Local, Buckets::Filtered(a)) => {
+                Buckets::Filtered(a.clone())
+            }
+            (Buckets::Local, Buckets::Local) => Buckets::Local,
         };
         Ok(buckets)
     }
@@ -297,8 +305,17 @@ where
 
             let rel = self.exec_plan.get_ir_plan().get_relation_node(node_id)?;
             match rel {
-                Relational::ScanRelation { output, .. } => {
-                    self.bucket_map.insert(*output, Buckets::new_all());
+                Relational::ScanRelation {
+                    output, relation, ..
+                } => {
+                    if ir_plan
+                        .get_relation_or_error(relation.as_str())?
+                        .is_global()
+                    {
+                        self.bucket_map.insert(*output, Buckets::Local);
+                    } else {
+                        self.bucket_map.insert(*output, Buckets::new_all());
+                    }
                 }
                 Relational::Motion {
                     children,

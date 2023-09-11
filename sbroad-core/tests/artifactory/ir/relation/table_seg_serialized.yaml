@@ -12,12 +12,14 @@ columns:
   - name: f
     type: Unsigned
 name: t
-shard_key:
-  positions:
-    - 0
-    - 3
 primary_key:
   positions:
     - 0
     - 3
-engine: Memtx
+kind:
+  ShardedSpace:
+    shard_key:
+      positions:
+        - 0
+        - 3
+    engine: Memtx

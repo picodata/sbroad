@@ -17,19 +17,20 @@ fn full_motion_less_for_sub_query() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -38,6 +39,7 @@ fn full_motion_less_for_sub_query() {
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -80,7 +82,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -89,18 +91,20 @@ fn full_motion_non_segment_outer_for_sub_query() {
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -143,24 +147,26 @@ fn local_sub_query() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -202,19 +208,20 @@ fn multiple_sub_queries() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -223,6 +230,7 @@ fn multiple_sub_queries() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);

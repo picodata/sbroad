@@ -6,10 +6,12 @@ columns:
   - name: a
     type: String
 name: t
-shard_key:
-  positions:
-    - 0
 primary_key:
   positions:
     - 0
-engine: Memtx
+kind:
+  ShardedSpace:
+    shard_key:
+      positions:
+        - 0
+    engine: Memtx

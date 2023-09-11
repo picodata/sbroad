@@ -624,7 +624,7 @@ impl ExecutionPlan {
 
         let mut engine: Option<SpaceEngine> = None;
         for table in self.get_ir_plan().relations.tables.values() {
-            let table_engine = table.engine.clone();
+            let table_engine = table.engine();
             if engine.is_none() {
                 engine = Some(table_engine);
             } else if engine != Some(table_engine) {

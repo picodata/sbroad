@@ -79,6 +79,11 @@ pub fn normalize_name_for_space_api(s: &str) -> String {
     s.to_uppercase()
 }
 
+#[must_use]
+pub fn is_sharding_column_name(name: &str) -> bool {
+    name == "\"bucket_id\""
+}
+
 /// A helper function to encode the execution plan into a pair of binary data (see `Message`):
 /// * required data (plan id, parameters, etc.)
 /// * optional data (execution plan, etc.)
@@ -622,6 +627,7 @@ pub fn dispatch(
 
     match buckets {
         Buckets::Filtered(_) => runtime.exec_ir_on_some(sub_plan, buckets),
+        Buckets::Local => runtime.exec_ir_locally(sub_plan),
         Buckets::Single => {
             // Check that all vtables don't have index. Because if they do,
             // they will be filtered later by filter_vtable
@@ -892,7 +898,12 @@ pub fn sharding_key_from_tuple<'tuple>(
     } else if table_col_amount == tuple.len() + 1 {
         // The tuple doesn't contain the "bucket_id" column.
         let table = conf.table(&quoted_space)?;
-        let bucket_position = table.get_bucket_id_position()?;
+        let bucket_position = table.get_bucket_id_position()?.ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::Space,
+                Some("global space does not have a sharding key!".into()),
+            )
+        })?;
 
         // If the "bucket_id" splits the sharding key, we need to shift the sharding
         // key positions of the right part by one.

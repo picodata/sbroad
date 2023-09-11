@@ -144,26 +144,30 @@ relations:
       columns:
         - name: a
           type: integer
-      shard_key:
-        positions:
-          - 0
       primary_key:
         positions:
           - 0
       name: t1
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Memtx
     t2:
       columns:
         - name: b
           type: integer
-      shard_key:
-        positions:
-          - 0
       primary_key:
         positions:
           - 0
       name: t2
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Memtx
 slices:
   slices: []
 top: 24

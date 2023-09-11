@@ -77,7 +77,7 @@ impl Metadata for RouterConfigurationMock {
 
     fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError> {
         let table = self.table(space)?;
-        Ok(table.get_sharding_positions().to_vec())
+        Ok(table.get_sk()?.to_vec())
     }
 }
 
@@ -118,24 +118,26 @@ impl RouterConfigurationMock {
         let primary_key = &["\"product_code\"", "\"identification_number\""];
         tables.insert(
             "\"hash_testing\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"hash_testing\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"hash_testing_hist\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"hash_testing_hist\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -143,24 +145,26 @@ impl RouterConfigurationMock {
         let sharding_key = &["\"identification_number\""];
         tables.insert(
             "\"hash_single_testing\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"hash_single_testing\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"hash_single_testing_hist\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"hash_single_testing_hist\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -177,24 +181,26 @@ impl RouterConfigurationMock {
 
         tables.insert(
             "\"test_space\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"test_space\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"test_space_hist\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"test_space_hist\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -207,12 +213,13 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"history\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -228,12 +235,13 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"b\""];
         tables.insert(
             "\"t\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"t\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -247,12 +255,13 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t1\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"t1\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -268,12 +277,13 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"g\"", "\"h\""];
         tables.insert(
             "\"t2\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"t2\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -287,12 +297,32 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"a\""];
         tables.insert(
             "\"t3\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"t3\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
+            )
+            .unwrap(),
+        );
+
+        let columns = vec![
+            Column::new("\"a\"", Type::Integer, ColumnRole::User),
+            Column::new("\"b\"", Type::Integer, ColumnRole::User),
+        ];
+        let sharding_key: &[&str] = &[];
+        let primary_key: &[&str] = &["\"a\""];
+        tables.insert(
+            "\"global_t\"".to_string(),
+            Table::new(
+                "\"global_t\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -803,23 +833,25 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"reestrid\""];
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_string(),
-            Table::new_seg(
+            Table::new(
                 "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
+                false,
             )
             .unwrap(),
         );
@@ -922,6 +954,13 @@ impl Vshard for RouterRuntimeMock {
         ))
     }
 
+    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_locally is not supported for the mock runtime".to_string()),
+        ))
+    }
+
     fn bucket_count(&self) -> u64 {
         self.metadata.borrow().bucket_count
     }
@@ -971,6 +1010,13 @@ impl Vshard for &RouterRuntimeMock {
 
     fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
         Ok(bucket_id_by_tuple(s, self.bucket_count()))
+    }
+
+    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+        Err(SbroadError::Unsupported(
+            Entity::Runtime,
+            Some("exec_ir_locally is not supported for the mock runtime".to_string()),
+        ))
     }
 
     fn exec_ir_on_some(
@@ -1353,6 +1399,10 @@ impl Router for RouterRuntimeMock {
                 let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
+            Buckets::Local => {
+                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
+                result.extend(exec_locally(String::from(sql).as_str()))?;
+            }
             Buckets::Filtered(list) => {
                 for bucket in list {
                     let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
@@ -1480,6 +1530,17 @@ fn exec_on_some(bucket: u64, query: &str) -> ProducerResult {
 
     result.rows.push(vec![
         LuaValue::String(format!("Execute query on a bucket [{bucket}]")),
+        LuaValue::String(String::from(query)),
+    ]);
+
+    result
+}
+
+fn exec_locally(query: &str) -> ProducerResult {
+    let mut result = ProducerResult::new();
+
+    result.rows.push(vec![
+        LuaValue::String("Execute query locally".into()),
         LuaValue::String(String::from(query)),
     ]);
 

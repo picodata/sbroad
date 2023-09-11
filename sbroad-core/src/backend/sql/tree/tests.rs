@@ -19,12 +19,13 @@ fn sql_order_selection() {
     // select a from t where a = 1
 
     let mut plan = Plan::default();
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -98,7 +99,7 @@ fn sql_order_selection() {
 fn sql_arithmetic_selection_plan() {
     // select a from t where a + (b/c + d*e) * f - b = 1
     let mut plan = Plan::default();
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -112,6 +113,7 @@ fn sql_arithmetic_selection_plan() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -295,7 +297,7 @@ fn sql_arithmetic_selection_plan() {
 fn sql_arithmetic_projection_plan() {
     // select a + (b/c + d*e) * f - b from t
     let mut plan = Plan::default();
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -309,6 +311,7 @@ fn sql_arithmetic_projection_plan() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -469,7 +472,7 @@ fn sql_arithmetic_projection_plan() {
 fn sql_arbitrary_projection_plan() {
     // select a + b > c and d is not null from t
     let mut plan = Plan::default();
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -481,6 +484,7 @@ fn sql_arbitrary_projection_plan() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);

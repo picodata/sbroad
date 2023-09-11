@@ -105,28 +105,32 @@ relations:
           type: Boolean
         - name: b
           type: Number
-      shard_key:
-        positions:
-          - 0
       primary_key:
         positions:
           - 0
       name: t1
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Memtx
     t2:
       columns:
         - name: a
           type: Boolean
         - name: b
           type: Number
-      shard_key:
-        positions:
-          - 1
       primary_key:
         positions:
           - 0
       name: t2
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 1
+          engine: Memtx
 slices:
   slices: []
 top: 17

@@ -16,7 +16,7 @@ use super::expression::Expression;
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, Nodes, Plan};
-use crate::ir::distribution::{Distribution, KeySet};
+use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole};
@@ -770,6 +770,27 @@ impl Relational {
         }
     }
 
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Relational::Except { .. } => "Except",
+            Relational::Delete { .. } => "Delete",
+            Relational::Insert { .. } => "Insert",
+            Relational::Update { .. } => "Update",
+            Relational::Join { .. } => "Join",
+            Relational::Motion { .. } => "Motion",
+            Relational::Projection { .. } => "Projection",
+            Relational::ScanRelation { .. } => "Scan",
+            Relational::ScanSubQuery { .. } => "Subquery",
+            Relational::Selection { .. } => "Selection",
+            Relational::GroupBy { .. } => "GroupBy",
+            Relational::Having { .. } => "Having",
+            Relational::UnionAll { .. } => "UnionAll",
+            Relational::Values { .. } => "Values",
+            Relational::ValuesRow { .. } => "ValuesRow",
+        }
+    }
+
     /// Sets new scan name to relational node.
     ///
     /// # Errors
@@ -941,8 +962,7 @@ impl Plan {
         let table = self.get_relation_or_error(relation)?;
         // is shard key column updated
         let is_sharded_update = table
-            .shard_key
-            .positions
+            .get_sk()?
             .iter()
             .any(|col| update_defs.contains_key(col));
         // Columns of Projection that will be created
@@ -962,14 +982,17 @@ impl Plan {
             // table_tuple is without bucket_id column
 
             // Calculate primary key positions in table_tuple
-            let bucket_id_pos = table.get_bucket_id_position()?;
-            table.primary_key.positions.iter().for_each(|pos| {
-                if *pos < bucket_id_pos {
-                    primary_key_positions.push(*pos);
-                } else {
-                    primary_key_positions.push(*pos - 1);
-                }
-            });
+            if let Some(bucket_id_pos) = table.get_bucket_id_position()? {
+                table.primary_key.positions.iter().for_each(|pos| {
+                    if *pos < bucket_id_pos {
+                        primary_key_positions.push(*pos);
+                    } else {
+                        primary_key_positions.push(*pos - 1);
+                    }
+                });
+            } else {
+                primary_key_positions.extend(table.primary_key.positions.iter());
+            }
 
             // Create projection columns for table_tuple
             let cols_len = table.columns.len();
@@ -994,10 +1017,10 @@ impl Plan {
             // Create projection columns for sharding_key_columns
             // todo(ars): some sharding column maybe already present in projection_cols
             let table = self.get_relation_or_error(relation)?;
-            let shard_key_len = table.shard_key.positions.len();
+            let shard_key_len = table.get_sk()?.len();
             for i in 0..shard_key_len {
                 let table = self.get_relation_or_error(relation)?;
-                let col_pos = *table.shard_key.positions.get(i).ok_or_else(|| {
+                let col_pos = *table.get_sk()?.get(i).ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format!("invalid shard col position {i}"))
                 })?;
                 let shard_col_expr_id =
@@ -1162,7 +1185,7 @@ impl Plan {
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
-        let keys: HashSet<_, RepeatableState> = collection! { rel.shard_key.clone() };
+        let keys: HashSet<_, RepeatableState> = collection! { Key::new(rel.get_sk()?.to_vec()) };
         let dist = Distribution::Segment {
             keys: KeySet::from(keys),
         };
@@ -1281,14 +1304,16 @@ impl Plan {
                     JoinChild::Inner => Some(vec![1_usize]),
                     JoinChild::Outer => Some(vec![0_usize]),
                 };
-                for ref_id in refs {
-                    let expr = self.get_mut_expression_node(ref_id)?;
-                    if let Expression::Reference {
-                        position, targets, ..
-                    } = expr
-                    {
-                        if current_target == *targets && *position > sharding_column_pos {
-                            *position -= 1;
+                if let Some(sharding_column_pos) = sharding_column_pos {
+                    for ref_id in refs {
+                        let expr = self.get_mut_expression_node(ref_id)?;
+                        if let Expression::Reference {
+                            position, targets, ..
+                        } = expr
+                        {
+                            if current_target == *targets && *position > sharding_column_pos {
+                                *position -= 1;
+                            }
                         }
                     }
                 }

@@ -23,19 +23,20 @@ fn sub_query1() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_integer_user_non_null(String::from("a")),
@@ -44,6 +45,7 @@ fn sub_query1() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);

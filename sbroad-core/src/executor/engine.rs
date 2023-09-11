@@ -279,6 +279,12 @@ pub trait Vshard {
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError>;
 
+    /// Execute query locally on the current node.
+    ///
+    /// # Errors
+    /// - Execution errors
+    fn exec_ir_locally(&self, sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError>;
+
     /// Get the amount of buckets in the cluster.
     fn bucket_count(&self) -> u64;
 

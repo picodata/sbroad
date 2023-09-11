@@ -12,7 +12,6 @@ use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::expression::Expression;
 use super::operator::Relational;
-use super::relation::Table;
 use super::{Node, Plan};
 
 /// Tuple columns that determinate its segment distribution.
@@ -123,6 +122,12 @@ impl Distribution {
         let dist = match (left, right) {
             (Distribution::Single, Distribution::Global)
             | (Distribution::Global, Distribution::Single) => Distribution::Single,
+            (Distribution::Global, _) | (_, Distribution::Global) => {
+                return Err(SbroadError::Unsupported(
+                    Entity::Query,
+                    Some("union/except is not supported for global tables!".into())
+                ))
+            }
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
@@ -170,6 +175,12 @@ impl Distribution {
             }
             (_, Distribution::Global) | (Distribution::Segment { .. }, Distribution::Any) => {
                 left.clone()
+            }
+            (Distribution::Global, _) | (_, Distribution::Global) => {
+                return Err(SbroadError::Unsupported(
+                    Entity::Query,
+                    Some("join is not supported for global tables!".into())
+                ))
             }
             (
                 Distribution::Segment {
@@ -412,6 +423,12 @@ impl Plan {
             }
         } else {
             // References in the leaf (relation scan) node.
+            let tbl_name = self.get_scan_relation(parent_id)?;
+            let tbl = self.get_relation_or_error(tbl_name)?;
+            if tbl.is_global() {
+                self.set_dist(row_id, Distribution::Global)?;
+                return Ok(());
+            }
             let mut table_map: HashMap<usize, usize, RandomState> =
                 HashMap::with_capacity_and_hasher(row_children.len(), RandomState::new());
             for (pos, id) in row_children.iter().enumerate() {
@@ -431,15 +448,24 @@ impl Plan {
             }
             // We don't handle a case with the ValueRow (distribution would be set to Replicated in Value node).
             // So, we should care only about relation scan nodes.
-            let table_name: String = if let Relational::ScanRelation { relation, .. } = parent {
-                relation.clone()
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some("the parent node is not a relation scan node".to_string()),
-                ));
-            };
-            self.set_scan_dist(&table_name, &table_map, row_id)?;
+            let sk = tbl.get_sk()?;
+            let mut new_key: Key = Key::new(Vec::with_capacity(sk.len()));
+            let all_found = sk.iter().all(|pos| {
+                table_map.get(pos).map_or(false, |v| {
+                    new_key.positions.push(*v);
+                    true
+                })
+            });
+            if all_found {
+                if let Expression::Row {
+                    ref mut distribution,
+                    ..
+                } = self.get_mut_expression_node(row_id)?
+                {
+                    let keys: HashSet<Key, RepeatableState> = collection! { new_key };
+                    *distribution = Some(Distribution::Segment { keys: keys.into() });
+                }
+            }
         }
         Ok(())
     }
@@ -521,35 +547,6 @@ impl Plan {
             Entity::Expression,
             Some("the node is not a row type".to_string()),
         ))
-    }
-
-    fn set_scan_dist(
-        &mut self,
-        table_name: &str,
-        table_pos_map: &HashMap<usize, usize, RandomState>,
-        row_id: usize,
-    ) -> Result<(), SbroadError> {
-        let table: &Table = self.relations.get(table_name).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Table, format!("{table_name} among plan relations"))
-        })?;
-        let mut new_key: Key = Key::new(Vec::with_capacity(table.shard_key.positions.len()));
-        let all_found = table.shard_key.positions.iter().all(|pos| {
-            table_pos_map.get(pos).map_or(false, |v| {
-                new_key.positions.push(*v);
-                true
-            })
-        });
-        if all_found {
-            if let Expression::Row {
-                ref mut distribution,
-                ..
-            } = self.get_mut_expression_node(row_id)?
-            {
-                let keys: HashSet<Key, RepeatableState> = collection! { new_key };
-                *distribution = Some(Distribution::Segment { keys: keys.into() });
-            }
-        }
-        Ok(())
     }
 
     fn set_two_children_node_dist(

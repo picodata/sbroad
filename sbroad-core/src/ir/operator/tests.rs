@@ -18,7 +18,7 @@ use super::*;
 fn scan_rel() {
     let mut plan = Plan::default();
 
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -29,6 +29,7 @@ fn scan_rel() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -56,7 +57,7 @@ fn scan_rel() {
 fn scan_rel_serialized() {
     let mut plan = Plan::default();
 
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -67,6 +68,7 @@ fn scan_rel_serialized() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -92,7 +94,7 @@ fn scan_rel_serialized() {
 fn projection() {
     let mut plan = Plan::default();
 
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -103,6 +105,7 @@ fn projection() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -149,7 +152,7 @@ fn selection() {
 
     let mut plan = Plan::default();
 
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -160,6 +163,7 @@ fn selection() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -213,24 +217,26 @@ fn selection_serialize() {
 fn except() {
     let mut valid_plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     let t1_copy = t1.clone();
     valid_plan.add_rel(t1);
     let scan_t1_id = valid_plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     valid_plan.add_rel(t2);
@@ -244,7 +250,7 @@ fn except() {
     invalid_plan.add_rel(t1_copy);
     let scan_t1_id = invalid_plan.add_scan("t1", None).unwrap();
 
-    let t3 = Table::new_seg(
+    let t3 = Table::new(
         "t3",
         vec![
             column_user_non_null(String::from("a"), Type::Unsigned),
@@ -253,6 +259,7 @@ fn except() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     invalid_plan.add_rel(t3);
@@ -271,19 +278,20 @@ fn except() {
 fn insert() {
     let mut plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
 
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_user_non_null(String::from("a"), Type::Unsigned),
@@ -293,6 +301,7 @@ fn insert() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -334,23 +343,25 @@ fn insert() {
 fn union_all() {
     let mut plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -363,7 +374,7 @@ fn union_all() {
 fn union_all_col_amount_mismatch() {
     let mut plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -372,6 +383,7 @@ fn union_all_col_amount_mismatch() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
@@ -379,12 +391,13 @@ fn union_all_col_amount_mismatch() {
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
     // Check errors for children with different amount of column
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_user_non_null(String::from("b"), Type::Unsigned)],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -403,7 +416,7 @@ fn union_all_col_amount_mismatch() {
 fn sub_query() {
     let mut plan = Plan::default();
 
-    let t = Table::new_seg(
+    let t = Table::new(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -412,6 +425,7 @@ fn sub_query() {
         &["a"],
         &["b"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -452,24 +466,26 @@ fn selection_with_sub_query() {
     let mut plan = Plan::default();
     let mut children: Vec<usize> = Vec::new();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     children.push(scan_t1_id);
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![column_integer_user_non_null(String::from("b"))],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -508,7 +524,7 @@ fn join() {
     // i.e. (a), (d) - tuples containing a single column.
     let mut plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -518,12 +534,13 @@ fn join() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1 = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_user_non_null(String::from("c"), Type::Boolean),
@@ -533,6 +550,7 @@ fn join() {
         &["d"],
         &["d"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -569,7 +587,7 @@ fn join_duplicate_columns() {
     // select * from t1 join t2 on t1.a = t2.d
     let mut plan = Plan::default();
 
-    let t1 = Table::new_seg(
+    let t1 = Table::new(
         "t1",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -579,12 +597,13 @@ fn join_duplicate_columns() {
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1 = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new_seg(
+    let t2 = Table::new(
         "t2",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -594,6 +613,7 @@ fn join_duplicate_columns() {
         &["d"],
         &["d"],
         SpaceEngine::Memtx,
+        false,
     )
     .unwrap();
     plan.add_rel(t2);

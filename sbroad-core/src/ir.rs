@@ -578,6 +578,21 @@ impl Plan {
             .ok_or_else(|| SbroadError::NotFound(Entity::Table, format!("with name {name}")))
     }
 
+    /// Get relation of a scan node
+    ///
+    /// # Errors
+    /// - Given node is not a scan
+    pub fn get_scan_relation(&self, scan_id: usize) -> Result<&str, SbroadError> {
+        let node = self.get_relation_node(scan_id)?;
+        if let Relational::ScanRelation { relation, .. } = node {
+            return Ok(relation.as_str());
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!("expected scan node, got: {node:?}")),
+        ))
+    }
+
     /// Get relation in the plan by its name or returns error.
     ///
     /// # Errors

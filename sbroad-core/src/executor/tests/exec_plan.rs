@@ -6,6 +6,7 @@ use crate::ir::relation::Type;
 use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::Snapshot;
+use crate::ir::Slice;
 
 use super::*;
 
@@ -770,6 +771,38 @@ fn exec_plan_subtree_having_without_groupby() {
                 r#"HAVING (sum (DISTINCT "column_44")) > (?)"#,
             ),
             vec![Value::Unsigned(1u64)]
+        )
+    );
+}
+
+#[test]
+fn global_table_scan() {
+    let sql = r#"SELECT * from "global_t""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let exec_plan = query.get_mut_exec_plan();
+    assert_eq!(Vec::<Slice>::new(), exec_plan.get_ir_plan().slices.slices);
+
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let buckets = query.bucket_discovery(top_id).unwrap();
+    assert_eq!(Buckets::Local, buckets);
+    let exec_plan = query.get_mut_exec_plan();
+    let subplan = exec_plan.take_subtree(top_id).unwrap();
+    let subplan_top_id = subplan.get_ir_plan().get_top().unwrap();
+    let sp = SyntaxPlan::new(&subplan, subplan_top_id, Snapshot::Oldest).unwrap();
+    let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
+    let nodes = ordered.to_syntax_data().unwrap();
+    let (sql, _) = subplan.to_sql(&nodes, &buckets, "test").unwrap();
+
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#,
+            ),
+            vec![]
         )
     );
 }

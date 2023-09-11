@@ -72,14 +72,16 @@ relations:
           type: Boolean
         - name: b
           type: Number
-      shard_key:
-        positions:
-          - 1
       primary_key:
         positions:
           - 1
       name: t
-      engine: Memtx
+      kind:
+        ShardedSpace:
+          shard_key:
+            positions:
+              - 0
+          engine: Memtx
 slices:
   slices: []
 top: 9
