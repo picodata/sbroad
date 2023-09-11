@@ -417,7 +417,7 @@ left_join.test_sq_with_full_motion = function()
         "subquery $0:",
         "motion [policy: full]",
         "            scan",
-        "                projection ((\"arithmetic_space\".\"a\"::integer) + (1::unsigned) -> \"COL_1\")",
+        "                projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(1::unsigned) -> \"COL_1\")",
         "                    scan \"arithmetic_space\"",
         "execution options:",
         "sql_vdbe_max_steps = 45000",

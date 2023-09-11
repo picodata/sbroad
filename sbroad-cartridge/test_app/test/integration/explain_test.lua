@@ -324,7 +324,7 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(
         r,
         {
-            "projection ((\"arithmetic_space\".\"id\"::integer) + (2::unsigned) -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"id\"::integer) + ROW(2::unsigned) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -338,9 +338,9 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
-        -- luacheck: max line length 160
+        -- luacheck: max line length 210
         {
-            "projection ((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
@@ -354,29 +354,44 @@ g.test_explain_arithmetic_projection = function()
     t.assert_equals(err, nil)
     t.assert_equals(
         r,
-        -- luacheck: max line length 160
+        -- luacheck: max line length 210
         {
-            "projection (((\"arithmetic_space\".\"a\"::integer) + (\"arithmetic_space\".\"b\"::integer)) * (\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
+            "projection ((ROW(\"arithmetic_space\".\"a\"::integer) + ROW(\"arithmetic_space\".\"b\"::integer)) * ROW(\"arithmetic_space\".\"c\"::integer) -> \"COL_1\")",
             "    scan \"arithmetic_space\"",
             "execution options:",
             "sql_vdbe_max_steps = 45000",
             "vtable_max_rows = 5000",
         }
     )
-end
 
-g.test_explain_arbitrary_projection = function()
-    local api = cluster:server("api-1").net_box
-
-    -- currently explain does not support projection with bool and unary expressions
-
-    -- arbitraty expression consisted of bool
-    local _, err = api:call("sbroad.execute", {
+    local r, err = api:call("sbroad.execute", {
         [[EXPLAIN select "a" > "b" from "arithmetic_space"]], {}
     })
-    t.assert_str_contains(tostring(err), "is not supported for yet")
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        -- luacheck: max line length 160
+        {
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) > ROW(\"arithmetic_space\".\"b\"::integer) -> \"COL_1\")",
+            "    scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
+        }
+    )
 
-    -- arbitraty expression consisted of unary
-    local _, err = api:call("sbroad.execute", { [[EXPLAIN select "a" is null from "arithmetic_space"]], {} })
-    t.assert_str_contains(tostring(err), "is not supported for yet")
+    local r, err = api:call("sbroad.execute", {
+        [[EXPLAIN select "a" is null from "arithmetic_space"]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(
+        r,
+        {
+            "projection (ROW(\"arithmetic_space\".\"a\"::integer) is null -> \"COL_1\")",
+            "    scan \"arithmetic_space\"",
+            "execution options:",
+            "sql_vdbe_max_steps = 45000",
+            "vtable_max_rows = 5000",
+        }
+    )
 end

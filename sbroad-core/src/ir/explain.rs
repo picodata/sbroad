@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write as _};
+use std::mem::take;
 
 use itertools::Itertools;
 use serde::Serialize;
@@ -22,30 +23,46 @@ use super::value::Value;
 enum ColExpr {
     Alias(Box<ColExpr>, String),
     Arithmetic(Box<ColExpr>, BinaryOp, Box<ColExpr>, bool),
+    Bool(Box<ColExpr>, BinaryOp, Box<ColExpr>),
+    Unary(Unary, Box<ColExpr>),
     Column(String, Type),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(String, Box<ColExpr>, bool, Type),
-    Row(Vec<ColExpr>),
+    StableFunction(String, Vec<ColExpr>, bool, Type),
+    Row(Row),
     None,
 }
 
 impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
-            ColExpr::Alias(expr, name) => format!("({expr} -> {name})"),
+            ColExpr::Alias(expr, name) => format!("{expr} -> {name}"),
             ColExpr::Arithmetic(left, op, right, with_parentheses) => match with_parentheses {
                 false => format!("{left} {op} {right}"),
                 true => format!("({left} {op} {right})"),
             },
+            ColExpr::Bool(left, op, right) => {
+                if let BinaryOp::BoolOp(Bool::Or) = op {
+                    format!("({left} {op} {right})")
+                } else {
+                    format!("{left} {op} {right}")
+                }
+            }
+            ColExpr::Unary(op, expr) => match op {
+                Unary::IsNull | Unary::IsNotNull => format!("{expr} {op}"),
+                Unary::Exists | Unary::NotExists => format!("{op} {expr}"),
+            },
             ColExpr::Column(c, col_type) => format!("{c}::{col_type}"),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
-            ColExpr::StableFunction(name, arg, is_distinct, func_type) => format!(
-                "{name}({}{arg})::{func_type}",
-                if *is_distinct { "distinct " } else { "" }
-            ),
-            ColExpr::Row(list) => format!("({})", list.iter().format(", ")),
+            ColExpr::StableFunction(name, args, is_distinct, func_type) => {
+                let formatted_args = format!("({})", args.iter().format(", "));
+                format!(
+                    "{name}({}{formatted_args})::{func_type}",
+                    if *is_distinct { "distinct " } else { "" }
+                )
+            }
+            ColExpr::Row(row) => row.to_string(),
             ColExpr::None => String::new(),
         };
 
@@ -67,8 +84,12 @@ impl Default for ColExpr {
 
 impl ColExpr {
     #[allow(dead_code, clippy::too_many_lines)]
-    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
-        let mut stack: Vec<ColExpr> = Vec::new();
+    fn new(
+        plan: &Plan,
+        subtree_top: usize,
+        sq_ref_map: &SubQueryRefMap,
+    ) -> Result<Self, SbroadError> {
+        let mut stack: Vec<(ColExpr, usize)> = Vec::new();
         let mut dft_post =
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
 
@@ -77,19 +98,18 @@ impl ColExpr {
 
             match &current_node {
                 Expression::Cast { to, .. } => {
-                    let expr = stack.pop().ok_or_else(|| {
+                    let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing CAST expression".to_string(),
                         )
                     })?;
                     let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
-                    stack.push(cast_expr);
+                    stack.push((cast_expr, id));
                 }
                 Expression::CountAsterisk => {
-                    stack.push(ColExpr::Column(
-                        "*".to_string(),
-                        current_node.calculate_type(plan)?,
-                    ));
+                    let count_asterisk_expr =
+                        ColExpr::Column("*".to_string(), current_node.calculate_type(plan)?);
+                    stack.push((count_asterisk_expr, id));
                 }
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
@@ -105,29 +125,27 @@ impl ColExpr {
                     let alias = plan.get_alias_from_reference_node(current_node)?;
                     col_name.push_str(alias);
 
-                    stack.push(ColExpr::Column(
-                        col_name,
-                        current_node.calculate_type(plan)?,
-                    ));
+                    let ref_expr = ColExpr::Column(col_name, current_node.calculate_type(plan)?);
+                    stack.push((ref_expr, id));
                 }
                 Expression::Concat { .. } => {
-                    let right = stack.pop().ok_or_else(|| {
+                    let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing CONCAT expression".to_string(),
                         )
                     })?;
-                    let left = stack.pop().ok_or_else(|| {
+                    let (left, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing CONCAT expression".to_string(),
                         )
                     })?;
                     let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
-                    stack.push(concat_expr);
+                    stack.push((concat_expr, id));
                 }
                 Expression::Constant { value } => {
                     let expr =
                         ColExpr::Column(value.to_string(), current_node.calculate_type(plan)?);
-                    stack.push(expr);
+                    stack.push((expr, id));
                 }
                 Expression::StableFunction {
                     name,
@@ -138,7 +156,7 @@ impl ColExpr {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
                     while len > 0 {
-                        let arg = stack.pop().ok_or_else(|| {
+                        let (arg, _) = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
                                 format!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression"),
                             )
@@ -147,18 +165,17 @@ impl ColExpr {
                         len -= 1;
                     }
                     args.reverse();
-                    let args_expr = ColExpr::Row(args);
                     let func_expr = ColExpr::StableFunction(
                         name.clone(),
-                        Box::new(args_expr),
+                        args,
                         *is_distinct,
                         func_type.clone(),
                     );
-                    stack.push(func_expr);
+                    stack.push((func_expr, id));
                 }
                 Expression::Row { list, .. } => {
                     let mut len = list.len();
-                    let mut row: Vec<ColExpr> = Vec::with_capacity(len);
+                    let mut row: Vec<(ColExpr, usize)> = Vec::with_capacity(len);
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
@@ -168,8 +185,10 @@ impl ColExpr {
                         row.push(expr);
                         len -= 1;
                     }
+                    row.reverse();
+                    let row = Row::from_col_exprs_with_ids(plan, &mut row, sq_ref_map)?;
                     let row_expr = ColExpr::Row(row);
-                    stack.push(row_expr);
+                    stack.push((row_expr, id));
                 }
                 Expression::Arithmetic {
                     left: _,
@@ -177,13 +196,13 @@ impl ColExpr {
                     right: _,
                     with_parentheses,
                 } => {
-                    let right = stack.pop().ok_or_else(|| {
+                    let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing ARITHMETIC expression".to_string(),
                         )
                     })?;
 
-                    let left = stack.pop().ok_or_else(|| {
+                    let (left, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing ARITHMETIC expression".to_string(),
                         )
@@ -196,91 +215,81 @@ impl ColExpr {
                         *with_parentheses,
                     );
 
-                    stack.push(ar_expr);
+                    stack.push((ar_expr, id));
                 }
                 Expression::Alias { name, .. } => {
-                    let expr = stack.pop().ok_or_else(|| {
+                    let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
                             "stack is empty while processing ALIAS expression".to_string(),
                         )
                     })?;
                     let alias_expr = ColExpr::Alias(Box::new(expr), name.clone());
-                    stack.push(alias_expr);
+                    stack.push((alias_expr, id));
                 }
-                Expression::Bool { .. } | Expression::Unary { .. } => {
-                    return Err(SbroadError::Unsupported(
-                        Entity::Expression,
-                        Some(format!(
-                            "Column expression node [{current_node:?}] is not supported for yet"
-                        )),
-                    ));
+                Expression::Bool { op, .. } => {
+                    let (right, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing BOOL expression".to_string(),
+                        )
+                    })?;
+
+                    let (left, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing BOOL expression".to_string(),
+                        )
+                    })?;
+
+                    let bool_expr = ColExpr::Bool(
+                        Box::new(left),
+                        BinaryOp::BoolOp(op.clone()),
+                        Box::new(right),
+                    );
+
+                    stack.push((bool_expr, id));
+                }
+                Expression::Unary { op, .. } => {
+                    let (expr, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing UNARY expression".to_string(),
+                        )
+                    })?;
+                    let alias_expr = ColExpr::Unary(op.clone(), Box::new(expr));
+                    stack.push((alias_expr, id));
                 }
             }
         }
 
-        stack
+        let (expr, _) = stack
             .pop()
-            .ok_or_else(|| SbroadError::UnexpectedNumberOfValues("stack is empty".to_string()))
+            .ok_or_else(|| SbroadError::UnexpectedNumberOfValues("stack is empty".to_string()))?;
+        Ok(expr)
     }
 }
 
-#[derive(Debug, Serialize, Default)]
-struct Col {
-    /// Column alias from sql query
-    alias: Option<String>,
-
-    /// Column expression (e.g. column name, function, etc.)
-    col: ColExpr,
-}
-
-impl Col {
-    #[allow(dead_code)]
-    fn new(plan: &Plan, subtree_top: usize) -> Result<Self, SbroadError> {
-        let mut column = Col::default();
-
-        let mut dft_post =
-            PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, true), EXPR_CAPACITY);
-        for (_, id) in dft_post.iter(subtree_top) {
-            let current_node = plan.get_expression_node(id)?;
-
-            if let Expression::Alias { name, .. } = &current_node {
-                column.alias = Some(name.to_string());
-            } else {
-                column.col = ColExpr::new(plan, id)?;
-            }
-        }
-
-        Ok(column)
-    }
-}
-
-impl Display for Col {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::from(&self.col);
-
-        if let Some(a) = &self.alias {
-            write!(s, " -> {a}")?;
-        }
-
-        write!(f, "{s}")
-    }
-}
+/// Alias for map of (`SubQuery` id -> it's offset).
+/// Offset = `SubQuery` index (e.g. in case there are several `SubQueries` in Selection WHERE condition
+/// index will indicate to which of them Reference is pointing).
+type SubQueryRefMap = HashMap<usize, usize>;
 
 #[derive(Debug, Serialize)]
 struct Projection {
     /// List of colums in sql query
-    cols: Vec<Col>,
+    cols: Vec<ColExpr>,
 }
 
 impl Projection {
     #[allow(dead_code)]
-    fn new(plan: &Plan, output_id: usize) -> Result<Self, SbroadError> {
+    fn new(
+        plan: &Plan,
+        output_id: usize,
+        sq_ref_map: &SubQueryRefMap,
+    ) -> Result<Self, SbroadError> {
         let mut result = Projection { cols: vec![] };
 
         let alias_list = plan.get_expression_node(output_id)?;
 
         for col_node_id in alias_list.get_row_list()? {
-            let col = Col::new(plan, *col_node_id)?;
+            let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
 
             result.cols.push(col);
         }
@@ -307,25 +316,30 @@ impl Display for Projection {
 #[derive(Debug, Serialize)]
 struct GroupBy {
     /// List of colums in sql query
-    gr_cols: Vec<Col>,
-    output_cols: Vec<Col>,
+    gr_cols: Vec<ColExpr>,
+    output_cols: Vec<ColExpr>,
 }
 
 impl GroupBy {
     #[allow(dead_code)]
-    fn new(plan: &Plan, gr_cols: &Vec<usize>, output_id: usize) -> Result<Self, SbroadError> {
+    fn new(
+        plan: &Plan,
+        gr_cols: &Vec<usize>,
+        output_id: usize,
+        sq_ref_map: &SubQueryRefMap,
+    ) -> Result<Self, SbroadError> {
         let mut result = GroupBy {
             gr_cols: vec![],
             output_cols: vec![],
         };
 
         for col_node_id in gr_cols {
-            let col = Col::new(plan, *col_node_id)?;
+            let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
             result.gr_cols.push(col);
         }
         let alias_list = plan.get_expression_node(output_id)?;
         for col_node_id in alias_list.get_row_list()? {
-            let col = Col::new(plan, *col_node_id)?;
+            let col = ColExpr::new(plan, *col_node_id, sq_ref_map)?;
             result.output_cols.push(col);
         }
         Ok(result)
@@ -495,16 +509,14 @@ impl Display for Ref {
 
 #[derive(Debug, Serialize)]
 enum RowVal {
-    Const(Value),
-    Column(Col),
+    ColumnExpr(ColExpr),
     SqRef(Ref),
 }
 
 impl Display for RowVal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
-            RowVal::Const(c) => format!("{c}::{}", c.get_type()),
-            RowVal::Column(c) => c.to_string(),
+            RowVal::ColumnExpr(c) => c.to_string(),
             RowVal::SqRef(r) => r.to_string(),
         };
 
@@ -528,29 +540,26 @@ impl Row {
         self.cols.push(row);
     }
 
-    fn from_ir_nodes(
+    fn from_col_exprs_with_ids(
         plan: &Plan,
-        node_ids: &[usize],
-        ref_map: &HashMap<usize, usize>,
+        exprs_with_ids: &mut Vec<(ColExpr, usize)>,
+        sq_ref_map: &SubQueryRefMap,
     ) -> Result<Self, SbroadError> {
         let mut row = Row::new();
 
-        for child in node_ids {
-            let current_node = plan.get_expression_node(*child)?;
+        for (col_expr, expr_id) in take(exprs_with_ids) {
+            let current_node = plan.get_expression_node(expr_id)?;
 
             match &current_node {
-                Expression::Constant { value, .. } => {
-                    row.add_col(RowVal::Const(value.clone()));
-                }
                 Expression::Reference { .. } => {
-                    let rel_id: usize = *plan.get_relational_from_reference_node(*child)?;
+                    let rel_id: usize = *plan.get_relational_from_reference_node(expr_id)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
                     if plan.is_additional_child(rel_id)? {
                         if let Relational::ScanSubQuery { .. } | Relational::Motion { .. } =
                             rel_node
                         {
-                            let sq_offset = ref_map.get(&rel_id).ok_or_else(|| {
+                            let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::SubQuery,
                                     format!("with index {rel_id} in the map"),
@@ -566,27 +575,11 @@ impl Row {
                             ));
                         }
                     } else {
-                        let col = Col::new(plan, *child)?;
-                        row.add_col(RowVal::Column(col));
+                        let col = ColExpr::new(plan, expr_id, sq_ref_map)?;
+                        row.add_col(RowVal::ColumnExpr(col));
                     }
                 }
-                Expression::Bool { .. }
-                | Expression::Arithmetic { .. }
-                | Expression::Cast { .. }
-                | Expression::Concat { .. }
-                | Expression::StableFunction { .. }
-                | Expression::Row { .. }
-                | Expression::Alias { .. }
-                | Expression::Unary { .. } => {
-                    let col = Col::new(plan, *child)?;
-                    row.add_col(RowVal::Column(col));
-                }
-                Expression::CountAsterisk => {
-                    return Err(SbroadError::Invalid(
-                        Entity::Plan,
-                        Some("CountAsterisk can't be present among Row children!".into()),
-                    ))
-                }
+                _ => row.add_col(RowVal::ColumnExpr(col_expr)),
             }
         }
 
@@ -612,94 +605,12 @@ enum BinaryOp {
     ArithOp(Arithmetic),
     BoolOp(Bool),
 }
-/// Recursive type which describe `WHERE` cause in explain
-#[derive(Debug, Serialize)]
-enum Selection {
-    Row(Row),
-    BinaryOp {
-        left: Box<Selection>,
-        op: BinaryOp,
-        right: Box<Selection>,
-    },
-    UnaryOp {
-        op: Unary,
-        child: Box<Selection>,
-    },
-}
-
-impl Selection {
-    #[allow(dead_code)]
-    fn new(
-        plan: &Plan,
-        subtree_node_id: usize,
-        ref_map: &HashMap<usize, usize>,
-    ) -> Result<Self, SbroadError> {
-        let current_node = plan.get_expression_node(subtree_node_id)?;
-
-        let result = match current_node {
-            Expression::Bool { left, op, right } => Selection::BinaryOp {
-                left: Box::new(Selection::new(plan, *left, ref_map)?),
-                op: BinaryOp::BoolOp(op.clone()),
-                right: Box::new(Selection::new(plan, *right, ref_map)?),
-            },
-            Expression::Arithmetic {
-                left, op, right, ..
-            } => Selection::BinaryOp {
-                left: Box::new(Selection::new(plan, *left, ref_map)?),
-                op: BinaryOp::ArithOp(op.clone()),
-                right: Box::new(Selection::new(plan, *right, ref_map)?),
-            },
-            Expression::Row { list, .. } => {
-                let row = Row::from_ir_nodes(plan, list, ref_map)?;
-                Selection::Row(row)
-            }
-            Expression::Unary { op, child } => Selection::UnaryOp {
-                op: op.clone(),
-                child: Box::new(Selection::new(plan, *child, ref_map)?),
-            },
-            Expression::Reference { .. }
-            | Expression::Cast { .. }
-            | Expression::StableFunction { .. }
-            | Expression::Concat { .. }
-            | Expression::Constant { .. }
-            | Expression::Alias { .. } => {
-                let row = Row::from_ir_nodes(plan, &[subtree_node_id], ref_map)?;
-                Selection::Row(row)
-            }
-            Expression::CountAsterisk => {
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some("CountAsterisk can't be present in Selection filter!".into()),
-                ))
-            }
-        };
-
-        Ok(result)
-    }
-}
 
 impl Display for BinaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
             BinaryOp::ArithOp(a) => a.to_string(),
             BinaryOp::BoolOp(b) => b.to_string(),
-        };
-
-        write!(f, "{s}")
-    }
-}
-
-impl Display for Selection {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = match &self {
-            Selection::Row(r) => r.to_string(),
-            Selection::BinaryOp { left, op, right } => {
-                format!("{left} {op} {right}")
-            }
-            Selection::UnaryOp { op, child } => match op {
-                Unary::IsNull | Unary::IsNotNull => format!("{child} {op}"),
-                Unary::Exists | Unary::NotExists => format!("{op} {child}"),
-            },
         };
 
         write!(f, "{s}")
@@ -803,7 +714,7 @@ impl Display for Target {
 
 #[derive(Debug, Serialize)]
 struct InnerJoin {
-    condition: Selection,
+    condition: ColExpr,
     kind: JoinKind,
 }
 
@@ -828,13 +739,13 @@ enum ExplainNode {
     Except,
     GroupBy(GroupBy),
     InnerJoin(InnerJoin),
-    ValueRow(Row),
+    ValueRow(ColExpr),
     Value,
     Insert(String, ConflictStrategy),
     Projection(Projection),
     Scan(Scan),
-    Selection(Selection),
-    Having(Selection),
+    Selection(ColExpr),
+    Having(ColExpr),
     UnionAll,
     Update(Update),
     SubQuery(SubQuery),
@@ -871,10 +782,8 @@ struct ExplainTreePart {
     /// Level hepls to detect count of idents
     #[serde(skip_serializing)]
     level: usize,
-
     /// Current node of sql query
     current: Option<ExplainNode>,
-
     /// Children nodes of current sql node
     children: Vec<ExplainTreePart>,
 }
@@ -984,7 +893,7 @@ impl FullExplain {
                         )
                     })?;
                     current_node.children.push(child);
-                    let p = GroupBy::new(ir, gr_cols, *output)?;
+                    let p = GroupBy::new(ir, gr_cols, *output, &HashMap::new())?;
                     Some(ExplainNode::GroupBy(p))
                 }
                 Relational::Projection { output, .. } => {
@@ -995,7 +904,7 @@ impl FullExplain {
                         )
                     })?;
                     current_node.children.push(child);
-                    let p = Projection::new(ir, *output)?;
+                    let p = Projection::new(ir, *output, &HashMap::new())?;
                     Some(ExplainNode::Projection(p))
                 }
                 Relational::ScanRelation {
@@ -1013,8 +922,7 @@ impl FullExplain {
                 | Relational::Having {
                     children, filter, ..
                 } => {
-                    let mut sq_ref_map: HashMap<usize, usize> =
-                        HashMap::with_capacity(children.len() - 1);
+                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len() - 1);
                     if let Some((_, other)) = children.split_first() {
                         for sq_id in other.iter().rev() {
                             let sq_node = stack.pop().ok_or_else(|| {
@@ -1038,10 +946,10 @@ impl FullExplain {
                         ));
                     }
                     let filter_id = ir.undo.get_oldest(filter).map_or_else(|| *filter, |id| *id);
-                    let s = Selection::new(ir, filter_id, &sq_ref_map)?;
+                    let selection = ColExpr::new(ir, filter_id, &sq_ref_map)?;
                     let explain_node = match &node {
-                        Relational::Selection { .. } => ExplainNode::Selection(s),
-                        Relational::Having { .. } => ExplainNode::Having(s),
+                        Relational::Selection { .. } => ExplainNode::Selection(selection),
+                        Relational::Having { .. } => ExplainNode::Having(selection),
                         _ => return Err(SbroadError::DoSkip),
                     };
                     Some(explain_node)
@@ -1139,8 +1047,7 @@ impl FullExplain {
                         ));
                     }
                     let (_, subquery_ids) = children.split_at(2);
-                    let mut sq_ref_map: HashMap<usize, usize> =
-                        HashMap::with_capacity(children.len() - 2);
+                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len() - 2);
 
                     for sq_id in subquery_ids.iter().rev() {
                         let sq_node = stack.pop().ok_or_else(|| {
@@ -1162,15 +1069,14 @@ impl FullExplain {
                         ));
                     }
 
-                    let condition = Selection::new(ir, *condition, &sq_ref_map)?;
+                    let condition = ColExpr::new(ir, *condition, &sq_ref_map)?;
                     Some(ExplainNode::InnerJoin(InnerJoin {
                         condition,
                         kind: kind.clone(),
                     }))
                 }
                 Relational::ValuesRow { data, children, .. } => {
-                    let mut sq_ref_map: HashMap<usize, usize> =
-                        HashMap::with_capacity(children.len());
+                    let mut sq_ref_map: SubQueryRefMap = HashMap::with_capacity(children.len());
 
                     for sq_id in children.iter().rev() {
                         let sq_node = stack.pop().ok_or_else(|| {
@@ -1184,8 +1090,7 @@ impl FullExplain {
                         sq_ref_map.insert(*sq_id, offset);
                     }
 
-                    let values = ir.get_expression_node(*data)?.get_row_list()?;
-                    let row = Row::from_ir_nodes(ir, values, &sq_ref_map)?;
+                    let row = ColExpr::new(ir, *data, &sq_ref_map)?;
 
                     Some(ExplainNode::ValueRow(row))
                 }
