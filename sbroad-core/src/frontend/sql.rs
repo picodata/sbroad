@@ -314,13 +314,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 ) {
                     let distribution_type_node = ast.nodes.get_node(*distribution_type_id)?;
                     match distribution_type_node.rule {
-                        Type::Global => {
-                            // TODO: support global spaces via SQL API.
-                            return Err(SbroadError::NotImplemented(
-                                Entity::Node,
-                                "global spaces are not supported yet".into(),
-                            ));
-                        }
+                        Type::Global => {}
                         Type::Sharding => {
                             let shard_node = ast.nodes.get_node(*distribution_type_id)?;
                             for shard_col_id in &shard_node.children {
@@ -379,13 +373,30 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             }
         }
     }
-    let create_sharded_table = Ddl::CreateShardedTable {
-        name: table_name,
-        format: columns,
-        primary_key: pk_keys,
-        sharding_key: shard_key,
-        engine_type,
-        timeout,
+    let create_sharded_table = if shard_key.is_empty() {
+        if engine_type != SpaceEngineType::Memtx {
+            return Err(SbroadError::Unsupported(
+                Entity::Query,
+                Some("global spaces can use only memtx engine".into()),
+            ));
+        }
+        Ddl::CreateTable {
+            name: table_name,
+            format: columns,
+            primary_key: pk_keys,
+            sharding_key: None,
+            engine_type,
+            timeout,
+        }
+    } else {
+        Ddl::CreateTable {
+            name: table_name,
+            format: columns,
+            primary_key: pk_keys,
+            sharding_key: Some(shard_key),
+            engine_type,
+            timeout,
+        }
     };
     Ok(create_sharded_table)
 }

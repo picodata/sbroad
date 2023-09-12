@@ -15,11 +15,13 @@ pub struct ColumnDef {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Ddl {
-    CreateShardedTable {
+    CreateTable {
         name: String,
         format: Vec<ColumnDef>,
         primary_key: Vec<String>,
-        sharding_key: Vec<String>,
+        /// If `None`, create global table.
+        sharding_key: Option<Vec<String>>,
+        /// Vinyl is supported only for sharded tables.
         engine_type: SpaceEngineType,
         timeout: Decimal,
     },
@@ -36,9 +38,7 @@ impl Ddl {
     /// - timeout parsing error
     pub fn timeout(&self) -> Result<f64, SbroadError> {
         match self {
-            Ddl::CreateShardedTable { ref timeout, .. } | Ddl::DropTable { ref timeout, .. } => {
-                timeout
-            }
+            Ddl::CreateTable { ref timeout, .. } | Ddl::DropTable { ref timeout, .. } => timeout,
         }
         .to_string()
         .parse()
