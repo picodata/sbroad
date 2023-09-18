@@ -1915,6 +1915,90 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(drop_table));
                     map.add(id, plan_id);
                 }
+                Type::CreateUser => {
+                    let mut iter = node.children.iter();
+                    // User name
+                    let user_name_id = iter.next().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("UserName expected under CreateUser node")),
+                        )
+                    })?;
+                    let user_name_node = self.nodes.get_node(*user_name_id)?;
+                    let user_name = normalize_name_for_space_api(
+                        user_name_node.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "user name in the create user AST".into(),
+                            )
+                        })?,
+                    );
+                    // Password
+                    let pwd_id = iter.next().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("Password expected under CreateUser node")),
+                        )
+                    })?;
+                    let pwd_node = self.nodes.get_node(*pwd_id)?;
+                    let password: String = pwd_node
+                        .value
+                        .as_ref()
+                        .ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "password in the create user AST".into(),
+                            )
+                        })?
+                        .to_string();
+                    // Optional parameters: auth method and timeout.
+                    let mut timeout = default_timeout;
+                    let mut auth_method = String::from("chap-sha1");
+                    for child_id in iter {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Type::Timeout => {
+                                timeout = get_timeout(self, *child_id)?;
+                            }
+                            Type::AuthMethod => {
+                                let method_id = child_node.children.first().ok_or_else(|| {
+                                    SbroadError::Invalid(
+                                        Entity::ParseNode,
+                                        Some(String::from("Method expected under AuthMethod node")),
+                                    )
+                                })?;
+                                let method_node = self.nodes.get_node(*method_id)?;
+                                auth_method = method_node
+                                    .value
+                                    .as_ref()
+                                    .ok_or_else(|| {
+                                        SbroadError::NotFound(
+                                            Entity::Node,
+                                            "auth method in the create user AST".into(),
+                                        )
+                                    })?
+                                    .to_string();
+                            }
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format!(
+                                        "AST create user node {:?} contains unexpected children",
+                                        child_node,
+                                    )),
+                                ));
+                            }
+                        }
+                    }
+                    let create_user = Acl::CreateUser {
+                        name: user_name,
+                        password,
+                        auth_method,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(create_user));
+                    map.add(id, plan_id);
+                }
                 Type::DropUser => {
                     let user_name_id = node.children.first().ok_or_else(|| {
                         SbroadError::Invalid(
@@ -1945,6 +2029,8 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Add
                 | Type::AliasName
+                | Type::AuthMethod
+                | Type::ChapSha1
                 | Type::Columns
                 | Type::ColumnDef
                 | Type::ColumnDefName
@@ -1968,15 +2054,18 @@ impl Ast for AbstractSyntaxTree {
                 | Type::GtEq
                 | Type::In
                 | Type::InnerJoinKind
+                | Type::Ldap
                 | Type::LeftJoinKind
                 | Type::Length
                 | Type::Lt
                 | Type::LtEq
+                | Type::Md5
                 | Type::Memtx
                 | Type::Multiply
                 | Type::NewTable
                 | Type::NotEq
                 | Type::NotFlag
+                | Type::Password
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn
                 | Type::ScanName

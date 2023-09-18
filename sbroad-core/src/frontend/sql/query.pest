@@ -1,6 +1,16 @@
 Command = _{ SOI ~ (ExplainQuery | Query | DDL | ACL) ~ EOF }
 
-ACL = _{ DropUser }
+ACL = _{ CreateUser | DropUser }
+    CreateUser = {
+        ^"create" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
+        AuthMethod? ~ Option?
+    }
+        PasswordString = _{ "'" ~ Password ~ "'" }
+            Password = @{ String }
+	AuthMethod = { ^"using" ~ (ChapSha1 | Md5 | Ldap) }
+            ChapSha1 = { ^"chap-sha1" }
+            Md5 = { ^"md5" }
+            Ldap = { ^"ldap" }
     DropUser = { ^"drop" ~ ^"user" ~ UserName ~ Option? }
         UserName = @{ Name }
 
