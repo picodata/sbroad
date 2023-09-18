@@ -1878,6 +1878,34 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
                     map.add(id, plan_id);
                 }
+                Type::DropRole => {
+                    let role_name_id = node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("RoleName expected under DropRole node")),
+                        )
+                    })?;
+                    let role_name_node = self.nodes.get_node(*role_name_id)?;
+                    let role_name = normalize_name_for_space_api(
+                        role_name_node.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "role name in the drop role AST".into(),
+                            )
+                        })?,
+                    );
+
+                    let mut timeout = default_timeout;
+                    if let Some(timeout_child_id) = node.children.get(1) {
+                        timeout = get_timeout(self, *timeout_child_id)?;
+                    }
+                    let drop_role = Acl::DropRole {
+                        name: role_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(drop_role));
+                    map.add(id, plan_id);
+                }
                 Type::DropTable => {
                     let mut table_name: String = String::new();
                     let mut timeout = default_timeout;

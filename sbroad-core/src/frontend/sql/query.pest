@@ -1,6 +1,6 @@
 Command = _{ SOI ~ (ExplainQuery | Query | DDL | ACL) ~ EOF }
 
-ACL = _{ DropUser | CreateRole | CreateUser }
+ACL = _{ DropRole | DropUser | CreateRole | CreateUser }
     CreateUser = {
         ^"create" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
         AuthMethod? ~ Option?
@@ -15,6 +15,7 @@ ACL = _{ DropUser | CreateRole | CreateUser }
         UserName = @{ Name }
     CreateRole = { ^"create" ~ ^"role" ~ RoleName ~ Option? }
         RoleName = @{ Name }
+    DropRole = { ^"drop" ~ ^"role" ~ RoleName ~ Option? }
 
 DDL = _{ CreateTable | DropTable }
     CreateTable = {
