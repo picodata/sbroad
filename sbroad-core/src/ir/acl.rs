@@ -4,14 +4,18 @@ use tarantool::decimal::Decimal;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Acl {
+    DropUser {
+        name: String,
+        timeout: Decimal,
+    },
+    CreateRole {
+        name: String,
+        timeout: Decimal,
+    },
     CreateUser {
         name: String,
         password: String,
         auth_method: String,
-        timeout: Decimal,
-    },
-    DropUser {
-        name: String,
         timeout: Decimal,
     },
 }
@@ -23,7 +27,9 @@ impl Acl {
     /// - timeout parsing error
     pub fn timeout(&self) -> Result<f64, SbroadError> {
         match self {
-            Acl::CreateUser { ref timeout, .. } | Acl::DropUser { ref timeout, .. } => timeout,
+            Acl::DropUser { ref timeout, .. }
+            | Acl::CreateRole { ref timeout, .. }
+            | Acl::CreateUser { ref timeout, .. } => timeout,
         }
         .to_string()
         .parse()

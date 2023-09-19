@@ -30,6 +30,19 @@ g.test_drop_user = function()
     )
 end
 
+g.test_create_role = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call(
+            "sbroad.execute",
+            { [[ CREATE ROLE role ]], {} }
+    )
+    t.assert_equals(
+            string.format("%s", err),
+            [[Sbroad Error: ACL queries are not supported]]
+    )
+end
+
 g.test_create_user = function()
     local api = cluster:server("api-1").net_box
 

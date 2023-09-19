@@ -7,6 +7,8 @@ const DO_SKIP: &str = "do skip";
 /// Reason or object of errors.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum Entity {
+    /// corresponding to operations on ACL.
+    Acl,
     /// corresponding to enum Args
     Args,
     /// corresponding to struct AbstractSyntaxTree
@@ -136,6 +138,7 @@ pub enum Entity {
 impl fmt::Display for Entity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
+            Entity::Acl => "ACL".to_string(),
             Entity::Args => "args".to_string(),
             Entity::AST => "AST".to_string(),
             Entity::Aggregate => "aggregate".to_string(),

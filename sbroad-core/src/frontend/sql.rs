@@ -2027,6 +2027,34 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Acl(drop_user));
                     map.add(id, plan_id);
                 }
+                Type::CreateRole => {
+                    let role_name_id = node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("RoleName expected under CreateRole node")),
+                        )
+                    })?;
+                    let role_name_node = self.nodes.get_node(*role_name_id)?;
+                    let role_name = normalize_name_for_space_api(
+                        role_name_node.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "role name in the create role AST".into(),
+                            )
+                        })?,
+                    );
+
+                    let mut timeout = default_timeout;
+                    if let Some(timeout_child_id) = node.children.get(1) {
+                        timeout = get_timeout(self, *timeout_child_id)?;
+                    }
+                    let create_role = Acl::CreateRole {
+                        name: role_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(create_role));
+                    map.add(id, plan_id);
+                }
                 Type::Add
                 | Type::AliasName
                 | Type::AuthMethod
@@ -2068,6 +2096,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Password
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn
+                | Type::RoleName
                 | Type::ScanName
                 | Type::Select
                 | Type::Sharding
