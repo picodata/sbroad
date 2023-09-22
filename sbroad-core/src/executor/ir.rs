@@ -565,6 +565,10 @@ impl ExecutionPlan {
                     Entity::SubTree,
                     Some("DDL node".to_string()),
                 ))?,
+                Node::Acl { .. } => Err(SbroadError::Invalid(
+                    Entity::SubTree,
+                    Some("ACL node".to_string()),
+                ))?,
             }
             new_plan.nodes.push(node);
             translation.insert(node_id, next_id);

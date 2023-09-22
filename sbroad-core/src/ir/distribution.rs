@@ -650,6 +650,10 @@ impl Plan {
                 Entity::Distribution,
                 Some("Failed to get distribution for a DDL node.".to_string()),
             )),
+            Node::Acl(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for a ACL node.".to_string()),
+            )),
         }
     }
 

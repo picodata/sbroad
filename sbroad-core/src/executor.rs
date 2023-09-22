@@ -123,11 +123,11 @@ where
                 }
                 plan.version_map = table_version_map;
             }
-            if !plan.is_ddl()? {
+            if !plan.is_ddl()? && !plan.is_acl()? {
                 cache.put(key, plan.clone())?;
             }
         }
-        if !plan.is_ddl()? {
+        if !plan.is_ddl()? && !plan.is_acl()? {
             plan.bind_params(params)?;
             plan.apply_options()?;
             plan.optimize()?;
@@ -268,6 +268,14 @@ where
     /// - Plan is invalid.
     pub fn is_ddl(&self) -> Result<bool, SbroadError> {
         self.exec_plan.get_ir_plan().is_ddl()
+    }
+
+    /// Checks that query is ACL.
+    ///
+    /// # Errors
+    /// - Plan is invalid
+    pub fn is_acl(&self) -> Result<bool, SbroadError> {
+        self.exec_plan.get_ir_plan().is_acl()
     }
 }
 

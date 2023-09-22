@@ -1,13 +1,15 @@
-STATEMENT   ::= EXPLAIN | DDL | DML | DQL
+STATEMENT   ::= EXPLAIN | DDL | DML | DQL | ACL
 EXPLAIN     ::= 'EXPLAIN' ( DML | DQL )
 DQL         ::= (SELECT | SELECT UNION ALL SELECT | SELECT (EXCEPT 'DISTINCT'? ) SELECT ) Options?
 DML         ::= (DELETE | INSERT) Options?
 DDL         ::= CreateTable | DropTable
+ACL         ::= DropUser
 CreateTable ::= 'create table' table '(' Column (',' Column)* ',' PrimaryKey ')' ('using' ('memtx' | 'vinyl'))? Distribution ('option' '(' ('timeout' '=' DOUBLE)')')?
 Column      ::= name ('Bool' | 'Decimal' | 'Double' | 'Int' | 'Number' | 'Scalar' | 'String' | 'Text' | 'Unsigned' | 'Varchar') ('null' | 'not null')?
 PrimaryKey  ::= 'primary key' '(' name (',' name)* ')'
 Distribution ::= 'global' | ('distributed by' '(' name (',' name)*  ')')
 DropTable   ::= 'drop table' table ('option' '(' ('timeout' '=' DOUBLE)')')?
+DropUser    ::= 'drop user' user ('option' '(' ('timeout' '=' DOUBLE)')')?
 Options     ::= 'option' '(' ('vtable_max_rows' '=' UNSIGNED)? (',' 'sql_vdbe_max_steps' '=' UNSIGNED)? ')'
 SELECT      ::= 'SELECT' ((column (',' column)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' ('AS' name)?) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' ('AS' name)?))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
 VALUES      ::= 'VALUES' '(' row (',' row)* ')'

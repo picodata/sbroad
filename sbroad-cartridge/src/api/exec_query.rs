@@ -60,6 +60,9 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
                 if let Ok(true) = query.is_ddl() {
                     return tarantool_error("DDL queries are not supported");
                 }
+                if let Ok(true) = query.is_acl() {
+                    return tarantool_error("ACL queries are not supported");
+                }
 
                 match query.dispatch() {
                     Ok(result) => child_span("\"tarantool.tuple.return\"", || {

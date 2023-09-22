@@ -649,6 +649,12 @@ impl<'p> SyntaxPlan<'p> {
                     "DDL node {node:?} is not supported in the syntax plan"
                 )),
             )),
+            Node::Acl(..) => Err(SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some(format!(
+                    "ACL node {node:?} is not supported in the syntax plan"
+                )),
+            )),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
                 Ok(self.nodes.push_syntax_node(sn))

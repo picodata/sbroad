@@ -30,6 +30,7 @@ use crate::ir::{Node, OptionKind, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
+use crate::ir::acl::Acl;
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
@@ -1831,6 +1832,34 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(drop_table));
                     map.add(id, plan_id);
                 }
+                Type::DropUser => {
+                    let user_name_id = node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("UserName expected under DropUser node")),
+                        )
+                    })?;
+                    let user_name_node = self.nodes.get_node(*user_name_id)?;
+                    let user_name = normalize_name_for_space_api(
+                        user_name_node.value.as_ref().ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Node,
+                                "user name in the drop user AST".into(),
+                            )
+                        })?,
+                    );
+
+                    let mut timeout = default_timeout;
+                    if let Some(timeout_child_id) = node.children.get(1) {
+                        timeout = get_timeout(self, *timeout_child_id)?;
+                    }
+                    let drop_user = Acl::DropUser {
+                        name: user_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(drop_user));
+                    map.add(id, plan_id);
+                }
                 Type::Add
                 | Type::AliasName
                 | Type::Columns
@@ -1889,6 +1918,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::TypeVarchar
                 | Type::UpdateList
                 | Type::UpdateItem
+                | Type::UserName
                 | Type::Vinyl => {}
                 rule => {
                     return Err(SbroadError::NotImplemented(

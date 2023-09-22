@@ -18,6 +18,10 @@ impl Plan {
                 Entity::Node,
                 Some("DDL node has no type".to_string()),
             )),
+            Node::Acl(_) => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("ACL node has no type".to_string()),
+            )),
         }
     }
 }

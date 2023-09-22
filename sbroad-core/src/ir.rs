@@ -11,6 +11,7 @@ use std::fmt::{Display, Formatter};
 use std::slice::Iter;
 use tarantool::tlua;
 
+use acl::Acl;
 use ddl::Ddl;
 use expression::Expression;
 use operator::{Arithmetic, Relational};
@@ -32,6 +33,7 @@ use crate::{collection, error, warn};
 use self::parameters::Parameters;
 use self::relation::Relations;
 
+pub mod acl;
 pub mod aggregates;
 pub mod ddl;
 pub mod distribution;
@@ -63,6 +65,7 @@ const DEFAULT_VDBE_MAX_STEPS: u64 = 45000;
 /// dispatching and its performance penalties.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Node {
+    Acl(Acl),
     Ddl(Ddl),
     Expression(Expression),
     Relational(Relational),
@@ -751,6 +754,15 @@ impl Plan {
         Ok(matches!(self.get_node(top_id)?, Node::Ddl(..)))
     }
 
+    /// Checks that plan is ACL query.
+    ///
+    /// # Errors
+    /// - top node doesn't exist in the plan or is invalid.
+    pub fn is_acl(&self) -> Result<bool, SbroadError> {
+        let top_id = self.get_top()?;
+        Ok(matches!(self.get_node(top_id)?, Node::Acl(..)))
+    }
+
     /// Set top node of plan
     /// # Errors
     /// - top node doesn't exist in the plan.
@@ -769,10 +781,12 @@ impl Plan {
         let node = self.get_node(node_id)?;
         match node {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) | Node::Parameter | Node::Ddl(..) => Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format!("node is not Relational type: {node:?}")),
-            )),
+            Node::Expression(_) | Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {
+                Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!("node is not Relational type: {node:?}")),
+                ))
+            }
         }
     }
 
@@ -787,10 +801,9 @@ impl Plan {
     ) -> Result<&mut Relational, SbroadError> {
         match self.get_mut_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
-            Node::Expression(_) | Node::Parameter | Node::Ddl(..) => Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("Node is not relational".into()),
-            )),
+            Node::Expression(_) | Node::Parameter | Node::Ddl(..) | Node::Acl(..) => Err(
+                SbroadError::Invalid(Entity::Node, Some("Node is not relational".into())),
+            ),
         }
     }
 
@@ -813,7 +826,7 @@ impl Plan {
                     ))
                 }
             }
-            Node::Relational(_) | Node::Ddl(..) => Err(SbroadError::Invalid(
+            Node::Relational(_) | Node::Ddl(..) | Node::Acl(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("node is not Expression type".into()),
             )),
@@ -832,10 +845,12 @@ impl Plan {
         let node = self.get_mut_node(node_id)?;
         match node {
             Node::Expression(exp) => Ok(exp),
-            Node::Relational(_) | Node::Parameter | Node::Ddl(..) => Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format!("node ({node_id}) is not expression type: {node:?}")),
-            )),
+            Node::Relational(_) | Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {
+                Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!("node ({node_id}) is not expression type: {node:?}")),
+                ))
+            }
         }
     }
 

@@ -180,7 +180,8 @@ fn expression_next<'nodes>(
             )
             | Node::Relational(_)
             | Node::Parameter
-            | Node::Ddl(_),
+            | Node::Ddl(_)
+            | Node::Acl(_),
         )
         | None => None,
     }
