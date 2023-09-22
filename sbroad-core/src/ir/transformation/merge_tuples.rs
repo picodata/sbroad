@@ -14,6 +14,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
+use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::tree::traversal::BreadthFirst;
 use crate::ir::tree::traversal::EXPR_CAPACITY;
 use crate::ir::Plan;
@@ -21,7 +22,10 @@ use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
-fn call_expr_tree_merge_tuples(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
+fn call_expr_tree_merge_tuples(
+    plan: &mut Plan,
+    top_id: usize,
+) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
@@ -287,7 +291,7 @@ impl Plan {
         )
             -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError>,
         f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, SbroadError>,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<OldNewTopIdPair, SbroadError> {
         let mut tree = BreadthFirst::with_capacity(
             |node| self.nodes.expr_iter(node, false),
             EXPR_CAPACITY,
@@ -404,10 +408,10 @@ impl Plan {
         // Try to replace the subtree top node (if it is also AND).
         if let Some(top_chain) = chains.get(&expr_id) {
             let new_expr_id = f_to_plan(top_chain, self)?;
-            return Ok(new_expr_id);
+            return Ok((expr_id, new_expr_id));
         }
 
-        Ok(expr_id)
+        Ok((expr_id, expr_id))
     }
 
     /// Group boolean operators in the AND-ed chain by operator type and merge

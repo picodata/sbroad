@@ -1,9 +1,23 @@
+use crate::errors::SbroadError;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::value::Value;
 use pretty_assertions::assert_eq;
+
+fn sql_to_optimized_ir_add_motions_err(query: &str) -> SbroadError {
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(query).unwrap();
+    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    plan.replace_in_operator().unwrap();
+    plan.push_down_not().unwrap();
+    plan.split_columns().unwrap();
+    plan.set_dnf().unwrap();
+    plan.derive_equalities().unwrap();
+    plan.merge_tuples().unwrap();
+    plan.add_motions().unwrap_err()
+}
 
 #[test]
 fn front_sql1() {
@@ -379,7 +393,7 @@ fn front_sql19() {
 
     let expected_explain = String::from(
         r#"projection ("hash_testing"."identification_number"::integer -> "identification_number")
-    selection ROW("hash_testing"."product_code"::string) is not null
+    selection not ROW("hash_testing"."product_code"::string) is null
         scan "hash_testing"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -641,7 +655,7 @@ fn front_sql_join() {
 
     let expected_explain = String::from(
         r#"projection ("T2"."product_code"::string -> "product_code", "T2"."product_units"::boolean -> "product_units")
-    join on ROW("T2"."identification_number"::integer) = ROW("T"."id"::unsigned) and ROW("T"."id"::unsigned) is not null
+    join on ROW("T2"."identification_number"::integer) = ROW("T"."id"::unsigned) and not ROW("T"."id"::unsigned) is null
         scan "T2"
             projection ("hash_testing"."product_units"::boolean -> "product_units", "hash_testing"."product_code"::string -> "product_code", "hash_testing"."identification_number"::integer -> "identification_number")
                 scan "hash_testing"
@@ -659,14 +673,14 @@ vtable_max_rows = 5000
     // here hash_single_testing is sharded by "identification_number", so it is a local join
     let input = r#"SELECT "product_code", "product_units" FROM (SELECT "product_units", "product_code", "identification_number" FROM "hash_single_testing") as t1
         INNER JOIN (SELECT "id" from "test_space") as t2
-        ON t1."identification_number" = t2."id" and t2."id" is not null
+        ON t1."identification_number" = t2."id" and not t2."id" is null
         "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"projection ("T1"."product_code"::string -> "product_code", "T1"."product_units"::boolean -> "product_units")
-    join on ROW("T1"."identification_number"::integer) = ROW("T2"."id"::unsigned) and ROW("T2"."id"::unsigned) is not null
+    join on ROW("T1"."identification_number"::integer) = ROW("T2"."id"::unsigned) and not ROW("T2"."id"::unsigned) is null
         scan "T1"
             projection ("hash_single_testing"."product_units"::boolean -> "product_units", "hash_single_testing"."product_code"::string -> "product_code", "hash_single_testing"."identification_number"::integer -> "identification_number")
                 scan "hash_single_testing"
@@ -692,7 +706,7 @@ vtable_max_rows = 5000
     //       `motion [policy: segment([ref("id")])]` instead of the `motion [policy: full]`.
     let expected_explain = String::from(
         r#"projection ("T1"."product_code"::string -> "product_code", "T1"."product_units"::boolean -> "product_units")
-    join on ROW("T1"."identification_number"::integer) = ROW("T2"."id"::decimal) and ROW("T2"."id"::decimal) is not null
+    join on ROW("T1"."identification_number"::integer) = ROW("T2"."id"::decimal) and not ROW("T2"."id"::decimal) is null
         scan "T1"
             projection ("hash_single_testing"."product_units"::boolean -> "product_units", "hash_single_testing"."product_code"::string -> "product_code", "hash_single_testing"."identification_number"::integer -> "identification_number")
                 scan "hash_single_testing"
@@ -1854,15 +1868,7 @@ fn front_sql_having4() {
         having sum("a") > 1 and "b" > 1
     "#;
 
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.replace_in_operator().unwrap();
-    plan.split_columns().unwrap();
-    plan.set_dnf().unwrap();
-    plan.derive_equalities().unwrap();
-    plan.merge_tuples().unwrap();
-    let err = plan.add_motions().unwrap_err();
+    let err = sql_to_optimized_ir_add_motions_err(input);
 
     assert_eq!(
         true,
@@ -1912,15 +1918,7 @@ fn front_sql_unmatched_column_in_having() {
         having sum("a") > 1 and "a" > 1 or "c" = 1
     "#;
 
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.replace_in_operator().unwrap();
-    plan.split_columns().unwrap();
-    plan.set_dnf().unwrap();
-    plan.derive_equalities().unwrap();
-    plan.merge_tuples().unwrap();
-    let err = plan.add_motions().unwrap_err();
+    let err = sql_to_optimized_ir_add_motions_err(input);
 
     assert_eq!(
         true,
@@ -2137,15 +2135,7 @@ fn front_sql_invalid_select_distinct() {
         group by "b"
     "#;
 
-    let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
-    plan.replace_in_operator().unwrap();
-    plan.split_columns().unwrap();
-    plan.set_dnf().unwrap();
-    plan.derive_equalities().unwrap();
-    plan.merge_tuples().unwrap();
-    let err = plan.add_motions().unwrap_err();
+    let err = sql_to_optimized_ir_add_motions_err(input);
 
     assert_eq!(
         true,
@@ -2555,6 +2545,250 @@ vtable_max_rows = 5000
 "#,
     );
     assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_not_true() {
+    assert_explain_eq(
+        r#"
+            SELECT "a" FROM "t" WHERE not true
+        "#,
+        vec![],
+        r#"projection ("t"."a"::unsigned -> "a")
+    selection not ROW(true::boolean)
+        scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_equal() {
+    assert_explain_eq(
+        r#"
+            SELECT * FROM (VALUES (1)) where not true = true
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection not ROW(true::boolean) = ROW(true::boolean)
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_cast() {
+    assert_explain_eq(
+        r#"
+            SELECT * FROM (values (1)) where not cast('true' as boolean)
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection not 'true'::string::bool
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn from_sql_not_column() {
+    assert_explain_eq(
+        r#"
+            SELECT * FROM (values (true)) where not "COLUMN_1"
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::boolean -> "COLUMN_1")
+    selection not "COLUMN_1"::boolean
+        scan
+            values
+                value row (data=ROW(true::boolean))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_or() {
+    assert_explain_eq(
+        r#"
+            SELECT * FROM (values (1)) where not true or true
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection (not ROW(true::boolean) or ROW(true::boolean))
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_and_with_parentheses() {
+    assert_explain_eq(
+        r#"
+            SELECT not (true and false) FROM (values (1))
+        "#,
+        vec![],
+        r#"projection (not (ROW(true::boolean) and ROW(false::boolean)) -> "COL_1")
+    scan
+        values
+            value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_or_with_parentheses() {
+    assert_explain_eq(
+        r#"
+            SELECT * FROM (values (1)) where not (true or true)
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection not (ROW(true::boolean) or ROW(true::boolean))
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_exists() {
+    assert_explain_eq(
+        r#"
+            select * from (values (1)) where not exists (select * from (values (1)))
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection not exists ROW($0)
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+subquery $0:
+motion [policy: full]
+            scan
+                projection ("COLUMN_2"::unsigned -> "COLUMN_2")
+                    scan
+                        values
+                            value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_in() {
+    assert_explain_eq(
+        r#"
+            select * from (values (1)) where 1 not in (select * from (values (1)))
+        "#,
+        vec![],
+        r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+    selection not ROW(1::unsigned) in ROW($0)
+        scan
+            values
+                value row (data=ROW(1::unsigned))
+subquery $0:
+motion [policy: full]
+            scan
+                projection ("COLUMN_2"::unsigned -> "COLUMN_2")
+                    scan
+                        values
+                            value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_not_complex_query() {
+    assert_explain_eq(
+        r#"
+            select not (not (cast('true' as boolean)) and 1 + (?) != false)
+            from
+                (select not "id" as "nid" from "test_space") as "ts"
+                inner join
+                (select not not "id" as "nnid" from "test_space") as "nts"
+                on not "nid" = "nnid" * (?) or not 1 = cast((not not true) as bool)
+            where not exists (select * from (values (1)) where not true = (?))
+        "#,
+        vec![Value::from(1), Value::from(1), Value::from(true)],
+        r#"projection (not (not ROW('true'::string::bool) and ROW(1::unsigned) + ROW(1::integer) <> ROW(false::boolean)) -> "COL_1")
+    selection not exists ROW($0)
+        join on (ROW("ts"."nid"::boolean) <> ROW("nts"."nnid"::boolean) * ROW(1::integer) or ROW(1::unsigned) <> ROW(not not ROW(true::boolean)::bool))
+            scan "ts"
+                projection (not ROW("test_space"."id"::unsigned) -> "nid")
+                    scan "test_space"
+            motion [policy: full]
+                scan "nts"
+                    projection (not not ROW("test_space"."id"::unsigned) -> "nnid")
+                        scan "test_space"
+subquery $0:
+motion [policy: full]
+            scan
+                projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+                    selection not ROW(true::boolean) = ROW(true::boolean)
+                        scan
+                            values
+                                value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
+fn front_sql_arithmetic_with_parentheses() {
+    assert_explain_eq(
+        r#"
+            SELECT (1 + 2) * 3 FROM (values (1))
+        "#,
+        vec![],
+        r#"projection ((ROW(1::unsigned) + ROW(2::unsigned)) * ROW(3::unsigned) -> "COL_1")
+    scan
+        values
+            value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+fn assert_explain_eq(query: &str, params: Vec<Value>, expected: &str) {
+    let plan = sql_to_optimized_ir(query, params);
+    let actual = plan.as_explain().unwrap();
+    assert_eq!(expected, actual);
 }
 
 #[cfg(test)]

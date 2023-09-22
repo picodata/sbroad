@@ -363,7 +363,7 @@ fn invalid_query() {
 1 | select a frAm t
   |          ^---
   |
-  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, Gt, GtEq, Lt, LtEq, NotEq, or NotFlag"#,
         ),
         format!("{ast}"),
     );
@@ -599,7 +599,7 @@ fn sql_arithmetic_projection_alias_ast() {
 1 | select a as alias1 + b as alias2 from t
   |          ^---
   |
-  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, Gt, GtEq, Lt, LtEq, NotEq, or NotFlag"#,
         ),
         format!("{ast}"),
     );
@@ -774,7 +774,7 @@ fn sql_arbitrary_projection_alias_ast() {
 1 | select a as alias1 + b as alias2 from t
   |          ^---
   |
-  = expected Multiply, Divide, Add, Subtract, Eq, In, Gt, GtEq, Lt, LtEq, NotEq, or NotIn"#,
+  = expected Multiply, Divide, Add, Subtract, Eq, Gt, GtEq, Lt, LtEq, NotEq, or NotFlag"#,
         ),
         format!("{ast}"),
     );

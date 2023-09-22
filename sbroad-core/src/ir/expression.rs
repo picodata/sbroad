@@ -802,6 +802,11 @@ impl<'plan> Comparator<'plan> {
 }
 
 impl Plan {
+    /// Add `Row` to plan.
+    pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
+        self.nodes.add_row(list, distribution)
+    }
+
     /// Returns a list of columns from the child node outputs.
     /// If the column list is empty then copies all the non-sharding columns
     /// from the child node to a new tuple.

@@ -26,6 +26,16 @@ cartridge replicasets setup --bootstrap-vshard
  ```
 Before proceding with queries, make sure you have applied a valid schema for your application. A working example is [provided](https://git.picodata.io/picodata/picodata/sbroad/-/blob/main/sbroad-cartridge/test_app/test/data/config.yml) with this test app.
 
+```bash
+cartridge enter router-1
+```
+Name of the router (`router-1`) may differ. In order to get the actual one go to http://localhost:8081/
+and find the name of the router.
+
+**Note**: In case you just want to run integration tests, you may call
+`make run_integration` after build command (or just call `make test_integration` in
+order to unite build and run execution).
+
 ## <a name="architecture"></a>Architecture
 
 The application includes two roles:

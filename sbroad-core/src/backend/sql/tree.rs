@@ -1078,11 +1078,28 @@ impl<'p> SyntaxPlan<'p> {
                         .nodes
                         .push_syntax_node(SyntaxNode::new_operator(&format!("{op}")));
                     let child_node_id = self.nodes.get_syntax_node_id(*child)?;
-                    let (left, right) = match op {
-                        Unary::IsNull | Unary::IsNotNull => (child_node_id, operator_node_id),
-                        Unary::Exists | Unary::NotExists => (operator_node_id, child_node_id),
+                    let child_node = ir_plan.get_expression_node(*child)?;
+                    // Bool::Or operator already covers itself with parentheses, that's why we
+                    // don't have to cover it here.
+                    let sn = if *op == Unary::Not
+                        && matches!(*child_node, Expression::Bool { op: Bool::And, .. })
+                    {
+                        SyntaxNode::new_pointer(
+                            id,
+                            Some(operator_node_id),
+                            vec![
+                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
+                                child_node_id,
+                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
+                            ],
+                        )
+                    } else {
+                        let (left, right) = match op {
+                            Unary::IsNull => (child_node_id, operator_node_id),
+                            Unary::Exists | Unary::Not => (operator_node_id, child_node_id),
+                        };
+                        SyntaxNode::new_pointer(id, Some(left), vec![right])
                     };
-                    let sn = SyntaxNode::new_pointer(id, Some(left), vec![right]);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::StableFunction {

@@ -17,9 +17,7 @@ DDL = _{ CreateTable | DropTable }
         ColumnDefType = { TypeBool | TypeDecimal | TypeDouble
              | TypeInt | TypeNumber | TypeScalar | TypeString
              | TypeText | TypeUnsigned | TypeVarchar }
-        ColumnDefIsNull = { ColumnIsNull | ColumnIsNotNull }
-            ColumnIsNull = { ^"null" }
-            ColumnIsNotNull = { ^"not" ~ ^"null" }
+        ColumnDefIsNull = { NotFlag? ~ ^"null" }
     PrimaryKey = {
         ^"primary" ~ ^"key" ~
         "(" ~ PrimaryKeyColumn ~ ("," ~ PrimaryKeyColumn)* ~ ")"
@@ -79,8 +77,8 @@ Query = { (Except | UnionAll | Select | Values | Insert | Update | Delete) ~ Opt
     Update = { ^"update" ~ Table ~ ^"set" ~ UpdateList ~ (UpdateFrom | WhereClause)? }
         UpdateList = { UpdateItem ~ ("," ~ UpdateItem)* }
         UpdateItem = { ColumnName ~ "=" ~ ExprNotSubQuery }
-        // Condition is used intentionally here for implementation
-        // of Update transform.
+        /// Condition is used intentionally here for implementation
+        /// of Update transform.
         UpdateFrom = _{ ^"from" ~ Scan ~ (^"where" ~ Condition)? }
     Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
         ValuesRow = { Row }
@@ -113,26 +111,27 @@ Expr = _{ BoolOp | Primary | Parentheses }
         Divide = { "/" }
         Add = { "+" }
         Subtract = { "-" }
-    Unary = _{ IsNull | IsNotNull | Exists | NotExists }
-        Exists = { ^"exists" ~ SubQuery }
-        NotExists = { ^"not" ~ ^"exists" ~ SubQuery }
-        IsNull = { Primary ~ ^"is" ~ ^"null" }
-        IsNotNull = { Primary ~ ^"is" ~ ^"not" ~ ^"null" }
+    Unary = _{ Not | IsNull | Exists }
+        Not = { NotFlag ~ (NotInnerWithParenthesis | NotInnerWithoutParentheses) }
+            NotInnerWithoutParentheses = _{ Unary | Cast | Between | Cmp | Function | Row | Parameter | True | False | Null | Reference }
+            NotInnerWithParenthesis = _{ "(" ~ (Or | And | NotInnerWithoutParentheses) ~ ")" }
+        Exists = { NotFlag? ~ ^"exists" ~ SubQuery }
+        IsNull = { Primary ~ ^"is" ~ NotFlag? ~ ^"null" }
     Cmp = { Primary ~ CmpOp ~ Primary }
-        CmpOp = _{ Eq | In | NotEq | NotIn | GtEq | Gt | LtEq | Lt }
+        CmpOp = _{ Eq | In | NotEq | GtEq | Gt | LtEq | Lt }
         Eq = { "=" }
-        In = { ^"in" }
+        In = { NotFlag? ~ ^"in" }
         Gt = { ">" }
         GtEq = { ">=" }
         Lt = { "<" }
         LtEq = { "<=" }
         NotEq = { "<>" | "!=" }
-        NotIn = { ^"not" ~ ^"in" }
-    Between = { BetweenLeft ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
+    Between = { BetweenLeft ~ NotFlag? ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
         BetweenLeft = _{ Primary }
         BetweenCenter = _{ Primary }
         BetweenRight = _{ Primary }
     And = { AndLeft ~ ^"and" ~ AndRight }
+        /// Expr without And and Or.
         AndLeft = _{ Unary | Between | Cmp | Primary | Parentheses }
         AndRight = _{ And | AndLeft }
     Or = { OrLeft ~ ^"or" ~ OrRight }
@@ -146,6 +145,7 @@ Function = { FunctionName ~ "(" ~ (CountAsterisk | (Distinct? ~  FunctionArgs)) 
     CountAsterisk = { "*" }
 
 Distinct = { ^"distinct" }
+NotFlag = { ^"not" }
 
 Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
     CastExpr = _{ Parentheses | Primary }

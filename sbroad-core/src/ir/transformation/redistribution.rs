@@ -249,6 +249,23 @@ fn join_policy_for_and(
 }
 
 impl Plan {
+    /// Get unary NOT expression nodes.
+    pub(crate) fn get_not_unary_nodes(&self, top: usize) -> Vec<LevelNode> {
+        let filter = |node_id: usize| -> bool {
+            matches!(
+                self.get_node(node_id),
+                Ok(Node::Expression(Expression::Unary { op: Unary::Not, .. }))
+            )
+        };
+        let mut post_tree = PostOrderWithFilter::with_capacity(
+            |node| self.nodes.expr_iter(node, false),
+            EXPR_CAPACITY,
+            Box::new(filter),
+        );
+        post_tree.populate_nodes(top);
+        post_tree.take_nodes()
+    }
+
     /// Get boolean expressions with both row children in the sub-tree.
     /// It's a helper function for resolving subquery conflicts.
     /// E.g. boolean `In` operator will have both row children where
@@ -558,7 +575,7 @@ impl Plan {
             ));
         };
 
-        if let Unary::Exists | Unary::NotExists = op {
+        if let Unary::Exists = op {
             let child_sq = self.get_additional_sq(rel_id, *child)?;
             if let Some(child_sq) = child_sq {
                 return Ok(Some((child_sq, MotionPolicy::Full)));
@@ -576,6 +593,20 @@ impl Plan {
     ) -> Result<Strategy, SbroadError> {
         let mut strategy = Strategy::new(select_id);
 
+        let not_nodes = self.get_not_unary_nodes(filter_id);
+        let mut not_nodes_children = HashSet::with_capacity(not_nodes.len());
+        for (_, not_node_id) in &not_nodes {
+            let not_node = self.get_expression_node(*not_node_id)?;
+            if let Expression::Unary { child, .. } = not_node {
+                not_nodes_children.insert(*child);
+            } else {
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("Expected Not operator, got {not_node:?}")),
+                ));
+            }
+        }
+
         let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
         for (_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
@@ -585,7 +616,13 @@ impl Plan {
         for (_, bool_node) in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
-                strategy.add_child(id, policy, Program::default());
+                // In case we faced with `not ... in ...`, we
+                // have to change motion policy to Full.
+                if not_nodes_children.contains(bool_node) {
+                    strategy.add_child(id, MotionPolicy::Full, Program::default());
+                } else {
+                    strategy.add_child(id, policy, Program::default());
+                }
             }
         }
 
@@ -966,7 +1003,9 @@ impl Plan {
         let filter = |node_id: usize| -> bool {
             matches!(
                 self.get_node(node_id),
-                Ok(Node::Expression(Expression::Bool { .. }))
+                Ok(Node::Expression(
+                    Expression::Bool { .. } | Expression::Unary { op: Unary::Not, .. }
+                ))
             )
         };
         let mut expr_tree = PostOrderWithFilter::with_capacity(
@@ -979,6 +1018,21 @@ impl Plan {
         drop(expr_tree);
         for (_, node_id) in nodes {
             let expr = self.get_expression_node(node_id)?;
+
+            // Under `not ... in ...` we should change the policy to `Full`
+            if let Expression::Unary {
+                op: Unary::Not,
+                child,
+            } = expr
+            {
+                let child_expr = self.get_expression_node(*child)?;
+                if let Expression::Bool { op: Bool::In, .. } = child_expr {
+                    new_inner_policy = MotionPolicy::Full;
+                    inner_map.insert(node_id, new_inner_policy.clone());
+                    continue;
+                }
+            }
+
             let bool_op = if let Expression::Bool { .. } = expr {
                 BoolOp::from_expr(self, node_id)?
             } else {
@@ -1038,12 +1092,9 @@ impl Plan {
                         Bool::Eq | Bool::In => {
                             self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
                         }
-                        Bool::Gt
-                        | Bool::GtEq
-                        | Bool::Lt
-                        | Bool::LtEq
-                        | Bool::NotEq
-                        | Bool::NotIn => MotionPolicy::Full,
+                        Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq | Bool::NotEq => {
+                            MotionPolicy::Full
+                        }
                         Bool::And | Bool::Or => {
                             // "a and 1" or "a or 1" expressions make no sense.
                             return Err(SbroadError::Unsupported(

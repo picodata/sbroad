@@ -28,7 +28,7 @@ fn not_in2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    assert_eq!(Slices::from(vec![Slice { slice: vec![64] }]), plan.slices);
+    assert_eq!(Slices::from(vec![Slice { slice: vec![65] }]), plan.slices);
 }
 
 #[test]

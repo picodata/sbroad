@@ -95,6 +95,7 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
 use crate::ir::transformation::merge_tuples::Chain;
+use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::value::{Trivalent, Value};
 use crate::ir::Plan;
 use crate::otm::child_span;
@@ -349,7 +350,10 @@ impl EqClassChain {
 }
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
-fn call_expr_tree_derive_equalities(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
+fn call_expr_tree_derive_equalities(
+    plan: &mut Plan,
+    top_id: usize,
+) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 

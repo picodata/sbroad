@@ -49,8 +49,15 @@ impl Display for ColExpr {
                 }
             }
             ColExpr::Unary(op, expr) => match op {
-                Unary::IsNull | Unary::IsNotNull => format!("{expr} {op}"),
-                Unary::Exists | Unary::NotExists => format!("{op} {expr}"),
+                Unary::IsNull => format!("{expr} {op}"),
+                Unary::Exists => format!("{op} {expr}"),
+                Unary::Not => {
+                    if let ColExpr::Bool(_, BinaryOp::BoolOp(Bool::And), _) = **expr {
+                        format!("{op} ({expr})")
+                    } else {
+                        format!("{op} {expr}")
+                    }
+                }
             },
             ColExpr::Column(c, col_type) => format!("{c}::{col_type}"),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),

@@ -500,10 +500,11 @@ fn sql_arbitrary_projection_plan() {
         .unwrap();
 
     // d is not null
-    let unary_id = plan.nodes.add_unary_bool(Unary::IsNotNull, d_id).unwrap();
+    let is_null_id = plan.nodes.add_unary_bool(Unary::IsNull, d_id).unwrap();
+    let not_null_id = plan.nodes.add_unary_bool(Unary::Not, is_null_id).unwrap();
 
     // a + b > c and d is not null
-    let and_id = plan.nodes.add_bool(gt_id, Bool::And, unary_id).unwrap();
+    let and_id = plan.nodes.add_bool(gt_id, Bool::And, not_null_id).unwrap();
 
     let proj_id = plan.add_proj_internal(scan_id, &[and_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
@@ -530,7 +531,7 @@ fn sql_arbitrary_projection_plan() {
     let mut nodes_iter = nodes.into_iter();
 
     // projection
-    assert_eq!(Some(&SyntaxData::PlanId(25)), nodes_iter.next());
+    assert_eq!(Some(&SyntaxData::PlanId(26)), nodes_iter.next());
     // row 12
     assert_eq!(Some(&SyntaxData::PlanId(13)), nodes_iter.next());
     // (
@@ -564,9 +565,13 @@ fn sql_arbitrary_projection_plan() {
     // )
     assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
     // bool expression and: [a + b > c] and [d is not null]
-    assert_eq!(Some(&SyntaxData::PlanId(23)), nodes_iter.next());
+    assert_eq!(Some(&SyntaxData::PlanId(24)), nodes_iter.next());
     // bool operator And (and)
     assert_eq!(Some(&SyntaxData::Operator("and".into())), nodes_iter.next());
+    // unary operator Not (not)
+    assert_eq!(Some(&SyntaxData::Operator("not".into())), nodes_iter.next());
+    // unary expression not is null: not [d] is null 19
+    assert_eq!(Some(&SyntaxData::PlanId(23)), nodes_iter.next());
     // row
     assert_eq!(Some(&SyntaxData::PlanId(19)), nodes_iter.next());
     // (
@@ -575,11 +580,11 @@ fn sql_arbitrary_projection_plan() {
     assert_eq!(Some(&SyntaxData::PlanId(18)), nodes_iter.next());
     // )
     assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
-    // unary expression is not null: [d] is not null 19
+    // unary expression is null: [d] is null
     assert_eq!(Some(&SyntaxData::PlanId(22)), nodes_iter.next());
-    // unary operator IsNotNull (is not null)
+    // unary operator IsNull (is null)
     assert_eq!(
-        Some(&SyntaxData::Operator("is not null".into())),
+        Some(&SyntaxData::Operator("is null".into())),
         nodes_iter.next()
     );
     // from

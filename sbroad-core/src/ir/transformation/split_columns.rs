@@ -15,11 +15,15 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
+use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
-fn call_expr_tree_split_columns(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
+fn call_expr_tree_split_columns(
+    plan: &mut Plan,
+    top_id: usize,
+) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_replace_bool(
         top_id,
         &call_split_bool,
@@ -34,7 +38,7 @@ fn call_expr_tree_split_columns(plan: &mut Plan, top_id: usize) -> Result<usize,
     )
 }
 
-fn call_split_bool(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
+fn call_split_bool(plan: &mut Plan, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
     plan.split_bool(top_id)
 }
 
@@ -46,16 +50,16 @@ impl Plan {
     /// - If the operator is not a boolean operator.
     /// - If left and right tuples have different number of columns.
     /// - If the plan is invalid for some unknown reason.
-    fn split_bool(&mut self, expr_id: usize) -> Result<usize, SbroadError> {
-        let expr = self.get_expression_node(expr_id)?;
-        let (left_id, right_id, op) = match expr {
+    fn split_bool(&mut self, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
+        let top_expr = self.get_expression_node(top_id)?;
+        let (left_id, right_id, op) = match top_expr {
             Expression::Bool {
                 left, op, right, ..
             } => (*left, *right, op.clone()),
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("node is not a boolean expression: {expr:?}")),
+                    Some(format!("node is not a boolean expression: {top_expr:?}")),
                 ));
             }
         };
@@ -83,23 +87,23 @@ impl Plan {
             if let Some((first, other)) = pairs.split_first() {
                 let left_col_id = first.0;
                 let right_col_id = first.1;
-                let left_row_id = self.nodes.add_row(vec![left_col_id], None);
-                let right_row_id = self.nodes.add_row(vec![right_col_id], None);
-                let mut top_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;
+                let left_row_id = self.add_row(vec![left_col_id], None);
+                let right_row_id = self.add_row(vec![right_col_id], None);
+                let mut new_top_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;
 
                 for (left_col_id, right_col_id) in other {
                     let left_col_id = *left_col_id;
                     let right_col_id = *right_col_id;
                     let left_row_id = self.nodes.add_row(vec![left_col_id], None);
                     let right_row_id = self.nodes.add_row(vec![right_col_id], None);
-                    let new_top_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;
-                    top_id = self.concat_and(top_id, new_top_id)?;
+                    let cond_id = self.add_cond(left_row_id, op.clone(), right_row_id)?;
+                    new_top_id = self.concat_and(new_top_id, cond_id)?;
                 }
 
-                return Ok(top_id);
+                return Ok((top_id, new_top_id));
             }
         }
-        Ok(expr_id)
+        Ok((top_id, top_id))
     }
 
     /// Split columns in all the boolean operators of the plan.

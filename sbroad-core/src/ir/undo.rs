@@ -25,8 +25,16 @@ impl TransformationLog {
         }
     }
 
-    pub fn add(&mut self, old_id: usize, new_id: usize) {
-        self.log.insert(new_id, old_id);
+    pub fn add(&mut self, new_id: usize, old_id: usize) {
+        match self.log.get_key_value(&new_id) {
+            None => {
+                self.log.insert(new_id, old_id);
+            }
+            Some((_, prev_old_id)) => {
+                self.log.insert(old_id, *prev_old_id);
+                self.log.insert(new_id, old_id);
+            }
+        }
     }
 
     #[must_use]

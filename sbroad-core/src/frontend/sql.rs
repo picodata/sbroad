@@ -201,35 +201,20 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             }
                             Type::ColumnDefIsNull => {
                                 let is_null_node = ast.nodes.get_node(*def_child_id)?;
-                                if let (Some(null_id), None) =
-                                    (is_null_node.children.first(), is_null_node.children.get(1))
-                                {
-                                    let null_node = ast.nodes.get_node(*null_id)?;
-                                    match null_node.rule {
-                                        Type::ColumnIsNull => {
-                                            column_def.is_nullable = true;
-                                        }
-                                        Type::ColumnIsNotNull => {
-                                            column_def.is_nullable = false;
-                                        }
-                                        _ => {
-                                            return Err(SbroadError::Invalid(
-                                                Entity::Node,
-                                                Some(format!(
-                                                    "AST column null node {:?} has unexpected type",
-                                                    null_node,
-                                                )),
-                                            ));
-                                        }
+                                match (is_null_node.children.first(), is_null_node.children.get(1)) {
+                                    (Some(_), Some(_)) => {
+                                        column_def.is_nullable = false;
                                     }
-                                } else {
-                                    return Err(SbroadError::Invalid(
+                                    (Some(_), None) => {
+                                        column_def.is_nullable = true;
+                                    }
+                                    _ => return Err(SbroadError::Invalid(
                                         Entity::Node,
                                         Some(format!(
                                             "AST column null node {:?} contains unexpected children",
                                             def_child_node,
                                         )),
-                                    ));
+                                    )),
                                 }
                             }
                             _ => {
@@ -571,6 +556,8 @@ impl Ast for AbstractSyntaxTree {
 
             let op_node = self.nodes.get_node(*ast_op_id)?;
             let op = Arithmetic::from_node_type(&op_node.rule)?;
+            // Even though arithmetic expression is added without parenthesis here, they will
+            // be added later with `fix_arithmetic_parentheses` function call.
             let op_id = plan.add_arithmetic_to_plan(plan_left_id, op, plan_right_id, false)?;
             Ok::<usize, SbroadError>(op_id)
         };
@@ -1058,11 +1045,28 @@ impl Ast for AbstractSyntaxTree {
                     })?;
                     let op_node = self.nodes.get_node(*ast_op_id)?;
                     let op = Bool::from_node_type(&op_node.rule)?;
+                    let is_not = match op {
+                        Bool::In => {
+                            matches!(op_node.children.first(), Some(_))
+                        }
+                        _ => false,
+                    };
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
-                    map.add(id, cond_id);
+                    let not_id = if is_not {
+                        plan.add_unary(Unary::Not, cond_id)?
+                    } else {
+                        cond_id
+                    };
+                    map.add(id, not_id);
                 }
-                Type::IsNull | Type::IsNotNull | Type::Exists | Type::NotExists => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
+                Type::Not => {
+                    if node.children.first().is_none() {
+                        return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                            "{:?} must contain not flag as its first child.",
+                            &node.rule
+                        )));
+                    }
+                    let ast_child_id = node.children.get(1).ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(format!(
                             "{:?} has no children.",
                             &node.rule
@@ -1073,20 +1077,94 @@ impl Ast for AbstractSyntaxTree {
                     let unary_id = plan.add_unary(op, plan_child_id)?;
                     map.add(id, unary_id);
                 }
+                Type::Exists => {
+                    let (is_not, child_index) = match node.children.len() {
+                        2 => (true, 1),
+                        1 => (false, 0),
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!(
+                                    "AST Exists node {:?} contains unexpected children",
+                                    node,
+                                )),
+                            ))
+                        }
+                    };
+                    let ast_child_id = node.children.get(child_index).ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(format!(
+                            "{:?} has no children.",
+                            &node.rule
+                        ))
+                    })?;
+                    let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
+                    let op = Unary::from_node_type(&node.rule)?;
+                    let op_id = plan.add_unary(op, plan_child_id)?;
+                    let not_id = if is_not {
+                        plan.add_unary(Unary::Not, op_id)?
+                    } else {
+                        op_id
+                    };
+                    map.add(id, not_id);
+                }
+                Type::IsNull => {
+                    let is_not = match node.children.len() {
+                        2 => true,
+                        1 => false,
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!(
+                                    "AST Exists node {:?} contains unexpected children",
+                                    node,
+                                )),
+                            ))
+                        }
+                    };
+                    let ast_child_id = node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(format!(
+                            "{:?} has no children.",
+                            &node.rule
+                        ))
+                    })?;
+                    let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
+                    let op = Unary::from_node_type(&node.rule)?;
+                    let op_id = plan.add_unary(op, plan_child_id)?;
+                    let not_id = if is_not {
+                        plan.add_unary(Unary::Not, op_id)?
+                    } else {
+                        op_id
+                    };
+                    map.add(id, not_id);
+                }
                 Type::Between => {
-                    // left BETWEEN center AND right
-                    let ast_left_id = node.children.first().ok_or_else(|| {
+                    // left NOT? BETWEEN center AND right
+                    let (is_not, left_index, center_index, right_index) = match node.children.len()
+                    {
+                        4 => (true, 0, 2, 3),
+                        3 => (false, 0, 1, 2),
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Node,
+                                Some(format!(
+                                    "AST Between node {:?} contains unexpected children",
+                                    node,
+                                )),
+                            ))
+                        }
+                    };
+                    let ast_left_id = node.children.get(left_index).ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Between has no children.".into())
                     })?;
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    let ast_center_id = node.children.get(1).ok_or_else(|| {
+                    let ast_center_id = node.children.get(center_index).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
                             "(center) among between children".into(),
                         )
                     })?;
                     let plan_center_id = plan.as_row(map.get(*ast_center_id)?, &mut rows)?;
-                    let ast_right_id = node.children.get(2).ok_or_else(|| {
+                    let ast_right_id = node.children.get(right_index).ok_or_else(|| {
                         SbroadError::NotFound(Entity::Node, "(right) among between children".into())
                     })?;
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
@@ -1094,7 +1172,12 @@ impl Ast for AbstractSyntaxTree {
                     let greater_eq_id = plan.add_cond(plan_left_id, Bool::GtEq, plan_center_id)?;
                     let less_eq_id = plan.add_cond(plan_left_id, Bool::LtEq, plan_right_id)?;
                     let and_id = plan.add_cond(greater_eq_id, Bool::And, less_eq_id)?;
-                    map.add(id, and_id);
+                    let not_id = if is_not {
+                        plan.add_unary(Unary::Not, and_id)?
+                    } else {
+                        and_id
+                    };
+                    map.add(id, not_id);
                     betweens.push(Between::new(plan_left_id, less_eq_id));
                 }
                 Type::Cast => {
@@ -1867,8 +1950,6 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ColumnDefName
                 | Type::ColumnDefType
                 | Type::ColumnDefIsNull
-                | Type::ColumnIsNull
-                | Type::ColumnIsNotNull
                 | Type::ColumnName
                 | Type::DeleteFilter
                 | Type::DeletedTable
@@ -1895,7 +1976,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Multiply
                 | Type::NewTable
                 | Type::NotEq
-                | Type::NotIn
+                | Type::NotFlag
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn
                 | Type::ScanName
@@ -1943,6 +2024,7 @@ impl Ast for AbstractSyntaxTree {
 
 impl Plan {
     /// Wrap references, constants, functions, concatenations and casts in the plan into rows.
+    /// Leave other nodes (e.g. rows) unchanged.
     fn as_row(&mut self, expr_id: usize, rows: &mut HashSet<usize>) -> Result<usize, SbroadError> {
         if let Node::Expression(
             Expression::Reference { .. }

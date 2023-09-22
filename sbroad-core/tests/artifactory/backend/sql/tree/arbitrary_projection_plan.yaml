@@ -78,7 +78,7 @@ nodes:
     # 12
     - Expression:
         Reference:
-          parent: 25
+          parent: 26
           targets: [0]
           position: 0
           col_type: Integer
@@ -91,7 +91,7 @@ nodes:
     # 14
     - Expression:
         Reference:
-          parent: 25
+          parent: 26
           targets: [0]
           position: 1
           col_type: Integer
@@ -104,7 +104,7 @@ nodes:
     # 16
     - Expression:
         Reference:
-          parent: 25
+          parent: 26
           targets: [0]
           position: 2
           col_type: Integer
@@ -117,7 +117,7 @@ nodes:
     # 18
     - Expression:
         Reference:
-          parent: 25
+          parent: 26
           targets: [0]
           position: 3
           col_type: Integer
@@ -143,26 +143,31 @@ nodes:
     # 22
     - Expression:
         Unary:
-          op: isnotnull
+          op: isnull
           child: 19
     # 23
+    - Expression:
+        Unary:
+          op: not
+          child: 22
+    # 24
     - Expression:
         Bool:
           left: 21
           op: and
-          right: 22
-    # 24
+          right: 23
+    # 25
     - Expression:
         Row:
           list:
-            - 23
+            - 24
           distribution: ~
-    # 25
+    # 26
     - Relational:
         Projection:
           children:
             - 11
-          output: 24
+          output: 25
           is_distinct: false
 relations:
   tables:
@@ -193,7 +198,7 @@ relations:
       engine: Memtx
 slices:
   slices: []
-top: 25
+top: 26
 is_explain: false
 undo:
   log: {}

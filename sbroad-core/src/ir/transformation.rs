@@ -6,16 +6,28 @@ pub mod bool_in;
 pub mod dnf;
 pub mod equality_propagation;
 pub mod merge_tuples;
+pub mod not_push_down;
 pub mod redistribution;
 pub mod split_columns;
 
+use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 
-use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
+pub type ExprId = usize;
+/// Helper type representing map of (`old_expr_id` -> `changed_expr_id`).
+pub type OldNewExpressionMap = HashMap<ExprId, ExprId>;
+
+/// Pair of (old tree id, transformed tree id).
+pub type OldNewTopIdPair = (ExprId, ExprId);
+
+/// Function passed for being applied on WHERE|ON condition roots.
+/// It returns pair of (`old_tree_id`, `new_tree_id`).
+pub type TransformFunction<'func> =
+    &'func dyn Fn(&mut Plan, ExprId) -> Result<OldNewTopIdPair, SbroadError>;
 
 impl Plan {
     /// Concatenates trivalents (boolean or NULL expressions) to the AND node.
@@ -86,38 +98,29 @@ impl Plan {
     /// - If failed to get the plan top node.
     /// - If relational iterator returns non-relational node.
     /// - If failed to transform the expression subtree.
-    pub fn transform_expr_trees(
-        &mut self,
-        f: &dyn Fn(&mut Plan, usize) -> Result<usize, SbroadError>,
-    ) -> Result<(), SbroadError> {
+    pub fn transform_expr_trees(&mut self, f: TransformFunction) -> Result<(), SbroadError> {
         let top_id = self.get_top()?;
         let mut ir_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), EXPR_CAPACITY);
         ir_tree.populate_nodes(top_id);
         let nodes = ir_tree.take_nodes();
         for (_, id) in &nodes {
             let rel = self.get_relation_node(*id)?;
-            let (new_tree_id, old_tree_id) = match rel {
+            let (old_tree_id, new_tree_id) = match rel {
                 Relational::Selection {
                     filter: tree_id, ..
                 }
                 | Relational::Join {
                     condition: tree_id, ..
-                } => {
-                    let expr_id = *tree_id;
-                    (f(self, expr_id)?, expr_id)
-                }
+                } => f(self, *tree_id)?,
                 _ => continue,
             };
             if old_tree_id != new_tree_id {
-                self.undo.add(old_tree_id, new_tree_id);
+                self.undo.add(new_tree_id, old_tree_id);
             }
             let rel = self.get_mut_relation_node(*id)?;
             match rel {
                 Relational::Selection {
                     filter: tree_id, ..
-                }
-                | Relational::Projection {
-                    output: tree_id, ..
                 }
                 | Relational::Join {
                     condition: tree_id, ..
@@ -138,10 +141,13 @@ impl Plan {
     pub fn expr_tree_replace_bool(
         &mut self,
         top_id: usize,
-        f: &dyn Fn(&mut Plan, usize) -> Result<usize, SbroadError>,
+        f: TransformFunction,
         ops: &[Bool],
-    ) -> Result<usize, SbroadError> {
-        let mut map: HashMap<usize, usize> = HashMap::new();
+    ) -> Result<OldNewTopIdPair, SbroadError> {
+        let mut map: OldNewExpressionMap = HashMap::new();
+        // Note, that filter accepts nodes:
+        // * On which we'd like to apply transformation
+        // * That will contain transformed nodes as children
         let filter = |node_id: usize| -> bool {
             if let Ok(Node::Expression(
                 Expression::Bool { .. }
@@ -169,55 +175,67 @@ impl Plan {
             let expr = self.get_expression_node(*id)?;
             if let Expression::Bool { op, .. } = expr {
                 if ops.contains(op) || ops.is_empty() {
-                    let new_tree_id = f(self, *id)?;
-                    map.insert(*id, new_tree_id);
+                    let (old_top_id, new_top_id) = f(self, *id)?;
+                    if old_top_id != new_top_id {
+                        map.insert(*id, new_top_id);
+                    }
                 }
             }
         }
-        let mut new_top_id = top_id;
-        for (_, id) in &nodes {
-            let expr = self.get_mut_expression_node(*id)?;
-            // For all expressions in the subtree tries to replace their children
-            // with the new nodes from the map.
-            //
-            // XXX: If you add a new expression type to the match, make sure to
-            // add it to the filter above.
-            match expr {
-                Expression::Alias { child, .. }
-                | Expression::Cast { child, .. }
-                | Expression::Unary { child, .. } => {
-                    if let Some(new_id) = map.get(child) {
-                        *child = *new_id;
-                    }
-                }
-                Expression::Bool { left, right, .. }
-                | Expression::Arithmetic { left, right, .. } => {
-                    if let Some(new_id) = map.get(left) {
-                        *left = *new_id;
-                    }
-                    if let Some(new_id) = map.get(right) {
-                        *right = *new_id;
-                    }
-                }
-                Expression::Row { list, .. }
-                | Expression::StableFunction { children: list, .. } => {
-                    for id in list {
-                        if let Some(new_id) = map.get(id) {
-                            *id = *new_id;
+        let (old_top_id, new_top_id) = if map.is_empty() {
+            (top_id, top_id)
+        } else {
+            let old_top_id = if map.get(&top_id).is_some() && map.len() == 1 {
+                top_id
+            } else {
+                self.clone_expr_subtree(top_id)?
+            };
+            let mut new_top_id = top_id;
+            for (_, id) in &nodes {
+                let expr = self.get_mut_expression_node(*id)?;
+                // For all expressions in the subtree tries to replace their children
+                // with the new nodes from the map.
+                //
+                // XXX: If you add a new expression type to the match, make sure to
+                // add it to the filter above.
+                match expr {
+                    Expression::Alias { child, .. }
+                    | Expression::Cast { child, .. }
+                    | Expression::Unary { child, .. } => {
+                        if let Some(new_id) = map.get(child) {
+                            *child = *new_id;
                         }
                     }
+                    Expression::Bool { left, right, .. }
+                    | Expression::Arithmetic { left, right, .. } => {
+                        if let Some(new_id) = map.get(left) {
+                            *left = *new_id;
+                        }
+                        if let Some(new_id) = map.get(right) {
+                            *right = *new_id;
+                        }
+                    }
+                    Expression::Row { list, .. }
+                    | Expression::StableFunction { children: list, .. } => {
+                        for id in list {
+                            if let Some(new_id) = map.get(id) {
+                                *id = *new_id;
+                            }
+                        }
+                    }
+                    Expression::Concat { .. }
+                    | Expression::Constant { .. }
+                    | Expression::Reference { .. }
+                    | Expression::CountAsterisk => {}
                 }
-                Expression::Concat { .. }
-                | Expression::Constant { .. }
-                | Expression::Reference { .. }
-                | Expression::CountAsterisk => {}
             }
-        }
-        // Checks if the top node is a new node.
-        if let Some(new_id) = map.get(&top_id) {
-            new_top_id = *new_id;
-        }
-        Ok(new_top_id)
+            // Checks if the top node is a new node.
+            if let Some(new_id) = map.get(&top_id) {
+                new_top_id = *new_id;
+            }
+            (old_top_id, new_top_id)
+        };
+        Ok((old_top_id, new_top_id))
     }
 }
 

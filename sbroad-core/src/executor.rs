@@ -55,6 +55,7 @@ impl Plan {
     /// Apply optimization rules to the plan.
     pub(crate) fn optimize(&mut self) -> Result<(), SbroadError> {
         self.replace_in_operator()?;
+        self.push_down_not()?;
         self.split_columns()?;
         self.set_dnf()?;
         self.derive_equalities()?;

@@ -322,7 +322,7 @@ fn unary_condition_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")
-    selection ROW("test_space"."id"::unsigned) is null and ROW("test_space"."FIRST_NAME"::string) is not null
+    selection ROW("test_space"."id"::unsigned) is null and not ROW("test_space"."FIRST_NAME"::string) is null
         scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

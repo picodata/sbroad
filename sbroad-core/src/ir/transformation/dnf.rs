@@ -73,6 +73,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Bool;
+use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
@@ -160,7 +161,7 @@ impl Chain {
     }
 }
 
-fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<usize, SbroadError> {
+fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_to_dnf(top_id)
 }
 
@@ -229,7 +230,7 @@ impl Plan {
     /// - Failed to retrieve DNF chains.
     /// - Failed to convert the AND chain to a new expression tree.
     /// - Failed to concatenate the AND expression trees to the OR tree.
-    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<usize, SbroadError> {
+    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
         let mut result = self.get_dnf_chains(top_id)?;
 
         let mut new_top_id: Option<usize> = None;
@@ -241,9 +242,10 @@ impl Plan {
             }
         }
 
-        new_top_id.ok_or_else(|| {
+        let new_top_id = new_top_id.ok_or_else(|| {
             SbroadError::Invalid(Entity::Chain, Some("Chain returned no expressions".into()))
-        })
+        })?;
+        Ok((top_id, new_top_id))
     }
 
     /// Convert an expression tree of trivalent nodes to a conjunctive
@@ -260,4 +262,4 @@ impl Plan {
 }
 
 #[cfg(test)]
-mod tests;
+pub mod tests;

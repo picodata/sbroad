@@ -4,7 +4,7 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
 
-fn set_dnf(plan: &mut Plan) {
+pub fn set_dnf(plan: &mut Plan) {
     plan.set_dnf().unwrap();
 }
 

@@ -94,6 +94,11 @@ pub enum Distribution {
     Any,
     /// A tuple is located on all data nodes and on coordinator
     /// (constants).
+    ///
+    /// **Note**: the same data may appear with different rows number on different storages.
+    /// E.g. when we execute `select 1 from "t"`, where "t" is sharded on two storages (s1 contains
+    /// 1 row and s2 contains 2 rows), we will get upper Projection output row with distribution
+    /// `Replicated`, but on different storages it will have different number of rows.
     Replicated,
     /// Tuple distribution is set by the distribution key.
     /// Example: tuples from the segmented table.
@@ -304,18 +309,18 @@ impl Plan {
         };
 
         let mut parent_node = None;
-        let mut only_expr_row = true;
+        let mut only_compound_exprs = true;
         let mut contains_non_const_expr = false;
         for id in row_children.iter() {
             let child_id = row_child_id(*id)?;
             match self.get_expression_node(child_id)? {
                 Expression::Reference { parent, .. } => {
                     parent_node = *parent;
-                    only_expr_row = false;
+                    only_compound_exprs = false;
                     break;
                 }
                 Expression::Constant { .. } => {
-                    only_expr_row = false;
+                    only_compound_exprs = false;
                 }
                 _ => {
                     contains_non_const_expr = true;
@@ -329,7 +334,7 @@ impl Plan {
         // Here Projection must have Distribution::Any
         // but: select a + b, a from t
         // may be distributed by a
-        if only_expr_row {
+        if only_compound_exprs {
             self.set_dist(row_id, Distribution::Any)?;
             return Ok(());
         }

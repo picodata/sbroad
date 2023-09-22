@@ -125,7 +125,7 @@ fn sub_query3_latest() {
             "{} {} {} {} {}",
             r#"SELECT "t"."a", "t"."b" FROM "t""#,
             r#"WHERE ("t"."b") >= (?) and ("t"."a") <= (?) and ("t"."b") <= (?)"#,
-            r#"and ("t"."a", "t"."b") not in"#,
+            r#"and not ("t"."a", "t"."b") in"#,
             r#"(SELECT "t"."a", "t"."b" FROM "t" WHERE ("t"."b") >= (?)"#,
             r#"UNION ALL SELECT "t1"."a", "t1"."b" FROM "t1" WHERE ("t1"."a") <= (?))"#,
         ),

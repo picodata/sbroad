@@ -593,6 +593,182 @@ g.test_exists_partitioned_in_join_filter = function()
     t.assert_equals(r_all, r)
 end
 
+g.test_not_with_true_gives_false = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT not true FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {false}
+        },
+    })
+end
+
+g.test_double_not_with_true_gives_true = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT not not true FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {true}
+        },
+    })
+end
+
+g.test_not_with_parenthesis = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT (not (not true)) FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {true}
+        },
+    })
+end
+
+g.test_not_with_and = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT not true and false FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {false}
+        },
+    })
+end
+
+g.test_not_with_or = function()
+    local api = cluster:server("api-1").net_box
+
+    -- Select must return true as soon as OR operator has greater priority
+    -- `SELECT not true or true` = `SELECT (not true) or true`
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT not true or true FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {true}
+        },
+    })
+end
+
+g.test_not_with_in = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select * from (values (1)) where 1 not in (values(1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {{name = "COLUMN_1", type = "any"}},
+        rows = {},
+    })
+end
+
+g.test_not_with_exists = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select "COLUMN_1" from (values (1)) where not exists (select 1 from (values (1)))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {{name = "COLUMN_1", type = "any"}},
+        rows = {},
+    })
+end
+
+g.test_not_in_filter = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "testing_space" where not "id" = 2
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {{1}},
+    })
+end
+
+g.test_not_in_condition = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select * from
+            (select "id" as "tid" from "testing_space")
+        inner join
+            "t"
+        on not "tid" != "id" and "a" = 4.2
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "tid", type = "integer"},
+            {name = "t.id", type = "integer"},
+            {name = "t.a", type = "number"},
+        },
+        rows = {{1, 1, 4.2}},
+    })
+end
+
+g.test_not_between = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT 1 not between 2 and 3 FROM (values (1))
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "boolean"},
+        },
+        rows = {
+            {true}
+        },
+    })
+end
+
 g.test_between1 = function()
     local api = cluster:server("api-1").net_box
 

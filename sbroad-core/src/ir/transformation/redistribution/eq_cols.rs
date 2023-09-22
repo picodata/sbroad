@@ -219,8 +219,7 @@ impl EqualityCols {
             | Bool::GtEq
             | Bool::Lt
             | Bool::LtEq
-            | Bool::NotEq
-            | Bool::NotIn => {
+            | Bool::NotEq => {
                 if let Some(Referred::Both) = refers_to.get(node_id) {
                     None
                 } else {

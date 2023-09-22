@@ -32,7 +32,6 @@ impl Bool {
             Type::Lt => Ok(Bool::Lt),
             Type::LtEq => Ok(Bool::LtEq),
             Type::NotEq => Ok(Bool::NotEq),
-            Type::NotIn => Ok(Bool::NotIn),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!("bool operator: {s:?}")),
@@ -69,10 +68,9 @@ impl Unary {
     #[allow(dead_code)]
     pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
         match s {
+            Type::Not => Ok(Unary::Not),
             Type::IsNull => Ok(Unary::IsNull),
-            Type::IsNotNull => Ok(Unary::IsNotNull),
             Type::Exists => Ok(Unary::Exists),
-            Type::NotExists => Ok(Unary::NotExists),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!("unary operator: {s:?}")),

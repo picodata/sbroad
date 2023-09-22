@@ -19,6 +19,7 @@ fn check_sql_with_snapshot(
 ) {
     let mut plan = sql_to_ir(query, params);
     plan.replace_in_operator().unwrap();
+    plan.push_down_not().unwrap();
     plan.split_columns().unwrap();
     plan.set_dnf().unwrap();
     plan.derive_equalities().unwrap();

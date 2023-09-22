@@ -22,6 +22,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::TableVersionMap;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::operator::Bool;
 use crate::ir::relation::Column;
 use crate::ir::tree::traversal::{
     BreadthFirst, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
@@ -732,6 +733,14 @@ impl Plan {
     /// - Child node is invalid
     pub fn add_unary(&mut self, op: operator::Unary, child: usize) -> Result<usize, SbroadError> {
         self.nodes.add_unary_bool(op, child)
+    }
+
+    /// Add bool operator node to the plan.
+    ///
+    /// # Errors
+    /// - Children node are invalid
+    pub fn add_bool(&mut self, left: usize, op: Bool, right: usize) -> Result<usize, SbroadError> {
+        self.nodes.add_bool(left, op, right)
     }
 
     /// Marks plan as query explain

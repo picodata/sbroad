@@ -42,8 +42,6 @@ pub enum Bool {
     LtEq,
     /// `!=`
     NotEq,
-    /// `not in`
-    NotIn,
     /// `||`
     Or,
 }
@@ -64,7 +62,6 @@ impl Bool {
             "<" => Ok(Bool::Lt),
             "<=" => Ok(Bool::LtEq),
             "!=" | "<>" => Ok(Bool::NotEq),
-            "not in" => Ok(Bool::NotIn),
             _ => Err(SbroadError::Unsupported(Entity::Operator, None)),
         }
     }
@@ -82,7 +79,6 @@ impl Display for Bool {
             Bool::Lt => "<",
             Bool::LtEq => "<=",
             Bool::NotEq => "<>",
-            Bool::NotIn => "not in",
         };
 
         write!(f, "{op}")
@@ -135,14 +131,12 @@ impl Display for Arithmetic {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Eq, Hash, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Unary {
+    /// `not`
+    Not,
     /// `is null`
     IsNull,
-    /// `is not null`
-    IsNotNull,
     /// `exists`
     Exists,
-    /// `not exists`
-    NotExists,
 }
 
 impl Unary {
@@ -153,9 +147,7 @@ impl Unary {
     pub fn from(s: &str) -> Result<Self, SbroadError> {
         match s.to_lowercase().as_str() {
             "is null" => Ok(Unary::IsNull),
-            "is not null" => Ok(Unary::IsNotNull),
             "exists" => Ok(Unary::Exists),
-            "not exists" => Ok(Unary::NotExists),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
                 Some(format!(
@@ -169,10 +161,9 @@ impl Unary {
 impl Display for Unary {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let op = match &self {
+            Unary::Not => "not",
             Unary::IsNull => "is null",
-            Unary::IsNotNull => "is not null",
             Unary::Exists => "exists",
-            Unary::NotExists => "not exists",
         };
 
         write!(f, "{op}")
