@@ -200,13 +200,22 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                 }
                             }
                             Type::ColumnDefIsNull => {
-                                let is_null_node = ast.nodes.get_node(*def_child_id)?;
-                                match (is_null_node.children.first(), is_null_node.children.get(1)) {
-                                    (Some(_), Some(_)) => {
-                                        column_def.is_nullable = false;
-                                    }
-                                    (Some(_), None) => {
+                                match (def_child_node.children.first(), def_child_node.children.get(1)) {
+                                    (None, None) => {
                                         column_def.is_nullable = true;
+                                    }
+                                    (Some(child_id), None) => {
+                                        let not_flag_node = ast.nodes.get_node(*child_id)?;
+                                        if let Type::NotFlag = not_flag_node.rule {
+                                            column_def.is_nullable = false;
+                                        } else {
+                                            return Err(SbroadError::Invalid(
+                                                Entity::Node,
+                                                Some(format!(
+                                                    "Expected NotFlag node, got: {:?}",
+                                                    not_flag_node,
+                                                ))))
+                                        }
                                     }
                                     _ => return Err(SbroadError::Invalid(
                                         Entity::Node,
