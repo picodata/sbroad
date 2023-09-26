@@ -10,7 +10,7 @@ mod prod_imports {
     pub use crate::ir::relation::Column;
     pub use crate::ir::value::{EncodedValue, Value};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
-    pub use tarantool::space::{Field, Space, SpaceCreateOptions};
+    pub use tarantool::space::{Field, Space, SpaceCreateOptions, SpaceType};
     pub use tarantool::tuple::Tuple;
 }
 
@@ -51,17 +51,15 @@ impl TmpSpace {
             fields.push(Field::unsigned(pk_name.clone()));
             let fields_len = fields.len() as u32;
             // Vinyl engine does not support temporary spaces.
-            let is_temporary = match engine {
-                SpaceEngine::Memtx => true,
-                SpaceEngine::Vinyl => false,
+            let space_type = match engine {
+                SpaceEngine::Memtx => SpaceType::DataTemporary,
+                SpaceEngine::Vinyl => SpaceType::Normal,
             };
             let options = SpaceCreateOptions {
                 format: Some(fields),
                 engine: engine.into(),
-                is_local: false,
-                is_temporary,
+                space_type,
                 if_not_exists: false,
-                is_sync: false,
                 ..Default::default()
             };
 

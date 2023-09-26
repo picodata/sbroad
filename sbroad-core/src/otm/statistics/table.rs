@@ -28,7 +28,7 @@ use space::Field;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use tarantool::index::{FieldType, IndexOptions, IndexType, IteratorType};
-use tarantool::space::{Space, SpaceCreateOptions, SpaceEngineType};
+use tarantool::space::{Space, SpaceCreateOptions, SpaceEngineType, SpaceType};
 use tarantool::{index, space};
 
 use crate::{debug, warn};
@@ -328,8 +328,7 @@ impl TarantoolSpace for QuerySpace {
                 Field::unsigned("REF_COUNTER"),
             ]),
             engine: SpaceEngineType::Memtx,
-            is_temporary: true,
-            is_local: false,
+            space_type: SpaceType::DataTemporary,
             if_not_exists: true,
             ..Default::default()
         };
@@ -414,8 +413,7 @@ impl TarantoolSpace for StatSpace {
                 Field::unsigned("COUNT"),
             ]),
             engine: SpaceEngineType::Memtx,
-            is_temporary: true,
-            is_local: false,
+            space_type: SpaceType::DataTemporary,
             if_not_exists: true,
             ..Default::default()
         };
