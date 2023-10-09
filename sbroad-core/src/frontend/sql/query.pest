@@ -1,12 +1,16 @@
 Command = _{ SOI ~ (ExplainQuery | Query | DDL | ACL) ~ EOF }
 
-ACL = _{ DropRole | DropUser | CreateRole | CreateUser }
+ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser }
     CreateUser = {
         ^"create" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
         AuthMethod? ~ Option?
     }
         PasswordString = _{ "'" ~ Password ~ "'" }
             Password = @{ String }
+    AlterUser = {
+        ^"alter" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
+        AuthMethod? ~ Option?
+    }
 	AuthMethod = { ^"using" ~ (ChapSha1 | Md5 | Ldap) }
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }

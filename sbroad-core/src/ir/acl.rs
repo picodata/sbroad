@@ -22,6 +22,12 @@ pub enum Acl {
         auth_method: String,
         timeout: Decimal,
     },
+    AlterUser {
+        name: String,
+        password: String,
+        auth_method: String,
+        timeout: Decimal,
+    },
 }
 
 impl Acl {
@@ -34,6 +40,7 @@ impl Acl {
             Acl::DropRole { ref timeout, .. }
             | Acl::DropUser { ref timeout, .. }
             | Acl::CreateRole { ref timeout, .. }
+            | Acl::AlterUser { ref timeout, .. }
             | Acl::CreateUser { ref timeout, .. } => timeout,
         }
         .to_string()

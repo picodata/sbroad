@@ -427,6 +427,76 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     Ok(create_sharded_table)
 }
 
+/// Code block common for CREATE/ALTER USER moved to separate function.
+fn parse_create_alter_user(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+    default_timeout: Decimal,
+) -> Result<(String, String, String, Decimal), SbroadError> {
+    let mut iter = node.children.iter();
+    // User name
+    let user_name_id = iter.next().ok_or_else(|| {
+        SbroadError::Invalid(
+            Entity::ParseNode,
+            Some(String::from("UserName expected as a first child")),
+        )
+    })?;
+    let user_name_node = ast.nodes.get_node(*user_name_id)?;
+    let user_name =
+        normalize_name_for_space_api(user_name_node.value.as_ref().ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, "user name in UserName node".into())
+        })?);
+    // Password
+    let pwd_id = iter.next().ok_or_else(|| {
+        SbroadError::Invalid(
+            Entity::ParseNode,
+            Some(String::from("Password expected as a second child")),
+        )
+    })?;
+    let pwd_node = ast.nodes.get_node(*pwd_id)?;
+    let password: String = pwd_node
+        .value
+        .as_ref()
+        .ok_or_else(|| SbroadError::NotFound(Entity::Node, "password in Password node".into()))?
+        .to_string();
+    // Optional parameters: auth method and timeout.
+    let mut timeout = default_timeout;
+    let mut auth_method = String::from("chap-sha1");
+    for child_id in iter {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::Timeout => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            Type::AuthMethod => {
+                let method_id = child_node.children.first().ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::ParseNode,
+                        Some(String::from("Method expected under AuthMethod node")),
+                    )
+                })?;
+                let method_node = ast.nodes.get_node(*method_id)?;
+                auth_method = method_node
+                    .value
+                    .as_ref()
+                    .ok_or_else(|| {
+                        SbroadError::NotFound(Entity::Node, "auth method in AuthMethod node".into())
+                    })?
+                    .to_string();
+            }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!(
+                        "ACL node contains unexpected child: {child_node:?}",
+                    )),
+                ));
+            }
+        }
+    }
+    Ok((user_name, password, auth_method, timeout))
+}
+
 impl Ast for AbstractSyntaxTree {
     /// Build an empty AST.
     fn empty() -> Self {
@@ -2009,81 +2079,21 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(drop_table));
                     map.add(id, plan_id);
                 }
+                Type::AlterUser => {
+                    let (user_name, password, auth_method, timeout) =
+                        parse_create_alter_user(self, node, default_timeout)?;
+                    let alter_user = Acl::AlterUser {
+                        name: user_name,
+                        password,
+                        auth_method,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(alter_user));
+                    map.add(id, plan_id);
+                }
                 Type::CreateUser => {
-                    let mut iter = node.children.iter();
-                    // User name
-                    let user_name_id = iter.next().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(String::from("UserName expected under CreateUser node")),
-                        )
-                    })?;
-                    let user_name_node = self.nodes.get_node(*user_name_id)?;
-                    let user_name = normalize_name_for_space_api(
-                        user_name_node.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "user name in the create user AST".into(),
-                            )
-                        })?,
-                    );
-                    // Password
-                    let pwd_id = iter.next().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(String::from("Password expected under CreateUser node")),
-                        )
-                    })?;
-                    let pwd_node = self.nodes.get_node(*pwd_id)?;
-                    let password: String = pwd_node
-                        .value
-                        .as_ref()
-                        .ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "password in the create user AST".into(),
-                            )
-                        })?
-                        .to_string();
-                    // Optional parameters: auth method and timeout.
-                    let mut timeout = default_timeout;
-                    let mut auth_method = String::from("chap-sha1");
-                    for child_id in iter {
-                        let child_node = self.nodes.get_node(*child_id)?;
-                        match child_node.rule {
-                            Type::Timeout => {
-                                timeout = get_timeout(self, *child_id)?;
-                            }
-                            Type::AuthMethod => {
-                                let method_id = child_node.children.first().ok_or_else(|| {
-                                    SbroadError::Invalid(
-                                        Entity::ParseNode,
-                                        Some(String::from("Method expected under AuthMethod node")),
-                                    )
-                                })?;
-                                let method_node = self.nodes.get_node(*method_id)?;
-                                auth_method = method_node
-                                    .value
-                                    .as_ref()
-                                    .ok_or_else(|| {
-                                        SbroadError::NotFound(
-                                            Entity::Node,
-                                            "auth method in the create user AST".into(),
-                                        )
-                                    })?
-                                    .to_string();
-                            }
-                            _ => {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Node,
-                                    Some(format!(
-                                        "AST create user node {:?} contains unexpected children",
-                                        child_node,
-                                    )),
-                                ));
-                            }
-                        }
-                    }
+                    let (user_name, password, auth_method, timeout) =
+                        parse_create_alter_user(self, node, default_timeout)?;
                     let create_user = Acl::CreateUser {
                         name: user_name,
                         password,

@@ -68,3 +68,16 @@ g.test_create_user = function()
             [[Sbroad Error: ACL queries are not supported]]
     )
 end
+
+g.test_alter_user = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call(
+            "sbroad.execute",
+            { [[ ALTER USER "user" WITH PASSWORD '123' USING MD5 ]], {} }
+    )
+    t.assert_equals(
+            string.format("%s", err),
+            [[Sbroad Error: ACL queries are not supported]]
+    )
+end
