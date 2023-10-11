@@ -30,15 +30,15 @@ local function module_name()
 end
 
 local function format_result(result)
-    local formatted = {}
-    if result['metadata'] ~= nil then
-	formatted.metadata = setmetatable(result.metadata, { __serialize = nil })
+    local formatted = setmetatable(result, { __serialize = nil })
+    if formatted['available'] ~= nil then
+	formatted.available = setmetatable(formatted.available, { __serialize = nil })
     end
-    if result['rows'] ~= nil then
-	formatted.rows = setmetatable(result.rows, { __serialize = nil })
+    if formatted['metadata'] ~= nil then
+	formatted.metadata = setmetatable(formatted.metadata, { __serialize = nil })
     end
-    if result['metadata'] == nil and result['rows'] == nil then
-	formatted = setmetatable(result, { __serialize = nil })
+    if formatted['rows'] ~= nil then
+	formatted.rows = setmetatable(formatted.rows, { __serialize = nil })
     end
 
     return formatted

@@ -765,7 +765,7 @@ impl Plan {
 
     /// Checks that plan is explain query
     #[must_use]
-    pub fn is_expain(&self) -> bool {
+    pub fn is_explain(&self) -> bool {
         self.is_explain
     }
 

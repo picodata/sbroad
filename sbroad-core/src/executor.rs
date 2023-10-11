@@ -53,7 +53,10 @@ pub mod vtable;
 
 impl Plan {
     /// Apply optimization rules to the plan.
-    pub(crate) fn optimize(&mut self) -> Result<(), SbroadError> {
+    ///
+    /// # Errors
+    /// - Failed to optimize the plan.
+    pub fn optimize(&mut self) -> Result<(), SbroadError> {
         self.replace_in_operator()?;
         self.push_down_not()?;
         self.split_columns()?;
@@ -87,6 +90,20 @@ where
     C: Router + Vshard,
     &'a C: Vshard,
 {
+    pub fn from_parts(
+        is_explain: bool,
+        exec_plan: ExecutionPlan,
+        coordinator: &'a C,
+        bucket_map: HashMap<usize, Buckets>,
+    ) -> Self {
+        Self {
+            is_explain,
+            exec_plan,
+            coordinator,
+            bucket_map,
+        }
+    }
+
     /// Create a new query.
     ///
     /// # Errors
@@ -137,7 +154,7 @@ where
             plan.optimize()?;
         }
         let query = Query {
-            is_explain: plan.is_expain(),
+            is_explain: plan.is_explain(),
             exec_plan: ExecutionPlan::from(plan),
             coordinator,
             bucket_map: HashMap::new(),

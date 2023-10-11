@@ -279,6 +279,22 @@ where
 #[inline]
 #[allow(unreachable_code)]
 #[allow(unused_variables)]
+pub fn stat_query_span<T, F>(name: &'static str, sql: &str, id: &str, f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    #[cfg(not(feature = "mock"))]
+    {
+        let tracer = QueryTracer::Statistics;
+        let ctx = Context::new();
+        return query_span(name, id, &tracer, &ctx, sql, f);
+    }
+    f()
+}
+
+#[inline]
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
 pub fn query_span<T, F>(
     name: &'static str,
     id: &str,
