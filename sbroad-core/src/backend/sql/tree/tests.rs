@@ -5,12 +5,14 @@ use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::{Arithmetic, Bool, Unary};
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{SpaceEngine, Table, Type};
+use crate::ir::tests::sharding_column;
 use crate::ir::tree::Snapshot;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 
 use super::*;
+use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 
 #[test]
 fn sql_order_selection() {
@@ -19,7 +21,7 @@ fn sql_order_selection() {
     let mut plan = Plan::default();
     let t = Table::new_seg(
         "t",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -99,13 +101,13 @@ fn sql_arithmetic_selection_plan() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
-            Column::new("c", Type::Integer, ColumnRole::User),
-            Column::new("d", Type::Integer, ColumnRole::User),
-            Column::new("e", Type::Integer, ColumnRole::User),
-            Column::new("f", Type::Integer, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(String::from("c")),
+            column_integer_user_non_null(String::from("d")),
+            column_integer_user_non_null(String::from("e")),
+            column_integer_user_non_null(String::from("f")),
+            sharding_column(),
         ],
         &["a"],
         &["a"],
@@ -296,13 +298,13 @@ fn sql_arithmetic_projection_plan() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
-            Column::new("c", Type::Integer, ColumnRole::User),
-            Column::new("d", Type::Integer, ColumnRole::User),
-            Column::new("e", Type::Integer, ColumnRole::User),
-            Column::new("f", Type::Integer, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(String::from("c")),
+            column_integer_user_non_null(String::from("d")),
+            column_integer_user_non_null(String::from("e")),
+            column_integer_user_non_null(String::from("f")),
+            sharding_column(),
         ],
         &["a"],
         &["a"],
@@ -470,11 +472,11 @@ fn sql_arbitrary_projection_plan() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
-            Column::new("c", Type::Integer, ColumnRole::User),
-            Column::new("d", Type::Integer, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(String::from("c")),
+            column_integer_user_non_null(String::from("d")),
+            sharding_column(),
         ],
         &["a"],
         &["a"],

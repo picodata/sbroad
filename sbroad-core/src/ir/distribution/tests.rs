@@ -1,5 +1,6 @@
 use super::*;
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{SpaceEngine, Table, Type};
+use crate::ir::tests::column_user_non_null;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
 use crate::ir::{Node, Plan};
@@ -14,10 +15,10 @@ fn proj_preserve_dist_key() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],

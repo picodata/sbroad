@@ -4,7 +4,7 @@ use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::relation::{Column, ColumnRole, Type};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{LuaValue, Value};
@@ -32,11 +32,7 @@ fn between1_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "id".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("id")));
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
     query
         .coordinator
@@ -88,11 +84,7 @@ fn between2_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "id".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("id")));
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
 
     // Bind the virtual table to both motions.

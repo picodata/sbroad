@@ -2,7 +2,7 @@ use pretty_assertions::{assert_eq, assert_ne};
 use tarantool::decimal;
 
 use super::*;
-use crate::ir::relation::{ColumnRole, Type};
+use crate::ir::relation::Type;
 
 #[test]
 fn box_execute_result_serialize() {
@@ -78,22 +78,26 @@ fn convert_to_vtable() {
         name: col_names[0].into(),
         r#type: Type::Integer,
         role: ColumnRole::User,
+        is_nullable: true,
     });
     excepted.add_column(Column {
         name: col_names[1].into(),
         r#type: Type::String,
         role: ColumnRole::User,
+        is_nullable: true,
     });
     excepted.add_column(Column {
         name: col_names[2].into(),
         r#type: Type::Unsigned,
         role: ColumnRole::User,
+        is_nullable: true,
     });
 
     excepted.add_column(Column {
         name: col_names[3].into(),
         r#type: Type::Decimal,
         role: ColumnRole::User,
+        is_nullable: true,
     });
 
     excepted.add_tuple(vec![

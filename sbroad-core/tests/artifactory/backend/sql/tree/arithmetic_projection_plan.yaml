@@ -241,24 +241,31 @@ relations:
         - name: a
           type: Integer
           role: User
+          is_nullable: false
         - name: b
           type: Integer
           role: User
+          is_nullable: false
         - name: c
           type: Integer
           role: User
+          is_nullable: false
         - name: d
           type: Integer
           role: User
+          is_nullable: false
         - name: e
           type: Integer
           role: User
+          is_nullable: false
         - name: f
           type: Integer
           role: User
+          is_nullable: false
         - name: bucket_id
           type: Unsigned
           role: Sharding
+          is_nullable: true
       shard_key:
         positions:
           - 0

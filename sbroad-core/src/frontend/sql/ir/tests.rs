@@ -285,13 +285,13 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql11() {
-    let input = r#"INSERT INTO "t" ("a", "c") VALUES(1, 2)"#;
+    let input = r#"INSERT INTO "t" ("b", "d") VALUES(1, 2)"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_1"), value(NULL)])]
+    motion [policy: local segment([value(NULL), ref("COLUMN_1")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
 execution options:
@@ -305,13 +305,13 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql14() {
-    let input = r#"INSERT INTO "t" ("a", "c") SELECT "b", "d" FROM "t""#;
+    let input = r#"INSERT INTO "t" ("b", "c") SELECT "b", "d" FROM "t""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: segment([ref("b"), value(NULL)])]
+    motion [policy: segment([value(NULL), ref("b")])]
         projection ("t"."b"::unsigned -> "b", "t"."d"::unsigned -> "d")
             scan "t"
 execution options:
@@ -727,13 +727,13 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_groupby_insert() {
-    let input = r#"INSERT INTO "t" ("a", "c") 
+    let input = r#"INSERT INTO "t" ("c", "b")
     SELECT "b", "d" FROM "t" group by "b", "d" ON CONFLICT DO FAIL"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: segment([ref("b"), value(NULL)])]
+    motion [policy: segment([value(NULL), ref("d")])]
         projection ("column_24"::unsigned -> "b", "column_25"::unsigned -> "d")
             group by ("column_24"::unsigned, "column_25"::unsigned) output: ("column_25"::unsigned -> "column_25", "column_24"::unsigned -> "column_24")
                 motion [policy: segment([ref("column_24"), ref("column_25")])]
@@ -1327,13 +1327,13 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_insert_single() {
-    let input = r#"INSERT INTO "t" ("a", "c") SELECT sum("b"), count("d") FROM "t""#;
+    let input = r#"INSERT INTO "t" ("c", "b") SELECT sum("b"), count("d") FROM "t""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: segment([ref("COL_1"), value(NULL)])]
+    motion [policy: segment([value(NULL), ref("COL_2")])]
         projection (sum(("sum_25"::decimal))::decimal -> "COL_1", sum(("count_28"::integer))::decimal -> "COL_2")
             motion [policy: full]
                 scan
@@ -2347,7 +2347,7 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_insert_7() {
     // Check system column can't be inserted
-    let input = r#"insert into "hash_testing" ("sys_op", "bucket_id" ) values (1, 2)"#;
+    let input = r#"insert into "hash_testing" ("identification_number", "product_code", "bucket_id") values (1, 2, 3)"#;
 
     let metadata = &RouterConfigurationMock::new();
     let ast = AbstractSyntaxTree::new(input).unwrap();
@@ -2783,6 +2783,21 @@ sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
 "#,
     )
+}
+
+#[test]
+fn front_sql_check_non_null_columns_specified() {
+    let input = r#"insert into "test_space" ("sys_op") values (1)"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let plan = ast.resolve_metadata(metadata);
+    let err = plan.unwrap_err();
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("NonNull column \"id\" must be specified")
+    );
 }
 
 fn assert_explain_eq(query: &str, params: Vec<Value>, expected: &str) {

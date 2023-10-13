@@ -264,6 +264,26 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             )
                         })?,
                     );
+                    let mut column_found = false;
+                    for column in &columns {
+                        if column.name == pk_col_name {
+                            column_found = true;
+                            if column.is_nullable {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Column,
+                                    Some(String::from(
+                                        "Primary key mustn't contain nullable columns",
+                                    )),
+                                ));
+                            }
+                        }
+                    }
+                    if !column_found {
+                        return Err(SbroadError::Invalid(
+                            Entity::Column,
+                            Some(format!("Primary key column {pk_col_name} not found.")),
+                        ));
+                    }
                     pk_keys.push(pk_col_name);
                 }
             }
@@ -331,6 +351,17 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         )
                                     })?,
                                 );
+
+                                let column_found = columns.iter().any(|c| c.name == shard_col_name);
+                                if !column_found {
+                                    return Err(SbroadError::Invalid(
+                                        Entity::Column,
+                                        Some(format!(
+                                            "Sharding key column {shard_col_name} not found."
+                                        )),
+                                    ));
+                                }
+
                                 shard_key.push(shard_col_name);
                             }
                         }
@@ -1814,11 +1845,12 @@ impl Ast for AbstractSyntaxTree {
                     let ast_child = self.nodes.get_node(*ast_child_id)?;
                     let plan_insert_id = if let Type::TargetColumns = ast_child.rule {
                         // insert into t (a, b, c) ...
-                        let mut col_names: Vec<&str> = Vec::with_capacity(ast_child.children.len());
+                        let mut selected_col_names: Vec<&str> =
+                            Vec::with_capacity(ast_child.children.len());
                         for col_id in &ast_child.children {
                             let col = self.nodes.get_node(*col_id)?;
                             if let Type::ColumnName = col.rule {
-                                col_names.push(col.value.as_ref().ok_or_else(|| {
+                                selected_col_names.push(col.value.as_ref().ok_or_else(|| {
                                     SbroadError::NotFound(
                                         Entity::Name,
                                         "of Column among the AST target columns (insert)".into(),
@@ -1831,6 +1863,30 @@ impl Ast for AbstractSyntaxTree {
                                 ));
                             }
                         }
+
+                        let rel = plan.relations.get(&relation).ok_or_else(|| {
+                            SbroadError::NotFound(
+                                Entity::Table,
+                                format!("{relation} among plan relations"),
+                            )
+                        })?;
+                        for column in &rel.columns {
+                            if let ColumnRole::Sharding = column.get_role() {
+                                continue;
+                            }
+                            if !column.is_nullable
+                                && !selected_col_names.contains(&column.name.as_str())
+                            {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Column,
+                                    Some(format!(
+                                        "NonNull column {} must be specified",
+                                        column.name
+                                    )),
+                                ));
+                            }
+                        }
+
                         let ast_rel_child_id = node.children.get(2).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Node,
@@ -1842,7 +1898,7 @@ impl Ast for AbstractSyntaxTree {
                         plan.add_insert(
                             &relation,
                             plan_rel_child_id,
-                            &col_names,
+                            &selected_col_names,
                             conflict_strategy,
                         )?
                     } else {

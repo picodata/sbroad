@@ -1,6 +1,6 @@
 use super::*;
 use crate::executor::engine::mock::RouterRuntimeMock;
-use crate::ir::relation::{ColumnRole, Type};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
@@ -10,22 +10,14 @@ use std::collections::HashMap;
 fn virtual_table_1() {
     let mut vtable = VirtualTable::new();
 
-    vtable.add_column(Column {
-        name: "name".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    vtable.add_column(column_integer_user_non_null(String::from("name")));
 
     vtable.add_tuple(vec![Value::from(1_u64)]);
 
     vtable.set_alias("test").unwrap();
 
     let expected = VirtualTable {
-        columns: vec![Column {
-            name: "name".into(),
-            r#type: Type::Integer,
-            role: ColumnRole::User,
-        }],
+        columns: vec![column_integer_user_non_null(String::from("name"))],
         tuples: vec![vec![Value::from(1_u64)]],
         name: Some(String::from("test")),
         primary_key: None,
@@ -39,16 +31,8 @@ fn virtual_table_1() {
 #[test]
 fn virtual_table_2() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    vtable.add_column(column_integer_user_non_null(String::from("a")));
+    vtable.add_column(column_integer_user_non_null(String::from("b")));
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
@@ -63,16 +47,8 @@ fn virtual_table_2() {
 
     let expected = VirtualTable {
         columns: vec![
-            Column {
-                name: "a".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
-            Column {
-                name: "b".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         tuples: vec![tuple1, tuple2],
         name: Some(String::from("t")),
@@ -89,16 +65,8 @@ fn virtual_table_2() {
 #[test]
 fn virtual_table_3() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    vtable.add_column(column_integer_user_non_null(String::from("a")));
+    vtable.add_column(column_integer_user_non_null(String::from("b")));
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
@@ -114,16 +82,8 @@ fn virtual_table_3() {
 
     let expected = VirtualTable {
         columns: vec![
-            Column {
-                name: "a".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
-            Column {
-                name: "b".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         tuples: vec![tuple1, tuple2],
         name: Some(String::from("t")),
@@ -149,16 +109,8 @@ fn vtable_rearrange_for_update() {
         new_sh_key_value.clone(),
         old_sh_key_value.clone(),
     ];
-    vtable.add_column(Column {
-        name: "a".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    vtable.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    vtable.add_column(column_integer_user_non_null(String::from("a")));
+    vtable.add_column(column_integer_user_non_null(String::from("b")));
     vtable.set_alias("t").unwrap();
     vtable.add_tuple(tuple);
 
@@ -180,16 +132,8 @@ fn vtable_rearrange_for_update() {
 
     let expected = VirtualTable {
         columns: vec![
-            Column {
-                name: "a".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
-            Column {
-                name: "b".into(),
-                r#type: Type::Integer,
-                role: ColumnRole::User,
-            },
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         tuples: vec![vec![pk_value.clone(), new_sh_key_value], vec![pk_value]],
         name: Some(String::from("t")),

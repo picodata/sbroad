@@ -1,5 +1,6 @@
 use crate::ir::operator::Bool;
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{SpaceEngine, Table, Type};
+use crate::ir::tests::column_user_non_null;
 use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Expression, Plan};
@@ -55,7 +56,7 @@ fn relational_post() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -66,7 +67,7 @@ fn relational_post() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -119,7 +120,7 @@ fn selection_subquery_dfs_post() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -132,8 +133,8 @@ fn selection_subquery_dfs_post() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("b", Type::Boolean, ColumnRole::User),
-            Column::new("c", Type::Boolean, ColumnRole::User),
+            column_user_non_null(String::from("b"), Type::Boolean),
+            column_user_non_null(String::from("c"), Type::Boolean),
         ],
         &["b"],
         &["b"],
@@ -207,8 +208,8 @@ fn subtree_dfs_post() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("c", Type::Boolean, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("c"), Type::Boolean),
         ],
         &["a", "c"],
         &["a", "c"],

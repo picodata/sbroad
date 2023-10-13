@@ -28,14 +28,14 @@ fn front_ivalid_sql1() {
 
 #[test]
 fn front_invalid_sql2() {
-    let query = r#"INSERT INTO "t" ("a") VALUES(1, 2)"#;
+    let query = r#"INSERT INTO "t" ("a", "b", "c") VALUES(1, 2, 3, 4)"#;
 
     let metadata = &RouterRuntimeMock::new();
     let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
 
     assert_eq!(
         SbroadError::UnexpectedNumberOfValues(
-            r#"invalid number of values: 2. Table "t" expects 1 column(s)."#.into()
+            r#"invalid number of values: 4. Table "t" expects 3 column(s)."#.into()
         ),
         plan_err
     );

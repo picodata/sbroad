@@ -4,7 +4,7 @@ use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::relation::{Column, ColumnRole, Type};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{LuaValue, Value};
 
@@ -89,17 +89,9 @@ fn empty_motion1_test() {
 fn t2_empty() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
-    virtual_table.add_column(Column {
-        name: "g".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("g")));
 
-    virtual_table.add_column(Column {
-        name: "h".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("h")));
 
     virtual_table.set_alias("\"t2\"").unwrap();
 

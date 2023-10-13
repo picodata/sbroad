@@ -7,6 +7,8 @@ use crate::collection;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::tests::{column_user_non_null, sharding_column};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 
@@ -19,10 +21,10 @@ fn scan_rel() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -57,10 +59,10 @@ fn scan_rel_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Number, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Number),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -93,10 +95,10 @@ fn projection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -150,10 +152,10 @@ fn selection() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -213,7 +215,7 @@ fn except() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -225,7 +227,7 @@ fn except() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -245,8 +247,8 @@ fn except() {
     let t3 = Table::new_seg(
         "t3",
         vec![
-            Column::new("a", Type::Unsigned, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Unsigned),
+            column_user_non_null(String::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["a"],
@@ -271,7 +273,7 @@ fn insert() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -284,9 +286,9 @@ fn insert() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Unsigned, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::Unsigned, ColumnRole::Sharding),
+            column_user_non_null(String::from("a"), Type::Unsigned),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            Column::new("c", Type::Unsigned, ColumnRole::Sharding, true),
         ],
         &["a"],
         &["a"],
@@ -334,7 +336,7 @@ fn union_all() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -345,7 +347,7 @@ fn union_all() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("a", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -364,8 +366,8 @@ fn union_all_col_amount_mismatch() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["a"],
@@ -379,7 +381,7 @@ fn union_all_col_amount_mismatch() {
     // Check errors for children with different amount of column
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("b", Type::Unsigned, ColumnRole::User)],
+        vec![column_user_non_null(String::from("b"), Type::Unsigned)],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
@@ -404,8 +406,8 @@ fn sub_query() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["b"],
@@ -452,7 +454,7 @@ fn selection_with_sub_query() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -464,7 +466,7 @@ fn selection_with_sub_query() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("b", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("b"))],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
@@ -509,9 +511,9 @@ fn join() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            sharding_column(),
         ],
         &["a"],
         &["a"],
@@ -524,9 +526,9 @@ fn join() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("c", Type::Boolean, ColumnRole::User),
-            Column::new("d", Type::Unsigned, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_user_non_null(String::from("c"), Type::Boolean),
+            column_user_non_null(String::from("d"), Type::Unsigned),
+            sharding_column(),
         ],
         &["d"],
         &["d"],
@@ -570,9 +572,9 @@ fn join_duplicate_columns() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            sharding_column(),
         ],
         &["a"],
         &["a"],
@@ -585,9 +587,9 @@ fn join_duplicate_columns() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("d", Type::Unsigned, ColumnRole::User),
-            Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("d"), Type::Unsigned),
+            sharding_column(),
         ],
         &["d"],
         &["d"],

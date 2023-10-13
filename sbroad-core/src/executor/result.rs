@@ -56,16 +56,54 @@ impl TryInto<Column> for &MetadataColumn {
 
     fn try_into(self) -> Result<Column, Self::Error> {
         match self.r#type.as_str() {
-            "boolean" => Ok(Column::new(&self.name, Type::Boolean, ColumnRole::User)),
-            "decimal" => Ok(Column::new(&self.name, Type::Decimal, ColumnRole::User)),
-            "double" => Ok(Column::new(&self.name, Type::Double, ColumnRole::User)),
-            "integer" => Ok(Column::new(&self.name, Type::Integer, ColumnRole::User)),
-            "number" | "numeric" => Ok(Column::new(&self.name, Type::Number, ColumnRole::User)),
-            "scalar" => Ok(Column::new(&self.name, Type::Scalar, ColumnRole::User)),
-            "string" | "text" | "varchar" => {
-                Ok(Column::new(&self.name, Type::String, ColumnRole::User))
-            }
-            "unsigned" => Ok(Column::new(&self.name, Type::Unsigned, ColumnRole::User)),
+            "boolean" => Ok(Column::new(
+                &self.name,
+                Type::Boolean,
+                ColumnRole::User,
+                true,
+            )),
+            "decimal" => Ok(Column::new(
+                &self.name,
+                Type::Decimal,
+                ColumnRole::User,
+                true,
+            )),
+            "double" => Ok(Column::new(
+                &self.name,
+                Type::Double,
+                ColumnRole::User,
+                true,
+            )),
+            "integer" => Ok(Column::new(
+                &self.name,
+                Type::Integer,
+                ColumnRole::User,
+                true,
+            )),
+            "number" | "numeric" => Ok(Column::new(
+                &self.name,
+                Type::Number,
+                ColumnRole::User,
+                true,
+            )),
+            "scalar" => Ok(Column::new(
+                &self.name,
+                Type::Scalar,
+                ColumnRole::User,
+                true,
+            )),
+            "string" | "text" | "varchar" => Ok(Column::new(
+                &self.name,
+                Type::String,
+                ColumnRole::User,
+                true,
+            )),
+            "unsigned" => Ok(Column::new(
+                &self.name,
+                Type::Unsigned,
+                ColumnRole::User,
+                true,
+            )),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some(format!("column type {}", self.r#type)),
@@ -118,7 +156,7 @@ impl ProducerResult {
         for col in &self.metadata {
             let column: Column = if possibly_incorrect_types {
                 let column_type = Type::new_from_possibly_incorrect(&col.r#type)?;
-                Column::new(&col.name, column_type, ColumnRole::User)
+                Column::new(&col.name, column_type, ColumnRole::User, true)
             } else {
                 col.try_into()?
             };

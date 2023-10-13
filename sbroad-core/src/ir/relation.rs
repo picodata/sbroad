@@ -153,7 +153,7 @@ pub enum ColumnRole {
 }
 
 /// Table column.
-#[derive(Default, PartialEq, Debug, Eq, Clone)]
+#[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
     pub name: String,
@@ -161,6 +161,20 @@ pub struct Column {
     pub r#type: Type,
     /// Column role.
     pub role: ColumnRole,
+    /// Column is_nullable status.
+    /// Possibly `None` (e.g. in case it's taken from Tarantool local query execution metatada).
+    pub is_nullable: bool,
+}
+
+impl Default for Column {
+    fn default() -> Self {
+        Column {
+            name: String::default(),
+            r#type: Type::default(),
+            role: ColumnRole::default(),
+            is_nullable: true,
+        }
+    }
 }
 
 impl From<Column> for Field {
@@ -240,11 +254,13 @@ impl<'de> Visitor<'de> for ColumnVisitor {
         let mut column_name = String::new();
         let mut column_type = String::new();
         let mut column_role = String::new();
+        let mut column_is_nullable = String::new();
         while let Some((key, value)) = map.next_entry::<String, String>()? {
             match key.as_str() {
                 "name" => column_name.push_str(&value),
                 "type" => column_type.push_str(&value.to_lowercase()),
                 "role" => column_role.push_str(&value.to_lowercase()),
+                "is_nullable" => column_is_nullable.push_str(&value.to_lowercase()),
                 _ => return Err(Error::custom(&format!("invalid column param: {key}"))),
             }
         }
@@ -254,16 +270,20 @@ impl<'de> Visitor<'de> for ColumnVisitor {
             _ => ColumnRole::User,
         };
 
+        let is_nullable = matches!(column_is_nullable.as_str(), "true");
+
         match column_type.as_str() {
-            "boolean" => Ok(Column::new(&column_name, Type::Boolean, role)),
-            "decimal" => Ok(Column::new(&column_name, Type::Decimal, role)),
-            "double" => Ok(Column::new(&column_name, Type::Double, role)),
-            "integer" => Ok(Column::new(&column_name, Type::Integer, role)),
-            "number" | "numeric" => Ok(Column::new(&column_name, Type::Number, role)),
-            "scalar" => Ok(Column::new(&column_name, Type::Scalar, role)),
-            "string" | "text" | "varchar" => Ok(Column::new(&column_name, Type::String, role)),
-            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role)),
-            "array" => Ok(Column::new(&column_name, Type::Array, role)),
+            "boolean" => Ok(Column::new(&column_name, Type::Boolean, role, is_nullable)),
+            "decimal" => Ok(Column::new(&column_name, Type::Decimal, role, is_nullable)),
+            "double" => Ok(Column::new(&column_name, Type::Double, role, is_nullable)),
+            "integer" => Ok(Column::new(&column_name, Type::Integer, role, is_nullable)),
+            "number" | "numeric" => Ok(Column::new(&column_name, Type::Number, role, is_nullable)),
+            "scalar" => Ok(Column::new(&column_name, Type::Scalar, role, is_nullable)),
+            "string" | "text" | "varchar" => {
+                Ok(Column::new(&column_name, Type::String, role, is_nullable))
+            }
+            "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role, is_nullable)),
+            "array" => Ok(Column::new(&column_name, Type::Array, role, is_nullable)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }
@@ -281,11 +301,12 @@ impl<'de> Deserialize<'de> for Column {
 impl Column {
     /// Column constructor.
     #[must_use]
-    pub fn new(n: &str, t: Type, role: ColumnRole) -> Self {
+    pub fn new(n: &str, t: Type, role: ColumnRole, is_nullable: bool) -> Self {
         Column {
             name: n.into(),
             r#type: t,
             role,
+            is_nullable,
         }
     }
 

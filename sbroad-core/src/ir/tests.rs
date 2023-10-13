@@ -4,6 +4,54 @@ use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::Path;
 
+/// Helper function to create `Column` object with given name and default:
+///
+/// * `type` = Integer
+/// * `is_nullable` = false
+/// * `role` = User
+/// Used only for tests purposes.
+#[must_use]
+#[cfg(test)]
+pub fn column_integer_user_non_null(name: String) -> Column {
+    Column {
+        name,
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+        is_nullable: false,
+    }
+}
+
+/// Helper function to create `Column` object with given name, type and default
+/// * `is_nullable` = false
+/// * `role` = User
+/// Used only for tests purposes.
+#[must_use]
+#[cfg(test)]
+pub fn column_user_non_null(name: String, r#type: Type) -> Column {
+    Column {
+        name,
+        r#type,
+        role: ColumnRole::User,
+        is_nullable: false,
+    }
+}
+
+/// Helper function to create sharding `Column` object with default
+/// * `is_nullable` = true
+/// * `role` = Sharding
+/// * `type` = Unsigned
+/// Used only for tests purposes.
+#[must_use]
+#[cfg(test)]
+pub fn sharding_column() -> Column {
+    Column {
+        name: String::from("bucket_id"),
+        r#type: Type::Unsigned,
+        role: ColumnRole::Sharding,
+        is_nullable: true,
+    }
+}
+
 #[test]
 fn plan_no_top() {
     let path = Path::new("")
@@ -38,7 +86,7 @@ fn get_node() {
 
     let t = Table::new_seg(
         "t",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![Column::new("a", Type::Boolean, ColumnRole::User, false)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,

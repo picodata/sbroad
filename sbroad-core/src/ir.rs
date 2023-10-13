@@ -1148,4 +1148,4 @@ impl Plan {
 pub mod api;
 mod explain;
 #[cfg(test)]
-mod tests;
+pub mod tests;

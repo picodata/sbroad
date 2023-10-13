@@ -4,17 +4,14 @@ use std::path::Path;
 use pretty_assertions::{assert_eq, assert_ne};
 
 use super::*;
+use crate::ir::tests::column_user_non_null;
 
 #[test]
 fn column() {
-    let a = Column {
-        name: String::from("a"),
-        r#type: Type::Boolean,
-        role: ColumnRole::User,
-    };
-    assert_eq!(a, Column::new("a", Type::Boolean, ColumnRole::User));
-    assert_ne!(a, Column::new("a", Type::String, ColumnRole::User));
-    assert_ne!(a, Column::new("b", Type::Boolean, ColumnRole::User));
+    let a = column_user_non_null(String::from("a"), Type::Boolean);
+    assert_eq!(a, column_user_non_null(String::from("a"), Type::Boolean));
+    assert_ne!(a, column_user_non_null(String::from("a"), Type::String));
+    assert_ne!(a, column_user_non_null(String::from("b"), Type::Boolean));
 }
 
 #[test]
@@ -22,10 +19,10 @@ fn table_seg() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -42,7 +39,7 @@ fn table_seg() {
 fn table_seg_name() {
     let t = Table::new_seg(
         "t",
-        vec![Column::new("a", Type::Boolean, ColumnRole::User)],
+        vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -57,10 +54,10 @@ fn table_seg_duplicate_columns() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean, ColumnRole::User),
-                Column::new("b", Type::Unsigned, ColumnRole::User),
-                Column::new("c", Type::String, ColumnRole::User),
-                Column::new("a", Type::String, ColumnRole::User),
+                column_user_non_null(String::from("a"), Type::Boolean),
+                column_user_non_null(String::from("b"), Type::Unsigned),
+                column_user_non_null(String::from("c"), Type::String),
+                column_user_non_null(String::from("a"), Type::String),
             ],
             &["b", "a"],
             &["b", "a"],
@@ -76,9 +73,9 @@ fn table_seg_dno_bucket_id_column() {
     let t1 = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -94,11 +91,11 @@ fn table_seg_dno_bucket_id_column() {
     let t2 = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("bucket_id", Type::String, ColumnRole::Sharding),
-            Column::new("bucket_id2", Type::String, ColumnRole::Sharding),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            Column::new("bucket_id", Type::String, ColumnRole::Sharding, false),
+            Column::new("bucket_id2", Type::String, ColumnRole::Sharding, false),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -118,10 +115,10 @@ fn table_seg_wrong_key() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("a", Type::Boolean, ColumnRole::User),
-                Column::new("b", Type::Unsigned, ColumnRole::User),
-                Column::new("c", Type::String, ColumnRole::User),
-                Column::new("d", Type::String, ColumnRole::User),
+                column_user_non_null(String::from("a"), Type::Boolean),
+                column_user_non_null(String::from("b"), Type::Unsigned),
+                column_user_non_null(String::from("c"), Type::String),
+                column_user_non_null(String::from("d"), Type::String),
             ],
             &["a", "e"],
             &["a", "e"],
@@ -138,8 +135,8 @@ fn table_seg_compound_type_in_key() {
         Table::new_seg(
             "t",
             vec![
-                Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding),
-                Column::new("a", Type::Array, ColumnRole::User),
+                Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, false),
+                column_user_non_null(String::from("a"), Type::Array),
             ],
             &["a"],
             &["a"],
@@ -158,12 +155,12 @@ fn table_seg_serialized() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Number, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
-            Column::new("e", Type::Integer, ColumnRole::User),
-            Column::new("f", Type::Unsigned, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Number),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(String::from("e"), Type::Integer),
+            column_user_non_null(String::from("f"), Type::Unsigned),
         ],
         &["a", "d"],
         &["a", "d"],
@@ -254,11 +251,7 @@ fn table_seg_serialized_no_columns() {
 
 #[test]
 fn column_msgpack_serialize() {
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::Boolean,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::Boolean);
 
     assert_eq!(
         vec![
@@ -269,11 +262,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::String,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::String);
 
     assert_eq!(
         vec![
@@ -284,11 +273,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::Integer);
 
     assert_eq!(
         vec![
@@ -299,11 +284,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::Unsigned,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::Unsigned);
 
     assert_eq!(
         vec![
@@ -314,11 +295,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::Number,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::Number);
 
     assert_eq!(
         vec![
@@ -332,11 +309,7 @@ fn column_msgpack_serialize() {
 
 #[test]
 fn column_msgpack_deserialize() {
-    let c = Column {
-        name: "name".into(),
-        r#type: Type::Boolean,
-        role: ColumnRole::User,
-    };
+    let c = column_user_non_null(String::from("name"), Type::Boolean);
 
     let expected_msgpack = vec![
         0x83, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79, 0x70,
@@ -357,10 +330,10 @@ fn table_converting() {
     let t = Table::new_seg(
         "t",
         vec![
-            Column::new("a", Type::Boolean, ColumnRole::User),
-            Column::new("b", Type::Unsigned, ColumnRole::User),
-            Column::new("c", Type::String, ColumnRole::User),
-            Column::new("d", Type::String, ColumnRole::User),
+            column_user_non_null(String::from("a"), Type::Boolean),
+            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(String::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],

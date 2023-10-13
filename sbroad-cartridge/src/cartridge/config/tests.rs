@@ -143,12 +143,17 @@ fn test_getting_table_segment() {
     let expected = Table::new_seg(
         "\"hash_testing\"",
         vec![
-            Column::new("\"identification_number\"", Type::Integer, ColumnRole::User),
-            Column::new("\"product_code\"", Type::String, ColumnRole::User),
-            Column::new("\"product_units\"", Type::Boolean, ColumnRole::User),
-            Column::new("\"sys_op\"", Type::Number, ColumnRole::User),
-            Column::new("\"detail\"", Type::Array, ColumnRole::User),
-            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding),
+            Column::new(
+                "\"identification_number\"",
+                Type::Integer,
+                ColumnRole::User,
+                false,
+            ),
+            Column::new("\"product_code\"", Type::String, ColumnRole::User, false),
+            Column::new("\"product_units\"", Type::Boolean, ColumnRole::User, false),
+            Column::new("\"sys_op\"", Type::Number, ColumnRole::User, false),
+            Column::new("\"detail\"", Type::Array, ColumnRole::User, false),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
         ],
         &["\"identification_number\"", "\"product_code\""],
         &["\"identification_number\""],
@@ -231,7 +236,7 @@ fn test_invalid_schema() {
             parts:
               - path: bucket_id
                 type: unsigned
-                is_nullable: false
+                is_nullable: true
         sharding_key:
           - FID
           - COMMON_ID

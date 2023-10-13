@@ -1,5 +1,6 @@
 use ahash::AHashMap;
 
+use itertools::enumerate;
 use std::{
     any::Any,
     cmp::Ordering,
@@ -628,9 +629,9 @@ pub fn dispatch(
                 for (motion_id, vtable) in vtables.map() {
                     if !vtable.get_bucket_index().is_empty() {
                         return Err(SbroadError::Invalid(
-                                Entity::Motion,
-                                Some(format!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!"))
-                            ));
+                            Entity::Motion,
+                            Some(format!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!")),
+                        ));
                     }
                 }
             }
@@ -650,6 +651,7 @@ pub fn dispatch(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn materialize_values(
     plan: &mut ExecutionPlan,
     motion_node_id: usize,
@@ -678,14 +680,36 @@ pub(crate) fn materialize_values(
     let child_node_ref = plan.get_mut_ir_plan().get_mut_node(child_id)?;
     let child_node = std::mem::replace(child_node_ref, Node::Parameter);
     if let Node::Relational(Relational::Values {
-        children, output, ..
+        ref children,
+        output,
+        ..
     }) = child_node
     {
         // Build a new virtual table (check that all the rows are made of constants only).
         let mut vtable = VirtualTable::new();
         vtable.get_mut_tuples().reserve(children.len());
+
+        let columns_len = if let Some(first_row_id) = children.first() {
+            let row_node = plan.get_ir_plan().get_relation_node(*first_row_id)?;
+            let Relational::ValuesRow { data, .. } = row_node else {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!("Expected ValuesRow, got {row_node:?}")),
+                ));
+            };
+            plan.get_ir_plan()
+                .get_expression_node(*data)?
+                .get_row_list()?
+                .len()
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("Values node {child_node:?} must contain children")),
+            ));
+        };
+        let mut nullable_column_indices = HashSet::with_capacity(columns_len);
         for row_id in children {
-            let row_node = plan.get_ir_plan().get_relation_node(row_id)?;
+            let row_node = plan.get_ir_plan().get_relation_node(*row_id)?;
             if let Relational::ValuesRow { data, children, .. } = row_node {
                 // Check that there are no subqueries in the values node.
                 // (If any we'll need to materialize them first with dispatch
@@ -719,6 +743,9 @@ pub(crate) fn materialize_values(
                     let column_node_ref = plan.get_mut_ir_plan().get_mut_node(column_id)?;
                     let column_node = std::mem::replace(column_node_ref, Node::Parameter);
                     if let Node::Expression(Expression::Constant { value, .. }) = column_node {
+                        if let Value::Null = value {
+                            nullable_column_indices.insert(idx);
+                        }
                         row.push(value);
                     } else {
                         return Err(SbroadError::Invalid(
@@ -746,13 +773,15 @@ pub(crate) fn materialize_values(
             .get_row_list()?;
         let columns = vtable.get_mut_columns();
         columns.reserve(output_cols.len());
-        for column_id in output_cols {
+        for (idx, column_id) in enumerate(output_cols) {
+            let is_nullable = nullable_column_indices.contains(&idx);
             let alias = plan.get_ir_plan().get_expression_node(*column_id)?;
             if let Expression::Alias { name, .. } = alias {
                 let column = Column {
                     name: name.clone(),
                     r#type: Type::Scalar,
                     role: ColumnRole::User,
+                    is_nullable,
                 };
                 columns.push(column);
             } else {
@@ -879,7 +908,7 @@ pub fn sharding_key_from_tuple<'tuple>(
                         Some(format!(
                             r#"the tuple {tuple:?} contains a "bucket_id" position {position} in a sharding key {sharding_positions:?}"#
                         )),
-                    ))
+                    ));
                 }
                 Ordering::Greater => *position - 1,
             };
@@ -1291,7 +1320,7 @@ fn execute_sharded_update(
                             return Err(SbroadError::Invalid(
                                 Entity::TupleBuilderCommand,
                                 Some(format!("got command {command:?} for update insert")),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -1384,7 +1413,7 @@ fn execute_local_update(
                     return Err(SbroadError::Invalid(
                         Entity::TupleBuilderCommand,
                         Some(format!("got command {command:?} for update")),
-                    ))
+                    ));
                 }
             }
         }
@@ -1601,7 +1630,7 @@ where
                                     Action::Insert,
                                     Some(Entity::Space),
                                     format!("{tnt_err}"),
-                                ))
+                                ));
                             }
                         }
                         // if either DoReplace or DoNothing was done,
@@ -1758,8 +1787,8 @@ pub fn sharding_key_from_map<'rec, S: ::std::hash::BuildHasher>(
             return Err(SbroadError::NotFound(
                 Entity::ShardingKey,
                 format!(
-                "(quoted) column {quoted_column:?} in the quoted map {quoted_map:?} (original map: {map:?})"
-            )));
+                    "(quoted) column {quoted_column:?} in the quoted map {quoted_map:?} (original map: {map:?})"
+                )));
         }
     }
     Ok(tuple)

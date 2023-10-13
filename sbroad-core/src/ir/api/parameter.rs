@@ -55,8 +55,9 @@ impl Plan {
         tree.populate_nodes(top_id);
         let nodes = tree.take_nodes();
 
+        let mut binded_params_counter = 0;
         if !self.raw_options.is_empty() {
-            self.bind_option_params(&mut params)?;
+            binded_params_counter = self.bind_option_params(&mut params)?;
         }
 
         // Transform parameters to values (plan constants). The result values are stored in the
@@ -77,6 +78,17 @@ impl Plan {
         // `param_set_params` is used during second plan traversal (nodes transformation).
         let mut param_node_ids = self.get_param_set();
         let mut param_node_ids_cloned = param_node_ids.clone();
+
+        if param_node_ids.len() - binded_params_counter > value_ids.len() {
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!(
+                    "Expected at least {} values for parameters. Got {}.",
+                    param_node_ids.len() - binded_params_counter,
+                    value_ids.len()
+                )),
+            ));
+        }
 
         // Closure to retrieve a corresponding value for a parameter node.
         let get_value = |pos: usize| -> Result<usize, SbroadError> {
@@ -295,17 +307,20 @@ impl Plan {
         Ok(())
     }
 
-    /// Bind params related to `Option` clause
+    /// Bind params related to `Option` clause.
+    /// Returns the number of params binded to options.
     ///
     /// # Errors
     /// - User didn't provide parameter value for corresponding option parameter
-    pub fn bind_option_params(&mut self, params: &mut Vec<Value>) -> Result<(), SbroadError> {
+    pub fn bind_option_params(&mut self, params: &mut Vec<Value>) -> Result<usize, SbroadError> {
         // Bind parameters in options to values.
         // Because the Option clause is the last clause in the
         // query the parameters are located in the end of params list.
+        let mut binded_params_counter = 0usize;
         for opt in self.raw_options.iter_mut().rev() {
             if opt.val.is_none() {
                 if let Some(v) = params.pop() {
+                    binded_params_counter += 1;
                     opt.val = Some(v);
                 } else {
                     return Err(SbroadError::Invalid(
@@ -318,6 +333,6 @@ impl Plan {
                 }
             }
         }
-        Ok(())
+        Ok(binded_params_counter)
     }
 }

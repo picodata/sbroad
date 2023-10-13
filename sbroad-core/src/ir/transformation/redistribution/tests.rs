@@ -1,6 +1,7 @@
 use super::*;
 use crate::ir::operator::Relational;
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{SpaceEngine, Table};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
 use crate::ir::Slices;
@@ -18,7 +19,7 @@ fn full_motion_less_for_sub_query() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
@@ -31,8 +32,8 @@ fn full_motion_less_for_sub_query() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         &["a"],
         &["a"],
@@ -82,8 +83,8 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let t1 = Table::new_seg(
         "t1",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         &["a"],
         &["a"],
@@ -96,7 +97,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
@@ -144,7 +145,7 @@ fn local_sub_query() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -156,7 +157,7 @@ fn local_sub_query() {
 
     let t2 = Table::new_seg(
         "t2",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -203,7 +204,7 @@ fn multiple_sub_queries() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -216,8 +217,8 @@ fn multiple_sub_queries() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         &["a"],
         &["a"],

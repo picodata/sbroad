@@ -3,7 +3,8 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, Relational};
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{Column, SpaceEngine, Table};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
 use crate::ir::{Node, Plan};
@@ -24,7 +25,7 @@ fn sub_query1() {
 
     let t1 = Table::new_seg(
         "t1",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -37,8 +38,8 @@ fn sub_query1() {
     let t2 = Table::new_seg(
         "t2",
         vec![
-            Column::new("a", Type::Integer, ColumnRole::User),
-            Column::new("b", Type::Integer, ColumnRole::User),
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
         ],
         &["a"],
         &["a"],
@@ -334,7 +335,7 @@ fn insert4() {
 
 #[test]
 fn insert5() {
-    let query = r#"INSERT INTO "t" ("c", "d") SELECT "a", "b" FROM "t""#;
+    let query = r#"INSERT INTO "t" ("c", "d", "b") SELECT "a", "c", "b" FROM "t""#;
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
@@ -344,10 +345,7 @@ fn insert5() {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(MotionKey {
-                targets: vec![
-                    Target::Value(Column::default_value()),
-                    Target::Value(Column::default_value()),
-                ]
+                targets: vec![Target::Value(Column::default_value()), Target::Reference(2),]
             })
         );
     } else {
@@ -357,7 +355,7 @@ fn insert5() {
 
 #[test]
 fn insert6() {
-    let query = r#"INSERT INTO "t" ("a", "c") SELECT "a", "b" FROM "t""#;
+    let query = r#"INSERT INTO "t" ("c", "b") SELECT "b", "c" FROM "t""#;
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
@@ -367,7 +365,7 @@ fn insert6() {
         assert_eq!(
             *policy,
             MotionPolicy::Segment(MotionKey {
-                targets: vec![Target::Reference(0), Target::Value(Column::default_value()),]
+                targets: vec![Target::Value(Column::default_value()), Target::Reference(1)]
             })
         );
     } else {

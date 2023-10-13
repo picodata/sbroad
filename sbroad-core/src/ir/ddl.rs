@@ -6,11 +6,21 @@ use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
     pub name: String,
     pub data_type: Type,
     pub is_nullable: bool,
+}
+
+impl Default for ColumnDef {
+    fn default() -> Self {
+        Self {
+            name: String::default(),
+            data_type: Type::default(),
+            is_nullable: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

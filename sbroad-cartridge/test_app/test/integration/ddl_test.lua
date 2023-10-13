@@ -219,8 +219,8 @@ g.test_create_table = function()
         "sbroad.execute",
         { [[
             CREATE TABLE t (
-                a INT,
-                b TEXT,
+                a INT NOT NULL,
+                b TEXT NOT NULL,
                 PRIMARY KEY (a, b)
             )
             USING memtx

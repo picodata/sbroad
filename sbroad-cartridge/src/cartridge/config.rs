@@ -121,6 +121,17 @@ impl RouterConfiguration {
                                 ))
                             }
                         };
+                        let is_nullable: bool = match val["is_nullable"].as_bool() {
+                            Some(b) => b,
+                            None => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::ClusterSchema,
+                                    Some(format!(
+                                    "column is_nullable of table {current_space_name} is invalid"
+                                )),
+                                ))
+                            }
+                        };
                         let qualified_name = normalize_name_from_schema(name);
                         debug!(
                             Option::from("configuration parsing"),
@@ -133,7 +144,7 @@ impl RouterConfiguration {
                         } else {
                             ColumnRole::User
                         };
-                        let col = Column::new(&qualified_name, t, role);
+                        let col = Column::new(&qualified_name, t, role, is_nullable);
                         result.push(col);
                     }
                     result

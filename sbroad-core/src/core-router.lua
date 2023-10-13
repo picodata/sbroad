@@ -197,11 +197,15 @@ end
 _G.group_buckets_by_replicasets = function(buckets)
     local map = {}
     for _, bucket_id in pairs(buckets) do
-        local rs = vshard.router.route(bucket_id).uuid
-        if map[rs] then
-            table.insert(map[rs], bucket_id)
+        local rs, err = vshard.router.route(bucket_id)
+        if err ~= nil then
+            return nil, err
+        end
+        local uuid = rs.uuid
+        if map[uuid] then
+            table.insert(map[uuid], bucket_id)
         else
-            map[rs] = {bucket_id}
+            map[uuid] = {bucket_id}
         end
     end
 

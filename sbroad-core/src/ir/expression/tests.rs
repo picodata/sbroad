@@ -1,6 +1,7 @@
+use crate::ir::tests::column_integer_user_non_null;
 use pretty_assertions::assert_eq;
 
-use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
+use crate::ir::relation::{SpaceEngine, Table};
 use crate::ir::value::Value;
 use crate::ir::{Plan, SbroadError};
 
@@ -28,7 +29,7 @@ fn rel_nodes_from_reference_in_scan() {
 
     let t = Table::new_seg(
         "t",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -50,7 +51,7 @@ fn rel_nodes_from_reference_in_proj() {
 
     let t = Table::new_seg(
         "t",
-        vec![Column::new("a", Type::Integer, ColumnRole::User)],
+        vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,

@@ -2,6 +2,8 @@ use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::executor::engine::mock::RouterRuntimeMock;
+use crate::ir::relation::Type;
+use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::Snapshot;
 
@@ -95,11 +97,10 @@ fn exec_plan_subtree_two_stage_groupby_test() {
         .unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "FIRST_NAME".into(),
-        r#type: Type::String,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_user_non_null(
+        String::from("FIRST_NAME"),
+        Type::String,
+    ));
 
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
@@ -161,21 +162,18 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "column_12".into(),
-        r#type: Type::String,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "column_13".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "column_14".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_user_non_null(
+        String::from("column_12"),
+        Type::String,
+    ));
+    virtual_table.add_column(column_user_non_null(
+        String::from("column_13"),
+        Type::Integer,
+    ));
+    virtual_table.add_column(column_user_non_null(
+        String::from("column_14"),
+        Type::Integer,
+    ));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -253,56 +251,19 @@ fn exec_plan_subtree_aggregates() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "sys_op".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "sum_42".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_37".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "sum_49".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_51".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "group_concat_58".into(),
-        r#type: Type::String,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_61".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "total_64".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "min_67".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "max_70".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("sys_op")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("sum_42")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_37")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("sum_49")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_51")));
+    virtual_table.add_column(column_user_non_null(
+        String::from("group_concat_58"),
+        Type::String,
+    ));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_61")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("total_64")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("min_67")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("max_70")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -381,16 +342,8 @@ fn exec_plan_subtree_aggregates_no_groupby() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "column_19".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_13".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("column_19")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_13")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -609,11 +562,7 @@ fn exec_plan_subtree_count_asterisk() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "count_13".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_13")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -681,21 +630,9 @@ fn exec_plan_subtree_having() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "column_63".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "column_12".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_58".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("column_63")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("column_12")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_58")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -775,21 +712,9 @@ fn exec_plan_subtree_having_without_groupby() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "column_63".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "column_12".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "count_58".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("column_63")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("column_12")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("count_58")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();

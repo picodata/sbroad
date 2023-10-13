@@ -6,7 +6,7 @@ use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
-use crate::ir::relation::{Column, ColumnRole, Type};
+use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 
 use crate::ir::value::{LuaValue, Value};
@@ -406,16 +406,8 @@ fn join_linker2_test() {
         .unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "id1".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "id2".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("id1")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("id2")));
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
     virtual_table.set_alias("\"t2\"").unwrap();
@@ -478,16 +470,8 @@ fn join_linker3_test() {
         .unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(Column {
-        name: "id1".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_table.add_column(Column {
-        name: "FIRST_NAME".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from("id1")));
+    virtual_table.add_column(column_integer_user_non_null(String::from("FIRST_NAME")));
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
     virtual_table.set_alias("\"t2\"").unwrap();
@@ -549,11 +533,7 @@ fn join_linker4_test() {
         .position(0)
         .unwrap();
     let mut virtual_t2 = VirtualTable::new();
-    virtual_t2.add_column(Column {
-        name: "r_id".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_t2.add_column(column_integer_user_non_null(String::from("r_id")));
     virtual_t2.add_tuple(vec![Value::from(1_u64)]);
     virtual_t2.add_tuple(vec![Value::from(2_u64)]);
     virtual_t2.set_alias("\"T2\"").unwrap();
@@ -575,11 +555,7 @@ fn join_linker4_test() {
         .position(1)
         .unwrap();
     let mut virtual_sq = VirtualTable::new();
-    virtual_sq.add_column(Column {
-        name: "fn".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_sq.add_column(column_integer_user_non_null(String::from("fn")));
     virtual_sq.add_tuple(vec![Value::from(2_u64)]);
     virtual_sq.add_tuple(vec![Value::from(3_u64)]);
     if let MotionPolicy::Segment(key) =
@@ -662,11 +638,7 @@ on q."f" = "t1"."a""#;
         .position(0)
         .unwrap();
     let mut virtual_t2 = VirtualTable::new();
-    virtual_t2.add_column(Column {
-        name: "b".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_t2.add_column(column_integer_user_non_null(String::from("b")));
     virtual_t2.set_alias("\"t3\"").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
@@ -686,16 +658,8 @@ on q."f" = "t1"."a""#;
         .position(0)
         .unwrap();
     let mut virtual_sq = VirtualTable::new();
-    virtual_sq.add_column(Column {
-        name: "f".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
-    virtual_sq.add_column(Column {
-        name: "B".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_sq.add_column(column_integer_user_non_null(String::from("f")));
+    virtual_sq.add_column(column_integer_user_non_null(String::from("B")));
     virtual_sq.set_alias("Q").unwrap();
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
@@ -895,11 +859,9 @@ fn sharding_column2_test() {
 fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
-    virtual_table.add_column(Column {
-        name: "identification_number".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_table.add_column(column_integer_user_non_null(String::from(
+        "identification_number",
+    )));
 
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64)]);
@@ -964,11 +926,7 @@ fn groupby_linker_test() {
         "Expected Buckets::All for local groupby"
     );
     let mut virtual_t1 = VirtualTable::new();
-    virtual_t1.add_column(Column {
-        name: "id".into(),
-        r#type: Type::Integer,
-        role: ColumnRole::User,
-    });
+    virtual_t1.add_column(column_integer_user_non_null(String::from("id")));
 
     let mut buckets: Vec<u64> = vec![];
     let tuples: Vec<Vec<Value>> = vec![vec![Value::from(1_u64)], vec![Value::from(2_u64)]];
