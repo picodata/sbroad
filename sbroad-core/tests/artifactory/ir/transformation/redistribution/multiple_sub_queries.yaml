@@ -306,7 +306,7 @@ nodes:
         Row:
           list:
             - 48
-          distribution: Replicated
+          distribution: Global
     - Relational:
         Motion:
           children:

@@ -55,7 +55,7 @@ impl TryFrom<&MotionKey> for KeySet {
                         Action::Create,
                         Some(Entity::DistributionKey),
                         format!("found value target in motion key: {v}"),
-                    ))
+                    ));
                 }
             }
         }
@@ -89,25 +89,28 @@ impl From<HashSet<Key, RepeatableState>> for KeySet {
 /// Tuple distribution in the cluster.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Distribution {
-    /// A tuple can be located on any data node.
+    /// The output of relational operator with this distribution
+    /// can be located on several storages (maybe zero or one).
     /// Example: projection removes the segment key columns.
     Any,
-    /// A tuple is located on all data nodes and on coordinator
-    /// (constants).
+    /// The output of relational operator with this distribution
+    /// can be located on several storages (maybe zero or one).
+    /// But if the data is present on the node, it is located
+    /// as if it is a sharded by any of the keys in the keyset.
     ///
-    /// **Note**: the same data may appear with different rows number on different storages.
-    /// E.g. when we execute `select 1 from "t"`, where "t" is sharded on two storages (s1 contains
-    /// 1 row and s2 contains 2 rows), we will get upper Projection output row with distribution
-    /// `Replicated`, but on different storages it will have different number of rows.
-    Replicated,
-    /// Tuple distribution is set by the distribution key.
     /// Example: tuples from the segmented table.
     Segment {
         /// A set of distribution keys (we can have multiple keys after join)
         keys: KeySet,
     },
-    /// A tuple is located exactly only on one node
+    /// A subtree with relational operator that has this distribution is guaranteed
+    /// to be executed on a single node.
     Single,
+    /// If subtree which top has `Global` distribution is executed on several nodes,
+    /// then on each node output table will be exactly the same table.
+    ///
+    /// Example: scan of global tables, motion with policy full.
+    Global,
 }
 
 impl Distribution {
@@ -118,14 +121,16 @@ impl Distribution {
         right: &Distribution,
     ) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
+            (Distribution::Single, Distribution::Global)
+            | (Distribution::Global, Distribution::Single) => Distribution::Single,
             (Distribution::Single, _) | (_, Distribution::Single) => {
-                 return Err(SbroadError::Invalid(
-                     Entity::Distribution,
-                     Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))))   
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
-            (Distribution::Replicated, _) | (_, Distribution::Replicated) => {
-                Distribution::Replicated
+            (Distribution::Global, _) | (_, Distribution::Global) => {
+                unimplemented!()
             }
             (
                 Distribution::Segment {
@@ -155,15 +160,15 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))))
+                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
-            (Distribution::Any, Distribution::Any | Distribution::Replicated)
-            | (Distribution::Replicated, Distribution::Any) => Distribution::Any,
-            (Distribution::Replicated, Distribution::Replicated) => Distribution::Replicated,
-            (Distribution::Any | Distribution::Replicated, Distribution::Segment { .. }) => {
+            (Distribution::Any, Distribution::Any) => Distribution::Any,
+            // Currently Global distribution is possible only from
+            // Motion node, that appeared after conflict resolution.
+            (Distribution::Global, _) | (Distribution::Any, Distribution::Segment { .. }) => {
                 right.clone()
             }
-            (Distribution::Segment { .. }, Distribution::Any | Distribution::Replicated) => {
+            (_, Distribution::Global) | (Distribution::Segment { .. }, Distribution::Any) => {
                 left.clone()
             }
             (
@@ -310,25 +315,16 @@ impl Plan {
 
         let mut parent_node = None;
         let mut only_compound_exprs = true;
-        let mut contains_non_const_expr = false;
         for id in row_children.iter() {
             let child_id = row_child_id(*id)?;
-            match self.get_expression_node(child_id)? {
-                Expression::Reference { parent, .. } => {
-                    parent_node = *parent;
-                    only_compound_exprs = false;
-                    break;
-                }
-                Expression::Constant { .. } => {
-                    only_compound_exprs = false;
-                }
-                _ => {
-                    contains_non_const_expr = true;
-                }
+            if let Expression::Reference { parent, .. } = self.get_expression_node(child_id)? {
+                parent_node = *parent;
+                only_compound_exprs = false;
+                break;
             }
         }
 
-        // if node's output consists ONLY of non-const expressions,
+        // if node's output consists ONLY of compound expressions,
         // we can't make any assumptions about its distribution.
         // e.g select a + b from t
         // Here Projection must have Distribution::Any
@@ -342,16 +338,7 @@ impl Plan {
         let parent_id: usize = if let Some(parent_id) = parent_node {
             parent_id
         } else {
-            if contains_non_const_expr {
-                // Row does not contain standalone references, but
-                // contains some non-const expression:
-                // select a+b, 1 from t
-                self.set_dist(row_id, Distribution::Any)?;
-            } else {
-                // All children are constants:
-                // select 1 from t
-                self.set_const_dist(row_id)?;
-            }
+            self.set_dist(row_id, Distribution::Any)?;
             return Ok(());
         };
         let parent = self.get_relation_node(parent_id)?;
@@ -388,25 +375,6 @@ impl Plan {
                         ref_map.insert((referred_id, *position).into(), parent_column_pos);
                     }
                 }
-            }
-            // The parent node is VALUES.
-            if let Relational::Values { .. } = parent {
-                let mut dist = Distribution::Replicated;
-                for child_id in ref_nodes {
-                    let right_dist = self.dist_from_child(child_id, &ref_map)?;
-                    dist = Distribution::union_except(&dist, &right_dist)?;
-                }
-                let output = self.get_mut_expression_node(row_id)?;
-                if let Expression::Row {
-                    ref mut distribution,
-                    ..
-                } = output
-                {
-                    if distribution.is_none() {
-                        *distribution = Some(dist);
-                    }
-                }
-                return Ok(());
             }
 
             match ref_nodes {
@@ -495,11 +463,11 @@ impl Plan {
                         return Err(SbroadError::Invalid(
                             Entity::Distribution,
                             Some("distribution is uninitialized".to_string()),
-                        ))
+                        ));
                     }
                     Some(Distribution::Single) => return Ok(Distribution::Single),
                     Some(Distribution::Any) => return Ok(Distribution::Any),
-                    Some(Distribution::Replicated) => return Ok(Distribution::Replicated),
+                    Some(Distribution::Global) => return Ok(Distribution::Global),
                     Some(Distribution::Segment { keys }) => {
                         let mut new_keys: HashSet<Key, RepeatableState> =
                             HashSet::with_hasher(RepeatableState);
@@ -532,14 +500,6 @@ impl Plan {
             }
         }
         Err(SbroadError::Invalid(Entity::Relational, None))
-    }
-
-    /// Sets row distribution to replicated.
-    ///
-    /// # Errors
-    /// - Node is not of a row type.
-    pub fn set_const_dist(&mut self, row_id: usize) -> Result<(), SbroadError> {
-        self.set_dist(row_id, Distribution::Replicated)
     }
 
     /// Sets the `Distribution` of row to given one
@@ -613,7 +573,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,
                     Some("expected Except, UnionAll or InnerJoin".to_string()),
-                ))
+                ));
             }
         };
         let expr = self.get_mut_expression_node(row_id)?;

@@ -1562,6 +1562,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_union_all_id);
                 }
                 Type::ValuesRow => {
+                    // TODO(ars): check that all row elements are constants
                     let ast_child_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues("Values Row has no children.".into())
                     })?;

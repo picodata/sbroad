@@ -1299,10 +1299,8 @@ impl Plan {
                     join_kind,
                 )
             }
-            (Distribution::Replicated | Distribution::Any, Distribution::Single) => {
-                (MotionPolicy::None, MotionPolicy::Full)
-            }
-            (Distribution::Single, Distribution::Replicated | Distribution::Any) => {
+            (Distribution::Any, Distribution::Single) => (MotionPolicy::None, MotionPolicy::Full),
+            (Distribution::Single, Distribution::Any) => {
                 if let JoinKind::LeftOuter = join_kind {
                     // outer table can't be safely broadcasted in case of LeftJoin see
                     // https://git.picodata.io/picodata/picodata/sbroad/-/issues/248
@@ -1527,7 +1525,7 @@ impl Plan {
             }
         }
         if let Relational::Values { .. } = self.get_relation_node(child_id)? {
-            if let Distribution::Replicated = child_dist {
+            if let Distribution::Any = child_dist {
                 map.add_child(
                     child_id,
                     MotionPolicy::LocalSegment(motion_key),
@@ -1734,11 +1732,15 @@ impl Plan {
                 // sub queries.
                 Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
-                | Relational::Values { output, .. }
                 | Relational::GroupBy { output, .. }
                 | Relational::Having { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
+                }
+                Relational::Values { output, .. } => {
+                    // TODO(ars): replace with Global, when it is fully
+                    // supported.
+                    self.set_dist(output, Distribution::Any)?;
                 }
                 Relational::Projection {
                     output: proj_output_id,

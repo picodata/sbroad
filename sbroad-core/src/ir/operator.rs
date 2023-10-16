@@ -1351,7 +1351,7 @@ impl Plan {
                 }
             }
             MotionPolicy::Full => {
-                self.set_const_dist(output)?;
+                self.set_dist(output, Distribution::Global)?;
             }
             MotionPolicy::Local => {
                 self.set_dist(output, Distribution::Any)?;
