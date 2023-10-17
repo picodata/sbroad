@@ -309,8 +309,8 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
-            Column::new("\"a\"", Type::Integer, ColumnRole::User),
-            Column::new("\"b\"", Type::Integer, ColumnRole::User),
+            Column::new("\"a\"", Type::Integer, ColumnRole::User, false),
+            Column::new("\"b\"", Type::Integer, ColumnRole::User, false),
         ];
         let sharding_key: &[&str] = &[];
         let primary_key: &[&str] = &["\"a\""];

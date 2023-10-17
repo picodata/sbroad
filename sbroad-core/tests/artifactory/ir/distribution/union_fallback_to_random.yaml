@@ -111,7 +111,7 @@ relations:
       name: t1
       kind:
         ShardedSpace:
-          shard_key:
+          sharding_key:
             positions:
               - 0
           engine: Memtx
@@ -127,7 +127,7 @@ relations:
       name: t2
       kind:
         ShardedSpace:
-          shard_key:
+          sharding_key:
             positions:
               - 1
           engine: Memtx

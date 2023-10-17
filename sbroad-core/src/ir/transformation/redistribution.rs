@@ -10,6 +10,7 @@ use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
+use crate::ir::relation::TableKind;
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
     BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
@@ -523,17 +524,6 @@ impl Plan {
         let bool_op = BoolOp::from_expr(self, op_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
         let right = self.get_additional_sq(rel_id, bool_op.right)?;
-        let is_global_child = {
-            let d = self.get_distribution(
-                self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
-            )?;
-            matches!(d, Distribution::Global)
-        };
-        if (left.is_some() || right.is_some()) && is_global_child {
-            return Err(SbroadError::UnsupportedOpForGlobalTables(
-                "Subquery in condition".to_string(),
-            ));
-        }
         match left {
             Some(left_sq) => {
                 match right {
@@ -960,18 +950,28 @@ impl Plan {
     pub(crate) fn check_global_tbl_support(&self, rel_id: usize) -> Result<(), SbroadError> {
         let node = self.get_relation_node(rel_id)?;
         match node {
-            Relational::Delete { .. }
-            | Relational::Insert { .. }
-            | Relational::Update { .. }
-            | Relational::Values { .. }
-            | Relational::GroupBy { .. }
-            | Relational::Having { .. } => {
+            Relational::Values { .. } | Relational::GroupBy { .. } | Relational::Having { .. } => {
                 let child_dist = self.get_distribution(
                     self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
                 )?;
                 if let Distribution::Global = child_dist {
                     return Err(SbroadError::UnsupportedOpForGlobalTables(
                         node.name().to_string(),
+                    ));
+                }
+            }
+            Relational::Delete { relation, .. }
+            | Relational::Update { relation, .. }
+            | Relational::Insert { relation, .. } => {
+                // Reading from global table for dml is allowed,
+                // but updating/inserting/deleting from global table
+                // is not: it must be done via cas picodata api.
+                if matches!(
+                    self.get_relation_or_error(relation.as_str())?.kind,
+                    TableKind::GlobalSpace
+                ) {
+                    return Err(SbroadError::UnsupportedOpForGlobalTables(
+                        node.name().into(),
                     ));
                 }
             }
@@ -991,10 +991,27 @@ impl Plan {
                     ));
                 }
             }
+            Relational::Selection { children, .. } => {
+                // Currently only Projection + Selection without SQs is supported.
+                let has_sq = children.len() > 1;
+                if has_sq {
+                    let child_dist = self.get_distribution(
+                        self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
+                    )?;
+                    let sq_dist = self.get_distribution(
+                        self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
+                    )?;
+                    if matches!(
+                        (child_dist, sq_dist),
+                        (Distribution::Global, _) | (_, Distribution::Global)
+                    ) {
+                        return Err(SbroadError::UnsupportedOpForGlobalTables("Subquery".into()));
+                    }
+                }
+            }
             Relational::Projection { .. }
             | Relational::ScanRelation { .. }
             | Relational::ValuesRow { .. }
-            | Relational::Selection { .. }
             | Relational::ScanSubQuery { .. }
             | Relational::Motion { .. } => {}
         }
@@ -1143,7 +1160,7 @@ impl Plan {
                             return Err(SbroadError::Unsupported(
                                 Entity::Operator,
                                 Some("unsupported boolean operation, expected And or Or".into()),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -1182,7 +1199,7 @@ impl Plan {
                     return Err(SbroadError::Unsupported(
                         Entity::Operator,
                         Some("unsupported boolean operation".into()),
-                    ))
+                    ));
                 }
             };
             inner_map.insert(node_id, new_inner_policy.clone());
@@ -1641,7 +1658,7 @@ impl Plan {
                             }
                             let key = left_keys.iter().next().ok_or_else(|| SbroadError::Invalid(
                                 Entity::Distribution,
-                                Some("left child's segment distribution is invalid: no keys found in the set".into())
+                                Some("left child's segment distribution is invalid: no keys found in the set".into()),
                             ))?;
                             map.add_child(
                                 *right,

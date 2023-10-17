@@ -1,6 +1,6 @@
 columns: ~
 name: t
-shard_key:
+sharding_key:
   positions:
     - 0
 primary_key:

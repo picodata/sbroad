@@ -404,7 +404,7 @@ relations:
       name: t
       kind:
         ShardedSpace:
-          shard_key:
+          sharding_key:
             positions:
               - 0
           engine: Memtx

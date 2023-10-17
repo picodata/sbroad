@@ -80,7 +80,7 @@ relations:
           type: Boolean
         - name: b
           type: Number
-      shard_key:
+      sharding_key:
         positions:
           - 0
       primary_key:
@@ -89,7 +89,7 @@ relations:
       name: t
       kind:
         ShardedSpace:
-          shard_key:
+          sharding_key:
             positions:
               - 0
           engine: Memtx

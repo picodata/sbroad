@@ -120,23 +120,18 @@ impl Distribution {
         right: &Distribution,
     ) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
-            (Distribution::Single, Distribution::Global)
-            | (Distribution::Global, Distribution::Single) => Distribution::Single,
-            (Distribution::Global, _) | (_, Distribution::Global) => {
-                return Err(SbroadError::Unsupported(
-                    Entity::Query,
-                    Some("union/except is not supported for global tables!".into())
-                ))
-            }
+            // Currently Global distribution may come
+            // only from Motion(Full). The check for
+            // reading from global tables is done in
+            // conflict resolution.
+            (Distribution::Global, _) => right.clone(),
+            (_, Distribution::Global) => left.clone(),
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
                     Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
-            (Distribution::Global, _) | (_, Distribution::Global) => {
-                unimplemented!()
-            }
             (
                 Distribution::Segment {
                     keys: keys_left, ..
@@ -175,12 +170,6 @@ impl Distribution {
             }
             (_, Distribution::Global) | (Distribution::Segment { .. }, Distribution::Any) => {
                 left.clone()
-            }
-            (Distribution::Global, _) | (_, Distribution::Global) => {
-                return Err(SbroadError::Unsupported(
-                    Entity::Query,
-                    Some("join is not supported for global tables!".into())
-                ))
             }
             (
                 Distribution::Segment {

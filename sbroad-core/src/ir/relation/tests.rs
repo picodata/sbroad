@@ -235,7 +235,7 @@ fn table_seg_serialized_no_key() {
     assert_eq!(t.unwrap_err(), SbroadError::FailedTo(
         Action::Serialize,
         Some(Entity::Table),
-        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 118, line: 10, col: 15 }, path: \"kind.ShardedSpace.shard_key\" }))".into()),
+        "Message(\"invalid type: unit value, expected struct Key\", Some(Pos { marker: Marker { index: 121, line: 10, col: 18 }, path: \"kind.ShardedSpace.sharding_key\" }))".into()),
     );
 }
 

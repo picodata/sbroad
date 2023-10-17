@@ -2847,9 +2847,9 @@ fn front_sql_check_global_tbl_support() {
         "expected sharded table",
     );
     check_error(
-        r#"insert into "t3" select * from "global_t""#,
+        r#"insert into "global_t" values (1, 1)"#,
         metadata,
-        global_tbl_err!("Insert"),
+        "expected sharded table",
     );
     check_error(
         r#"delete from "global_t""#,
@@ -2869,13 +2869,17 @@ fn front_sql_check_global_tbl_support() {
     check_error(
         r#"select * from "global_t" where "a" in (select sum("a") from "t3")"#,
         metadata,
-        global_tbl_err!("Subquery in condition"),
+        global_tbl_err!("Subquery"),
+    );
+    check_error(
+        r#"select * from "t3" where "a" in (select "a" as "a1" from "global_t")"#,
+        metadata,
+        global_tbl_err!("Subquery"),
     );
 
     fn check_error(input: &str, metadata: &RouterConfigurationMock, expected_err: &str) {
         let err = build(input, metadata).unwrap_err();
 
-        println!("{}", err.to_string());
         assert_eq!(true, err.to_string().contains(expected_err));
 
         fn build(input: &str, metadata: &RouterConfigurationMock) -> Result<(), SbroadError> {

@@ -395,7 +395,10 @@ pub struct Table {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum TableKind {
-    ShardedSpace { shard_key: Key, engine: SpaceEngine },
+    ShardedSpace {
+        sharding_key: Key,
+        engine: SpaceEngine,
+    },
     GlobalSpace,
     SystemSpace,
 }
@@ -468,7 +471,7 @@ impl Table {
                 })
                 .collect::<Result<Vec<usize>, _>>()?;
             TableKind::ShardedSpace {
-                shard_key: Key::new(shard_positions),
+                sharding_key: Key::new(shard_positions),
                 engine,
             }
         };
@@ -524,7 +527,11 @@ impl Table {
             ));
         }
 
-        if let TableKind::ShardedSpace { shard_key, .. } = &table.kind {
+        if let TableKind::ShardedSpace {
+            sharding_key: shard_key,
+            ..
+        } = &table.kind
+        {
             let in_range = shard_key.positions.iter().all(|pos| *pos < cols.len());
 
             if !in_range {
@@ -611,7 +618,10 @@ impl Table {
     /// - The table is global
     pub fn get_sk(&self) -> Result<&[usize], SbroadError> {
         match &self.kind {
-            TableKind::ShardedSpace { shard_key, .. } => Ok(&shard_key.positions),
+            TableKind::ShardedSpace {
+                sharding_key: shard_key,
+                ..
+            } => Ok(&shard_key.positions),
             TableKind::GlobalSpace | TableKind::SystemSpace => Err(SbroadError::Invalid(
                 Entity::Table,
                 Some(format!("expected sharded table. Name: {}", self.name)),

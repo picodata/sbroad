@@ -77,7 +77,7 @@ relations:
       name: t
       kind:
         ShardedSpace:
-          shard_key:
+          sharding_key:
             positions:
               - 1
               - 0

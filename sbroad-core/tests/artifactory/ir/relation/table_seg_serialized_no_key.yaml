@@ -7,5 +7,5 @@ primary_key:
     - 0
 kind:
   ShardedSpace:
-    shard_key: ~
+    sharding_key: ~
     engine: Memtx

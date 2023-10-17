@@ -18,7 +18,7 @@ primary_key:
     - 3
 kind:
   ShardedSpace:
-    shard_key:
+    sharding_key:
       positions:
         - 0
         - 3
