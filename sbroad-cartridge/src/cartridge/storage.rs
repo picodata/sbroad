@@ -201,7 +201,7 @@ impl Vshard for StorageRuntime {
         ))
     }
 
-    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the cartridge runtime".to_string()),

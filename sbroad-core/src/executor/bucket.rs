@@ -1,3 +1,5 @@
+use itertools::FoldWhile::{Continue, Done};
+use itertools::Itertools;
 use std::collections::HashSet;
 
 use crate::errors::{Action, Entity, SbroadError};
@@ -23,11 +25,8 @@ pub enum Buckets {
     All,
     // A filtered set of buckets.
     Filtered(HashSet<u64, RepeatableState>),
-    // Execute query only on a single node.
-    Single,
-    // Execute query locally on the router.
-    // Relevant only for picodata.
-    Local,
+    // Execute query on any single node, maybe locally.
+    Any,
 }
 
 impl Buckets {
@@ -55,15 +54,6 @@ impl Buckets {
     /// - Buckets that can't be conjucted
     pub fn conjuct(&self, buckets: &Buckets) -> Result<Buckets, SbroadError> {
         let buckets = match (self, buckets) {
-            // We have Buckets::Single only for motion subtree root, we do not have any leafs
-            // or internal nodes that produce Buckets::Single
-            (Buckets::Single, _) | (_, Buckets::Single) => {
-                return Err(SbroadError::Unsupported(
-                    Entity::Buckets,
-                    Some("can't conjuct Buckets::Single".into()),
-                ))
-            }
-            (Buckets::Local, _) | (_, Buckets::Local) => Buckets::Local,
             (Buckets::All, Buckets::All) => Buckets::All,
             (Buckets::Filtered(b), Buckets::All) | (Buckets::All, Buckets::Filtered(b)) => {
                 Buckets::Filtered(b.clone())
@@ -71,6 +61,8 @@ impl Buckets {
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
                 Buckets::Filtered(a.intersection(b).copied().collect())
             }
+            (Buckets::Any, _) => buckets.clone(),
+            (_, Buckets::Any) => self.clone(),
         };
         Ok(buckets)
     }
@@ -81,22 +73,12 @@ impl Buckets {
     /// - Buckets that can't be disjuncted
     pub fn disjunct(&self, buckets: &Buckets) -> Result<Buckets, SbroadError> {
         let buckets = match (self, buckets) {
-            // Buckets::Single is only possible for a motion subtree root, we don't have leafs
-            // or any internal nodes that produce Buckets::Single
-            (Buckets::Single, _) | (_, Buckets::Single) => {
-                return Err(SbroadError::Unsupported(
-                    Entity::Buckets,
-                    Some("can't disjunct Buckets::Single".into()),
-                ))
-            }
             (Buckets::All, _) | (_, Buckets::All) => Buckets::All,
             (Buckets::Filtered(a), Buckets::Filtered(b)) => {
                 Buckets::Filtered(a.union(b).copied().collect())
             }
-            (Buckets::Filtered(a), Buckets::Local) | (Buckets::Local, Buckets::Filtered(a)) => {
-                Buckets::Filtered(a.clone())
-            }
-            (Buckets::Local, Buckets::Local) => Buckets::Local,
+            (Buckets::Any, _) => buckets.clone(),
+            (_, Buckets::Any) => self.clone(),
         };
         Ok(buckets)
     }
@@ -112,14 +94,14 @@ where
     /// In general it returns `Buckets::All`, but in some cases (e.g. `Eq` and `In` operators) it
     /// will return `Buckets::Filtered` (if such a result is met in SELECT or JOIN filter, it means
     /// that we can execute the query only on some of the replicasets).
-    fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
-        // Vec of `Buckets` that would be con conjucted later in case the vec is not empty.
+    fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Option<Buckets>, SbroadError> {
         // The only possible case there will be several `Buckets` in the vec is when we have `Eq`.
         // See the logic of its handling below.
-        let mut buckets: Vec<Buckets> = Vec::new();
+        let mut buckets: Vec<Buckets> = vec![];
         let ir_plan = self.exec_plan.get_ir_plan();
         let expr = ir_plan.get_expression_node(expr_id)?;
 
+        // Try to collect buckets from expression of type `sharding_key = value`
         if let Expression::Bool {
             op: Bool::Eq | Bool::In,
             left,
@@ -130,32 +112,15 @@ where
             let pairs = vec![(*left, *right), (*right, *left)];
             for (left_id, right_id) in pairs {
                 let left_expr = ir_plan.get_expression_node(left_id)?;
-
-                if left_expr.is_arithmetic() {
-                    return Ok(Buckets::new_all());
-                }
-                if !left_expr.is_row() {
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some(format!(
-                            "left side of equality expression is not a row or arithmetic: {left_expr:?}"
-                        )),
-                    ));
+                if !matches!(left_expr, Expression::Row { .. }) {
+                    continue;
                 }
 
                 let right_expr = ir_plan.get_expression_node(right_id)?;
-                if right_expr.is_arithmetic() {
-                    return Ok(Buckets::new_all());
-                }
                 let right_columns = if let Expression::Row { list, .. } = right_expr {
                     list.clone()
                 } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some(format!(
-                            "right side of equality expression is not a row or arithmetic: {right_expr:?}"
-                        )),
-                    ));
+                    continue;
                 };
 
                 // Get the distribution of the left row.
@@ -172,7 +137,7 @@ where
                         let bucket_ids: HashSet<u64, RepeatableState> =
                             virtual_table.get_bucket_index().keys().copied().collect();
                         if !bucket_ids.is_empty() {
-                            return Ok(Buckets::new_filtered(bucket_ids));
+                            return Ok(Some(Buckets::new_filtered(bucket_ids)));
                         }
                     }
 
@@ -218,31 +183,53 @@ where
         }
 
         if buckets.is_empty() {
-            Ok(Buckets::new_all())
-        } else {
-            Ok::<Result<Buckets, SbroadError>, SbroadError>(
-                buckets
-                    .into_iter()
-                    .fold(Ok(Buckets::new_all()), |a, b| a?.conjuct(&b)),
-            )?
+            return Ok(None);
         }
+
+        let merged = buckets
+            .into_iter()
+            .fold_while(Ok(Buckets::Any), |acc, b| match acc {
+                Ok(a) => Continue(a.conjuct(&b)),
+                Err(_) => Done(acc),
+            })
+            .into_inner()?;
+
+        Ok(Some(merged))
     }
 
     /// Inner logic of `bucket_discovery` for expressions (currently it's called only on SELECTION's
     /// and JOIN's filters).
     /// It splits given expression into DNF chains and calls `get_buckets_from_expr` on each simple
     /// chain subexpression, later conjucting results.
-    fn get_expression_tree_buckets(&self, expr_id: usize) -> Result<Buckets, SbroadError> {
+    fn get_expression_tree_buckets(
+        &self,
+        expr_id: usize,
+        children: &[usize],
+    ) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;
+        let default_buckets = {
+            let mut default_buckets = Buckets::Any;
+            for child_id in children {
+                let child_dist =
+                    ir_plan.get_distribution(ir_plan.get_relational_output(*child_id)?)?;
+                if matches!(child_dist, Distribution::Any | Distribution::Segment { .. }) {
+                    default_buckets = Buckets::All;
+                    break;
+                }
+            }
+            default_buckets
+        };
         let mut result: Vec<Buckets> = Vec::new();
         for mut chain in chains {
-            let mut chain_buckets = Buckets::new_all();
+            let mut chain_buckets = Buckets::Any;
             let nodes = chain.get_mut_nodes();
             // Nodes in the chain are in the top-down order (from left to right).
             // We need to pop back the chain to get nodes in the bottom-up order.
             while let Some(node_id) = nodes.pop_back() {
-                let node_buckets = self.get_buckets_from_expr(node_id)?;
+                let node_buckets = self
+                    .get_buckets_from_expr(node_id)?
+                    .unwrap_or(default_buckets.clone());
                 chain_buckets = chain_buckets.conjuct(&node_buckets)?;
             }
             result.push(chain_buckets);
@@ -279,7 +266,7 @@ where
             .get_expression_node(top_output_id)?
         {
             if *dist == Distribution::Single {
-                return Ok(Buckets::Single);
+                return Ok(Buckets::Any);
             }
         }
 
@@ -312,7 +299,7 @@ where
                         .get_relation_or_error(relation.as_str())?
                         .is_global()
                     {
-                        self.bucket_map.insert(*output, Buckets::Local);
+                        self.bucket_map.insert(*output, Buckets::Any);
                     } else {
                         self.bucket_map.insert(*output, Buckets::new_all());
                     }
@@ -515,7 +502,7 @@ where
                         .clone();
                     let output_id = *output;
                     let filter_id = *filter;
-                    let filter_buckets = self.get_expression_tree_buckets(filter_id)?;
+                    let filter_buckets = self.get_expression_tree_buckets(filter_id, children)?;
                     self.bucket_map
                         .insert(output_id, child_buckets.conjuct(&filter_buckets)?);
                 }
@@ -557,7 +544,7 @@ where
                         let join_buckets = match kind {
                             JoinKind::Inner => {
                                 let filter_buckets =
-                                    self.get_expression_tree_buckets(condition_id)?;
+                                    self.get_expression_tree_buckets(condition_id, children)?;
                                 inner_buckets
                                     .disjunct(&outer_buckets)?
                                     .conjuct(&filter_buckets)?

@@ -1235,6 +1235,29 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_sql_aggregate_on_aggregate() {
+    let input = r#"SELECT max(c) FROM (SELECT count("id") as c FROM "test_space") as "t1""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (max(("t1"."C"::integer))::scalar -> "COL_1")
+    scan "t1"
+        projection (sum(("count_13"::integer))::decimal -> "C")
+            motion [policy: full]
+                scan
+                    projection (count(("test_space"."id"::unsigned))::integer -> "count_13")
+                        scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_union_single_left() {
     let input = r#"
         SELECT "a" FROM "t"
@@ -1590,43 +1613,6 @@ vtable_max_rows = 5000
 }
 
 #[test]
-fn front_sql_multiple_motions_in_condition_row() {
-    let input = r#"SELECT * from (select sum("a") as a, sum("b") as b from "t") as o 
-        inner join (select count("b") as c, count("d") as d from "t") as i
-        on (o.a, i.d) = (i.c, o.a) and i.c < i.d
-        "#;
-
-    let plan = sql_to_optimized_ir(input, vec![]);
-
-    // TODO: For the  hash function in the cartrisge runtime we can apply
-    //       `motion [policy: segment([ref("C")])]` instead of the `motion [policy: full]`.
-    let expected_explain = String::from(
-        r#"projection ("O"."A"::decimal -> "A", "O"."B"::decimal -> "B", "I"."C"::integer -> "C", "I"."D"::integer -> "D")
-    join on ROW("O"."A"::decimal, "I"."D"::integer) = ROW("I"."C"::integer, "O"."A"::decimal) and ROW("I"."C"::integer) < ROW("I"."D"::integer)
-        motion [policy: segment([ref("A")])]
-            scan "O"
-                projection (sum(("sum_13"::decimal))::decimal -> "A", sum(("sum_16"::decimal))::decimal -> "B")
-                    motion [policy: full]
-                        scan
-                            projection (sum(("t"."b"::unsigned))::decimal -> "sum_16", sum(("t"."a"::unsigned))::decimal -> "sum_13")
-                                scan "t"
-        motion [policy: full]
-            scan "I"
-                projection (sum(("count_39"::integer))::decimal -> "C", sum(("count_42"::integer))::decimal -> "D")
-                    motion [policy: full]
-                        scan
-                            projection (count(("t"."d"::unsigned))::integer -> "count_42", count(("t"."b"::unsigned))::integer -> "count_39")
-                                scan "t"
-execution options:
-sql_vdbe_max_steps = 45000
-vtable_max_rows = 5000
-"#,
-    );
-
-    assert_eq!(expected_explain, plan.as_explain().unwrap());
-}
-
-#[test]
 fn front_sql_left_join() {
     let input = r#"SELECT * from (select "a" as a from "t") as o 
         left outer join (select "b" as c, "d" as d from "t") as i
@@ -1735,20 +1721,18 @@ fn front_sql_left_join_single_both() {
     let expected_explain = String::from(
         r#"projection ("T1"."A"::decimal -> "A", "T2"."B"::integer -> "B")
     left join on ROW("T1"."A"::decimal) <> ROW("T2"."B"::integer)
-        motion [policy: segment([ref("A")])]
-            scan "T1"
-                projection (ROW(sum(("sum_13"::decimal))::decimal) / ROW(3::unsigned) -> "A")
-                    motion [policy: full]
-                        scan
-                            projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_13")
-                                scan "test_space"
-        motion [policy: full]
-            scan "T2"
-                projection (sum(("count_38"::integer))::decimal -> "B")
-                    motion [policy: full]
-                        scan
-                            projection (count(("test_space"."id"::unsigned))::integer -> "count_38")
-                                scan "test_space"
+        scan "T1"
+            projection (ROW(sum(("sum_13"::decimal))::decimal) / ROW(3::unsigned) -> "A")
+                motion [policy: full]
+                    scan
+                        projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_13")
+                            scan "test_space"
+        scan "T2"
+            projection (sum(("count_38"::integer))::decimal -> "B")
+                motion [policy: full]
+                    scan
+                        projection (count(("test_space"."id"::unsigned))::integer -> "count_38")
+                            scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -2878,7 +2862,9 @@ fn front_sql_check_global_tbl_support() {
     );
 
     fn check_error(input: &str, metadata: &RouterConfigurationMock, expected_err: &str) {
-        let err = build(input, metadata).unwrap_err();
+        let res = build(input, metadata);
+        if res.is_ok() {}
+        let err = res.unwrap_err();
 
         assert_eq!(true, err.to_string().contains(expected_err));
 

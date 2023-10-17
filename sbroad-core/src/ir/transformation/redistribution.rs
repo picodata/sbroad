@@ -1334,31 +1334,7 @@ impl Plan {
         let eq_cols = EqualityCols::from_join_condition(self, join_id, inner_id, condition_id)?;
         let (outer_policy, inner_policy) = match (outer_dist, inner_dist) {
             (Distribution::Single, Distribution::Single) => {
-                if let Some(eq_cols) = eq_cols {
-                    let mut inner_targets: Vec<Target> = Vec::with_capacity(eq_cols.len());
-                    let mut outer_targets: Vec<Target> = Vec::with_capacity(eq_cols.len());
-                    for (i_col, o_col) in eq_cols.iter() {
-                        inner_targets.push(Target::Reference(*i_col));
-                        outer_targets.push(Target::Reference(*o_col));
-                    }
-                    let inner_policy = MotionPolicy::Segment(MotionKey {
-                        targets: inner_targets,
-                    });
-                    let outer_policy = MotionPolicy::Segment(MotionKey {
-                        targets: outer_targets,
-                    });
-                    (outer_policy, inner_policy)
-                } else {
-                    // Note: it is important that outer policy is Segment
-                    // in case it is left join, we can't broadcast the left table
-                    // for more details: https://git.picodata.io/picodata/picodata/sbroad/-/issues/248
-                    let outer_policy = MotionPolicy::Segment(MotionKey {
-                        // we can choose any distribution columns here
-                        targets: vec![Target::Reference(0)],
-                    });
-                    let inner_policy = MotionPolicy::Full;
-                    (outer_policy, inner_policy)
-                }
+                (MotionPolicy::None, MotionPolicy::None)
             }
             (Distribution::Single, Distribution::Segment { keys }) => {
                 Self::compute_policies_for_segment_vs_single(
@@ -1823,7 +1799,18 @@ impl Plan {
                     output: proj_output_id,
                     ..
                 } => {
-                    if !self.add_two_stage_aggregation(id)? {
+                    let child_dist = self.get_distribution(
+                        self.get_relational_output(self.get_relational_child(id, 0)?)?,
+                    )?;
+                    if matches!(child_dist, Distribution::Single) {
+                        // If child has Distribution::Single and this Projection contains
+                        // aggregates or there is GroupBy, then we don't need two stage
+                        // transformation, we can calculate aggregates / GroupBy in one
+                        // stage, because all data will reside on a single node.
+                        self.set_dist(proj_output_id, child_dist.clone())?;
+                    } else if !self.add_two_stage_aggregation(id)? {
+                        // if there are no aggregates or GroupBy, just take distribution
+                        // from child.
                         self.set_distribution(proj_output_id)?;
                     }
                 }

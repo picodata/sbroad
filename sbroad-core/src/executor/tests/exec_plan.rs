@@ -786,7 +786,7 @@ fn global_table_scan() {
 
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
     let buckets = query.bucket_discovery(top_id).unwrap();
-    assert_eq!(Buckets::Local, buckets);
+    assert_eq!(Buckets::Any, buckets);
     let exec_plan = query.get_mut_exec_plan();
     let subplan = exec_plan.take_subtree(top_id).unwrap();
     let subplan_top_id = subplan.get_ir_plan().get_top().unwrap();

@@ -1142,6 +1142,9 @@ groupby_queries.test_except_single = function()
     })
 end
 
+-- uncomment when https://git.picodata.io/picodata/tarantool/-/issues/35
+-- is fixed.
+--[==[
 groupby_queries.test_join_single1 = function()
     local api = cluster:server("api-1").net_box
 
@@ -1198,6 +1201,38 @@ groupby_queries.test_join_single3 = function()
     })
 end
 
+groupby_queries.test_having_inside_sq = function()
+    local api = cluster:server("api-1").net_box
+
+    -- check we can execute sq-s containing having clause
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT t1.s1, t2.s2 from (
+            select sum(distinct "a") as s1 from "arithmetic_space"
+            having sum("a") > 3
+        ) as t1 inner join (
+            select sum(distinct "a") as s2 from "arithmetic_space"
+            having sum("a") > 3
+        ) as t2 on t1.s1 = t2.s2 and t1.s1 in (
+            select sum(distinct "a") as s1 from "arithmetic_space"
+            having sum("a") > 3
+        )
+        where t2.s2 in (
+            select sum(distinct "a") as s1 from "arithmetic_space"
+            having sum("a") > 3
+        )
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "T1.S1", type = "decimal" },
+        { name = "T2.S2", type = "decimal" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 3, 3 }
+    })
+end
+
 groupby_queries.test_join_single4 = function()
     local api = cluster:server("api-1").net_box
     local r, err = api:call("sbroad.execute", {
@@ -1233,6 +1268,7 @@ groupby_queries.test_join_single5 = function()
         { 6, 9 },
     })
 end
+--]==]
 
 groupby_queries.test_join_single6 = function()
     local api = cluster:server("api-1").net_box
@@ -2078,38 +2114,6 @@ groupby_queries.test_having_full_query = function()
     })
 end
 
-groupby_queries.test_having_inside_sq = function()
-    local api = cluster:server("api-1").net_box
-
-    -- check we can execute sq-s containing having clause
-    local r, err = api:call("sbroad.execute", {
-        [[
-        SELECT t1.s1, t2.s2 from (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        ) as t1 inner join (
-            select sum(distinct "a") as s2 from "arithmetic_space"
-            having sum("a") > 3
-        ) as t2 on t1.s1 = t2.s2 and t1.s1 in (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        )
-        where t2.s2 in (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        )
-        ]], {}
-    })
-    t.assert_equals(err, nil)
-    t.assert_equals(r.metadata, {
-        { name = "T1.S1", type = "decimal" },
-        { name = "T2.S2", type = "decimal" },
-    })
-    t.assert_items_equals(r.rows, {
-        { 3, 3 }
-    })
-end
-
 groupby_queries.test_having_inside_union = function()
     local api = cluster:server("api-1").net_box
 
@@ -2430,38 +2434,6 @@ groupby_queries.test_having_full_query = function()
     })
     t.assert_items_equals(r.rows, {
         { 1, 2 }
-    })
-end
-
-groupby_queries.test_having_inside_sq = function()
-    local api = cluster:server("api-1").net_box
-
-    -- check we can execute sq-s containing having clause
-    local r, err = api:call("sbroad.execute", {
-        [[
-        SELECT t1.s1, t2.s2 from (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        ) as t1 inner join (
-            select sum(distinct "a") as s2 from "arithmetic_space"
-            having sum("a") > 3
-        ) as t2 on t1.s1 = t2.s2 and t1.s1 in (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        )
-        where t2.s2 in (
-            select sum(distinct "a") as s1 from "arithmetic_space"
-            having sum("a") > 3
-        )
-        ]], {}
-    })
-    t.assert_equals(err, nil)
-    t.assert_equals(r.metadata, {
-        { name = "T1.S1", type = "decimal" },
-        { name = "T2.S2", type = "decimal" },
-    })
-    t.assert_items_equals(r.rows, {
-        { 3, 3 }
     })
 end
 

@@ -954,7 +954,7 @@ impl Vshard for RouterRuntimeMock {
         ))
     }
 
-    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the mock runtime".to_string()),
@@ -1012,7 +1012,7 @@ impl Vshard for &RouterRuntimeMock {
         Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
-    fn exec_ir_locally(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the mock runtime".to_string()),
@@ -1391,15 +1391,11 @@ impl Router for RouterRuntimeMock {
         let nodes = ordered.to_syntax_data()?;
 
         match buckets {
-            Buckets::Single => {
-                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
-                result.extend(exec_on_some(1_u64, String::from(sql).as_str()))?;
-            }
             Buckets::All => {
                 let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
-            Buckets::Local => {
+            Buckets::Any => {
                 let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
                 result.extend(exec_locally(String::from(sql).as_str()))?;
             }

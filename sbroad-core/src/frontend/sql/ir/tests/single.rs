@@ -104,12 +104,7 @@ fn front_sql_join_single_both_1() {
         on o.a = i.b
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["B"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -119,12 +114,7 @@ fn front_sql_join_single_both_2() {
         on o.a = i.c and o.b = i.c
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -142,12 +132,7 @@ fn front_sql_join_single_both_3() {
     ];
 
     for input in inputs {
-        check_join_motions(
-            input,
-            Policy::new_seg(&["A", "B"]),
-            Policy::new_seg(&["C", "D"]),
-            None,
-        );
+        check_join_motions(input, Policy::None, Policy::None, None);
     }
 }
 
@@ -158,7 +143,7 @@ fn front_sql_join_single_both_4() {
         on o.a = i.c and o.b < i.d
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -168,7 +153,7 @@ fn front_sql_join_single_both_5() {
         on cast(o.a as number) = i.c
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -178,12 +163,7 @@ fn front_sql_join_single_both_6() {
         on o.a = i.c and i.c = 1 
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -193,12 +173,7 @@ fn front_sql_join_single_both_7() {
         on o.a = i.c and i.c + i.d = 2
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -208,12 +183,7 @@ fn front_sql_join_single_both_8() {
         on o.a = i.c and i.c < 2
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -223,7 +193,7 @@ fn front_sql_join_single_both_9() {
         on o.a = i.c or i.c < 2
     "#;
 
-    check_join_motions(input, Policy::new_seg(&["A"]), Policy::Full, None);
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -233,12 +203,7 @@ fn front_sql_join_single_both_10() {
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -248,12 +213,7 @@ fn front_sql_join_single_both_11() {
         on (o.a, o.a) = (i.c, i.d)
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::new_seg(&["C"]),
-        None,
-    );
+    check_join_motions(input, Policy::None, Policy::None, None);
 }
 
 #[test]
@@ -263,35 +223,7 @@ fn front_sql_join_single_both_12() {
         on (o.a, o.a) = (i.c, i.d) or i.c in (select "a" as q from "t")
     "#;
 
-    check_join_motions(
-        input,
-        Policy::new_seg(&["A"]),
-        Policy::Full,
-        Some(vec![Policy::Full]),
-    );
-}
-
-#[test]
-fn front_sql_join_single_both_13() {
-    let input = r#"
-            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, cast("d" + 4 as decimal) as d from "t") as i
-            inner join (select sum("a") as a, count("b") as b from "t") as o
-            on o.a = i.d or o.b = i.c and i.c in (select "a" from "t")
-            where o.a > 5
-    "#;
-
-    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
-}
-
-#[test]
-fn front_sql_join_single_both_14() {
-    let input = r#"
-            select o.a, o.b, i.c, i.d from  (select cast("c" + 3 as decimal) as c, cast("d" + 4 as decimal) as d from "t") as i
-            inner join (select sum("a") as a, count("b") as b from "t") as o
-            on o.a = i.d or o.b = i.c and i.c in (select sum("a") from "t")
-    "#;
-
-    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
+    check_join_motions(input, Policy::None, Policy::None, Some(vec![Policy::Full]));
 }
 
 #[test]
@@ -364,4 +296,27 @@ fn front_sql_join_single_left_6() {
         Policy::None,
         Some(vec![Policy::Full]),
     );
+}
+
+#[test]
+fn front_sql_join_single_left_7() {
+    let input = r#"
+            select o.a, o.b, i.c, i.d from  (select "c" + 3 as c, cast("d" + 4 as decimal) as d from "t") as i
+            inner join (select sum("a") as a, count("b") as b from "t") as o
+            on o.a = i.d or o.b = i.c and i.c in (select "a" from "t")
+            where o.a > 5
+    "#;
+
+    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
+}
+
+#[test]
+fn front_sql_join_single_left_8() {
+    let input = r#"
+            select o.a, o.b, i.c, i.d from  (select cast("c" + 3 as decimal) as c, cast("d" + 4 as decimal) as d from "t") as i
+            inner join (select sum("a") as a, count("b") as b from "t") as o
+            on o.a = i.d or o.b = i.c and i.c in (select sum("a") from "t")
+    "#;
+
+    check_join_motions(input, Policy::None, Policy::Full, Some(vec![Policy::Full]));
 }

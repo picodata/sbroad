@@ -473,6 +473,9 @@ left_join.test_sq_with_segment_motion = function()
     })
 end
 
+-- uncomment when https://git.picodata.io/picodata/tarantool/-/issues/35
+-- is fixed.
+--[==[
 left_join.test_left_true_condition = function()
     local api = cluster:server("api-1").net_box
     local query_str = [[
@@ -510,6 +513,7 @@ left_join.test_falsy_condition = function()
         { 10, nil },
     })
 end
+--]==]
 
 left_join.test_table_with_nulls1 = function()
     local api = cluster:server("api-1").net_box

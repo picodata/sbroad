@@ -627,8 +627,7 @@ pub fn dispatch(
 
     match buckets {
         Buckets::Filtered(_) => runtime.exec_ir_on_some(sub_plan, buckets),
-        Buckets::Local => runtime.exec_ir_locally(sub_plan),
-        Buckets::Single => {
+        Buckets::Any => {
             // Check that all vtables don't have index. Because if they do,
             // they will be filtered later by filter_vtable
             if let Some(vtables) = &sub_plan.vtables {
@@ -641,7 +640,7 @@ pub fn dispatch(
                     }
                 }
             }
-            runtime.exec_ir_on_some(sub_plan, &runtime.get_random_bucket())
+            runtime.exec_ir_on_any_node(sub_plan)
         }
         Buckets::All => {
             if sub_plan.has_segmented_tables() {

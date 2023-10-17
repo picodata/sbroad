@@ -157,12 +157,14 @@ impl Distribution {
     /// Calculate a new distribution for the tuple combined from two different tuples.
     fn join(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
+            (Distribution::Any, Distribution::Any) => Distribution::Any,
+            (Distribution::Single, Distribution::Global | Distribution::Single)
+            | (Distribution::Global, Distribution::Single) => Distribution::Single,
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
                     Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
-            (Distribution::Any, Distribution::Any) => Distribution::Any,
             // Currently Global distribution is possible only from
             // Motion node, that appeared after conflict resolution.
             (Distribution::Global, _) | (Distribution::Any, Distribution::Segment { .. }) => {
@@ -504,6 +506,13 @@ impl Plan {
                             }
                         }
 
+                        // Parent's operator output does not contain some
+                        // sharding columns. For example:
+                        // ```sql
+                        // select b from t
+                        // ```
+                        //
+                        // Where `t` is sharded by `a`.
                         if new_keys.is_empty() {
                             return Ok(Distribution::Any);
                         }
