@@ -115,7 +115,7 @@ pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
         }
     };
 
-    let id: String = required.id().into();
+    let id = required.trace_id().to_string();
     let ctx = required.extract_context();
     let tracer = required.tracer();
 

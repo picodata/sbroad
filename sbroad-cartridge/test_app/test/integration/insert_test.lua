@@ -510,12 +510,12 @@ end
 local function assert_cache_hit(query_id)
     local storage1 = cluster:server("storage-1-1").net_box
     local r, err = storage1:call("box.execute", { [[
-    select span, query_id from "__SBROAD_STAT"
-    where span = '"tarantool.cache.hit.read.prepared"' and query_id = ? ]], { query_id } })
+    select "span", "query_id" from "_sql_stat"
+    where "span" = '"tarantool.cache.hit.read.prepared"' and "query_id" = ? ]], { query_id } })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "SPAN", type = "string" },
-        { name = "QUERY_ID", type = "string" },
+        { name = "span", type = "string" },
+        { name = "query_id", type = "string" },
     })
     t.assert_equals(#r.rows, 1)
 end
@@ -523,13 +523,13 @@ end
 local function assert_cache_miss(query_id)
     local storage1 = cluster:server("storage-1-1").net_box
     local r, err = storage1:call("box.execute", { [[
-    select span, query_id from "__SBROAD_STAT"
-    where span = '"tarantool.cache.miss.read.prepared"' and query_id = ?
+    select "span", "query_id" from "_sql_stat"
+    where "span" = '"tarantool.cache.miss.read.prepared"' and "query_id" = ?
     ]] , { query_id }})
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "SPAN", type = "string" },
-        { name = "QUERY_ID", type = "string" },
+        { name = "span", type = "string" },
+        { name = "query_id", type = "string" },
     })
     t.assert_equals(#r.rows, 1)
 end

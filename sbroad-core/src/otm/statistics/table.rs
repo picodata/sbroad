@@ -3,9 +3,9 @@
 //! This module contains the implementation of the statistics spaces used by
 //! the `statistics` span processor. There are two spaces and one hash table
 //! used to store the statistics:
-//! - `__sbroad_query` space - stores the queries that are currently being executed.
-//!   Its query id is used as a key for the `__sbroad_stat` space.
-//! - `__sbroad_stat` space - stores the statistics for the query spans. The spans
+//! - `_sql_query` space - stores the queries that are currently being executed.
+//!   Its query id is used as a key for the `_sql_stat` space.
+//! - `_sql_stat` space - stores the statistics for the query spans. The spans
 //!   are stored as a flat tree for each query.
 //! - `SpanMap` hash table - stores the mapping between the span id and the span name.
 //!   The reason is that the span context contains only the span id, so we use
@@ -174,7 +174,7 @@ impl TarantoolSpace for QuerySpace {
     fn new() -> Self {
         let mut space = Self {
             space: None,
-            name: "__SBROAD_QUERY".to_string(),
+            name: "_sql_query".to_string(),
         };
         space.space_update_cache();
         space
@@ -323,9 +323,9 @@ impl TarantoolSpace for QuerySpace {
     fn try_create_space(&mut self) {
         let options = SpaceCreateOptions {
             format: Some(vec![
-                Field::string("QUERY_ID"),
-                Field::string("QUERY_TEXT"),
-                Field::unsigned("REF_COUNTER"),
+                Field::string("query_id"),
+                Field::string("query_text"),
+                Field::unsigned("ref_counter"),
             ]),
             engine: SpaceEngineType::Memtx,
             space_type: SpaceType::DataTemporary,
@@ -344,17 +344,14 @@ impl TarantoolSpace for QuerySpace {
         match Space::create(&self.name, &options) {
             Ok(table) => {
                 debug!(Option::from("space query"), "Space created");
-                match table.create_index("__SBROAD_QUERY_PK", &pk) {
+                match table.create_index("_sql_query_pk", &pk) {
                     Ok(_) => {
-                        debug!(
-                            Option::from("space query"),
-                            "Index __SBROAD_QUERY_PK created"
-                        );
+                        debug!(Option::from("space query"), "Index _sql_query_pk created");
                         let space = self.space_mut();
                         *space = Some(table);
                     }
                     Err(err) => {
-                        let _msg = &format!("failed to create index __SBROAD_QUERY_PK: {err}");
+                        let _msg = &format!("failed to create index _sql_query_pk: {err}");
                         warn!(Option::from("space query"), &_msg);
                     }
                 }
@@ -377,13 +374,13 @@ pub struct StatSpace {
 type StatSpaceTuple = (String, String, String, f64, f64, f64, u64);
 
 impl TarantoolSpace for StatSpace {
-    type Key = (String, String);
+    type Key = (String, String, String);
     type Tuple = StatSpaceTuple;
 
     fn new() -> Self {
         let mut space = Self {
             space: None,
-            name: "__SBROAD_STAT".to_string(),
+            name: "_sql_stat".to_string(),
         };
         space.space_update_cache();
         space
@@ -404,13 +401,13 @@ impl TarantoolSpace for StatSpace {
     fn try_create_space(&mut self) {
         let options = SpaceCreateOptions {
             format: Some(vec![
-                Field::string("QUERY_ID"),
-                Field::string("SPAN"),
-                Field::string("PARENT_SPAN"),
-                Field::double("MIN"),
-                Field::double("MAX"),
-                Field::double("SUM"),
-                Field::unsigned("COUNT"),
+                Field::string("query_id"),
+                Field::string("span"),
+                Field::string("parent_span"),
+                Field::double("min"),
+                Field::double("max"),
+                Field::double("sum"),
+                Field::unsigned("count"),
             ]),
             engine: SpaceEngineType::Memtx,
             space_type: SpaceType::DataTemporary,
@@ -424,6 +421,7 @@ impl TarantoolSpace for StatSpace {
             parts: Some(vec![
                 Part::new(1, FieldType::String),
                 Part::new(2, FieldType::String),
+                Part::new(3, FieldType::String),
             ]),
             if_not_exists: Some(true),
             ..Default::default()
@@ -432,14 +430,14 @@ impl TarantoolSpace for StatSpace {
         match Space::create(&self.name, &options) {
             Ok(table) => {
                 debug!(Option::from("space stat"), "Space created");
-                match table.create_index("__SBROAD_STAT_PK", &pk) {
+                match table.create_index("_sql_stat_pk", &pk) {
                     Ok(_) => {
-                        debug!(Option::from("space stat"), "Index __SBROAD_STAT_PK created");
+                        debug!(Option::from("space stat"), "Index _sql_stat_pk created");
                         let space = self.space_mut();
                         *space = Some(table);
                     }
                     Err(err) => {
-                        let _msg = &format!("failed to create index __SBROAD_STAT_PK: {err}");
+                        let _msg = &format!("failed to create index _sql_stat_pk: {err}");
                         warn!(Option::from("space stat"), &_msg);
                     }
                 }
@@ -486,7 +484,7 @@ impl TarantoolSpace for StatSpace {
 
     fn upsert(&mut self, tuple: Self::Tuple) {
         self.space_update_cache();
-        match self.get(&(tuple.0.clone(), tuple.1.clone())) {
+        match self.get(&(tuple.0.clone(), tuple.1.clone(), tuple.2.clone())) {
             None => {
                 debug!(Option::from("space stat"), &format!("insert {:?}", tuple));
                 if let Some(space) = self.space_mut() {
@@ -579,7 +577,7 @@ impl StatSpace {
                 .filter_map(|tuple| match tuple.decode::<StatSpaceTuple>() {
                     Ok(tuple) => {
                         debug!(Option::from("space stat"), "get tuple");
-                        Some((tuple.0, tuple.1))
+                        Some((tuple.0, tuple.1, tuple.2))
                     }
                     Err(_e) => {
                         warn!(

@@ -81,7 +81,7 @@ pub struct RequiredData {
     pub can_be_cached: bool,
     context: ContextCarrier,
     tracer: QueryTracer,
-    trace_id: Option<String>,
+    trace_id: String,
     pub options: Options,
     pub schema_info: SchemaInfo,
 }
@@ -95,7 +95,7 @@ impl Default for RequiredData {
             can_be_cached: true,
             context: ContextCarrier::empty(),
             tracer: QueryTracer::default(),
-            trace_id: None,
+            trace_id: String::new(),
             options: Options::default(),
             schema_info: SchemaInfo::default(),
         }
@@ -143,6 +143,7 @@ impl RequiredData {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
         let tracer = current_tracer();
+        let trace_id = current_id();
         if carrier.is_empty() {
             RequiredData {
                 plan_id,
@@ -151,7 +152,7 @@ impl RequiredData {
                 can_be_cached,
                 context: ContextCarrier::empty(),
                 tracer,
-                trace_id: None,
+                trace_id,
                 options,
                 schema_info,
             }
@@ -163,11 +164,16 @@ impl RequiredData {
                 can_be_cached,
                 context: ContextCarrier::new(carrier),
                 tracer,
-                trace_id: Some(current_id()),
+                trace_id,
                 options,
                 schema_info,
             }
         }
+    }
+
+    #[must_use]
+    pub fn plan_id(&self) -> &str {
+        &self.plan_id
     }
 
     #[must_use]
@@ -176,11 +182,8 @@ impl RequiredData {
     }
 
     #[must_use]
-    pub fn id(&self) -> &str {
-        match &self.trace_id {
-            Some(trace_id) => trace_id,
-            None => &self.plan_id,
-        }
+    pub fn trace_id(&self) -> &str {
+        &self.trace_id
     }
 
     pub fn extract_context(&mut self) -> Context {

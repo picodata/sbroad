@@ -2,7 +2,7 @@
 //!
 //! This span processor is used to collect statistics about running queries.
 //! It uses sampling (1% at the moment) to reduce the overhead of collecting
-//! statistics. The results are written to `__sbroad_query` and `__sbroad_stat`
+//! statistics. The results are written to `_sql_query` and `_sql_stat`
 //! spaces and evicted by LRU strategy (more details in the `table` and
 //! `eviction` modules).
 //!
@@ -10,27 +10,27 @@
 //! For example, to get the top 5 most expensive SELECT SQL queries by the
 //! average execution time:
 //! ```sql
-//! select distinct(q.query_text) from __sbroad_stat as s
-//! join __sbroad_query as q
-//!     on s.query_id = q.query_id
-//! where lower(q.query_text) like 'select%'
-//! order by s.sum/s.count desc
+//! select distinct(q."query_text") from "_sql_stat" as s
+//! join "_sql_query" as q
+//!     on s."query_id" = q."query_id"
+//! where lower(q."query_text") like 'select%'
+//! order by s."sum"/s."count" desc
 //! limit 5
 //! ```
 //!
 //! Or to get the flame graph of the most expensive query:
 //! ```sql
 //! with recursive st as (
-//!     select * from __sbroad_stat where query_id in (select qt.query_id from qt)
-//!         and parent_span = ''
+//!     select * from "_sql_stat" where "query_id" in (select qt."query_id" from qt)
+//!         and "parent_span" = ''
 //!     union all
-//!     select s.* from __sbroad_stat as s, st on s.parent_span = st.span
-//!         and s.query_id in (select qt.query_id from qt)
+//!     select s.* from "_sql_stat" as s, st on s."parent_span" = st."span"
+//!         and s."query_id" in (select qt."query_id" from qt)
 //! ), qt as (
-//!     select s.query_id from __sbroad_stat as s
-//!     join __sbroad_query as q
-//!         on s.query_id = q.query_id
-//!     order by s.sum/s.count desc
+//!     select s."query_id" from "_sql_stat" as s
+//!     join "_sql_query" as q
+//!         on s."query_id" = q."query_id"
+//!     order by s."sum"/s."count" desc
 //!     limit 1
 //! )
 //! select * from st;
@@ -79,7 +79,7 @@ impl SpanProcessor for StatCollector {
         // We are processing a top level query span. Lets register it.
         if let Some(query_sql) = span_data.attributes.get(&"query_sql".into()) {
             QUERY.with(|query_space| {
-                let tuple = (id.to_string(), query_sql.to_string(), 2);
+                let tuple = (id, query_sql.to_string(), 2);
                 query_space.borrow_mut().upsert(tuple);
             });
             debug!(Option::from("on start"), &format!("query: {query_sql}"));

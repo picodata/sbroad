@@ -43,6 +43,8 @@ use crate::errors::{Entity, SbroadError};
 #[cfg(not(feature = "mock"))]
 use prod_imports::*;
 
+pub const OTM_CHAR_LIMIT: usize = 512;
+
 static TRACER_NAME: &str = "libsbroad";
 static RATIO: f64 = 0.01;
 thread_local!(
@@ -279,15 +281,19 @@ where
 #[inline]
 #[allow(unreachable_code)]
 #[allow(unused_variables)]
-pub fn stat_query_span<T, F>(name: &'static str, sql: &str, id: &str, f: F) -> T
+pub fn stat_query_span<T, F>(name: &'static str, sql: &str, id: &str, traceable: bool, f: F) -> T
 where
     F: FnOnce() -> T,
 {
     #[cfg(not(feature = "mock"))]
     {
-        let tracer = QueryTracer::Statistics;
+        let tracer = if traceable {
+            QueryTracer::TestStatistics
+        } else {
+            QueryTracer::Statistics
+        };
         let ctx = Context::new();
-        return query_span(name, id, &tracer, &ctx, sql, f);
+        return query_span(name, &id, &tracer, &ctx, sql, f);
     }
     f()
 }
@@ -314,8 +320,7 @@ where
             "query_sql",
             sql.char_indices()
                 // Maximum number of bytes per a single name-value pair: 4096.
-                // UTF-8 character can be up to 4 bytes long, `query_sql` is 9 bytes long.
-                .filter_map(|(i, c)| if i <= 4083 { Some(c) } else { None })
+                .filter_map(|(i, c)| if i <= OTM_CHAR_LIMIT { Some(c) } else { None })
                 .collect::<String>(),
         ));
 

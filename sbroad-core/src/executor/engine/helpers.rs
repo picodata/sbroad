@@ -91,14 +91,13 @@ pub fn is_sharding_column_name(name: &str) -> bool {
 /// # Errors
 /// - Failed to encode the execution plan.
 pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
-    let query_type = exec_plan.query_type()?;
     let can_be_cached = exec_plan.vtables_empty();
+    let query_type = exec_plan.query_type()?;
     let (ordered, sub_plan_id) = match query_type {
         QueryType::DQL => {
+            let top_id = exec_plan.get_ir_plan().get_top()?;
             let sub_plan_id = if can_be_cached {
-                exec_plan
-                    .get_ir_plan()
-                    .pattern_id(exec_plan.get_ir_plan().get_top()?)?
+                exec_plan.get_ir_plan().pattern_id(top_id)?
             } else {
                 // plan id is used as cache key on storages, no need to calculate it.
                 String::new()
