@@ -4,7 +4,7 @@ DQL         ::= (SELECT | SELECT UNION ALL SELECT | SELECT (EXCEPT 'DISTINCT'? )
 DML         ::= (DELETE | INSERT | UPDATE) Options?
 DDL         ::= CreateTable | DropTable
 ACL         ::= DropRole | DropUser | CreateRole | CreateUser
-CreateRole  ::= `create role` role ('option' '(' ('timeout' '=' DOUBLE)')')?
+CreateRole  ::= 'create role' role ('option' '(' ('timeout' '=' DOUBLE)')')?
 CreateTable ::= 'create table' table '(' Column (',' Column)* ',' PrimaryKey ')' ('using' ('memtx' | 'vinyl'))? Distribution ('option' '(' ('timeout' '=' DOUBLE)')')?
 CreateUser ::= 'create user' user 'with'? 'password' "'" password "'" ('using' ('chap-sha1' | 'ldap' | 'md5'))? ('option' '(' ('timeout' '=' DOUBLE)')')?
 Column      ::= name ('Bool' | 'Decimal' | 'Double' | 'Int' | 'Number' | 'Scalar' | 'String' | 'Text' | 'Unsigned' | 'Varchar') (('not'?)  'null')?
