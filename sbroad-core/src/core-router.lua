@@ -7,7 +7,7 @@ local fiber = require('fiber')
 local table = require('table')
 local ref_id = 0
 local DQL_MIN_TIMEOUT = 10
-local REF_MIN_TIMEOUT = 3
+local REF_MIN_TIMEOUT = 5
 
 local function future_wait(cond, timeout)
     local f = function(cond, timeout)
@@ -250,7 +250,7 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
         result = res[1][1][1]
     else
         local err, err_uuid
-        local opts = { map_timeout = waiting_timeout }
+        local opts = { map_timeout = waiting_timeout, ref_timeout = waiting_timeout }
         result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, vtable_max_rows, opts)
         if err ~= nil then
             helper.dql_error(err, err_uuid)
@@ -269,6 +269,7 @@ _G.dql_on_all = function(required, optional, waiting_timeout, vtable_max_rows)
     end
     local opts = {
         map_timeout = waiting_timeout,
+        ref_timeout = waiting_timeout,
         check_bucket_count = true
     }
     local result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, vtable_max_rows, opts)

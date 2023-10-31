@@ -423,29 +423,39 @@ impl Plan {
     ) -> Result<MotionPolicy, SbroadError> {
         let outer_dist = self.get_distribution(outer_id)?;
         let inner_dist = self.get_distribution(inner_id)?;
+        if let Distribution::Global = inner_dist {
+            return Ok(MotionPolicy::None);
+        }
         if Bool::Eq == *op || Bool::In == *op {
-            if let Distribution::Segment {
-                keys: ref keys_outer,
-            } = outer_dist
-            {
-                // If the inner and outer tuples are segmented by the same key we don't need motions.
-                if let Distribution::Segment {
-                    keys: ref keys_inner,
-                } = inner_dist
-                {
-                    if keys_outer.intersection(keys_inner).iter().next().is_some() {
+            match outer_dist {
+                Distribution::Segment {
+                    keys: ref keys_outer,
+                } => {
+                    // If the inner and outer tuples are segmented by the same key we don't need motions.
+                    if let Distribution::Segment {
+                        keys: ref keys_inner,
+                    } = inner_dist
+                    {
+                        if keys_outer.intersection(keys_inner).iter().next().is_some() {
+                            return Ok(MotionPolicy::None);
+                        }
+                    }
+                    // Redistribute the inner tuples using the first key from the outer tuple.
+                    return keys_outer.iter().next().map_or_else(
+                        || {
+                            Err(SbroadError::UnexpectedNumberOfValues(String::from(
+                                "Failed to get the first distribution key from the outer row.",
+                            )))
+                        },
+                        |key| Ok(MotionPolicy::Segment(key.into())),
+                    );
+                }
+                Distribution::Global => {
+                    if let Distribution::Segment { .. } | Distribution::Single = inner_dist {
                         return Ok(MotionPolicy::None);
                     }
                 }
-                // Redistribute the inner tuples using the first key from the outer tuple.
-                return keys_outer.iter().next().map_or_else(
-                    || {
-                        Err(SbroadError::UnexpectedNumberOfValues(String::from(
-                            "Failed to get the first distribution key from the outer row.",
-                        )))
-                    },
-                    |key| Ok(MotionPolicy::Segment(key.into())),
-                );
+                _ => {}
             }
         }
         Ok(MotionPolicy::Full)
@@ -529,8 +539,12 @@ impl Plan {
                 match right {
                     Some(right_sq) => {
                         // Both sides are sub-queries and require a full copy.
-                        strategies.push((left_sq, MotionPolicy::Full));
-                        strategies.push((right_sq, MotionPolicy::Full));
+                        if !matches!(self.get_distribution(bool_op.left)?, Distribution::Global) {
+                            strategies.push((left_sq, MotionPolicy::Full));
+                        }
+                        if !matches!(self.get_distribution(bool_op.right)?, Distribution::Global) {
+                            strategies.push((right_sq, MotionPolicy::Full));
+                        }
                     }
                     None => {
                         // Left side is sub-query, right is an outer tuple.
@@ -579,6 +593,9 @@ impl Plan {
         if let Unary::Exists = op {
             let child_sq = self.get_additional_sq(rel_id, *child)?;
             if let Some(child_sq) = child_sq {
+                if let Distribution::Global = self.get_rel_distribution(child_sq)? {
+                    return Ok(Some((child_sq, MotionPolicy::None)));
+                }
                 return Ok(Some((child_sq, MotionPolicy::Full)));
             }
         }
@@ -633,6 +650,12 @@ impl Plan {
             if let Some((id, policy)) = unary_strategy {
                 strategy.add_child(id, policy, Program::default());
             }
+        }
+
+        if let Distribution::Global =
+            self.get_rel_distribution(self.get_relational_child(select_id, 0)?)?
+        {
+            self.fix_sq_strategy_for_global_tbl(select_id, filter_id, &mut strategy)?;
         }
 
         Ok(strategy)
@@ -991,26 +1014,9 @@ impl Plan {
                     ));
                 }
             }
-            Relational::Selection { children, .. } => {
-                // Currently only Projection + Selection without SQs is supported.
-                let has_sq = children.len() > 1;
-                if has_sq {
-                    let child_dist = self.get_distribution(
-                        self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
-                    )?;
-                    let sq_dist = self.get_distribution(
-                        self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
-                    )?;
-                    if matches!(
-                        (child_dist, sq_dist),
-                        (Distribution::Global, _) | (_, Distribution::Global)
-                    ) {
-                        return Err(SbroadError::UnsupportedOpForGlobalTables("Subquery".into()));
-                    }
-                }
-            }
             Relational::Projection { .. }
             | Relational::ScanRelation { .. }
+            | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
             | Relational::ScanSubQuery { .. }
             | Relational::Motion { .. } => {}
@@ -1060,7 +1066,9 @@ impl Plan {
         let mut strategy = Strategy::new(rel_id);
         if let Some((_, children)) = join_children.split_first() {
             for child_id in children {
-                strategy.add_child(*child_id, MotionPolicy::Full, Program::default());
+                if !matches!(self.get_rel_distribution(*child_id)?, Distribution::Global) {
+                    strategy.add_child(*child_id, MotionPolicy::Full, Program::default());
+                }
             }
         } else {
             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -1069,12 +1077,22 @@ impl Plan {
         }
 
         // Let's improve the full motion policy for the join children (sub-queries and the inner child).
-        let inner_child = *join_children.get(1).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                "that is Join node inner child with index 1.".into(),
-            )
-        })?;
+        let (inner_child, outer_child) = {
+            let outer = *join_children.first().ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Node,
+                    "that is Join node inner child with index 0.".into(),
+                )
+            })?;
+            let inner = *join_children.get(1).ok_or_else(|| {
+                SbroadError::NotFound(
+                    Entity::Node,
+                    "that is Join node inner child with index 1.".into(),
+                )
+            })?;
+            (inner, outer)
+        };
+
         let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
         let filter = |node_id: usize| -> bool {
@@ -1205,7 +1223,108 @@ impl Plan {
             inner_map.insert(node_id, new_inner_policy.clone());
         }
         strategy.add_child(inner_child, new_inner_policy, Program::default());
+
+        {
+            let (outer_dist, inner_dist) = (
+                self.get_rel_distribution(outer_child)?,
+                self.get_rel_distribution(inner_child)?,
+            );
+            if matches!(
+                (outer_dist, inner_dist),
+                (Distribution::Global, _) | (_, Distribution::Global)
+            ) {
+                self.fix_sq_strategy_for_global_tbl(rel_id, cond_id, &mut strategy)?;
+            }
+        }
         self.create_motion_nodes(strategy)?;
+        Ok(())
+    }
+
+    /// In case there are more than one and-chains which
+    /// (both) contain subquery with `Segment` or `Single`
+    /// distribution (at least one subquery must be `Segment`),
+    /// then default motions assigned in `choose_strategy_for_bool_op_inner_sq`
+    /// function are wrong.
+    ///
+    /// By default if subquery has `Segment` distribution, we assign
+    /// `Motion(None)` to it in `choose_strategy_for_bool_op_inner_sq`.
+    /// But in the case described above it can lead to wrong results:
+    ///
+    /// ```sql
+    /// select a, b from global
+    /// where a in (select b from segment_b) or b in (select c from segment_c)
+    /// ```
+    ///
+    /// The data distribution is as follows:
+    /// ```text
+    /// global (a int, b decimal): [1, 100]
+    /// segment_b (b int): [1]
+    /// segment_c (c decimal): [100]
+    ///
+    /// node1:
+    /// segment_b: [1]
+    /// segment_c: []
+    ///
+    /// node2:
+    /// segment_b: []
+    /// segment_c: [100]
+    /// ```
+    ///
+    /// So, if use `Motion(None)` for both subqueries, we will get `\[1, 100\]` twice in result
+    /// table. So we need `Motion(Full)` for both subqueries.
+    ///
+    /// The same can be said when one subquery has distribution `Any` and the other one has
+    /// distribution `Single`. Then we need to add `Motion(Full)` to `Any` subquery, and
+    /// for `Single` no motion is needed.
+    fn fix_sq_strategy_for_global_tbl(
+        &self,
+        rel_id: usize,
+        cond_id: usize,
+        strategy: &mut Strategy,
+    ) -> Result<(), SbroadError> {
+        let chains = self.get_dnf_chains(cond_id)?;
+        let mut subqueries: Vec<usize> = vec![];
+        let mut chain_count: usize = 0;
+        for mut chain in chains {
+            let nodes = chain.get_mut_nodes();
+            let mut contains_sq = false;
+            while let Some(node_id) = nodes.pop_back() {
+                // Subqueries with `exists` are not handled here, because by default
+                // if they read a global table, then they never need a motion.
+                // Otherwise, if they read some sharded table (Segment or Any),
+                // then they always have Motion, which was set before this function
+                // was called in `get_sq_node_strategy_for_unary_op`.
+                if let Expression::Bool {
+                    op, left, right, ..
+                } = self.get_expression_node(node_id)?
+                {
+                    // If some other operator is used, then the corresponding subquery
+                    // already must have a Motion (in case it is reading non-global table),
+                    // see `choose_strategy_for_bool_op_inner_sq`.
+                    if let Bool::Eq | Bool::In = op {
+                        for child_id in [left, right] {
+                            if let Some(sq_id) = self.get_additional_sq(rel_id, *child_id)? {
+                                if let Distribution::Segment { .. } | Distribution::Single =
+                                    self.get_rel_distribution(sq_id)?
+                                {
+                                    subqueries.push(sq_id);
+                                    contains_sq = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            chain_count += usize::from(contains_sq);
+        }
+
+        if chain_count > 1 {
+            for sq_id in subqueries {
+                if let Distribution::Segment { .. } = self.get_rel_distribution(sq_id)? {
+                    strategy.add_child(sq_id, MotionPolicy::Full, Program::default());
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1811,7 +1930,7 @@ impl Plan {
                     } else if !self.add_two_stage_aggregation(id)? {
                         // if there are no aggregates or GroupBy, just take distribution
                         // from child.
-                        self.set_distribution(proj_output_id)?;
+                        self.set_projection_distribution(id)?;
                     }
                 }
                 Relational::Motion { .. } => {
@@ -1822,9 +1941,13 @@ impl Plan {
                     )));
                 }
                 Relational::Selection { output, filter, .. } => {
-                    self.set_distribution(output)?;
                     let strategy = self.resolve_sub_query_conflicts(id, filter)?;
                     self.create_motion_nodes(strategy)?;
+                    if let Some(dist) = self.dist_from_subqueries(id)? {
+                        self.set_dist(output, dist)?;
+                    } else {
+                        self.set_distribution(output)?;
+                    }
                 }
                 Relational::Join {
                     output,

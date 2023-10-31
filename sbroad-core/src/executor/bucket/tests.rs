@@ -242,3 +242,101 @@ fn global_tbl_scan() {
 
     assert_eq!(Buckets::Any, buckets);
 }
+
+#[test]
+fn global_tbl_sq1() {
+    // first sq will have motion(full)
+    // second sq will have motion(full)
+    // from map aggregation stage.
+    let query = r#"
+    select * from "global_t"
+    where "a" in (select "a" as a1 from "t") or
+    "a" in (select sum("a") from "t")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Any, buckets);
+}
+
+#[test]
+fn global_tbl_sq2() {
+    // first sq will have no motion
+    // second sq will have motion(full)
+    // from map aggregation stage.
+    let query = r#"
+    select * from "global_t"
+    where ("a", "b") in (select "a" as a1, "b" as b1 from "t") and
+    "a" in (select sum("a") from "t")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}
+
+#[test]
+fn global_tbl_sq3() {
+    // sq will have no motion, because
+    // it is reading from global table.
+    // During bucket discovery it shouldn't
+    // affect buckets from inner and outer children
+    let query = r#"
+    select "product_code" from "t" inner join "hash_testing"
+    on "t"."a" = "hash_testing"."identification_number" and "hash_testing"."product_code"
+    in (select "a" as a1 from "global_t")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}
+
+#[test]
+fn global_tbl_sq4() {
+    // sq will have no motion, because
+    // it has distribution Segment .
+    let query = r#"
+    select * from "global_t" 
+    where ("a", "b") in (select "a" as a, "b" as b from "t")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}
+
+#[test]
+fn global_tbl_sq5() {
+    // sq will have motion(full), because
+    // it has distribution Any. So the
+    // whole query will be executed on one node.
+    let query = r#"
+    select * from "global_t" 
+    where "a" in (select "a" as a from "t")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Any, buckets);
+}

@@ -1795,6 +1795,29 @@ impl Plan {
         ))
     }
 
+    /// Some nodes (like Having, Selection, Join),
+    /// may have 0 or more subqueries in addition to
+    /// their required children. This is a helper method
+    /// to return the number of required children.
+    ///
+    /// # Errors
+    /// - Node is not Join, Having, Selection
+    pub fn get_required_children_len(&self, node_id: usize) -> Result<usize, SbroadError> {
+        let len = match self.get_relation_node(node_id)? {
+            Relational::Join { .. } => 2,
+            Relational::Having { .. } | Relational::Selection { .. } => 1,
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Node,
+                    Some(format!(
+                        "expected Join, Having or Selection on id ({node_id})"
+                    )),
+                ))
+            }
+        };
+        Ok(len)
+    }
+
     /// Create a mapping between column positions
     /// in table and corresponding positions in
     /// relational node's output. Sharding

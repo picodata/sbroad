@@ -247,6 +247,47 @@ impl ReferredNodes {
     }
 }
 
+struct ReferenceInfo {
+    referred_children: ReferredNodes,
+    child_column_to_parent_col: AHashMap<ChildColumnReference, ParentColumnPosition>,
+}
+
+impl ReferenceInfo {
+    pub fn new(row_id: usize, ir: &Plan, parent_children: &[usize]) -> Result<Self, SbroadError> {
+        let mut ref_nodes = ReferredNodes::new();
+        let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
+        for (parent_column_pos, id) in ir.get_row_list(row_id)?.iter().enumerate() {
+            let child_id = ir.get_child_under_alias(*id)?;
+            if let Expression::Reference {
+                targets, position, ..
+            } = ir.get_expression_node(child_id)?
+            {
+                // As the row is located in the branch relational node, the targets should be non-empty.
+                let targets = targets.as_ref().ok_or_else(|| {
+                    SbroadError::UnexpectedNumberOfValues("Reference targets are empty".to_string())
+                })?;
+                ref_map.reserve(targets.len());
+                ref_nodes.reserve(targets.len());
+                for target in targets {
+                    let referred_id = parent_children.get(*target).ok_or_else(|| {
+                        SbroadError::NotFound(
+                            Entity::Expression,
+                            "reference points to invalid column".to_string(),
+                        )
+                    })?;
+                    ref_nodes.append(*referred_id);
+                    ref_map.insert((*referred_id, *position).into(), parent_column_pos);
+                }
+            }
+        }
+
+        Ok(ReferenceInfo {
+            referred_children: ref_nodes,
+            child_column_to_parent_col: ref_map,
+        })
+    }
+}
+
 impl Iterator for ReferredNodes {
     type Item = usize;
 
@@ -296,6 +337,68 @@ impl From<(usize, usize)> for ChildColumnReference {
 type ParentColumnPosition = usize;
 
 impl Plan {
+    /// Sets distribution for output tuple of projection.
+    ///
+    /// # Errors
+    /// - node is not projection
+    /// - invalid projection node (e.g. no children)
+    /// - failed to get child distribution
+    pub fn set_projection_distribution(&mut self, proj_id: usize) -> Result<(), SbroadError> {
+        if !matches!(
+            self.get_relation_node(proj_id)?,
+            Relational::Projection { .. }
+        ) {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("expected projection on id: {proj_id}")),
+            ));
+        };
+
+        let output_id = self.get_relational_output(proj_id)?;
+        let child_id = self.get_relational_child(proj_id, 0)?;
+
+        if let Distribution::Global = self.get_rel_distribution(child_id)? {
+            self.set_dist(output_id, Distribution::Global)?;
+            return Ok(());
+        }
+
+        let mut only_compound_exprs = true;
+        for id in self.get_row_list(output_id)?.iter() {
+            let child_id = self.get_child_under_alias(*id)?;
+            if let Expression::Reference { .. } = self.get_expression_node(child_id)? {
+                only_compound_exprs = false;
+                break;
+            }
+        }
+        if only_compound_exprs {
+            // The projection looks like this: `select 1, a + b, 10 * b`
+            // i.e no bare references like in `select a, b, c`
+            self.set_dist(output_id, Distribution::Any)?;
+            return Ok(());
+        }
+
+        // Projection has some bare references: `select a + b, b, c ..`
+        // It may have Segment distribution, to check that we need a mapping
+        // between referenced columns in child and column position in projection's
+        // output.
+        let children = self.get_relational_children(proj_id)?.ok_or_else(|| {
+            SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("projection node ({proj_id}) has no children")),
+            )
+        })?;
+        let ref_info = ReferenceInfo::new(output_id, self, children)?;
+        if let ReferredNodes::Single(child_id) = ref_info.referred_children {
+            let child_dist =
+                self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
+            self.set_dist(output_id, child_dist)?;
+        } else {
+            return Err(SbroadError::Invalid(Entity::ReferredNodes, None));
+        }
+
+        Ok(())
+    }
+
     /// Calculate and set tuple distribution.
     ///
     /// # Errors
@@ -304,92 +407,41 @@ impl Plan {
     pub fn set_distribution(&mut self, row_id: usize) -> Result<(), SbroadError> {
         let row_children = self.get_expression_node(row_id)?.get_row_list()?;
 
-        // There are two kinds of rows: constructed from aliases (projections)
-        // and constructed from any other expressions (selection filters, join conditions, etc).
-        // This closure returns the proper child id for the row.
-        let row_child_id = |col_id: usize| -> Result<usize, SbroadError> {
-            match self.get_expression_node(col_id) {
-                Ok(Expression::Alias { child, .. }) => Ok(*child),
-                Ok(_) => Ok(col_id),
-                Err(e) => Err(e),
-            }
-        };
-
         let mut parent_node = None;
-        let mut only_compound_exprs = true;
         for id in row_children.iter() {
-            let child_id = row_child_id(*id)?;
+            let child_id = self.get_child_under_alias(*id)?;
             if let Expression::Reference { parent, .. } = self.get_expression_node(child_id)? {
                 parent_node = *parent;
-                only_compound_exprs = false;
                 break;
             }
         }
 
-        // if node's output consists ONLY of compound expressions,
-        // we can't make any assumptions about its distribution.
-        // e.g select a + b from t
-        // Here Projection must have Distribution::Any
-        // but: select a + b, a from t
-        // may be distributed by a
-        if only_compound_exprs {
+        let Some(parent_id) = parent_node else {
+            // It is not exactly true for tuples, that are used
+            // in queries with global tables:
+            // select a from global_t join global_t2 on (1, 1) = (a + b, c)
+            // here (1, 1) should have distribution Global, not any.
+            // TODO: fix that when joins for global tables are supported
             self.set_dist(row_id, Distribution::Any)?;
-            return Ok(());
-        }
-
-        let parent_id: usize = if let Some(parent_id) = parent_node {
-            parent_id
-        } else {
-            self.set_dist(row_id, Distribution::Any)?;
-            return Ok(());
+            return Ok(())
         };
         let parent = self.get_relation_node(parent_id)?;
 
         // References in the branch node.
-        if let Some(parent_children) = parent.children() {
+        if let Some(children) = parent.children() {
             // Set of the referred relational nodes in the row.
-            let mut ref_nodes = ReferredNodes::new();
-            // Child node columns referred by the parent node columns in its output tuple.
-            // We'll need it later to deal with the `Segment` distribution.
-            let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
-            for (parent_column_pos, id) in row_children.iter().enumerate() {
-                let child_id = row_child_id(*id)?;
-                if let Expression::Reference {
-                    targets, position, ..
-                } = self.get_expression_node(child_id)?
-                {
-                    // As the row is located in the branch relational node, the targets should be non-empty.
-                    let targets = targets.as_ref().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Reference targets are empty".to_string(),
-                        )
-                    })?;
-                    ref_map.reserve(targets.len());
-                    ref_nodes.reserve(targets.len());
-                    for target in targets {
-                        let referred_id = *parent_children.get(*target).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Expression,
-                                "reference points to invalid column".to_string(),
-                            )
-                        })?;
-                        ref_nodes.append(referred_id);
-                        ref_map.insert((referred_id, *position).into(), parent_column_pos);
-                    }
-                }
-            }
+            let ref_info = ReferenceInfo::new(row_id, self, children)?;
 
-            match ref_nodes {
+            match ref_info.referred_children {
                 ReferredNodes::None => {
-                    // We should never get here as we have already handled the case
-                    // when there are no references in the row (a row of constants).
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
                         Some("the row contains no references".to_string()),
                     ));
                 }
                 ReferredNodes::Single(child_id) => {
-                    let suggested_dist = self.dist_from_child(child_id, &ref_map)?;
+                    let suggested_dist =
+                        self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
                     let output = self.get_mut_expression_node(row_id)?;
                     if let Expression::Row {
                         ref mut distribution,
@@ -403,7 +455,13 @@ impl Plan {
                 }
                 ReferredNodes::Pair(n1, n2) => {
                     // Union, join
-                    self.set_two_children_node_dist(&ref_map, n1, n2, parent_id, row_id)?;
+                    self.set_two_children_node_dist(
+                        &ref_info.child_column_to_parent_col,
+                        n1,
+                        n2,
+                        parent_id,
+                        row_id,
+                    )?;
                 }
                 ReferredNodes::Multiple(_) => {
                     return Err(SbroadError::DuplicatedValue(
@@ -423,7 +481,7 @@ impl Plan {
             let mut table_map: HashMap<usize, usize, RandomState> =
                 HashMap::with_capacity_and_hasher(row_children.len(), RandomState::new());
             for (pos, id) in row_children.iter().enumerate() {
-                let child_id = row_child_id(*id)?;
+                let child_id = self.get_child_under_alias(*id)?;
                 if let Expression::Reference {
                     targets, position, ..
                 } = self.get_expression_node(child_id)?
@@ -459,6 +517,72 @@ impl Plan {
             }
         }
         Ok(())
+    }
+
+    // Join, Having or Selection
+    // may have references that refer only to one
+    // child (or two in case of Join),
+    // but their final distribution also depends
+    // on subqueries. Currently this dependency
+    // arises only when non-sq children (required children)
+    // have Distribution::Global.
+    //
+    // This method checks whether node is Join, Selection or Having,
+    // and if all required children have Global distribution, it computes
+    // the correct distribution in case there are any subqueries. Otherwise,
+    // it retuns `None`.
+    //
+    // # Errors
+    // - node is not relational
+    // - incorrect number of children for node
+    // - missing Motion(Full) for sq with Any distribution
+    pub(crate) fn dist_from_subqueries(
+        &self,
+        node_id: usize,
+    ) -> Result<Option<Distribution>, SbroadError> {
+        let node = self.get_relation_node(node_id)?;
+
+        if !matches!(
+            node,
+            Relational::Join { .. } | Relational::Having { .. } | Relational::Selection { .. }
+        ) {
+            return Ok(None);
+        }
+
+        let required_children_len = self.get_required_children_len(node_id)?;
+        // check all required children have Global distribution
+        for child_idx in 0..required_children_len {
+            let child_id = self.get_relational_child(node_id, child_idx)?;
+            let child_dist = self.get_rel_distribution(child_id)?;
+            if !matches!(child_dist, Distribution::Global) {
+                return Ok(None);
+            }
+        }
+
+        let children_len = node.children().map_or(0, <[usize]>::len);
+        let mut suggested_dist = Some(Distribution::Global);
+        for sq_idx in required_children_len..children_len {
+            let sq_id = self.get_relational_child(node_id, sq_idx)?;
+            match self.get_rel_distribution(sq_id)? {
+                Distribution::Segment { .. } => {
+                    suggested_dist = Some(Distribution::Any);
+                }
+                Distribution::Any { .. } => {
+                    // Earier when resolving conflicts for subqueries we must have
+                    // inserted Motion(Full) for subquery with Any
+                    // distribution.
+                    return Err(SbroadError::Invalid(
+                        Entity::Distribution,
+                        Some(format!(
+                            "expected Motion(Full) for subquery child ({sq_id})"
+                        )),
+                    ));
+                }
+                Distribution::Single | Distribution::Global => {}
+            }
+        }
+
+        Ok(suggested_dist)
     }
 
     // Private methods
@@ -615,6 +739,15 @@ impl Plan {
                 Some("Failed to get distribution for a ACL node.".to_string()),
             )),
         }
+    }
+
+    /// Gets distribution of the relational node.
+    ///
+    /// # Errors
+    /// - Node is not realtional
+    /// - Node is not of a row type.
+    pub fn get_rel_distribution(&self, rel_id: usize) -> Result<&Distribution, SbroadError> {
+        self.get_distribution(self.get_relation_node(rel_id)?.output())
     }
 
     /// Gets distribution of the row node or initializes it if not set.

@@ -886,6 +886,20 @@ impl Plan {
         self.get_expression_node(row_id)?.get_row_list()
     }
 
+    /// Helper function to get id of node under alias node,
+    /// or return the given id if node is not an alias.
+    ///
+    /// # Errors
+    /// - node is not an expression node
+    pub fn get_child_under_alias(&self, child_id: usize) -> Result<usize, SbroadError> {
+        match self.get_expression_node(child_id)? {
+            Expression::Alias {
+                child: alias_child, ..
+            } => Ok(*alias_child),
+            _ => Ok(child_id),
+        }
+    }
+
     /// Gets mut list of `Row` children ids
     ///
     /// # Errors

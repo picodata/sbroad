@@ -211,8 +211,7 @@ where
         let default_buckets = {
             let mut default_buckets = Buckets::Any;
             for child_id in children {
-                let child_dist =
-                    ir_plan.get_distribution(ir_plan.get_relational_output(*child_id)?)?;
+                let child_dist = ir_plan.get_rel_distribution(*child_id)?;
                 if matches!(child_dist, Distribution::Any | Distribution::Segment { .. }) {
                     default_buckets = Buckets::All;
                     break;
@@ -222,7 +221,7 @@ where
         };
         let mut result: Vec<Buckets> = Vec::new();
         for mut chain in chains {
-            let mut chain_buckets = Buckets::Any;
+            let mut chain_buckets = default_buckets.clone();
             let nodes = chain.get_mut_nodes();
             // Nodes in the chain are in the top-down order (from left to right).
             // We need to pop back the chain to get nodes in the bottom-up order.
@@ -311,7 +310,7 @@ where
                     ..
                 } => match policy {
                     MotionPolicy::Full | MotionPolicy::Local => {
-                        self.bucket_map.insert(*output, Buckets::new_all());
+                        self.bucket_map.insert(*output, Buckets::Any);
                     }
                     MotionPolicy::Segment(_) => {
                         let virtual_table = self.exec_plan.get_motion_vtable(node_id)?;
@@ -369,33 +368,36 @@ where
                         ));
                     }
                 },
-                Relational::Delete {
-                    children, output, ..
+                Relational::Delete { output, .. }
+                | Relational::Insert { output, .. }
+                | Relational::Update { output, .. } => {
+                    let child_id = ir_plan.get_relational_child(node_id, 0)?;
+                    let child_buckets = self
+                        .bucket_map
+                        .get(&ir_plan.get_relational_output(child_id)?)
+                        .ok_or_else(|| {
+                            SbroadError::FailedTo(
+                                Action::Retrieve,
+                                Some(Entity::Buckets),
+                                "of the child from the bucket map.".to_string(),
+                            )
+                        })?
+                        .clone();
+                    // By default Motion(Full) produces
+                    // Buckets::Any, but insert, update and
+                    // delete require to be executed on all nodes.
+                    let mut my_buckets = child_buckets;
+                    if let Buckets::Any = my_buckets {
+                        my_buckets = Buckets::All;
+                    }
+                    self.bucket_map.insert(*output, my_buckets);
                 }
-                | Relational::Insert {
-                    children, output, ..
-                }
-                | Relational::Projection {
-                    children, output, ..
-                }
-                | Relational::GroupBy {
-                    children, output, ..
-                }
-                | Relational::Having {
-                    children, output, ..
-                }
-                | Relational::Update {
-                    children, output, ..
-                }
-                | Relational::ScanSubQuery {
-                    children, output, ..
-                } => {
-                    let child_id = children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Current node should have exactly one child".to_string(),
-                        )
-                    })?;
-                    let child_rel = self.exec_plan.get_ir_plan().get_relation_node(*child_id)?;
+                Relational::Projection { output, .. }
+                | Relational::GroupBy { output, .. }
+                | Relational::Having { output, .. }
+                | Relational::ScanSubQuery { output, .. } => {
+                    let child_id = ir_plan.get_relational_child(node_id, 0)?;
+                    let child_rel = ir_plan.get_relation_node(child_id)?;
                     let child_buckets = self
                         .bucket_map
                         .get(&child_rel.output())
