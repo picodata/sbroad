@@ -155,7 +155,12 @@ impl Distribution {
     }
 
     /// Calculate a new distribution for the tuple combined from two different tuples.
-    fn join(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
+    fn join(
+        left: &Distribution,
+        right: &Distribution,
+        plan: &Plan,
+        join_id: usize,
+    ) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
             (Distribution::Any, Distribution::Any) => Distribution::Any,
             (Distribution::Single, Distribution::Global | Distribution::Single)
@@ -165,8 +170,10 @@ impl Distribution {
                     Entity::Distribution,
                     Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
-            // Currently Global distribution is possible only from
-            // Motion node, that appeared after conflict resolution.
+            (Distribution::Global, Distribution::Global) => {
+                // this case is handled by `dist_from_subqueries``
+                Distribution::Global
+            }
             (Distribution::Global, _) | (Distribution::Any, Distribution::Segment { .. }) => {
                 right.clone()
             }
@@ -417,11 +424,6 @@ impl Plan {
         }
 
         let Some(parent_id) = parent_node else {
-            // It is not exactly true for tuples, that are used
-            // in queries with global tables:
-            // select a from global_t join global_t2 on (1, 1) = (a + b, c)
-            // here (1, 1) should have distribution Global, not any.
-            // TODO: fix that when joins for global tables are supported
             self.set_dist(row_id, Distribution::Any)?;
             return Ok(())
         };
@@ -687,7 +689,9 @@ impl Plan {
             Relational::Except { .. } | Relational::UnionAll { .. } => {
                 Distribution::union_except(&left_dist, &right_dist)?
             }
-            Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
+            Relational::Join { .. } => {
+                Distribution::join(&left_dist, &right_dist, self, parent_id)?
+            }
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,

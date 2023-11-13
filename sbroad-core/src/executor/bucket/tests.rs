@@ -340,3 +340,107 @@ fn global_tbl_sq5() {
 
     assert_eq!(Buckets::Any, buckets);
 }
+
+#[test]
+fn global_tbl_join1() {
+    let query = r#"
+    select * from "global_t" 
+    inner join (select "a" as a from "global_t")
+    on true
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Any, buckets);
+}
+
+#[test]
+fn global_tbl_join2() {
+    let query = r#"
+    select * from "global_t" 
+    inner join (select "a" as a from "global_t")
+    on ("a", "b") in (select "e", "f" from "t2")
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}
+
+#[test]
+fn global_tbl_join3() {
+    let query = r#"
+    select * from "t2" 
+    inner join "global_t"
+    on ("e", "f") = (1, 1)
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+    let param = Value::from(1_u64);
+    let bucket = query
+        .coordinator
+        .determine_bucket_id(&[&param, &param])
+        .unwrap();
+    let bucket_set: HashSet<u64, RepeatableState> = vec![bucket].into_iter().collect();
+
+    assert_eq!(Buckets::new_filtered(bucket_set), buckets);
+}
+
+#[test]
+fn global_tbl_join4() {
+    let query = r#"
+    select * from "t2" 
+    left join "global_t"
+    on ("e", "f") = (1, 1)
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}
+
+#[test]
+fn global_tbl_join5() {
+    let query = r#"
+    select e from "global_t"
+    left join (select sum("e") as e from "t2") as s
+    on true
+"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Any, buckets);
+}
+
+#[test]
+fn global_tbl_join6() {
+    let query = r#"update "t3" set "b" = "b1" from (select "b" as "b1" from "global_t")"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::All, buckets);
+}

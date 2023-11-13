@@ -20,9 +20,9 @@ fn front_sql_check_global_tbl_support() {
     let metadata = &RouterConfigurationMock::new();
 
     check_error(
-        r#"select * from "global_t" join (select "a" as "oa" from "t3") on true"#,
+        r#"select * from "global_t" left join (select "a" as "oa" from "t3") on true"#,
         metadata,
-        global_tbl_err!("Join"),
+        global_tbl_err!("Left Join"),
     );
     check_error(
         r#"select "a" from "global_t" union all select * from (select "a" as "oa" from "t3")"#,
@@ -58,11 +58,6 @@ fn front_sql_check_global_tbl_support() {
         r#"delete from "global_t""#,
         metadata,
         global_tbl_err!("Delete"),
-    );
-    check_error(
-        r#"update "t3" set "b" = "b1" from (select "b" as "b1" from "global_t")"#,
-        metadata,
-        global_tbl_err!("Join"),
     );
     check_error(
         r#"update "global_t" set "b" = 1"#,
@@ -453,6 +448,340 @@ subquery $1:
 scan
             projection ("global_t"."a"::integer -> "A1")
                 scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+fn check_join_dist(plan: &Plan, expected_distributions: &[DistMock]) {
+    let filter = |id: usize| -> bool {
+        matches!(
+            plan.get_node(id),
+            Ok(Node::Relational(Relational::Join { .. }))
+        )
+    };
+    let nodes = collect_relational(plan, Box::new(filter));
+    check_distributions(plan, &nodes, expected_distributions);
+}
+
+#[test]
+fn front_sql_global_join1() {
+    let input = r#"
+    select "e", "a" from "global_t"
+    inner join "t2"
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t2"."e"::unsigned -> "e", "global_t"."a"::integer -> "a")
+    join on true::boolean
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+        scan "t2"
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+    check_join_dist(&plan, &[DistMock::Segment]);
+}
+
+#[test]
+fn front_sql_global_join2() {
+    let input = r#"
+    select "e", "a" from "t2"
+    inner join "global_t"
+    on "e" = "a" or "b" = "f"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Segment]);
+
+    let expected_explain = String::from(
+        r#"projection ("t2"."e"::unsigned -> "e", "global_t"."a"::integer -> "a")
+    join on (ROW("t2"."e"::unsigned) = ROW("global_t"."a"::integer) or ROW("global_t"."b"::integer) = ROW("t2"."f"::unsigned))
+        scan "t2"
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                scan "t2"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join3() {
+    let input = r#"
+    select "e", "a" from "t2"
+    left join "global_t"
+    on "e" = "a" or "b" = "f"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Segment]);
+
+    let expected_explain = String::from(
+        r#"projection ("t2"."e"::unsigned -> "e", "global_t"."a"::integer -> "a")
+    left join on (ROW("t2"."e"::unsigned) = ROW("global_t"."a"::integer) or ROW("global_t"."b"::integer) = ROW("t2"."f"::unsigned))
+        scan "t2"
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                scan "t2"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join4() {
+    let input = r#"
+    select e from (select sum("e") as e from "t2") as s
+    left join "global_t"
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Single]);
+
+    let expected_explain = String::from(
+        r#"projection ("S"."E"::decimal -> "E")
+    left join on true::boolean
+        scan "S"
+            projection (sum(("sum_13"::decimal))::decimal -> "E")
+                motion [policy: full]
+                    scan
+                        projection (sum(("t2"."e"::unsigned))::decimal -> "sum_13")
+                            scan "t2"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join5() {
+    let input = r#"
+    select e from "global_t"
+    left join (select sum("e") as e from "t2") as s
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Single]);
+
+    let expected_explain = String::from(
+        r#"projection ("S"."E"::decimal -> "E")
+    left join on true::boolean
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+        scan "S"
+            projection (sum(("sum_19"::decimal))::decimal -> "E")
+                motion [policy: full]
+                    scan
+                        projection (sum(("t2"."e"::unsigned))::decimal -> "sum_19")
+                            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join6() {
+    let input = r#"
+    select e from "global_t"
+    inner join (select "e"*"e" as e from "t2") as s
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Any]);
+
+    let expected_explain = String::from(
+        r#"projection ("S"."E"::unsigned -> "E")
+    join on true::boolean
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+        scan "S"
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+                scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join7() {
+    let input = r#"
+    select e from (select "e"*"e" as e from "t2") as s
+    inner join "global_t"
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Any]);
+
+    let expected_explain = String::from(
+        r#"projection ("S"."E"::unsigned -> "E")
+    join on true::boolean
+        scan "S"
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+                scan "t2"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join8() {
+    let input = r#"
+    select e from (select "a"*"a" as e from "global_t")
+    inner join "global_t"
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Global]);
+
+    let expected_explain = String::from(
+        r#"projection ("E"::integer -> "E")
+    join on true::boolean
+        scan
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+                scan "global_t"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join9() {
+    let input = r#"
+    select e from (select "e"*"e" as e from "t2")
+    left join "global_t"
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Any]);
+
+    let expected_explain = String::from(
+        r#"projection ("E"::unsigned -> "E")
+    left join on true::boolean
+        scan
+            projection (ROW("t2"."e"::unsigned) * ROW("t2"."e"::unsigned) -> "E")
+                scan "t2"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join10() {
+    let input = r#"
+    select e from (select "a"*"a" as e from "global_t")
+    inner join "global_t"
+    on e in (select "e" from "t2")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Global]);
+
+    let expected_explain = String::from(
+        r#"projection ("E"::integer -> "E")
+    join on ROW("E"::integer) in ROW($0)
+        scan
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+                scan "global_t"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+subquery $0:
+motion [policy: full]
+            scan
+                projection ("t2"."e"::unsigned -> "e")
+                    scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_join11() {
+    let input = r#"
+    select e from (select "a"*"a" as e from "global_t")
+    inner join "global_t"
+    on (e, e) in (select "e", "f" from "t2")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    check_join_dist(&plan, &[DistMock::Any]);
+
+    let expected_explain = String::from(
+        r#"projection ("E"::integer -> "E")
+    join on ROW("E"::integer, "E"::integer) in ROW($0, $0)
+        scan
+            projection (ROW("global_t"."a"::integer) * ROW("global_t"."a"::integer) -> "E")
+                scan "global_t"
+        scan "global_t"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                scan "global_t"
+subquery $0:
+scan
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
+                scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

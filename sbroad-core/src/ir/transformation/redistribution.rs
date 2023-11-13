@@ -998,7 +998,7 @@ impl Plan {
                     ));
                 }
             }
-            Relational::UnionAll { .. } | Relational::Except { .. } | Relational::Join { .. } => {
+            Relational::UnionAll { .. } | Relational::Except { .. } => {
                 let left_dist = self.get_distribution(
                     self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
                 )?;
@@ -1012,6 +1012,24 @@ impl Plan {
                     return Err(SbroadError::UnsupportedOpForGlobalTables(
                         node.name().to_string(),
                     ));
+                }
+            }
+            Relational::Join { kind, .. } => {
+                if let JoinKind::LeftOuter = kind {
+                    let left_dist = self.get_distribution(
+                        self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
+                    )?;
+                    let right_dist = self.get_distribution(
+                        self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
+                    )?;
+                    let left_global = matches!(left_dist, Distribution::Global);
+                    let right_single = matches!(right_dist, Distribution::Single);
+                    if left_global && !right_single {
+                        return Err(SbroadError::UnsupportedOpForGlobalTables(format!(
+                            "Left {}",
+                            node.name()
+                        )));
+                    }
                 }
             }
             Relational::Projection { .. }
@@ -1233,6 +1251,9 @@ impl Plan {
                 (outer_dist, inner_dist),
                 (Distribution::Global, _) | (_, Distribution::Global)
             ) {
+                // if at least one child is global, the join can be done without any motions
+                strategy.add_child(inner_child, MotionPolicy::None, Program::default());
+                strategy.add_child(outer_child, MotionPolicy::None, Program::default());
                 self.fix_sq_strategy_for_global_tbl(rel_id, cond_id, &mut strategy)?;
             }
         }
@@ -1450,6 +1471,20 @@ impl Plan {
         }
 
         let mut strategy = Strategy::new(join_id);
+
+        // If one child has Distribution::Global and the other child
+        // Distribution::Single, then motion is not needed.
+        // The fastest way is to execute the subtree on single node,
+        // since we have a child that requires one node execution.
+        if matches!(
+            (outer_dist, inner_dist),
+            (Distribution::Global, _) | (_, Distribution::Global)
+        ) {
+            strategy.add_child(outer_id, MotionPolicy::None, Program::default());
+            strategy.add_child(inner_id, MotionPolicy::None, Program::default());
+            return Ok(Some(strategy));
+        }
+
         let eq_cols = EqualityCols::from_join_condition(self, join_id, inner_id, condition_id)?;
         let (outer_policy, inner_policy) = match (outer_dist, inner_dist) {
             (Distribution::Single, Distribution::Single) => {
@@ -1956,7 +1991,11 @@ impl Plan {
                     ..
                 } => {
                     self.resolve_join_conflicts(id, condition, &kind)?;
-                    self.set_distribution(output)?;
+                    if let Some(dist) = self.dist_from_subqueries(id)? {
+                        self.set_dist(output, dist)?;
+                    } else {
+                        self.set_distribution(output)?;
+                    }
                 }
                 Relational::Delete { .. } => {
                     let strategy = self.resolve_delete_conflicts(id)?;

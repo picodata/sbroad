@@ -208,6 +208,24 @@ where
     ) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;
+        // When we can't extract buckets from expression,
+        // we use default buckets for that expression with
+        // idea that expression does not influence the result
+        // bucket set for given subtree. But we must choose
+        // between Buckets::Any and Buckets::All, we can't use
+        // one of them in all cases:
+        // `select a from global where true`
+        // If expression `true` gives Buckets::All,
+        // then we will get that query must be executed on all
+        // nodes, which is wrong.
+        // On the other hand, if Buckets::Any is the default:
+        // `select a from segment_a where a = 1 or true`
+        // `true` -> Buckets::Any || `a=1` -> Buckets::Filtered = Buckets::Filtered
+        // which is wrong, because query must be executed on all nodes.
+        // So, we should choose default buckets depending on
+        // children's buckets: if some child subtree must be
+        // executed on several nodes, we must use Buckets::All,
+        // otherwise we should use Buckets::Any.
         let default_buckets = {
             let mut default_buckets = Buckets::Any;
             for child_id in children {
