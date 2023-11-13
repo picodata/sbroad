@@ -20,11 +20,6 @@ fn front_sql_check_global_tbl_support() {
     let metadata = &RouterConfigurationMock::new();
 
     check_error(
-        r#"select * from "global_t" left join (select "a" as "oa" from "t3") on true"#,
-        metadata,
-        global_tbl_err!("Left Join"),
-    );
-    check_error(
         r#"select "a" from "global_t" union all select * from (select "a" as "oa" from "t3")"#,
         metadata,
         global_tbl_err!("UnionAll"),
@@ -786,7 +781,6 @@ fn front_sql_global_aggregate1() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "COL_1")
@@ -806,7 +800,6 @@ fn front_sql_global_aggregate2() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "COL_1")
@@ -827,7 +820,6 @@ fn front_sql_global_aggregate3() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "COL_1", sum(("global_t"."a"::integer))::decimal -> "COL_2")
@@ -850,7 +842,6 @@ fn front_sql_global_aggregate4() {
     "#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "COL_1", sum(("global_t"."a"::integer))::decimal -> "COL_2")
@@ -890,6 +881,132 @@ subquery $0:
 scan
                                     projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
                                         scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_left_join1() {
+    let input = r#"
+    select "e", "b" from "global_t"
+    left join "t2" on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("e"::unsigned -> "e", "b"::integer -> "b")
+    motion [policy: full]
+        scan
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                join on true::boolean
+                    motion [policy: full]
+                        scan "global_t"
+                            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                                scan "global_t"
+                    scan "t2"
+                        projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_left_join2() {
+    let input = r#"
+    select "e", sum("b") from "global_t"
+    left join "t2" on true
+    group by "e"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("e"::unsigned -> "e", sum(("b"::integer))::decimal -> "COL_1")
+    group by ("e"::unsigned) output: ("a"::integer -> "a", "b"::integer -> "b", "e"::unsigned -> "e", "f"::unsigned -> "f", "g"::unsigned -> "g", "h"::unsigned -> "h")
+        motion [policy: full]
+            scan
+                projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                    join on true::boolean
+                        motion [policy: full]
+                            scan "global_t"
+                                projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                                    scan "global_t"
+                        scan "t2"
+                            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                                scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_left_join3() {
+    let input = r#"
+    select "e", "b" from 
+    (select "b" * "b" as "b" from "global_t")
+    left join "t2" on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("e"::unsigned -> "e", "b"::integer -> "b")
+    motion [policy: full]
+        scan
+            projection ("b"::integer -> "b", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                join on true::boolean
+                    motion [policy: full]
+                        scan
+                            projection (ROW("global_t"."b"::integer) * ROW("global_t"."b"::integer) -> "b")
+                                scan "global_t"
+                    scan "t2"
+                        projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_left_join4() {
+    let input = r#"
+    select "e", "b" from 
+    (select "b" * "b" as "b" from "global_t")
+    left join 
+    (select "e" + 1 as "e" from "t2")
+    on true
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("e"::unsigned -> "e", "b"::integer -> "b")
+    motion [policy: full]
+        scan
+            projection ("b"::integer -> "b", "e"::unsigned -> "e")
+                join on true::boolean
+                    motion [policy: full]
+                        scan
+                            projection (ROW("global_t"."b"::integer) * ROW("global_t"."b"::integer) -> "b")
+                                scan "global_t"
+                    scan
+                        projection (ROW("t2"."e"::unsigned) + ROW(1::unsigned) -> "e")
+                            scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

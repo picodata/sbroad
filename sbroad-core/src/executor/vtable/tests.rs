@@ -143,3 +143,94 @@ fn vtable_rearrange_for_update() {
 
     assert_eq!(expected, vtable);
 }
+
+#[test]
+fn vtable_add_missing_from1() {
+    let mut vtable = VirtualTable::new();
+
+    // t: a (pk)
+    vtable.add_column(column_integer_user_non_null(String::from("a")));
+    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.set_alias("t").unwrap();
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(4_u64)]);
+    vtable.add_tuple(vec![Value::from(2_u64), Value::from(5_u64)]);
+
+    vtable.set_primary_key(&[0]).unwrap();
+
+    let mut from_vtable = VirtualTable::new();
+    from_vtable.add_column(column_integer_user_non_null(String::from("a")));
+    from_vtable.set_alias("s").unwrap();
+    from_vtable.add_tuple(vec![Value::from(1_u64)]);
+    from_vtable.add_tuple(vec![Value::from(1_u64)]);
+    from_vtable.add_tuple(vec![Value::from(3_u64)]);
+
+    vtable.add_missing_rows(from_vtable).unwrap();
+
+    let expected_index = VTableIndex::new();
+
+    let expected = VirtualTable {
+        columns: vec![
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
+        ],
+        tuples: vec![
+            vec![Value::from(1_u64), Value::from(3_u64)],
+            vec![Value::from(1_u64), Value::from(4_u64)],
+            vec![Value::from(2_u64), Value::from(5_u64)],
+            vec![Value::from(3_u64), Value::Null],
+        ],
+        name: Some(String::from("t")),
+        primary_key: Some(vec![0]),
+        bucket_index: expected_index,
+    };
+
+    assert_eq!(expected, vtable);
+}
+
+#[test]
+fn vtable_add_missing_from2() {
+    let mut vtable = VirtualTable::new();
+
+    // t: a (pk)
+    vtable.add_column(column_integer_user_non_null(String::from("a")));
+    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t").unwrap();
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
+    vtable.add_tuple(vec![Value::from(2_u64), Value::from(4_u64)]);
+
+    vtable.set_primary_key(&[0]).unwrap();
+
+    let mut from_vtable = VirtualTable::new();
+    from_vtable.add_column(column_integer_user_non_null(String::from("a")));
+    from_vtable.set_alias("s").unwrap();
+    from_vtable.add_tuple(vec![Value::from(1_u64)]);
+    from_vtable.add_tuple(vec![Value::from(2_u64)]);
+    from_vtable.add_tuple(vec![Value::from(3_u64)]);
+    from_vtable.add_tuple(vec![Value::from(3_u64)]);
+    from_vtable.add_tuple(vec![Value::from(3_u64)]);
+
+    vtable.add_missing_rows(from_vtable).unwrap();
+
+    let expected_index = VTableIndex::new();
+
+    let expected = VirtualTable {
+        columns: vec![
+            column_integer_user_non_null(String::from("a")),
+            column_integer_user_non_null(String::from("b")),
+        ],
+        tuples: vec![
+            vec![Value::from(1_u64), Value::from(3_u64)],
+            vec![Value::from(2_u64), Value::from(4_u64)],
+            vec![Value::from(3_u64), Value::Null],
+            vec![Value::from(3_u64), Value::Null],
+            vec![Value::from(3_u64), Value::Null],
+        ],
+        name: Some(String::from("t")),
+        primary_key: Some(vec![0]),
+        bucket_index: expected_index,
+    };
+
+    assert_eq!(expected, vtable);
+}

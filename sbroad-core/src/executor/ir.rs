@@ -168,6 +168,23 @@ impl ExecutionPlan {
                         plan.set_update_delete_tuple_len(update_id, v)?;
                     }
                 }
+                MotionOpcode::AddMissingRowsForLeftJoin { motion_id, .. } => {
+                    let motion_id = *motion_id;
+                    let Some(vtables) = &mut self.vtables else {
+                        return Err(SbroadError::UnexpectedNumberOfValues("expected at least one virtual table".into()))
+                    };
+                    let Some(from_vtable) = vtables.mut_map().remove(&motion_id) else {
+                        return Err(SbroadError::UnexpectedNumberOfValues(format!("expected virtual table for motion {motion_id}")))
+                    };
+                    let from_vtable = Rc::try_unwrap(from_vtable).map_err(|_| {
+                        SbroadError::FailedTo(
+                            Action::Borrow,
+                            Some(Entity::VirtualTable),
+                            String::new(),
+                        )
+                    })?;
+                    vtable.add_missing_rows(from_vtable)?;
+                }
             }
         }
 

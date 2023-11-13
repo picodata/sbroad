@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::vec;
 
+use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Entity, SbroadError};
@@ -440,6 +441,63 @@ impl VirtualTable {
         self.set_bucket_index(index.value);
         self.get_mut_tuples().extend(delete_tuples.into_iter());
         Ok(delete_tuple_len)
+    }
+
+    /// Adds rows that are not present in `Self`
+    /// from another virtual table.
+    ///
+    /// Assumptions:
+    /// 1. All columns from `from_vtable` are located in
+    /// a row from the beginning of the current vtable's columns.
+    ///
+    /// # Errors
+    /// - invalid arguments
+    pub fn add_missing_rows(&mut self, from_vtable: VirtualTable) -> Result<(), SbroadError> {
+        if from_vtable.columns.len() >= self.columns.len() {
+            return Err(SbroadError::UnexpectedNumberOfValues(
+                "from vtable must have less columns then self vtable!".into(),
+            ));
+        }
+        let mut current_tuples: AHashSet<&[Value]> = AHashSet::with_capacity(self.tuples.len());
+
+        let key_tuple_len = from_vtable.columns.len();
+        for tuple in &self.tuples {
+            let key_tuple = &tuple[..key_tuple_len];
+            current_tuples.insert(key_tuple);
+        }
+        current_tuples.shrink_to_fit();
+
+        let estimated_capacity = from_vtable.tuples.len().saturating_sub(self.tuples.len());
+        let mut missing_tuples: HashMap<VTableTuple, usize, RepeatableState> =
+            HashMap::with_capacity_and_hasher(estimated_capacity, RepeatableState);
+        let mut missing_tuples_cnt: usize = 0;
+        for tuple in from_vtable.tuples {
+            if !current_tuples.contains(&tuple[..]) {
+                missing_tuples
+                    .entry(tuple)
+                    .and_modify(|cnt| *cnt += 1)
+                    .or_insert(1);
+            }
+            missing_tuples_cnt += 1;
+        }
+
+        let move_to_slice = |dst: &mut [Value], src: Vec<Value>| {
+            for (to, from) in dst.iter_mut().zip(src) {
+                *to = from;
+            }
+        };
+
+        self.tuples.reserve(missing_tuples_cnt);
+        for (key_tuple, count) in missing_tuples {
+            let mut joined_tuple = vec![Value::Null; self.columns.len()];
+            move_to_slice(&mut joined_tuple[0..key_tuple_len], key_tuple);
+            for _ in 0..count - 1 {
+                self.tuples.push(joined_tuple.clone());
+            }
+            self.tuples.push(joined_tuple);
+        }
+
+        Ok(())
     }
 }
 

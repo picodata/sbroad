@@ -1818,6 +1818,58 @@ impl Plan {
         Ok(len)
     }
 
+    /// Finds the parent of the given relational node.
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - Plan has no top
+    pub fn find_parent_rel(&self, target_id: usize) -> Result<Option<usize>, SbroadError> {
+        for (id, node) in self.nodes.iter().enumerate() {
+            if !matches!(node, Node::Relational(_)) {
+                continue;
+            }
+            for child_id in self.nodes.rel_iter(id) {
+                if child_id == target_id {
+                    return Ok(Some(id));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Change child of relational node.
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - node does not have child with specified id
+    pub fn change_child(
+        &mut self,
+        parent_id: usize,
+        old_child_id: usize,
+        new_child_id: usize,
+    ) -> Result<(), SbroadError> {
+        let node = self.get_mut_relation_node(parent_id)?;
+        let Some(children) = node.mut_children() else {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("node ({parent_id}) has no children"))
+            ))
+        };
+        for child_id in children {
+            if *child_id == old_child_id {
+                *child_id = new_child_id;
+                return Ok(());
+            }
+        }
+
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format!(
+                "node ({parent_id}) has no child with id ({old_child_id})"
+            )),
+        ))
+    }
+
     /// Create a mapping between column positions
     /// in table and corresponding positions in
     /// relational node's output. Sharding

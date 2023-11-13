@@ -23,6 +23,7 @@ use sbroad_proc::otm_child_span;
 pub(crate) mod dml;
 pub(crate) mod eq_cols;
 pub(crate) mod groupby;
+pub(crate) mod left_join;
 
 pub(crate) enum JoinChild {
     Inner,
@@ -127,6 +128,9 @@ pub enum MotionOpcode {
         update_id: usize,
         old_shard_columns_len: usize,
         new_shard_columns_positions: Vec<ColumnPosition>,
+    },
+    AddMissingRowsForLeftJoin {
+        motion_id: usize,
     },
 }
 
@@ -1014,32 +1018,25 @@ impl Plan {
                     ));
                 }
             }
-            Relational::Join { kind, .. } => {
-                if let JoinKind::LeftOuter = kind {
-                    let left_dist = self.get_distribution(
-                        self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
-                    )?;
-                    let right_dist = self.get_distribution(
-                        self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
-                    )?;
-                    let left_global = matches!(left_dist, Distribution::Global);
-                    let right_single = matches!(right_dist, Distribution::Single);
-                    if left_global && !right_single {
-                        return Err(SbroadError::UnsupportedOpForGlobalTables(format!(
-                            "Left {}",
-                            node.name()
-                        )));
-                    }
-                }
-            }
             Relational::Projection { .. }
             | Relational::GroupBy { .. }
             | Relational::Having { .. }
+            | Relational::Join { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
             | Relational::ScanSubQuery { .. }
             | Relational::Motion { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn set_rows_distributions_in_expr(&mut self, expr_id: usize) -> Result<(), SbroadError> {
+        let nodes = self.get_bool_nodes_with_row_children(expr_id);
+        for (_, node) in &nodes {
+            let bool_op = BoolOp::from_expr(self, *node)?;
+            self.set_distribution(bool_op.left)?;
+            self.set_distribution(bool_op.right)?;
         }
         Ok(())
     }
@@ -1062,23 +1059,18 @@ impl Plan {
             self.calculate_strategy_for_single_distribution(rel_id, cond_id, join_kind)?
         {
             self.create_motion_nodes(strategy)?;
-            let nodes = self.get_bool_nodes_with_row_children(cond_id);
-            for (_, node) in &nodes {
-                let bool_op = BoolOp::from_expr(self, *node)?;
-                self.set_distribution(bool_op.left)?;
-                self.set_distribution(bool_op.right)?;
-            }
+            self.set_rows_distributions_in_expr(cond_id)?;
             return Ok(());
         }
 
         // First, we need to set the motion policy for each boolean expression in the join condition.
+        self.set_rows_distributions_in_expr(cond_id)?;
+
+        if let Some(strategy) =
+            self.calculate_strategy_for_left_join_with_global_tbl(rel_id, join_kind)?
         {
-            let nodes = self.get_bool_nodes_with_row_children(cond_id);
-            for (_, node) in &nodes {
-                let bool_op = BoolOp::from_expr(self, *node)?;
-                self.set_distribution(bool_op.left)?;
-                self.set_distribution(bool_op.right)?;
-            }
+            self.create_motion_nodes(strategy)?;
+            return Ok(());
         }
 
         // Init the strategy (motion policy map) for all the join children except the outer child.
@@ -1474,6 +1466,18 @@ impl Plan {
 
         let mut strategy = Strategy::new(join_id);
 
+        let subqueries = self
+            .get_relational_children(join_id)?
+            .ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues(format!("join {join_id} has no children!"))
+            })?
+            .split_at(2)
+            .1;
+        for sq in subqueries {
+            // todo: improve subqueries motions
+            strategy.add_child(*sq, MotionPolicy::Full, Program::default());
+        }
+
         // If one child has Distribution::Global and the other child
         // Distribution::Single, then motion is not needed.
         // The fastest way is to execute the subtree on single node,
@@ -1530,17 +1534,6 @@ impl Plan {
         strategy.add_child(outer_id, outer_policy, Program::default());
         strategy.add_child(inner_id, inner_policy, Program::default());
 
-        let subqueries = self
-            .get_relational_children(join_id)?
-            .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(format!("join {join_id} has no children!"))
-            })?
-            .split_at(2)
-            .1;
-        for sq in subqueries {
-            // todo: improve subqueries motions
-            strategy.add_child(*sq, MotionPolicy::Full, Program::default());
-        }
         Ok(Some(strategy))
     }
 
