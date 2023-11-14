@@ -973,7 +973,7 @@ impl Plan {
     pub(crate) fn check_global_tbl_support(&self, rel_id: usize) -> Result<(), SbroadError> {
         let node = self.get_relation_node(rel_id)?;
         match node {
-            Relational::Values { .. } | Relational::GroupBy { .. } | Relational::Having { .. } => {
+            Relational::Values { .. } => {
                 let child_dist = self.get_distribution(
                     self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
                 )?;
@@ -1033,6 +1033,8 @@ impl Plan {
                 }
             }
             Relational::Projection { .. }
+            | Relational::GroupBy { .. }
+            | Relational::Having { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
@@ -1956,10 +1958,11 @@ impl Plan {
                     let child_dist = self.get_distribution(
                         self.get_relational_output(self.get_relational_child(id, 0)?)?,
                     )?;
-                    if matches!(child_dist, Distribution::Single) {
-                        // If child has Distribution::Single and this Projection contains
-                        // aggregates or there is GroupBy, then we don't need two stage
-                        // transformation, we can calculate aggregates / GroupBy in one
+                    if matches!(child_dist, Distribution::Single | Distribution::Global) {
+                        // If child has Single or Global distribution and this Projection
+                        // contains aggregates or there is GroupBy,
+                        // then we don't need two stage transformation,
+                        // we can calculate aggregates / GroupBy in one
                         // stage, because all data will reside on a single node.
                         self.set_dist(proj_output_id, child_dist.clone())?;
                     } else if !self.add_two_stage_aggregation(id)? {

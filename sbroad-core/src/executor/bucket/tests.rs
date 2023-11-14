@@ -444,3 +444,16 @@ fn global_tbl_join6() {
 
     assert_eq!(Buckets::All, buckets);
 }
+
+#[test]
+fn global_tbl_groupby() {
+    let query = r#"select "a", avg("b") from "global_t" group by "a" having sum("b") > 10"#;
+
+    let coordinator = RouterRuntimeMock::new();
+    let mut query = Query::new(&coordinator, query, vec![]).unwrap();
+    let plan = query.exec_plan.get_ir_plan();
+    let top = plan.get_top().unwrap();
+    let buckets = query.bucket_discovery(top).unwrap();
+
+    assert_eq!(Buckets::Any, buckets);
+}

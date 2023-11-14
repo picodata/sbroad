@@ -35,16 +35,6 @@ fn front_sql_check_global_tbl_support() {
         global_tbl_err!("Except"),
     );
     check_error(
-        r#"select sum("a") from "global_t""#,
-        metadata,
-        global_tbl_err!("Aggregate"),
-    );
-    check_error(
-        r#"select "a" from "global_t" group by "a""#,
-        metadata,
-        global_tbl_err!("GroupBy"),
-    );
-    check_error(
         r#"insert into "global_t" values (1, 1)"#,
         metadata,
         "expected sharded table",
@@ -67,7 +57,6 @@ fn front_sql_check_global_tbl_support() {
 
     fn check_error(input: &str, metadata: &RouterConfigurationMock, expected_err: &str) {
         let res = build(input, metadata);
-        if res.is_ok() {}
         let err = res.unwrap_err();
 
         assert_eq!(true, err.to_string().contains(expected_err));
@@ -782,6 +771,125 @@ subquery $0:
 scan
             projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
                 scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_aggregate1() {
+    let input = r#"
+    select sum("a") + avg("b" + "b") from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    println!("{}", plan.as_explain().unwrap());
+
+    let expected_explain = String::from(
+        r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "COL_1")
+    scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_aggregate2() {
+    let input = r#"
+    select sum("a") + avg("b" + "b") from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    println!("{}", plan.as_explain().unwrap());
+
+    let expected_explain = String::from(
+        r#"projection (ROW(sum(("global_t"."a"::integer))::decimal) + ROW(avg((ROW("global_t"."b"::integer) + ROW("global_t"."b"::integer)))::decimal) -> "COL_1")
+    scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_aggregate3() {
+    let input = r#"
+    select "b"+"a", sum("a") from "global_t"
+    group by "b"+"a"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    println!("{}", plan.as_explain().unwrap());
+
+    let expected_explain = String::from(
+        r#"projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "COL_1", sum(("global_t"."a"::integer))::decimal -> "COL_2")
+    group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+        scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_aggregate4() {
+    let input = r#"
+    select "b"+"a", sum("a") from "global_t"
+    group by "b"+"a"
+    having avg("b") > 3
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    println!("{}", plan.as_explain().unwrap());
+
+    let expected_explain = String::from(
+        r#"projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "COL_1", sum(("global_t"."a"::integer))::decimal -> "COL_2")
+    having ROW(avg(("global_t"."b"::integer))::decimal) > ROW(3::unsigned)
+        group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+            scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_aggregate5() {
+    let input = r#"
+    select "b"+"a", sum("a") from "global_t"
+    where ("a", "b") in (select "e", "f" from "t2")
+    group by "b"+"a"
+    having avg("b") > 3
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("column_44"::integer -> "COL_1", sum(("sum_70"::decimal))::decimal -> "COL_2")
+    having ROW((sum(("sum_52"::decimal::double))::decimal / sum(("count_52"::integer::double))::decimal)) > ROW(3::unsigned)
+        group by ("column_44"::integer) output: ("column_44"::integer -> "column_44", "sum_52"::decimal -> "sum_52", "sum_70"::decimal -> "sum_70", "count_52"::integer -> "count_52")
+            motion [policy: segment([ref("column_44")])]
+                scan
+                    projection (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer) -> "column_44", sum(("global_t"."b"::integer))::decimal -> "sum_52", sum(("global_t"."a"::integer))::decimal -> "sum_70", count(("global_t"."b"::integer))::integer -> "count_52")
+                        group by (ROW("global_t"."b"::integer) + ROW("global_t"."a"::integer)) output: ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                            selection ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0)
+                                scan "global_t"
+subquery $0:
+scan
+                                    projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
+                                        scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

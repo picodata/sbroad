@@ -155,12 +155,7 @@ impl Distribution {
     }
 
     /// Calculate a new distribution for the tuple combined from two different tuples.
-    fn join(
-        left: &Distribution,
-        right: &Distribution,
-        plan: &Plan,
-        join_id: usize,
-    ) -> Result<Distribution, SbroadError> {
+    fn join(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
             (Distribution::Any, Distribution::Any) => Distribution::Any,
             (Distribution::Single, Distribution::Global | Distribution::Single)
@@ -689,9 +684,7 @@ impl Plan {
             Relational::Except { .. } | Relational::UnionAll { .. } => {
                 Distribution::union_except(&left_dist, &right_dist)?
             }
-            Relational::Join { .. } => {
-                Distribution::join(&left_dist, &right_dist, self, parent_id)?
-            }
+            Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,
