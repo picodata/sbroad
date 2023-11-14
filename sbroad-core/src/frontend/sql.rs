@@ -679,25 +679,45 @@ impl Ast for AbstractSyntaxTree {
             let node = self.nodes.get_node(id)?;
             match &node.rule {
                 Type::Scan => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
+                    let ast_scan_id = node.children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "could not find child id in scan node".to_string(),
+                            "could not find first child id in scan node".to_string(),
                         )
                     })?;
-                    let plan_child_id = map.get(*ast_child_id)?;
+                    let plan_child_id = map.get(*ast_scan_id)?;
                     map.add(id, plan_child_id);
-                    if let Some(ast_scan_id) = node.children.get(1) {
-                        let ast_scan = self.nodes.get_node(*ast_scan_id)?;
-                        if let Type::ScanName = ast_scan.rule {
-                            let ast_scan_name =
-                                ast_scan.value.as_deref().map(normalize_name_from_sql);
+                    if let Some(ast_alias_id) = node.children.get(1) {
+                        let ast_alias = self.nodes.get_node(*ast_alias_id)?;
+                        if let Type::ScanName = ast_alias.rule {
+                            let ast_alias_name =
+                                ast_alias.value.as_deref().map(normalize_name_from_sql);
                             // Update scan name in the plan.
                             let scan = plan.get_mut_relation_node(plan_child_id)?;
-                            scan.set_scan_name(ast_scan_name)?;
+                            scan.set_scan_name(ast_alias_name)?;
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Type,
                                 Some("expected scan name AST node.".into()),
+                            ));
+                        }
+                    }
+                }
+                Type::ScanTable => {
+                    let ast_table_id = node.children.first().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "could not find first child id in scan table node".to_string(),
+                        )
+                    })?;
+                    let ast_table = self.nodes.get_node(*ast_table_id)?;
+                    match ast_table.value {
+                        Some(ref table) if ast_table.rule == Type::Table => {
+                            let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
+                            map.add(id, scan_id);
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::Type,
+                                Some("Table scan child must be a valid table.".into()),
                             ));
                         }
                     }
@@ -707,8 +727,6 @@ impl Ast for AbstractSyntaxTree {
                         let table = node_val.as_str();
                         let t = metadata.table(table)?;
                         plan.add_rel(t);
-                        let scan_id = plan.add_scan(&normalize_name_from_sql(table), None)?;
-                        map.add(id, scan_id);
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Type,
@@ -1659,17 +1677,28 @@ impl Ast for AbstractSyntaxTree {
                         SbroadError::UnexpectedNumberOfValues("Update has no children.".into())
                     })?;
                     let ast_table = self.nodes.get_node(ast_table_id)?;
-                    if let Type::Table = ast_table.rule {
+                    if let Type::ScanTable = ast_table.rule {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Type,
-                            Some(format!("expected a Table in update, got {ast_table:?}.",)),
+                            Some(format!(
+                                "expected a table scan in update, got {ast_table:?}.",
+                            )),
                         ));
                     }
-                    let relation =
-                        normalize_name_from_sql(ast_table.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(Entity::Name, "of table in the AST".into())
-                        })?);
+                    let plan_scan_id = map.get(ast_table_id)?;
+                    let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
+                    let relation = if let Relational::ScanRelation { relation, .. } = plan_scan_node
+                    {
+                        relation.clone()
+                    } else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Type,
+                            Some(format!(
+                                "expected a table scan in update, got {ast_table:?}.",
+                            )),
+                        ));
+                    };
                     let update_list_id = node.children.get(2).unwrap();
                     let update_list = self.nodes.get_node(*update_list_id)?;
                     // Maps position of column in table to corresponding update expression
@@ -1765,7 +1794,7 @@ impl Ast for AbstractSyntaxTree {
                     {
                         let child_node = self.nodes.get_node(*child_id)?;
                         match child_node.rule {
-                            Type::Table => {
+                            Type::ScanTable => {
                                 let plan_scan_id = map.get(*child_id)?;
                                 let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
                                 let table = if let Relational::ScanRelation { relation, .. } =

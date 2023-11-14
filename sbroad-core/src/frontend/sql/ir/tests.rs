@@ -734,11 +734,11 @@ fn front_sql_groupby_insert() {
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
     motion [policy: segment([value(NULL), ref("d")])]
-        projection ("column_24"::unsigned -> "b", "column_25"::unsigned -> "d")
-            group by ("column_24"::unsigned, "column_25"::unsigned) output: ("column_25"::unsigned -> "column_25", "column_24"::unsigned -> "column_24")
-                motion [policy: segment([ref("column_24"), ref("column_25")])]
+        projection ("column_12"::unsigned -> "b", "column_13"::unsigned -> "d")
+            group by ("column_12"::unsigned, "column_13"::unsigned) output: ("column_12"::unsigned -> "column_12", "column_13"::unsigned -> "column_13")
+                motion [policy: segment([ref("column_12"), ref("column_13")])]
                     scan
-                        projection ("t"."d"::unsigned -> "column_25", "t"."b"::unsigned -> "column_24")
+                        projection ("t"."b"::unsigned -> "column_12", "t"."d"::unsigned -> "column_13")
                             group by ("t"."b"::unsigned, "t"."d"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                                 scan "t"
 execution options:
@@ -1357,10 +1357,10 @@ fn front_sql_insert_single() {
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
     motion [policy: segment([value(NULL), ref("COL_2")])]
-        projection (sum(("sum_25"::decimal))::decimal -> "COL_1", sum(("count_28"::integer))::decimal -> "COL_2")
+        projection (sum(("sum_13"::decimal))::decimal -> "COL_1", sum(("count_16"::integer))::decimal -> "COL_2")
             motion [policy: full]
                 scan
-                    projection (sum(("t"."b"::unsigned))::decimal -> "sum_25", count(("t"."d"::unsigned))::integer -> "count_28")
+                    projection (sum(("t"."b"::unsigned))::decimal -> "sum_13", count(("t"."d"::unsigned))::integer -> "count_16")
                         scan "t"
 execution options:
 sql_vdbe_max_steps = 45000

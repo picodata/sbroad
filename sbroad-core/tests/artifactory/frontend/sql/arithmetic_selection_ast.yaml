@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children: #0
-        - 14
+        - 15
       rule: Query
       value: ~
     - children: #1
-        - 14
+        - 15
       rule: Select
       value: ~
     - children: #2
@@ -53,31 +53,35 @@ nodes:
         - 13
       rule: Scan
       value: ~
-    - children: [] #13
+    - children: #13
+        - 14
+      rule: ScanTable
+      value: ~
+    - children: [] #14
       rule: Table
       value: t
-    - children: #14
+    - children: #15
         - 2
-        - 15
+        - 16
       rule: Projection
       value: ~
-    - children: #15
-        - 19
+    - children: #16
+        - 20
       rule: Column
       value: ~
-    - children: #16
-        - 17
+    - children: #17
+        - 18
       rule: Reference
       value: ~
-    - children: [] #17
+    - children: [] #18
       rule: ColumnName
       value: a
-    - children: [] #18
+    - children: [] #19
       rule: AliasName
       value: a
-    - children: #19
-        - 16
-        - 18
+    - children: #20
+        - 17
+        - 19
       rule: Alias
       value: ~
 top: 0
@@ -86,5 +90,5 @@ map:
     - 12
   7:
     - 12
-  16:
+  17:
     - 2

@@ -2,31 +2,35 @@
 nodes:
   arena:
     - children:
-        - 4
+        - 5
       rule: Query
       value: ~
     - children:
-        - 4
+        - 5
       rule: Select
       value: ~
     - children:
         - 3
       rule: Scan
       value: ~
+    - children:
+        - 4
+      rule: ScanTable
+      value: ~
     - children: []
       rule: Table
       value: "\"test_space\""
     - children:
         - 2
-        - 5
+        - 6
       rule: Projection
       value: ~
     - children:
-        - 9
+        - 10
       rule: Column
       value: ~
     - children:
-        - 7
+        - 8
       rule: SingleQuotedString
       value: ~
     - children: []
@@ -36,8 +40,8 @@ nodes:
       rule: AliasName
       value: COL_1
     - children:
-        - 6
-        - 8
+        - 7
+        - 9
       rule: Alias
       value: ~
 top: 0

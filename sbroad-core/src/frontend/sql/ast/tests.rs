@@ -293,6 +293,10 @@ fn traversal() {
     let node = ast.nodes.get_node(table_id).unwrap();
     assert_eq!(node.rule, Type::Table);
 
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
+
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
@@ -431,6 +435,10 @@ fn sql_arithmetic_selection_ast() {
     assert_eq!(node.rule, Type::Table);
     assert_eq!(node.value, Some("t".to_string()));
 
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
+
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
@@ -535,6 +543,10 @@ fn sql_arithmetic_projection_ast() {
     assert_eq!(node.rule, Type::Table);
     assert_eq!(node.value, Some("t".to_string()));
 
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
+
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
@@ -615,6 +627,10 @@ fn sql_arithmetic_projection_alias_ast() {
     assert_eq!(node.rule, Type::Table);
     assert_eq!(node.value, Some("t".to_string()));
 
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
+
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();
     assert_eq!(node.rule, Type::Scan);
@@ -693,6 +709,10 @@ fn sql_arbitrary_projection_ast() {
     let node = ast.nodes.get_node(table_id).unwrap();
     assert_eq!(node.rule, Type::Table);
     assert_eq!(node.value, Some("t".to_string()));
+
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
 
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();
@@ -789,6 +809,10 @@ fn sql_arbitrary_projection_alias_ast() {
     let node = ast.nodes.get_node(table_id).unwrap();
     assert_eq!(node.rule, Type::Table);
     assert_eq!(node.value, Some("t".to_string()));
+
+    let (_, scan_table_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(scan_table_id).unwrap();
+    assert_eq!(node.rule, Type::ScanTable);
 
     let (_, scan_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(scan_id).unwrap();

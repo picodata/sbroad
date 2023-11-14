@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children: #0
-        - 31
+        - 33
       rule: Query
       value: ~
     - children: #1
-        - 31
+        - 33
       rule: Select
       value: ~
     - children: #2
@@ -66,8 +66,8 @@ nodes:
       rule: ScanName
       value: t1
     - children: #16
+        - 30
         - 29
-        - 28
         - 26
         - 17
       rule: Join
@@ -111,84 +111,92 @@ nodes:
         - 27
       rule: Scan
       value: ~
-    - children: [] #27
+    - children: #27
+        - 28
+      rule: ScanTable
+      value: ~
+    - children: [] #28
       rule: Table
       value: t2
-    - children: [] #28
+    - children: [] #29
       rule: InnerJoinKind
       value: inner
-    - children: #29
-        - 30
+    - children: #30
+        - 31
       rule: Scan
       value: ~
-    - children: [] #30
+    - children: #31
+        - 32
+      rule: ScanTable
+      value: ~
+    - children: [] #32
       rule: Table
       value: t1
-    - children: #31
+    - children: #33
         - 2
-        - 36
-        - 32
+        - 38
+        - 34
       rule: Projection
       value: ~
-    - children: #32
+    - children: #34
+        - 45
+      rule: Column
+      value: ~
+    - children: #35
+        - 37
+        - 36
+      rule: Reference
+      value: ~
+    - children: [] #36
+      rule: ColumnName
+      value: b
+    - children: [] #37
+      rule: ScanName
+      value: t2
+    - children: #38
         - 43
       rule: Column
       value: ~
-    - children: #33
-        - 35
-        - 34
-      rule: Reference
-      value: ~
-    - children: [] #34
-      rule: ColumnName
-      value: b
-    - children: [] #35
-      rule: ScanName
-      value: t2
-    - children: #36
+    - children: #39
         - 41
-      rule: Column
-      value: ~
-    - children: #37
-        - 39
-        - 38
+        - 40
       rule: Reference
       value: ~
-    - children: [] #38
+    - children: [] #40
       rule: ColumnName
       value: a
-    - children: [] #39
+    - children: [] #41
       rule: ScanName
       value: t1
-    - children: [] #40
-      rule: AliasName
-      value: a
-    - children: #41
-        - 37
-        - 40
-      rule: Alias
-      value: ~
     - children: [] #42
       rule: AliasName
-      value: b
+      value: a
     - children: #43
-        - 33
+        - 39
         - 42
+      rule: Alias
+      value: ~
+    - children: [] #44
+      rule: AliasName
+      value: b
+    - children: #45
+        - 35
+        - 44
       rule: Alias
       value: ~
 top: 0
 map:
   3:
     - 9
-  37:
+  39:
     - 2
   19:
-    - 29
+    - 30
     - 26
-  33:
+  35:
     - 2
   23:
-    - 29
+    - 30
     - 26
   13:
     - 16

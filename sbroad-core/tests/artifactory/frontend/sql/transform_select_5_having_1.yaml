@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children: #0
-        - 42
+        - 44
       rule: Query
       value: ~
     - children: #1
-        - 42
+        - 44
       rule: Select
       value: ~
     - children: #2
@@ -110,8 +110,8 @@ nodes:
       rule: ScanName
       value: t1
     - children: #27
+        - 41
         - 40
-        - 39
         - 37
         - 28
       rule: Join
@@ -155,79 +155,87 @@ nodes:
         - 38
       rule: Scan
       value: ~
-    - children: [] #38
+    - children: #38
+        - 39
+      rule: ScanTable
+      value: ~
+    - children: [] #39
       rule: Table
       value: t2
-    - children: [] #39
+    - children: [] #40
       rule: InnerJoinKind
       value: inner
-    - children: #40
-        - 41
+    - children: #41
+        - 42
       rule: Scan
       value: ~
-    - children: [] #41
+    - children: #42
+        - 43
+      rule: ScanTable
+      value: ~
+    - children: [] #43
       rule: Table
       value: t1
-    - children: #42
+    - children: #44
         - 2
-        - 43
+        - 45
       rule: Projection
       value: ~
-    - children: #43
-        - 55
+    - children: #45
+        - 57
       rule: Column
       value: ~
-    - children: #44
-        - 50
-        - 49
-        - 45
+    - children: #46
+        - 52
+        - 51
+        - 47
       rule: Addition
       value: ~
-    - children: #45
+    - children: #47
+        - 50
         - 48
-        - 46
       rule: Function
       value: ~
-    - children: #46
-        - 47
+    - children: #48
+        - 49
       rule: Reference
       value: ~
-    - children: [] #47
+    - children: [] #49
       rule: ColumnName
       value: b
-    - children: [] #48
+    - children: [] #50
       rule: FunctionName
       value: f
-    - children: [] #49
+    - children: [] #51
       rule: Add
       value: +
-    - children: #50
+    - children: #52
+        - 55
         - 53
-        - 51
       rule: Function
       value: ~
-    - children: #51
-        - 52
+    - children: #53
+        - 54
       rule: Reference
       value: ~
-    - children: [] #52
+    - children: [] #54
       rule: ColumnName
       value: a
-    - children: [] #53
+    - children: [] #55
       rule: FunctionName
       value: sum
-    - children: [] #54
+    - children: [] #56
       rule: AliasName
       value: COL_1
-    - children: #55
-        - 44
-        - 54
+    - children: #57
+        - 46
+        - 56
       rule: Alias
       value: ~
 top: 0
 map:
   30:
-    - 40
+    - 41
     - 37
   24:
     - 27
@@ -235,12 +243,12 @@ map:
     - 27
   8:
     - 20
-  46:
+  48:
     - 2
   34:
-    - 40
+    - 41
     - 37
   16:
     - 20
-  51:
+  53:
     - 2

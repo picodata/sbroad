@@ -2,16 +2,16 @@
 nodes:
   arena:
     - children: #0
-        - 17
+        - 19
       rule: Query
       value: ~
     - children: #1
-        - 17
+        - 19
       rule: Select
       value: ~
     - children: #2
+        - 16
         - 15
-        - 14
         - 12
         - 3
       rule: Join
@@ -55,34 +55,42 @@ nodes:
         - 13
       rule: Scan
       value: ~
-    - children: [] #13
+    - children: #13
+        - 14
+      rule: ScanTable
+      value: ~
+    - children: [] #14
       rule: Table
       value: t2
-    - children: [] #14
+    - children: [] #15
       rule: InnerJoinKind
       value: inner
-    - children: #15
-        - 16
+    - children: #16
+        - 17
       rule: Scan
       value: ~
-    - children: [] #16
-      rule: Table
-      value: t1
     - children: #17
-        - 2
         - 18
-      rule: Projection
+      rule: ScanTable
       value: ~
     - children: [] #18
+      rule: Table
+      value: t1
+    - children: #19
+        - 2
+        - 20
+      rule: Projection
+      value: ~
+    - children: [] #20
       rule: Asterisk
       value: "*"
 top: 0
 map:
-  18:
+  20:
     - 2
   9:
-    - 15
+    - 16
     - 12
   5:
-    - 15
+    - 16
     - 12

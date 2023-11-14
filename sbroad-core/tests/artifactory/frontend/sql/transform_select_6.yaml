@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children: #0
-        - 42
+        - 44
       rule: Query
       value: ~
     - children: #1
-        - 42
+        - 44
       rule: Select
       value: ~
     - children: #2
@@ -110,8 +110,8 @@ nodes:
       rule: ColumnName
       value: a
     - children: #27
+        - 41
         - 40
-        - 39
         - 37
         - 28
       rule: Join
@@ -155,6 +155,10 @@ nodes:
         - 38
       rule: Scan
       value: ~
+    - children:
+        - 39
+      rule: ScanTable
+      value: ~
     - children: [] #38
       rule: Table
       value: t2
@@ -162,28 +166,32 @@ nodes:
       rule: InnerJoinKind
       value: inner
     - children: #40
-        - 41
+        - 42
       rule: Scan
+      value: ~
+    - children:
+        - 43
+      rule: ScanTable
       value: ~
     - children: [] #41
       rule: Table
       value: t1
     - children: #42
         - 2
-        - 43
+        - 45
       rule: Projection
       value: ~
     - children: #43
-        - 49
+        - 51
       rule: Column
       value: ~
     - children: #44
+        - 49
         - 47
-        - 45
       rule: Function
       value: ~
     - children: #45
-        - 46
+        - 48
       rule: Reference
       value: ~
     - children: [] #46
@@ -196,25 +204,25 @@ nodes:
       rule: AliasName
       value: COL_1
     - children: #49
-        - 44
-        - 48
+        - 46
+        - 50
       rule: Alias
       value: ~
 top: 0
 map:
   34:
-    - 40
+    - 41
     - 37
   25:
     - 27
   7:
     - 11
   30:
-    - 40
+    - 41
     - 37
   12:
     - 14
   22:
     - 27
-  45:
+  47:
     - 2

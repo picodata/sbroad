@@ -2,11 +2,11 @@
 nodes:
   arena:
     - children: #0
-        - 24
+        - 26
       rule: Query
       value: ~
     - children: #1
-        - 24
+        - 26
       rule: Select
       value: ~
     - children: #2
@@ -38,8 +38,8 @@ nodes:
       rule: ScanName
       value: t1
     - children: #9
+        - 23
         - 22
-        - 21
         - 19
         - 10
       rule: Join
@@ -83,6 +83,10 @@ nodes:
         - 20
       rule: Scan
       value: ~
+    - children: #19
+        - 21
+      rule: ScanTable
+      value: ~
     - children: [] #20
       rule: Table
       value: t2
@@ -90,25 +94,29 @@ nodes:
       rule: InnerJoinKind
       value: inner
     - children: #22
-        - 23
+        - 24
       rule: Scan
+      value: ~
+    - children: #22
+        - 25
+      rule: ScanTable
       value: ~
     - children: [] #23
       rule: Table
       value: t1
     - children: #24
         - 2
-        - 29
-        - 25
+        - 31
+        - 27
       rule: Projection
       value: ~
     - children: #25
-        - 36
+        - 38
       rule: Column
       value: ~
     - children: #26
-        - 28
-        - 27
+        - 30
+        - 29
       rule: Reference
       value: ~
     - children: [] #27
@@ -118,12 +126,12 @@ nodes:
       rule: ScanName
       value: t2
     - children: #29
-        - 34
+        - 36
       rule: Column
       value: ~
     - children: #30
-        - 32
-        - 31
+        - 34
+        - 33
       rule: Reference
       value: ~
     - children: [] #31
@@ -136,16 +144,16 @@ nodes:
       rule: AliasName
       value: a
     - children: #34
-        - 30
-        - 33
+        - 32
+        - 35
       rule: Alias
       value: ~
     - children: [] #35
       rule: AliasName
       value: b
     - children: #36
-        - 26
-        - 35
+        - 28
+        - 37
       rule: Alias
       value: ~
 top: 0
@@ -153,14 +161,14 @@ map:
   3:
     - 9
   16:
-    - 22
+    - 23
     - 19
   6:
     - 9
-  26:
+  28:
     - 2
   12:
-    - 22
+    - 23
     - 19
-  30:
+  32:
     - 2
