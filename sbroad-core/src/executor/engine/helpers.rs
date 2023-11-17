@@ -46,10 +46,8 @@ use crate::{
     warn,
 };
 use sbroad_proc::otm_child_span;
-use tarantool::tuple::{
-    rmp::{self, decode::RmpRead},
-    Tuple,
-};
+use tarantool::msgpack::rmp::{self, decode::RmpRead};
+use tarantool::tuple::Tuple;
 
 use super::{Metadata, Router, Vshard};
 
