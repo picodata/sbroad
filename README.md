@@ -56,7 +56,7 @@ cargo doc --open
 
 ### SQL frontend
 
-We use a custom [PEG](src/frontend/sql/grammar.pest) for the `pest` parser generator to compile an SQL query and a `vshard` cluster schema into the planner's intermediate representation (IR).
+We use a custom [PEG](sbroad-core/src/frontend/sql/query.pest) for the `pest` parser generator to compile an SQL query and a `vshard` cluster schema into the planner's intermediate representation (IR).
 The SQL query passes three main steps:
 
 - the parse tree (PT) iterator, which is produced by the `pest` parser generated for our grammar.
