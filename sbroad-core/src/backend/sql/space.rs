@@ -52,7 +52,7 @@ impl TmpSpace {
             let fields_len = fields.len() as u32;
             // Vinyl engine does not support temporary spaces.
             let space_type = match engine {
-                SpaceEngine::Memtx => SpaceType::DataTemporary,
+                SpaceEngine::Memtx => SpaceType::Temporary,
                 SpaceEngine::Vinyl => SpaceType::Normal,
             };
             let options = SpaceCreateOptions {
