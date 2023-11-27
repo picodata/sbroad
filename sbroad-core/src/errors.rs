@@ -70,6 +70,8 @@ pub enum Entity {
     Plan,
     /// primary key of tarantool space
     PrimaryKey,
+    /// privilege participating in GRANT/REVOKE query
+    Privilege,
     /// corresponds to struct ProducerResult
     ProducerResult,
     /// SQL query
@@ -173,6 +175,7 @@ impl fmt::Display for Entity {
             Entity::PatternWithParams => "pattern with parameters".to_string(),
             Entity::Plan => "plan".to_string(),
             Entity::PrimaryKey => "primary key".to_string(),
+            Entity::Privilege => "privilege".to_string(),
             Entity::ProducerResult => "producer result".to_string(),
             Entity::ParseNode => "parse node".to_string(),
             Entity::Query => "query".to_string(),

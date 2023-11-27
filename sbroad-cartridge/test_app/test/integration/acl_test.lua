@@ -81,3 +81,29 @@ g.test_alter_user = function()
             [[Sbroad Error: ACL queries are not supported]]
     )
 end
+
+g.test_grant_privilege = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call(
+            "sbroad.execute",
+            { [[ GRANT READ ON TABLE "t" TO "role" ]], {} }
+    )
+    t.assert_equals(
+            string.format("%s", err),
+            [[Sbroad Error: ACL queries are not supported]]
+    )
+end
+
+g.test_revoke_privilege = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call(
+            "sbroad.execute",
+            { [[ REVOKE READ ON TABLE "t" FROM "role" ]], {} }
+    )
+    t.assert_equals(
+            string.format("%s", err),
+            [[Sbroad Error: ACL queries are not supported]]
+    )
+end

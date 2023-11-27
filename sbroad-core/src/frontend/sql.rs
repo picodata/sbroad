@@ -30,7 +30,8 @@ use crate::ir::{Node, OptionKind, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
-use crate::ir::acl::Acl;
+use crate::ir::acl::AlterOption;
+use crate::ir::acl::{Acl, GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
@@ -39,7 +40,16 @@ use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
 
 // DDL timeout in seconds (1 day).
-const DEFAULT_TIMEOUT: f64 = 24.0 * 60.0 * 60.0;
+const DEFAULT_TIMEOUT_F64: f64 = 24.0 * 60.0 * 60.0;
+const DEFAULT_AUTH_METHOD: &str = "chap-sha1";
+
+fn get_default_timeout() -> Decimal {
+    Decimal::from_str(&format!("{DEFAULT_TIMEOUT_F64}")).unwrap()
+}
+
+fn get_default_auth_method() -> String {
+    String::from(DEFAULT_AUTH_METHOD)
+}
 
 /// Helper structure to fix the double linking
 /// problem in the BETWEEN operator.
@@ -98,6 +108,16 @@ fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, Sbro
     ))
 }
 
+/// Parse node from which we want to get String value.
+fn parse_string_value_node(ast: &AbstractSyntaxTree, node_id: usize) -> Result<&str, SbroadError> {
+    let string_value_node = ast.nodes.get_node(node_id)?;
+    let string_value = string_value_node
+        .value
+        .as_ref()
+        .expect("Rule node must contain string value.");
+    Ok(string_value.as_str())
+}
+
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::uninlined_format_args)]
 fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
@@ -112,20 +132,12 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut pk_keys: Vec<String> = Vec::new();
     let mut shard_key: Vec<String> = Vec::new();
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
-    let mut timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}")).map_err(|_| {
-        SbroadError::Invalid(Entity::Type, Some("timeout value in create table".into()))
-    })?;
+    let mut timeout = get_default_timeout();
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Type::NewTable => {
-                table_name =
-                    normalize_name_for_space_api(child_node.value.as_ref().ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "table name in the create table AST".into(),
-                        )
-                    })?);
+                table_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
             }
             Type::Columns => {
                 let columns_node = ast.nodes.get_node(*child_id)?;
@@ -137,15 +149,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                         match def_child_node.rule {
                             Type::ColumnDefName => {
                                 column_def.name = normalize_name_for_space_api(
-                                    def_child_node.value.as_ref().ok_or_else(|| {
-                                        SbroadError::Invalid(
-                                            Entity::Column,
-                                            Some(
-                                                "column name is empty in the create table AST"
-                                                    .into(),
-                                            ),
-                                        )
-                                    })?,
+                                    parse_string_value_node(ast, *def_child_id)?,
                                 );
                             }
                             Type::ColumnDefType => {
@@ -253,17 +257,8 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             )),
                         ));
                     }
-                    let pk_col_name = normalize_name_for_space_api(
-                        pk_col_node.value.as_ref().ok_or_else(|| {
-                            SbroadError::Invalid(
-                                Entity::Column,
-                                Some(
-                                    "primary key column name is empty in the create table AST"
-                                        .into(),
-                                ),
-                            )
-                        })?,
-                    );
+                    let pk_col_name =
+                        normalize_name_for_space_api(parse_string_value_node(ast, *pk_col_id)?);
                     let mut column_found = false;
                     for column in &columns {
                         if column.name == pk_col_name {
@@ -344,12 +339,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                     ));
                                 }
                                 let shard_col_name = normalize_name_for_space_api(
-                                    shard_col_node.value.as_ref().ok_or_else(|| {
-                                        SbroadError::Invalid(
-                                            Entity::Column,
-                                            Some("AST shard key column name is empty".into()),
-                                        )
-                                    })?,
+                                    parse_string_value_node(ast, *shard_col_id)?,
                                 );
 
                                 let column_found = columns.iter().any(|c| c.name == shard_col_name);
@@ -427,74 +417,122 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     Ok(create_sharded_table)
 }
 
-/// Code block common for CREATE/ALTER USER moved to separate function.
-fn parse_create_alter_user(
-    ast: &AbstractSyntaxTree,
+/// Get String value under `RoleName` node.
+fn parse_role_name(ast: &AbstractSyntaxTree, node_id: usize) -> Result<String, SbroadError> {
+    Ok(normalize_name_for_space_api(parse_string_value_node(
+        ast, node_id,
+    )?))
+}
+
+/// Common logic for parsing GRANT/REVOKE queries.
+#[allow(clippy::too_many_lines)]
+fn parse_grant_revoke(
     node: &ParseNode,
-    default_timeout: Decimal,
-) -> Result<(String, String, String, Decimal), SbroadError> {
-    let mut iter = node.children.iter();
-    // User name
-    let user_name_id = iter.next().ok_or_else(|| {
-        SbroadError::Invalid(
-            Entity::ParseNode,
-            Some(String::from("UserName expected as a first child")),
-        )
-    })?;
-    let user_name_node = ast.nodes.get_node(*user_name_id)?;
-    let user_name =
-        normalize_name_for_space_api(user_name_node.value.as_ref().ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, "user name in UserName node".into())
-        })?);
-    // Password
-    let pwd_id = iter.next().ok_or_else(|| {
-        SbroadError::Invalid(
-            Entity::ParseNode,
-            Some(String::from("Password expected as a second child")),
-        )
-    })?;
-    let pwd_node = ast.nodes.get_node(*pwd_id)?;
-    let password: String = pwd_node
-        .value
-        .as_ref()
-        .ok_or_else(|| SbroadError::NotFound(Entity::Node, "password in Password node".into()))?
-        .to_string();
-    // Optional parameters: auth method and timeout.
-    let mut timeout = default_timeout;
-    let mut auth_method = String::from("chap-sha1");
-    for child_id in iter {
-        let child_node = ast.nodes.get_node(*child_id)?;
-        match child_node.rule {
-            Type::Timeout => {
-                timeout = get_timeout(ast, *child_id)?;
-            }
-            Type::AuthMethod => {
-                let method_id = child_node.children.first().ok_or_else(|| {
-                    SbroadError::Invalid(
+    ast: &AbstractSyntaxTree,
+) -> Result<(GrantRevokeType, String, Decimal), SbroadError> {
+    let privilege_block_node_id = node
+        .children
+        .first()
+        .expect("Specific privilege block expected under GRANT/REVOKE");
+    let privilege_block_node = ast.nodes.get_node(*privilege_block_node_id)?;
+    let grant_revoke_type = match privilege_block_node.rule {
+        Type::PrivBlockPrivilege => {
+            let privilege_node_id = privilege_block_node
+                .children
+                .first()
+                .expect("Expected to see Privilege under PrivBlockPrivilege");
+            let privilege_node = ast.nodes.get_node(*privilege_node_id)?;
+            let privilege = match privilege_node.rule {
+                Type::PrivilegeAlter => Privilege::Alter,
+                Type::PrivilegeCreate => Privilege::Create,
+                Type::PrivilegeDrop => Privilege::Drop,
+                Type::PrivilegeExecute => Privilege::Execute,
+                Type::PrivilegeRead => Privilege::Read,
+                Type::PrivilegeSession => Privilege::Session,
+                Type::PrivilegeUsage => Privilege::Usage,
+                Type::PrivilegeWrite => Privilege::Write,
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Privilege,
+                        Some(format!(
+                            "Expected to see Privilege node. Got: {privilege_node:?}"
+                        )),
+                    ))
+                }
+            };
+            let inner_privilege_block_node_id = privilege_block_node
+                .children
+                .get(1)
+                .expect("Expected to see inner priv block under PrivBlockPrivilege");
+            let inner_privilege_block_node = ast.nodes.get_node(*inner_privilege_block_node_id)?;
+            match inner_privilege_block_node.rule {
+                Type::PrivBlockUser => GrantRevokeType::user(privilege)?,
+                Type::PrivBlockSpecificUser => {
+                    let user_name_node_id = inner_privilege_block_node
+                        .children
+                        .first()
+                        .expect("Expected to see RoleName under PrivBlockSpecificUser");
+                    let user_name = parse_role_name(ast, *user_name_node_id)?;
+                    GrantRevokeType::specific_user(privilege, user_name)?
+                }
+                Type::PrivBlockRole => GrantRevokeType::role(privilege)?,
+                Type::PrivBlockSpecificRole => {
+                    let role_name_node_id = inner_privilege_block_node
+                        .children
+                        .first()
+                        .expect("Expected to see RoleName under PrivBlockSpecificUser");
+                    let role_name = parse_role_name(ast, *role_name_node_id)?;
+                    GrantRevokeType::specific_role(privilege, role_name)?
+                }
+                Type::PrivBlockTable => GrantRevokeType::table(privilege)?,
+                Type::PrivBlockSpecificTable => {
+                    let table_node_id = inner_privilege_block_node.children.first().expect(
+                        "Expected to see TableName as a first child of PrivBlockSpecificTable",
+                    );
+                    let table_name =
+                        normalize_name_for_space_api(parse_string_value_node(ast, *table_node_id)?);
+                    GrantRevokeType::specific_table(privilege, table_name)?
+                }
+                _ => {
+                    return Err(SbroadError::Invalid(
                         Entity::ParseNode,
-                        Some(String::from("Method expected under AuthMethod node")),
-                    )
-                })?;
-                let method_node = ast.nodes.get_node(*method_id)?;
-                auth_method = method_node
-                    .value
-                    .as_ref()
-                    .ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "auth method in AuthMethod node".into())
-                    })?
-                    .to_string();
-            }
-            _ => {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format!(
-                        "ACL node contains unexpected child: {child_node:?}",
-                    )),
-                ));
+                        Some(format!(
+                            "Expected specific priv block, got: {inner_privilege_block_node:?}"
+                        )),
+                    ))
+                }
             }
         }
+        Type::PrivBlockRolePass => {
+            let role_name_id = privilege_block_node
+                .children
+                .first()
+                .expect("RoleName must be a first child of PrivBlockRolePass");
+            let role_name = parse_role_name(ast, *role_name_id)?;
+            GrantRevokeType::role_pass(role_name)
+        }
+        _ => {
+            return Err(SbroadError::Invalid(
+                Entity::ParseNode,
+                Some(format!(
+                    "Expected specific priv block, got: {privilege_block_node:?}"
+                )),
+            ))
+        }
+    };
+
+    let grantee_name_node_id = node
+        .children
+        .get(1)
+        .expect("RoleName must be a second child of GRANT/REVOKE");
+    let grantee_name = parse_role_name(ast, *grantee_name_node_id)?;
+
+    let mut timeout = get_default_timeout();
+    if let Some(timeout_child_id) = node.children.get(2) {
+        timeout = get_timeout(ast, *timeout_child_id)?;
     }
-    Ok((user_name, password, auth_method, timeout))
+
+    Ok((grant_revoke_type, grantee_name, timeout))
 }
 
 impl Ast for AbstractSyntaxTree {
@@ -608,11 +646,10 @@ impl Ast for AbstractSyntaxTree {
             // also we will mark this expr to add in the future `()`
             let arithmetic_parse_node = self.nodes.get_node(ast_id)?;
             if arithmetic_parse_node.rule == Type::ArithParentheses {
-                let arithmetic_id = arithmetic_parse_node.children.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        "ArithParentheses has no children.".into(),
-                    )
-                })?;
+                let arithmetic_id = arithmetic_parse_node
+                    .children
+                    .first()
+                    .expect("ArithParentheses has no children.");
                 plan_id = plan.as_row(map.get(*arithmetic_id)?, rows)?;
                 arith_expr_with_parentheses_ids.push(plan_id);
             } else {
@@ -628,11 +665,10 @@ impl Ast for AbstractSyntaxTree {
                                     map: &Translation,
                                     arith_expr_with_parentheses_ids: &mut Vec<usize>,
                                     rows: &mut HashSet<usize>| {
-            let ast_left_id = current_node.children.first().ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    "Multiplication or Addition has no children.".into(),
-                )
-            })?;
+            let ast_left_id = current_node
+                .children
+                .first()
+                .expect("Multiplication or Addition has no children.");
             let plan_left_id = get_arithmetic_plan_id(
                 plan,
                 map,
@@ -641,13 +677,9 @@ impl Ast for AbstractSyntaxTree {
                 *ast_left_id,
             )?;
 
-            let ast_right_id = current_node.children.get(2).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::Node,
-                    "that is right node with index 2 among Multiplication or Addition children"
-                        .into(),
-                )
-            })?;
+            let ast_right_id = current_node.children.get(2).expect(
+                "that is right node with index 2 among Multiplication or Addition children",
+            );
             let plan_right_id = get_arithmetic_plan_id(
                 plan,
                 map,
@@ -656,13 +688,7 @@ impl Ast for AbstractSyntaxTree {
                 *ast_right_id,
             )?;
 
-            let ast_op_id = current_node.children.get(1).ok_or_else(|| {
-                    SbroadError::NotFound(
-                        Entity::Node,
-                        "that is center node (operator) with index 1 among Multiplication or Addition children"
-                            .into(),
-                    )
-                })?;
+            let ast_op_id = current_node.children.get(1).expect("that is center node (operator) with index 1 among Multiplication or Addition children");
 
             let op_node = self.nodes.get_node(*ast_op_id)?;
             let op = Arithmetic::from_node_type(&op_node.rule)?;
@@ -672,18 +698,14 @@ impl Ast for AbstractSyntaxTree {
             Ok::<usize, SbroadError>(op_id)
         };
 
-        let default_timeout: Decimal = Decimal::from_str(&format!("{DEFAULT_TIMEOUT}"))
-            .map_err(|_| SbroadError::Invalid(Entity::Type, Some("timeout option".into())))?;
-
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
             match &node.rule {
                 Type::Scan => {
-                    let ast_scan_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "could not find first child id in scan node".to_string(),
-                        )
-                    })?;
+                    let ast_scan_id = node
+                        .children
+                        .first()
+                        .expect("could not find first child id in scan node");
                     let plan_child_id = map.get(*ast_scan_id)?;
                     map.add(id, plan_child_id);
                     if let Some(ast_alias_id) = node.children.get(1) {
@@ -703,11 +725,10 @@ impl Ast for AbstractSyntaxTree {
                     }
                 }
                 Type::ScanTable => {
-                    let ast_table_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "could not find first child id in scan table node".to_string(),
-                        )
-                    })?;
+                    let ast_table_id = node
+                        .children
+                        .first()
+                        .expect("could not find first child id in scan table node");
                     let ast_table = self.nodes.get_node(*ast_table_id)?;
                     match ast_table.value {
                         Some(ref table) if ast_table.rule == Type::Table => {
@@ -735,11 +756,10 @@ impl Ast for AbstractSyntaxTree {
                     }
                 }
                 Type::SubQuery => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "child node id is not found among sub-query children.".into(),
-                        )
-                    })?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("child node id is not found among sub-query children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     let plan_sq_id = plan.add_sub_query(plan_child_id, None)?;
                     map.add(id, plan_sq_id);
@@ -756,14 +776,9 @@ impl Ast for AbstractSyntaxTree {
                     let get_column_name = |ast_id: usize| -> Result<String, SbroadError> {
                         let ast_col_name = self.nodes.get_node(ast_id)?;
                         if let Type::ColumnName = ast_col_name.rule {
-                            let name: Option<String> =
-                                ast_col_name.value.as_deref().map(normalize_name_from_sql);
-                            Ok(name.ok_or_else(|| {
-                                SbroadError::Invalid(
-                                    Entity::Name,
-                                    Some("empty AST column name".into()),
-                                )
-                            })?)
+                            let name =
+                                normalize_name_from_sql(parse_string_value_node(self, ast_id)?);
+                            Ok(name)
                         } else {
                             Err(SbroadError::Invalid(
                                 Entity::Type,
@@ -920,11 +935,7 @@ impl Ast for AbstractSyntaxTree {
                             let ast_scan = self.nodes.get_node(*ast_scan_id)?;
                             if let Type::ScanName = ast_scan.rule {
                                 let ast_scan_name = Some(normalize_name_from_sql(
-                                    ast_scan.value.as_ref().ok_or_else(|| {
-                                        SbroadError::UnexpectedNumberOfValues(
-                                            "empty scan name for AST node.".into(),
-                                        )
-                                    })?,
+                                    parse_string_value_node(self, *ast_scan_id)?,
                                 ));
                                 let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
                                 if plan_scan_name != ast_scan_name {
@@ -985,13 +996,11 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan.add_const(val));
                 }
                 Type::VTableMaxRows => {
-                    let ast_child_id = *node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::AST,
-                            Some("no children for sql_vdbe_max_steps option".into()),
-                        )
-                    })?;
-                    let ast_child_node = self.nodes.get_node(ast_child_id)?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("no children for sql_vdbe_max_steps option");
+                    let ast_child_node = self.nodes.get_node(*ast_child_id)?;
                     let val: Option<Value> = match ast_child_node.rule {
                         Type::Parameter => None,
                         Type::Unsigned => {
@@ -1025,13 +1034,11 @@ impl Ast for AbstractSyntaxTree {
                     });
                 }
                 Type::SqlVdbeMaxSteps => {
-                    let ast_child_id = *node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::AST,
-                            Some("no children for sql_vdbe_max_steps option".into()),
-                        )
-                    })?;
-                    let ast_child_node = self.nodes.get_node(ast_child_id)?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("no children for sql_vdbe_max_steps option");
+                    let ast_child_node = self.nodes.get_node(*ast_child_id)?;
                     let val: Option<Value> = match ast_child_node.rule {
                         Type::Parameter => None,
                         Type::Unsigned => {
@@ -1090,31 +1097,20 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_asterisk_id);
                 }
                 Type::Alias => {
-                    let ast_ref_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "list of alias children is empty, Reference node id is not found."
-                                .into(),
-                        )
-                    })?;
+                    let ast_ref_id = node
+                        .children
+                        .first()
+                        .expect("list of alias children is empty, Reference node id is not found.");
                     let plan_ref_id = map.get(*ast_ref_id)?;
-                    let ast_name_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(Alias name) with index 1".into())
-                    })?;
-                    let name = self
-                        .nodes
-                        .get_node(*ast_name_id)?
-                        .value
-                        .as_ref()
-                        .ok_or_else(|| SbroadError::NotFound(Entity::Name, "of Alias".into()))?;
+                    let ast_name_id = node.children.get(1).expect("(Alias name) with index 1");
+                    let name = parse_string_value_node(self, *ast_name_id)?;
                     let plan_alias_id = plan
                         .nodes
                         .add_alias(&normalize_name_from_sql(name), plan_ref_id)?;
                     map.add(id, plan_alias_id);
                 }
                 Type::Column => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Column has no children.".into())
-                    })?;
+                    let ast_child_id = node.children.first().expect("Column has no children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(id, plan_child_id);
                 }
@@ -1138,39 +1134,29 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_row_id);
                 }
                 Type::And | Type::Or => {
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Comparison has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Comparison has no children.");
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is right node with index 1 among comparison children".into(),
-                        )
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(1)
+                        .expect("that is right node with index 1 among comparison children");
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let op = Bool::from_node_type(&node.rule)?;
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
                     map.add(id, cond_id);
                 }
                 Type::Cmp => {
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Comparison has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Comparison has no children.");
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    let ast_right_id = node.children.get(2).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is right node with index 2 among comparison children".into(),
-                        )
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(2)
+                        .expect("that is right node with index 2 among comparison children");
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
-                    let ast_op_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is operator node with index 1 among comparison children".into(),
-                        )
-                    })?;
+                    let ast_op_id = node
+                        .children
+                        .get(1)
+                        .expect("that is operator node with index 1 among comparison children");
                     let op_node = self.nodes.get_node(*ast_op_id)?;
                     let op = Bool::from_node_type(&op_node.rule)?;
                     let is_not = match op {
@@ -1194,12 +1180,7 @@ impl Ast for AbstractSyntaxTree {
                             &node.rule
                         )));
                     }
-                    let ast_child_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format!(
-                            "{:?} has no children.",
-                            &node.rule
-                        ))
-                    })?;
+                    let ast_child_id = node.children.get(1).expect("Not has no children.");
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
                     let unary_id = plan.add_unary(op, plan_child_id)?;
@@ -1219,12 +1200,10 @@ impl Ast for AbstractSyntaxTree {
                             ))
                         }
                     };
-                    let ast_child_id = node.children.get(child_index).ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format!(
-                            "{:?} has no children.",
-                            &node.rule
-                        ))
-                    })?;
+                    let ast_child_id = node
+                        .children
+                        .get(child_index)
+                        .expect("{:?} has no children.");
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
                     let op_id = plan.add_unary(op, plan_child_id)?;
@@ -1249,12 +1228,7 @@ impl Ast for AbstractSyntaxTree {
                             ))
                         }
                     };
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format!(
-                            "{:?} has no children.",
-                            &node.rule
-                        ))
-                    })?;
+                    let ast_child_id = node.children.first().expect("IsNull has no children.");
                     let plan_child_id = plan.as_row(map.get(*ast_child_id)?, &mut rows)?;
                     let op = Unary::from_node_type(&node.rule)?;
                     let op_id = plan.add_unary(op, plan_child_id)?;
@@ -1281,20 +1255,20 @@ impl Ast for AbstractSyntaxTree {
                             ))
                         }
                     };
-                    let ast_left_id = node.children.get(left_index).ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Between has no children.".into())
-                    })?;
+                    let ast_left_id = node
+                        .children
+                        .get(left_index)
+                        .expect("Between has no children.");
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    let ast_center_id = node.children.get(center_index).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(center) among between children".into(),
-                        )
-                    })?;
+                    let ast_center_id = node
+                        .children
+                        .get(center_index)
+                        .expect("Center not found among between children");
                     let plan_center_id = plan.as_row(map.get(*ast_center_id)?, &mut rows)?;
-                    let ast_right_id = node.children.get(right_index).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(right) among between children".into())
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(right_index)
+                        .expect("Right not found among between children");
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
 
                     let greater_eq_id = plan.add_cond(plan_left_id, Bool::GtEq, plan_center_id)?;
@@ -1309,25 +1283,19 @@ impl Ast for AbstractSyntaxTree {
                     betweens.push(Between::new(plan_left_id, less_eq_id));
                 }
                 Type::Cast => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Condition has no children.".into())
-                    })?;
+                    let ast_child_id = node.children.first().expect("Condition has no children.");
                     let plan_child_id = map.get(*ast_child_id)?;
-                    let ast_type_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(Cast type) among cast children".into(),
-                        )
-                    })?;
+                    let ast_type_id = node
+                        .children
+                        .get(1)
+                        .expect("Cast type not found among cast children");
                     let ast_type = self.nodes.get_node(*ast_type_id)?;
                     let cast_type = if ast_type.rule == Type::TypeVarchar {
                         // Get the length of the varchar.
-                        let ast_len_id = ast_type.children.first().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "Cast has no children. Cast type length node id is not found."
-                                    .into(),
-                            )
-                        })?;
+                        let ast_len_id = ast_type
+                            .children
+                            .first()
+                            .expect("Cast has no children. Cast type length node id is not found.");
                         let ast_len = self.nodes.get_node(*ast_len_id)?;
                         let len = ast_len
                             .value
@@ -1352,31 +1320,25 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, cast_id);
                 }
                 Type::Concat => {
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Concat has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Concat has no children.");
                     let plan_left_id = plan.as_row(map.get(*ast_left_id)?, &mut rows)?;
-                    let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(right) among concat children".into())
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(1)
+                        .expect("Right not found among concat children");
                     let plan_right_id = plan.as_row(map.get(*ast_right_id)?, &mut rows)?;
                     let concat_id = plan.add_concat(plan_left_id, plan_right_id)?;
                     map.add(id, concat_id);
                 }
                 Type::Condition => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Condition has no children.".into())
-                    })?;
+                    let ast_child_id = node.children.first().expect("Condition has no children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     map.add(id, plan_child_id);
                 }
                 Type::Function => {
                     if let Some((first, mut other)) = node.children.split_first() {
                         let mut is_distinct = false;
-                        let function_name =
-                            self.nodes.get_node(*first)?.value.as_ref().ok_or_else(|| {
-                                SbroadError::NotFound(Entity::Name, "of sql function".into())
-                            })?;
+                        let function_name = parse_string_value_node(self, *first)?;
                         if let Some(first_id) = other.first() {
                             let rule = &self.nodes.get_node(*first_id)?.rule;
                             match rule {
@@ -1417,7 +1379,7 @@ impl Ast for AbstractSyntaxTree {
 
                         if let Some(kind) = AggregateKind::new(function_name) {
                             let plan_id = plan.add_aggregate_function(
-                                &function_name.to_string(),
+                                function_name,
                                 kind,
                                 plan_arg_list.clone(),
                                 is_distinct,
@@ -1473,23 +1435,21 @@ impl Ast for AbstractSyntaxTree {
                     // - kind
                     // - right scan
                     // - condition
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Join has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Join has no children.");
                     let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node.children.get(2).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(right) among Join children.".into())
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(2)
+                        .expect("Right not found among Join children.");
                     let plan_right_id = map.get(*ast_right_id)?;
-                    let ast_cond_id = node.children.get(3).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(Condition) among Join children".into(),
-                        )
-                    })?;
-                    let ast_kind_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(kind) among Join children.".into())
-                    })?;
+                    let ast_cond_id = node
+                        .children
+                        .get(3)
+                        .expect("Condition not found among Join children");
+                    let ast_kind_id = node
+                        .children
+                        .get(1)
+                        .expect("Kind not found among Join children.");
                     let ast_kind_node = self.nodes.get_node(*ast_kind_id)?;
                     let kind = match ast_kind_node.rule {
                         Type::LeftJoinKind => JoinKind::LeftOuter,
@@ -1510,16 +1470,15 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_join_id);
                 }
                 Type::Selection | Type::Having => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format!("{node:?} has no children."))
-                    })?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("Selection or Having has no children.");
                     let plan_child_id = map.get(*ast_child_id)?;
-                    let ast_filter_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(Filter) among Selection children".into(),
-                        )
-                    })?;
+                    let ast_filter_id = node
+                        .children
+                        .get(1)
+                        .expect("Filter not found among Selection children");
                     let plan_filter_id = map.get(*ast_filter_id)?;
                     let plan_node_id = match &node.rule {
                         Type::Selection => plan.add_select(&[plan_child_id], plan_filter_id)?,
@@ -1559,13 +1518,11 @@ impl Ast for AbstractSyntaxTree {
                         let ast_column = self.nodes.get_node(*ast_column_id)?;
                         match ast_column.rule {
                             Type::Column => {
-                                let ast_alias_id =
-                                    *ast_column.children.first().ok_or_else(|| {
-                                        SbroadError::UnexpectedNumberOfValues(
-                                            "Column has no children.".into(),
-                                        )
-                                    })?;
-                                let plan_alias_id = map.get(ast_alias_id)?;
+                                let ast_alias_id = ast_column
+                                    .children
+                                    .first()
+                                    .expect("Column has no children.");
+                                let plan_alias_id = map.get(*ast_alias_id)?;
                                 proj_columns.push(plan_alias_id);
                             }
                             Type::Asterisk => {
@@ -1612,48 +1569,39 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, cond_id);
                 }
                 Type::ArithParentheses => {
-                    let ast_child_id = *node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::AST,
-                            Some(format!("ArithParentheses ({id}) have no child!")),
-                        )
-                    })?;
-                    let plan_child_id = map.get(ast_child_id)?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("ArithParentheses have no child!");
+                    let plan_child_id = map.get(*ast_child_id)?;
                     arith_expr_with_parentheses_ids.push(plan_child_id);
                     map.add(id, plan_child_id);
                 }
                 Type::Except => {
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Except has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Except has no children.");
                     let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::Node, "(right) among Except children".into())
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(1)
+                        .expect("Right not found among Except children");
                     let plan_right_id = map.get(*ast_right_id)?;
                     let plan_except_id = plan.add_except(plan_left_id, plan_right_id)?;
                     map.add(id, plan_except_id);
                 }
                 Type::UnionAll => {
-                    let ast_left_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Union All has no children.".into())
-                    })?;
+                    let ast_left_id = node.children.first().expect("Union All has no children.");
                     let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(right) among Union All children".into(),
-                        )
-                    })?;
+                    let ast_right_id = node
+                        .children
+                        .get(1)
+                        .expect("Right not found among Union All children");
                     let plan_right_id = map.get(*ast_right_id)?;
                     let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
                     map.add(id, plan_union_all_id);
                 }
                 Type::ValuesRow => {
                     // TODO(ars): check that all row elements are constants
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Values Row has no children.".into())
-                    })?;
+                    let ast_child_id = node.children.first().expect("Values Row has no children.");
                     let plan_child_id = map.get(*ast_child_id)?;
                     let values_row_id = plan.add_values_row(plan_child_id, &mut col_idx)?;
                     map.add(id, values_row_id);
@@ -1669,14 +1617,10 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_values_id);
                 }
                 Type::Update => {
-                    let rel_child_ast_id = *node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Update has no children.".into())
-                    })?;
-                    let rel_child_id = map.get(rel_child_ast_id)?;
-                    let ast_table_id = *node.children.get(1).ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Update has no children.".into())
-                    })?;
-                    let ast_table = self.nodes.get_node(ast_table_id)?;
+                    let rel_child_ast_id = node.children.first().expect("Update has no children.");
+                    let rel_child_id = map.get(*rel_child_ast_id)?;
+                    let ast_table_id = node.children.get(1).expect("Update has no children.");
+                    let ast_table = self.nodes.get_node(*ast_table_id)?;
                     if let Type::ScanTable = ast_table.rule {
                     } else {
                         return Err(SbroadError::Invalid(
@@ -1686,7 +1630,7 @@ impl Ast for AbstractSyntaxTree {
                             )),
                         ));
                     }
-                    let plan_scan_id = map.get(ast_table_id)?;
+                    let plan_scan_id = map.get(*ast_table_id)?;
                     let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
                     let relation = if let Relational::ScanRelation { relation, .. } = plan_scan_node
                     {
@@ -1699,7 +1643,10 @@ impl Ast for AbstractSyntaxTree {
                             )),
                         ));
                     };
-                    let update_list_id = node.children.get(2).unwrap();
+                    let update_list_id = node
+                        .children
+                        .get(2)
+                        .expect("Update lise expected as a second child of Update");
                     let update_list = self.nodes.get_node(*update_list_id)?;
                     // Maps position of column in table to corresponding update expression
                     let mut update_defs: HashMap<ColumnPosition, ExpressionId, RepeatableState> =
@@ -1725,9 +1672,15 @@ impl Ast for AbstractSyntaxTree {
                     });
                     for update_item_id in &update_list.children {
                         let update_item = self.nodes.get_node(*update_item_id)?;
-                        let ast_column_id = update_item.children.first().unwrap();
-                        let expr_ast_id = *update_item.children.get(1).unwrap();
-                        let expr_id = map.get(expr_ast_id)?;
+                        let ast_column_id = update_item
+                            .children
+                            .first()
+                            .expect("Column expected as first child of UpdateItem");
+                        let expr_ast_id = update_item
+                            .children
+                            .get(1)
+                            .expect("Expression expected as second child of UpdateItem");
+                        let expr_id = map.get(*expr_ast_id)?;
                         if plan.contains_aggregates(expr_id, true)? {
                             return Err(SbroadError::Invalid(
                                 Entity::Query,
@@ -1738,28 +1691,23 @@ impl Ast for AbstractSyntaxTree {
                             ));
                         }
                         let col = self.nodes.get_node(*ast_column_id)?;
-                        let name = col.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Name,
-                                "of Column among the AST target columns (update)".into(),
-                            )
-                        })?;
+                        let col_name = parse_string_value_node(self, *ast_column_id)?;
                         if let Type::ColumnName = col.rule {
-                            match names.get(name.as_str()) {
+                            match names.get(col_name) {
                                 Some((&ColumnRole::User, pos)) => {
                                     if pk_positions.contains(pos) {
                                         return Err(SbroadError::Invalid(
                                             Entity::Query,
                                             Some(format!(
                                                 "it is illegal to update primary key column: {}",
-                                                name
+                                                col_name
                                             )),
                                         ));
                                     }
                                     if update_defs.contains_key(pos) {
                                         return Err(SbroadError::Invalid(
                                             Entity::Query,
-                                            Some(format!("The same column is specified twice in update list: {}", name))
+                                            Some(format!("The same column is specified twice in update list: {}", col_name))
                                         ));
                                     }
                                     update_defs.insert(*pos, expr_id);
@@ -1768,13 +1716,13 @@ impl Ast for AbstractSyntaxTree {
                                     return Err(SbroadError::FailedTo(
                                         Action::Update,
                                         Some(Entity::Column),
-                                        format!("system column {name} cannot be updated"),
+                                        format!("system column {col_name} cannot be updated"),
                                     ))
                                 }
                                 None => {
                                     return Err(SbroadError::NotFound(
                                         Entity::Column,
-                                        (*name).to_string(),
+                                        (*col_name).to_string(),
                                     ))
                                 }
                             }
@@ -1813,14 +1761,11 @@ impl Ast for AbstractSyntaxTree {
                                 (plan_scan_id, table)
                             }
                             Type::DeleteFilter => {
-                                let ast_table_id =
-                                    *child_node.children.first().ok_or_else(|| {
-                                        SbroadError::NotFound(
-                                            Entity::Node,
-                                            "(Table) among DeleteFilter children".into(),
-                                        )
-                                    })?;
-                                let plan_scan_id = map.get(ast_table_id)?;
+                                let ast_table_id = child_node
+                                    .children
+                                    .first()
+                                    .expect("Table not found among DeleteFilter children");
+                                let plan_scan_id = map.get(*ast_table_id)?;
                                 let plan_scan_node = plan.get_relation_node(plan_scan_id)?;
                                 let table = if let Relational::ScanRelation { relation, .. } =
                                     plan_scan_node
@@ -1835,13 +1780,10 @@ impl Ast for AbstractSyntaxTree {
                                         )),
                                     ));
                                 };
-                                let ast_filter_id =
-                                    child_node.children.get(1).ok_or_else(|| {
-                                        SbroadError::NotFound(
-                                            Entity::Node,
-                                            "(Expr) among DeleteFilter children".into(),
-                                        )
-                                    })?;
+                                let ast_filter_id = child_node
+                                    .children
+                                    .get(1)
+                                    .expect("Expr not found among DeleteFilter children");
                                 let plan_filter_id = map.get(*ast_filter_id)?;
                                 let plan_select_id =
                                     plan.add_select(&[plan_scan_id], plan_filter_id)?;
@@ -1898,9 +1840,7 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_delete_id);
                 }
                 Type::Insert => {
-                    let ast_table_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Insert has no children.".into())
-                    })?;
+                    let ast_table_id = node.children.first().expect("Insert has no children.");
                     let ast_table = self.nodes.get_node(*ast_table_id)?;
                     if let Type::Table = ast_table.rule {
                     } else {
@@ -1910,16 +1850,12 @@ impl Ast for AbstractSyntaxTree {
                         ));
                     }
                     let relation =
-                        normalize_name_from_sql(ast_table.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(Entity::Name, "of table in the AST".into())
-                        })?);
+                        normalize_name_from_sql(parse_string_value_node(self, *ast_table_id)?);
 
-                    let ast_child_id = node.children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "(second child) among insert children".into(),
-                        )
-                    })?;
+                    let ast_child_id = node
+                        .children
+                        .get(1)
+                        .expect("Second child not found among Insert children");
                     let get_conflict_strategy =
                         |child_idx: usize| -> Result<ConflictStrategy, SbroadError> {
                             let Some(child_id) = node.children.get(child_idx).copied() else {
@@ -1950,12 +1886,7 @@ impl Ast for AbstractSyntaxTree {
                         for col_id in &ast_child.children {
                             let col = self.nodes.get_node(*col_id)?;
                             if let Type::ColumnName = col.rule {
-                                selected_col_names.push(col.value.as_ref().ok_or_else(|| {
-                                    SbroadError::NotFound(
-                                        Entity::Name,
-                                        "of Column among the AST target columns (insert)".into(),
-                                    )
-                                })?);
+                                selected_col_names.push(parse_string_value_node(self, *col_id)?);
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Type,
@@ -1987,12 +1918,10 @@ impl Ast for AbstractSyntaxTree {
                             }
                         }
 
-                        let ast_rel_child_id = node.children.get(2).ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "(third child) among Insert children".into(),
-                            )
-                        })?;
+                        let ast_rel_child_id = node
+                            .children
+                            .get(2)
+                            .expect("Third child not found among Insert children");
                         let plan_rel_child_id = map.get(*ast_rel_child_id)?;
                         let conflict_strategy = get_conflict_strategy(3)?;
                         plan.add_insert(
@@ -2012,17 +1941,14 @@ impl Ast for AbstractSyntaxTree {
                 Type::Explain => {
                     plan.mark_as_explain();
 
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Explain has no children.".into())
-                    })?;
+                    let ast_child_id = node.children.first().expect("Explain has no children.");
                     map.add(0, map.get(*ast_child_id)?);
                 }
                 Type::SingleQuotedString => {
-                    let ast_child_id = node.children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "SingleQuotedString has no children.".into(),
-                        )
-                    })?;
+                    let ast_child_id = node
+                        .children
+                        .first()
+                        .expect("SingleQuotedString has no children.");
                     map.add(id, map.get(*ast_child_id)?);
                 }
                 Type::CountAsterisk => {
@@ -2033,9 +1959,8 @@ impl Ast for AbstractSyntaxTree {
                     // Query may have two children:
                     // 1. select | insert | except | ..
                     // 2. Option child - for which no plan node is created
-                    let child_id = map.get(*node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(Entity::AST, Some("no children for Query rule".into()))
-                    })?)?;
+                    let child_id =
+                        map.get(*node.children.first().expect("no children for Query rule"))?;
                     map.add(id, child_id);
                 }
                 Type::CreateTable => {
@@ -2043,24 +1968,35 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
                     map.add(id, plan_id);
                 }
+                Type::GrantPrivilege => {
+                    let (grant_type, grantee_name, timeout) = parse_grant_revoke(node, self)?;
+                    let grant_privilege = Acl::GrantPrivilege {
+                        grant_type,
+                        grantee_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(grant_privilege));
+                    map.add(id, plan_id);
+                }
+                Type::RevokePrivilege => {
+                    let (revoke_type, grantee_name, timeout) = parse_grant_revoke(node, self)?;
+                    let revoke_privilege = Acl::RevokePrivilege {
+                        revoke_type,
+                        grantee_name,
+                        timeout,
+                    };
+                    let plan_id = plan.nodes.push(Node::Acl(revoke_privilege));
+                    map.add(id, plan_id);
+                }
                 Type::DropRole => {
-                    let role_name_id = node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(String::from("RoleName expected under DropRole node")),
-                        )
-                    })?;
-                    let role_name_node = self.nodes.get_node(*role_name_id)?;
-                    let role_name = normalize_name_for_space_api(
-                        role_name_node.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "role name in the drop role AST".into(),
-                            )
-                        })?,
-                    );
+                    let role_name_id = node
+                        .children
+                        .first()
+                        .expect("RoleName expected under DropRole node");
+                    let role_name =
+                        normalize_name_for_space_api(parse_string_value_node(self, *role_name_id)?);
 
-                    let mut timeout = default_timeout;
+                    let mut timeout = get_default_timeout();
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
@@ -2073,19 +2009,14 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::DropTable => {
                     let mut table_name: String = String::new();
-                    let mut timeout = default_timeout;
+                    let mut timeout = get_default_timeout();
                     for child_id in &node.children {
                         let child_node = self.nodes.get_node(*child_id)?;
                         match child_node.rule {
                             Type::DeletedTable => {
-                                table_name = normalize_name_for_space_api(
-                                    child_node.value.as_ref().ok_or_else(|| {
-                                        SbroadError::NotFound(
-                                            Entity::Node,
-                                            "table name in the drop table AST".into(),
-                                        )
-                                    })?,
-                                );
+                                table_name = normalize_name_for_space_api(parse_string_value_node(
+                                    self, *child_id,
+                                )?);
                             }
                             Type::Timeout => {
                                 timeout = get_timeout(self, *child_id)?;
@@ -2109,20 +2040,114 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Type::AlterUser => {
-                    let (user_name, password, auth_method, timeout) =
-                        parse_create_alter_user(self, node, default_timeout)?;
+                    let user_name_node_id = node
+                        .children
+                        .first()
+                        .expect("RoleName expected as a first child");
+                    let user_name = parse_role_name(self, *user_name_node_id)?;
+
+                    let alter_option_node_id = node
+                        .children
+                        .get(1)
+                        .expect("Some AlterOption expected as a second child");
+                    let alter_option_node = self.nodes.get_node(*alter_option_node_id)?;
+                    let alter_option = match alter_option_node.rule {
+                        Type::AlterLogin => AlterOption::Login,
+                        Type::AlterNoLogin => AlterOption::NoLogin,
+                        Type::AlterPassword => {
+                            let pwd_node_id = alter_option_node
+                                .children
+                                .first()
+                                .expect("Password expected as a first child");
+                            let password =
+                                String::from(parse_string_value_node(self, *pwd_node_id)?);
+
+                            let mut auth_method = get_default_auth_method();
+                            if let Some(auth_method_node_id) = alter_option_node.children.get(1) {
+                                let auth_method_node = self.nodes.get_node(*auth_method_node_id)?;
+                                let auth_method_string_node_id = auth_method_node
+                                    .children
+                                    .first()
+                                    .expect("Method expected under AuthMethod node");
+                                auth_method = String::from(parse_string_value_node(
+                                    self,
+                                    *auth_method_string_node_id,
+                                )?);
+                            }
+
+                            AlterOption::Password {
+                                password,
+                                auth_method,
+                            }
+                        }
+                        _ => {
+                            return Err(SbroadError::Invalid(
+                                Entity::ParseNode,
+                                Some(String::from("Expected to see concrete alter option")),
+                            ))
+                        }
+                    };
+
+                    let mut timeout = get_default_timeout();
+                    if let Some(timeout_node_id) = node.children.get(2) {
+                        timeout = get_timeout(self, *timeout_node_id)?;
+                    }
+
                     let alter_user = Acl::AlterUser {
                         name: user_name,
-                        password,
-                        auth_method,
+                        alter_option,
                         timeout,
                     };
                     let plan_id = plan.nodes.push(Node::Acl(alter_user));
                     map.add(id, plan_id);
                 }
                 Type::CreateUser => {
-                    let (user_name, password, auth_method, timeout) =
-                        parse_create_alter_user(self, node, default_timeout)?;
+                    let mut iter = node.children.iter();
+                    let user_name_node_id = iter.next().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("RoleName expected as a first child")),
+                        )
+                    })?;
+                    let user_name = parse_role_name(self, *user_name_node_id)?;
+
+                    let pwd_node_id = iter.next().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::ParseNode,
+                            Some(String::from("Password expected as a second child")),
+                        )
+                    })?;
+                    let password = String::from(parse_string_value_node(self, *pwd_node_id)?);
+
+                    let mut timeout = get_default_timeout();
+                    let mut auth_method = get_default_auth_method();
+                    for child_id in iter {
+                        let child_node = self.nodes.get_node(*child_id)?;
+                        match child_node.rule {
+                            Type::Timeout => {
+                                timeout = get_timeout(self, *child_id)?;
+                            }
+                            Type::AuthMethod => {
+                                let auth_method_node_id = child_node
+                                    .children
+                                    .first()
+                                    .expect("Method expected under AuthMethod node");
+                                auth_method = String::from(parse_string_value_node(
+                                    self,
+                                    *auth_method_node_id,
+                                )?);
+                            }
+                            _ => {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Node,
+                                    Some(format!(
+                                        "ACL node contains unexpected child: {child_node:?}",
+                                    )),
+                                ));
+                            }
+                        }
+                    }
+
                     let create_user = Acl::CreateUser {
                         name: user_name,
                         password,
@@ -2133,23 +2158,13 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Type::DropUser => {
-                    let user_name_id = node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(String::from("UserName expected under DropUser node")),
-                        )
-                    })?;
-                    let user_name_node = self.nodes.get_node(*user_name_id)?;
-                    let user_name = normalize_name_for_space_api(
-                        user_name_node.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "user name in the drop user AST".into(),
-                            )
-                        })?,
-                    );
+                    let user_name_id = node
+                        .children
+                        .first()
+                        .expect("RoleName expected under DropUser node");
+                    let user_name = parse_role_name(self, *user_name_id)?;
 
-                    let mut timeout = default_timeout;
+                    let mut timeout = get_default_timeout();
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
@@ -2161,23 +2176,13 @@ impl Ast for AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Type::CreateRole => {
-                    let role_name_id = node.children.first().ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::ParseNode,
-                            Some(String::from("RoleName expected under CreateRole node")),
-                        )
-                    })?;
-                    let role_name_node = self.nodes.get_node(*role_name_id)?;
-                    let role_name = normalize_name_for_space_api(
-                        role_name_node.value.as_ref().ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                "role name in the create role AST".into(),
-                            )
-                        })?,
-                    );
+                    let role_name_id = node
+                        .children
+                        .first()
+                        .expect("RoleName expected under CreateRole node");
+                    let role_name = parse_role_name(self, *role_name_id)?;
 
-                    let mut timeout = default_timeout;
+                    let mut timeout = get_default_timeout();
                     if let Some(timeout_child_id) = node.children.get(1) {
                         timeout = get_timeout(self, *timeout_child_id)?;
                     }
@@ -2190,6 +2195,9 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Add
                 | Type::AliasName
+                | Type::AlterLogin
+                | Type::AlterNoLogin
+                | Type::AlterPassword
                 | Type::AuthMethod
                 | Type::ChapSha1
                 | Type::Columns
@@ -2230,6 +2238,22 @@ impl Ast for AbstractSyntaxTree {
                 | Type::PrimaryKey
                 | Type::PrimaryKeyColumn
                 | Type::RoleName
+                | Type::PrivBlockPrivilege
+                | Type::PrivBlockUser
+                | Type::PrivBlockSpecificUser
+                | Type::PrivBlockRole
+                | Type::PrivBlockSpecificRole
+                | Type::PrivBlockTable
+                | Type::PrivBlockSpecificTable
+                | Type::PrivBlockRolePass
+                | Type::PrivilegeAlter
+                | Type::PrivilegeCreate
+                | Type::PrivilegeDrop
+                | Type::PrivilegeExecute
+                | Type::PrivilegeRead
+                | Type::PrivilegeSession
+                | Type::PrivilegeUsage
+                | Type::PrivilegeWrite
                 | Type::ScanName
                 | Type::Select
                 | Type::Sharding
@@ -2250,7 +2274,6 @@ impl Ast for AbstractSyntaxTree {
                 | Type::TypeVarchar
                 | Type::UpdateList
                 | Type::UpdateItem
-                | Type::UserName
                 | Type::Vinyl => {}
                 rule => {
                     return Err(SbroadError::NotImplemented(

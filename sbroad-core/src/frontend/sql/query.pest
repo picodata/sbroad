@@ -1,25 +1,51 @@
 Command = _{ SOI ~ (ExplainQuery | Query | DDL | ACL) ~ EOF }
 
-ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser }
+ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
+    /// Represents both RoleName and UserName.
+    RoleName = @{ Name }
     CreateUser = {
-        ^"create" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
+        ^"create" ~ ^"user" ~ RoleName ~ (^"with")? ~ ^"password" ~ PasswordString ~
         AuthMethod? ~ Option?
     }
         PasswordString = _{ "'" ~ Password ~ "'" }
             Password = @{ String }
     AlterUser = {
-        ^"alter" ~ ^"user" ~ UserName ~ (^"with")? ~ ^"password" ~ PasswordString ~
-        AuthMethod? ~ Option?
+        ^"alter" ~ ^"user" ~ RoleName ~ (^"with")? ~ AlterOption ~ Option?
     }
+        AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword }
+            AlterLogin = { ^"login" }
+            AlterNoLogin = { ^"nologin" }
+            AlterPassword = { ^"password" ~ PasswordString ~ AuthMethod? }
 	AuthMethod = { ^"using" ~ (ChapSha1 | Md5 | Ldap) }
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
             Ldap = { ^"ldap" }
-    DropUser = { ^"drop" ~ ^"user" ~ UserName ~ Option? }
-        UserName = @{ Name }
+    DropUser = { ^"drop" ~ ^"user" ~ RoleName ~ Option? }
     CreateRole = { ^"create" ~ ^"role" ~ RoleName ~ Option? }
-        RoleName = @{ Name }
     DropRole = { ^"drop" ~ ^"role" ~ RoleName ~ Option? }
+    GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ RoleName ~ Option? }
+    RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ RoleName ~ Option? }
+        PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
+            PrivBlockPrivilege = {Privilege ~ (PrivBlockUser | PrivBlockSpecificUser | PrivBlockRole
+                                                | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable)}
+            PrivBlockUser = { ^"user" }
+            PrivBlockSpecificUser = { ^"on" ~ ^"user" ~ RoleName }
+            PrivBlockRole = { ^"role" }
+            PrivBlockSpecificRole = { ^"on" ~ ^"role" ~ RoleName }
+            PrivBlockTable = { ^"table" }
+            PrivBlockSpecificTable = { ^"on" ~ ^"table" ~ Table }
+            PrivBlockRolePass = { RoleName }
+        Privilege = _{ PrivilegeRead | PrivilegeWrite | PrivilegeExecute |
+                      PrivilegeCreate | PrivilegeAlter | PrivilegeDrop |
+                      PrivilegeSession | PrivilegeUsage }
+            PrivilegeAlter = { ^"alter" }
+            PrivilegeCreate = { ^"create" }
+            PrivilegeDrop = { ^"drop" }
+            PrivilegeExecute = { ^"execute" }
+            PrivilegeRead = { ^"read" }
+            PrivilegeSession = { ^"session" }
+            PrivilegeUsage = { ^"usage" }
+            PrivilegeWrite = { ^"write" }
 
 DDL = _{ CreateTable | DropTable }
     CreateTable = {
