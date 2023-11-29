@@ -113,17 +113,48 @@ pub enum Distribution {
 }
 
 impl Distribution {
+    fn union(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
+        let dist = match (left, right) {
+            (
+                Distribution::Global | Distribution::Any,
+                Distribution::Any | Distribution::Segment { .. },
+            )
+            | (
+                Distribution::Any | Distribution::Segment { .. },
+                Distribution::Global | Distribution::Any,
+            ) => Distribution::Any,
+            (Distribution::Global, Distribution::Global) => Distribution::Global,
+            (Distribution::Single, _) | (_, Distribution::Single) => {
+                return Err(SbroadError::Invalid(
+                    Entity::Distribution,
+                    Some(format!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+            }
+            (
+                Distribution::Segment {
+                    keys: keys_left, ..
+                },
+                Distribution::Segment {
+                    keys: keys_right, ..
+                },
+            ) => {
+                let mut keys: HashSet<Key, RepeatableState> = HashSet::with_hasher(RepeatableState);
+                for key in keys_left.intersection(keys_right).iter() {
+                    keys.insert(Key::new(key.positions.clone()));
+                }
+                if keys.is_empty() {
+                    Distribution::Any
+                } else {
+                    Distribution::Segment { keys: keys.into() }
+                }
+            }
+        };
+        Ok(dist)
+    }
+
     /// Calculate a new distribution for the `Except` and `UnionAll` output tuple.
     /// Single
-    fn union_except(
-        left: &Distribution,
-        right: &Distribution,
-    ) -> Result<Distribution, SbroadError> {
+    fn except(left: &Distribution, right: &Distribution) -> Result<Distribution, SbroadError> {
         let dist = match (left, right) {
-            // Currently Global distribution may come
-            // only from Motion(Full). The check for
-            // reading from global tables is done in
-            // conflict resolution.
             (Distribution::Global, _) => right.clone(),
             (_, Distribution::Global) => left.clone(),
             (Distribution::Single, _) | (_, Distribution::Single) => {
@@ -681,9 +712,8 @@ impl Plan {
 
         let parent = self.get_relation_node(parent_id)?;
         let new_dist = match parent {
-            Relational::Except { .. } | Relational::UnionAll { .. } => {
-                Distribution::union_except(&left_dist, &right_dist)?
-            }
+            Relational::Except { .. } => Distribution::except(&left_dist, &right_dist)?,
+            Relational::UnionAll { .. } => Distribution::union(&left_dist, &right_dist)?,
             Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
             _ => {
                 return Err(SbroadError::Invalid(

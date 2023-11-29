@@ -24,7 +24,7 @@ use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::{
     helpers::{
-        dispatch, explain_format, materialize_motion, normalize_name_from_schema,
+        dispatch_impl, explain_format, materialize_motion, normalize_name_from_schema,
         sharding_key_from_map, sharding_key_from_tuple,
     },
     Router, Statistics,
@@ -234,7 +234,7 @@ impl Router for RouterRuntime {
         top_id: usize,
         buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        dispatch(self, plan, top_id, buckets)
+        dispatch_impl(self, plan, top_id, buckets)
     }
 
     fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {

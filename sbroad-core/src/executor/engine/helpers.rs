@@ -607,7 +607,7 @@ pub fn explain_format(explain: &str) -> Result<Box<dyn Any>, SbroadError> {
 ///
 /// # Errors
 /// - Internal errors during the execution.
-pub fn dispatch(
+pub fn dispatch_impl(
     runtime: &impl Vshard,
     plan: &mut ExecutionPlan,
     top_id: usize,
@@ -618,13 +618,35 @@ pub fn dispatch(
         &format!("dispatching plan: {plan:?}")
     );
     let sub_plan = plan.take_subtree(top_id)?;
+    debug!(Option::from("dispatch"), &format!("sub plan: {sub_plan:?}"));
+    dispatch_by_buckets(sub_plan, buckets, runtime)
+}
+
+/// Helper function that chooses one of the methods for execution
+/// based on buckets.
+///
+/// # Errors
+/// - Failed to dispatch
+pub fn dispatch_by_buckets(
+    sub_plan: ExecutionPlan,
+    buckets: &Buckets,
+    runtime: &impl Vshard,
+) -> Result<Box<dyn Any>, SbroadError> {
     let query_type = sub_plan.query_type()?;
     let conn_type = sub_plan.connection_type()?;
-    debug!(Option::from("dispatch"), &format!("sub plan: {sub_plan:?}"));
 
     match buckets {
         Buckets::Filtered(_) => runtime.exec_ir_on_some(sub_plan, buckets),
         Buckets::Any => {
+            if sub_plan.has_customization_opcodes() {
+                return Err(SbroadError::Invalid(
+                    Entity::SubTree,
+                    Some(
+                        "plan customization is needed only when executing on multiple replicasets"
+                            .into(),
+                    ),
+                ));
+            }
             // Check that all vtables don't have index. Because if they do,
             // they will be filtered later by filter_vtable
             if let Some(vtables) = &sub_plan.vtables {
@@ -640,7 +662,7 @@ pub fn dispatch(
             runtime.exec_ir_on_any_node(sub_plan)
         }
         Buckets::All => {
-            if sub_plan.has_segmented_tables() {
+            if sub_plan.has_segmented_tables() || sub_plan.has_customization_opcodes() {
                 let bucket_set: HashSet<u64, RepeatableState> =
                     (1..=runtime.bucket_count()).collect();
                 let all_buckets = Buckets::new_filtered(bucket_set);

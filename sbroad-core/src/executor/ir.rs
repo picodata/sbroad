@@ -185,6 +185,7 @@ impl ExecutionPlan {
                     })?;
                     vtable.add_missing_rows(from_vtable)?;
                 }
+                MotionOpcode::SerializeAsEmptyTable(_) => {}
             }
         }
 
@@ -208,6 +209,29 @@ impl ExecutionPlan {
                 .values()
                 .any(|t| !t.get_bucket_index().is_empty())
         })
+    }
+
+    /// Return true if plan needs to be customized for each storage.
+    /// I.e we can't send the same plan to all storages.
+    ///
+    /// The check is done by iterating over the plan nodes arena,
+    /// and checking whether motion node contains serialize as empty
+    /// opcode. Be sure there are no dead nodes in the plan arena:
+    /// nodes that are not referenced by actual plan tree.
+    #[must_use]
+    pub fn has_customization_opcodes(&self) -> bool {
+        for node in self.get_ir_plan().nodes.iter() {
+            if let Node::Relational(Relational::Motion { program, .. }) = node {
+                if program
+                    .0
+                    .iter()
+                    .any(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)))
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Extract policy from motion node

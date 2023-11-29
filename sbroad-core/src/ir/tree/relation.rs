@@ -25,6 +25,15 @@ impl<'n> Nodes {
             nodes: self,
         }
     }
+
+    #[must_use]
+    pub fn empty_rel_iter(&'n self) -> RelationalIterator<'n> {
+        RelationalIterator {
+            current: self.next_id(),
+            child: RefCell::new(1000),
+            nodes: self,
+        }
+    }
 }
 
 impl<'nodes> TreeIterator<'nodes> for RelationalIterator<'nodes> {

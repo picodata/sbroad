@@ -588,6 +588,47 @@ flowchart LR
     Union --> |Any| Parent(parent)
 ```
 
+#### Arbitrary subtree with global distribution
+The above idea with primary key filter does not work, if the subtree with global distribution
+is more complex than just a scan of a global table.
+
+For example:
+
+```sql
+(select g1.a, g2.b from
+global_1 as g1
+inner join
+global_2 as g2)
+union all
+select c, d from segment
+```
+Here we have a join of two global tables and such subtree will have `Global` distribution.
+
+It is also clear that we can't push down primary key filter on global tables scans, because
+there is an inner join above them.
+
+I suggest we simply do global table materialization only on single storage
+and on all other storages do not scan the global table at all.
+
+Suppose we have three storages where the whole subtree with union all must be executed.
+Then:
+
+storage 1 and 2:
+```
+select c, d from segment
+```
+
+storage 3:
+```
+(select g1.a, g2.b from
+global_1 as g1
+inner join
+global_2 as g2)
+union all
+select c, d from segment
+```
+
+
 
 
 ## Except

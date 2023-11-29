@@ -8,7 +8,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, Relational, Unary};
-use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
 use crate::ir::Node;
@@ -32,6 +32,8 @@ pub enum SyntaxData {
     Condition,
     /// "distinct"
     Distinct,
+    /// Inline sql string
+    Inline(String),
     /// "from"
     From,
     /// "("
@@ -126,6 +128,14 @@ impl SyntaxNode {
     fn new_distinct() -> Self {
         SyntaxNode {
             data: SyntaxData::Distinct,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_inline(value: &str) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Inline(value.into()),
             left: None,
             right: Vec::new(),
         }
@@ -809,6 +819,8 @@ impl<'p> SyntaxPlan<'p> {
                     policy,
                     children,
                     is_child_subquery,
+                    program,
+                    output,
                     ..
                 } => {
                     if let MotionPolicy::LocalSegment { .. } = policy {
@@ -836,6 +848,38 @@ impl<'p> SyntaxPlan<'p> {
                                 ),
                             ));
                         }
+                    }
+                    if let Some(op) = program
+                        .0
+                        .iter()
+                        .find(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)))
+                    {
+                        let is_enabled = matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
+                        if is_enabled {
+                            let output_len = self.plan.get_ir_plan().get_row_list(*output)?.len();
+                            let empty_select = format!(
+                                "select {}null where false",
+                                "null, ".repeat(output_len - 1)
+                            );
+                            let inline_id = self
+                                .nodes
+                                .push_syntax_node(SyntaxNode::new_inline(&empty_select));
+                            let pointer_id = self.nodes.push_syntax_node(SyntaxNode::new_pointer(
+                                id,
+                                None,
+                                vec![inline_id],
+                            ));
+                            return Ok(pointer_id);
+                        }
+                        let child_plan_id = self.plan.get_ir_plan().get_relational_child(id, 0)?;
+                        let child_sp_id = *self.nodes.map.get(&child_plan_id).ok_or_else(|| {
+                            SbroadError::Invalid(
+                                Entity::SyntaxPlan,
+                                Some(format!("motion child {child_plan_id} is not found in map")),
+                            )
+                        })?;
+                        self.nodes.map.insert(id, child_sp_id);
+                        return Ok(child_sp_id);
                     }
                     let vtable = self.plan.get_motion_vtable(id)?;
                     let vtable_alias = vtable.get_alias().map(String::from);

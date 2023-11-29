@@ -132,6 +132,21 @@ pub enum MotionOpcode {
     AddMissingRowsForLeftJoin {
         motion_id: usize,
     },
+    /// When set to `true` this opcode serializes
+    /// motion subtree to sql that produces
+    /// empty table.
+    ///
+    /// Relevant only for Local motion policy.
+    /// Must be initialized to `true` by planner,
+    /// executor garuantees to mark only one replicaset
+    /// which will have `false` value in this opcode.
+    /// For all replicasets that will have `true` value,
+    /// executor will remove all virtual tables used in
+    /// below subtree and unlink the given motion node.
+    ///
+    /// Note: currently this opcode is only used for
+    /// execution of union all having global child and sharded child.
+    SerializeAsEmptyTable(bool),
 }
 
 /// Helper struct that unwraps `Expression::Bool` fields.
@@ -1002,7 +1017,7 @@ impl Plan {
                     ));
                 }
             }
-            Relational::UnionAll { .. } | Relational::Except { .. } => {
+            Relational::Except { .. } => {
                 let left_dist = self.get_distribution(
                     self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
                 )?;
@@ -1026,7 +1041,8 @@ impl Plan {
             | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
             | Relational::ScanSubQuery { .. }
-            | Relational::Motion { .. } => {}
+            | Relational::Motion { .. }
+            | Relational::UnionAll { .. } => {}
         }
         Ok(())
     }
@@ -1861,56 +1877,85 @@ impl Plan {
     }
 
     fn resolve_union_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
-        let mut map = Strategy::new(rel_id);
-        match self.get_relation_node(rel_id)? {
-            Relational::UnionAll { children, .. } => {
-                if let (Some(left), Some(right), None) =
-                    (children.first(), children.get(1), children.get(2))
-                {
-                    let left_output_id = self.get_relation_node(*left)?.output();
-                    let right_output_id = self.get_relation_node(*right)?.output();
-                    let left_output_row =
-                        self.get_expression_node(left_output_id)?.get_row_list()?;
-                    let right_output_row =
-                        self.get_expression_node(right_output_id)?.get_row_list()?;
-                    if left_output_row.len() != right_output_row.len() {
-                        return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                            "Except node children have different row lengths: left {}, right {}",
-                            left_output_row.len(),
-                            right_output_row.len()
-                        )));
-                    }
-                    let left_dist = self.get_distribution(left_output_id)?;
-                    let right_dist = self.get_distribution(right_output_id)?;
-                    if let Distribution::Single = left_dist {
-                        map.add_child(
-                            *left,
-                            MotionPolicy::Segment(MotionKey {
-                                targets: vec![Target::Reference(0)],
-                            }),
-                            Program::default(),
-                        );
-                    }
-                    if let Distribution::Single = right_dist {
-                        map.add_child(
-                            *right,
-                            MotionPolicy::Segment(MotionKey {
-                                targets: vec![Target::Reference(0)],
-                            }),
-                            Program::default(),
-                        );
-                    }
-                    return Ok(map);
-                }
-                Err(SbroadError::UnexpectedNumberOfValues(
-                    "UnionAll node doesn't have exactly two children.".into(),
-                ))
-            }
-            _ => Err(SbroadError::Invalid(
+        if !matches!(self.get_relation_node(rel_id)?, Relational::UnionAll { .. }) {
+            return Err(SbroadError::Invalid(
                 Entity::Relational,
                 Some("expected UnionAll node".into()),
-            )),
+            ));
         }
+        let mut map = Strategy::new(rel_id);
+        let left_id = self.get_relational_child(rel_id, 0)?;
+        let right_id = self.get_relational_child(rel_id, 1)?;
+        let left_output_id = self.get_relation_node(left_id)?.output();
+        let right_output_id = self.get_relation_node(right_id)?.output();
+
+        {
+            let left_output_row = self.get_expression_node(left_output_id)?.get_row_list()?;
+            let right_output_row = self.get_expression_node(right_output_id)?.get_row_list()?;
+            if left_output_row.len() != right_output_row.len() {
+                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                    "Except node children have different row lengths: left {}, right {}",
+                    left_output_row.len(),
+                    right_output_row.len()
+                )));
+            }
+        }
+
+        let left_dist = self.get_distribution(left_output_id)?;
+        let right_dist = self.get_distribution(right_output_id)?;
+        match (left_dist, right_dist) {
+            (Distribution::Single, Distribution::Single) => {
+                // todo: do not use a motion here
+                map.add_child(
+                    left_id,
+                    MotionPolicy::Segment(MotionKey {
+                        targets: vec![Target::Reference(0)],
+                    }),
+                    Program::default(),
+                );
+                map.add_child(
+                    right_id,
+                    MotionPolicy::Segment(MotionKey {
+                        targets: vec![Target::Reference(0)],
+                    }),
+                    Program::default(),
+                );
+            }
+            (Distribution::Single, _) => {
+                map.add_child(
+                    left_id,
+                    MotionPolicy::Segment(MotionKey {
+                        targets: vec![Target::Reference(0)],
+                    }),
+                    Program::default(),
+                );
+            }
+            (_, Distribution::Single) => {
+                map.add_child(
+                    right_id,
+                    MotionPolicy::Segment(MotionKey {
+                        targets: vec![Target::Reference(0)],
+                    }),
+                    Program::default(),
+                );
+            }
+            (Distribution::Global, Distribution::Segment { .. } | Distribution::Any) => {
+                map.add_child(
+                    left_id,
+                    MotionPolicy::Local,
+                    Program(vec![MotionOpcode::SerializeAsEmptyTable(true)]),
+                );
+            }
+            (Distribution::Segment { .. } | Distribution::Any, Distribution::Global) => {
+                map.add_child(
+                    right_id,
+                    MotionPolicy::Local,
+                    Program(vec![MotionOpcode::SerializeAsEmptyTable(true)]),
+                );
+            }
+            (_, _) => {}
+        }
+        Ok(map)
     }
 
     /// Add motion nodes to the plan tree.

@@ -1,5 +1,7 @@
 use std::any::Any;
 use std::cell::{Ref, RefCell};
+use std::cmp::Ordering;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -33,7 +35,8 @@ use crate::ir::tree::Snapshot;
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Plan;
 
-use super::helpers::normalize_name_from_sql;
+use super::helpers::vshard::{prepare_rs_to_ir_map, GroupedBuckets};
+use super::helpers::{dispatch_by_buckets, normalize_name_from_sql};
 use super::{Metadata, QueryCache};
 
 #[allow(clippy::module_name_repetitions)]
@@ -865,6 +868,99 @@ impl RouterConfigurationMock {
     }
 }
 
+/// Helper struct to group buckets by replicasets.
+/// Assumes that all buckets are uniformly distributed
+/// between replicasets: first rs holds p buckets,
+/// second rs holds p buckets, .., last rs holds p + r
+/// buckets.
+/// Where: `p = bucket_cnt / rs_cnt, r = bucket_cnt % rs_cnt`
+#[allow(clippy::module_name_repetitions)]
+pub struct VshardMock {
+    // Holds boundaries of replicaset buckets: [start, end)
+    blocks: Vec<(u64, u64)>,
+}
+
+impl VshardMock {
+    #[must_use]
+    pub fn new(rs_count: usize, bucket_count: u64) -> Self {
+        let mut blocks = Vec::new();
+        let rs_count: u64 = rs_count as u64;
+        let buckets_per_rs = bucket_count / rs_count;
+        let remainder = bucket_count % rs_count;
+        for rs_idx in 0..rs_count {
+            let start = rs_idx * buckets_per_rs;
+            let end = start + buckets_per_rs;
+            blocks.push((start, end));
+        }
+        if let Some(last_block) = blocks.last_mut() {
+            last_block.1 += remainder + 1;
+        }
+        Self { blocks }
+    }
+
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn group(&self, buckets: &Buckets) -> GroupedBuckets {
+        let mut res: GroupedBuckets = HashMap::new();
+        match buckets {
+            Buckets::All => {
+                for (idx, (start, end)) in self.blocks.iter().enumerate() {
+                    let name = Self::generate_rs_name(idx);
+                    res.insert(name, ((*start)..(*end)).collect());
+                }
+            }
+            Buckets::Filtered(buckets_set) => {
+                for bucket_id in buckets_set {
+                    let comparator = |block: &(u64, u64)| -> Ordering {
+                        let start = block.0;
+                        let end = block.1;
+                        if *bucket_id < start {
+                            Ordering::Greater
+                        } else if *bucket_id >= end {
+                            Ordering::Less
+                        } else {
+                            Ordering::Equal
+                        }
+                    };
+                    let block_idx = match self.blocks.binary_search_by(comparator) {
+                        Ok(idx) => idx,
+                        Err(idx) => {
+                            panic!("bucket_id: {bucket_id}, err_idx: {idx}");
+                        }
+                    };
+                    let name = Self::generate_rs_name(block_idx);
+                    match res.entry(name) {
+                        Entry::Occupied(mut e) => {
+                            e.get_mut().push(*bucket_id);
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(vec![*bucket_id]);
+                        }
+                    }
+                }
+            }
+            Buckets::Any => {
+                res.insert(Self::generate_rs_name(0), vec![0]);
+            }
+        }
+
+        res
+    }
+
+    #[must_use]
+    pub fn generate_rs_name(idx: usize) -> String {
+        format!("replicaset_{idx}")
+    }
+
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn get_id(name: &str) -> usize {
+        name[name.find('_').unwrap() + 1..]
+            .parse::<usize>()
+            .unwrap()
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntimeMock {
     metadata: RefCell<RouterConfigurationMock>,
@@ -872,6 +968,7 @@ pub struct RouterRuntimeMock {
     ir_cache: RefCell<LRUCache<String, Plan>>,
     table_statistics_cache: RefCell<HashMap<String, Rc<TableStats>>>,
     initial_column_statistics_cache: RefCell<HashMap<TableColumnPair, Rc<Box<dyn Any>>>>,
+    pub vshard_mock: VshardMock,
 }
 
 impl std::fmt::Debug for RouterRuntimeMock {
@@ -975,13 +1072,10 @@ impl Vshard for RouterRuntimeMock {
 
     fn exec_ir_on_some(
         &self,
-        _sub_plan: ExecutionPlan,
-        _buckets: &Buckets,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        Err(SbroadError::Unsupported(
-            Entity::Runtime,
-            Some("exec_ir_on_some is not supported for the mock runtime".to_string()),
-        ))
+        mock_exec_ir_on_some(&self.vshard_mock, buckets, sub_plan)
     }
 }
 
@@ -1021,14 +1115,30 @@ impl Vshard for &RouterRuntimeMock {
 
     fn exec_ir_on_some(
         &self,
-        _sub_plan: ExecutionPlan,
-        _buckets: &Buckets,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        Err(SbroadError::Unsupported(
-            Entity::Runtime,
-            Some("exec_ir_on_some is not supported for the mock runtime".to_string()),
-        ))
+        mock_exec_ir_on_some(&self.vshard_mock, buckets, sub_plan)
     }
+}
+
+fn mock_exec_ir_on_some(
+    vshard_mock: &VshardMock,
+    buckets: &Buckets,
+    sub_plan: ExecutionPlan,
+) -> Result<Box<dyn Any>, SbroadError> {
+    let mut rs_bucket_vec: Vec<(String, Vec<u64>)> = vshard_mock.group(buckets).drain().collect();
+    // sort to get deterministic test results
+    rs_bucket_vec.sort_by_key(|(rs_name, _)| rs_name.clone());
+    let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
+    let mut dispatch_vec: Vec<ReplicasetDispatchInfo> = Vec::new();
+    for (rs_name, exec_plan) in rs_ir {
+        let id = VshardMock::get_id(&rs_name);
+        let dispatch = ReplicasetDispatchInfo::new(id, &exec_plan);
+        dispatch_vec.push(dispatch);
+    }
+    dispatch_vec.sort_by_key(|d| d.rs_id);
+    Ok(Box::new(dispatch_vec))
 }
 
 impl Default for RouterRuntimeMock {
@@ -1338,12 +1448,15 @@ impl RouterRuntimeMock {
             Rc::new(boxed_column_stats),
         );
 
+        let meta = RouterConfigurationMock::new();
+        let bucket_cnt = meta.bucket_count;
         RouterRuntimeMock {
-            metadata: RefCell::new(RouterConfigurationMock::new()),
+            metadata: RefCell::new(meta),
             virtual_tables: RefCell::new(HashMap::new()),
             ir_cache: RefCell::new(cache),
             table_statistics_cache: RefCell::new(table_statistics_cache),
             initial_column_statistics_cache: RefCell::new(column_statistics_cache),
+            vshard_mock: VshardMock::new(2, bucket_cnt),
         }
     }
 
@@ -1552,4 +1665,59 @@ fn exec_on_all(query: &str) -> ProducerResult {
     ]);
 
     result
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ReplicasetDispatchInfo {
+    pub rs_id: usize,
+    pub pattern: String,
+    pub params: Vec<Value>,
+    pub vtables_map: HashMap<usize, Rc<VirtualTable>>,
+}
+
+impl ReplicasetDispatchInfo {
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
+    pub fn new(rs_id: usize, exec_plan: &ExecutionPlan) -> Self {
+        let top = exec_plan.get_ir_plan().get_top().unwrap();
+        let sp = SyntaxPlan::new(exec_plan, top, Snapshot::Oldest).unwrap();
+        let ordered_sn = OrderedSyntaxNodes::try_from(sp).unwrap();
+        let syntax_data_nodes = ordered_sn.to_syntax_data().unwrap();
+        let (pattern_with_params, _) = exec_plan
+            .to_sql(&syntax_data_nodes, &Buckets::All, "test")
+            .unwrap();
+        let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+        if let Some(vtables_map) = exec_plan.get_vtables() {
+            vtables = vtables_map.clone();
+        }
+        Self {
+            rs_id,
+            pattern: pattern_with_params.pattern,
+            params: pattern_with_params.params,
+            vtables_map: vtables,
+        }
+    }
+}
+
+impl RouterRuntimeMock {
+    pub fn set_vshard_mock(&mut self, rs_count: usize) {
+        self.vshard_mock = VshardMock::new(rs_count, self.bucket_count());
+    }
+
+    /// Imitates the real pipeline of dispatching plan subtree
+    /// on the given buckets. But does not encode plan into
+    /// message for sending, instead it evalutes what sql
+    /// query will be executed on each replicaset, and what vtables
+    /// will be send to that replicaset.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn detailed_dispatch(
+        &self,
+        plan: ExecutionPlan,
+        buckets: &Buckets,
+    ) -> Vec<ReplicasetDispatchInfo> {
+        *dispatch_by_buckets(plan, buckets, self)
+            .unwrap()
+            .downcast::<Vec<ReplicasetDispatchInfo>>()
+            .unwrap()
+    }
 }

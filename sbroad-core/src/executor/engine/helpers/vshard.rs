@@ -3,7 +3,20 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::{executor::engine::Router, ir::helpers::RepeatableState, otm::child_span};
+use crate::{
+    executor::engine::Router,
+    ir::{
+        helpers::RepeatableState,
+        operator::Relational,
+        transformation::redistribution::{MotionOpcode, MotionPolicy},
+        tree::{
+            relation::RelationalIterator,
+            traversal::{PostOrderWithFilter, REL_CAPACITY},
+        },
+        Node, Plan,
+    },
+    otm::child_span,
+};
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
@@ -171,7 +184,7 @@ pub fn exec_ir_on_all_buckets(
 #[otm_child_span("query.dispatch.cartridge.some")]
 pub fn exec_ir_on_some_buckets(
     runtime: &(impl Router + Vshard),
-    mut sub_plan: ExecutionPlan,
+    sub_plan: ExecutionPlan,
     buckets: &Buckets,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let query_type = sub_plan.query_type()?;
@@ -194,41 +207,208 @@ pub fn exec_ir_on_some_buckets(
         }
     }
 
-    let mut rs_ir: ReplicasetMessage = HashMap::new();
+    // todo(ars): group should be a runtime function not global,
+    // this way we could implement it for mock runtime for better testing
     let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
     if rs_bucket_vec.is_empty() {
         return Err(SbroadError::UnexpectedNumberOfValues(format!(
             "no replica sets were found for the buckets {buckets:?} to execute the query on"
         )));
     }
-    rs_ir.reserve(rs_bucket_vec.len());
-    // We split last pair in order not to call extra `clone` method.
-    if let Some((last, other)) = rs_bucket_vec.split_last() {
-        for (rs, bucket_ids) in other {
-            let mut rs_plan = sub_plan.clone();
-            filter_vtable(&mut rs_plan, bucket_ids)?;
-            rs_ir.insert(rs.clone(), Message::from(encode_plan(rs_plan)?));
-        }
-
-        let (rs, bucket_ids) = last;
-        filter_vtable(&mut sub_plan, bucket_ids)?;
-        rs_ir.insert(rs.clone(), Message::from(encode_plan(sub_plan)?));
+    let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
+    let mut rs_message = HashMap::with_capacity(rs_ir.len());
+    for (rs, ir) in rs_ir {
+        rs_message.insert(rs, Message::from(encode_plan(ir)?));
     }
     match &query_type {
         QueryType::DQL => dql_on_some(
             &*runtime.metadata()?,
-            rs_ir,
+            rs_message,
             conn_type.is_readonly(),
             vtable_max_rows,
         ),
-        QueryType::DML => dml_on_some(&*runtime.metadata()?, rs_ir, conn_type.is_readonly()),
+        QueryType::DML => dml_on_some(&*runtime.metadata()?, rs_message, conn_type.is_readonly()),
     }
+}
+
+// Helper struct to hold information
+// needed to apply SerializeAsEmpty opcode
+// to subtree.
+struct SerializeAsEmptyInfo {
+    // ids of topmost motion nodes which have this opcode
+    // with `true` value
+    top_motion_ids: Vec<usize>,
+    // ids of motions which have this opcode
+    target_motion_ids: Vec<usize>,
+    // ids of motions that are located below
+    // top_motion_id, vtables corresponding
+    // to those motions must be deleted from
+    // replicaset message.
+    unused_motions: Vec<usize>,
+}
+
+impl Plan {
+    // return true if given node is Motion containing seriliaze as empty
+    // opcode. If `check_enabled` is true checks that the opcode is enabled.
+    fn is_serialize_as_empty_motion(&self, node_id: usize, check_enabled: bool) -> bool {
+        if let Ok(Node::Relational(Relational::Motion { program, .. })) = self.get_node(node_id) {
+            if let Some(op) = program
+                .0
+                .iter()
+                .find(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)))
+            {
+                return !check_enabled || matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
+            };
+        }
+        false
+    }
+
+    fn collect_top_ids(&self) -> Result<Vec<usize>, SbroadError> {
+        let mut stop_nodes: HashSet<usize> = HashSet::new();
+        let iter_children = |node_id| -> RelationalIterator<'_> {
+            if self.is_serialize_as_empty_motion(node_id, true) {
+                stop_nodes.insert(node_id);
+            }
+            // do not traverse subtree with this child
+            if stop_nodes.contains(&node_id) {
+                return self.nodes.empty_rel_iter();
+            }
+            self.nodes.rel_iter(node_id)
+        };
+        let filter = |node_id: usize| -> bool { self.is_serialize_as_empty_motion(node_id, true) };
+        let mut dfs = PostOrderWithFilter::with_capacity(iter_children, 4, Box::new(filter));
+
+        Ok(dfs.iter(self.get_top()?).map(|(_, id)| id).collect())
+    }
+
+    fn serialize_as_empty_info(&self) -> Result<Option<SerializeAsEmptyInfo>, SbroadError> {
+        let top_ids = self.collect_top_ids()?;
+        if top_ids.is_empty() {
+            return Ok(None);
+        }
+
+        // all motion nodes that are inside the subtrees
+        // defined by `top_ids`
+        let all_motion_nodes = {
+            let is_motion = |node_id: usize| -> bool {
+                matches!(
+                    self.get_node(node_id),
+                    Ok(Node::Relational(Relational::Motion { .. }))
+                )
+            };
+            let mut all_motions = Vec::new();
+            for top_id in &top_ids {
+                let mut dfs = PostOrderWithFilter::with_capacity(
+                    |x| self.nodes.rel_iter(x),
+                    REL_CAPACITY,
+                    Box::new(is_motion),
+                );
+                all_motions.extend(dfs.iter(*top_id).map(|(_, id)| id));
+            }
+            all_motions
+        };
+        let mut target_motions = Vec::new();
+        let mut unused_motions = Vec::new();
+        for id in all_motion_nodes {
+            if self.is_serialize_as_empty_motion(id, false) {
+                target_motions.push(id);
+            } else {
+                unused_motions.push(id);
+            }
+        }
+
+        Ok(Some(SerializeAsEmptyInfo {
+            top_motion_ids: top_ids,
+            target_motion_ids: target_motions,
+            unused_motions,
+        }))
+    }
+}
+
+/// Prepares execution plan for each replicaset.
+///
+/// # Errors
+/// - Failed to apply customization opcodes
+/// - Failed to filter vtable
+pub fn prepare_rs_to_ir_map(
+    rs_bucket_vec: &Vec<(String, Vec<u64>)>,
+    mut sub_plan: ExecutionPlan,
+) -> Result<HashMap<String, ExecutionPlan>, SbroadError> {
+    let mut rs_ir: HashMap<String, ExecutionPlan> = HashMap::new();
+    rs_ir.reserve(rs_bucket_vec.len());
+    if let Some((last, other)) = rs_bucket_vec.split_last() {
+        let sae_info = sub_plan.get_ir_plan().serialize_as_empty_info()?;
+        for (rs, bucket_ids) in other {
+            let mut rs_plan = sub_plan.clone();
+            if let Some(ref info) = sae_info {
+                apply_serialize_as_empty_opcode(&mut rs_plan, info)?;
+            }
+            filter_vtable(&mut rs_plan, bucket_ids)?;
+            rs_ir.insert(rs.clone(), rs_plan);
+        }
+
+        if let Some(ref info) = sae_info {
+            disable_serialize_as_empty_opcode(&mut sub_plan, info)?;
+        }
+        let (rs, bucket_ids) = last;
+        filter_vtable(&mut sub_plan, bucket_ids)?;
+        rs_ir.insert(rs.clone(), sub_plan);
+    }
+
+    Ok(rs_ir)
+}
+
+fn apply_serialize_as_empty_opcode(
+    sub_plan: &mut ExecutionPlan,
+    info: &SerializeAsEmptyInfo,
+) -> Result<(), SbroadError> {
+    if let Some(vtables_map) = sub_plan.get_mut_vtables() {
+        for motion_id in &info.unused_motions {
+            vtables_map.remove(motion_id);
+        }
+    }
+
+    for top_id in &info.top_motion_ids {
+        sub_plan.unlink_motion_subtree(*top_id)?;
+    }
+    Ok(())
+}
+
+fn disable_serialize_as_empty_opcode(
+    sub_plan: &mut ExecutionPlan,
+    info: &SerializeAsEmptyInfo,
+) -> Result<(), SbroadError> {
+    for motion_id in &info.target_motion_ids {
+        let program = if let Relational::Motion {
+            policy, program, ..
+        } = sub_plan
+            .get_mut_ir_plan()
+            .get_mut_relation_node(*motion_id)?
+        {
+            if !matches!(policy, MotionPolicy::Local) {
+                continue;
+            }
+            program
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format!("expected motion node on id {motion_id}")),
+            ));
+        };
+        for op in &mut program.0 {
+            if let MotionOpcode::SerializeAsEmptyTable(enabled) = op {
+                *enabled = false;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Map between replicaset uuid and the set of buckets (their ids) which correspond to that replicaset.
 /// This set is defined by vshard `router.route` function call. See `group_buckets_by_replicasets`
 /// function for more details.
-type GroupedBuckets = HashMap<String, Vec<u64>>;
+pub(crate) type GroupedBuckets = HashMap<String, Vec<u64>>;
 
 /// Function that transforms `Buckets` (set of bucket_ids)
 /// into `GroupedBuckets` (map from replicaset uuid to set of bucket_ids).
