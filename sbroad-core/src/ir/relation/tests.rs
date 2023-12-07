@@ -16,7 +16,7 @@ fn column() {
 
 #[test]
 fn table_seg() {
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -27,7 +27,6 @@ fn table_seg() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
 
@@ -39,13 +38,12 @@ fn table_seg() {
 
 #[test]
 fn table_seg_name() {
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     assert_eq!("t", t.name());
@@ -54,7 +52,7 @@ fn table_seg_name() {
 #[test]
 fn table_seg_duplicate_columns() {
     assert_eq!(
-        Table::new(
+        Table::new_sharded(
             "t",
             vec![
                 column_user_non_null(String::from("a"), Type::Boolean),
@@ -65,16 +63,17 @@ fn table_seg_duplicate_columns() {
             &["b", "a"],
             &["b", "a"],
             SpaceEngine::Memtx,
-            false
         )
         .unwrap_err(),
-        SbroadError::DuplicatedValue("Table has duplicated columns and couldn't be loaded".into())
+        SbroadError::DuplicatedValue(format!(
+            r#"Table "t" has a duplicating column "a" at positions 0 and 3"#,
+        ))
     );
 }
 
 #[test]
 fn table_seg_dno_bucket_id_column() {
-    let t1 = Table::new(
+    let t1 = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -84,16 +83,15 @@ fn table_seg_dno_bucket_id_column() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
 
     assert_eq!(
-        SbroadError::UnexpectedNumberOfValues("Table has no bucket_id columns".into()),
+        SbroadError::UnexpectedNumberOfValues(format!("Table {} has no bucket_id columns", "t")),
         t1.get_bucket_id_position().unwrap_err()
     );
 
-    let t2 = Table::new(
+    let t2 = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -105,7 +103,6 @@ fn table_seg_dno_bucket_id_column() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
 
@@ -118,7 +115,7 @@ fn table_seg_dno_bucket_id_column() {
 #[test]
 fn table_seg_wrong_key() {
     assert_eq!(
-        Table::new(
+        Table::new_sharded(
             "t",
             vec![
                 column_user_non_null(String::from("a"), Type::Boolean),
@@ -127,9 +124,8 @@ fn table_seg_wrong_key() {
                 column_user_non_null(String::from("d"), Type::String),
             ],
             &["a", "e"],
-            &["a", "e"],
+            &["a"],
             SpaceEngine::Memtx,
-            false
         )
         .unwrap_err(),
         SbroadError::Invalid(Entity::ShardingKey, None)
@@ -139,7 +135,7 @@ fn table_seg_wrong_key() {
 #[test]
 fn table_seg_compound_type_in_key() {
     assert_eq!(
-        Table::new(
+        Table::new_sharded(
             "t",
             vec![
                 Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, false),
@@ -148,7 +144,6 @@ fn table_seg_compound_type_in_key() {
             &["a"],
             &["a"],
             SpaceEngine::Memtx,
-            false
         )
         .unwrap_err(),
         SbroadError::Invalid(
@@ -160,7 +155,7 @@ fn table_seg_compound_type_in_key() {
 
 #[test]
 fn table_seg_serialized() {
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -173,7 +168,6 @@ fn table_seg_serialized() {
         &["a", "d"],
         &["a", "d"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     let path = Path::new("")
@@ -336,7 +330,7 @@ fn column_msgpack_deserialize() {
 
 #[test]
 fn table_converting() {
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -347,7 +341,6 @@ fn table_converting() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
 

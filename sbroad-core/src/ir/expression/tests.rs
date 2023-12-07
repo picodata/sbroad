@@ -27,13 +27,12 @@ fn rel_nodes_from_reference_in_scan() {
     // select * from t
     let mut plan = Plan::default();
 
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t);
@@ -50,13 +49,12 @@ fn rel_nodes_from_reference_in_proj() {
     // select a from t
     let mut plan = Plan::default();
 
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![column_integer_user_non_null(String::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t);

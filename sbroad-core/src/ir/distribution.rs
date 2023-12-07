@@ -12,6 +12,7 @@ use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::expression::Expression;
 use super::operator::Relational;
+use super::relation::{Column, ColumnPositions};
 use super::{Node, Plan};
 
 /// Tuple columns that determinate its segment distribution.
@@ -30,6 +31,38 @@ impl Key {
     #[must_use]
     pub fn new(positions: Vec<usize>) -> Self {
         Key { positions }
+    }
+
+    pub(crate) fn with_columns(
+        columns: &[Column],
+        pos_map: &ColumnPositions,
+        sharding_key: &[&str],
+    ) -> Result<Self, SbroadError> {
+        let shard_positions = sharding_key
+            .iter()
+            .map(|name| match pos_map.get(name) {
+                Some(pos) => {
+                    // Check that the column type is scalar.
+                    // Compound types are not supported as sharding keys.
+                    let column = &columns.get(pos).ok_or_else(|| {
+                        SbroadError::FailedTo(
+                            Action::Create,
+                            Some(Entity::Column),
+                            format!("column {name} not found at position {pos}"),
+                        )
+                    })?;
+                    if !column.r#type.is_scalar() {
+                        return Err(SbroadError::Invalid(
+                            Entity::Column,
+                            Some(format!("column {name} at position {pos} is not scalar",)),
+                        ));
+                    }
+                    Ok(pos)
+                }
+                None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
+            })
+            .collect::<Result<Vec<usize>, _>>()?;
+        Ok(Key::new(shard_positions))
     }
 
     #[must_use]

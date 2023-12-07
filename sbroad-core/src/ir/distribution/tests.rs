@@ -12,7 +12,7 @@ use std::path::Path;
 fn proj_preserve_dist_key() {
     let mut plan = Plan::default();
 
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -23,7 +23,6 @@ fn proj_preserve_dist_key() {
         &["b", "a"],
         &["b", "a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t);

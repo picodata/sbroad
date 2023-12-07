@@ -7,6 +7,7 @@
 //! * Table, representing unnamed tuples storage (`Table`)
 //! * Relation, representing named tables (`Relations` as a map of { name -> table })
 
+use ahash::AHashMap;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Formatter};
@@ -381,16 +382,33 @@ impl TryFrom<&str> for SpaceEngine {
     }
 }
 
-/// Table is a tuple storage in the cluster.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct Table {
-    /// List of the columns.
-    pub columns: Vec<Column>,
-    /// Primary key of the table (column positions).
-    pub primary_key: Key,
-    /// Unique table name.
-    pub name: String,
-    pub kind: TableKind,
+// A helper struct to collect column positions.
+#[derive(Debug)]
+pub(crate) struct ColumnPositions<'column> {
+    // Column positions with names as keys.
+    map: AHashMap<&'column str, usize>,
+}
+
+impl<'column> ColumnPositions<'column> {
+    #[allow(clippy::uninlined_format_args)]
+    pub(crate) fn new(columns: &'column [Column], table: &str) -> Result<Self, SbroadError> {
+        let mut map = AHashMap::with_capacity(columns.len());
+        for (pos, col) in columns.iter().enumerate() {
+            let name = col.name.as_str();
+            if let Some(old_pos) = map.insert(name, pos) {
+                return Err(SbroadError::DuplicatedValue(format!(
+                    r#"Table "{}" has a duplicating column "{}" at positions {} and {}"#,
+                    table, name, old_pos, pos,
+                )));
+            }
+        }
+        map.shrink_to_fit();
+        Ok(Self { map })
+    }
+
+    pub(crate) fn get(&self, name: &str) -> Option<usize> {
+        self.map.get(name).copied()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -403,101 +421,130 @@ pub enum TableKind {
     SystemSpace,
 }
 
+impl TableKind {
+    #[must_use]
+    pub fn new_sharded(sharding_key: Key, engine: SpaceEngine) -> Self {
+        Self::ShardedSpace {
+            sharding_key,
+            engine,
+        }
+    }
+
+    #[must_use]
+    pub fn new_global() -> Self {
+        Self::GlobalSpace
+    }
+
+    #[must_use]
+    pub fn new_system() -> Self {
+        Self::SystemSpace
+    }
+}
+
+fn table_new_impl<'column>(
+    name: &str,
+    columns: &'column [Column],
+    primary_key: &'column [&str],
+) -> Result<(ColumnPositions<'column>, Key), SbroadError> {
+    let pos_map = ColumnPositions::new(columns, name)?;
+    let primary_positions = primary_key
+        .iter()
+        .map(|name| match pos_map.get(name) {
+            Some(pos) => {
+                let _ = &columns.get(pos).ok_or_else(|| {
+                    SbroadError::FailedTo(
+                        Action::Create,
+                        Some(Entity::Column),
+                        format!("column {name} not found at position {pos}"),
+                    )
+                })?;
+                Ok(pos)
+            }
+            None => Err(SbroadError::Invalid(Entity::PrimaryKey, None)),
+        })
+        .collect::<Result<Vec<usize>, _>>()?;
+    Ok((pos_map, Key::new(primary_positions)))
+}
+
+/// Table is a tuple storage in the cluster.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Table {
+    /// List of the columns.
+    pub columns: Vec<Column>,
+    /// Primary key of the table (column positions).
+    pub primary_key: Key,
+    /// Unique table name.
+    pub name: String,
+    pub kind: TableKind,
+}
+
 impl Table {
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Table constructor.
+    /// Sharded table constructor.
     ///
     /// # Errors
-    /// Returns `SbroadError` when the input arguments are invalid.
-    pub fn new(
+    /// - column names are duplicated;
+    /// - primary key is not found among the columns;
+    /// - sharding key is not found among the columns;
+    pub fn new_sharded(
         name: &str,
         columns: Vec<Column>,
         sharding_key: &[&str],
         primary_key: &[&str],
         engine: SpaceEngine,
-        is_system: bool,
     ) -> Result<Self, SbroadError> {
-        let mut pos_map: HashMap<&str, usize> = HashMap::new();
-        let no_duplicates = &columns
-            .iter()
-            .enumerate()
-            .all(|(pos, col)| matches!(pos_map.insert(&col.name, pos), None));
-
-        if !no_duplicates {
-            return Err(SbroadError::DuplicatedValue(
-                "Table has duplicated columns and couldn't be loaded".into(),
-            ));
-        }
-
-        let table_kind = if sharding_key.is_empty() {
-            if engine != SpaceEngine::Memtx {
-                return Err(SbroadError::Unsupported(
-                    Entity::Table,
-                    Some("global table can only have memtx engine".into()),
-                ));
-            }
-            if is_system {
-                TableKind::SystemSpace
-            } else {
-                TableKind::GlobalSpace
-            }
-        } else {
-            let shard_positions = sharding_key
-                .iter()
-                .map(|name| match pos_map.get(*name) {
-                    Some(pos) => {
-                        // Check that the column type is scalar.
-                        // Compound types are not supported as sharding keys.
-                        let column = &columns.get(*pos).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Create,
-                                Some(Entity::Column),
-                                format!("column {name} not found at position {pos}"),
-                            )
-                        })?;
-                        if !column.r#type.is_scalar() {
-                            return Err(SbroadError::Invalid(
-                                Entity::Column,
-                                Some(format!("column {name} at position {pos} is not scalar",)),
-                            ));
-                        }
-                        Ok(*pos)
-                    }
-                    None => Err(SbroadError::Invalid(Entity::ShardingKey, None)),
-                })
-                .collect::<Result<Vec<usize>, _>>()?;
-            TableKind::ShardedSpace {
-                sharding_key: Key::new(shard_positions),
-                engine,
-            }
-        };
-
-        let primary_positions = primary_key
-            .iter()
-            .map(|name| match pos_map.get(*name) {
-                Some(pos) => {
-                    let _ = &columns.get(*pos).ok_or_else(|| {
-                        SbroadError::FailedTo(
-                            Action::Create,
-                            Some(Entity::Column),
-                            format!("column {name} not found at position {pos}"),
-                        )
-                    })?;
-                    Ok(*pos)
-                }
-                None => Err(SbroadError::Invalid(Entity::PrimaryKey, None)),
-            })
-            .collect::<Result<Vec<usize>, _>>()?;
-
+        let (pos_map, primary_key) = table_new_impl(name, &columns, primary_key)?;
+        let sharding_key = Key::with_columns(&columns, &pos_map, sharding_key)?;
+        let kind = TableKind::new_sharded(sharding_key, engine);
         Ok(Table {
             name: name.into(),
             columns,
-            primary_key: Key::new(primary_positions),
-            kind: table_kind,
+            primary_key,
+            kind,
+        })
+    }
+
+    /// Global table constructor.
+    ///
+    /// # Errors
+    /// - column names are duplicated;
+    /// - primary key is not found among the columns;
+    pub fn new_global(
+        name: &str,
+        columns: Vec<Column>,
+        primary_key: &[&str],
+    ) -> Result<Self, SbroadError> {
+        let (_, primary_key) = table_new_impl(name, &columns, primary_key)?;
+        let kind = TableKind::new_global();
+        Ok(Table {
+            name: name.into(),
+            columns,
+            primary_key,
+            kind,
+        })
+    }
+
+    /// System table constructor.
+    ///
+    /// # Errors
+    /// - column names are duplicated;
+    /// - primary key is not found among the columns;
+    pub fn new_system(
+        name: &str,
+        columns: Vec<Column>,
+        primary_key: &[&str],
+    ) -> Result<Self, SbroadError> {
+        let (_, primary_key) = table_new_impl(name, &columns, primary_key)?;
+        let kind = TableKind::new_system();
+        Ok(Table {
+            name: name.into(),
+            columns,
+            primary_key,
+            kind,
         })
     }
 
@@ -566,9 +613,10 @@ impl Table {
             Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
                 "Table has more than one bucket_id column".into(),
             )),
-            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(
-                "Table has no bucket_id columns".into(),
-            )),
+            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(format!(
+                "Table {} has no bucket_id columns",
+                self.name
+            ))),
         }
     }
 

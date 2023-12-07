@@ -121,26 +121,24 @@ impl RouterConfigurationMock {
         let primary_key = &["\"product_code\"", "\"identification_number\""];
         tables.insert(
             "\"hash_testing\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"hash_testing\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"hash_testing_hist\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"hash_testing_hist\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -148,26 +146,24 @@ impl RouterConfigurationMock {
         let sharding_key = &["\"identification_number\""];
         tables.insert(
             "\"hash_single_testing\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"hash_single_testing\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"hash_single_testing_hist\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"hash_single_testing_hist\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -184,26 +180,24 @@ impl RouterConfigurationMock {
 
         tables.insert(
             "\"test_space\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"test_space\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
 
         tables.insert(
             "\"test_space_hist\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"test_space_hist\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -216,13 +210,12 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"id\""];
         tables.insert(
             "\"history\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"history\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -238,13 +231,12 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"b\""];
         tables.insert(
             "\"t\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"t\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -258,13 +250,12 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
             "\"t1\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"t1\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -280,13 +271,12 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"g\"", "\"h\""];
         tables.insert(
             "\"t2\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"t2\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -300,13 +290,12 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"a\""];
         tables.insert(
             "\"t3\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"t3\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
@@ -315,19 +304,10 @@ impl RouterConfigurationMock {
             Column::new("\"a\"", Type::Integer, ColumnRole::User, false),
             Column::new("\"b\"", Type::Integer, ColumnRole::User, false),
         ];
-        let sharding_key: &[&str] = &[];
         let primary_key: &[&str] = &["\"a\""];
         tables.insert(
             "\"global_t\"".to_string(),
-            Table::new(
-                "\"global_t\"",
-                columns,
-                sharding_key,
-                primary_key,
-                SpaceEngine::Memtx,
-                false,
-            )
-            .unwrap(),
+            Table::new_global("\"global_t\"", columns, primary_key).unwrap(),
         );
 
         // Table for sbroad-benches
@@ -836,25 +816,23 @@ impl RouterConfigurationMock {
         let primary_key: &[&str] = &["\"reestrid\""];
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
                 columns.clone(),
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );
         tables.insert(
             "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_string(),
-            Table::new(
+            Table::new_sharded(
                 "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
                 columns,
                 sharding_key,
                 primary_key,
                 SpaceEngine::Memtx,
-                false,
             )
             .unwrap(),
         );

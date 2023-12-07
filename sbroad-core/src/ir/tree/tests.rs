@@ -54,25 +54,23 @@ fn relational_post() {
     // Initialize plan
     let mut plan = Plan::default();
 
-    let t1 = Table::new(
+    let t1 = Table::new_sharded(
         "t1",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
 
-    let t2 = Table::new(
+    let t2 = Table::new_sharded(
         "t2",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -120,20 +118,19 @@ fn selection_subquery_dfs_post() {
     // Initialize plan
     let mut plan = Plan::default();
 
-    let t1 = Table::new(
+    let t1 = Table::new_sharded(
         "t1",
         vec![column_user_non_null(String::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
 
-    let t2 = Table::new(
+    let t2 = Table::new_sharded(
         "t2",
         vec![
             column_user_non_null(String::from("b"), Type::Boolean),
@@ -142,7 +139,6 @@ fn selection_subquery_dfs_post() {
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t2);
@@ -209,7 +205,7 @@ fn subtree_dfs_post() {
     // Initialize plan
     let mut plan = Plan::default();
 
-    let t1 = Table::new(
+    let t1 = Table::new_sharded(
         "t1",
         vec![
             column_user_non_null(String::from("a"), Type::Boolean),
@@ -218,7 +214,6 @@ fn subtree_dfs_post() {
         &["a", "c"],
         &["a", "c"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t1);

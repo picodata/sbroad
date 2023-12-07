@@ -84,13 +84,12 @@ fn plan_oor_top() {
 fn get_node() {
     let mut plan = Plan::default();
 
-    let t = Table::new(
+    let t = Table::new_sharded(
         "t",
         vec![Column::new("a", Type::Boolean, ColumnRole::User, false)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
     plan.add_rel(t);

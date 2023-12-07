@@ -140,7 +140,7 @@ fn test_getting_table_segment() {
     s.set_sharding_column("\"bucket_id\"".into());
     s.load_schema(test_schema).unwrap();
 
-    let expected = Table::new(
+    let expected = Table::new_sharded(
         "\"hash_testing\"",
         vec![
             Column::new(
@@ -158,7 +158,6 @@ fn test_getting_table_segment() {
         &["\"identification_number\"", "\"product_code\""],
         &["\"identification_number\""],
         SpaceEngine::Memtx,
-        false,
     )
     .unwrap();
 

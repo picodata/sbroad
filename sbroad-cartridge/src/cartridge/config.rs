@@ -244,13 +244,12 @@ impl RouterConfiguration {
                     .iter()
                     .map(String::as_str)
                     .collect::<Vec<&str>>();
-                let t = Table::new(
+                let t = Table::new_sharded(
                     &table_name,
                     fields,
                     shard_key_str.as_slice(),
                     primary_key_str.as_slice(),
                     engine,
-                    false,
                 )?;
                 self.tables.insert(table_name, t);
             } else {
