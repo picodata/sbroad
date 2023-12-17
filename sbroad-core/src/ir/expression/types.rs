@@ -41,11 +41,11 @@ impl Expression {
                 let left_type = plan.get_node_type(*left)?;
                 let right_type = plan.get_node_type(*right)?;
                 match (&left_type, &right_type) {
-                    (Type::Double, Type::Unsigned | Type::Integer | Type::Decimal)
+                    (Type::Double, Type::Double | Type::Unsigned | Type::Integer | Type::Decimal)
                     | (Type::Unsigned | Type::Integer | Type::Decimal, Type::Double) => {
                         Ok(Type::Double)
                     }
-                    (Type::Decimal, Type::Unsigned | Type::Integer)
+                    (Type::Decimal, Type::Decimal | Type::Unsigned | Type::Integer)
                     | (Type::Unsigned | Type::Integer, Type::Decimal) => Ok(Type::Decimal),
                     (Type::Integer, Type::Unsigned | Type::Integer)
                     | (Type::Unsigned, Type::Integer) => Ok(Type::Integer),
