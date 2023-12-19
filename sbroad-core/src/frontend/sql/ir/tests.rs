@@ -426,6 +426,30 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_sql_subquery_column_duplicates() {
+    let input = r#"SELECT "id" FROM "test_space" WHERE ("id", "id")
+        IN (SELECT "id", "id" from "test_space")"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("test_space"."id"::unsigned -> "id")
+    selection ROW("test_space"."id"::unsigned, "test_space"."id"::unsigned) in ROW($0, $0)
+        scan "test_space"
+subquery $0:
+scan
+            projection ("test_space"."id"::unsigned -> "id", "test_space"."id"::unsigned -> "id")
+                scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_exists_subquery_select_from_table() {
     let input = r#"SELECT "id" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing")"#;
 

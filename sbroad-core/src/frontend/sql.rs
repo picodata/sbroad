@@ -21,7 +21,7 @@ use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::{Expression, ExpressionId};
+use crate::ir::expression::{ColumnPositionMap, Expression, ExpressionId};
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
@@ -766,7 +766,7 @@ impl Ast for AbstractSyntaxTree {
                 }
                 Type::Reference => {
                     let ast_rel_list = self.get_referred_relational_nodes(id)?;
-                    let mut plan_rel_list = Vec::new();
+                    let mut plan_rel_list = Vec::with_capacity(ast_rel_list.len());
                     for ast_id in ast_rel_list {
                         let plan_id = map.get(ast_id)?;
                         plan_rel_list.push(plan_id);
@@ -787,109 +787,82 @@ impl Ast for AbstractSyntaxTree {
                         }
                     };
 
-                    // Closure to get the nearest name of relation the output column came from
-                    // E.g. for `Scan` it would be it's `realation`.
-                    let get_scan_name =
-                        |col_name: &str, plan_id: usize| -> Result<Option<String>, SbroadError> {
-                            let child = plan.get_relation_node(plan_id)?;
-                            let col_position = child
-                                .output_alias_position_map(&plan.nodes)?
-                                .get(col_name)
-                                .copied();
-                            match col_position {
-                                Some(pos) => Ok(plan
-                                    .get_relation_node(plan_id)?
-                                    .scan_name(&plan, pos)?
-                                    .map(String::from)),
-                                None => Ok(None),
-                            }
-                        };
-
                     let plan_left_id = plan_rel_list.first();
                     let plan_right_id = plan_rel_list.get(1);
                     if let (Some(plan_left_id), Some(plan_right_id)) = (plan_left_id, plan_right_id)
                     {
                         // Handling case of referencing join node.
 
+                        // Get column position maps for the left and right children
+                        // of the join node.
+                        let left_col_map = ColumnPositionMap::new(&plan, *plan_left_id)?;
+                        let right_col_map = ColumnPositionMap::new(&plan, *plan_right_id)?;
+
+                        // We get both column and scan names from the AST.
                         if let (Some(ast_scan_id), Some(ast_col_name_id)) =
                             (node.children.first(), node.children.get(1))
                         {
                             let ast_scan = self.nodes.get_node(*ast_scan_id)?;
+                            let ast_scan_name: Option<String> =
+                                ast_scan.value.as_deref().map(normalize_name_from_sql);
+                            let scan_name = ast_scan_name.as_deref();
                             if let Type::ScanName = ast_scan.rule {
                                 // Get the column name and its positions in the output tuples.
                                 let col_name = get_column_name(*ast_col_name_id)?;
-                                let left_name = get_scan_name(&col_name, *plan_left_id)?;
-                                let right_name = get_scan_name(&col_name, *plan_right_id)?;
-                                // Check that the AST scan name matches to the children scan names in the plan join node.
-                                let ast_scan_name: Option<String> =
-                                    ast_scan.value.as_deref().map(normalize_name_from_sql);
-                                // Determine the referred side of the join (left or right).
-                                if left_name == ast_scan_name {
-                                    let left_col_map = plan
-                                        .get_relation_node(*plan_left_id)?
-                                        .output_alias_position_map(&plan.nodes)?;
-                                    if left_col_map.get(&col_name.as_str()).is_some() {
-                                        let ref_id = plan.add_row_from_left_branch(
-                                            *plan_left_id,
-                                            *plan_right_id,
-                                            &[&col_name],
-                                        )?;
-                                        rows.insert(ref_id);
-                                        map.add(id, ref_id);
-                                    } else {
-                                        return Err(SbroadError::NotFound(
-                                            Entity::Column,
-                                            format!(
-                                                "'{col_name}' in the join left child '{left_name:?}'"
-                                            ),
-                                        ));
-                                    }
-                                } else if right_name == ast_scan_name {
-                                    let right_col_map = plan
-                                        .get_relation_node(*plan_right_id)?
-                                        .output_alias_position_map(&plan.nodes)?;
-                                    if right_col_map.get(&col_name.as_str()).is_some() {
-                                        let ref_id = plan.add_row_from_right_branch(
-                                            *plan_left_id,
-                                            *plan_right_id,
-                                            &[&col_name],
-                                        )?;
-                                        rows.insert(ref_id);
-                                        map.add(id, ref_id);
-                                    } else {
-                                        return Err(SbroadError::NotFound(
-                                            Entity::Column,
-                                            format!(
-                                                "'{col_name}' in the join right child '{right_name:?}'"
-                                            ),
-                                        ));
-                                    }
+                                // First, try to find the column name in the left child.
+                                let present_in_left =
+                                    left_col_map.get_with_scan(&col_name, scan_name).is_ok();
+                                let ref_id = if present_in_left {
+                                    plan.add_row_from_left_branch(
+                                        *plan_left_id,
+                                        *plan_right_id,
+                                        &[&col_name],
+                                    )?
                                 } else {
-                                    return Err(SbroadError::Invalid(
-                                        Entity::Plan,
-                                        Some(format!(
-                                            "left {:?} and right {:?} plan nodes do not match the AST scan name: {:?}",
-                                            left_name,
-                                            right_name,
-                                            ast_scan_name,
-                                            )),
-                                    ));
-                                }
+                                    // If it is not found, try to find it in the right child.
+                                    let present_in_right =
+                                        right_col_map.get_with_scan(&col_name, scan_name).is_ok();
+                                    if present_in_right {
+                                        plan.add_row_from_right_branch(
+                                            *plan_left_id,
+                                            *plan_right_id,
+                                            &[&col_name],
+                                        )?
+                                    } else {
+                                        return Err(SbroadError::NotFound(
+                                            Entity::Column,
+                                            format!("'{col_name}' in the join children",),
+                                        ));
+                                    }
+                                };
+                                rows.insert(ref_id);
+                                map.add(id, ref_id);
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
                                     Some("expected AST node to be a scan name.".into()),
                                 ));
                             }
+                        // We get only column name from the AST.
                         } else if let (Some(ast_col_name_id), None) =
                             (node.children.first(), node.children.get(1))
                         {
                             // Determine the referred side of the join (left or right).
                             let col_name = get_column_name(*ast_col_name_id)?;
-                            let left_col_map = plan
-                                .get_relation_node(*plan_left_id)?
-                                .output_alias_position_map(&plan.nodes)?;
-                            if left_col_map.get(&col_name.as_str()).is_some() {
+
+                            // We need to check that the column name is unique in the join children.
+                            // Otherwise, we cannot determine the referred side of the join
+                            // and the user should specify the scan name in the SQL.
+                            let present_in_left = left_col_map.get(&col_name).is_ok();
+                            let present_in_right = right_col_map.get(&col_name).is_ok();
+                            if present_in_left && present_in_right {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Column,
+                                    Some(format!(
+                                        "column name '{col_name}' is present in both join children",
+                                    )),
+                                ));
+                            } else if present_in_left {
                                 let ref_id = plan.add_row_from_left_branch(
                                     *plan_left_id,
                                     *plan_right_id,
@@ -897,24 +870,19 @@ impl Ast for AbstractSyntaxTree {
                                 )?;
                                 rows.insert(ref_id);
                                 map.add(id, ref_id);
+                            } else if present_in_right {
+                                let ref_id = plan.add_row_from_right_branch(
+                                    *plan_left_id,
+                                    *plan_right_id,
+                                    &[&col_name],
+                                )?;
+                                rows.insert(ref_id);
+                                map.add(id, ref_id);
                             } else {
-                                let right_col_map = plan
-                                    .get_relation_node(*plan_right_id)?
-                                    .output_alias_position_map(&plan.nodes)?;
-                                if right_col_map.get(&col_name.as_str()).is_some() {
-                                    let ref_id = plan.add_row_from_right_branch(
-                                        *plan_left_id,
-                                        *plan_right_id,
-                                        &[&col_name],
-                                    )?;
-                                    rows.insert(ref_id);
-                                    map.add(id, ref_id);
-                                } else {
-                                    return Err(SbroadError::NotFound(
-                                        Entity::Column,
-                                        format!("'{col_name}' for the join left or right children"),
-                                    ));
-                                }
+                                return Err(SbroadError::NotFound(
+                                    Entity::Column,
+                                    format!("'{col_name}' in the join left or right children"),
+                                ));
                             }
                         } else {
                             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -926,7 +894,7 @@ impl Ast for AbstractSyntaxTree {
 
                         let first_child_id = node.children.first();
                         let second_child_id = node.children.get(1);
-                        let col_name: String = if let (Some(ast_scan_id), Some(ast_col_id)) =
+                        if let (Some(ast_scan_id), Some(ast_col_id)) =
                             (first_child_id, second_child_id)
                         {
                             // Get column name.
@@ -937,46 +905,51 @@ impl Ast for AbstractSyntaxTree {
                                 let ast_scan_name = Some(normalize_name_from_sql(
                                     parse_string_value_node(self, *ast_scan_id)?,
                                 ));
-                                let plan_scan_name = get_scan_name(&col_name, *plan_rel_id)?;
-                                if plan_scan_name != ast_scan_name {
-                                    return Err(SbroadError::UnexpectedNumberOfValues(
-                                        format!(
-                                            "Scan name for the column {:?} doesn't match: expected {:?}, found {:?}",
-                                            get_column_name(*ast_col_id),
-                                            plan_scan_name,
-                                            ast_scan_name,
-                                    )));
-                                }
+
+                                let col_position = ColumnPositionMap::new(&plan, *plan_rel_id)?
+                                    .get_with_scan(&col_name, ast_scan_name.as_deref())?;
+                                // Manually build the reference node.
+                                let child = plan.get_relation_node(*plan_rel_id)?;
+                                let child_alias_ids =
+                                    plan.get_expression_node(child.output())?.get_row_list()?;
+                                let child_alias_id = child_alias_ids
+                                    .get(col_position)
+                                    .expect("column position is invalid");
+                                let col_type = plan
+                                    .get_expression_node(*child_alias_id)?
+                                    .calculate_type(&plan)?;
+                                let ref_id =
+                                    plan.nodes
+                                        .add_ref(None, Some(vec![0]), col_position, col_type);
+                                map.add(id, ref_id);
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
                                     Some("expected AST node to be a scan name.".into()),
                                 ));
                             };
-                            col_name
                         } else if let (Some(ast_col_id), None) = (first_child_id, second_child_id) {
                             // Get the column name.
-                            get_column_name(*ast_col_id)?
+                            let col_name = get_column_name(*ast_col_id)?;
+                            let ref_list = plan.new_columns(
+                                &[*plan_rel_id],
+                                false,
+                                &[0],
+                                &[&col_name],
+                                false,
+                                true,
+                            )?;
+                            let ref_id = *ref_list.first().ok_or_else(|| {
+                                SbroadError::UnexpectedNumberOfValues(
+                                    "Referred column is not found.".into(),
+                                )
+                            })?;
+                            map.add(id, ref_id);
                         } else {
                             return Err(SbroadError::UnexpectedNumberOfValues(
                                 "no child node found in the AST reference.".into(),
                             ));
                         };
-
-                        let ref_list = plan.new_columns(
-                            &[*plan_rel_id],
-                            false,
-                            &[0],
-                            &[&col_name],
-                            false,
-                            true,
-                        )?;
-                        let ref_id = *ref_list.first().ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                "Referred column is not found.".into(),
-                            )
-                        })?;
-                        map.add(id, ref_id);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
                             "expected one or two referred relational nodes, got less or more."

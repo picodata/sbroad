@@ -8,8 +8,9 @@
 
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::ops::Bound::Included;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::is_sharding_column_name;
@@ -456,31 +457,24 @@ impl Nodes {
     /// Mostly used for relational node output.
     ///
     /// # Errors
-    /// - nodes in a list are invalid
-    /// - nodes in a list are not aliases
-    /// - aliases in a list have duplicate names
+    /// - nodes in the list do not exist in the arena
+    /// - some nodes in the list are not aliases
     pub fn add_row_of_aliases(
         &mut self,
         list: Vec<usize>,
         distribution: Option<Distribution>,
     ) -> Result<usize, SbroadError> {
-        let mut names: HashSet<String> = HashSet::with_capacity(list.len());
-
-        for node_id in &list {
-            if let Some(Node::Expression(expr)) = self.arena.get(*node_id) {
-                if let Expression::Alias { name, .. } = expr {
-                    if !names.insert(String::from(name)) {
-                        return Err(SbroadError::DuplicatedValue(format!(
-                            "row can't be added because `{name}` already has an alias",
-                        )));
-                    }
-                }
-            } else {
-                return Err(SbroadError::NotFound(
-                    Entity::Node,
-                    format!("with index {node_id}"),
-                ));
+        for alias_id in &list {
+            let node = self.arena.get(*alias_id).ok_or_else(|| {
+                SbroadError::NotFound(Entity::Node, format!("from arena with index {alias_id}"))
+            })?;
+            if let Node::Expression(Expression::Alias { .. }) = node {
+                continue;
             }
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(format!("expected {alias_id}  to be alias, got {node:?}")),
+            ));
         }
         Ok(self.add_row(list, distribution))
     }
@@ -802,6 +796,109 @@ impl<'plan> Comparator<'plan> {
     }
 }
 
+pub(crate) type Position = usize;
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum Positions {
+    Empty,
+    Single(Position),
+    Multiple,
+}
+
+impl Positions {
+    pub(crate) fn new() -> Self {
+        Positions::Empty
+    }
+
+    pub(crate) fn push(&mut self, pos: Position) {
+        if Positions::Empty == *self {
+            *self = Positions::Single(pos);
+        } else {
+            *self = Positions::Multiple;
+        }
+    }
+}
+
+/// (column name, scan name)
+pub(crate) type ColumnName<'column> = (&'column str, Option<&'column str>);
+
+#[derive(Debug)]
+pub(crate) struct ColumnPositionMap<'column> {
+    map: BTreeMap<ColumnName<'column>, Positions>,
+    max_name: Option<&'column str>,
+}
+
+impl<'plan> ColumnPositionMap<'plan> {
+    pub(crate) fn new(plan: &'plan Plan, rel_id: usize) -> Result<Self, SbroadError> {
+        let rel_node = plan.get_relation_node(rel_id)?;
+        let output = plan.get_expression_node(rel_node.output())?;
+        let alias_ids = output.get_row_list()?;
+
+        let mut map = BTreeMap::new();
+        let mut max_name = None;
+        for (pos, alias_id) in alias_ids.iter().enumerate() {
+            let alias = plan.get_expression_node(*alias_id)?;
+            let Expression::Alias { name, .. } = alias  else {
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format!("alias {alias_id} is not an Alias")),
+                ));
+            };
+            let scan_name = rel_node.scan_name(plan, pos)?;
+            map.entry((name.as_str(), scan_name))
+                .or_insert_with(Positions::new)
+                .push(pos);
+            if max_name < scan_name {
+                max_name = scan_name;
+            }
+        }
+        Ok(Self { map, max_name })
+    }
+
+    pub(crate) fn get(&self, column: &str) -> Result<Position, SbroadError> {
+        let from_key = &(column, None);
+        let to_key = &(column, self.max_name);
+        let mut iter = self.map.range((Included(from_key), Included(to_key)));
+        match (iter.next(), iter.next()) {
+            (Some(..), Some(..)) => Err(SbroadError::DuplicatedValue(format!(
+                "column name {column} is ambiguous"
+            ))),
+            (Some((_, position)), None) => {
+                if let Positions::Single(pos) = position {
+                    return Ok(*pos);
+                }
+                Err(SbroadError::DuplicatedValue(format!(
+                    "column name {column} is ambiguous"
+                )))
+            }
+            _ => Err(SbroadError::NotFound(
+                Entity::Column,
+                format!("with name {column}"),
+            )),
+        }
+    }
+
+    pub(crate) fn get_with_scan(
+        &self,
+        column: &str,
+        scan: Option<&str>,
+    ) -> Result<Position, SbroadError> {
+        let key = &(column, scan);
+        if let Some(position) = self.map.get(key) {
+            if let Positions::Single(pos) = position {
+                return Ok(*pos);
+            }
+            return Err(SbroadError::DuplicatedValue(format!(
+                "column name {column} is ambiguous"
+            )));
+        }
+        Err(SbroadError::NotFound(
+            Entity::Column,
+            format!("with name {column} and scan {scan:?}"),
+        ))
+    }
+}
+
 impl Plan {
     /// Add `Row` to plan.
     pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
@@ -959,49 +1056,19 @@ impl Plan {
             col_names_set.insert(col_name);
         }
 
-        let relational_op = self.get_relation_node(child_node)?;
-        let output_id = relational_op.output();
-        let output = self.get_expression_node(output_id)?;
         // Map of { column name (aliased) from child output -> its index in output }
-        let map: HashMap<&str, usize, RandomState> = if let Expression::Row { list, .. } = output {
-            let state = RandomState::new();
-            let mut map: HashMap<&str, usize, RandomState> =
-                HashMap::with_capacity_and_hasher(col_names.len(), state);
-            for (pos, col_id) in list.iter().enumerate() {
-                let alias = self.get_expression_node(*col_id)?;
-                let name = alias.get_alias_name()?;
-                if !col_names_set.contains(name) {
-                    continue;
-                }
-                if map.insert(name, pos).is_some() {
-                    return Err(SbroadError::DuplicatedValue(format!(
-                        "Duplicate column name {name} at position {pos}"
-                    )));
-                }
-            }
-            map
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some("Relational output tuple is not a row".into()),
-            ));
-        };
+        let map = ColumnPositionMap::new(self, child_node)?;
 
         // Vec of { `map` key, targets, `map` value }
         let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
-        let all_found = col_names.iter().all(|col| {
-            map.get(col).map_or(false, |pos| {
-                refs.push((col, targets.to_vec(), *pos));
-                true
-            })
-        });
-        if !all_found {
-            return Err(SbroadError::NotFound(
-                Entity::Column,
-                format!("with name {}", col_names.join(", ")),
-            ));
+        for col in col_names {
+            let pos = map.get(col)?;
+            refs.push((col, targets.to_vec(), pos));
         }
 
+        let relational_op = self.get_relation_node(child_node)?;
+        let output_id = relational_op.output();
+        let output = self.get_expression_node(output_id)?;
         let columns = output.clone_row_list()?;
         for (col, new_targets, pos) in refs {
             let col_id = *columns.get(pos).ok_or_else(|| {
@@ -1085,22 +1152,40 @@ impl Plan {
         Ok(self.nodes.add_row(list, None))
     }
 
-    /// Project columns from the child subquery node.
+    /// Project all the columns from the child's subquery node.
     ///
-    /// New columns don't have aliases. If column names are empty,
-    /// copy all the columns from the child.
+    /// New columns don't have aliases.
+    ///
     /// # Errors
-    /// Returns `SbroadError`:
-    /// - children nodes are not a relational
-    /// - column names don't exist
-    pub fn add_row_from_sub_query(
+    /// - children nodes are inconsistent with the target position;
+    pub fn add_row_from_subquery(
         &mut self,
         children: &[usize],
-        children_pos: usize,
-        col_names: &[&str],
+        target: usize,
+        parent: Option<usize>,
     ) -> Result<usize, SbroadError> {
-        let list = self.new_columns(children, false, &[children_pos], col_names, false, true)?;
-        Ok(self.nodes.add_row(list, None))
+        let sq_id = *children.get(target).ok_or_else(|| {
+            SbroadError::UnexpectedNumberOfValues(format!(
+                "invalid target index: {target} (children: {children:?})",
+            ))
+        })?;
+        let sq_rel = self.get_relation_node(sq_id)?;
+        let sq_output_id = sq_rel.output();
+        let sq_alias_ids_len = self.get_row_list(sq_output_id)?.len();
+        let mut new_refs = Vec::with_capacity(sq_alias_ids_len);
+        for pos in 0..sq_alias_ids_len {
+            let alias_id = *self
+                .get_row_list(sq_output_id)?
+                .get(pos)
+                .expect("subquery output row already checked");
+            let alias_type = self.get_expression_node(alias_id)?.calculate_type(self)?;
+            let ref_id = self
+                .nodes
+                .add_ref(parent, Some(vec![target]), pos, alias_type);
+            new_refs.push(ref_id);
+        }
+        let row_id = self.nodes.add_row(new_refs, None);
+        Ok(row_id)
     }
 
     /// Project columns from the join's left branch.

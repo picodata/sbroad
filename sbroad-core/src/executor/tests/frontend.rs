@@ -4,26 +4,17 @@ use crate::executor::engine::mock::RouterRuntimeMock;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn front_ivalid_sql1() {
+fn front_valid_sql1() {
     // Tables "test_space" and "hash_testing" have the same columns "sys_op" and "bucket_id",
-    // that cause a "duplicate column" error in the output tuple of the INNER JOIN node.
-    // The error is handled by renaming the columns within a sub-query (inner_join test).
-    //
-    // TODO: improve reference resolution to avoid this error.
+    // that previously caused a "duplicate column" error in the output tuple of the
+    // INNER JOIN node. Now the error is fixed.
     let query = r#"SELECT "id", "product_units" FROM "hash_testing"
         INNER JOIN "test_space" as t
         ON "hash_testing"."identification_number" = t."id"
         WHERE "hash_testing"."identification_number" = 5 and "hash_testing"."product_code" = '123'"#;
 
     let metadata = &RouterRuntimeMock::new();
-    let plan_err = Query::new(metadata, query, vec![]).unwrap_err();
-
-    assert_eq!(
-        SbroadError::DuplicatedValue(
-            "row can't be added because `\"sys_op\"` already has an alias".into()
-        ),
-        plan_err
-    );
+    Query::new(metadata, query, vec![]).unwrap();
 }
 
 #[test]
@@ -124,8 +115,8 @@ fn front_explain_select_sql2() {
 
 #[test]
 fn front_explain_select_sql3() {
-    let sql = r#"EXPLAIN SELECT "a" FROM "t3" as "q1"
-        INNER JOIN (SELECT "t3"."a" as "a2", "t3"."b" as "b2" FROM "t3") as "q2"
+    let sql = r#"explain select "a" from "t3" as "q1"
+        inner join (select "t3"."a" as "a2", "t3"."b" as "b2" from "t3") as "q2"
         on "q1"."a" = "q2"."a2""#;
 
     let metadata = &RouterRuntimeMock::new();
@@ -149,6 +140,37 @@ fn front_explain_select_sql3() {
     if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
         assert_eq!(expected_explain, *actual_explain);
     } else {
-        panic!("Explain must be string")
+        panic!("explain must be string")
+    }
+}
+
+#[test]
+fn front_explain_select_sql4() {
+    let sql = r#"explain select "q2"."a" from "t3" as "q1"
+        inner join "t3" as "q2"
+        on "q1"."a" = "q2"."a""#;
+
+    let metadata = &RouterRuntimeMock::new();
+    let mut query = Query::new(metadata, sql, vec![]).unwrap();
+
+    let expected_explain = format!(
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        r#"projection ("q2"."a"::string -> "a")"#,
+        r#"    join on ROW("q1"."a"::string) = ROW("q2"."a"::string)"#,
+        r#"        scan "q1""#,
+        r#"            projection ("q1"."a"::string -> "a", "q1"."b"::integer -> "b")"#,
+        r#"                scan "t3" -> "q1""#,
+        r#"        scan "q2""#,
+        r#"            projection ("q2"."a"::string -> "a", "q2"."b"::integer -> "b")"#,
+        r#"                scan "t3" -> "q2""#,
+        r#"execution options:"#,
+        r#"sql_vdbe_max_steps = 45000"#,
+        r#"vtable_max_rows = 5000"#,
+    );
+
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+        assert_eq!(expected_explain, *actual_explain);
+    } else {
+        panic!("explain must be string")
     }
 }

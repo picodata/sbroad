@@ -251,47 +251,22 @@ impl Plan {
             }
 
             // Generate a reference to the sub-query.
-            let row_id: usize = match self.get_node(sq.relational)? {
-                Node::Relational(
-                    Relational::Selection { children, .. }
-                    | Relational::Join { children, .. }
-                    | Relational::Having { children, .. },
-                ) => {
-                    let nodes = children.clone();
-                    let sq_output = self.get_relation_node(sq.sq)?.output();
-                    let row = self.get_expression_node(sq_output)?;
-                    if let Expression::Row { list, .. } = row {
-                        let mut names: Vec<String> = Vec::new();
-                        for col_id in list {
-                            names.push(self.get_expression_node(*col_id)?.get_alias_name()?.into());
-                        }
-                        let names_str: Vec<_> = names.iter().map(String::as_str).collect();
-                        // TODO: should we add current row_id to the set of the generated rows?
-                        let position: usize =
-                            children.iter().position(|&x| x == sq.sq).ok_or_else(|| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    None,
-                                    "a reference to the sub-query".into(),
-                                )
-                            })?;
-                        let row_id = self.add_row_from_sub_query(&nodes, position, &names_str)?;
-                        self.replace_parent_in_subtree(row_id, None, Some(sq.relational))?;
-                        row_id
-                    } else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Expression,
-                            Some("Sub-query output is not a row".into()),
-                        ));
-                    }
-                }
+            let rel = self.get_relation_node(sq.relational)?;
+            let children = match rel {
+                Relational::Join { children, .. }
+                | Relational::Having { children, .. }
+                | Relational::Selection { children, .. } => children.clone(),
                 _ => {
                     return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some("Sub-query is not in selection or join node".into()),
+                        Entity::Relational,
+                        Some("Sub-query is not in selection, group by or join node".into()),
                     ))
                 }
             };
+            let position: usize = children.iter().position(|&x| x == sq.sq).ok_or_else(|| {
+                SbroadError::FailedTo(Action::Build, None, "a reference to the sub-query".into())
+            })?;
+            let row_id = self.add_row_from_subquery(&children, position, Some(sq.relational))?;
 
             // Replace sub-query with reference.
             let op = self.get_mut_expression_node(sq.operator)?;

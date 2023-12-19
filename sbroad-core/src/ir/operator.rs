@@ -12,10 +12,10 @@ use std::fmt::{Display, Formatter};
 
 use crate::errors::{Action, Entity, SbroadError};
 
-use super::expression::Expression;
+use super::expression::{ColumnPositionMap, Expression};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
-use super::{Node, Nodes, Plan};
+use super::{Node, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
@@ -448,48 +448,6 @@ pub enum Relational {
 
 #[allow(dead_code)]
 impl Relational {
-    /// Gets a <column name - position> map from the output tuple.
-    ///
-    /// We expect that the top level of the node's expression tree
-    /// is a row of aliases with unique names.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the output tuple is invalid.
-    pub fn output_alias_position_map<'nodes>(
-        &self,
-        nodes: &'nodes Nodes,
-    ) -> Result<HashMap<&'nodes str, usize, RandomState>, SbroadError> {
-        if let Some(Node::Expression(Expression::Row { list, .. })) = nodes.arena.get(self.output())
-        {
-            let state = RandomState::new();
-            let mut map: HashMap<&str, usize, RandomState> =
-                HashMap::with_capacity_and_hasher(list.len(), state);
-            let valid = list.iter().enumerate().all(|(pos, item)| {
-                // Checks that expressions in the row list are all aliases
-                if let Some(Node::Expression(Expression::Alias { ref name, .. })) =
-                    nodes.arena.get(*item)
-                {
-                    // Populates the map and checks for duplicates
-                    if map.insert(name, pos).is_none() {
-                        return true;
-                    }
-                }
-                false
-            });
-            if valid {
-                return Ok(map);
-            }
-            return Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some("invalid output tuple".to_string()),
-            ));
-        }
-        Err(SbroadError::NotFound(
-            Entity::Node,
-            "(an output tuple) from the arena".to_string(),
-        ))
-    }
-
     /// Gets an immutable id of the output tuple node of the plan's arena.
     #[must_use]
     pub fn output(&self) -> usize {
@@ -1903,21 +1861,14 @@ impl Plan {
         rel_id: usize,
     ) -> Result<HashMap<ColumnPosition, ColumnPosition>, SbroadError> {
         let table = self.get_relation_or_error(table_name)?;
-        let alias_to_pos = self
-            .get_relation_node(rel_id)?
-            .output_alias_position_map(&self.nodes)?;
+        let alias_to_pos = ColumnPositionMap::new(self, rel_id)?;
         let mut map: HashMap<ColumnPosition, ColumnPosition> =
             HashMap::with_capacity(table.columns.len());
         for (table_pos, col) in table.columns.iter().enumerate() {
             if let ColumnRole::Sharding = col.role {
                 continue;
             }
-            let output_pos = *alias_to_pos.get(col.name.as_str()).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(format!(
-                    "no column with name {} in relational's ({}) output",
-                    &col.name, rel_id
-                ))
-            })?;
+            let output_pos = alias_to_pos.get(col.name.as_str())?;
             map.insert(table_pos, output_pos);
         }
         Ok(map)
@@ -1971,19 +1922,11 @@ impl Plan {
         rel_id: usize,
         children: Vec<usize>,
     ) -> Result<(), SbroadError> {
-        if let Node::Relational(ref mut rel) =
-            self.nodes.arena.get_mut(rel_id).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::Node,
-                    format!("(mutable) from arena with index {rel_id}"),
-                )
-            })?
-        {
+        if let Node::Relational(ref mut rel) = self.nodes.get_mut(rel_id)? {
             rel.set_children(children)?;
-            Ok(())
-        } else {
-            Err(SbroadError::Invalid(Entity::Relational, None))
+            return Ok(());
         }
+        Err(SbroadError::Invalid(Entity::Relational, None))
     }
 
     /// Checks if the node is an additional child of some relational node.

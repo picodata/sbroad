@@ -2,7 +2,9 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression::StableFunction;
-use crate::ir::expression::{Comparator, Expression, ReferencePolicy, EXPR_HASH_DEPTH};
+use crate::ir::expression::{
+    ColumnPositionMap, Comparator, Expression, ReferencePolicy, EXPR_HASH_DEPTH,
+};
 use crate::ir::operator::Relational;
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
@@ -14,7 +16,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ir::function::{Behavior, Function};
 use crate::ir::helpers::RepeatableState;
-use itertools::Itertools;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -1263,23 +1264,14 @@ impl Plan {
             return Ok(child_id);
         }
         let mut gr_cols: Vec<usize> = Vec::with_capacity(grouping_exprs.len());
-        let child_map = self
-            .get_relation_node(child_id)?
-            .output_alias_position_map(&self.nodes)?
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect::<HashMap<String, usize>>();
+        let child_map = ColumnPositionMap::new(self, child_id)?;
+        let mut nodes = Vec::with_capacity(grouping_exprs.len());
         for expr_id in grouping_exprs {
             let Some(local_alias) = local_aliases_map.get(expr_id) else {
                 return Err(SbroadError::Invalid(Entity::Plan,
                 Some(format!("could not find local alias for GroupBy expr ({expr_id})"))))
             };
-            let Some(position) = child_map.get(&*(*local_alias)) else {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format!("did not find alias: {local_alias} in child ({child_id}) output!")))
-                )
-            };
+            let position = child_map.get(local_alias)?;
             let col_type = self.get_expression_node(*expr_id)?.calculate_type(self)?;
             if !col_type.is_scalar() {
                 return Err(SbroadError::Invalid(
@@ -1290,12 +1282,15 @@ impl Plan {
                 ));
             }
             let new_col = Expression::Reference {
-                position: *position,
+                position,
                 parent: None,
                 targets: Some(vec![0]),
                 col_type,
             };
-            let new_col_id = self.nodes.push(Node::Expression(new_col));
+            nodes.push(Node::Expression(new_col));
+        }
+        for node in nodes {
+            let new_col_id = self.nodes.push(node);
             gr_cols.push(new_col_id);
         }
         let output = self.add_row_for_output(child_id, &[], true)?;
@@ -1363,22 +1358,15 @@ impl Plan {
                         "expected relation node ({rel_id}) to have children!"
                     ))
                 })?;
-            let alias_to_pos_map = self
-                .get_relation_node(child_id)?
-                .output_alias_position_map(&self.nodes)?
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect::<HashMap<String, usize>>();
+            let alias_to_pos_map = ColumnPositionMap::new(self, child_id)?;
+            let mut nodes = Vec::with_capacity(group.len());
             for (gr_expr_id, expr_id, parent) in group {
                 let Some(local_alias) = local_aliases_map.get(&gr_expr_id) else {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
                         Some(format!("failed to find local alias for groupby expression {gr_expr_id}"))))
                 };
-                let Some(pos) = alias_to_pos_map.get(&*(*local_alias)).copied() else {
-                    return Err(SbroadError::Invalid(Entity::Plan,
-                                                    Some(format!("failed to find alias '{local_alias}' in ({child_id}). Aliases: {}", alias_to_pos_map.keys().join(" ")))))
-                };
+                let position = alias_to_pos_map.get(local_alias)?;
                 let col_type = self.get_expression_node(expr_id)?.calculate_type(self)?;
                 if !col_type.is_scalar() {
                     return Err(SbroadError::Invalid(
@@ -1391,10 +1379,13 @@ impl Plan {
                 let new_ref = Expression::Reference {
                     parent: Some(rel_id),
                     targets: Some(vec![0]),
-                    position: pos,
+                    position,
                     col_type,
                 };
-                let ref_id = self.nodes.push(Node::Expression(new_ref));
+                nodes.push((parent, expr_id, gr_expr_id, Node::Expression(new_ref)));
+            }
+            for (parent, expr_id, gr_expr_id, node) in nodes {
+                let ref_id = self.nodes.push(node);
                 if let Some(parent_expr_id) = parent {
                     self.replace_expression(parent_expr_id, expr_id, ref_id)?;
                 } else {
@@ -1402,7 +1393,12 @@ impl Plan {
                         Relational::Projection { .. } => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!("invalid mapping between groupby expression {gr_expr_id} and projection one: expression {expr_id} has no parent"))
+                                Some(format!(
+                                    "{} {gr_expr_id} {} {expr_id} {}",
+                                    "invalid mapping between group by expression",
+                                    "and projection one: expression",
+                                    "has no parent",
+                                )),
                             ))
                         }
                         Relational::Having { filter, .. } => {
@@ -1411,7 +1407,7 @@ impl Plan {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!("unexpected node in Reduce stage: {rel_id}"))
+                                Some(format!("unexpected node in Reduce stage: {rel_id}")),
                             ))
                         }
                     }
@@ -1516,17 +1512,19 @@ impl Plan {
                     )),
                 ));
             };
-            let alias_to_pos_map = self
-                .get_relation_node(child_id)?
-                .output_alias_position_map(&self.nodes)?
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect::<HashMap<String, usize>>();
-            for info in infos {
+            let alias_to_pos_map = ColumnPositionMap::new(self, child_id)?;
+            let mut position_kinds = Vec::with_capacity(infos.len());
+            for info in &infos {
+                position_kinds.push(
+                    info.aggr
+                        .get_position_kinds(&alias_to_pos_map, info.is_distinct)?,
+                );
+            }
+            for (info, pos_kinds) in infos.into_iter().zip(position_kinds) {
                 let final_expr = info.aggr.create_final_aggregate_expr(
                     parent,
                     self,
-                    &alias_to_pos_map,
+                    pos_kinds,
                     info.is_distinct,
                 )?;
                 if let Some(parent_expr) = info.parent_expr {

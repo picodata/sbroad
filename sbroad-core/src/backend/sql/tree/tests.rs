@@ -344,10 +344,9 @@ fn sql_arithmetic_projection_plan() {
     let arith_subract_id = plan
         .add_arithmetic_to_plan(arith_addition_id2, Arithmetic::Subtract, b_id, false)
         .unwrap();
+    let alias_id = plan.nodes.add_alias("COL_1", arith_subract_id).unwrap();
 
-    let proj_id = plan
-        .add_proj_internal(scan_id, &[arith_subract_id], false)
-        .unwrap();
+    let proj_id = plan.add_proj_internal(scan_id, &[alias_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan
@@ -372,7 +371,7 @@ fn sql_arithmetic_projection_plan() {
     let mut nodes_iter = nodes.into_iter();
 
     // projection
-    assert_eq!(Some(&SyntaxData::PlanId(35)), nodes_iter.next());
+    assert_eq!(Some(&SyntaxData::PlanId(36)), nodes_iter.next());
     // row
     assert_eq!(Some(&SyntaxData::PlanId(17)), nodes_iter.next());
     // (
@@ -457,6 +456,12 @@ fn sql_arithmetic_projection_plan() {
     assert_eq!(Some(&SyntaxData::PlanId(18)), nodes_iter.next());
     // )
     assert_eq!(Some(&SyntaxData::CloseParenthesis), nodes_iter.next());
+    // alias
+    assert_eq!(Some(&SyntaxData::PlanId(34)), nodes_iter.next());
+    assert_eq!(
+        Some(&SyntaxData::Alias("COL_1".to_string())),
+        nodes_iter.next()
+    );
     // from
     assert_eq!(Some(&SyntaxData::From), nodes_iter.next());
     // scan
@@ -507,8 +512,9 @@ fn sql_arbitrary_projection_plan() {
 
     // a + b > c and d is not null
     let and_id = plan.nodes.add_bool(gt_id, Bool::And, not_null_id).unwrap();
+    let alias_id = plan.nodes.add_alias("COL_1", and_id).unwrap();
 
-    let proj_id = plan.add_proj_internal(scan_id, &[and_id], false).unwrap();
+    let proj_id = plan.add_proj_internal(scan_id, &[alias_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan
@@ -533,7 +539,7 @@ fn sql_arbitrary_projection_plan() {
     let mut nodes_iter = nodes.into_iter();
 
     // projection
-    assert_eq!(Some(&SyntaxData::PlanId(26)), nodes_iter.next());
+    assert_eq!(Some(&SyntaxData::PlanId(27)), nodes_iter.next());
     // row 12
     assert_eq!(Some(&SyntaxData::PlanId(13)), nodes_iter.next());
     // (
@@ -587,6 +593,12 @@ fn sql_arbitrary_projection_plan() {
     // unary operator IsNull (is null)
     assert_eq!(
         Some(&SyntaxData::Operator("is null".into())),
+        nodes_iter.next()
+    );
+    // alias
+    assert_eq!(Some(&SyntaxData::PlanId(25)), nodes_iter.next());
+    assert_eq!(
+        Some(&SyntaxData::Alias("COL_1".to_string())),
         nodes_iter.next()
     );
     // from

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
+use super::expression::{ColumnPositionMap, Position};
+
 /// The kind of aggregate function
 ///
 /// Examples: avg, sum, count,  ..
@@ -167,7 +169,44 @@ impl SimpleAggregate {
     }
 }
 
+pub(crate) type PositionKind = (Position, AggregateKind);
+
 impl SimpleAggregate {
+    pub(crate) fn get_position_kinds(
+        &self,
+        alias_to_pos: &ColumnPositionMap,
+        is_distinct: bool,
+    ) -> Result<Vec<PositionKind>, SbroadError> {
+        if is_distinct {
+            let local_alias = self.lagg_alias.get(&self.kind).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Aggregate,
+                    Some(format!(
+                        "missing local alias for distinct aggregate: {self:?}"
+                    )),
+                )
+            })?;
+            let position = alias_to_pos.get(local_alias)?;
+            Ok(vec![(position, self.kind)])
+        } else {
+            let aggr_kinds = self.kind.get_local_aggregates_kinds();
+            let mut res = Vec::with_capacity(aggr_kinds.len());
+            for aggr_kind in aggr_kinds {
+                let local_alias = self.lagg_alias.get(&aggr_kind).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Aggregate,
+                        Some(format!(
+                            "missing local alias for local aggregate ({aggr_kind}): {self:?}"
+                        )),
+                    )
+                })?;
+                let position = alias_to_pos.get(local_alias)?;
+                res.push((position, aggr_kind));
+            }
+            Ok(res)
+        }
+    }
+
     /// Create final aggregate expression and return its id
     ///
     /// # Examples
@@ -193,30 +232,24 @@ impl SimpleAggregate {
     /// - Invalid aggregate
     /// - Could not find local alias position in child output
     #[allow(clippy::too_many_lines)]
-    pub fn create_final_aggregate_expr(
+    pub(crate) fn create_final_aggregate_expr(
         &self,
         parent: usize,
         plan: &mut Plan,
-        alias_to_pos: &HashMap<String, usize>,
+        mut position_kinds: Vec<PositionKind>,
         is_distinct: bool,
     ) -> Result<usize, SbroadError> {
         // map local AggregateKind to finalised expression of that aggregate
         let mut final_aggregates: HashMap<AggregateKind, usize> = HashMap::new();
-        let mut create_final_aggr = |local_alias: &str,
+        let mut create_final_aggr = |position: Position,
                                      local_kind: AggregateKind,
                                      final_func: AggregateKind|
          -> Result<(), SbroadError> {
-            let Some(position) = alias_to_pos.get(local_alias) else {
-                let parent_node = plan.get_relation_node(parent)?;
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format!("could not find aggregate column in final {parent_node:?} child by local alias: {local_alias}. Aliases: {alias_to_pos:?}"))))
-            };
             let ref_node = Expression::Reference {
                 parent: Some(parent),
                 // projection has only one child
                 targets: Some(vec![0]),
-                position: *position,
+                position,
                 col_type: RelType::from(local_kind),
             };
             let ref_id = plan.nodes.push(Node::Expression(ref_node));
@@ -260,27 +293,14 @@ impl SimpleAggregate {
             Ok(())
         };
         if is_distinct {
-            let local_alias = self.lagg_alias.get(&self.kind).ok_or_else(|| {
-                SbroadError::Invalid(
-                    Entity::Aggregate,
-                    Some(format!(
-                        "missing local alias for distinct aggregate: {self:?}"
-                    )),
-                )
+            let (position, kind) = position_kinds.drain(..).next().ok_or_else(|| {
+                SbroadError::UnexpectedNumberOfValues("position kinds are empty".to_string())
             })?;
-            create_final_aggr(local_alias, self.kind, self.kind)?;
+            create_final_aggr(position, kind, self.kind)?;
         } else {
-            for aggr_kind in self.kind.get_local_aggregates_kinds() {
-                let local_alias = self.lagg_alias.get(&aggr_kind).ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Aggregate,
-                        Some(format!(
-                            "missing local alias for local aggregate ({aggr_kind}): {self:?}"
-                        )),
-                    )
-                })?;
-                let final_aggregate_kind = self.kind.get_final_aggregate_kind(&aggr_kind)?;
-                create_final_aggr(local_alias, aggr_kind, final_aggregate_kind)?;
+            for (position, kind) in position_kinds {
+                let final_aggregate_kind = self.kind.get_final_aggregate_kind(&kind)?;
+                create_final_aggr(position, kind, final_aggregate_kind)?;
             }
         }
         let final_expr_id = if final_aggregates.len() == 1 {

@@ -84,6 +84,26 @@ pub struct Nodes {
 }
 
 impl Nodes {
+    pub(crate) fn get(&self, id: usize) -> Result<&Node, SbroadError> {
+        match self.arena.get(id) {
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format!("from arena with index {id}"),
+            )),
+            Some(node) => Ok(node),
+        }
+    }
+
+    pub(crate) fn get_mut(&mut self, id: usize) -> Result<&mut Node, SbroadError> {
+        match self.arena.get_mut(id) {
+            None => Err(SbroadError::NotFound(
+                Entity::Node,
+                format!("from arena with index {id}"),
+            )),
+            Some(node) => Ok(node),
+        }
+    }
+
     /// Get the amount of relational nodes in the plan.
     #[must_use]
     pub fn relation_node_amount(&self) -> usize {
@@ -402,12 +422,7 @@ impl Plan {
                 ))
             }
             Some(top) => {
-                if self.nodes.arena.get(top).is_none() {
-                    return Err(SbroadError::NotFound(
-                        Entity::Node,
-                        format!("from arena with index {top}"),
-                    ));
-                }
+                let _ = self.nodes.get(top)?;
             }
         }
 

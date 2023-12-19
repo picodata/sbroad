@@ -8,6 +8,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::distribution::{Distribution, Key, KeySet};
+use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
@@ -1621,9 +1622,7 @@ impl Plan {
                         // remove bucket_id position, and shard_key.positions
                         // can't be used directly.
                         let expected_positions = {
-                            let child_alias_map = self
-                                .get_relation_node(pr_child)?
-                                .output_alias_position_map(&self.nodes)?;
+                            let child_alias_map = ColumnPositionMap::new(self, pr_child)?;
                             let mut expected_positions = Vec::with_capacity(table.get_sk()?.len());
                             for pos in table.get_sk()? {
                                 let col_name = &table
@@ -1636,16 +1635,7 @@ impl Plan {
                                         )
                                     })?
                                     .name;
-                                let col_pos =
-                                    *child_alias_map.get(col_name.as_str()).ok_or_else(|| {
-                                        SbroadError::Invalid(
-                                            Entity::Update,
-                                            Some(format!(
-                                                "no shard column {} in projection child's output",
-                                                &col_name
-                                            )),
-                                        )
-                                    })?;
+                                let col_pos = child_alias_map.get(col_name.as_str())?;
                                 expected_positions.push(col_pos);
                             }
                             expected_positions

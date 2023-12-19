@@ -111,7 +111,7 @@ fn projection() {
 
     // Invalid alias names in the output
     assert_eq!(
-        SbroadError::NotFound(Entity::Column, r#"with name a, e"#.into()),
+        SbroadError::NotFound(Entity::Column, r#"with name e"#.into()),
         plan.add_proj(scan_id, &["a", "e"], false).unwrap_err()
     );
 
@@ -479,7 +479,7 @@ fn selection_with_sub_query() {
     children.push(sq_id);
 
     let b_id = plan
-        .add_row_from_sub_query(&children[..], children.len() - 1, &["b"])
+        .add_row_from_subquery(&children[..], children.len() - 1, None)
         .unwrap();
     let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
@@ -606,9 +606,8 @@ fn join_duplicate_columns() {
         .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
-    assert_eq!(
-        SbroadError::DuplicatedValue("row can't be added because `a` already has an alias".into()),
-        plan.add_join(scan_t1, scan_t2, condition, JoinKind::Inner)
-            .unwrap_err()
-    );
+    let join = plan
+        .add_join(scan_t1, scan_t2, condition, JoinKind::Inner)
+        .unwrap();
+    plan.top = Some(join);
 }
