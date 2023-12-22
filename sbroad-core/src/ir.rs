@@ -1155,7 +1155,8 @@ impl Plan {
     /// # Errors
     /// - serialization error (to binary)
     pub fn pattern_id(&self, top_id: usize) -> Result<String, SbroadError> {
-        let mut dfs = PostOrder::with_capacity(|x| self.subtree_iter(x), self.nodes.next_id());
+        let mut dfs =
+            PostOrder::with_capacity(|x| self.subtree_iter(x, false), self.nodes.next_id());
         dfs.populate_nodes(top_id);
         let nodes = dfs.take_nodes();
         let mut plan_nodes: Vec<&Node> = Vec::with_capacity(nodes.len());

@@ -1,9 +1,10 @@
+use std::rc::Rc;
+
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
-use crate::executor::engine::helpers::filter_vtable;
 use crate::executor::engine::mock::{ReplicasetDispatchInfo, RouterRuntimeMock, VshardMock};
 use crate::ir::relation::Type;
 use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
@@ -870,7 +871,7 @@ fn global_union_all2() {
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(column_integer_user_non_null(String::from("e")));
     virtual_table.add_tuple(vec![Value::Integer(1)]);
-    let mut exec_plan = query.get_mut_exec_plan();
+    let exec_plan = query.get_mut_exec_plan();
     exec_plan
         .set_motion_vtable(motion_id, virtual_table.clone(), &coordinator)
         .unwrap();
@@ -1085,4 +1086,71 @@ fn global_union_all4() {
     ];
 
     assert_eq!(expected, actual_dispatch);
+}
+
+#[test]
+fn global_except() {
+    let sql = r#"select "a" from "global_t"
+    except select "e" from "t2""#;
+    let mut coordinator = RouterRuntimeMock::new();
+    coordinator.set_vshard_mock(3);
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let intersect_motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+
+    {
+        // check map stage
+        let motion_child = query
+            .exec_plan
+            .get_motion_subtree_root(intersect_motion_id)
+            .unwrap();
+        let buckets = query.bucket_discovery(motion_child).unwrap();
+        let sql = get_sql_from_execution_plan(
+            &mut query.exec_plan,
+            motion_child,
+            Snapshot::Oldest,
+            &buckets,
+            "test",
+        );
+        assert_eq!(
+            sql,
+            PatternWithParams::new(
+                r#"SELECT "t2"."e" FROM "t2" INTERSECT SELECT "global_t"."a" FROM "global_t""#
+                    .to_string(),
+                vec![]
+            )
+        );
+
+        let mut virtual_table = VirtualTable::new();
+        virtual_table.add_column(column_integer_user_non_null(String::from("e")));
+        virtual_table.add_tuple(vec![Value::Integer(1)]);
+        query
+            .get_mut_exec_plan()
+            .set_motion_vtable(intersect_motion_id, virtual_table.clone(), &coordinator)
+            .unwrap();
+    }
+
+    // check reduce stage
+    let res = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+    let mut expected = ProducerResult::new();
+    expected.rows.extend(vec![vec![
+        LuaValue::String(format!("Execute query locally")),
+        LuaValue::String(String::from(PatternWithParams::new(
+            r#"SELECT "global_t"."a" FROM "global_t" EXCEPT SELECT "e" FROM "TMP_test_47""#.into(),
+            vec![],
+        ))),
+    ]]);
+    assert_eq!(expected, res,)
 }

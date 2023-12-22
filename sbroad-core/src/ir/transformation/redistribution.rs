@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use crate::errors::{Action, Entity, SbroadError};
+use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
@@ -1017,29 +1018,15 @@ impl Plan {
                     ));
                 }
             }
-            Relational::Except { .. } => {
-                let left_dist = self.get_distribution(
-                    self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
-                )?;
-                let right_dist = self.get_distribution(
-                    self.get_relational_output(self.get_relational_child(rel_id, 1)?)?,
-                )?;
-                if matches!(
-                    (left_dist, right_dist),
-                    (_, Distribution::Global) | (Distribution::Global, _)
-                ) {
-                    return Err(SbroadError::UnsupportedOpForGlobalTables(
-                        node.name().to_string(),
-                    ));
-                }
-            }
-            Relational::Projection { .. }
+            Relational::Except { .. }
+            | Relational::Projection { .. }
             | Relational::GroupBy { .. }
             | Relational::Having { .. }
             | Relational::Join { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
+            | Relational::Intersect { .. }
             | Relational::ScanSubQuery { .. }
             | Relational::Motion { .. }
             | Relational::UnionAll { .. } => {}
@@ -1763,117 +1750,155 @@ impl Plan {
 
     #[allow(clippy::too_many_lines)]
     fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+        if !matches!(self.get_relation_node(rel_id)?, Relational::Except { .. }) {
+            return Err(SbroadError::Invalid(
+                Entity::Relational,
+                Some("expected Except node".into()),
+            ));
+        }
+
         let mut map = Strategy::new(rel_id);
-        match self.get_relation_node(rel_id)? {
-            Relational::Except { children, .. } => {
-                if let (Some(left), Some(right), None) =
-                    (children.first(), children.get(1), children.get(2))
-                {
-                    let left_output_id = self.get_relation_node(*left)?.output();
-                    let right_output_id = self.get_relation_node(*right)?.output();
-                    let left_output_row =
-                        self.get_expression_node(left_output_id)?.get_row_list()?;
-                    let right_output_row =
-                        self.get_expression_node(right_output_id)?.get_row_list()?;
-                    if left_output_row.len() != right_output_row.len() {
-                        return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                            "Except node children have different row lengths: left {}, right {}",
-                            left_output_row.len(),
-                            right_output_row.len()
-                        )));
-                    }
-                    let left_dist = self.get_distribution(left_output_id)?;
-                    let right_dist = self.get_distribution(right_output_id)?;
-                    match left_dist {
-                        Distribution::Segment {
-                            keys: left_keys, ..
-                        } => {
-                            if let Distribution::Segment {
-                                keys: right_keys, ..
-                            } = right_dist
-                            {
-                                // Distribution key sets have common keys, no need for the data motion.
-                                if right_keys.intersection(left_keys).iter().next().is_some() {
-                                    return Ok(map);
-                                }
-                            }
-                            let key = left_keys.iter().next().ok_or_else(|| SbroadError::Invalid(
+
+        if self.resolve_except_global_vs_sharded(rel_id)? {
+            return Ok(map);
+        }
+
+        let left_id = self.get_relational_child(rel_id, 0)?;
+        let right_id = self.get_relational_child(rel_id, 1)?;
+        let left_dist = self.get_rel_distribution(left_id)?;
+        let right_dist = self.get_rel_distribution(right_id)?;
+
+        let (left_motion, right_motion) = match (left_dist, right_dist) {
+            (
+                Distribution::Segment { keys: left_keys },
+                Distribution::Segment { keys: right_keys },
+            ) => {
+                if right_keys.intersection(left_keys).iter().next().is_some() {
+                    // Distribution key sets have common keys, no need for the data motion.
+                    (MotionPolicy::None, MotionPolicy::None)
+                } else {
+                    let key = left_keys.iter().next().ok_or_else(|| SbroadError::Invalid(
+                        Entity::Distribution,
+                        Some("left child's segment distribution is invalid: no keys found in the set".into()),
+                    ))?;
+                    (MotionPolicy::None, MotionPolicy::Segment(key.into()))
+                }
+            }
+            (
+                Distribution::Segment { .. }
+                | Distribution::Any
+                | Distribution::Global
+                | Distribution::Single,
+                Distribution::Global,
+            ) => (MotionPolicy::None, MotionPolicy::None),
+            (Distribution::Segment { keys }, _) => {
+                let key = keys.iter().next().ok_or_else(|| SbroadError::Invalid(
                                 Entity::Distribution,
                                 Some("left child's segment distribution is invalid: no keys found in the set".into()),
                             ))?;
-                            map.add_child(
-                                *right,
-                                MotionPolicy::Segment(key.into()),
-                                Program::default(),
-                            );
-                        }
-                        Distribution::Single => {
-                            match right_dist {
-                                Distribution::Segment { keys: right_keys } => {
-                                    map.add_child(
-                                        *left,
-                                        MotionPolicy::Segment(MotionKey::from(
-                                            right_keys.iter().next().ok_or_else(|| {
-                                                SbroadError::Invalid(
-                                                    Entity::Distribution,
-                                                    Some(format!(
-                                                        "{} {} {right}",
-                                                        "Segment distribution with no keys.",
-                                                        "Except right child:"
-                                                    )),
-                                                )
-                                            })?,
-                                        )),
-                                        Program::default(),
-                                    );
-                                    map.add_child(*right, MotionPolicy::None, Program::default());
-                                }
-                                Distribution::Single => {
-                                    // we could redistribute both children by any combination of columns,
-                                    // first column is used for simplicity
-                                    map.add_child(
-                                        *left,
-                                        MotionPolicy::Segment(MotionKey {
-                                            targets: vec![Target::Reference(0)],
-                                        }),
-                                        Program::default(),
-                                    );
-                                    map.add_child(
-                                        *right,
-                                        MotionPolicy::Segment(MotionKey {
-                                            targets: vec![Target::Reference(0)],
-                                        }),
-                                        Program::default(),
-                                    );
-                                }
-                                _ => {
-                                    // right child must to be broadcasted to each node
-                                    map.add_child(
-                                        *left,
-                                        MotionPolicy::Segment(MotionKey {
-                                            targets: vec![Target::Reference(0)], // any combination of columns would suffice
-                                        }),
-                                        Program::default(),
-                                    );
-                                    map.add_child(*right, MotionPolicy::Full, Program::default());
-                                }
-                            }
-                        }
-                        _ => {
-                            map.add_child(*right, MotionPolicy::Full, Program::default());
-                        }
-                    }
-                    return Ok(map);
-                }
-                Err(SbroadError::UnexpectedNumberOfValues(
-                    "Except node doesn't have exactly two children.".into(),
-                ))
+                (MotionPolicy::None, MotionPolicy::Segment(key.into()))
             }
-            _ => Err(SbroadError::Invalid(
-                Entity::Relational,
-                Some("expected Except node".into()),
-            )),
+            (Distribution::Single, Distribution::Single) => {
+                // we could redistribute both children by any combination of columns,
+                // first column is used for simplicity
+                let policy = MotionPolicy::Segment(MotionKey {
+                    targets: vec![Target::Reference(0)],
+                });
+                (policy.clone(), policy)
+            }
+            (Distribution::Single, Distribution::Segment { keys }) => {
+                let key = keys.iter().next().ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Distribution,
+                        Some(format!(
+                            "{} {} {right_id}",
+                            "Segment distribution with no keys.", "Except right child:"
+                        )),
+                    )
+                })?;
+                (MotionPolicy::Segment(key.into()), MotionPolicy::None)
+            }
+            (Distribution::Global, Distribution::Single) => {
+                (MotionPolicy::None, MotionPolicy::None)
+            }
+            (_, _) => (MotionPolicy::None, MotionPolicy::Full),
+        };
+
+        map.add_child(left_id, left_motion, Program::default());
+        map.add_child(right_id, right_motion, Program::default());
+
+        Ok(map)
+    }
+
+    /// Resolves the case when left child has distribution Global
+    /// and right child has Any or Segment distribution.
+    /// If distributions are different returns `false`, otherwise modifies the
+    /// plan inserting motions (and other nodes) and returns `true`.
+    ///
+    /// Currently, the except is executed in two stages:
+    /// 1. Map stage: do intersect of the global child and sharded child
+    /// 2. Reduce stage: do except with global child and results from Map stage
+    ///
+    /// For example:
+    /// ```sql
+    /// select a from g
+    /// except
+    /// select b from segment_a
+    /// ```
+    ///
+    /// Before transformation:
+    /// ```text
+    /// Except
+    ///     Projection a
+    ///         scan g
+    ///     Projection b
+    ///         scan segment_a
+    /// ```
+    ///
+    /// Transforms into:
+    ///
+    /// ```text
+    /// Except
+    ///     Projection a
+    ///         scan g
+    ///     Motion(Full)
+    ///         Intersect
+    ///             Projection b
+    ///                 scan segment_a
+    ///             Projection a
+    ///                 scan g
+    /// ```
+    fn resolve_except_global_vs_sharded(&mut self, except_id: usize) -> Result<bool, SbroadError> {
+        let left_id = self.get_relational_child(except_id, 0)?;
+        let right_id = self.get_relational_child(except_id, 1)?;
+        let left_dist = self.get_rel_distribution(left_id)?;
+        let right_dist = self.get_rel_distribution(right_id)?;
+        if !matches!(
+            (left_dist, right_dist),
+            (
+                Distribution::Global,
+                Distribution::Any | Distribution::Segment { .. }
+            )
+        ) {
+            return Ok(false);
         }
+
+        let cloned_left_id = SubtreeCloner::clone_subtree(self, left_id, left_id)?;
+        let right_output_id = self.get_relational_output(right_id)?;
+        let intersect_output_id = self.clone_expr_subtree(right_output_id)?;
+        let intersect = Relational::Intersect {
+            children: vec![right_id, cloned_left_id],
+            output: intersect_output_id,
+        };
+        let intersect_id = self.nodes.push(Node::Relational(intersect));
+
+        self.change_child(except_id, right_id, intersect_id)?;
+
+        let mut map = Strategy::new(except_id);
+        map.add_child(intersect_id, MotionPolicy::Full, Program::default());
+        self.create_motion_nodes(map)?;
+
+        Ok(true)
     }
 
     fn resolve_union_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
@@ -1980,6 +2005,7 @@ impl Plan {
                 Relational::ScanRelation { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::GroupBy { output, .. }
+                | Relational::Intersect { output, .. }
                 | Relational::Having { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;

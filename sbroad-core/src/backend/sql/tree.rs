@@ -785,16 +785,18 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::Except { children, .. } | Relational::UnionAll { children, .. } => {
+                Relational::Except { children, .. }
+                | Relational::UnionAll { children, .. }
+                | Relational::Intersect { children, .. } => {
                     let left_id = *children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "Union/Except has no children.".into(),
+                            "Union/Except/Intersect has no children.".into(),
                         )
                     })?;
                     let right_id = *children.get(1).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
-                            "that is Union/Except right child.".into(),
+                            "that is Union/Except/Intersect right child.".into(),
                         )
                     })?;
                     let sn = SyntaxNode::new_pointer(
@@ -1311,7 +1313,7 @@ impl<'p> SyntaxPlan<'p> {
         match snapshot {
             Snapshot::Latest => {
                 let mut dft_post =
-                    PostOrder::with_capacity(|node| ir_plan.subtree_iter(node), capacity);
+                    PostOrder::with_capacity(|node| ir_plan.subtree_iter(node, false), capacity);
                 for (_, id) in dft_post.iter(top) {
                     // it works only for post-order traversal
                     let sn_id = sp.add_plan_node(id)?;

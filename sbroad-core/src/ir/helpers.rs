@@ -254,6 +254,7 @@ impl Plan {
                 }
                 Relational::Delete { .. } => writeln!(buf, "Delete")?,
                 Relational::Insert { .. } => writeln!(buf, "Insert")?,
+                Relational::Intersect { .. } => writeln!(buf, "Intersect")?,
                 Relational::Except { .. } => writeln!(buf, "Except")?,
             }
             // Print children.
@@ -263,6 +264,7 @@ impl Plan {
                 | Relational::Except { children, .. }
                 | Relational::Delete { children, .. }
                 | Relational::Insert { children, .. }
+                | Relational::Intersect { children, .. }
                 | Relational::ScanSubQuery { children, .. }
                 | Relational::Selection { children, .. }
                 | Relational::Values { children, .. }
@@ -291,6 +293,7 @@ impl Plan {
                 | Relational::Except { output, .. }
                 | Relational::Delete { output, .. }
                 | Relational::Insert { output, .. }
+                | Relational::Intersect { output, .. }
                 | Relational::Projection { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::GroupBy { output, .. }

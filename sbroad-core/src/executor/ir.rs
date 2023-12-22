@@ -276,6 +276,7 @@ impl ExecutionPlan {
             Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
             Relational::Except { .. }
             | Relational::GroupBy { .. }
+            | Relational::Intersect { .. }
             | Relational::Join { .. }
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }

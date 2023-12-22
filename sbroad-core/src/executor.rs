@@ -25,7 +25,6 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
@@ -39,7 +38,6 @@ use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
-use ahash::AHashMap;
 use sbroad_proc::otm_child_span;
 
 pub mod bucket;
@@ -192,35 +190,21 @@ where
         if self.is_explain() {
             return self.coordinator.explain_format(self.to_explain()?);
         }
-
         self.get_mut_exec_plan()
             .get_mut_ir_plan()
             .restore_constants()?;
 
         let slices = self.exec_plan.get_ir_plan().clone_slices();
-        let mut already_materialized: AHashMap<usize, usize> =
-            AHashMap::with_capacity(slices.slices().len());
         for slice in slices.slices() {
             // TODO: make it work in parallel
             for motion_id in slice.positions() {
-                let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
-
-                // Multiple motions can point to the same subtree (BETWEEN operator).
-                if let Some(id) = already_materialized.get(&top_id) {
-                    let vtable = self.get_exec_plan().get_motion_vtable(*id)?;
-                    if let Some(vtables) = self.get_mut_exec_plan().get_mut_vtables() {
-                        vtables.insert(*motion_id, Rc::clone(&vtable));
+                if let Some(vtables_map) = self.exec_plan.get_vtables() {
+                    if vtables_map.contains_key(motion_id) {
+                        continue;
                     }
-                    // Unlink the subtree under the motion node
-                    // (it has already been materialized and replaced with invalid nodes).
-                    // Such a logic is applied in `materialize_motion`, but only for the
-                    // first `Motion` (that e.g. pointed to BETWEEN).
-                    // We have to apply it again, but for current `motion_id` now.
-                    self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
-                    continue;
                 }
-
                 let motion = self.exec_plan.get_ir_plan().get_relation_node(*motion_id)?;
+
                 if let Relational::Motion { policy, .. } = motion {
                     match policy {
                         // Local segment motions should be treated as a special case.
@@ -241,7 +225,6 @@ where
                                     &self.coordinator,
                                 )?;
                                 self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
-                                already_materialized.insert(top_id, *motion_id);
                             }
                             continue;
                         }
@@ -252,6 +235,7 @@ where
                     }
                 }
 
+                let top_id = self.exec_plan.get_motion_subtree_root(*motion_id)?;
                 let buckets = self.bucket_discovery(top_id)?;
                 let virtual_table = self.coordinator.materialize_motion(
                     &mut self.exec_plan,
@@ -260,10 +244,8 @@ where
                 )?;
                 self.exec_plan
                     .set_motion_vtable(*motion_id, virtual_table, &self.coordinator)?;
-                already_materialized.insert(top_id, *motion_id);
             }
         }
-
         let top_id = self.exec_plan.get_ir_plan().get_top()?;
         let buckets = self.bucket_discovery(top_id)?;
         self.coordinator

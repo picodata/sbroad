@@ -744,6 +744,7 @@ impl Display for InnerJoin {
 enum ExplainNode {
     Delete(String),
     Except,
+    Intersect,
     GroupBy(GroupBy),
     InnerJoin(InnerJoin),
     ValueRow(ColExpr),
@@ -774,6 +775,7 @@ impl Display for ExplainNode {
             ExplainNode::Selection(s) => format!("selection {s}"),
             ExplainNode::Having(s) => format!("having {s}"),
             ExplainNode::UnionAll => "union all".to_string(),
+            ExplainNode::Intersect => "intersect".to_string(),
             ExplainNode::Update(u) => u.to_string(),
             ExplainNode::SubQuery(s) => s.to_string(),
             ExplainNode::Motion(m) => m.to_string(),
@@ -880,6 +882,17 @@ impl FullExplain {
             let mut current_node = ExplainTreePart::with_level(level);
             let node = ir.get_relation_node(id)?;
             current_node.current = match &node {
+                Relational::Intersect { .. } => {
+                    if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
+                        current_node.children.push(left);
+                        current_node.children.push(right);
+                    } else {
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "Intersect node must have exactly two children".into(),
+                        ));
+                    }
+                    Some(ExplainNode::Intersect)
+                }
                 Relational::Except { .. } => {
                     if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
                         current_node.children.push(left);

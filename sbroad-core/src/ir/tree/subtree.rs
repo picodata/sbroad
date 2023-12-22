@@ -18,6 +18,7 @@ pub struct SubtreeIterator<'plan> {
     current: usize,
     child: RefCell<usize>,
     plan: &'plan Plan,
+    need_output: bool,
 }
 
 impl<'nodes> TreeIterator<'nodes> for SubtreeIterator<'nodes> {
@@ -42,7 +43,7 @@ impl<'plan> PlanTreeIterator<'plan> for SubtreeIterator<'plan> {
 
 impl<'plan> SubtreePlanIterator<'plan> for SubtreeIterator<'plan> {
     fn need_output(&self) -> bool {
-        false
+        self.need_output
     }
 
     fn need_motion_subtree(&self) -> bool {
@@ -60,11 +61,12 @@ impl<'plan> Iterator for SubtreeIterator<'plan> {
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn subtree_iter(&'plan self, current: usize) -> SubtreeIterator<'plan> {
+    pub fn subtree_iter(&'plan self, current: usize, need_output: bool) -> SubtreeIterator<'plan> {
         SubtreeIterator {
             current,
             child: RefCell::new(0),
             plan: self,
+            need_output,
         }
     }
 }
@@ -315,6 +317,9 @@ fn subtree_next<'plan>(
                     children, output, ..
                 }
                 | Relational::Insert {
+                    children, output, ..
+                }
+                | Relational::Intersect {
                     children, output, ..
                 }
                 | Relational::Delete {

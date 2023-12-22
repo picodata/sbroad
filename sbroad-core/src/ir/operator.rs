@@ -311,6 +311,12 @@ pub enum Relational {
         /// What to do in case there is a conflict during insert on storage
         conflict_strategy: ConflictStrategy,
     },
+    Intersect {
+        // contains exactly 2 children
+        children: Vec<usize>,
+        // id of the output tuple
+        output: usize,
+    },
     Update {
         /// Relation name.
         relation: String,
@@ -495,6 +501,7 @@ impl Relational {
             | Relational::Join { output, .. }
             | Relational::Delete { output, .. }
             | Relational::Insert { output, .. }
+            | Relational::Intersect { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
             | Relational::ScanRelation { output, .. }
@@ -517,6 +524,7 @@ impl Relational {
             | Relational::Join { output, .. }
             | Relational::Delete { output, .. }
             | Relational::Insert { output, .. }
+            | Relational::Intersect { output, .. }
             | Relational::Motion { output, .. }
             | Relational::Projection { output, .. }
             | Relational::ScanRelation { output, .. }
@@ -539,6 +547,7 @@ impl Relational {
             | Relational::Having { children, .. }
             | Relational::Delete { children, .. }
             | Relational::Insert { children, .. }
+            | Relational::Intersect { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
@@ -573,6 +582,9 @@ impl Relational {
                 ref mut children, ..
             }
             | Relational::Insert {
+                ref mut children, ..
+            }
+            | Relational::Intersect {
                 ref mut children, ..
             }
             | Relational::Motion {
@@ -658,6 +670,10 @@ impl Relational {
                 children: ref mut old,
                 ..
             }
+            | Relational::Intersect {
+                children: ref mut old,
+                ..
+            }
             | Relational::Motion {
                 children: ref mut old,
                 ..
@@ -722,6 +738,7 @@ impl Relational {
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
             Relational::Projection { .. }
             | Relational::GroupBy { .. }
+            | Relational::Intersect { .. }
             | Relational::Having { .. }
             | Relational::Selection { .. }
             | Relational::Update { .. }
@@ -776,6 +793,7 @@ impl Relational {
             Relational::Except { .. } => "Except",
             Relational::Delete { .. } => "Delete",
             Relational::Insert { .. } => "Insert",
+            Relational::Intersect { .. } => "Intersect",
             Relational::Update { .. } => "Update",
             Relational::Join { .. } => "Join",
             Relational::Motion { .. } => "Motion",

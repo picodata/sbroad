@@ -8,6 +8,7 @@ use crate::frontend::sql::ast::{ParseNode, Type};
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Arithmetic, Bool, Relational, Unary};
+use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
@@ -430,6 +431,348 @@ impl Plan {
             map.insert(id, next_id);
         }
         Ok(self.nodes.next_id() - 1)
+    }
+}
+
+/// Helper struct to clone plan's subtree.
+/// Assumes that all parameters are bound.
+pub struct SubtreeCloner {
+    old_new: AHashMap<usize, usize>,
+    nodes_with_backward_references: Vec<usize>,
+}
+
+impl SubtreeCloner {
+    fn new(capacity: usize) -> Self {
+        SubtreeCloner {
+            old_new: AHashMap::with_capacity(capacity),
+            nodes_with_backward_references: Vec::new(),
+        }
+    }
+
+    fn get_new_id(&self, old_id: usize) -> Result<usize, SbroadError> {
+        self.old_new
+            .get(&old_id)
+            .ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!("new node not found for old id: {old_id}")),
+                )
+            })
+            .copied()
+    }
+
+    fn copy_list(&self, list: &[usize]) -> Result<Vec<usize>, SbroadError> {
+        let mut new_list = Vec::with_capacity(list.len());
+        for id in list {
+            new_list.push(self.get_new_id(*id)?);
+        }
+        Ok(new_list)
+    }
+
+    fn clone_expression(&mut self, expr: &Expression) -> Result<Expression, SbroadError> {
+        let mut copied = expr.clone();
+
+        // note: all struct fields are listed explicitly (instead of `..`), so that
+        // when a new field is added to a struct, this match must
+        // be updated, or compilation will fail.
+        match &mut copied {
+            Expression::Constant { value: _ }
+            | Expression::Reference {
+                parent: _,
+                targets: _,
+                position: _,
+                col_type: _,
+            }
+            | Expression::CountAsterisk => {}
+            Expression::Alias {
+                ref mut child,
+                name: _,
+            }
+            | Expression::Cast {
+                ref mut child,
+                to: _,
+            }
+            | Expression::Unary {
+                ref mut child,
+                op: _,
+            } => {
+                *child = self.get_new_id(*child)?;
+            }
+            Expression::Bool {
+                ref mut left,
+                ref mut right,
+                op: _,
+            }
+            | Expression::Arithmetic {
+                ref mut left,
+                ref mut right,
+                op: _,
+                with_parentheses: _,
+            }
+            | Expression::Concat {
+                ref mut left,
+                ref mut right,
+            } => {
+                *left = self.get_new_id(*left)?;
+                *right = self.get_new_id(*right)?;
+            }
+            Expression::Row {
+                list: ref mut children,
+                distribution: _,
+            }
+            | Expression::StableFunction {
+                ref mut children,
+                name: _,
+                is_distinct: _,
+                func_type: _,
+            } => {
+                *children = self.copy_list(&*children)?;
+            }
+        }
+
+        Ok(copied)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn clone_relational(
+        &mut self,
+        old_relational: &Relational,
+        id: usize,
+    ) -> Result<Relational, SbroadError> {
+        let mut copied = old_relational.clone();
+
+        // all relational nodes have output and children list,
+        // which must be copied.
+        if let Some(children) = old_relational.children() {
+            let new_children = self.copy_list(children)?;
+            copied.set_children(new_children)?;
+        }
+        let new_output_id = self.get_new_id(old_relational.output())?;
+        *copied.mut_output() = new_output_id;
+
+        // copy node specific fields, that reference other plan nodes
+
+        // note: all struct fields are listed explicitly (instead of `..`), so that
+        // when a new field is added to a struct, this match must
+        // be updated, or compilation will fail.
+        match &mut copied {
+            Relational::Except {
+                children: _,
+                output: _,
+            }
+            | Relational::Intersect {
+                children: _,
+                output: _,
+            }
+            | Relational::UnionAll {
+                children: _,
+                output: _,
+            }
+            | Relational::Values {
+                output: _,
+                children: _,
+            }
+            | Relational::Projection {
+                children: _,
+                output: _,
+                is_distinct: _,
+            }
+            | Relational::Insert {
+                relation: _,
+                columns: _,
+                children: _,
+                output: _,
+                conflict_strategy: _,
+            }
+            | Relational::Update {
+                relation: _,
+                children: _,
+                update_columns_map: _,
+                strategy: _,
+                pk_positions: _,
+                output: _,
+            }
+            | Relational::Delete {
+                relation: _,
+                children: _,
+                output: _,
+            }
+            | Relational::ScanRelation {
+                alias: _,
+                output: _,
+                relation: _,
+            }
+            | Relational::ScanSubQuery {
+                alias: _,
+                children: _,
+                output: _,
+            } => {}
+            Relational::Having {
+                children: _,
+                output: _,
+                filter,
+            }
+            | Relational::Selection {
+                children: _,
+                filter,
+                output: _,
+            }
+            | Relational::Join {
+                children: _,
+                condition: filter,
+                output: _,
+                kind: _,
+            } => {
+                *filter = self.get_new_id(*filter)?;
+            }
+            Relational::Motion {
+                alias: _,
+                children: _,
+                policy: _,
+                program,
+                output: _,
+                is_child_subquery: _,
+            } => {
+                for op in &mut program.0 {
+                    match op {
+                        MotionOpcode::RearrangeForShardedUpdate {
+                            update_id: _,
+                            old_shard_columns_len: _,
+                            new_shard_columns_positions: _,
+                        } => {
+                            // Update -> Motion -> ...
+                            // Update is not copied yet.
+                            self.nodes_with_backward_references.push(id);
+                        }
+                        MotionOpcode::AddMissingRowsForLeftJoin { motion_id } => {
+                            // Projection -> THIS Motion -> Projection -> InnerJoin -> Motion (== motion_id)
+                            // so it is safe to look up motion_id in map
+                            *motion_id = self.get_new_id(*motion_id)?;
+                        }
+                        MotionOpcode::PrimaryKey(_)
+                        | MotionOpcode::ReshardIfNeeded
+                        | MotionOpcode::SerializeAsEmptyTable(_) => {}
+                    }
+                }
+            }
+            Relational::GroupBy {
+                children: _,
+                gr_cols,
+                output: _,
+                is_final: _,
+            } => {
+                *gr_cols = self.copy_list(gr_cols)?;
+            }
+            Relational::ValuesRow {
+                output: _,
+                data,
+                children: _,
+            } => {
+                *data = self.get_new_id(*data)?;
+            }
+        }
+
+        Ok(copied)
+    }
+
+    // Some nodes contain references to nodes above in the tree
+    // This function replaces those references to new nodes.
+    fn replace_backward_refs(&self, plan: &mut Plan) -> Result<(), SbroadError> {
+        for old_id in &self.nodes_with_backward_references {
+            if let Node::Relational(Relational::Motion { program, .. }) = plan.get_node(*old_id)? {
+                let op_cnt = program.0.len();
+                for idx in 0..op_cnt {
+                    let op = plan.get_motion_opcode(*old_id, idx)?;
+                    if let MotionOpcode::RearrangeForShardedUpdate { update_id, .. } = op {
+                        let new_motion_id = self.get_new_id(*old_id)?;
+                        let new_update_id = self.get_new_id(*update_id)?;
+
+                        if let Relational::Motion {
+                            program: new_program,
+                            ..
+                        } = plan.get_mut_relation_node(new_motion_id)?
+                        {
+                            if let Some(MotionOpcode::RearrangeForShardedUpdate {
+                                update_id: new_node_update_id,
+                                ..
+                            }) = new_program.0.get_mut(idx)
+                            {
+                                *new_node_update_id = new_update_id;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn clone(
+        &mut self,
+        plan: &mut Plan,
+        top_id: usize,
+        capacity: usize,
+    ) -> Result<usize, SbroadError> {
+        let mut dfs = PostOrder::with_capacity(|x| plan.subtree_iter(x, true), capacity);
+        dfs.populate_nodes(top_id);
+        let nodes = dfs.take_nodes();
+        drop(dfs);
+        for (_, id) in nodes {
+            let node = plan.get_node(id)?;
+            let new_node = match node {
+                Node::Relational(rel) => Node::Relational(self.clone_relational(rel, id)?),
+                Node::Expression(expr) => Node::Expression(self.clone_expression(expr)?),
+                _ => {
+                    return Err(SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "clone: expected relational or expression on id: {id}"
+                        )),
+                    ))
+                }
+            };
+            let new_id = plan.nodes.push(new_node);
+            let old = self.old_new.insert(id, new_id);
+            if let Some(old_new_id) = old {
+                return Err(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!(
+                        "clone: node with id {id} was mapped twice: {old_new_id}, {new_id}"
+                    )),
+                ));
+            }
+        }
+
+        self.replace_backward_refs(plan)?;
+
+        let new_top_id = self
+            .old_new
+            .get(&top_id)
+            .ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!("invalid subtree traversal with top: {top_id}")),
+                )
+            })
+            .copied()?;
+        Ok(new_top_id)
+    }
+
+    /// Clones the given subtree to the plan arena and returns new `top_id`.
+    /// Assumes that all parameters are bound and there are no parameters
+    /// in the subtree.
+    ///
+    /// # Errors
+    /// - invalid plan subtree, e.g some node is met twice in the plan
+    /// - parameters/ddl/acl nodes are found in subtree
+    pub fn clone_subtree(
+        plan: &mut Plan,
+        top_id: usize,
+        subtree_capacity: usize,
+    ) -> Result<usize, SbroadError> {
+        let mut helper = Self::new(subtree_capacity);
+        helper.clone(plan, top_id, subtree_capacity)
     }
 }
 

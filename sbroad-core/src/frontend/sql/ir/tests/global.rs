@@ -6,6 +6,7 @@ use crate::ir::distribution::Distribution;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::tree::traversal::{FilterFn, PostOrderWithFilter, REL_CAPACITY};
+use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
 
@@ -19,11 +20,6 @@ fn front_sql_check_global_tbl_support() {
 
     let metadata = &RouterConfigurationMock::new();
 
-    check_error(
-        r#"select "a" from "global_t" except select * from (select "a" as "oa" from "t3")"#,
-        metadata,
-        global_tbl_err!("Except"),
-    );
     check_error(
         r#"insert into "global_t" values (1, 1)"#,
         metadata,
@@ -1137,4 +1133,245 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 
     check_union_dist(&plan, &[DistMock::Global]);
+}
+
+#[test]
+fn check_plan_except_global_vs_segment() {
+    let input = r#"
+    select "a", "b" from "global_t"
+    where "a" = ?
+    except
+    select "e", "f" from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(1)]);
+
+    // TODO: the subtree for left except child is reused
+    // from another motion, show this in explain
+    let expected_explain = String::from(
+        r#"except
+    projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+        selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
+            scan "global_t"
+    motion [policy: full]
+        intersect
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
+                scan "t2"
+            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
+                    scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_global_vs_any() {
+    let input = r#"
+    select "a" from "global_t"
+    except
+    select "e" from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    // TODO: the subtree for left except child is reused
+    // from another motion, show this in explain
+    let expected_explain = String::from(
+        r#"except
+    projection ("global_t"."a"::integer -> "a")
+        scan "global_t"
+    motion [policy: full]
+        intersect
+            projection ("t2"."e"::unsigned -> "e")
+                scan "t2"
+            projection ("global_t"."a"::integer -> "a")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_global_vs_global() {
+    let input = r#"
+    select "a" from "global_t"
+    except
+    select "b" from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("global_t"."a"::integer -> "a")
+        scan "global_t"
+    projection ("global_t"."b"::integer -> "b")
+        scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_global_vs_single() {
+    let input = r#"
+    select "a" from "global_t"
+    except
+    select sum("e") from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("global_t"."a"::integer -> "a")
+        scan "global_t"
+    projection (sum(("sum_23"::decimal))::decimal -> "COL_1")
+        motion [policy: full]
+            scan
+                projection (sum(("t2"."e"::unsigned))::decimal -> "sum_23")
+                    scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_single_vs_global() {
+    let input = r#"
+    select sum("e") from "t2"
+    except
+    select "a" from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection (sum(("sum_13"::decimal))::decimal -> "COL_1")
+        motion [policy: full]
+            scan
+                projection (sum(("t2"."e"::unsigned))::decimal -> "sum_13")
+                    scan "t2"
+    projection ("global_t"."a"::integer -> "a")
+        scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_segment_vs_global() {
+    let input = r#"
+    select "e", "f" from "t2"
+    except
+    select "a", "b" from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f")
+        scan "t2"
+    projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+        scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_any_vs_global() {
+    let input = r#"
+    select "e" from "t2"
+    except
+    select "b" from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("t2"."e"::unsigned -> "e")
+        scan "t2"
+    projection ("global_t"."b"::integer -> "b")
+        scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn check_plan_except_non_trivial_global_subtree_vs_any() {
+    // check that plan is correctly built when left global
+    // subtree is something more difficult than a scan of
+    // a global table
+    let input = r#"
+    select "b" from "global_t"
+    left join (select "b" as b from "global_t")
+    on "a" = b
+    where "a" = 1
+    except
+    select "e" from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("global_t"."b"::integer -> "b")
+        selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
+            left join on ROW("global_t"."a"::integer) = ROW("B"::integer)
+                scan "global_t"
+                    projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                        scan "global_t"
+                scan
+                    projection ("global_t"."b"::integer -> "B")
+                        scan "global_t"
+    motion [policy: full]
+        intersect
+            projection ("t2"."e"::unsigned -> "e")
+                scan "t2"
+            projection ("global_t"."b"::integer -> "b")
+                selection ROW("global_t"."a"::integer) = ROW(1::unsigned)
+                    left join on ROW("global_t"."a"::integer) = ROW("B"::integer)
+                        scan "global_t"
+                            projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
+                                scan "global_t"
+                        scan
+                            projection ("global_t"."b"::integer -> "B")
+                                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
 }

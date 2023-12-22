@@ -50,7 +50,7 @@ impl Plan {
         }
 
         let capacity = self.next_id();
-        let mut tree = PostOrder::with_capacity(|node| self.subtree_iter(node), capacity);
+        let mut tree = PostOrder::with_capacity(|node| self.subtree_iter(node, false), capacity);
         let top_id = self.get_top()?;
         tree.populate_nodes(top_id);
         let nodes = tree.take_nodes();

@@ -495,6 +495,41 @@ where
                         ));
                     }
                 }
+                Relational::Intersect {
+                    children, output, ..
+                } => {
+                    if let (Some(first_id), Some(second_id), None) =
+                        (children.first(), children.get(1), children.get(2))
+                    {
+                        let first_rel =
+                            self.exec_plan.get_ir_plan().get_relation_node(*first_id)?;
+                        let second_rel =
+                            self.exec_plan.get_ir_plan().get_relation_node(*second_id)?;
+                        let first_buckets =
+                            self.bucket_map.get(&first_rel.output()).ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the first intersect child from the bucket map.".to_string(),
+                                )
+                            })?;
+                        let second_buckets =
+                            self.bucket_map.get(&second_rel.output()).ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Retrieve,
+                                    Some(Entity::Buckets),
+                                    "of the second intersect child from the bucket map."
+                                        .to_string(),
+                                )
+                            })?;
+                        let buckets = first_buckets.disjunct(second_buckets)?;
+                        self.bucket_map.insert(*output, buckets);
+                    } else {
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "current node should have exactly two children".to_string(),
+                        ));
+                    }
+                }
                 Relational::Selection {
                     children,
                     filter,

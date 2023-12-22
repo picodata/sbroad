@@ -311,6 +311,7 @@ impl ExecutionPlan {
                             Node::Relational(rel) => match rel {
                                 Relational::Except { .. } => sql.push_str("EXCEPT"),
                                 Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
+                                Relational::Intersect { .. } => sql.push_str("INTERSECT"),
                                 Relational::Having { .. } => sql.push_str("HAVING"),
                                 Relational::Delete { .. } => {
                                     return Err(SbroadError::Unsupported(
