@@ -22,7 +22,7 @@ g.test_drop_user = function()
 
     local _, err = api:call(
             "sbroad.execute",
-            { [[ DROP USER user ]], {} }
+            { [[ DROP USER user_name ]], {} }
     )
     t.assert_equals(
             string.format("%s", err),

@@ -405,18 +405,37 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
-// Check double angle quotation marks in the strings
 #[test]
-fn front_sql20() {
+fn front_sql_check_arbitrary_utf_in_single_quote_strings() {
     let input = r#"SELECT "identification_number" FROM "hash_testing"
-        WHERE "product_code" = '«123»'"#;
+        WHERE "product_code" = '«123»§#*&%@/// / // \\ ƵǖḘỺʥ ͑ ͑  ͕ΆΨѮښ ۞ܤ'"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
         r#"projection ("hash_testing"."identification_number"::integer -> "identification_number")
-    selection ROW("hash_testing"."product_code"::string) = ROW('«123»'::string)
+    selection ROW("hash_testing"."product_code"::string) = ROW('«123»§#*&%@/// / // \\ ƵǖḘỺʥ ͑ ͑  ͕ΆΨѮښ ۞ܤ'::string)
         scan "hash_testing"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_check_arbitraty_utf_in_identifiers() {
+    let input = r#"SELECT "id" "from", "id" as "select", "id"
+                               "123»*&%ښ۞@Ƶǖselect.""''\\"
+                                , "id" aц1&@$//Ƶǖ%^&*«»§*&%ښ۞@Ƶǖ FROM "test_space" *&%ښ۞@Ƶǖ"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("*&%ښ۞@ƵǕ"."id"::unsigned -> "from", "*&%ښ۞@ƵǕ"."id"::unsigned -> "select", "*&%ښ۞@ƵǕ"."id"::unsigned -> "123»*&%ښ۞@Ƶǖselect.""''\\", "*&%ښ۞@ƵǕ"."id"::unsigned -> "AЦ1&@$//ƵǕ%^&*«»§*&%ښ۞@ƵǕ")
+    scan "test_space" -> "*&%ښ۞@ƵǕ"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -522,7 +541,7 @@ vtable_max_rows = 5000
 #[test]
 fn track_shard_col_pos() {
     let input = r#"
-    select "e", "bucket_id", "f" 
+    select "e", "bucket_id", "f"
     from "t2"
     where "e" + "f" = 3
     "#;
@@ -618,7 +637,7 @@ fn track_shard_col_pos() {
 fn front_sql_join_on_bucket_id1() {
     let input = r#"select * from "t2" join (
         select "bucket_id" from "test_space" where "id" = 1
-    ) as t_mv 
+    ) as t_mv
     on t_mv."bucket_id" = "t2"."bucket_id";
     "#;
 
@@ -647,7 +666,7 @@ vtable_max_rows = 5000
 fn front_sql_join_on_bucket_id2() {
     let input = r#"select * from "t2" join (
         select "bucket_id" from "test_space" where "id" = 1
-    ) as t_mv 
+    ) as t_mv
     on t_mv."bucket_id" = "t2"."bucket_id" or "t2"."e" = "t2"."f";
     "#;
 
@@ -676,7 +695,7 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_groupby_on_bucket_id() {
     let input = r#"
-    select b, count(*) from (select "bucket_id" as b from "t2") as t 
+    select b, count(*) from (select "bucket_id" as b from "t2") as t
     group by b
     "#;
 
@@ -700,7 +719,7 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_sq_on_bucket_id() {
     let input = r#"
-    select b, e from (select "bucket_id" as b, "e" as e from "t2") as t 
+    select b, e from (select "bucket_id" as b, "e" as e from "t2") as t
     where (b, e) in (select "bucket_id", "id" from "test_space")
     "#;
 
