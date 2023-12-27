@@ -61,6 +61,10 @@ start:
 stop:
 	cd $(TEST_APP) && cartridge stop &&  while  cartridge status 2>&1 | grep "RUNNING" -q; do sleep 1; done
 
+stress_start:
+	cd $(TEST_APP) && cartridge start -d
+	$(MAKE) setup
+
 stress_init:
 	@if [ -z "${test}" ]; then echo "test variable must be set"; exit 1; fi
 	tarantool $(CARTRIDGE_MODULE)/stress-test/$(test)/init.lua 1000
