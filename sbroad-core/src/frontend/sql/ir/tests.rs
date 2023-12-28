@@ -2816,3 +2816,5 @@ mod global;
 #[cfg(test)]
 mod params;
 mod single;
+#[cfg(test)]
+mod update;

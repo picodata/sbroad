@@ -1092,6 +1092,7 @@ impl Plan {
             strategy: update_kind,
         };
         let update_id = self.nodes.push(Node::Relational(update_node));
+        self.replace_parent_in_subtree(upd_output, None, Some(update_id))?;
 
         Ok(update_id)
     }

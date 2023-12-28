@@ -1652,9 +1652,10 @@ impl Ast for AbstractSyntaxTree {
                             ));
                         }
                         let col = self.nodes.get_node(*ast_column_id)?;
-                        let col_name = parse_string_value_node(self, *ast_column_id)?;
+                        let col_name =
+                            normalize_name_from_sql(parse_string_value_node(self, *ast_column_id)?);
                         if let Type::ColumnName = col.rule {
-                            match names.get(col_name) {
+                            match names.get(col_name.as_str()) {
                                 Some((&ColumnRole::User, pos)) => {
                                     if pk_positions.contains(pos) {
                                         return Err(SbroadError::Invalid(
