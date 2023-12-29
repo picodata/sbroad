@@ -10,16 +10,15 @@ use std::{
 };
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::executor::engine::{
-    helpers::{normalize_name_for_space_api, normalize_name_from_sql},
-    Metadata,
-};
+use crate::executor::engine::helpers::{normalize_name_for_space_api, normalize_name_from_sql};
+use crate::executor::engine::Metadata;
 use crate::frontend::sql::ast::{
     AbstractSyntaxTree, ParseNode, ParseNodes, ParseTree, Rule, StackParseNode, Type,
 };
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
+use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{ColumnPositionMap, Expression, ExpressionId};
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
@@ -116,6 +115,81 @@ fn parse_string_value_node(ast: &AbstractSyntaxTree, node_id: usize) -> Result<&
         .as_ref()
         .expect("Rule node must contain string value.");
     Ok(string_value.as_str())
+}
+
+fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    if node.rule != Type::CreateProc {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("create procedure".into()),
+        ));
+    }
+    let mut proc_name: String = String::new();
+    let mut params: Vec<ParamDef> = Vec::new();
+    let language = Language::SQL;
+    let mut body: String = String::new();
+    let mut timeout = get_default_timeout();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::NewProc => {
+                proc_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+            }
+            Type::ProcParams => {
+                let params_node = ast.nodes.get_node(*child_id)?;
+                params.reserve(params_node.children.len());
+                for param_id in &params_node.children {
+                    let param_def_node = ast.nodes.get_node(*param_id)?;
+                    match param_def_node.rule {
+                        Type::ProcParamDef => {
+                            let type_id = *param_def_node.children.first().expect(
+                                "ProcParamDef node must contain exactly one child (type node).",
+                            );
+                            assert!(param_def_node.children.get(1).is_none());
+                            let type_node = ast.nodes.get_node(type_id)?;
+                            let data_type = match type_node.rule {
+                                Type::TypeBool => RelationType::Boolean,
+                                Type::TypeDecimal => RelationType::Decimal,
+                                Type::TypeDouble => RelationType::Double,
+                                Type::TypeInt => RelationType::Integer,
+                                Type::TypeNumber => RelationType::Number,
+                                Type::TypeScalar => RelationType::Scalar,
+                                Type::TypeString | Type::TypeText | Type::TypeVarchar => {
+                                    RelationType::String
+                                }
+                                Type::TypeUnsigned => RelationType::Unsigned,
+                                _ => panic!("Unexpected node: {type_node:?}"),
+                            };
+                            params.push(ParamDef { data_type });
+                        }
+                        _ => panic!("Unexpected node: {param_def_node:?}"),
+                    }
+                }
+            }
+            Type::ProcLanguage => {
+                // We don't need to parse language node, because we support only SQL.
+            }
+            Type::ProcBody => {
+                body = child_node
+                    .value
+                    .as_ref()
+                    .expect("procedure body must not be empty")
+                    .clone();
+            }
+            Type::Timeout => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            _ => panic!("Unexpected node: {child_node:?}"),
+        }
+    }
+    let create_proc = Ddl::CreateProc {
+        name: proc_name,
+        params,
+        language,
+        body,
+        timeout,
+    };
+    Ok(create_proc)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -577,12 +651,23 @@ impl Ast for AbstractSyntaxTree {
                 Some(String::from(stack_node.pair.as_str())),
             )?);
 
+            // Save procedure body (a special case).
+            if stack_node.pair.as_rule() == Rule::ProcBody {
+                let span = stack_node.pair.as_span();
+                let body = &query[span.start()..span.end()];
+                ast.nodes.update_value(node, Some(String::from(body)))?;
+            }
+
             // Update parent's node children list
             ast.nodes.add_child(stack_node.parent, node)?;
 
-            // Clean parent values (only leafs should contain data)
+            // Clean parent values (only leafs and special nodes like
+            // procedure body should contain data)
             if let Some(parent) = stack_node.parent {
-                ast.nodes.update_value(parent, None)?;
+                let parent_node = ast.nodes.get_node(parent)?;
+                if parent_node.rule != Type::ProcBody {
+                    ast.nodes.update_value(parent, None)?;
+                }
             }
 
             for parse_child in stack_node.pair.into_inner() {
@@ -1925,6 +2010,11 @@ impl Ast for AbstractSyntaxTree {
                         map.get(*node.children.first().expect("no children for Query rule"))?;
                     map.add(id, child_id);
                 }
+                Type::CreateProc => {
+                    let create_proc = parse_create_proc(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(create_proc));
+                    map.add(id, plan_id);
+                }
                 Type::CreateTable => {
                     let create_sharded_table = parse_create_table(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(create_sharded_table));
@@ -2193,6 +2283,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Md5
                 | Type::Memtx
                 | Type::Multiply
+                | Type::NewProc
                 | Type::NewTable
                 | Type::NotEq
                 | Type::Name
@@ -2217,9 +2308,14 @@ impl Ast for AbstractSyntaxTree {
                 | Type::PrivilegeSession
                 | Type::PrivilegeUsage
                 | Type::PrivilegeWrite
+                | Type::ProcBody
+                | Type::ProcParamDef
+                | Type::ProcParams
+                | Type::ProcLanguage
                 | Type::ScanName
                 | Type::Select
                 | Type::Sharding
+                | Type::SQL
                 | Type::ExceptContinuation
                 | Type::UnionAllContinuation
                 | Type::ShardingColumn

@@ -47,7 +47,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeUsage = { ^"usage" }
             PrivilegeWrite = { ^"write" }
 
-DDL = _{ CreateTable | DropTable }
+DDL = _{ CreateTable | DropTable | CreateProc }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
@@ -76,6 +76,18 @@ DDL = _{ CreateTable | DropTable }
 
     DropTable = { ^"drop" ~ ^"table" ~ DeletedTable ~ Option? }
     	DeletedTable = @{ Table }
+
+    CreateProc = {
+        ^"create" ~ ^"procedure" ~ NewProc ~
+        "(" ~ ProcParams? ~ ")" ~ (^"language" ~ ProcLanguage)? ~
+        ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
+    }
+        NewProc = @{ Name }
+        ProcParams = { ProcParamDef ~ ("," ~ ProcParamDef)* }
+        ProcParamDef = { Type }
+        ProcLanguage = { SQL }
+        SQL = { ^"sql" }
+        ProcBody = { (Insert | Update | Delete) }
 
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }

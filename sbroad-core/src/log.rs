@@ -87,8 +87,9 @@ pub fn tarantool_error(message: &str) -> c_int {
     #[cfg(not(feature = "mock"))]
     {
         use tarantool::error::TarantoolErrorCode;
+        use tarantool::set_error;
 
-        return tarantool::set_error!(TarantoolErrorCode::ProcC, "Sbroad Error: {}", message);
+        set_error!(TarantoolErrorCode::ProcC, "Sbroad Error: {}", message);
     }
     -1
 }

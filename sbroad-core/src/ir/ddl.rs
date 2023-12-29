@@ -23,6 +23,17 @@ impl Default for ColumnDef {
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct ParamDef {
+    pub data_type: Type,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum Language {
+    #[default]
+    SQL,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Ddl {
     CreateTable {
@@ -39,6 +50,13 @@ pub enum Ddl {
         name: String,
         timeout: Decimal,
     },
+    CreateProc {
+        name: String,
+        params: Vec<ParamDef>,
+        body: String,
+        language: Language,
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -48,7 +66,9 @@ impl Ddl {
     /// - timeout parsing error
     pub fn timeout(&self) -> Result<f64, SbroadError> {
         match self {
-            Ddl::CreateTable { ref timeout, .. } | Ddl::DropTable { ref timeout, .. } => timeout,
+            Ddl::CreateTable { ref timeout, .. }
+            | Ddl::DropTable { ref timeout, .. }
+            | Ddl::CreateProc { ref timeout, .. } => timeout,
         }
         .to_string()
         .parse()

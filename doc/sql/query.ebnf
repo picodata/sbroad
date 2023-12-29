@@ -2,7 +2,7 @@ statement   ::= explain | ddl | dml | dql | acl
 explain     ::= 'EXPLAIN' ( dml | dql )
 dql         ::= (select | select union all select | select (except 'DISTINCT'? ) select ) options?
 dml         ::= (delete | insert | update) options?
-ddl         ::= create_table | drop_table
+ddl         ::= create_table | drop_table | create_procedure
 acl         ::= drop_role | drop_user | create_role | create_user | alter_user | grant_privilege | revoke_privilege
 revoke_privilege      ::= 'REVOKE' privilege 'FROM' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 grant_privilege       ::= 'GRANT' privilege 'TO' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
@@ -13,6 +13,9 @@ privilege ::= (('CREATE' | 'ALTER' | 'DROP') 'USER')
               | (('READ' | 'WRITE' | 'CREATE' | 'ALTER' | 'DROP') 'TABLE')
               | (('ALTER' | 'DROP' | 'READ' | 'WRITE') 'ON' 'TABLE'? table)
               | role
+create_procedure ::= 'CREATE PROCEDURE' procedure '(' type (',' type)* ')'
+                     ('language' 'SQL')? (('as' '$$' body '$$') | ('begin' 'atomic' body 'end'))
+body         ::= (insert | update | delete)
 create_role  ::= 'CREATE ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_table ::= 'CREATE TABLE' table '(' column (',' column)* ',' primary_key ')' ('USING' ('MEMTX' | 'VINYL'))? distribution ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 create_user  ::= 'CREATE USER' user 'WITH'? 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
