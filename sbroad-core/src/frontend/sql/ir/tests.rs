@@ -2812,9 +2812,13 @@ fn assert_explain_eq(query: &str, params: Vec<Value>, expected: &str) {
     assert_eq!(expected, actual);
 }
 
+#[cfg(test)]
 mod global;
 #[cfg(test)]
+mod insert;
+#[cfg(test)]
 mod params;
+#[cfg(test)]
 mod single;
 #[cfg(test)]
 mod update;

@@ -299,7 +299,7 @@ fn insert() {
 
     assert_eq!(
         SbroadError::NotFound(Entity::Table, "t4 among plan relations".into()),
-        plan.add_insert("t4", scan_t1_id, &["a"], ConflictStrategy::default())
+        plan.add_insert("t4", scan_t1_id, &["a".into()], ConflictStrategy::default())
             .unwrap_err()
     );
 
@@ -312,7 +312,7 @@ fn insert() {
         plan.add_insert(
             "t2",
             scan_t1_id,
-            &["a", "b", "c"],
+            &["a".into(), "b".into(), "c".into()],
             ConflictStrategy::default()
         )
         .unwrap_err()
@@ -322,11 +322,16 @@ fn insert() {
         SbroadError::UnexpectedNumberOfValues(
             "invalid number of values: 1. Table t2 expects 2 column(s).".into()
         ),
-        plan.add_insert("t2", scan_t1_id, &["a", "b"], ConflictStrategy::default())
-            .unwrap_err()
+        plan.add_insert(
+            "t2",
+            scan_t1_id,
+            &["a".into(), "b".into()],
+            ConflictStrategy::default()
+        )
+        .unwrap_err()
     );
 
-    plan.add_insert("t1", scan_t1_id, &["a"], ConflictStrategy::default())
+    plan.add_insert("t1", scan_t1_id, &["a".into()], ConflictStrategy::default())
         .unwrap();
 }
 

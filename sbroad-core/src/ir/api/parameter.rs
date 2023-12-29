@@ -181,7 +181,6 @@ impl Plan {
                         }
                     }
                     Expression::Reference { .. } => {
-                        println!("expr: {expr:?}, id: {id}");
                         // Remember to recalculate type.
                         new_types.insert(id, expr.recalculate_type(self)?);
                     }

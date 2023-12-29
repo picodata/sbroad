@@ -1843,12 +1843,14 @@ impl Ast for AbstractSyntaxTree {
                     let ast_child = self.nodes.get_node(*ast_child_id)?;
                     let plan_insert_id = if let Type::TargetColumns = ast_child.rule {
                         // insert into t (a, b, c) ...
-                        let mut selected_col_names: Vec<&str> =
+                        let mut selected_col_names: Vec<String> =
                             Vec::with_capacity(ast_child.children.len());
                         for col_id in &ast_child.children {
                             let col = self.nodes.get_node(*col_id)?;
                             if let Type::ColumnName = col.rule {
-                                selected_col_names.push(parse_string_value_node(self, *col_id)?);
+                                selected_col_names.push(normalize_name_from_sql(
+                                    parse_string_value_node(self, *col_id)?,
+                                ));
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Type,
@@ -1867,9 +1869,7 @@ impl Ast for AbstractSyntaxTree {
                             if let ColumnRole::Sharding = column.get_role() {
                                 continue;
                             }
-                            if !column.is_nullable
-                                && !selected_col_names.contains(&column.name.as_str())
-                            {
+                            if !column.is_nullable && !selected_col_names.contains(&column.name) {
                                 return Err(SbroadError::Invalid(
                                     Entity::Column,
                                     Some(format!(

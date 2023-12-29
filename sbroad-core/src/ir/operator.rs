@@ -1105,7 +1105,7 @@ impl Plan {
         &mut self,
         relation: &str,
         child: usize,
-        columns: &[&str],
+        columns: &[String],
         conflict_strategy: ConflictStrategy,
     ) -> Result<usize, SbroadError> {
         let rel = self.relations.get(relation).ok_or_else(|| {
@@ -1126,7 +1126,7 @@ impl Plan {
             });
             let mut cols: Vec<usize> = Vec::with_capacity(names.len());
             for name in columns {
-                match names.get(name) {
+                match names.get(name.as_str()) {
                     Some((&ColumnRole::User, pos)) => cols.push(*pos),
                     Some((&ColumnRole::Sharding, _)) => {
                         return Err(SbroadError::FailedTo(
