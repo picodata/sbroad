@@ -1,43 +1,43 @@
-STATEMENT   ::= EXPLAIN | DDL | DML | DQL | ACL
-EXPLAIN     ::= 'EXPLAIN' ( DML | DQL )
-DQL         ::= (SELECT | SELECT UNION ALL SELECT | SELECT (EXCEPT 'DISTINCT'? ) SELECT ) Options?
-DML         ::= (DELETE | INSERT | UPDATE) Options?
-DDL         ::= CreateTable | DropTable
-ACL         ::= DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege
-RevokePrivilege      ::= 'revoke' Privilege 'from' (role | user) ('option' '(' ('timeout' '=' DOUBLE)')')?
-GrantPrivilege       ::= 'grant' Privilege 'to' (role | user) ('option' '(' ('timeout' '=' DOUBLE)')')?
-Privilege ::= (('create' | 'alter' | 'drop') 'user')
-              | (('alter' | 'drop') 'on' 'user' (role | user))
-              | (('create' | 'drop') 'role')
-              | ('drop' 'on' 'role' (role | user))
-              | (('read' | 'write' | 'create' | 'alter' | 'drop') 'table')
-              | (('alter' | 'drop' | 'read' | 'write') 'on' 'table'? table)
+statement   ::= explain | ddl | dml | dql | acl
+explain     ::= 'EXPLAIN' ( dml | dql )
+dql         ::= (select | select union all select | select (except 'DISTINCT'? ) select ) options?
+dml         ::= (delete | insert | update) options?
+ddl         ::= create_table | drop_table
+acl         ::= drop_role | drop_user | create_role | create_user | alter_user | grant_privilege | revoke_privilege
+revoke_privilege      ::= 'REVOKE' privilege 'FROM' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+grant_privilege       ::= 'GRANT' privilege 'TO' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+privilege ::= (('CREATE' | 'ALTER' | 'DROP') 'USER')
+              | (('ALTER' | 'DROP') 'ON' 'USER' (role | user))
+              | (('CREATE' | 'DROP') 'ROLE')
+              | ('DROP' 'ON' 'ROLE' (role | user))
+              | (('READ' | 'WRITE' | 'CREATE' | 'ALTER' | 'DROP') 'TABLE')
+              | (('ALTER' | 'DROP' | 'READ' | 'WRITE') 'ON' 'TABLE'? table)
               | role
-CreateRole  ::= 'create role' role ('option' '(' ('timeout' '=' DOUBLE)')')?
-CreateTable ::= 'create table' table '(' Column (',' Column)* ',' PrimaryKey ')' ('using' ('memtx' | 'vinyl'))? Distribution ('option' '(' ('timeout' '=' DOUBLE)')')?
-CreateUser  ::= 'create user' user 'with'? 'password' "'" password "'" ('using' ('chap-sha1' | 'ldap' | 'md5'))? ('option' '(' ('timeout' '=' DOUBLE)')')?
-AlterUser   ::= 'alter user' user 'with'? ('login' | 'nologin' | 'password' "'" password "'" ('using' ('chap-sha1' | 'ldap' | 'md5'))?) ('option' '(' ('timeout' '=' DOUBLE)')')?
-Column      ::= name ('Bool' | 'Decimal' | 'Double' | 'Int' | 'Number' | 'Scalar' | 'String' | 'Text' | 'Unsigned' | 'Varchar') (('not'?)  'null')?
-PrimaryKey  ::= 'primary key' '(' name (',' name)* ')'
-Distribution ::= 'global' | ('distributed by' '(' name (',' name)*  ')')
-DropTable   ::= 'drop table' table ('option' '(' ('timeout' '=' DOUBLE)')')?
-DropRole    ::= 'drop role' role ('option' '(' ('timeout' '=' DOUBLE)')')?
-DropUser    ::= 'drop user' user ('option' '(' ('timeout' '=' DOUBLE)')')?
-Options     ::= 'option' '(' ('vtable_max_rows' '=' UNSIGNED)? (',' 'sql_vdbe_max_steps' '=' UNSIGNED)? ')'
-SELECT      ::= 'SELECT' ((alias (',' alias)*) ) 'FROM' (table ('AS' name)? | '(' (SELECT | VALUES) ')' ('AS' name)?) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (SELECT | VALUES) ')' ('AS' name)?))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
-VALUES      ::= 'VALUES' '(' row (',' row)* ')'
-SUBQUERY    ::= '(' (SELECT | VALUES) ')'
+create_role  ::= 'CREATE ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+create_table ::= 'CREATE TABLE' table '(' column (',' column)* ',' primary_key ')' ('USING' ('MEMTX' | 'VINYL'))? distribution ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+create_user  ::= 'CREATE USER' user 'WITH'? 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+alter_user   ::= 'ALTER USER' user 'WITH'? ('LOGIN' | 'NOLOGIN' | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+column       ::= name ('BOOL' | 'DECIMAL' | 'DOUBLE' | 'INT' | 'NUMBER' | 'SCALAR' | 'STRING' | 'TEXT' | 'UNSIGNED' | 'VARCHAR') (('NOT'?)  'NULL')?
+primary_key  ::= 'PRIMARY KEY' '(' name (',' name)* ')'
+distribution ::= 'GLOBAL' | ('DISTRIBUTED BY' '(' name (',' name)*  ')')
+drop_table   ::= 'DROP TABLE' table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_role    ::= 'DROP ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_user    ::= 'DROP USER' user ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+options     ::= 'OPTION' '(' ('VTABLE_MAX_ROWS' '=' unsigned)? (',' 'SQL_VDBE_MAX_STEPS' '=' unsigned)? ')'
+select      ::= 'SELECT' ((alias (',' alias)*) ) 'FROM' (table ('AS' name)? | '(' (select | values) ')' ('AS' name)?) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (select | values) ')' ('AS' name)?))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
+values      ::= 'VALUES' '(' row (',' row)* ')'
+subquery    ::= '(' (select | values) ')'
 row         ::= '(' (value (',' value)*) ')'
-alias      ::= '*' | (table '.')? name ('AS' name)? |  table '.' '*' | expression ('AS' name)?
+alias       ::= '*' | (table '.')? name ('AS' name)? |  table '.' '*' | expression ('AS' name)?
 expression  ::= column_name
                | 'CAST' '(' expression 'AS' type ')'
                | expression ('IS' ('NOT')? 'NULL')
                | expression ('OR' | 'AND' | '*' | '/' | '+' | '-' | '=' | '>' | '<' | '>=' | '<=' | ('<>' | '!=')) expression
                | expression ('NOT')? 'BETWEEN' expression 'AND' expression
-               | ('NOT')? 'EXISTS' SUBQUERY
-               | expression ('NOT')? 'IN' SUBQUERY
+               | ('NOT')? 'EXISTS' subquery
+               | expression ('NOT')? 'IN' subquery
                | reference
-               | SUBQUERY
+               | subquery
                | value
                | 'NOT' expression
 reference   ::= (table '.')? name
@@ -45,11 +45,11 @@ value       ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
                 | '?'
-                | INTEGER
-                | UNSIGNED
-                | DOUBLE
-                | DECIMAL
-                | STRING
+                | integer
+                | unsigned
+                | double
+                | decimal
+                | string
                 | row
 type        ::= 'ANY'
                 | 'BOOL'
@@ -64,7 +64,6 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
-DELETE      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
-INSERT      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? (VALUES row | SELECT )  ('on conflict' 'do'  ('nothing' | 'replace' | 'fail'))?
-UPDATE      ::= 'UPDATE' table 'set' ( name '=' ((table '.')? name) (',' name '=' (table '.')? name)* ) ( 'FROM' '(' SELECT ')' ( 'AS' name )? )? ( 'WHERE' expression )?
-
+delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
+insert      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? (values row | select )  ('ON CONFLICT' 'DO'  ('NOTHING' | 'REPLACE' | 'FAIL'))?
+update      ::= 'UPDATE' table 'SET' ( name '=' ((table '.')? name) (',' name '=' (table '.')? name)* ) ( 'FROM' '(' select ')' ( 'AS' name )? )? ( 'WHERE' expression )?
