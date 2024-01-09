@@ -345,7 +345,7 @@ fn insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_1")])]
+    motion [policy: segment([ref("COLUMN_1")])]
         values
             value row (data=ROW(1::unsigned, '123'::string))
 execution options:
@@ -369,7 +369,7 @@ fn multiply_insert_plan() {
     let mut actual_explain = String::new();
     actual_explain.push_str(
         r#"insert "test_space" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_5")])]
+    motion [policy: segment([ref("COLUMN_5")])]
         values
             value row (data=ROW(1::unsigned, '123'::string))
             value row (data=ROW(2::unsigned, '456'::string))

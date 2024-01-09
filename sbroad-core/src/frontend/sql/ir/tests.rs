@@ -271,7 +271,7 @@ fn front_sql10() {
 
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned, 3::unsigned, 4::unsigned))
 execution options:
@@ -291,7 +291,7 @@ fn front_sql11() {
 
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: local segment([value(NULL), ref("COLUMN_1")])]
+    motion [policy: segment([value(NULL), ref("COLUMN_1")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
 execution options:
@@ -2203,7 +2203,7 @@ fn front_sql_insert_on_conflict() {
     let mut plan = sql_to_optimized_ir(input, vec![]);
     let mut expected_explain = String::from(
         r#"insert "t" on conflict: nothing
-    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 1::unsigned, 1::unsigned, 1::unsigned))
 execution options:
@@ -2217,7 +2217,7 @@ vtable_max_rows = 5000
     plan = sql_to_optimized_ir(input, vec![]);
     expected_explain = String::from(
         r#"insert "t" on conflict: replace
-    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 1::unsigned, 1::unsigned, 1::unsigned))
 execution options:
@@ -2339,7 +2339,7 @@ fn front_sql_insert_6() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_5"), ref("COLUMN_6")])]
+    motion [policy: segment([ref("COLUMN_5"), ref("COLUMN_6")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
             value row (data=ROW(1::unsigned, 2::unsigned))
@@ -2394,7 +2394,7 @@ fn front_sql_insert_9() {
     let plan = sql_to_optimized_ir(input, vec![Value::from(1_u64), Value::from(2_u64)]);
     let expected_explain = String::from(
         r#"insert "t" on conflict: fail
-    motion [policy: local segment([ref("COLUMN_1"), ref("COLUMN_2")])]
+    motion [policy: segment([ref("COLUMN_1"), ref("COLUMN_2")])]
         values
             value row (data=ROW(1::unsigned, 2::unsigned))
 execution options:
@@ -2698,12 +2698,11 @@ fn front_sql_not_exists() {
             values
                 value row (data=ROW(1::unsigned))
 subquery $0:
-motion [policy: full]
-            scan
-                projection ("COLUMN_2"::unsigned -> "COLUMN_2")
-                    scan
-                        values
-                            value row (data=ROW(1::unsigned))
+scan
+            projection ("COLUMN_2"::unsigned -> "COLUMN_2")
+                scan
+                    values
+                        value row (data=ROW(1::unsigned))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -2761,13 +2760,12 @@ fn front_sql_not_complex_query() {
                     projection (not not ROW("test_space"."id"::unsigned) -> "nnid")
                         scan "test_space"
 subquery $0:
-motion [policy: full]
-            scan
-                projection ("COLUMN_1"::unsigned -> "COLUMN_1")
-                    selection not ROW(true::boolean) = ROW(true::boolean)
-                        scan
-                            values
-                                value row (data=ROW(1::unsigned))
+scan
+            projection ("COLUMN_1"::unsigned -> "COLUMN_1")
+                selection not ROW(true::boolean) = ROW(true::boolean)
+                    scan
+                        values
+                            value row (data=ROW(1::unsigned))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

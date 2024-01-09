@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 
 use crate::ir::relation::{Column, SpaceEngine, Table, Type};
 use crate::ir::value::Value;
-use crate::ir::{Plan, SbroadError};
+use crate::ir::Plan;
 
 #[test]
 fn row_duplicate_column_names() {

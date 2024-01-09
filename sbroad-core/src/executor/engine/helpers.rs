@@ -697,10 +697,12 @@ pub(crate) fn materialize_values(
     // to constants, we have to rewrite this code (need to check that there are
     // no subqueries before node replacement).
     let child_id = plan.get_motion_child(motion_node_id)?;
-    if let Relational::Values { .. } = plan.get_ir_plan().get_relation_node(child_id)? {
-    } else {
+    if !matches!(
+        plan.get_ir_plan().get_relation_node(child_id)?,
+        Relational::Values { .. }
+    ) {
         return Ok(None);
-    };
+    }
     let child_node_ref = plan.get_mut_ir_plan().get_mut_node(child_id)?;
     let child_node = std::mem::replace(child_node_ref, Node::Parameter);
     if let Node::Relational(Relational::Values {
@@ -746,11 +748,7 @@ pub(crate) fn materialize_values(
                 }
                 let data = *data;
                 // Check that all the values are constants.
-                let columns_len = plan
-                    .get_ir_plan()
-                    .get_expression_node(data)?
-                    .get_row_list()?
-                    .len();
+                let columns_len = plan.get_ir_plan().get_row_list(data)?.len();
                 let mut row: VTableTuple = Vec::with_capacity(columns_len);
                 for idx in 0..columns_len {
                     let column_id =

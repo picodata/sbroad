@@ -1718,16 +1718,6 @@ impl Plan {
                 }
             }
         }
-        if let Relational::Values { .. } = self.get_relation_node(child_id)? {
-            if let Distribution::Any = child_dist {
-                map.add_child(
-                    child_id,
-                    MotionPolicy::LocalSegment(motion_key),
-                    Program::default(),
-                );
-                return Ok(map);
-            }
-        }
 
         map.add_child(
             child_id,
@@ -2001,9 +1991,7 @@ impl Plan {
                     self.set_distribution(output)?;
                 }
                 Relational::Values { output, .. } => {
-                    // TODO(ars): replace with Global, when it is fully
-                    // supported.
-                    self.set_dist(output, Distribution::Any)?;
+                    self.set_dist(output, Distribution::Global)?;
                 }
                 Relational::Projection {
                     output: proj_output_id,

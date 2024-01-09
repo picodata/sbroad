@@ -66,12 +66,6 @@ arbitrary_projection.test_arbitrary_invalid = function()
         select cast("id" * 2 > 0 as boolean), cast("id" * 2 > 0 as boolean) as "cast" from "arithmetic_space"
     ]], {} })
     t.assert_str_contains(tostring(err), "rule parsing error")
-
-    -- selection from values without cast
-    local _, err = api:call("sbroad.execute", { [[
-        SELECT "id" FROM "arithmetic_space" WHERE "id" IN (SELECT * FROM (VALUES (1)))
-    ]], {} })
-    t.assert_str_contains(tostring(err), "Sbroad Error: type any not implemented")
 end
 
 arbitrary_projection.test_arbitrary_valid = function()
