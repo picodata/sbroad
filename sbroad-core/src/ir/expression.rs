@@ -798,10 +798,14 @@ impl<'plan> Comparator<'plan> {
 
 pub(crate) type Position = usize;
 
+/// Identifier of how many times column (with specific name) was met in relational output.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Positions {
+    /// Init state.
     Empty,
+    /// Column with such name was met in the output only once on a given `Position`.
     Single(Position),
+    /// Several columns were met with the same name in the output.
     Multiple,
 }
 
@@ -822,10 +826,19 @@ impl Positions {
 /// (column name, scan name)
 pub(crate) type ColumnName<'column> = (&'column str, Option<&'column str>);
 
+/// Map of { column (with optional scan name) -> on which positions of relational node it's met }.
+/// Built for concrete relational node. Every column from its (relational node) output is
+/// presented as a key in `map`.
 #[derive(Debug)]
 pub(crate) struct ColumnPositionMap<'column> {
+    /// Binary tree map.
     map: BTreeMap<ColumnName<'column>, Positions>,
-    max_name: Option<&'column str>,
+    /// Max Scan name (in alphabetical order) that some of columns in output can reference to.
+    /// E.g. we have Join node that references to Scan nodes "aa" and "ab". The `max_scan_name` will
+    /// be "ab".
+    ///
+    /// Used for querying binary tree `map` by ranges (see `ColumnPositionMap` `get` method below).
+    max_scan_name: Option<&'column str>,
 }
 
 impl<'plan> ColumnPositionMap<'plan> {
@@ -838,13 +851,18 @@ impl<'plan> ColumnPositionMap<'plan> {
         let mut max_name = None;
         for (pos, alias_id) in alias_ids.iter().enumerate() {
             let alias = plan.get_expression_node(*alias_id)?;
-            let Expression::Alias { name, .. } = alias  else {
+            let Expression::Alias { name, .. } = alias else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
                     Some(format!("alias {alias_id} is not an Alias")),
                 ));
             };
             let scan_name = rel_node.scan_name(plan, pos)?;
+
+            // For query `select "a", "b" as "a" from (select "a", "b" from t)`
+            // column entry "a" will have `Position::Multiple` so that if parent operator will
+            // reference "a" we won't be able to identify which of these two columns
+            // will it reference.
             map.entry((name.as_str(), scan_name))
                 .or_insert_with(Positions::new)
                 .push(pos);
@@ -852,21 +870,39 @@ impl<'plan> ColumnPositionMap<'plan> {
                 max_name = scan_name;
             }
         }
-        Ok(Self { map, max_name })
+        Ok(Self {
+            map,
+            max_scan_name: max_name,
+        })
     }
 
+    /// Get position of relational output that corresponds to given `column`.
+    /// Note that we don't specify a Scan name here (see `get_with_scan` below for that logic).
     pub(crate) fn get(&self, column: &str) -> Result<Position, SbroadError> {
         let from_key = &(column, None);
-        let to_key = &(column, self.max_name);
+        let to_key = &(column, self.max_scan_name);
         let mut iter = self.map.range((Included(from_key), Included(to_key)));
         match (iter.next(), iter.next()) {
+            // Map contains several values for the same `column`.
+            // e.g. in the query
+            // `select "t2"."a", "t1"."a" from (select "a" from "t1") join (select "a" from "t2")
+            // for the column "a" there will be two results: {
+            // * Some(("a", "t2"), _),
+            // * Some(("a", "t1"), _)
+            // }
+            //
+            // So that given just a column name we can't say what column to refer to.
             (Some(..), Some(..)) => Err(SbroadError::DuplicatedValue(format!(
                 "column name {column} is ambiguous"
             ))),
+            // Map contains single value for the given `column`.
             (Some((_, position)), None) => {
                 if let Positions::Single(pos) = position {
                     return Ok(*pos);
                 }
+                // In case we have query like
+                // `select "a", "a" from (select "a" from t)`
+                // where single column is met on several positions.
                 Err(SbroadError::DuplicatedValue(format!(
                     "column name {column} is ambiguous"
                 )))
@@ -888,6 +924,12 @@ impl<'plan> ColumnPositionMap<'plan> {
             if let Positions::Single(pos) = position {
                 return Ok(*pos);
             }
+            // In case we have query like
+            // `select "a", "a" from (select "a" from t)`
+            // where single column is met on several positions.
+            //
+            // Even given `scan` we can't identify which of these two columns do we need to
+            // refer to.
             return Err(SbroadError::DuplicatedValue(format!(
                 "column name {column} is ambiguous"
             )));

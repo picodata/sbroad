@@ -1,98 +1,102 @@
 ---
 nodes:
   arena:
-    - children: #0
-        - 11
+    - children:
+        - 1
       rule: Query
       value: ~
-    - children: #1
-        - 11
+    - children:
+        - 12
+      rule: SelectWithOptionalContinuation
+      value: ~
+    - children:
+        - 12
       rule: Select
       value: ~
-    - children: #2
-        - 8
-        - 3
+    - children:
+        - 9
+        - 4
       rule: Selection
       value: ~
-    - children: #3
+    - children:
+        - 7
         - 6
         - 5
-        - 4
       rule: Cmp
       value: ~
-    - children: [] #4
+    - children: []
       rule: Unsigned
       value: "1"
-    - children: [] #5
+    - children: []
       rule: Eq
       value: "="
-    - children: #6
-        - 7
+    - children:
+        - 8
       rule: Reference
       value: ~
-    - children: [] #7
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: "\"identification_number\""
-    - children: #8
-        - 9
+    - children:
+        - 10
       rule: Scan
       value: ~
-    - children: #9
-        - 10
+    - children:
+        - 11
       rule: ScanTable
       value: ~
-    - children: [] #10
+    - children: []
       rule: Table
       value: "\"test_space\""
-    - children: #11
-        - 2
-        - 15
-        - 12
+    - children:
+        - 3
+        - 16
+        - 13
       rule: Projection
       value: ~
-    - children: #12
-        - 21
+    - children:
+        - 22
       rule: Column
       value: ~
-    - children: #13
-        - 14
+    - children:
+        - 15
       rule: Reference
       value: ~
-    - children: [] #14
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: "\"product_code\""
-    - children: #15
-        - 19
+    - children:
+        - 20
       rule: Column
       value: ~
-    - children: #16
-        - 17
+    - children:
+        - 18
       rule: Reference
       value: ~
-    - children: [] #17
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: "\"identification_number\""
-    - children: [] #18
+    - children: []
       rule: AliasName
       value: "\"identification_number\""
-    - children: #19
-        - 16
-        - 18
+    - children:
+        - 17
+        - 19
       rule: Alias
       value: ~
-    - children: [] #20
+    - children: []
       rule: AliasName
       value: "\"product_code\""
-    - children: #21
-        - 13
-        - 20
+    - children:
+        - 14
+        - 21
       rule: Alias
       value: ~
 top: 0
 map:
-  6:
-    - 8
-  13:
-    - 2
-  16:
-    - 2
+  17:
+    - 3
+  14:
+    - 3
+  7:
+    - 9

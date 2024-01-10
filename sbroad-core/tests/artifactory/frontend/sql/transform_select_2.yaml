@@ -1,50 +1,54 @@
 ---
 nodes:
   arena:
-    - children: #0 
-        - 5
+    - children:
+        - 1
       rule: Query
       value: ~
-    - children: #1
-        - 5
+    - children:
+        - 6
+      rule: SelectWithOptionalContinuation
+      value: ~
+    - children:
+        - 6
       rule: Select
       value: ~
-    - children: #2
-        - 3
+    - children:
+        - 4
       rule: Scan
       value: ~
-    - children: #3
-        - 4
+    - children:
+        - 5
       rule: ScanTable
       value: ~
-    - children: [] #4
+    - children: []
       rule: Table
       value: t
-    - children: #5
-        - 2
-        - 6
+    - children:
+        - 3
+        - 7
       rule: Projection
       value: ~
-    - children: #6
-        - 10
+    - children:
+        - 11
       rule: Column
       value: ~
-    - children: #7
-        - 8
+    - children:
+        - 9
       rule: Reference
       value: ~
-    - children: [] #8
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #9
+    - children: []
       rule: AliasName
       value: a
-    - children: #10
-        - 7
-        - 9
+    - children:
+        - 8
+        - 10
       rule: Alias
       value: ~
 top: 0
 map:
-  7:
-    - 2
+  8:
+    - 3

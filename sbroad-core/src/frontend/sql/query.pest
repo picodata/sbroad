@@ -1,4 +1,4 @@
-Command = _{ SOI ~ (ExplainQuery | Query | DDL | ACL) ~ EOF }
+Command = _{ SOI ~ (Query | ExplainQuery | DDL | ACL) ~ EOF }
 
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     /// Represents both RoleName and UserName.
@@ -80,7 +80,10 @@ DDL = _{ CreateTable | DropTable }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
-Query = { (Except | UnionAll | Select | Values | Insert | Update | Delete) ~ Option? }
+Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~ Option? }
+    SelectWithOptionalContinuation = { Select ~ (ExceptContinuation | UnionAllContinuation)? }
+        ExceptContinuation   = { ((^"except" ~ ^"distinct") | ^"except") ~ Select }
+        UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         Join? ~ WhereClause? ~ 
@@ -88,17 +91,16 @@ Query = { (Except | UnionAll | Select | Values | Insert | Update | Delete) ~ Opt
         (^"having" ~ Having)?
     }
         Projection = { Distinct? ~  (Asterisk | Column) ~ ("," ~ (Asterisk | Column))* }
-            Column = { Alias | Expr | Value }
-                Alias = {(Expr | Value) ~ ^"as" ~ AliasName }
-                AliasName = @{ Name }
-                Reference = { (ScanName ~ "." ~ ColumnName) | ColumnName }
+            Column = { ((Value ~ &(WHITESPACE | ",")) | Expr) ~ (^"as" ~ AliasName)? }
+                // May be inside of Value
+                Reference = { Name ~ ("." ~ Name)? }
                     ColumnName = @{ Name }
                     ScanName = @{ Name }
-                    Name = @{ NameString | ("\"" ~ NameString ~ "\"") }
+                    AliasName = @{ Name }
                 Asterisk = { "*" }
         WhereClause = _{ ^"where" ~ Selection }
         Selection = { Expr }
-        Scan = { (SubQuery | ScanTable) ~ (^"as" ~ ScanName)? }
+        Scan = { (ScanTable | SubQuery) ~ (^"as" ~ ScanName)? }
             ScanTable = { Table }
             Table = @{ Name }
         Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Condition }
@@ -108,9 +110,7 @@ Query = { (Except | UnionAll | Select | Values | Insert | Update | Delete) ~ Opt
         Condition = { Expr }
         GroupBy = { GroupingElement ~ ("," ~ GroupingElement)* }
         Having = { Expr }
-    UnionAll = { Select ~ ^"union" ~ ^"all" ~ Select }
-    Except = { Select ~ ((^"except" ~ ^"distinct") | ^"except") ~ Select }
-    SubQuery = { "(" ~ (Except | UnionAll | Select | Values) ~ ")" }
+    SubQuery = { "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ 
     (Values | Select) ~ OnConflict? }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
@@ -211,11 +211,12 @@ Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
 
 GroupingElement = _{ Expr }
 
-NameLetters = _{ ('А' .. 'Я' | 'а' .. 'я' | 'A' .. 'Z' | 'a'..'z' | "-" | "_") }
-NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
+Name = @{ ("\"" ~ NameString ~ "\"") | NameString  }
+    NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
+        NameLetters = _{ ('a'..'z' | 'A' .. 'Z' | 'А' .. 'Я' | 'а' .. 'я' | "-" | "_") }
 String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
 Keyword = { ^"except" | ^"union" | ^"where" | ^"distinct" }
-Character = _{ LETTER | NUMBER | Other | OTHER_ALPHABETIC| Punctuation | SYMBOL }
+Character = _{ LETTER | NUMBER | Other | OTHER_ALPHABETIC | Punctuation | SYMBOL }
 Punctuation = _{
     CONNECTOR_PUNCTUATION
     | DASH_PUNCTUATION

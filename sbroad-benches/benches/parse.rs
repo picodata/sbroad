@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use sbroad::executor::engine::mock::RouterRuntimeMock;
 use sbroad::executor::Query;
@@ -6,6 +6,13 @@ use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::frontend::Ast;
 use sbroad::ir::tree::Snapshot;
 use sbroad::ir::value::Value;
+
+use pest::Parser;
+use pest_derive::Parser;
+
+#[derive(Parser)]
+#[grammar = "../sbroad-core/src/frontend/sql/query.pest"]
+struct ParseTree;
 
 #[allow(clippy::too_many_lines)]
 fn query_sql() -> String {
@@ -235,6 +242,110 @@ fn query_sql() -> String {
     sql.into()
 }
 
+fn get_target_queries() -> Vec<&'static str> {
+    vec![
+        r#"
+        SELECT *
+FROM
+    (SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_history"
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
+    UNION ALL
+    SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_actual"
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE "col1" = ?
+        AND ("col2" = ?
+        AND "amount" > ?)
+        "#,
+        r#"
+        SELECT *
+FROM
+    (SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_history"
+    WHERE "sys_from" <= ?
+            AND "sys_to" >= ?
+    UNION ALL
+    SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_actual"
+    WHERE "sys_from" <= ?) AS "t3"
+WHERE ("col1" = ?
+        OR ("col1" = ?
+        OR "col1" = ?))
+        AND (("col2" = ?
+        OR "col2" = ?)
+        AND "amount" > ?)
+        "#,
+        r#"
+        SELECT *
+FROM
+    (SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_history"
+    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    UNION ALL
+    SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_actual"
+    WHERE "sys_from" <= 0) AS "t3"
+INNER JOIN
+    (SELECT "id", "cola", "colb"
+    FROM "cola_colb_accounts_history"
+    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    UNION ALL
+    SELECT "id", "cola", "colb"
+    FROM "cola_colb_accounts_actual"
+    WHERE "sys_from" <= 0) AS "t8"
+    ON "t3"."account_id" = "t8"."id"
+WHERE "t3"."col1" = 1 AND "t3"."col2" = 2
+AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))
+        "#,
+        r#"
+        SELECT *
+FROM
+    (SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_history"
+    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    UNION ALL
+    SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_actual"
+    WHERE "sys_from" <= 0) AS "t3"
+INNER JOIN
+    (SELECT "id", "cola", "colb"
+    FROM "cola_accounts_history"
+    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    UNION ALL
+    SELECT "id", "cola", "colb"
+    FROM "cola_accounts_actual"
+    WHERE "sys_from" <= 0) AS "t8"
+    ON "t3"."account_id" = "t8"."id"
+WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)
+        "#,
+        r#"
+        SELECT *
+FROM
+    (SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_history"
+    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    UNION ALL
+    SELECT "col1", "col2", "account_id", "amount"
+    FROM "col1_col2_transactions_actual"
+    WHERE "sys_from" <= 0) AS "t3"
+WHERE "account_id" IN
+    (SELECT "id"
+    FROM
+        (SELECT "id", "cola", "colb"
+        FROM "cola_colb_accounts_history"
+        WHERE "sys_from" <= 0 AND "sys_to" >= 0
+        UNION ALL
+        SELECT "id", "cola", "colb"
+        FROM "cola_colb_accounts_actual"
+        WHERE "sys_from" <= 0) AS "t8"
+        WHERE "cola" = 1 AND "colb" = 2)
+    AND ("col1" = ? AND "col2" = 2)
+        "#,
+    ]
+}
+
 fn parse_ast(pattern: &str) {
     AbstractSyntaxTree::new(pattern).unwrap();
 }
@@ -272,5 +383,33 @@ fn bench_ir_build(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_ir_build, bench_ast_build);
+fn bench_target_queries(c: &mut Criterion) {
+    let queries = get_target_queries();
+
+    for (index, query) in queries.iter().enumerate() {
+        let bench_name = format!("parsing_target_query{index}");
+        c.bench_function(bench_name.as_str(), |b| {
+            b.iter(|| parse_ast(query));
+        });
+    }
+}
+
+fn bench_pure_pest_parsing(c: &mut Criterion) {
+    let queries = get_target_queries();
+
+    for (index, query) in queries.iter().enumerate() {
+        let bench_name = format!("pure_pest_parsing_target_query{index}");
+        c.bench_function(bench_name.as_str(), |b| {
+            b.iter(|| black_box(ParseTree::parse(Rule::Command, query)));
+        });
+    }
+}
+
+criterion_group!(
+    benches,
+    bench_ir_build,
+    bench_ast_build,
+    bench_target_queries,
+    bench_pure_pest_parsing
+);
 criterion_main!(benches);

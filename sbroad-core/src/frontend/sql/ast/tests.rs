@@ -303,7 +303,7 @@ fn traversal() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
 
     let (_, a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(a_id).unwrap();
@@ -327,7 +327,7 @@ fn traversal() {
 
     let (_, prj_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(prj_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
 
     let (_, str_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(str_id).unwrap();
@@ -348,6 +348,10 @@ fn traversal() {
     let (_, projection_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();
@@ -403,7 +407,7 @@ fn invalid_condition() {
 2 |     "identification_number" = 1 "product_code" = 2
   |                                 ^---
   |
-  = expected EOI, Multiply, Divide, Add, or Subtract"#,
+  = expected EOI, ExceptContinuation, UnionAllContinuation, Multiply, Divide, Add, or Subtract"#,
         ),
         format!("{ast}"),
     );
@@ -445,7 +449,7 @@ fn sql_arithmetic_selection_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, a_id) = iter.next().unwrap();
@@ -458,7 +462,7 @@ fn sql_arithmetic_selection_ast() {
 
     let (_, sel_name_b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_b_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("b".to_string()));
 
     let (_, b_id) = iter.next().unwrap();
@@ -488,7 +492,7 @@ fn sql_arithmetic_selection_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, str_id) = iter.next().unwrap();
@@ -510,6 +514,10 @@ fn sql_arithmetic_selection_ast() {
     let (_, projection_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(projection_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();
@@ -553,7 +561,7 @@ fn sql_arithmetic_projection_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, a_id) = iter.next().unwrap();
@@ -566,7 +574,7 @@ fn sql_arithmetic_projection_ast() {
 
     let (_, sel_name_b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_b_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("b".to_string()));
 
     let (_, b_id) = iter.next().unwrap();
@@ -593,6 +601,10 @@ fn sql_arithmetic_projection_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();
@@ -637,7 +649,7 @@ fn sql_arithmetic_projection_alias_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, a_id) = iter.next().unwrap();
@@ -650,7 +662,7 @@ fn sql_arithmetic_projection_alias_ast() {
 
     let (_, sel_name_b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_b_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("b".to_string()));
 
     let (_, b_id) = iter.next().unwrap();
@@ -677,6 +689,10 @@ fn sql_arithmetic_projection_alias_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();
@@ -720,7 +736,7 @@ fn sql_arbitrary_projection_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, a_id) = iter.next().unwrap();
@@ -733,7 +749,7 @@ fn sql_arbitrary_projection_ast() {
 
     let (_, sel_name_b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_b_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("b".to_string()));
 
     let (_, b_id) = iter.next().unwrap();
@@ -750,7 +766,7 @@ fn sql_arbitrary_projection_ast() {
 
     let (_, col_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(col_name_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
 
     let (_, b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(b_id).unwrap();
@@ -776,6 +792,10 @@ fn sql_arbitrary_projection_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();
@@ -820,7 +840,7 @@ fn sql_arbitrary_projection_alias_ast() {
 
     let (_, sel_name_a_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_a_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("a".to_string()));
 
     let (_, a_id) = iter.next().unwrap();
@@ -833,7 +853,7 @@ fn sql_arbitrary_projection_alias_ast() {
 
     let (_, sel_name_b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(sel_name_b_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
     assert_eq!(node.value, Some("b".to_string()));
 
     let (_, b_id) = iter.next().unwrap();
@@ -850,7 +870,7 @@ fn sql_arbitrary_projection_alias_ast() {
 
     let (_, col_name_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(col_name_id).unwrap();
-    assert_eq!(node.rule, Type::ColumnName);
+    assert_eq!(node.rule, Type::Name);
 
     let (_, b_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(b_id).unwrap();
@@ -876,6 +896,10 @@ fn sql_arbitrary_projection_alias_ast() {
     let (_, proj_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(proj_id).unwrap();
     assert_eq!(node.rule, Type::Projection);
+
+    let (_, continuation_id) = iter.next().unwrap();
+    let node = ast.nodes.get_node(continuation_id).unwrap();
+    assert_eq!(node.rule, Type::SelectWithOptionalContinuation);
 
     let (_, query_id) = iter.next().unwrap();
     let node = ast.nodes.get_node(query_id).unwrap();

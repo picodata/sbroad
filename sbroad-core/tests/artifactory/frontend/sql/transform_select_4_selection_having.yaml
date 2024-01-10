@@ -1,136 +1,140 @@
 ---
 nodes:
   arena:
-    - children: #0
-        - 23
+    - children:
+        - 1
       rule: Query
       value: ~
-    - children: #1
-        - 23
+    - children:
+        - 24
+      rule: SelectWithOptionalContinuation
+      value: ~
+    - children:
+        - 24
       rule: Select
       value: ~
-    - children: #2
-        - 11
-        - 3
+    - children:
+        - 12
+        - 4
       rule: Having
       value: ~
-    - children: #3
+    - children:
+        - 7
         - 6
         - 5
-        - 4
       rule: Cmp
       value: ~
-    - children: [] #4
+    - children: []
       rule: Unsigned
       value: "1"
-    - children: [] #5
+    - children: []
       rule: Gt
       value: ">"
-    - children: #6
-        - 10
-        - 7
+    - children:
+        - 11
+        - 8
       rule: Function
       value: ~
-    - children: #7
+    - children:
+        - 10
         - 9
-        - 8
       rule: Reference
       value: ~
-    - children: [] #8
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #9
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t1
-    - children: [] #10
+    - children: []
       rule: FunctionName
       value: sum
-    - children: #11
-        - 14
-        - 12
+    - children:
+        - 15
+        - 13
       rule: GroupBy
       value: ~
-    - children: #12
-        - 13
+    - children:
+        - 14
       rule: Reference
       value: ~
-    - children: [] #13
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: #14
-        - 20
-        - 15
+    - children:
+        - 21
+        - 16
       rule: Selection
       value: ~
-    - children: #15
+    - children:
+        - 19
         - 18
         - 17
-        - 16
       rule: Cmp
       value: ~
-    - children: [] #16
+    - children: []
       rule: Unsigned
       value: "1"
-    - children: [] #17
+    - children: []
       rule: Gt
       value: ">"
-    - children: #18
-        - 19
+    - children:
+        - 20
       rule: Reference
       value: ~
-    - children: [] #19
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: "\"a\""
-    - children: #20
-        - 21
+    - children:
+        - 22
       rule: Scan
       value: ~
-    - children: #21
-        - 22
+    - children:
+        - 23
       rule: ScanTable
       value: ~
-    - children: [] #22
+    - children: []
       rule: Table
       value: t1
-    - children: #23
-        - 2
-        - 24
+    - children:
+        - 3
+        - 25
       rule: Projection
       value: ~
-    - children: #24
-        - 30
+    - children:
+        - 31
       rule: Column
       value: ~
-    - children: #25
-        - 28
-        - 26
+    - children:
+        - 29
+        - 27
       rule: Function
       value: ~
-    - children: #26
-        - 27
+    - children:
+        - 28
       rule: Reference
       value: ~
-    - children: [] #27
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #28
+    - children: []
       rule: FunctionName
       value: sum
-    - children: [] #29
+    - children: []
       rule: AliasName
       value: COL_1
-    - children: #30
-        - 25
-        - 29
+    - children:
+        - 26
+        - 30
       rule: Alias
       value: ~
 top: 0
 map:
-  12:
-    - 14
-  7:
-    - 11
-  26:
-    - 2
-  18:
-    - 20
+  27:
+    - 3
+  19:
+    - 21
+  13:
+    - 15
+  8:
+    - 12

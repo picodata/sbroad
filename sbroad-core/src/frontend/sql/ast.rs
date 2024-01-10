@@ -12,6 +12,7 @@ use pest::iterators::Pair;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Action, Entity, SbroadError};
+use crate::frontend::sql::parse_string_value_node;
 use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 
 /// Parse tree
@@ -69,7 +70,6 @@ pub enum Type {
     Duration,
     Engine,
     Eq,
-    Except,
     Exists,
     Explain,
     False,
@@ -141,6 +141,9 @@ pub enum Type {
     ScanName,
     ScanTable,
     Select,
+    SelectWithOptionalContinuation,
+    ExceptContinuation,
+    UnionAllContinuation,
     Selection,
     Sharding,
     ShardingColumn,
@@ -163,7 +166,6 @@ pub enum Type {
     TypeText,
     TypeUnsigned,
     TypeVarchar,
-    UnionAll,
     Update,
     UpdateList,
     UpdateItem,
@@ -181,7 +183,6 @@ impl Type {
         match rule {
             Rule::Add => Ok(Type::Add),
             Rule::Addition => Ok(Type::Addition),
-            Rule::Alias => Ok(Type::Alias),
             Rule::AliasName => Ok(Type::AliasName),
             Rule::AlterUser => Ok(Type::AlterUser),
             Rule::AlterLogin => Ok(Type::AlterLogin),
@@ -223,7 +224,6 @@ impl Type {
             Rule::DoNothing => Ok(Type::DoNothing),
             Rule::DoFail => Ok(Type::DoFail),
             Rule::Eq => Ok(Type::Eq),
-            Rule::Except => Ok(Type::Except),
             Rule::Exists => Ok(Type::Exists),
             Rule::Explain => Ok(Type::Explain),
             Rule::False => Ok(Type::False),
@@ -297,6 +297,9 @@ impl Type {
             Rule::Sharding => Ok(Type::Sharding),
             Rule::ShardingColumn => Ok(Type::ShardingColumn),
             Rule::Select => Ok(Type::Select),
+            Rule::SelectWithOptionalContinuation => Ok(Type::SelectWithOptionalContinuation),
+            Rule::ExceptContinuation => Ok(Type::ExceptContinuation),
+            Rule::UnionAllContinuation => Ok(Type::UnionAllContinuation),
             Rule::Selection => Ok(Type::Selection),
             Rule::String => Ok(Type::String),
             Rule::SingleQuotedString => Ok(Type::SingleQuotedString),
@@ -317,7 +320,6 @@ impl Type {
             Rule::TypeText => Ok(Type::TypeText),
             Rule::TypeUnsigned => Ok(Type::TypeUnsigned),
             Rule::TypeVarchar => Ok(Type::TypeVarchar),
-            Rule::UnionAll => Ok(Type::UnionAll),
             Rule::Update => Ok(Type::Update),
             Rule::UpdateList => Ok(Type::UpdateList),
             Rule::UpdateItem => Ok(Type::UpdateItem),
@@ -765,8 +767,27 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
-    /// `Select` node is not IR-friendly as it can have up to five children.
+    /// `Select` node is not IR-friendly as it can have up to six children.
     /// Transform this node in IR-way (to a binary sub-tree).
+    ///
+    /// The task of `transform_select_i` functions is to build nested structure of rules.
+    /// E.g. if we work with query `select ... from t ... where expr`, the initial structure like
+    /// `Select [
+    ///     children = [Projection, Scan(t), WhereClause(expr)]
+    /// ]`
+    /// will be transformed into
+    /// `Select [
+    ///     children = [Projection [
+    ///         children = [Scan(t) [
+    ///             children = [WhereClause(expr)]
+    ///         ]
+    ///     ]
+    /// ]`
+    ///
+    /// At the end of `transform_select` work all `Select` nodes are replaced with
+    /// their first child (always Projection):
+    /// * In some node contained Select as a child, we replace that child with Select child
+    /// * In case Select is a top node, it's replaced itself
     pub(super) fn transform_select(&mut self) -> Result<(), SbroadError> {
         let mut selects: HashSet<usize> = HashSet::new();
         for id in 0..self.nodes.arena.len() {
@@ -1029,46 +1050,40 @@ impl AbstractSyntaxTree {
                 for child_id in &node.children {
                     let child = self.nodes.get_node(*child_id)?;
                     if let Type::Column = child.rule {
+                        // Value or Expr.
                         let col_child_id = *child.children.first().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues("Column has no children".into())
                         })?;
                         let col_child = self.nodes.get_node(col_child_id)?;
-                        match &col_child.rule {
-                            Type::Alias => {
-                                columns.push((*child_id, None));
-                            }
-                            Type::Reference => {
-                                let col_name_id: usize = if let (Some(_), Some(col_name_id)) =
-                                    (col_child.children.first(), col_child.children.get(1))
-                                {
-                                    *col_name_id
-                                } else if let (Some(col_name_id), None) =
-                                    (col_child.children.first(), col_child.children.get(1))
-                                {
-                                    *col_name_id
-                                } else {
-                                    return Err(SbroadError::NotFound(
-                                        Entity::Node,
-                                        "that is first child of the Column".into(),
-                                    ));
-                                };
-                                let col_name = self.nodes.get_node(col_name_id)?;
-                                let name: String = col_name
-                                    .value
-                                    .as_ref()
-                                    .ok_or_else(|| {
-                                        SbroadError::Invalid(
-                                            Entity::Name,
-                                            Some("of Column is empty".into()),
-                                        )
-                                    })?
-                                    .clone();
-                                columns.push((*child_id, Some(name)));
-                            }
-                            _ => {
-                                pos += 1;
-                                columns.push((*child_id, Some(format!("COL_{pos}"))));
-                            }
+
+                        let col_alias_id = child.children.get(1);
+                        if let Some(col_alias_id) = col_alias_id {
+                            let alias_name = parse_string_value_node(self, *col_alias_id)?;
+                            columns.push((*child_id, Some(String::from(alias_name))));
+                            continue;
+                        }
+                        if let Type::Reference = &col_child.rule {
+                            let col_name_id: usize = if let (Some(_), Some(col_name_id)) =
+                                (col_child.children.first(), col_child.children.get(1))
+                            {
+                                // Case of table_name.col_name.
+                                *col_name_id
+                            } else if let (Some(col_name_id), None) =
+                                (col_child.children.first(), col_child.children.get(1))
+                            {
+                                // Case of col_name.
+                                *col_name_id
+                            } else {
+                                return Err(SbroadError::NotFound(
+                                    Entity::Node,
+                                    "that is first child of the Column".into(),
+                                ));
+                            };
+                            let col_name = parse_string_value_node(self, col_name_id)?;
+                            columns.push((*child_id, Some(String::from(col_name))));
+                        } else {
+                            pos += 1;
+                            columns.push((*child_id, Some(format!("COL_{pos}"))));
                         }
                     }
                 }
@@ -1086,7 +1101,7 @@ impl AbstractSyntaxTree {
                 SbroadError::UnexpectedNumberOfValues("Column has no children".into())
             })?;
             let child = self.nodes.get_node(child_id)?;
-            if let Type::Alias | Type::Asterisk = child.rule {
+            if let Type::Asterisk = child.rule {
                 // Nothing to do here.
                 continue;
             }

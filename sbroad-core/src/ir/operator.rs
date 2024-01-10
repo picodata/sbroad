@@ -678,14 +678,15 @@ impl Relational {
         }
     }
 
-    /// Gets relational scan name if it exists.
+    /// Get relational Scan name that given `output_alias_position` (`Expression::Alias`)
+    /// references to.
     ///
     /// # Errors
     /// - plan tree is invalid (failed to retrieve child nodes)
     pub fn scan_name<'n>(
         &'n self,
         plan: &'n Plan,
-        position: usize,
+        output_alias_position: usize,
     ) -> Result<Option<&'n str>, SbroadError> {
         match self {
             Relational::Insert { relation, .. } | Relational::Delete { relation, .. } => {
@@ -703,10 +704,12 @@ impl Relational {
             | Relational::Join { .. } => {
                 let output_row = plan.get_expression_node(self.output())?;
                 let list = output_row.get_row_list()?;
-                let col_id = *list.get(position).ok_or_else(|| {
+                let col_id = *list.get(output_alias_position).ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Column,
-                        format!("at position {position} of Row, {self:?}, {output_row:?}"),
+                        format!(
+                            "at position {output_alias_position} of Row, {self:?}, {output_row:?}"
+                        ),
                     )
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
@@ -717,7 +720,7 @@ impl Relational {
                         let rel_node = plan.get_relation_node(rel_id)?;
                         if rel_node == self {
                             return Err(SbroadError::DuplicatedValue(format!(
-                                "Reference to the same node {rel_node:?} at position {position}"
+                                "Reference to the same node {rel_node:?} at position {output_alias_position}"
                             )));
                         }
                         return rel_node.scan_name(plan, *pos);

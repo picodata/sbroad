@@ -772,19 +772,11 @@ impl Ast for AbstractSyntaxTree {
                         plan_rel_list.push(plan_id);
                     }
 
-                    // Closure to get uppercase name from AST `ColumnName` node.
-                    let get_column_name = |ast_id: usize| -> Result<String, SbroadError> {
-                        let ast_col_name = self.nodes.get_node(ast_id)?;
-                        if let Type::ColumnName = ast_col_name.rule {
-                            let name =
-                                normalize_name_from_sql(parse_string_value_node(self, ast_id)?);
-                            Ok(name)
-                        } else {
-                            Err(SbroadError::Invalid(
-                                Entity::Type,
-                                Some("expected column name AST node.".into()),
-                            ))
-                        }
+                    // Closure to get uppercase name from AST `Name` node.
+                    let get_name = |ast_id: usize| -> Result<String, SbroadError> {
+                        Ok(normalize_name_from_sql(parse_string_value_node(
+                            self, ast_id,
+                        )?))
                     };
 
                     let plan_left_id = plan_rel_list.first();
@@ -799,56 +791,48 @@ impl Ast for AbstractSyntaxTree {
                         let right_col_map = ColumnPositionMap::new(&plan, *plan_right_id)?;
 
                         // We get both column and scan names from the AST.
-                        if let (Some(ast_scan_id), Some(ast_col_name_id)) =
+                        if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
                             (node.children.first(), node.children.get(1))
                         {
-                            let ast_scan = self.nodes.get_node(*ast_scan_id)?;
-                            let ast_scan_name: Option<String> =
-                                ast_scan.value.as_deref().map(normalize_name_from_sql);
-                            let scan_name = ast_scan_name.as_deref();
-                            if let Type::ScanName = ast_scan.rule {
-                                // Get the column name and its positions in the output tuples.
-                                let col_name = get_column_name(*ast_col_name_id)?;
-                                // First, try to find the column name in the left child.
-                                let present_in_left =
-                                    left_col_map.get_with_scan(&col_name, scan_name).is_ok();
-                                let ref_id = if present_in_left {
-                                    plan.add_row_from_left_branch(
+                            let scan_name = get_name(*ast_scan_name_id)?;
+                            // Get the column name and its positions in the output tuples.
+                            let col_name = get_name(*ast_col_name_id)?;
+                            // First, try to find the column name in the left child.
+                            let present_in_left = left_col_map
+                                .get_with_scan(&col_name, Some(&scan_name))
+                                .is_ok();
+                            let ref_id = if present_in_left {
+                                plan.add_row_from_left_branch(
+                                    *plan_left_id,
+                                    *plan_right_id,
+                                    &[&col_name],
+                                )?
+                            } else {
+                                // If it is not found, try to find it in the right child.
+                                let present_in_right = right_col_map
+                                    .get_with_scan(&col_name, Some(&scan_name))
+                                    .is_ok();
+                                if present_in_right {
+                                    plan.add_row_from_right_branch(
                                         *plan_left_id,
                                         *plan_right_id,
                                         &[&col_name],
                                     )?
                                 } else {
-                                    // If it is not found, try to find it in the right child.
-                                    let present_in_right =
-                                        right_col_map.get_with_scan(&col_name, scan_name).is_ok();
-                                    if present_in_right {
-                                        plan.add_row_from_right_branch(
-                                            *plan_left_id,
-                                            *plan_right_id,
-                                            &[&col_name],
-                                        )?
-                                    } else {
-                                        return Err(SbroadError::NotFound(
-                                            Entity::Column,
-                                            format!("'{col_name}' in the join children",),
-                                        ));
-                                    }
-                                };
-                                rows.insert(ref_id);
-                                map.add(id, ref_id);
-                            } else {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Node,
-                                    Some("expected AST node to be a scan name.".into()),
-                                ));
-                            }
+                                    return Err(SbroadError::NotFound(
+                                        Entity::Column,
+                                        format!("'{col_name}' in the join children",),
+                                    ));
+                                }
+                            };
+                            rows.insert(ref_id);
+                            map.add(id, ref_id);
                         // We get only column name from the AST.
                         } else if let (Some(ast_col_name_id), None) =
                             (node.children.first(), node.children.get(1))
                         {
                             // Determine the referred side of the join (left or right).
-                            let col_name = get_column_name(*ast_col_name_id)?;
+                            let col_name = get_name(*ast_col_name_id)?;
 
                             // We need to check that the column name is unique in the join children.
                             // Otherwise, we cannot determine the referred side of the join
@@ -894,43 +878,34 @@ impl Ast for AbstractSyntaxTree {
 
                         let first_child_id = node.children.first();
                         let second_child_id = node.children.get(1);
-                        if let (Some(ast_scan_id), Some(ast_col_id)) =
+                        if let (Some(ast_scan_name_id), Some(ast_col_name_id)) =
                             (first_child_id, second_child_id)
                         {
                             // Get column name.
-                            let col_name = get_column_name(*ast_col_id)?;
+                            let col_name = get_name(*ast_col_name_id)?;
                             // Check that scan name in the reference matches to the one in scan node.
-                            let ast_scan = self.nodes.get_node(*ast_scan_id)?;
-                            if let Type::ScanName = ast_scan.rule {
-                                let ast_scan_name = Some(normalize_name_from_sql(
-                                    parse_string_value_node(self, *ast_scan_id)?,
-                                ));
-
-                                let col_position = ColumnPositionMap::new(&plan, *plan_rel_id)?
-                                    .get_with_scan(&col_name, ast_scan_name.as_deref())?;
-                                // Manually build the reference node.
-                                let child = plan.get_relation_node(*plan_rel_id)?;
-                                let child_alias_ids =
-                                    plan.get_expression_node(child.output())?.get_row_list()?;
-                                let child_alias_id = child_alias_ids
-                                    .get(col_position)
-                                    .expect("column position is invalid");
-                                let col_type = plan
-                                    .get_expression_node(*child_alias_id)?
-                                    .calculate_type(&plan)?;
-                                let ref_id =
-                                    plan.nodes
-                                        .add_ref(None, Some(vec![0]), col_position, col_type);
-                                map.add(id, ref_id);
-                            } else {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Node,
-                                    Some("expected AST node to be a scan name.".into()),
-                                ));
-                            };
-                        } else if let (Some(ast_col_id), None) = (first_child_id, second_child_id) {
+                            let scan_name = get_name(*ast_scan_name_id)?;
+                            let col_position = ColumnPositionMap::new(&plan, *plan_rel_id)?
+                                .get_with_scan(&col_name, Some(&scan_name))?;
+                            // Manually build the reference node.
+                            let child = plan.get_relation_node(*plan_rel_id)?;
+                            let child_alias_ids =
+                                plan.get_expression_node(child.output())?.get_row_list()?;
+                            let child_alias_id = child_alias_ids
+                                .get(col_position)
+                                .expect("column position is invalid");
+                            let col_type = plan
+                                .get_expression_node(*child_alias_id)?
+                                .calculate_type(&plan)?;
+                            let ref_id =
+                                plan.nodes
+                                    .add_ref(None, Some(vec![0]), col_position, col_type);
+                            map.add(id, ref_id);
+                        } else if let (Some(ast_col_name_id), None) =
+                            (first_child_id, second_child_id)
+                        {
                             // Get the column name.
-                            let col_name = get_column_name(*ast_col_id)?;
+                            let col_name = get_name(*ast_col_name_id)?;
                             let ref_list = plan.new_columns(
                                 &[*plan_rel_id],
                                 false,
@@ -1320,7 +1295,8 @@ impl Ast for AbstractSyntaxTree {
                                     let Some((_, args)) = other.split_first() else {
                                         return Err(SbroadError::Invalid(
                                             Entity::AST,
-                                            Some("function ast has no arguments".into())))
+                                            Some("function ast has no arguments".into()),
+                                        ));
                                     };
                                     other = args;
                                 }
@@ -1460,6 +1436,40 @@ impl Ast for AbstractSyntaxTree {
                     };
                     map.add(id, plan_node_id);
                 }
+                Type::SelectWithOptionalContinuation => {
+                    let first_select_id = node.children.first().expect(
+                        "SelectWithOptionalContinuation must always have Select as a first child.",
+                    );
+                    let first_select_plan_id = map.get(*first_select_id)?;
+
+                    let continuation_id = node.children.get(1);
+                    if let Some(continuation_id) = continuation_id {
+                        let continuation_node = self.nodes.get_node(*continuation_id)?;
+                        match continuation_node.rule {
+                            Type::UnionAllContinuation => {
+                                let second_select_id = continuation_node
+                                    .children
+                                    .first()
+                                    .expect("UnionAllContinuation must contain Select as a first child.");
+                                let second_select_plan_id = map.get(*second_select_id)?;
+                                let plan_union_all_id = plan.add_union_all(first_select_plan_id, second_select_plan_id)?;
+                                map.add(id, plan_union_all_id);
+                            }
+                            Type::ExceptContinuation => {
+                                let second_select_id = continuation_node
+                                    .children
+                                    .first()
+                                    .expect("ExceptContinuation must contain Select as a first child.");
+                                let second_select_plan_id = map.get(*second_select_id)?;
+                                let plan_except_id = plan.add_except(first_select_plan_id, second_select_plan_id)?;
+                                map.add(id, plan_except_id);
+                            }
+                            _ => unreachable!("SelectWithOptionalContinuation must contain UnionAllContinuation or ExceptContinuation as child")
+                        }
+                    } else {
+                        map.add(id, first_select_plan_id);
+                    }
+                }
                 Type::Projection => {
                     let (child_id, ast_columns_ids, is_distinct) = if let Some((first, other)) =
                         node.children.split_first()
@@ -1549,28 +1559,6 @@ impl Ast for AbstractSyntaxTree {
                     let plan_child_id = map.get(*ast_child_id)?;
                     arith_expr_with_parentheses_ids.push(plan_child_id);
                     map.add(id, plan_child_id);
-                }
-                Type::Except => {
-                    let ast_left_id = node.children.first().expect("Except has no children.");
-                    let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node
-                        .children
-                        .get(1)
-                        .expect("Right not found among Except children");
-                    let plan_right_id = map.get(*ast_right_id)?;
-                    let plan_except_id = plan.add_except(plan_left_id, plan_right_id)?;
-                    map.add(id, plan_except_id);
-                }
-                Type::UnionAll => {
-                    let ast_left_id = node.children.first().expect("Union All has no children.");
-                    let plan_left_id = map.get(*ast_left_id)?;
-                    let ast_right_id = node
-                        .children
-                        .get(1)
-                        .expect("Right not found among Union All children");
-                    let plan_right_id = map.get(*ast_right_id)?;
-                    let plan_union_all_id = plan.add_union_all(plan_left_id, plan_right_id)?;
-                    map.add(id, plan_union_all_id);
                 }
                 Type::ValuesRow => {
                     // TODO(ars): check that all row elements are constants
@@ -2206,6 +2194,7 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Multiply
                 | Type::NewTable
                 | Type::NotEq
+                | Type::Name
                 | Type::NotFlag
                 | Type::Password
                 | Type::PrimaryKey
@@ -2230,6 +2219,8 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ScanName
                 | Type::Select
                 | Type::Sharding
+                | Type::ExceptContinuation
+                | Type::UnionAllContinuation
                 | Type::ShardingColumn
                 | Type::Subtract
                 | Type::TargetColumns

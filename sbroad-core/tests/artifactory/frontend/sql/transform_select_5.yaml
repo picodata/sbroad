@@ -1,204 +1,208 @@
 ---
 nodes:
   arena:
-    - children: #0
-        - 33
+    - children:
+        - 1
       rule: Query
       value: ~
-    - children: #1
-        - 33
+    - children:
+        - 34
+      rule: SelectWithOptionalContinuation
+      value: ~
+    - children:
+        - 34
       rule: Select
       value: ~
-    - children: #2
-        - 9
-        - 6
-        - 3
+    - children:
+        - 10
+        - 7
+        - 4
       rule: GroupBy
       value: ~
-    - children: #3
+    - children:
+        - 6
         - 5
-        - 4
       rule: Reference
       value: ~
-    - children: [] #4
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: b
-    - children: [] #5
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t2
-    - children: #6
+    - children:
+        - 9
         - 8
-        - 7
       rule: Reference
       value: ~
-    - children: [] #7
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #8
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t1
-    - children: #9
-        - 16
-        - 10
+    - children:
+        - 17
+        - 11
       rule: Selection
       value: ~
-    - children: #10
+    - children:
+        - 14
         - 13
         - 12
-        - 11
       rule: Cmp
       value: ~
-    - children: [] #11
+    - children: []
       rule: Unsigned
       value: "1"
-    - children: [] #12
+    - children: []
       rule: Gt
       value: ">"
-    - children: #13
+    - children:
+        - 16
         - 15
-        - 14
       rule: Reference
       value: ~
-    - children: [] #14
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #15
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t1
-    - children: #16
+    - children:
+        - 31
         - 30
-        - 29
-        - 26
-        - 17
+        - 27
+        - 18
       rule: Join
       value: ~
-    - children: #17
-        - 18
+    - children:
+        - 19
       rule: Condition
       value: ~
-    - children: #18
+    - children:
+        - 24
         - 23
-        - 22
-        - 19
+        - 20
       rule: Cmp
       value: ~
-    - children: #19
+    - children:
+        - 22
         - 21
-        - 20
       rule: Reference
       value: ~
-    - children: [] #20
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #21
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t2
-    - children: [] #22
+    - children: []
       rule: Eq
       value: "="
-    - children: #23
+    - children:
+        - 26
         - 25
-        - 24
       rule: Reference
       value: ~
-    - children: [] #24
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #25
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t1
-    - children: #26
-        - 27
+    - children:
+        - 28
       rule: Scan
       value: ~
-    - children: #27
-        - 28
+    - children:
+        - 29
       rule: ScanTable
       value: ~
-    - children: [] #28
+    - children: []
       rule: Table
       value: t2
-    - children: [] #29
+    - children: []
       rule: InnerJoinKind
       value: inner
-    - children: #30
-        - 31
+    - children:
+        - 32
       rule: Scan
       value: ~
-    - children: #31
-        - 32
+    - children:
+        - 33
       rule: ScanTable
       value: ~
-    - children: [] #32
+    - children: []
       rule: Table
       value: t1
-    - children: #33
-        - 2
-        - 38
-        - 34
+    - children:
+        - 3
+        - 39
+        - 35
       rule: Projection
       value: ~
-    - children: #34
-        - 45
+    - children:
+        - 46
       rule: Column
       value: ~
-    - children: #35
+    - children:
+        - 38
         - 37
-        - 36
       rule: Reference
       value: ~
-    - children: [] #36
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: b
-    - children: [] #37
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t2
-    - children: #38
-        - 43
+    - children:
+        - 44
       rule: Column
       value: ~
-    - children: #39
+    - children:
+        - 42
         - 41
-        - 40
       rule: Reference
       value: ~
-    - children: [] #40
-      rule: ColumnName
+    - children: []
+      rule: Name
       value: a
-    - children: [] #41
-      rule: ScanName
+    - children: []
+      rule: Name
       value: t1
-    - children: [] #42
+    - children: []
       rule: AliasName
       value: a
-    - children: #43
-        - 39
-        - 42
+    - children:
+        - 40
+        - 43
       rule: Alias
       value: ~
-    - children: [] #44
+    - children: []
       rule: AliasName
       value: b
-    - children: #45
-        - 35
-        - 44
+    - children:
+        - 36
+        - 45
       rule: Alias
       value: ~
 top: 0
 map:
-  3:
-    - 9
-  39:
-    - 2
-  19:
-    - 30
-    - 26
-  35:
-    - 2
-  23:
-    - 30
-    - 26
-  13:
-    - 16
-  6:
-    - 9
+  20:
+    - 31
+    - 27
+  4:
+    - 10
+  24:
+    - 31
+    - 27
+  36:
+    - 3
+  14:
+    - 17
+  40:
+    - 3
+  7:
+    - 10
