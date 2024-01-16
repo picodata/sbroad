@@ -28,12 +28,6 @@ pub struct RouterConfiguration {
     /// Sharding column names.
     sharding_column: String,
 
-    /// Jaeger agent host.
-    jaeger_agent_host: String,
-
-    /// Jaeger agent port.
-    jaeger_agent_port: u16,
-
     /// IR table segments from the cluster spaces
     tables: HashMap<String, Table>,
 
@@ -53,8 +47,6 @@ impl RouterConfiguration {
         RouterConfiguration {
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
-            jaeger_agent_host: "localhost".to_string(),
-            jaeger_agent_port: 6831,
             tables: HashMap::new(),
             sharding_column: String::new(),
             functions: HashMap::new(),
@@ -263,24 +255,6 @@ impl RouterConfiguration {
         Ok(())
     }
 
-    #[must_use]
-    pub fn get_jaeger_agent_host(&self) -> &str {
-        self.jaeger_agent_host.as_str()
-    }
-
-    #[must_use]
-    pub fn get_jaeger_agent_port(&self) -> u16 {
-        self.jaeger_agent_port
-    }
-
-    pub fn set_jaeger_agent_host(&mut self, host: String) {
-        self.jaeger_agent_host = host;
-    }
-
-    pub fn set_jaeger_agent_port(&mut self, port: u16) {
-        self.jaeger_agent_port = port;
-    }
-
     /// Setup response waiting timeout for executor
     pub fn set_waiting_timeout(&mut self, timeout: u64) {
         if timeout > 0 {
@@ -351,10 +325,6 @@ pub struct StorageConfiguration {
     /// If a new statement is bigger doesn't fit into the cache,
     /// it would not be cached but executed directly.
     pub storage_size_bytes: usize,
-    /// Jaeger agent host
-    pub jaeger_agent_host: String,
-    /// Jaeger agent port
-    pub jaeger_agent_port: u16,
 }
 
 impl Default for StorageConfiguration {
@@ -369,8 +339,6 @@ impl StorageConfiguration {
         StorageConfiguration {
             storage_capacity: 0,
             storage_size_bytes: 0,
-            jaeger_agent_host: "localhost".to_string(),
-            jaeger_agent_port: 6831,
         }
     }
 

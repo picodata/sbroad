@@ -15,8 +15,8 @@ use std::rc::Rc;
 use sbroad::cbo::histogram::Scalar;
 use tarantool::tlua::LuaFunction;
 
+use crate::cartridge::bucket_count;
 use crate::cartridge::config::RouterConfiguration;
-use crate::cartridge::{bucket_count, update_tracing};
 use sbroad::executor::protocol::Binary;
 
 use sbroad::error;
@@ -88,26 +88,6 @@ impl ConfigurationProvider for RouterRuntime {
                 }
             };
 
-            let jaeger_agent_host: LuaFunction<_> =
-                lua.eval("return get_jaeger_agent_host;").unwrap();
-            let jaeger_host: String = match jaeger_agent_host.call() {
-                Ok(res) => res,
-                Err(e) => {
-                    error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
-                }
-            };
-
-            let jaeger_agent_port: LuaFunction<_> =
-                lua.eval("return get_jaeger_agent_port;").unwrap();
-            let jaeger_port: u16 = match jaeger_agent_port.call() {
-                Ok(res) => res,
-                Err(e) => {
-                    error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
-                }
-            };
-
             let waiting_timeout: LuaFunction<_> = lua.eval("return get_waiting_timeout;").unwrap();
             let timeout: u64 = match waiting_timeout.call() {
                 Ok(res) => res,
@@ -148,17 +128,11 @@ impl ConfigurationProvider for RouterRuntime {
             };
 
             let mut metadata = RouterConfiguration::new();
-            metadata.set_jaeger_agent_host(jaeger_host);
-            metadata.set_jaeger_agent_port(jaeger_port);
             metadata.set_waiting_timeout(timeout);
             metadata.set_cache_capacity(router_capacity);
             metadata.set_sharding_column(normalize_name_from_schema(column.as_str()));
             // We should always load the schema **after** setting the sharding column.
             metadata.load_schema(&schema)?;
-            update_tracing(
-                metadata.get_jaeger_agent_host(),
-                metadata.get_jaeger_agent_port(),
-            )?;
 
             return Ok(Some(metadata));
         }

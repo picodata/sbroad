@@ -109,7 +109,6 @@ where
     /// - Failed to build AST.
     /// - Failed to build IR plan.
     /// - Failed to apply optimizing transformations to IR plan.
-    #[otm_child_span("query.new")]
     pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, SbroadError>
     where
         C::Cache: Cache<String, Plan>,

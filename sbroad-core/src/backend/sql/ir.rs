@@ -15,10 +15,7 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
-use crate::otm::{
-    child_span, current_id, current_tracer, deserialize_context, inject_context, query_id,
-    QueryTracer,
-};
+use crate::otm::{child_span, current_id, deserialize_context, inject_context, query_id};
 
 use super::space::TmpSpace;
 use super::tree::SyntaxData;
@@ -29,7 +26,8 @@ pub struct PatternWithParams {
     pub params: Vec<Value>,
     pub context: Option<HashMap<String, String>>,
     pub id: Option<String>,
-    pub tracer: QueryTracer,
+    // Name of the tracer to use
+    pub tracer: Option<String>,
 }
 
 impl PartialEq for PatternWithParams {
@@ -62,7 +60,7 @@ pub struct EncodedPatternWithParams(
     Option<Vec<LuaValue>>,
     Option<HashMap<String, String>>,
     Option<String>,
-    String,
+    Option<String>,
 );
 
 impl From<PatternWithParams> for EncodedPatternWithParams {
@@ -73,7 +71,7 @@ impl From<PatternWithParams> for EncodedPatternWithParams {
             Some(encoded_params),
             value.context,
             value.id,
-            value.tracer.to_string(),
+            value.tracer,
         )
     }
 }
@@ -93,7 +91,7 @@ impl TryFrom<EncodedPatternWithParams> for PatternWithParams {
             params,
             context: value.2,
             id: value.3,
-            tracer: value.4.try_into()?,
+            tracer: value.4,
         };
         Ok(res)
     }
@@ -104,22 +102,21 @@ impl PatternWithParams {
     pub fn new(pattern: String, params: Vec<Value>) -> Self {
         let mut carrier = HashMap::new();
         inject_context(&mut carrier);
-        let tracer = current_tracer();
         if carrier.is_empty() {
             PatternWithParams {
                 pattern,
                 params,
                 context: None,
                 id: None,
-                tracer,
+                tracer: None,
             }
         } else {
             PatternWithParams {
                 pattern,
                 params,
                 context: Some(carrier),
-                id: Some(current_id()),
-                tracer,
+                id: current_id(),
+                tracer: None,
             }
         }
     }

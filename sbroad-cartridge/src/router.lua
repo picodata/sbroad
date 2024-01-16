@@ -57,27 +57,13 @@ local function invalidate_cache ()
     box.func["libsbroad.invalidate_coordinator_cache"]:call({})
 end
 
-local function trace(query, params, context, id)
-    local has_err, parser_res = pcall(
-        function()
-            return box.func["libsbroad.dispatch_query"]:call({
-                query, params, context, id, helper.constants.GLOBAL_TRACER })
-        end
-    )
-
-    if has_err == false then
-        return nil, parser_res
-    end
-
-    return helper.format_result(parser_res[1])
-end
 
 local function execute(query, params)
     local has_err, parser_res = pcall(
         function()
             return box.func["libsbroad.dispatch_query"]:call({
-                query, params, box.NULL, box.NULL,
-                helper.constants.STAT_TRACER })
+                query, params, box.NULL, box.NULL, helper.constants.STAT_TRACER,
+            })
         end
     )
 
@@ -92,5 +78,4 @@ return {
     init=init,
     invalidate_cache = invalidate_cache,
     execute = execute,
-    trace = trace,
 }

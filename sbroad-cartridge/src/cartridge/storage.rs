@@ -1,5 +1,5 @@
+use crate::cartridge::bucket_count;
 use crate::cartridge::config::StorageConfiguration;
-use crate::cartridge::{bucket_count, update_tracing};
 use sbroad::errors::{Action, Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::helpers::storage::runtime::unprepare;
@@ -143,32 +143,9 @@ impl ConfigurationProvider for StorageRuntime {
             let storage_size_bytes = usize::try_from(cache_size_bytes)
                 .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e}"))))?;
 
-            let jaeger_agent_host: LuaFunction<_> =
-                lua.eval("return get_jaeger_agent_host;").unwrap();
-            let jaeger_host: String = match jaeger_agent_host.call() {
-                Ok(res) => res,
-                Err(e) => {
-                    error!(Option::from("getting jaeger agent host"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
-                }
-            };
-
-            let jaeger_agent_port: LuaFunction<_> =
-                lua.eval("return get_jaeger_agent_port;").unwrap();
-            let jaeger_port: u16 = match jaeger_agent_port.call() {
-                Ok(res) => res,
-                Err(e) => {
-                    error!(Option::from("getting jaeger agent port"), &format!("{e:?}"),);
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
-                }
-            };
-
             let mut metadata = StorageConfiguration::new();
             metadata.storage_capacity = storage_capacity;
             metadata.storage_size_bytes = storage_size_bytes;
-            metadata.jaeger_agent_host = jaeger_host;
-            metadata.jaeger_agent_port = jaeger_port;
-            update_tracing(&metadata.jaeger_agent_host, metadata.jaeger_agent_port)?;
 
             return Ok(Some(metadata));
         }

@@ -6,37 +6,9 @@ pub mod storage;
 
 use std::cell::Ref;
 
-use opentelemetry::global::{set_text_map_propagator, set_tracer_provider};
-use opentelemetry::sdk::propagation::{TextMapCompositePropagator, TraceContextPropagator};
 use sbroad::error;
-use sbroad::errors::{Action, SbroadError};
-use sbroad::otm::update_global_tracer;
+use sbroad::errors::SbroadError;
 use tarantool::tlua::LuaFunction;
-
-static SERVICE_NAME: &str = "sbroad";
-
-/// Update the opentelemetry global trace provider and tracer.
-///
-/// # Errors
-/// - failed to build OTM global trace provider
-pub fn update_tracing(host: &str, port: u16) -> Result<(), SbroadError> {
-    let propagator = TextMapCompositePropagator::new(vec![Box::new(TraceContextPropagator::new())]);
-    set_text_map_propagator(propagator);
-    let provider = opentelemetry_jaeger::new_pipeline()
-        .with_agent_endpoint(format!("{host}:{port}"))
-        .with_service_name(SERVICE_NAME)
-        .build_simple()
-        .map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Build,
-                None,
-                format!("OTM global trace provider: {e}"),
-            )
-        })?;
-    set_tracer_provider(provider);
-    update_global_tracer();
-    Ok(())
-}
 
 /// Cartridge cluster configuration provider.
 pub trait ConfigurationProvider: Sized {

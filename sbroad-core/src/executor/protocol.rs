@@ -8,7 +8,7 @@ use crate::debug;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
-use crate::otm::{current_id, current_tracer, extract_context, inject_context, QueryTracer};
+use crate::otm::{current_id, extract_context, inject_context};
 
 use crate::executor::engine::TableVersionMap;
 use crate::ir::Options;
@@ -70,6 +70,22 @@ impl SchemaInfo {
     }
 }
 
+/// Helper struct for storing tracing related information
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct TracingMetadata {
+    /// Context passed between nodes
+    pub context: ContextCarrier,
+    /// Id of a trace
+    pub trace_id: String,
+}
+
+impl TracingMetadata {
+    #[must_use]
+    pub fn new(context: ContextCarrier, trace_id: String) -> Self {
+        Self { context, trace_id }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RequiredData {
     // Unique ID for concrete plan represented in a view of BLAKE3 hash.
@@ -79,11 +95,9 @@ pub struct RequiredData {
     pub parameters: Vec<Value>,
     pub query_type: QueryType,
     pub can_be_cached: bool,
-    context: ContextCarrier,
-    tracer: QueryTracer,
-    trace_id: String,
     pub options: Options,
     pub schema_info: SchemaInfo,
+    pub tracing_meta: Option<TracingMetadata>,
 }
 
 impl Default for RequiredData {
@@ -93,11 +107,9 @@ impl Default for RequiredData {
             parameters: vec![],
             query_type: QueryType::DQL,
             can_be_cached: true,
-            context: ContextCarrier::empty(),
-            tracer: QueryTracer::default(),
-            trace_id: String::new(),
             options: Options::default(),
             schema_info: SchemaInfo::default(),
+            tracing_meta: None,
         }
     }
 }
@@ -140,54 +152,27 @@ impl RequiredData {
         options: Options,
         schema_info: SchemaInfo,
     ) -> Self {
-        let mut carrier = HashMap::new();
-        inject_context(&mut carrier);
-        let tracer = current_tracer();
-        let trace_id = current_id();
-        if carrier.is_empty() {
-            RequiredData {
-                plan_id,
-                parameters,
-                query_type,
-                can_be_cached,
-                context: ContextCarrier::empty(),
-                tracer,
-                trace_id,
-                options,
-                schema_info,
-            }
-        } else {
-            RequiredData {
-                plan_id,
-                parameters,
-                query_type,
-                can_be_cached,
-                context: ContextCarrier::new(carrier),
-                tracer,
-                trace_id,
-                options,
-                schema_info,
-            }
+        let mut tracing_meta = None;
+        if let Some(trace_id) = current_id() {
+            let mut carrier = HashMap::new();
+            inject_context(&mut carrier);
+            tracing_meta = Some(TracingMetadata::new(ContextCarrier::new(carrier), trace_id));
+        }
+
+        RequiredData {
+            plan_id,
+            parameters,
+            query_type,
+            can_be_cached,
+            options,
+            schema_info,
+            tracing_meta,
         }
     }
 
     #[must_use]
     pub fn plan_id(&self) -> &str {
         &self.plan_id
-    }
-
-    #[must_use]
-    pub fn tracer(&self) -> QueryTracer {
-        self.tracer.clone()
-    }
-
-    #[must_use]
-    pub fn trace_id(&self) -> &str {
-        &self.trace_id
-    }
-
-    pub fn extract_context(&mut self) -> Context {
-        (&mut self.context).into()
     }
 }
 

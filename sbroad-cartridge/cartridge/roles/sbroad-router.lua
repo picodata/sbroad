@@ -13,7 +13,6 @@ local function init(opts) -- luacheck: no unused args
 
     sbroad_router.init(opts.is_master)
     sbroad_common.init(opts.is_master)
-    sbroad_common.init_statistics()
 
     return true
 end
