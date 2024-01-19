@@ -1154,3 +1154,65 @@ fn global_except() {
     ]]);
     assert_eq!(expected, res,)
 }
+
+fn check_subtree_hashes_are_equal(
+    sql1: &str,
+    values1: Vec<Value>,
+    sql2: &str,
+    values2: Vec<Value>,
+) {
+    let coordinator = RouterRuntimeMock::new();
+    let get_hash = |sql: &str, values: Vec<Value>| -> String {
+        let mut query = Query::new(&coordinator, sql, values).unwrap();
+        query
+            .get_mut_exec_plan()
+            .get_mut_ir_plan()
+            .stash_constants()
+            .unwrap();
+        let ir = query.get_exec_plan().get_ir_plan();
+        let top = ir.get_top().unwrap();
+        ir.pattern_id(top).unwrap()
+    };
+
+    assert_eq!(get_hash(sql1, values1), get_hash(sql2, values2));
+}
+
+#[test]
+fn subtree_hash1() {
+    check_subtree_hashes_are_equal(
+        r#"select ?, ? from "t""#,
+        vec![Value::Unsigned(1), Value::Unsigned(1)],
+        r#"select $1, $1 from "t""#,
+        vec![Value::Unsigned(1)],
+    );
+}
+
+#[test]
+fn subtree_hash2() {
+    check_subtree_hashes_are_equal(
+        r#"select ?, ? from "t"
+        option(sql_vdbe_max_steps = ?, vtable_max_rows = ?)"#,
+        vec![
+            Value::Unsigned(1),
+            Value::Unsigned(11),
+            Value::Unsigned(3),
+            Value::Unsigned(10),
+        ],
+        r#"select $1, $1 from "t"
+        option(sql_vdbe_max_steps = $1, vtable_max_rows = $1)"#,
+        vec![Value::Unsigned(1)],
+    );
+}
+
+/* FIXME: https://git.picodata.io/picodata/picodata/sbroad/-/issues/583
+#[test]
+fn subtree_hash3() {
+    check_subtree_hashes_are_equal(
+        r#"select ?, ? from "t"
+        option(sql_vdbe_max_steps = ?)"#,
+        vec![Value::Unsigned(1), Value::Unsigned(11), Value::Unsigned(10)],
+        r#"select ?, ? from "t""#,
+        vec![Value::Unsigned(1), Value::Unsigned(1)],
+    );
+}
+*/

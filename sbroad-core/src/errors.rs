@@ -303,6 +303,7 @@ pub enum SbroadError {
     /// and can be empty (None).
     Unsupported(Entity, Option<String>),
     OutdatedStorageSchema,
+    UseOfBothParamsStyles,
     UnsupportedOpForGlobalTables(String),
 }
 
@@ -328,6 +329,9 @@ impl fmt::Display for SbroadError {
             },
             SbroadError::UnexpectedNumberOfValues(s) => format!("unexpected number of values: {s}"),
             SbroadError::LuaError(e) => e.clone(),
+            SbroadError::UseOfBothParamsStyles => {
+                "invalid parameters usage. Got $n and ? parameters in one query!".into()
+            }
             SbroadError::OutdatedStorageSchema => {
                 "storage schema version different from router".into()
             }

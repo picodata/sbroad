@@ -242,6 +242,7 @@ impl Slices {
 pub struct OptionSpec {
     pub kind: OptionKind,
     pub val: Option<Value>,
+    pub param_id: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Deserialize, Serialize)]
@@ -355,6 +356,9 @@ impl Options {
     }
 }
 
+pub type NodeId = usize;
+pub type ValueIdx = usize;
+
 /// Logical plan tree structure.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Plan {
@@ -387,6 +391,11 @@ pub struct Plan {
     /// for storing the order of options in `Option` clause, after `bind_params` is
     /// called this field is not used and becomes empty.
     pub raw_options: Vec<OptionSpec>,
+    /// Mapping between parameter plan id and corresponding value position in
+    /// in values list. This is needed only for handling PG-like parameters
+    /// in `bind_params` after which it becomes `None`.
+    /// If query uses tnt-like params, then this field is always `None`.
+    pub pg_params_map: HashMap<NodeId, ValueIdx>,
     /// SQL options. Initiliazed to defaults upon IR creation. Then bound to actual
     /// values after `bind_params` these options are set to their actual values.
     /// See `apply_options`.
@@ -445,6 +454,7 @@ impl Plan {
             raw_options: vec![],
             options: Options::default(),
             version_map: TableVersionMap::new(),
+            pg_params_map: HashMap::new(),
         }
     }
 

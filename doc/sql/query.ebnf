@@ -47,7 +47,7 @@ reference   ::= (table '.')? name
 value       ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
-                | '?'
+                | parameter
                 | integer
                 | unsigned
                 | double
@@ -67,6 +67,7 @@ type        ::= 'ANY'
                 | 'TEXT'
                 | 'UNSIGNED'
                 | 'VARCHAR' ('(' length ')')?
+parameter   ::= '$' unsigned | '?'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 insert      ::= 'INSERT' 'INTO' table ('(' name (',' name)* ')')? (values row | select )  ('ON CONFLICT' 'DO'  ('NOTHING' | 'REPLACE' | 'FAIL'))?
 update      ::= 'UPDATE' table 'SET' ( name '=' ((table '.')? name) (',' name '=' (table '.')? name)* ) ( 'FROM' '(' select ')' ( 'AS' name )? )? ( 'WHERE' expression )?

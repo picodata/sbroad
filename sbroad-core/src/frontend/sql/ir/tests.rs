@@ -1180,6 +1180,100 @@ vtable_max_rows = 10
 }
 
 #[test]
+fn front_sql_pg_style_params1() {
+    let input = r#"select $1, $2, $1 from "t""#;
+
+    let plan = sql_to_optimized_ir(
+        input,
+        vec![Value::Unsigned(1000), Value::String("hi".into())],
+    );
+    let expected_explain = String::from(
+        r#"projection (1000::unsigned -> "COL_1", 'hi'::string -> "COL_2", 1000::unsigned -> "COL_3")
+    scan "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_pg_style_params2() {
+    let input =
+        r#"select $1, $2, $1 from "t" option(sql_vdbe_max_steps = $1, vtable_max_rows = $1)"#;
+
+    let plan = sql_to_optimized_ir(
+        input,
+        vec![Value::Unsigned(1000), Value::String("hi".into())],
+    );
+    let expected_explain = String::from(
+        r#"projection (1000::unsigned -> "COL_1", 'hi'::string -> "COL_2", 1000::unsigned -> "COL_3")
+    scan "t"
+execution options:
+sql_vdbe_max_steps = 1000
+vtable_max_rows = 1000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_pg_style_params3() {
+    let input = r#"select "a" + $1 from "t" 
+        where "a" = $1
+        group by "a" + $1
+        having count("b") > $1 
+        option(sql_vdbe_max_steps = $1, vtable_max_rows = $1)"#;
+
+    let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(42)]);
+    let expected_explain = String::from(
+        r#"projection ("column_31"::unsigned -> "COL_1")
+    having ROW(sum(("count_45"::integer))::decimal) > ROW(42::unsigned)
+        group by ("column_31"::unsigned) output: ("column_31"::unsigned -> "column_31", "count_45"::integer -> "count_45")
+            motion [policy: segment([ref("column_31")])]
+                scan
+                    projection (ROW("t"."a"::unsigned) + ROW(42::unsigned) -> "column_31", count(("t"."b"::unsigned))::integer -> "count_45")
+                        group by (ROW("t"."a"::unsigned) + ROW(42::unsigned)) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                            selection ROW("t"."a"::unsigned) = ROW(42::unsigned)
+                                scan "t"
+execution options:
+sql_vdbe_max_steps = 42
+vtable_max_rows = 42
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_pg_style_params4() {
+    let input = r#"select $1, ? from "t""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        "invalid parameters usage. Got $n and ? parameters in one query!",
+        err.to_string()
+    );
+}
+
+#[test]
+fn front_sql_pg_style_params5() {
+    let input = r#"select $0 from "t""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let ast = AbstractSyntaxTree::new(input).unwrap();
+    let err = ast.resolve_metadata(metadata).unwrap_err();
+
+    assert_eq!(
+        "invalid query: $n parameters are indexed from 1!",
+        err.to_string()
+    );
+}
+
+#[test]
 fn front_sql_option_defaults() {
     let input = r#"select * from "t" where "a" = ? and "b" = ?"#;
 

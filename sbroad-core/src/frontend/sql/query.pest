@@ -253,7 +253,9 @@ Value = _{ Parameter | True | False | Null | Double | Decimal | Unsigned | Integ
         | (^"row" ~ "(" ~ RowElem ~ ("," ~ RowElem)* ~ ")")
     }
     RowElem = _{ Concat | Cast | Row | Function | Value }
-    Parameter = @{ "?" }
+    Parameter = { PgParameter | TntParameter }
+    TntParameter = @{ "?" }
+    PgParameter = @{ "$" ~ Unsigned }
 
 EOF = { EOI | ";" }
 WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }

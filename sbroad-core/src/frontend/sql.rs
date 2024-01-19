@@ -714,6 +714,9 @@ impl Ast for AbstractSyntaxTree {
         // Is it global for every `ValuesRow` met in the AST.
         let mut col_idx: usize = 0;
 
+        let mut met_tnt_param = false;
+        let mut met_pg_param = false;
+
         let mut betweens: Vec<Between> = Vec::new();
         // Ids of arithmetic expressions that have parentheses.
         let mut arith_expr_with_parentheses_ids: Vec<usize> = Vec::new();
@@ -1034,8 +1037,12 @@ impl Ast for AbstractSyntaxTree {
                         .first()
                         .expect("no children for sql_vdbe_max_steps option");
                     let ast_child_node = self.nodes.get_node(*ast_child_id)?;
+                    let mut param_id = None;
                     let val: Option<Value> = match ast_child_node.rule {
-                        Type::Parameter => None,
+                        Type::Parameter => {
+                            param_id = Some(map.get(*ast_child_id)?);
+                            None
+                        }
                         Type::Unsigned => {
                             let v = {
                                 if let Some(str_value) = ast_child_node.value.as_ref() {
@@ -1064,6 +1071,7 @@ impl Ast for AbstractSyntaxTree {
                     plan.raw_options.push(OptionSpec {
                         kind: OptionKind::VTableMaxRows,
                         val,
+                        param_id,
                     });
                 }
                 Type::SqlVdbeMaxSteps => {
@@ -1072,8 +1080,12 @@ impl Ast for AbstractSyntaxTree {
                         .first()
                         .expect("no children for sql_vdbe_max_steps option");
                     let ast_child_node = self.nodes.get_node(*ast_child_id)?;
+                    let mut param_id = None;
                     let val: Option<Value> = match ast_child_node.rule {
-                        Type::Parameter => None,
+                        Type::Parameter => {
+                            param_id = Some(map.get(*ast_child_id)?);
+                            None
+                        }
                         Type::Unsigned => {
                             let v = {
                                 if let Some(str_value) = ast_child_node.value.as_ref() {
@@ -1102,10 +1114,61 @@ impl Ast for AbstractSyntaxTree {
                     plan.raw_options.push(OptionSpec {
                         kind: OptionKind::SqlVdbeMaxSteps,
                         val,
+                        param_id,
                     });
                 }
                 Type::Parameter => {
+                    let ast_child_id = node.children.first().ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::AST,
+                            Some(format!("parameter ast must have a child. id: {id}")),
+                        )
+                    })?;
+                    let plan_child_id = map.get(*ast_child_id)?;
+                    map.add(id, plan_child_id);
+                }
+                Type::TntParameter => {
+                    if met_pg_param {
+                        return Err(SbroadError::UseOfBothParamsStyles);
+                    }
+                    met_tnt_param = true;
                     map.add(id, plan.add_param());
+                }
+                Type::PgParameter => {
+                    if met_tnt_param {
+                        return Err(SbroadError::UseOfBothParamsStyles);
+                    }
+                    met_pg_param = true;
+
+                    let node_str = node
+                        .value
+                        .as_ref()
+                        .expect("pg param ast node must have value");
+
+                    // There is no child of pg parameter on purpose:
+                    // if there is a child (Constant), we will add it to
+                    // plan, and plan will now have extra nodes. This
+                    // will cause the same expressions have different ids.
+                    // And because of that we will get different subtree
+                    // hashes in dispatch.
+                    let value_idx = node_str[1..].parse::<usize>().map_err(|_| {
+                        SbroadError::Invalid(
+                            Entity::Query,
+                            Some(format!("failed to parse parameter: {node_str}")),
+                        )
+                    })?;
+
+                    if value_idx == 0 {
+                        return Err(SbroadError::Invalid(
+                            Entity::Query,
+                            Some("$n parameters are indexed from 1!".into()),
+                        ));
+                    }
+
+                    let param_id = plan.add_param();
+                    map.add(id, param_id);
+
+                    plan.pg_params_map.insert(param_id, value_idx - 1);
                 }
                 Type::Asterisk => {
                     // We can get an asterisk only in projection.

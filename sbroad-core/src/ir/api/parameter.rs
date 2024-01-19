@@ -43,9 +43,9 @@ impl Plan {
     /// - Internal errors.
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("plan.bind")]
-    pub fn bind_params(&mut self, mut params: Vec<Value>) -> Result<(), SbroadError> {
+    pub fn bind_params(&mut self, mut values: Vec<Value>) -> Result<(), SbroadError> {
         // Nothing to do here.
-        if params.is_empty() {
+        if values.is_empty() {
             return Ok(());
         }
 
@@ -57,13 +57,69 @@ impl Plan {
 
         let mut binded_params_counter = 0;
         if !self.raw_options.is_empty() {
-            binded_params_counter = self.bind_option_params(&mut params)?;
+            binded_params_counter = self.bind_option_params(&mut values)?;
+        }
+
+        // Gather all parameter nodes from the tree to a hash set.
+        // `param_node_ids` is used during first plan traversal (`row_ids` populating).
+        // `param_set_params` is used during second plan traversal (nodes transformation).
+        let mut param_node_ids = self.get_param_set();
+        let mut param_node_ids_cloned = param_node_ids.clone();
+
+        let tnt_params_style = self.pg_params_map.is_empty();
+
+        let mut pg_params_map = std::mem::take(&mut self.pg_params_map);
+
+        if !tnt_params_style {
+            // Due to how we calculate hash for plan subtree and the
+            // fact that pg parameters can refer to same value multiple
+            // times we currently copy params that are referred more
+            // than once in order to get the same hash.
+            // See https://git.picodata.io/picodata/picodata/sbroad/-/issues/583
+            let mut used_values = vec![false; values.len()];
+            let invalid_idx = |param_id: usize, value_idx: usize| {
+                SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!(
+                        "out of bounds value index {value_idx} for pg parameter {param_id}"
+                    )),
+                )
+            };
+
+            // NB: we can't use `param_node_ids`, we need to traverse
+            // parameters in the same order they will be bound,
+            // otherwise we may get different hashes for plans
+            // with tnt and pg parameters. See `subtree_hash*` tests,
+            for (_, param_id) in &nodes {
+                if !matches!(self.get_node(*param_id)?, Node::Parameter) {
+                    continue;
+                }
+                let value_idx = *pg_params_map.get(param_id).ok_or(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!(
+                        "value index not found for parameter with id: {param_id}",
+                    )),
+                ))?;
+                if used_values.get(value_idx).copied().unwrap_or(true) {
+                    let Some(value) = values.get(value_idx) else {
+                        return Err(invalid_idx(*param_id, value_idx))
+                    };
+                    values.push(value.clone());
+                    pg_params_map
+                        .entry(*param_id)
+                        .and_modify(|value_idx| *value_idx = values.len() - 1);
+                } else if let Some(used) = used_values.get_mut(value_idx) {
+                    *used = true;
+                } else {
+                    return Err(invalid_idx(*param_id, value_idx));
+                }
+            }
         }
 
         // Transform parameters to values (plan constants). The result values are stored in the
         // opposite to parameters order.
-        let mut value_ids: Vec<usize> = Vec::with_capacity(params.len());
-        while let Some(param) = params.pop() {
+        let mut value_ids: Vec<usize> = Vec::with_capacity(values.len());
+        while let Some(param) = values.pop() {
             value_ids.push(self.add_const(param));
         }
 
@@ -73,13 +129,7 @@ impl Plan {
         let mut row_ids: HashMap<usize, usize, RandomState> =
             HashMap::with_hasher(RandomState::new());
 
-        // Gather all parameter nodes from the tree to a hash set.
-        // `param_node_ids` is used during first plan traversal (`row_ids` populating).
-        // `param_set_params` is used during second plan traversal (nodes transformation).
-        let mut param_node_ids = self.get_param_set();
-        let mut param_node_ids_cloned = param_node_ids.clone();
-
-        if param_node_ids.len() - binded_params_counter > value_ids.len() {
+        if tnt_params_style && param_node_ids.len() - binded_params_counter > value_ids.len() {
             return Err(SbroadError::Invalid(
                 Entity::Value,
                 Some(format!(
@@ -90,41 +140,54 @@ impl Plan {
             ));
         }
 
-        // Closure to retrieve a corresponding value for a parameter node.
-        let get_value = |pos: usize| -> Result<usize, SbroadError> {
-            let val_id = value_ids.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format!("(Parameter) in position {pos}"))
-            })?;
-            Ok(*val_id)
-        };
-
-        // After binding parameters we need to recalculate expression types.
-        let mut new_types = HashMap::with_capacity_and_hasher(nodes.len(), RandomState::new());
-
         // Populate rows.
         // Number of parameters - `idx` - 1 = index in params we are currently binding.
         // Initially pointing to nowhere.
         let mut idx = value_ids.len();
+
+        let get_value = |param_id: usize, idx: usize| -> Result<usize, SbroadError> {
+            let value_idx = if tnt_params_style {
+                // in case non-pg params are used,
+                // idx is the correct position
+                idx
+            } else {
+                value_ids.len()
+                    - 1
+                    - *pg_params_map.get(&param_id).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!(
+                                "value index not found for parameter with id: {param_id}",
+                            )),
+                        )
+                    })?
+            };
+            let val_id = value_ids.get(value_idx).ok_or_else(|| {
+                SbroadError::NotFound(Entity::Node, format!("(Parameter) in position {value_idx}"))
+            })?;
+            Ok(*val_id)
+        };
+
         for (_, id) in &nodes {
             let node = self.get_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
-                    Relational::Selection {
+                    Relational::Having {
+                        filter: ref param_id,
+                        ..
+                    }
+                    | Relational::Selection {
                         filter: ref param_id,
                         ..
                     }
                     | Relational::Join {
                         condition: ref param_id,
                         ..
-                    }
-                    | Relational::Projection {
-                        output: ref param_id,
-                        ..
                     } => {
                         if param_node_ids.take(param_id).is_some() {
-                            idx -= 1;
-                            let val_id = get_value(idx)?;
-                            row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
+                            idx = idx.saturating_sub(1);
+                            let val_id = get_value(*param_id, idx)?;
+                            row_ids.insert(*param_id, self.nodes.add_row(vec![val_id], None));
                         }
                     }
                     _ => {}
@@ -143,7 +206,7 @@ impl Plan {
                         ..
                     } => {
                         if param_node_ids.take(param_id).is_some() {
-                            idx -= 1;
+                            idx = idx.saturating_sub(1);
                         }
                     }
                     Expression::Bool {
@@ -162,9 +225,9 @@ impl Plan {
                     } => {
                         for param_id in &[*left, *right] {
                             if param_node_ids.take(param_id).is_some() {
-                                idx -= 1;
-                                let val_id = get_value(idx)?;
-                                row_ids.insert(idx, self.nodes.add_row(vec![val_id], None));
+                                idx = idx.saturating_sub(1);
+                                let val_id = get_value(*param_id, idx)?;
+                                row_ids.insert(*param_id, self.nodes.add_row(vec![val_id], None));
                             }
                         }
                     }
@@ -176,24 +239,22 @@ impl Plan {
                             if param_node_ids.take(param_id).is_some() {
                                 // Parameter is already under row/function so that we don't
                                 // have to cover it with `add_row` call.
-                                idx -= 1;
+                                idx = idx.saturating_sub(1);
                             }
                         }
                     }
-                    Expression::Reference { .. } => {
-                        // Remember to recalculate type.
-                        new_types.insert(id, expr.recalculate_type(self)?);
-                    }
-                    Expression::Constant { .. } | Expression::CountAsterisk => {}
+                    Expression::Reference { .. }
+                    | Expression::Constant { .. }
+                    | Expression::CountAsterisk => {}
                 },
                 Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 
         // Closure to retrieve a corresponding row for a parameter node.
-        let get_row = |idx: usize| -> Result<usize, SbroadError> {
-            let row_id = row_ids.get(&idx).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format!("(Row) at position {idx}"))
+        let get_row = |param_id: usize| -> Result<usize, SbroadError> {
+            let row_id = row_ids.get(&param_id).ok_or_else(|| {
+                SbroadError::NotFound(Entity::Node, format!("(Row) at position {param_id}"))
             })?;
             Ok(*row_id)
         };
@@ -201,24 +262,41 @@ impl Plan {
         // Replace parameters in the plan.
         idx = value_ids.len();
         for (_, id) in &nodes {
+            // Before binding, references that referred to
+            // parameters had scalar type (by default),
+            // but in fact they may refer to different stuff.
+            {
+                let mut new_type = None;
+                if let Node::Expression(expr) = self.get_node(*id)? {
+                    if let Expression::Reference { .. } = expr {
+                        new_type = Some(expr.recalculate_type(self)?);
+                    }
+                }
+                if let Some(new_type) = new_type {
+                    let expr = self.get_mut_expression_node(*id)?;
+                    expr.set_ref_type(new_type);
+                    continue;
+                }
+            }
+
             let node = self.get_mut_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
-                    Relational::Selection {
+                    Relational::Having {
+                        filter: ref mut param_id,
+                        ..
+                    }
+                    | Relational::Selection {
                         filter: ref mut param_id,
                         ..
                     }
                     | Relational::Join {
                         condition: ref mut param_id,
                         ..
-                    }
-                    | Relational::Projection {
-                        output: ref mut param_id,
-                        ..
                     } => {
                         if param_node_ids_cloned.take(param_id).is_some() {
-                            idx -= 1;
-                            let row_id = get_row(idx)?;
+                            idx = idx.saturating_sub(1);
+                            let row_id = get_row(*param_id)?;
                             *param_id = row_id;
                         }
                     }
@@ -238,8 +316,8 @@ impl Plan {
                         ..
                     } => {
                         if param_node_ids_cloned.take(param_id).is_some() {
-                            idx -= 1;
-                            let val_id = get_value(idx)?;
+                            idx = idx.saturating_sub(1);
+                            let val_id = get_value(*param_id, idx)?;
                             *param_id = val_id;
                         }
                     }
@@ -259,8 +337,8 @@ impl Plan {
                     } => {
                         for param_id in &mut [left, right].iter_mut() {
                             if param_node_ids_cloned.take(param_id).is_some() {
-                                idx -= 1;
-                                let row_id = get_row(idx)?;
+                                idx = idx.saturating_sub(1);
+                                let row_id = get_row(**param_id)?;
                                 **param_id = row_id;
                             }
                         }
@@ -272,26 +350,15 @@ impl Plan {
                     } => {
                         for param_id in list {
                             if param_node_ids_cloned.take(param_id).is_some() {
-                                idx -= 1;
-                                let val_id = get_value(idx)?;
+                                idx = idx.saturating_sub(1);
+                                let val_id = get_value(*param_id, idx)?;
                                 *param_id = val_id;
                             }
                         }
                     }
-                    Expression::Reference { .. } => {
-                        // Update type.
-                        let new_type = new_types
-                            .get(id)
-                            .ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::Node,
-                                    format!("failed to get type for node {id}"),
-                                )
-                            })?
-                            .clone();
-                        expr.set_ref_type(new_type);
-                    }
-                    Expression::Constant { .. } | Expression::CountAsterisk => {}
+                    Expression::Reference { .. }
+                    | Expression::Constant { .. }
+                    | Expression::CountAsterisk => {}
                 },
                 Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
             }
@@ -319,7 +386,30 @@ impl Plan {
         let mut binded_params_counter = 0usize;
         for opt in self.raw_options.iter_mut().rev() {
             if opt.val.is_none() {
-                if let Some(v) = params.pop() {
+                if !self.pg_params_map.is_empty() {
+                    // PG-like params syntax
+                    let Some(param_id) = opt.param_id else {
+                        return Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!("no param id for option: {opt:?}"))
+                        ))
+                    };
+                    let value_idx = *self.pg_params_map.get(&param_id).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!("no value idx in map for option parameter: {opt:?}")),
+                        )
+                    })?;
+                    let value = params.get(value_idx).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!(
+                                "invalid value idx {value_idx}, for option: {opt:?}"
+                            )),
+                        )
+                    })?;
+                    opt.val = Some(value.clone());
+                } else if let Some(v) = params.pop() {
                     binded_params_counter += 1;
                     opt.val = Some(v);
                 } else {

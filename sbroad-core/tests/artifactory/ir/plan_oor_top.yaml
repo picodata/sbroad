@@ -48,6 +48,7 @@ undo:
   log: {}
 constants: {}
 raw_options: []
+pg_params_map: {}
 options:
   vtable_max_rows: 5000
   execute_options:

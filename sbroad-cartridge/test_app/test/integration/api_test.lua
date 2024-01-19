@@ -483,3 +483,47 @@ g.test_uppercase3 = function()
         rows = {},
     })
 end
+
+g.test_pg_style_params1 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" FROM "t"
+        where "id" = $1 or "id" = $1 + 1
+    ]], {1} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {1},
+            {2}
+        },
+    })
+end
+
+g.test_pg_style_params2 = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT "id" + $1 as "id" from (
+            SELECT "id" FROM "t"
+            UNION ALL
+            SELECT "id" FROM "space_simple_shard_key"
+        )
+        group by "id" + $1
+        having count("id") > $1
+    ]], {1} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = {
+            {2},
+        },
+    })
+end

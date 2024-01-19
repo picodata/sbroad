@@ -415,11 +415,12 @@ impl ExecutionPlan {
             }
 
             let dst_node = self.get_mut_ir_plan().get_mut_node(node_id)?;
+            let next_id = new_plan.nodes.next_id();
+
             // Replace the node with some invalid value.
             // TODO: introduce some new enum variant for this purpose.
             let mut node: Node = std::mem::replace(dst_node, Node::Parameter);
             let ir_plan = self.get_ir_plan();
-            let next_id = new_plan.nodes.next_id();
             match node {
                 Node::Relational(ref mut rel) => {
                     if let Relational::ValuesRow { data, .. } = rel {
