@@ -1,3 +1,6 @@
+local compat = require('compat')
+local compat_mt = compat ~= nil and getmetatable(compat) or nil
+
 -- Make table read-only
 local function protect(tbl)
     return setmetatable({}, {
@@ -64,10 +67,32 @@ local function dql_error(err, rs_uuid)
     error(err)
 end
 
+local function unwrap_execute_result(result)
+    if compat_mt == nil then
+        return result[1]
+    end
+    -- We want to just call `compat.c_func_iproto_multireturn:is_new()`,
+    -- but it throws an exception when the option is unknown.
+    local ok, opt = pcall(compat_mt.__index, compat, 'c_func_iproto_multireturn')
+    if ok and opt:is_new() then
+        -- On older versions of tarantool there was a bug which made all FFI
+        -- stored procedures' wrap their return values into an additional
+        -- msgpack array (they call it "multireturn", but you couldn't put
+        -- multiple values in there, it was hard-coded to be 1 element). But
+        -- thankfully it was fixed and now we get to rewrite all of our code...
+        -- Yay!
+        -- See https://github.com/tarantool/tarantool/issues/4799
+        return result
+    else
+        return result[1]
+    end
+end
+
 return {
     module_name = module_name,
     vtable_limit_exceeded = vtable_limit_exceeded,
     dql_error = dql_error,
     format_result = format_result,
+    unwrap_execute_result = unwrap_execute_result,
     constants = constants
 }

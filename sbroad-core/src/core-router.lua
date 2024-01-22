@@ -247,7 +247,8 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
         if err ~= nil then
             error(err)
         end
-        result = res[1][1][1]
+        -- TODO: explain where this `[1][1]` comes from
+        result = helper.unwrap_execute_result(res[1][1])
     else
         local err, err_uuid
         local opts = { map_timeout = waiting_timeout, ref_timeout = waiting_timeout }
@@ -320,10 +321,12 @@ _G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
             error(err)
         end
 
+        -- TODO: explain where this `[1][1]` comes from
+        local next_result = helper.unwrap_execute_result(res[1][1])
         if result == nil then
-            result = res[1][1][1]
+            result = next_result
         else
-            result.row_count = result.row_count + res[1][1][1].row_count
+            result.row_count = result.row_count + next_result.row_count
         end
     end
 
@@ -369,10 +372,12 @@ _G.dml_on_all = function(required, optional, is_readonly, waiting_timeout)
             error(err)
         end
 
+        -- TODO: explain where this `[1][1]` comes from
+        local next_result = helper.unwrap_execute_result(res[1][1])
         if result == nil then
-            result = res[1][1][1]
+            result = next_result
         else
-            result.row_count = result.row_count + res[1][1][1].row_count
+            result.row_count = result.row_count + next_result.row_count
         end
     end
 
