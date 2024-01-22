@@ -176,4 +176,18 @@ arbitrary_projection.test_arbitrary_valid = function()
             {1}
         },
     })
+
+    -- using cyrillic symbols in identifiers is okay
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT COLUMN_1 as "колонка" FROM (VALUES (1))
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "колонка", type = "any"},
+        },
+        rows = {
+            {1}
+        },
+    })
 end

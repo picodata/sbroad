@@ -76,7 +76,7 @@ pub fn normalize_name_from_sql(s: &str) -> String {
 #[must_use]
 pub fn normalize_name_for_space_api(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return s.chars().skip(1).take(s.len() - 2).collect();
+        return String::from(&s[1..s.len() - 1]);
     }
     s.to_uppercase()
 }
