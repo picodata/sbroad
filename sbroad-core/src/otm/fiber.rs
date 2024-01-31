@@ -1,5 +1,5 @@
 #[cfg(all(feature = "tracing", not(feature = "mock")))]
+#[inline]
 pub fn fiber_id() -> u64 {
-    let lua = tarantool::lua_state();
-    lua.eval("return require('fiber').id()").unwrap()
+    tarantool::fiber::id()
 }
