@@ -15,18 +15,18 @@ privilege ::= (('CREATE' | 'ALTER' | 'DROP') 'USER')
               | role
 create_procedure ::= 'CREATE PROCEDURE' procedure '(' type (',' type)* ')'
                      ('language' 'SQL')? (('as' '$$' body '$$') | ('begin' 'atomic' body 'end'))
-body         ::= (insert | update | delete)
-create_role  ::= 'CREATE ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_table ::= 'CREATE TABLE' table '(' column (',' column)* ',' primary_key ')' ('USING' ('MEMTX' | 'VINYL'))? distribution ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-create_user  ::= 'CREATE USER' user 'WITH'? 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-alter_user   ::= 'ALTER USER' user 'WITH'? ('LOGIN' | 'NOLOGIN' | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-column       ::= name ('BOOL' | 'DECIMAL' | 'DOUBLE' | 'INT' | 'NUMBER' | 'SCALAR' | 'STRING' | 'TEXT' | 'UNSIGNED' | 'VARCHAR') (('NOT'?)  'NULL')?
-primary_key  ::= 'PRIMARY KEY' '(' name (',' name)* ')'
-distribution ::= 'GLOBAL' | ('DISTRIBUTED BY' '(' name (',' name)*  ')')
+body           ::= (insert | update | delete)
+create_role    ::= 'CREATE ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+create_table   ::= 'CREATE TABLE' table '(' column (',' column)* ',' primary_key ')' ('USING' ('MEMTX' | 'VINYL'))? distribution ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+create_user    ::= 'CREATE USER' user 'WITH'? 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+alter_user     ::= 'ALTER USER' user 'WITH'? ('LOGIN' | 'NOLOGIN' | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+column         ::= name ('BOOL' | 'DECIMAL' | 'DOUBLE' | 'INT' | 'NUMBER' | 'SCALAR' | 'STRING' | 'TEXT' | 'UNSIGNED' | 'VARCHAR') (('NOT'?)  'NULL')?
+primary_key    ::= 'PRIMARY KEY' '(' name (',' name)* ')'
+distribution   ::= 'GLOBAL' | ('DISTRIBUTED BY' '(' name (',' name)*  ')')
 drop_procedure ::= 'DROP PROCEDURE' procedure ('(' type (',' type)* ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_table   ::= 'DROP TABLE' table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_role    ::= 'DROP ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-drop_user    ::= 'DROP USER' user ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_table     ::= 'DROP TABLE' table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_role      ::= 'DROP ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+drop_user      ::= 'DROP USER' user ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 options     ::= 'OPTION' '(' ('VTABLE_MAX_ROWS' '=' unsigned)? (',' 'SQL_VDBE_MAX_STEPS' '=' unsigned)? ')'
 select      ::= 'SELECT' ((alias (',' alias)*) ) 'FROM' (table ('AS' name)? | '(' (select | values) ')' ('AS' name)?) ( ('INNER')? 'JOIN' (table ('AS' name)? | ('(' (select | values) ')' ('AS' name)?))  'ON' expression )? ( 'WHERE' expression )? ( 'GROUP BY' expression(',' expression)* )?
 values      ::= 'VALUES' '(' row (',' row)* ')'
