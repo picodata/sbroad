@@ -220,22 +220,6 @@ where
 #[allow(unreachable_code)]
 #[allow(unused_variables)]
 #[allow(clippy::needless_pass_by_value)]
-pub fn stat_query_span<T, F>(name: &'static str, sql: &str, id: &str, tracer: TracerRef, f: F) -> T
-where
-    F: FnOnce() -> T,
-{
-    #[cfg(all(feature = "tracing", not(feature = "mock")))]
-    {
-        let ctx = Context::new();
-        return query_span(name, &id, tracer, &ctx, sql, f);
-    }
-    f()
-}
-
-#[inline]
-#[allow(unreachable_code)]
-#[allow(unused_variables)]
-#[allow(clippy::needless_pass_by_value)]
 pub fn query_span<T, F>(
     name: &'static str,
     id: &str,
