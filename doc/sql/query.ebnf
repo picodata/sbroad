@@ -2,7 +2,7 @@ statement   ::= explain | ddl | dml | dql | acl
 explain     ::= 'EXPLAIN' ( dml | dql )
 dql         ::= (select | select union all select | select (except 'DISTINCT'? ) select ) options?
 dml         ::= (delete | insert | update) options?
-ddl         ::= create_table | drop_table | create_procedure
+ddl         ::= create_table | drop_table | create_procedure | drop_procedure
 acl         ::= drop_role | drop_user | create_role | create_user | alter_user | grant_privilege | revoke_privilege
 revoke_privilege      ::= 'REVOKE' privilege 'FROM' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 grant_privilege       ::= 'GRANT' privilege 'TO' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
@@ -23,6 +23,7 @@ alter_user   ::= 'ALTER USER' user 'WITH'? ('LOGIN' | 'NOLOGIN' | 'PASSWORD' "'"
 column       ::= name ('BOOL' | 'DECIMAL' | 'DOUBLE' | 'INT' | 'NUMBER' | 'SCALAR' | 'STRING' | 'TEXT' | 'UNSIGNED' | 'VARCHAR') (('NOT'?)  'NULL')?
 primary_key  ::= 'PRIMARY KEY' '(' name (',' name)* ')'
 distribution ::= 'GLOBAL' | ('DISTRIBUTED BY' '(' name (',' name)*  ')')
+drop_procedure ::= 'DROP PROCEDURE' procedure ('(' type (',' type)* ')')? ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 drop_table   ::= 'DROP TABLE' table ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 drop_role    ::= 'DROP ROLE' role ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 drop_user    ::= 'DROP USER' user ('OPTION' '(' ('TIMEOUT' '=' double)')')?

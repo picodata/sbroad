@@ -117,6 +117,47 @@ fn parse_string_value_node(ast: &AbstractSyntaxTree, node_id: usize) -> Result<&
     Ok(string_value.as_str())
 }
 
+fn parse_proc_params(
+    ast: &AbstractSyntaxTree,
+    params_node: &ParseNode,
+) -> Result<Vec<ParamDef>, SbroadError> {
+    if params_node.rule != Type::ProcParams {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("proc params".into()),
+        ));
+    }
+
+    let mut params = Vec::with_capacity(params_node.children.len());
+    for param_id in &params_node.children {
+        let param_def_node = ast.nodes.get_node(*param_id)?;
+        match param_def_node.rule {
+            Type::ProcParamDef => {
+                let type_id = *param_def_node
+                    .children
+                    .first()
+                    .expect("ProcParamDef node must contain exactly one child (type node).");
+                assert!(param_def_node.children.get(1).is_none());
+                let type_node = ast.nodes.get_node(type_id)?;
+                let data_type = match type_node.rule {
+                    Type::TypeBool => RelationType::Boolean,
+                    Type::TypeDecimal => RelationType::Decimal,
+                    Type::TypeDouble => RelationType::Double,
+                    Type::TypeInt => RelationType::Integer,
+                    Type::TypeNumber => RelationType::Number,
+                    Type::TypeScalar => RelationType::Scalar,
+                    Type::TypeString | Type::TypeText | Type::TypeVarchar => RelationType::String,
+                    Type::TypeUnsigned => RelationType::Unsigned,
+                    _ => panic!("Unexpected node: {type_node:?}"),
+                };
+                params.push(ParamDef { data_type });
+            }
+            _ => panic!("Unexpected node: {param_def_node:?}"),
+        }
+    }
+    Ok(params)
+}
+
 fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     if node.rule != Type::CreateProc {
         return Err(SbroadError::Invalid(
@@ -136,35 +177,7 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
                 proc_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
             }
             Type::ProcParams => {
-                let params_node = ast.nodes.get_node(*child_id)?;
-                params.reserve(params_node.children.len());
-                for param_id in &params_node.children {
-                    let param_def_node = ast.nodes.get_node(*param_id)?;
-                    match param_def_node.rule {
-                        Type::ProcParamDef => {
-                            let type_id = *param_def_node.children.first().expect(
-                                "ProcParamDef node must contain exactly one child (type node).",
-                            );
-                            assert!(param_def_node.children.get(1).is_none());
-                            let type_node = ast.nodes.get_node(type_id)?;
-                            let data_type = match type_node.rule {
-                                Type::TypeBool => RelationType::Boolean,
-                                Type::TypeDecimal => RelationType::Decimal,
-                                Type::TypeDouble => RelationType::Double,
-                                Type::TypeInt => RelationType::Integer,
-                                Type::TypeNumber => RelationType::Number,
-                                Type::TypeScalar => RelationType::Scalar,
-                                Type::TypeString | Type::TypeText | Type::TypeVarchar => {
-                                    RelationType::String
-                                }
-                                Type::TypeUnsigned => RelationType::Unsigned,
-                                _ => panic!("Unexpected node: {type_node:?}"),
-                            };
-                            params.push(ParamDef { data_type });
-                        }
-                        _ => panic!("Unexpected node: {param_def_node:?}"),
-                    }
-                }
+                params = parse_proc_params(ast, child_node)?;
             }
             Type::ProcLanguage => {
                 // We don't need to parse language node, because we support only SQL.
@@ -190,6 +203,65 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
         timeout,
     };
     Ok(create_proc)
+}
+
+fn parse_proc_with_optional_params(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<(String, Vec<ParamDef>), SbroadError> {
+    if node.rule != Type::ProcWithOptionalParams {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("proc with optional params".into()),
+        ));
+    }
+
+    let mut name = String::new();
+    let mut params = Vec::new();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::ProcName => {
+                name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+            }
+            Type::ProcParams => {
+                params = parse_proc_params(ast, child_node)?;
+            }
+            _ => panic!("Unexpected node: {child_node:?}"),
+        }
+    }
+
+    Ok((name, params))
+}
+
+fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    if node.rule != Type::DropProc {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("drop procedure".into()),
+        ));
+    }
+
+    let mut name: String = String::new();
+    let mut params: Vec<ParamDef> = Vec::new();
+    let mut timeout = get_default_timeout();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::ProcWithOptionalParams => {
+                (name, params) = parse_proc_with_optional_params(ast, child_node)?;
+            }
+            Type::Timeout => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            _ => panic!("Unexpected node: {child_node:?}"),
+        }
+    }
+    Ok(Ddl::DropProc {
+        name,
+        params,
+        timeout,
+    })
 }
 
 #[allow(clippy::too_many_lines)]
@@ -2152,6 +2224,11 @@ impl Ast for AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(Node::Ddl(drop_table));
                     map.add(id, plan_id);
                 }
+                Type::DropProc => {
+                    let drop_proc = parse_drop_proc(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(drop_proc));
+                    map.add(id, plan_id);
+                }
                 Type::AlterUser => {
                     let user_name_node_id = node
                         .children
@@ -2373,6 +2450,8 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ProcParamDef
                 | Type::ProcParams
                 | Type::ProcLanguage
+                | Type::ProcName
+                | Type::ProcWithOptionalParams
                 | Type::ScanName
                 | Type::Select
                 | Type::Sharding

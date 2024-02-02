@@ -57,6 +57,11 @@ pub enum Ddl {
         language: Language,
         timeout: Decimal,
     },
+    DropProc {
+        name: String,
+        params: Vec<ParamDef>,
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -68,7 +73,8 @@ impl Ddl {
         match self {
             Ddl::CreateTable { ref timeout, .. }
             | Ddl::DropTable { ref timeout, .. }
-            | Ddl::CreateProc { ref timeout, .. } => timeout,
+            | Ddl::CreateProc { ref timeout, .. }
+            | Ddl::DropProc { ref timeout, .. } => timeout,
         }
         .to_string()
         .parse()
