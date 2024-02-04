@@ -102,7 +102,7 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        Join? ~ WhereClause? ~ 
+        Join? ~ WhereClause? ~
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)?
     }
@@ -127,7 +127,7 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         GroupBy = { GroupingElement ~ ("," ~ GroupingElement)* }
         Having = { Expr }
     SubQuery = { "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
-    Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ 
+    Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~
     (Values | Select) ~ OnConflict? }
         TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
         OnConflict = _{ ^"on conflict" ~ ^"do" ~ (DoNothing | DoReplace | DoFail) }
