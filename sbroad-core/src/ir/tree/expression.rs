@@ -181,7 +181,8 @@ fn expression_next<'nodes>(
             | Node::Relational(_)
             | Node::Parameter
             | Node::Ddl(_)
-            | Node::Acl(_),
+            | Node::Acl(_)
+            | Node::Block(_),
         )
         | None => None,
     }

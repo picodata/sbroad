@@ -88,6 +88,8 @@ pub enum Entity {
     OptionSpec,
     /// corresponds to struct ReferredNodes
     ReferredNodes,
+    /// Routine
+    Routine,
     /// parser rule
     Rule,
     /// corresponds to struct RouterRuntime
@@ -182,6 +184,7 @@ impl fmt::Display for Entity {
             Entity::Relational => "relational".to_string(),
             Entity::RequiredData => "required data".to_string(),
             Entity::ReferredNodes => "referred nodes".to_string(),
+            Entity::Routine => "routine".to_string(),
             Entity::Rule => "rule".to_string(),
             Entity::Runtime => "runtime".to_string(),
             Entity::Option => "option".to_string(),

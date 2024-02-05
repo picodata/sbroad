@@ -100,7 +100,8 @@ fn relational_next<'nodes>(
             | Node::Expression(_)
             | Node::Parameter
             | Node::Ddl(_)
-            | Node::Acl(_),
+            | Node::Acl(_)
+            | Node::Block(_),
         )
         | None => None,
     }

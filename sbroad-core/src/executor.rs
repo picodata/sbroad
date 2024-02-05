@@ -141,11 +141,11 @@ where
                 }
                 plan.version_map = table_version_map;
             }
-            if !plan.is_ddl()? && !plan.is_acl()? {
+            if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_block()? {
                 cache.put(key, plan.clone())?;
             }
         }
-        if !plan.is_ddl()? && !plan.is_acl()? {
+        if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_block()? {
             plan.bind_params(params)?;
             plan.apply_options()?;
             plan.optimize()?;
@@ -263,6 +263,14 @@ where
     /// Checks that query is explain and have not to be executed
     fn is_explain(&self) -> bool {
         self.is_explain
+    }
+
+    /// Checks that query is a statement block.
+    ///
+    /// # Errors
+    /// - plan is invalid
+    pub fn is_block(&self) -> Result<bool, SbroadError> {
+        self.exec_plan.get_ir_plan().is_block()
     }
 
     /// Checks that query is DDL.

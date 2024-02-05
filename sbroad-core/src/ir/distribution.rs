@@ -798,6 +798,10 @@ impl Plan {
                 Entity::Distribution,
                 Some("Failed to get distribution for a ACL node.".to_string()),
             )),
+            Node::Block(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for a code block node.".to_string()),
+            )),
         }
     }
 

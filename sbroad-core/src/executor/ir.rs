@@ -616,6 +616,10 @@ impl ExecutionPlan {
                     Entity::SubTree,
                     Some("ACL node".to_string()),
                 ))?,
+                Node::Block { .. } => Err(SbroadError::Invalid(
+                    Entity::SubTree,
+                    Some("code block node".to_string()),
+                ))?,
             }
             new_plan.nodes.push(node);
             translation.insert(node_id, next_id);

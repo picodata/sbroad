@@ -247,7 +247,7 @@ impl Plan {
                     | Expression::Constant { .. }
                     | Expression::CountAsterisk => {}
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => {}
             }
         }
 
@@ -360,7 +360,7 @@ impl Plan {
                     | Expression::Constant { .. }
                     | Expression::CountAsterisk => {}
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => {}
             }
         }
 

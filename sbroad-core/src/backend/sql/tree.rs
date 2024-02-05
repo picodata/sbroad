@@ -665,6 +665,12 @@ impl<'p> SyntaxPlan<'p> {
                     "ACL node {node:?} is not supported in the syntax plan"
                 )),
             )),
+            Node::Block(..) => Err(SbroadError::Invalid(
+                Entity::SyntaxPlan,
+                Some(format!(
+                    "Block node {node:?} is not supported in the syntax plan"
+                )),
+            )),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
                 Ok(self.nodes.push_syntax_node(sn))

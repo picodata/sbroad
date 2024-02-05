@@ -297,6 +297,15 @@ impl ExecutionPlan {
                                     Some("ACL nodes are not supported in the generated SQL".into()),
                                 ));
                             }
+                            Node::Block(_) => {
+                                return Err(SbroadError::Unsupported(
+                                    Entity::Node,
+                                    Some(
+                                        "Code block nodes are not supported in the generated SQL"
+                                            .into(),
+                                    ),
+                                ));
+                            }
                             Node::Parameter => {
                                 return Err(SbroadError::Unsupported(
                                     Entity::Node,

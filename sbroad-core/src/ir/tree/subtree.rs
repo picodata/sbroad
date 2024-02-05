@@ -195,7 +195,7 @@ fn subtree_next<'plan>(
 ) -> Option<&'plan usize> {
     if let Some(child) = iter.get_nodes().arena.get(iter.get_current()) {
         return match child {
-            Node::Parameter | Node::Ddl(..) | Node::Acl(..) => None,
+            Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => None,
             Node::Expression(exp) => match exp {
                 Expression::Alias { child, .. }
                 | Expression::Cast { child, .. }
