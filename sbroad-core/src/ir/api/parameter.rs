@@ -1,4 +1,5 @@
 use crate::errors::{Entity, SbroadError};
+use crate::ir::block::Block;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::tree::traversal::PostOrder;
@@ -247,7 +248,18 @@ impl Plan {
                     | Expression::Constant { .. }
                     | Expression::CountAsterisk => {}
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => {}
+                Node::Block(block) => match block {
+                    Block::Procedure { ref values, .. } => {
+                        for param_id in values {
+                            if param_node_ids.take(param_id).is_some() {
+                                // We don't need to wrap arguments, passed into the
+                                // procedure call, into the rows.
+                                idx = idx.saturating_sub(1);
+                            }
+                        }
+                    }
+                },
+                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 
@@ -360,7 +372,18 @@ impl Plan {
                     | Expression::Constant { .. }
                     | Expression::CountAsterisk => {}
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => {}
+                Node::Block(block) => match block {
+                    Block::Procedure { ref mut values, .. } => {
+                        for param_id in values {
+                            if param_node_ids_cloned.take(param_id).is_some() {
+                                idx = idx.saturating_sub(1);
+                                let val_id = get_value(*param_id, idx)?;
+                                *param_id = val_id;
+                            }
+                        }
+                    }
+                },
+                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 

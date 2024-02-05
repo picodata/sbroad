@@ -91,6 +91,33 @@ impl From<&Type> for SpaceFieldType {
     }
 }
 
+impl TryFrom<SpaceFieldType> for Type {
+    type Error = SbroadError;
+
+    fn try_from(field_type: SpaceFieldType) -> Result<Self, Self::Error> {
+        match field_type {
+            SpaceFieldType::Boolean => Ok(Type::Boolean),
+            SpaceFieldType::Decimal => Ok(Type::Decimal),
+            SpaceFieldType::Double => Ok(Type::Double),
+            SpaceFieldType::Integer => Ok(Type::Integer),
+            SpaceFieldType::Number => Ok(Type::Number),
+            SpaceFieldType::Scalar => Ok(Type::Scalar),
+            SpaceFieldType::String => Ok(Type::String),
+            SpaceFieldType::Unsigned => Ok(Type::Unsigned),
+            SpaceFieldType::Array => Ok(Type::Array),
+            SpaceFieldType::Any
+            | SpaceFieldType::Varbinary
+            | SpaceFieldType::Uuid
+            | SpaceFieldType::Map
+            | SpaceFieldType::Interval
+            | SpaceFieldType::Datetime => Err(SbroadError::NotImplemented(
+                Entity::Type,
+                field_type.to_string(),
+            )),
+        }
+    }
+}
+
 impl Type {
     /// Type constructor
     ///
@@ -139,6 +166,22 @@ impl Type {
                 | Type::Scalar
                 | Type::String
                 | Type::Unsigned
+        )
+    }
+
+    /// Check if the type can be casted to another type.
+    #[must_use]
+    pub fn is_castable_to(&self, to: &Type) -> bool {
+        matches!(
+            (self, to),
+            (Type::Array, Type::Array)
+                | (Type::Boolean, Type::Boolean)
+                | (
+                    Type::Double | Type::Integer | Type::Unsigned | Type::Decimal | Type::Number,
+                    Type::Double | Type::Integer | Type::Unsigned | Type::Decimal | Type::Number,
+                )
+                | (Type::Scalar, Type::Scalar)
+                | (Type::String, Type::String)
         )
     }
 }

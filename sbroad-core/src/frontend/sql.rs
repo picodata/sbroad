@@ -25,13 +25,14 @@ use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relation
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
-use crate::ir::{Node, OptionKind, OptionSpec, Plan};
+use crate::ir::{Node, NodeId, OptionKind, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
 use crate::ir::acl::AlterOption;
 use crate::ir::acl::{Acl, GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
+use crate::ir::block::Block;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
 use sbroad_proc::otm_child_span;
@@ -158,6 +159,43 @@ fn parse_proc_params(
     Ok(params)
 }
 
+fn parse_call_proc(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+    map: &Translation,
+) -> Result<Block, SbroadError> {
+    if node.rule != Type::CallProc {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("call procedure".into()),
+        ));
+    }
+    let mut proc_name: String = String::new();
+    let mut values: Vec<NodeId> = Vec::new();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Type::ProcName => {
+                proc_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+            }
+            Type::ProcValues => {
+                let values_node = ast.nodes.get_node(*child_id)?;
+                values.reserve(values_node.children.len());
+                for value_id in &values_node.children {
+                    let plan_value_id = map.get(*value_id)?;
+                    values.push(plan_value_id);
+                }
+            }
+            _ => panic!("Unexpected node: {child_node:?}"),
+        }
+    }
+    let call_proc = Block::Procedure {
+        name: proc_name,
+        values,
+    };
+    Ok(call_proc)
+}
+
 fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     if node.rule != Type::CreateProc {
         return Err(SbroadError::Invalid(
@@ -173,7 +211,7 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
-            Type::NewProc => {
+            Type::ProcName => {
                 proc_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
             }
             Type::ProcParams => {
@@ -2143,6 +2181,19 @@ impl Ast for AbstractSyntaxTree {
                         map.get(*node.children.first().expect("no children for Query rule"))?;
                     map.add(id, child_id);
                 }
+                Type::Block => {
+                    // Query may have two children:
+                    // 1. call
+                    // 2. Option child - for which no plan node is created
+                    let child_id =
+                        map.get(*node.children.first().expect("no children for Block rule"))?;
+                    map.add(id, child_id);
+                }
+                Type::CallProc => {
+                    let call_proc = parse_call_proc(self, node, &map)?;
+                    let plan_id = plan.nodes.push(Node::Block(call_proc));
+                    map.add(id, plan_id);
+                }
                 Type::CreateProc => {
                     let create_proc = parse_create_proc(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(create_proc));
@@ -2421,7 +2472,6 @@ impl Ast for AbstractSyntaxTree {
                 | Type::Md5
                 | Type::Memtx
                 | Type::Multiply
-                | Type::NewProc
                 | Type::NewTable
                 | Type::NotEq
                 | Type::Name
@@ -2449,8 +2499,9 @@ impl Ast for AbstractSyntaxTree {
                 | Type::ProcBody
                 | Type::ProcParamDef
                 | Type::ProcParams
-                | Type::ProcLanguage
                 | Type::ProcName
+                | Type::ProcValues
+                | Type::ProcLanguage
                 | Type::ProcWithOptionalParams
                 | Type::ScanName
                 | Type::Select

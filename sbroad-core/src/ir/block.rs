@@ -1,6 +1,7 @@
+//! IR nodes representing blocks of commands.
+
 use crate::errors::{Entity, SbroadError};
 use crate::ir::{Node, NodeId, Plan};
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

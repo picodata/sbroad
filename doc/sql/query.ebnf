@@ -1,9 +1,10 @@
-statement   ::= explain | ddl | dml | dql | acl
+statement   ::= explain | ddl | dml | dql | acl | call
 explain     ::= 'EXPLAIN' ( dml | dql )
 dql         ::= (select | select union all select | select (except 'DISTINCT'? ) select ) options?
 dml         ::= (delete | insert | update) options?
 ddl         ::= create_table | drop_table | create_procedure | drop_procedure
 acl         ::= drop_role | drop_user | create_role | create_user | alter_user | grant_privilege | revoke_privilege
+call        ::= 'CALL' procedure '(' value ( ',' value )* ')' options?
 revoke_privilege      ::= 'REVOKE' privilege 'FROM' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 grant_privilege       ::= 'GRANT' privilege 'TO' (role | user) ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 privilege ::= (('CREATE' | 'ALTER' | 'DROP') 'USER')

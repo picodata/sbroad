@@ -1,4 +1,4 @@
-Command = _{ SOI ~ (Query | ExplainQuery | DDL | ACL) ~ EOF }
+Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL) ~ EOF }
 
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     /// Represents both RoleName and UserName.
@@ -78,11 +78,11 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc }
     	DeletedTable = @{ Table }
 
     CreateProc = {
-        ^"create" ~ ^"procedure" ~ NewProc ~
+        ^"create" ~ ^"procedure" ~ ProcName ~
         "(" ~ ProcParams? ~ ")" ~ (^"language" ~ ProcLanguage)? ~
         ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
     }
-        NewProc = @{ Name }
+        ProcName = @{ Name }
         ProcParams = { ProcParamDef ~ ("," ~ ProcParamDef)* }
         ProcParamDef = { Type }
         ProcLanguage = { SQL }
@@ -91,7 +91,10 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc }
 
     DropProc = { ^"drop" ~ ^"procedure" ~ ProcWithOptionalParams ~ Option? }
         ProcWithOptionalParams = { ProcName ~ ("(" ~ ProcParams ~ ")")? }
-        ProcName = @{ Name }
+
+Block = { CallProc ~ Option? }
+    CallProc = { ^"call" ~ ProcName ~ "(" ~ ProcValues ~ ")" }
+        ProcValues = { (Value | Parameter)? ~ ("," ~ (Value | Parameter))* }
 
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }

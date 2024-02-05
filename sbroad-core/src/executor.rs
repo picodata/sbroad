@@ -141,11 +141,13 @@ where
                 }
                 plan.version_map = table_version_map;
             }
-            if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_block()? {
+            if !plan.is_ddl()? && !plan.is_acl()? {
                 cache.put(key, plan.clone())?;
             }
         }
-        if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_block()? {
+        if plan.is_block()? {
+            plan.bind_params(params)?;
+        } else if !plan.is_ddl()? && !plan.is_acl()? {
             plan.bind_params(params)?;
             plan.apply_options()?;
             plan.optimize()?;
