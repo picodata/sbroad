@@ -17,6 +17,6 @@
 - Update sbroad submodule in [picodata/picodata].
 - (if EBNF grammar is changed) create a follow-up issue in [picodata/docs].
 
-[generator]: https://bottlecaps.de/rr/ui
+[generator]: https://www.bottlecaps.de/rr/ui
 [picodata/docs]: https://git.picodata.io/picodata/picodata/docs/-/issues/new
 [picodata/picodata]: https://git.picodata.io/picodata/picodata/picodata
