@@ -655,6 +655,15 @@ fn parse_grant_revoke(
                     let table_name = parse_identifier(ast, *table_node_id)?;
                     GrantRevokeType::specific_table(privilege, table_name)?
                 }
+                Rule::PrivBlockProcedure => GrantRevokeType::procedure(privilege)?,
+                Rule::PrivBlockSpecificProcedure => {
+                    let proc_node_id = inner_privilege_block_node.children.first().expect(
+                        "Expected to see Name as a first child of PrivBlockSpecificProcedure",
+                    );
+                    let proc_node = ast.nodes.get_node(*proc_node_id)?;
+                    let (proc_name, proc_params) = parse_proc_with_optional_params(ast, proc_node)?;
+                    GrantRevokeType::specific_procedure(privilege, proc_name, proc_params)?
+                }
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::ParseNode,

@@ -13,6 +13,8 @@ privilege ::= (('CREATE' | 'ALTER' | 'DROP') 'USER')
               | ('DROP' 'ON' 'ROLE' (role | user))
               | (('READ' | 'WRITE' | 'CREATE' | 'ALTER' | 'DROP') 'TABLE')
               | (('ALTER' | 'DROP' | 'READ' | 'WRITE') 'ON' 'TABLE'? table)
+              | (('CREATE' | 'EXECUTE') 'PROCEDURE')
+              | ('EXECUTE' 'PROCEDURE' procedure ('(' type (',' type)* ')')?)
               | role
 create_procedure ::= 'CREATE PROCEDURE' procedure '(' type (',' type)* ')'
                      ('language' 'SQL')? (('as' '$$' body '$$') | ('begin' 'atomic' body 'end'))

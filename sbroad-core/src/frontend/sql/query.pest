@@ -30,7 +30,8 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
     RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ Identifier ~ TimeoutOption? }
         PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
             PrivBlockPrivilege = {Privilege ~ (PrivBlockUser | PrivBlockSpecificUser | PrivBlockRole
-                                                | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable)}
+                                                | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable
+                                                | PrivBlockProcedure | PrivBlockSpecificProcedure)}
             PrivBlockUser = { ^"user" }
             PrivBlockSpecificUser = { ^"on" ~ ^"user" ~ Identifier }
             PrivBlockRole = { ^"role" }
@@ -38,6 +39,8 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivBlockTable = { ^"table" }
             PrivBlockSpecificTable = { ^"on" ~ ^"table" ~ Table }
             PrivBlockRolePass = { Identifier }
+            PrivBlockProcedure = { ^"procedure" }
+            PrivBlockSpecificProcedure = { ^"on" ~ ^"procedure" ~ ProcWithOptionalParams }
         Privilege = _{ PrivilegeRead | PrivilegeWrite | PrivilegeExecute |
                       PrivilegeCreate | PrivilegeAlter | PrivilegeDrop |
                       PrivilegeSession | PrivilegeUsage }

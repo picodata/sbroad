@@ -2,6 +2,8 @@ use crate::ir::{Entity, Node, Plan, SbroadError};
 use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 
+use super::ddl::ParamDef;
+
 ::tarantool::define_str_enum! {
     /// Revoked or granted privilege.
     pub enum Privilege {
@@ -42,6 +44,14 @@ pub enum GrantRevokeType {
     SpecificTable {
         privilege: Privilege,
         table_name: String,
+    },
+    Procedure {
+        privilege: Privilege,
+    },
+    SpecificProcedure {
+        privilege: Privilege,
+        proc_name: String,
+        proc_params: Option<Vec<ParamDef>>,
     },
     RolePass {
         role_name: String,
@@ -128,6 +138,31 @@ impl GrantRevokeType {
         Ok(Self::SpecificTable {
             privilege,
             table_name,
+        })
+    }
+
+    /// # Errors
+    /// - Unacceptable privilege for procedure was passed.
+    pub fn procedure(privilege: Privilege) -> Result<Self, SbroadError> {
+        check_privilege(
+            privilege,
+            &[Privilege::Create, Privilege::Drop, Privilege::Execute],
+        )?;
+        Ok(Self::Procedure { privilege })
+    }
+
+    /// # Errors
+    /// - Unacceptable privilege for specific procedure was passed.
+    pub fn specific_procedure(
+        privilege: Privilege,
+        proc_name: String,
+        proc_params: Option<Vec<ParamDef>>,
+    ) -> Result<Self, SbroadError> {
+        check_privilege(privilege, &[Privilege::Drop, Privilege::Execute])?;
+        Ok(Self::SpecificProcedure {
+            privilege,
+            proc_name,
+            proc_params,
         })
     }
 
