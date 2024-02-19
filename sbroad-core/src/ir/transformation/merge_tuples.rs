@@ -324,7 +324,7 @@ impl Plan {
                     }
                 }
                 Expression::Bool { left, right, .. } => {
-                    let children = vec![*left, *right];
+                    let children = [*left, *right];
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {
@@ -351,7 +351,7 @@ impl Plan {
                     }
                 }
                 Expression::Arithmetic { left, right, .. } => {
-                    let children = vec![*left, *right];
+                    let children = [*left, *right];
                     for (pos, child) in children.iter().enumerate() {
                         let chain = chains.get(child);
                         if let Some(chain) = chain {

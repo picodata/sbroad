@@ -429,7 +429,7 @@ impl Plan {
         }
 
         let mut only_compound_exprs = true;
-        for id in self.get_row_list(output_id)?.iter() {
+        for id in self.get_row_list(output_id)? {
             let child_id = self.get_child_under_alias(*id)?;
             if let Expression::Reference { .. } = self.get_expression_node(child_id)? {
                 only_compound_exprs = false;
@@ -474,7 +474,7 @@ impl Plan {
         let row_children = self.get_expression_node(row_id)?.get_row_list()?;
 
         let mut parent_node = None;
-        for id in row_children.iter() {
+        for id in row_children {
             let child_id = self.get_child_under_alias(*id)?;
             if let Expression::Reference { parent, .. } = self.get_expression_node(child_id)? {
                 parent_node = *parent;
@@ -484,7 +484,7 @@ impl Plan {
 
         let Some(parent_id) = parent_node else {
             self.set_dist(row_id, Distribution::Any)?;
-            return Ok(())
+            return Ok(());
         };
         let parent = self.get_relation_node(parent_id)?;
 

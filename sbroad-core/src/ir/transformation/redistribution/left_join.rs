@@ -40,8 +40,8 @@ impl Plan {
         let Some(parent_id) = self.find_parent_rel(join_id)? else {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
-                Some(format!("join ({join_id}) has no parent!"))
-            ))
+                Some(format!("join ({join_id}) has no parent!")),
+            ));
         };
         let projection_id = create_projection(self, join_id)?;
         let sq_id = self.add_sub_query(projection_id, None)?;

@@ -318,7 +318,7 @@ impl VirtualTable {
         let delete_tuple_pattern: TupleBuilderPattern = {
             let pk_positions = self.get_primary_key()?;
             let mut res = Vec::with_capacity(old_shard_columns_len + pk_positions.len());
-            for pos in pk_positions.iter() {
+            for pos in pk_positions {
                 res.push(TupleBuilderCommand::TakePosition(*pos));
             }
             res
@@ -348,8 +348,12 @@ impl VirtualTable {
                 // Note that we are getting values from the end of `insert_tuple` using `pop` method
                 // as soon as `old_shard_key_columns` are located in the end of `insert_tuple`
                 let Some(v) = insert_tuple.pop() else {
-                    return Err(SbroadError::Invalid(Entity::MotionOpcode,
-                                                    Some(format!("invalid number of old shard columns: {old_shard_columns_len}"))))
+                    return Err(SbroadError::Invalid(
+                        Entity::MotionOpcode,
+                        Some(format!(
+                            "invalid number of old shard columns: {old_shard_columns_len}"
+                        )),
+                    ));
                 };
                 old_shard_key.push(v);
             }
@@ -439,7 +443,7 @@ impl VirtualTable {
         }
         let delete_tuple_len = delete_tuples.first().map(Vec::len);
         self.set_bucket_index(index.value);
-        self.get_mut_tuples().extend(delete_tuples.into_iter());
+        self.get_mut_tuples().extend(delete_tuples);
         Ok(delete_tuple_len)
     }
 

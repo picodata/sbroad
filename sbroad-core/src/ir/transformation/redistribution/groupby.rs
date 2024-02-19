@@ -51,18 +51,18 @@ struct AggrCollector<'plan> {
 ///
 /// For example grouping expressions can appear
 /// in `Projection`, `Having`, `OrderBy`
-struct ExpressionLocation {
-    pub parent_expr_id: Option<usize>,
-    pub expr_id: usize,
-    pub rel_id: usize,
+struct ExpressionLocationIds {
+    pub parent_expr: Option<usize>,
+    pub expr: usize,
+    pub rel: usize,
 }
 
-impl ExpressionLocation {
+impl ExpressionLocationIds {
     pub fn new(expr_id: usize, parent_expr_id: Option<usize>, rel_id: usize) -> Self {
-        ExpressionLocation {
-            parent_expr_id,
-            expr_id,
-            rel_id,
+        ExpressionLocationIds {
+            parent_expr: parent_expr_id,
+            expr: expr_id,
+            rel: rel_id,
         }
     }
 }
@@ -186,7 +186,7 @@ impl<'plan> AggrCollector<'plan> {
         {
             if let Some(aggr) = SimpleAggregate::new(name, current) {
                 let Some(parent_rel) = self.parent_rel else {
-                    return Err(SbroadError::Invalid(Entity::AggregateCollector, None))
+                    return Err(SbroadError::Invalid(Entity::AggregateCollector, None));
                 };
                 let info = AggrInfo {
                     parent_rel,
@@ -212,7 +212,7 @@ impl<'plan> AggrCollector<'plan> {
 /// For example:
 /// `select a from t group by a having a = 1`
 /// Here expression in `GroupBy` is mapped to `a` in `Projection` and `a` in `Having`
-type GroupbyExpressionsMap = HashMap<usize, Vec<ExpressionLocation>>;
+type GroupbyExpressionsMap = HashMap<usize, Vec<ExpressionLocationIds>>;
 /// Maps id of `GroupBy` expression used in `GroupBy` (from local stage)
 /// to corresponding local alias used in local Projection. Note:
 /// this map does not contain mappings between grouping expressions from
@@ -274,7 +274,7 @@ impl<'plan> ExpressionMapper<'plan> {
     /// and if no match is found recursively calls itself.
     fn find(&mut self, current: usize, parent: Option<usize>) -> Result<(), SbroadError> {
         let Some(node_id) = self.node_id else {
-            return Err(SbroadError::Invalid(Entity::ExpressionMapper, None))
+            return Err(SbroadError::Invalid(Entity::ExpressionMapper, None));
         };
         let is_ref = matches!(
             self.plan.get_expression_node(current),
@@ -300,7 +300,7 @@ impl<'plan> ExpressionMapper<'plan> {
             })
             .copied()
         {
-            let location = ExpressionLocation::new(current, parent, node_id);
+            let location = ExpressionLocationIds::new(current, parent, node_id);
             if let Some(v) = self.map.get_mut(&gr_expr) {
                 v.push(location);
             } else {
@@ -525,7 +525,9 @@ impl Plan {
         }
 
         let Some((first_child, other)) = children.split_first() else {
-            return Err(SbroadError::UnexpectedNumberOfValues("GroupBy ast has no children".into()))
+            return Err(SbroadError::UnexpectedNumberOfValues(
+                "GroupBy ast has no children".into(),
+            ));
         };
 
         // Check grouping expression:
@@ -598,7 +600,7 @@ impl Plan {
         let groupby_id = self.nodes.push(Node::Relational(groupby));
 
         self.replace_parent_in_subtree(final_output, None, Some(groupby_id))?;
-        for expr in grouping_exprs.iter() {
+        for expr in grouping_exprs {
             self.replace_parent_in_subtree(*expr, expr_parent, Some(groupby_id))?;
         }
 
@@ -885,7 +887,7 @@ impl Plan {
             if let Relational::GroupBy { gr_cols, .. } =
                 self.get_mut_relation_node(local_proj_child_id)?
             {
-                gr_cols.extend(additional_grouping_exprs.into_iter());
+                gr_cols.extend(additional_grouping_exprs);
             } else {
                 local_proj_child_id =
                     self.add_groupby(upper, &additional_grouping_exprs, true, None)?;
@@ -1013,7 +1015,7 @@ impl Plan {
     /// - grouping positions: positions of columns by which `GroupBy` is done
     fn create_columns_for_local_proj(
         &mut self,
-        aggr_infos: &mut Vec<AggrInfo>,
+        aggr_infos: &mut [AggrInfo],
         upper_id: usize,
         grouping_exprs: &Vec<usize>,
     ) -> Result<(usize, Vec<usize>, LocalAliasesMap, Vec<usize>), SbroadError> {
@@ -1153,7 +1155,7 @@ impl Plan {
     /// Next, it creates for each unique aggregate local alias and column.
     fn add_local_aggregates(
         &mut self,
-        aggr_infos: &mut Vec<AggrInfo>,
+        aggr_infos: &mut [AggrInfo],
         output_cols: &mut Vec<usize>,
     ) -> Result<(), SbroadError> {
         // Aggregate expressions can appear in `Projection`, `Having`, `OrderBy`, if the
@@ -1268,8 +1270,12 @@ impl Plan {
         let mut nodes = Vec::with_capacity(grouping_exprs.len());
         for expr_id in grouping_exprs {
             let Some(local_alias) = local_aliases_map.get(expr_id) else {
-                return Err(SbroadError::Invalid(Entity::Plan,
-                Some(format!("could not find local alias for GroupBy expr ({expr_id})"))))
+                return Err(SbroadError::Invalid(
+                    Entity::Plan,
+                    Some(format!(
+                        "could not find local alias for GroupBy expr ({expr_id})"
+                    )),
+                ));
             };
             let position = child_map.get(local_alias)?;
             let col_type = self.get_expression_node(*expr_id)?.calculate_type(self)?;
@@ -1333,11 +1339,11 @@ impl Plan {
             let mut new_map: ParentExpressionMap = HashMap::with_capacity(map.len());
             for (groupby_expr_id, locations) in map {
                 for location in locations {
-                    let rec = (groupby_expr_id, location.expr_id, location.parent_expr_id);
-                    if let Some(u) = new_map.get_mut(&location.rel_id) {
+                    let rec = (groupby_expr_id, location.expr, location.parent_expr);
+                    if let Some(u) = new_map.get_mut(&location.rel) {
                         u.push(rec);
                     } else {
-                        new_map.insert(location.rel_id, vec![rec]);
+                        new_map.insert(location.rel, vec![rec]);
                     }
                 }
             }
@@ -1364,7 +1370,10 @@ impl Plan {
                 let Some(local_alias) = local_aliases_map.get(&gr_expr_id) else {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("failed to find local alias for groupby expression {gr_expr_id}"))))
+                        Some(format!(
+                            "failed to find local alias for groupby expression {gr_expr_id}"
+                        )),
+                    ));
                 };
                 let position = alias_to_pos_map.get(local_alias)?;
                 let col_type = self.get_expression_node(expr_id)?.calculate_type(self)?;
@@ -1442,7 +1451,7 @@ impl Plan {
     /// used in `finals`.
     fn patch_finals(
         &mut self,
-        finals: &Vec<usize>,
+        finals: &[usize],
         finals_child_id: usize,
         local_aliases_map: &LocalAliasesMap,
         aggr_infos: &Vec<AggrInfo>,
@@ -1545,7 +1554,7 @@ impl Plan {
 
     fn add_motion_to_2stage(
         &mut self,
-        grouping_positions: &Vec<usize>,
+        grouping_positions: &[usize],
         motion_parent: usize,
         finals: &[usize],
     ) -> Result<(), SbroadError> {

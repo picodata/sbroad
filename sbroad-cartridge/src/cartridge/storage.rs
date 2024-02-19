@@ -255,7 +255,7 @@ where
 {
     let lua = tarantool::lua_state();
     match lua.exec(&format!("box.cfg{{{param} = {val}}}")) {
-        Ok(_) => debug!(
+        Ok(()) => debug!(
             Option::from("update_box_param"),
             &format!("box.cfg param {param} was updated to {val}")
         ),

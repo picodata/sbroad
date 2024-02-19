@@ -59,7 +59,7 @@ impl RouterConfiguration {
     /// Returns `SbroadError` when process was terminated.
     pub fn load_schema(&mut self, s: &str) -> Result<(), SbroadError> {
         if let Ok(docs) = YamlLoader::load_from_str(s) {
-            if let Some(schema) = docs.get(0) {
+            if let Some(schema) = docs.first() {
                 self.init_table_segments(schema)?;
                 return Ok(());
             }
@@ -83,10 +83,10 @@ impl RouterConfiguration {
             return Err(SbroadError::Invalid(
                 Entity::ClusterSchema,
                 Some("schema.spaces is invalid".into()),
-            ))
+            ));
         };
 
-        for (space_name, params) in spaces.iter() {
+        for (space_name, params) in spaces {
             if let Some(current_space_name) = space_name.as_str() {
                 let fields = if let Some(fields) = params["format"].as_vec() {
                     let mut result = Vec::new();

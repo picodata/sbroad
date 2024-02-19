@@ -178,7 +178,7 @@ impl Expression {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
                     Some("distribution is uninitialized".into()),
-                ))
+                ));
             };
             return Ok(dist);
         }
@@ -1199,8 +1199,8 @@ impl Plan {
     /// New columns don't have aliases.
     ///
     /// # Errors
-    /// - children nodes are inconsistent with the target position;
-    pub fn add_row_from_subquery(
+    /// - children nodes are inconsistent with the target position
+    pub(crate) fn add_row_from_subquery(
         &mut self,
         children: &[usize],
         target: usize,
@@ -1387,7 +1387,7 @@ impl Plan {
     #[must_use]
     pub fn is_bool_eq_with_rows(&self, node_id: usize) -> bool {
         let Ok(node) = self.get_expression_node(node_id) else {
-            return false
+            return false;
         };
         if let Expression::Bool { left, op, right } = node {
             if *op != Bool::Eq {
@@ -1395,11 +1395,11 @@ impl Plan {
             }
 
             let Ok(left_node) = self.get_expression_node(*left) else {
-                return false
+                return false;
             };
 
             let Ok(right_node) = self.get_expression_node(*right) else {
-                return false
+                return false;
             };
 
             if left_node.is_row() && right_node.is_row() {

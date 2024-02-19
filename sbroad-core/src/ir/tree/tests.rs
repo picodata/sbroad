@@ -235,7 +235,10 @@ fn subtree_dfs_post() {
         .clone_row_list()
         .unwrap();
     let alias_id = row_children.first().unwrap();
-    let Expression::Alias { child: c_ref_id, .. } = plan.get_expression_node(*alias_id).unwrap() else {
+    let Expression::Alias {
+        child: c_ref_id, ..
+    } = plan.get_expression_node(*alias_id).unwrap()
+    else {
         panic!("invalid child in the row");
     };
 

@@ -702,7 +702,7 @@ impl Ast for AbstractSyntaxTree {
         let mut plan = Plan::default();
 
         let Some(top) = self.top else {
-            return Err(SbroadError::Invalid(Entity::AST, None))
+            return Err(SbroadError::Invalid(Entity::AST, None));
         };
         let capacity = self.nodes.arena.len();
         let mut dft_post = PostOrder::with_capacity(|node| self.nodes.ast_iter(node), capacity);
@@ -1256,9 +1256,7 @@ impl Ast for AbstractSyntaxTree {
                     let op_node = self.nodes.get_node(*ast_op_id)?;
                     let op = Bool::from_node_type(&op_node.rule)?;
                     let is_not = match op {
-                        Bool::In => {
-                            matches!(op_node.children.first(), Some(_))
-                        }
+                        Bool::In => op_node.children.first().is_some(),
                         _ => false,
                     };
                     let cond_id = plan.add_cond(plan_left_id, op, plan_right_id)?;
@@ -1969,8 +1967,8 @@ impl Ast for AbstractSyntaxTree {
                     let get_conflict_strategy =
                         |child_idx: usize| -> Result<ConflictStrategy, SbroadError> {
                             let Some(child_id) = node.children.get(child_idx).copied() else {
-                            return Ok(ConflictStrategy::DoFail)
-                        };
+                                return Ok(ConflictStrategy::DoFail);
+                            };
                             let rule = &self.nodes.get_node(child_id)?.rule;
                             let res = match rule {
                                 Type::DoNothing => ConflictStrategy::DoNothing,

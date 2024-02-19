@@ -84,7 +84,7 @@ impl Debug for TraceInfo {
             // Context `Debug` trait doesn't print anything useful.
             .field("context", &self.context.span())
             .field("id", &self.id)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -159,26 +159,17 @@ where
         let Some(id) = current_id() else {
             error!(
                 Option::from("child span"),
-                &format!(
-                    "fiber {}, child span {}: missing trace info",
-                    fid, name
-                ),
+                &format!("fiber {}, child span {}: missing trace info", fid, name),
             );
-            return f()
+            return f();
         };
 
-        let Some(old_ti) = TRACE_MANAGER.with(|tm| {
-            tm.borrow_mut()
-                .remove(fid)
-        }) else {
+        let Some(old_ti) = TRACE_MANAGER.with(|tm| tm.borrow_mut().remove(fid)) else {
             error!(
                 Option::from("child span"),
-                &format!(
-                    "fiber {}, child span {}: missing trace info",
-                    fid, name
-                ),
+                &format!("fiber {}, child span {}: missing trace info", fid, name),
             );
-            return f()
+            return f();
         };
         let ctx = build_ctx(
             old_ti.tracer(),

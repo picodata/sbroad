@@ -242,7 +242,7 @@ fn subtree_next<'plan>(
                         // the reference points to an **additional** sub-query and then traverse
                         // into it. Otherwise, stop traversal.
                         let Ok(parent_id) = exp.get_parent() else {
-                            return None
+                            return None;
                         };
                         if let Ok(rel_id) = iter
                             .get_plan()

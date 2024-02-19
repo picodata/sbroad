@@ -156,9 +156,7 @@ pub fn generate_local_alias_for_aggr(kind: &AggregateKind, suffix: &str) -> Stri
 impl SimpleAggregate {
     #[must_use]
     pub fn new(name: &str, fun_id: usize) -> Option<SimpleAggregate> {
-        let Some(kind) = AggregateKind::new(name) else {
-            return None
-        };
+        let kind = AggregateKind::new(name)?;
         let laggr_alias: HashMap<AggregateKind, Rc<String>> = HashMap::new();
         let aggr = SimpleAggregate {
             kind,

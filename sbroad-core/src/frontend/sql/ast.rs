@@ -1062,7 +1062,7 @@ impl AbstractSyntaxTree {
     pub(super) fn add_aliases_to_projection(&mut self) -> Result<(), SbroadError> {
         let mut columns: Vec<(usize, Option<String>)> = Vec::new();
         // Collect projection columns and their names.
-        for (_, node) in self.nodes.arena.iter().enumerate() {
+        for node in &self.nodes.arena {
             if let Type::Projection = node.rule {
                 let mut pos = 0;
                 for child_id in &node.children {

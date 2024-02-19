@@ -194,7 +194,7 @@ pub fn exec_ir_on_some_buckets(
         return Err(SbroadError::Invalid(
             Entity::Buckets,
             Some(format!("Expected Buckets::Filtered, got {buckets:?}")),
-        ))
+        ));
     };
     let mut buckets = buckets;
     let random_bucket = runtime.get_random_bucket();
@@ -331,7 +331,7 @@ impl Plan {
 /// - Failed to apply customization opcodes
 /// - Failed to filter vtable
 pub fn prepare_rs_to_ir_map(
-    rs_bucket_vec: &Vec<(String, Vec<u64>)>,
+    rs_bucket_vec: &[(String, Vec<u64>)],
     mut sub_plan: ExecutionPlan,
 ) -> Result<HashMap<String, ExecutionPlan>, SbroadError> {
     let mut rs_ir: HashMap<String, ExecutionPlan> = HashMap::new();

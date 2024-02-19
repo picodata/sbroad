@@ -84,7 +84,13 @@ impl<'bytes> Bytes<'bytes> {
             // it's not, we made it equal to bound.
             let constrained_byte = byte.clamp(&low_bound, &high_bound);
 
-            let power = Decimal::from(-((index + 1) as i64));
+            let power_base = i64::try_from(index + 1).map_err(|_| {
+                SbroadError::Invalid(
+                    Entity::Value,
+                    Some(String::from("Unable to cast index to i64")),
+                )
+            })?;
+            let power = Decimal::from(-power_base);
             let base_shift = Decimal::pow(base, power).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Statistics,

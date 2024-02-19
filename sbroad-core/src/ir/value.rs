@@ -379,12 +379,12 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn concat(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::String(s), Value::String(o)) = (self, other) else {
-            return Err(
-                SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format!("{self:?} and {other:?} must be strings to be concatenated"))
-                )
-            )
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!(
+                    "{self:?} and {other:?} must be strings to be concatenated"
+                )),
+            ));
         };
 
         Ok(Value::from(format!("{s}{o}")))
@@ -397,12 +397,12 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn and(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
-            return Err(
-                SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format!("{self:?} and {other:?} must be booleans to be applied to AND operation"))
-                )
-            )
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!(
+                    "{self:?} and {other:?} must be booleans to be applied to AND operation"
+                )),
+            ));
         };
 
         Ok(Value::from(*s && *o))
@@ -415,12 +415,12 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn or(&self, other: &Value) -> Result<Value, SbroadError> {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
-            return Err(
-                SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format!("{self:?} and {other:?} must be booleans to be applied to OR operation"))
-                )
-            )
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format!(
+                    "{self:?} and {other:?} must be booleans to be applied to OR operation"
+                )),
+            ));
         };
 
         Ok(Value::from(*s || *o))
@@ -939,7 +939,7 @@ impl fmt::Display for LuaValue {
             LuaValue::Unsigned(v) => write!(f, "{v}"),
             LuaValue::String(v) => write!(f, "'{v}'"),
             LuaValue::Tuple(v) => write!(f, "{v}"),
-            LuaValue::Null(_) => write!(f, "NULL"),
+            LuaValue::Null(()) => write!(f, "NULL"),
         }
     }
 }
@@ -981,7 +981,7 @@ impl From<LuaValue> for Value {
             LuaValue::Boolean(v) => Value::Boolean(v),
             LuaValue::String(v) => Value::String(v),
             LuaValue::Tuple(v) => Value::Tuple(v),
-            LuaValue::Null(_) => Value::Null,
+            LuaValue::Null(()) => Value::Null,
         }
     }
 }
@@ -1091,7 +1091,7 @@ where
             Err((lua, _)) => lua,
         };
         let Err((lua, _)) = tlua::Null::lua_read_at_position(lua, index) else {
-            return Ok(Self::Null)
+            return Ok(Self::Null);
         };
 
         let err = tlua::WrongType::info("reading value from Lua")

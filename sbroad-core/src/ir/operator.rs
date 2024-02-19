@@ -1832,8 +1832,8 @@ impl Plan {
         let Some(children) = node.mut_children() else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node ({parent_id}) has no children"))
-            ))
+                Some(format!("node ({parent_id}) has no children")),
+            ));
         };
         for child_id in children {
             if *child_id == old_child_id {

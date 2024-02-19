@@ -102,7 +102,7 @@ impl Plan {
                 ))?;
                 if used_values.get(value_idx).copied().unwrap_or(true) {
                     let Some(value) = values.get(value_idx) else {
-                        return Err(invalid_idx(*param_id, value_idx))
+                        return Err(invalid_idx(*param_id, value_idx));
                     };
                     values.push(value.clone());
                     pg_params_map
@@ -391,8 +391,8 @@ impl Plan {
                     let Some(param_id) = opt.param_id else {
                         return Err(SbroadError::Invalid(
                             Entity::Plan,
-                            Some(format!("no param id for option: {opt:?}"))
-                        ))
+                            Some(format!("no param id for option: {opt:?}")),
+                        ));
                     };
                     let value_idx = *self.pg_params_map.get(&param_id).ok_or_else(|| {
                         SbroadError::Invalid(

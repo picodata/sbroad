@@ -171,10 +171,14 @@ impl ExecutionPlan {
                 MotionOpcode::AddMissingRowsForLeftJoin { motion_id, .. } => {
                     let motion_id = *motion_id;
                     let Some(vtables) = &mut self.vtables else {
-                        return Err(SbroadError::UnexpectedNumberOfValues("expected at least one virtual table".into()))
+                        return Err(SbroadError::UnexpectedNumberOfValues(
+                            "expected at least one virtual table".into(),
+                        ));
                     };
                     let Some(from_vtable) = vtables.mut_map().remove(&motion_id) else {
-                        return Err(SbroadError::UnexpectedNumberOfValues(format!("expected virtual table for motion {motion_id}")))
+                        return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                            "expected virtual table for motion {motion_id}"
+                        )));
                     };
                     let from_vtable = Rc::try_unwrap(from_vtable).map_err(|_| {
                         SbroadError::FailedTo(
@@ -220,7 +224,7 @@ impl ExecutionPlan {
     /// nodes that are not referenced by actual plan tree.
     #[must_use]
     pub fn has_customization_opcodes(&self) -> bool {
-        for node in self.get_ir_plan().nodes.iter() {
+        for node in &self.get_ir_plan().nodes {
             if let Node::Relational(Relational::Motion { program, .. }) = node {
                 if program
                     .0

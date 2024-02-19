@@ -175,6 +175,14 @@ impl Nodes {
     }
 }
 
+impl<'nodes> IntoIterator for &'nodes Nodes {
+    type Item = &'nodes Node;
+    type IntoIter = Iter<'nodes, Node>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// One level of `Slices`.
 /// Element of `slice` vec is a `motion_id` to execute.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -494,7 +502,7 @@ impl Plan {
                 ));
             }
             let Some(val) = opt.val else {
-                return Err(SbroadError::Invalid(Entity::OptionSpec, None))
+                return Err(SbroadError::Invalid(Entity::OptionSpec, None));
             };
             match opt.kind {
                 OptionKind::SqlVdbeMaxSteps => {

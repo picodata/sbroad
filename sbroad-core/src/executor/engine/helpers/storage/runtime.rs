@@ -40,7 +40,7 @@ pub fn unprepare(stmt: &mut PreparedStmt) -> Result<(), SbroadError> {
         .ok_or_else(|| SbroadError::LuaError("Lua function `unprepare` not found".into()))?;
 
     match unprepare_stmt.call_with_args::<(), _>(stmt.id()?) {
-        Ok(_) => Ok(()),
+        Ok(()) => Ok(()),
         Err(e) => {
             error!(Option::from("unprepare"), &format!("{e:?}"));
             Err(SbroadError::LuaError(format!("{e:?}")))

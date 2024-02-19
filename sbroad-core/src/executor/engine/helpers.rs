@@ -475,9 +475,9 @@ fn init_sharded_update_tuple_builder(
     update_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     let Relational::Update {
-        update_columns_map,
-        ..
-    } = plan.get_relation_node(update_id)? else {
+        update_columns_map, ..
+    } = plan.get_relation_node(update_id)?
+    else {
         return Err(SbroadError::Invalid(
             Entity::Node,
             Some(format!(
@@ -1564,7 +1564,7 @@ where
         .get_ir_plan()
         .insert_conflict_strategy(insert_id)?;
     transaction(|| -> Result<(), SbroadError> {
-        for (bucket_id, positions) in vtable.get_bucket_index().iter() {
+        for (bucket_id, positions) in vtable.get_bucket_index() {
             for pos in positions {
                 let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
                     SbroadError::Invalid(
