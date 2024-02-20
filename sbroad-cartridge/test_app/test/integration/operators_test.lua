@@ -452,14 +452,19 @@ g.test_exists_subquery_with_several_rows = function ()
 
     -- Exists condition should return true on each row from testing_space
     -- as soon as it's subquery always returns two rows.
-    local _, err = api:call("sbroad.execute", { [[
+    local r, err = api:call("sbroad.execute", { [[
         SELECT * FROM "testing_space" WHERE EXISTS (SELECT 0 FROM "t" WHERE "t"."id" = 1 or "t"."a" = (?))
     ]], {require('decimal').new(6.66)} })
 
-    t.assert_str_contains(
-            tostring(err),
-            "Failed to execute SQL statement: Expression subquery returned more than 1 row"
-    )
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = { {1, "123", 1} },
+    })
 end
 
 g.test_not_exists_subquery_with_several_rows = function()
@@ -467,15 +472,20 @@ g.test_not_exists_subquery_with_several_rows = function()
 
     -- NotExists condition should return false on each row from testing_space
     -- as soon as it's subquery always returns two rows.
-    local _, err = api:call("sbroad.execute", { [[
+    local r, err = api:call("sbroad.execute", { [[
         SELECT * FROM "testing_space"
         WHERE NOT EXISTS (SELECT 0 FROM "t" WHERE "t"."id" = 1 or "t"."a" = (?))
     ]], {require('decimal').new(6.66)} })
 
-    t.assert_str_contains(
-            tostring(err),
-            "Failed to execute SQL statement: Expression subquery returned more than 1 row"
-    )
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
+        },
+        rows = {},
+    })
 end
 
 g.test_exists_nested = function()
