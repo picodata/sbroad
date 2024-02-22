@@ -62,6 +62,12 @@ pub enum Ddl {
         params: Vec<ParamDef>,
         timeout: Decimal,
     },
+    RenameRoutine {
+        old_name: String,
+        new_name: String,
+        params: Option<Vec<ParamDef>>,
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -74,7 +80,8 @@ impl Ddl {
             Ddl::CreateTable { ref timeout, .. }
             | Ddl::DropTable { ref timeout, .. }
             | Ddl::CreateProc { ref timeout, .. }
-            | Ddl::DropProc { ref timeout, .. } => timeout,
+            | Ddl::DropProc { ref timeout, .. }
+            | Ddl::RenameRoutine { ref timeout, .. } => timeout,
         }
         .to_string()
         .parse()

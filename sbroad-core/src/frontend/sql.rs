@@ -189,6 +189,44 @@ fn parse_call_proc<M: Metadata>(
     Ok(call_proc)
 }
 
+fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    if node.rule != Rule::RenameProc {
+        return Err(SbroadError::Invalid(
+            Entity::Type,
+            Some("rename procedure".into()),
+        ));
+    }
+
+    let mut old_name: String = String::new();
+    let mut new_name: String = String::new();
+    let mut params: Option<Vec<ParamDef>> = None;
+    let mut timeout = get_default_timeout();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::NewProc => {
+                new_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+            }
+            Rule::OldProc => {
+                old_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+            }
+            Rule::ProcParams => {
+                params = Some(parse_proc_params(ast, child_node)?);
+            }
+            Rule::Timeout => {
+                timeout = get_timeout(ast, *child_id)?;
+            }
+            _ => panic!("Unexpected node: {child_node:?}"),
+        }
+    }
+    Ok(Ddl::RenameRoutine {
+        old_name,
+        new_name,
+        params,
+        timeout,
+    })
+}
+
 fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     let proc_name_id = node.children.first().expect("Expected to get Proc name");
     let proc_name = parse_identifier(ast, *proc_name_id)?;
@@ -2453,6 +2491,11 @@ impl AbstractSyntaxTree {
                 Rule::DropProc => {
                     let drop_proc = parse_drop_proc(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(drop_proc));
+                    map.add(id, plan_id);
+                }
+                Rule::RenameProc => {
+                    let rename_proc = parse_rename_proc(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(rename_proc));
                     map.add(id, plan_id);
                 }
                 Rule::AlterUser => {
