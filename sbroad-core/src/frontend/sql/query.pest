@@ -10,10 +10,10 @@ ScanTable = { Table }
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     CreateUser = {
         ^"create" ~ ^"user" ~ Identifier ~ (^"with")? ~ ^"password" ~ SingleQuotedString ~
-        AuthMethod? ~ Option?
+        AuthMethod? ~ TimeoutOption?
     }
     AlterUser = {
-        ^"alter" ~ ^"user" ~ Identifier ~ (^"with")? ~ AlterOption ~ Option?
+        ^"alter" ~ ^"user" ~ Identifier ~ (^"with")? ~ AlterOption ~ TimeoutOption?
     }
         AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword }
             AlterLogin = { ^"login" }
@@ -23,11 +23,11 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
             Ldap = { ^"ldap" }
-    DropUser = { ^"drop" ~ ^"user" ~ Identifier ~ Option? }
-    CreateRole = { ^"create" ~ ^"role" ~ Identifier ~ Option? }
-    DropRole = { ^"drop" ~ ^"role" ~ Identifier ~ Option? }
-    GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ Identifier ~ Option? }
-    RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ Identifier ~ Option? }
+    DropUser = { ^"drop" ~ ^"user" ~ Identifier ~ TimeoutOption? }
+    CreateRole = { ^"create" ~ ^"role" ~ Identifier ~ TimeoutOption? }
+    DropRole = { ^"drop" ~ ^"role" ~ Identifier ~ TimeoutOption? }
+    GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ Identifier ~ TimeoutOption? }
+    RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ Identifier ~ TimeoutOption? }
         PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
             PrivBlockPrivilege = {Privilege ~ (PrivBlockUser | PrivBlockSpecificUser | PrivBlockRole
                                                 | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable)}
@@ -54,7 +54,7 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
-        Engine? ~ Distribution ~ Option?
+        Engine? ~ Distribution ~ TimeoutOption?
     }
         NewTable = @{Table}
         Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
@@ -70,23 +70,23 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc }
         Distribution = { ^"distributed" ~ (Global | Sharding) }
         Global = { ^"globally" }
         Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")"}
-    DropTable = { ^"drop" ~ ^"table" ~ Table ~ Option? }
+    DropTable = { ^"drop" ~ ^"table" ~ Table ~ TimeoutOption? }
 
     CreateProc = {
         ^"create" ~ ^"procedure" ~ Identifier
         ~ ProcParams ~ (^"language" ~ ProcLanguage)?
         ~ ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
-        ~ Option?
+        ~ TimeoutOption?
     }
         ProcParams = { "(" ~ ColumnDefType ~ ("," ~ ColumnDefType)* ~ ")" }
         ProcLanguage = { SQL }
             SQL = { ^"sql" }
         ProcBody = { (Insert | Update | Delete) }
 
-    DropProc = { ^"drop" ~ ^"procedure" ~ ProcWithOptionalParams ~ Option? }
+    DropProc = { ^"drop" ~ ^"procedure" ~ ProcWithOptionalParams ~ TimeoutOption? }
         ProcWithOptionalParams = { Identifier ~ ProcParams? }
 
-Block = { CallProc ~ Option? }
+Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }
         ProcValues = { ProcValue? ~ ("," ~ ProcValue)* }
             ProcValue = _{ Literal | Parameter }
@@ -94,7 +94,7 @@ Block = { CallProc ~ Option? }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
-Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~ Option? }
+Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~ DqlOption? }
     SelectWithOptionalContinuation = { Select ~ (ExceptContinuation | UnionAllContinuation)? }
         ExceptContinuation   = { ((^"except" ~ ^"distinct") | ^"except") ~ Select }
         UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
@@ -130,10 +130,11 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         UpdateFrom = _{ ^"from" ~ Scan ~ (^"where" ~ Expr)? }
     Values = { ^"values" ~ Row ~ ("," ~ Row)* }
 
-    Option = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
-    OptionParam = _{ Timeout | SqlVdbeMaxSteps | VTableMaxRows }
+    DqlOption = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
+    OptionParam = _{ SqlVdbeMaxSteps | VTableMaxRows }
     Timeout = { ^"timeout" ~ "=" ~ Duration }
        Duration = @{ Unsigned ~ ("." ~ Unsigned)? }
+    TimeoutOption = _{ ^"option" ~ "(" ~ Timeout ~ ")" }
     SqlVdbeMaxSteps = { ^"sql_vdbe_max_steps" ~ "=" ~ (Unsigned | Parameter) }
     VTableMaxRows = { ^"vtable_max_rows" ~ "=" ~ (Unsigned | Parameter) }
     Delete = { ^"delete" ~ ^"from" ~ ScanTable ~ (^"where" ~ DeleteFilter)? }
