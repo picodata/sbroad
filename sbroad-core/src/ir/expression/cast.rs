@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
+    Map,
     Boolean,
     Decimal,
     Double,
@@ -61,6 +62,8 @@ impl TryFrom<&RelationType> for Type {
             RelationType::String => Ok(Type::String),
             RelationType::Number => Ok(Type::Number),
             RelationType::Unsigned => Ok(Type::Unsigned),
+            RelationType::Map => Ok(Type::Map),
+            RelationType::Any => Ok(Type::Any),
             RelationType::Array => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some("array int the cast operation".to_string()),
@@ -73,6 +76,7 @@ impl From<&Type> for String {
     fn from(t: &Type) -> Self {
         match t {
             Type::Any => "any".to_string(),
+            Type::Map => "map".to_string(),
             Type::Boolean => "bool".to_string(),
             Type::Decimal => "decimal".to_string(),
             Type::Double => "double".to_string(),
@@ -98,6 +102,7 @@ impl Type {
     pub fn as_relation_type(&self) -> RelationType {
         match self {
             Type::Any | Type::Scalar => RelationType::Scalar,
+            Type::Map => RelationType::Map,
             Type::Boolean => RelationType::Boolean,
             Type::Decimal => RelationType::Decimal,
             Type::Double => RelationType::Double,

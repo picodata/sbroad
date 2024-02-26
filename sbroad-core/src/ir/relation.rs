@@ -31,6 +31,8 @@ const DEFAULT_VALUE: Value = Value::Null;
 /// This `Type` is derived from the result's metadata.
 #[derive(Serialize, Default, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]
 pub enum Type {
+    Any,
+    Map,
     Array,
     Boolean,
     Decimal,
@@ -55,6 +57,8 @@ impl fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Number => write!(f, "number"),
             Type::Unsigned => write!(f, "unsigned"),
+            Type::Any => write!(f, "any"),
+            Type::Map => write!(f, "map"),
         }
     }
 }
@@ -71,6 +75,8 @@ impl From<&Type> for FieldType {
             Type::String => FieldType::String,
             Type::Unsigned => FieldType::Unsigned,
             Type::Array => FieldType::Array,
+            Type::Any => FieldType::Any,
+            Type::Map => FieldType::Map,
         }
     }
 }
@@ -87,6 +93,8 @@ impl From<&Type> for SpaceFieldType {
             Type::String => SpaceFieldType::String,
             Type::Unsigned => SpaceFieldType::Unsigned,
             Type::Array => SpaceFieldType::Array,
+            Type::Any => SpaceFieldType::Any,
+            Type::Map => SpaceFieldType::Map,
         }
     }
 }
@@ -119,7 +127,9 @@ impl TryFrom<SpaceFieldType> for Type {
 }
 
 impl Type {
-    /// Type constructor
+    /// Type constructor.
+    /// Used in `Metadata` `table` method implementations to get columns type when constructing
+    /// tables.
     ///
     /// # Errors
     /// - Invalid type name.
@@ -134,6 +144,8 @@ impl Type {
             "string" | "text" => Ok(Type::String),
             "unsigned" => Ok(Type::Unsigned),
             "array" => Ok(Type::Array),
+            "any" => Ok(Type::Any),
+            "map" => Ok(Type::Map),
             v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
         }
     }
@@ -148,7 +160,12 @@ impl Type {
             "boolean" | "decimal" | "double" | "integer" | "number" | "numeric" | "scalar"
             | "string" | "text" | "unsigned" => Ok(Type::Scalar),
             "array" => Ok(Type::Array),
-            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
+            "map" => Ok(Type::Map),
+            "any" => Ok(Type::Any),
+            v => Err(SbroadError::Invalid(
+                Entity::Type,
+                Some(format!("Unexpected type {v} met during ")),
+            )),
         }
     }
 
@@ -233,6 +250,8 @@ impl From<Column> for Field {
             Type::String => Field::string(column.name),
             Type::Unsigned => Field::unsigned(column.name),
             Type::Array => Field::array(column.name),
+            Type::Any => Field::any(column.name),
+            Type::Map => Field::map(column.name),
         };
         field.is_nullable(true)
     }
@@ -269,6 +288,8 @@ impl SerSerialize for Column {
             Type::String => map.serialize_entry("type", "string")?,
             Type::Unsigned => map.serialize_entry("type", "unsigned")?,
             Type::Array => map.serialize_entry("type", "array")?,
+            Type::Any => map.serialize_entry("type", "any")?,
+            Type::Map => map.serialize_entry("type", "map")?,
         }
         map.serialize_entry(
             "role",

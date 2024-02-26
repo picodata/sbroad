@@ -667,6 +667,15 @@ impl Value {
     #[allow(clippy::too_many_lines)]
     pub fn cast(&self, column_type: &Type) -> Result<EncodedValue, SbroadError> {
         match column_type {
+            Type::Any => Ok(self.into()),
+            Type::Map => match self {
+                Value::Null => Ok(Value::Null.into()),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into map"),
+                )),
+            },
             Type::Array => match self {
                 Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(

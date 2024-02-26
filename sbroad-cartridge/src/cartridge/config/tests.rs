@@ -190,44 +190,14 @@ fn test_invalid_schema() {
             type: unsigned
             is_nullable: false
           - name: FID
-            type: integer
+            type: invalid_type
             is_nullable: false
-          - name: DATE_START
-            type: integer
-            is_nullable: false
-          - name: DATE_END
-            type: integer
-            is_nullable: false
-          - name: COMMON_ID
-            type: string
-            is_nullable: false
-          - name: EXCLUDE_ID
-            type: string
-            is_nullable: true
-          - name: COMMON_TEXT
-            type: string
-            is_nullable: false
-          - name: COMMON_DETAIL
-            type: map
-            is_nullable: false
-          - name: TYPOLOGY_TYPE
-            type: integer
-            is_nullable: true
-          - name: TYPOLOGY_ID
-            type: string
-            is_nullable: true
         indexes:
           - type: TREE
             name: primary
             unique: true
             parts:
               - path: FID
-                type: integer
-                is_nullable: false
-              - path: COMMON_ID
-                type: string
-                is_nullable: false
-              - path: DATE_START
                 type: integer
                 is_nullable: false
           - type: TREE
@@ -239,8 +209,6 @@ fn test_invalid_schema() {
                 is_nullable: true
         sharding_key:
           - FID
-          - COMMON_ID
-          - DATE_START
 "#;
 
     let mut s = RouterConfiguration::new();
@@ -248,6 +216,6 @@ fn test_invalid_schema() {
 
     assert_eq!(
         s.load_schema(test_schema).unwrap_err(),
-        SbroadError::NotImplemented(Entity::Type, "map".into())
+        SbroadError::NotImplemented(Entity::Type, "invalid_type".into())
     );
 }
