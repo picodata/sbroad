@@ -270,15 +270,15 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
 fn parse_proc_with_optional_params(
     ast: &AbstractSyntaxTree,
     node: &ParseNode,
-) -> Result<(String, Vec<ParamDef>), SbroadError> {
+) -> Result<(String, Option<Vec<ParamDef>>), SbroadError> {
     let proc_name_id = node.children.first().expect("Expected to get Proc name");
     let proc_name = parse_identifier(ast, *proc_name_id)?;
 
     let params = if let Some(params_node_id) = node.children.get(1) {
         let params_node = ast.nodes.get_node(*params_node_id)?;
-        parse_proc_params(ast, params_node)?
+        Some(parse_proc_params(ast, params_node)?)
     } else {
-        Vec::new()
+        None
     };
 
     Ok((proc_name, params))

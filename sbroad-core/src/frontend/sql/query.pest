@@ -78,7 +78,7 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc | RenameProc }
         ~ ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
         ~ TimeoutOption?
     }
-        ProcParams = { "(" ~ ColumnDefType ~ ("," ~ ColumnDefType)* ~ ")" }
+        ProcParams = { "(" ~ (ColumnDefType ~ ("," ~ ColumnDefType)*)? ~ ")" }
         ProcLanguage = { SQL }
             SQL = { ^"sql" }
         ProcBody = { (Insert | Update | Delete) }

@@ -59,7 +59,7 @@ pub enum Ddl {
     },
     DropProc {
         name: String,
-        params: Vec<ParamDef>,
+        params: Option<Vec<ParamDef>>,
         timeout: Decimal,
     },
     RenameRoutine {
