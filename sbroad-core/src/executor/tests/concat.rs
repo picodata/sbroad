@@ -32,7 +32,7 @@ fn concat3_test() {
 fn concat4_test() {
     broadcast_check(
         r#"SELECT "a" FROM "t1" WHERE "a" || 'a' = CAST(42 as string) || FUNC('b') || 'a'"#,
-        r#"SELECT "t1"."a" FROM "t1" WHERE (("t1"."a") || (?)) = ((CAST (? as string)) || (("FUNC" (?)) || (?)))"#,
+        r#"SELECT "t1"."a" FROM "t1" WHERE (("t1"."a") || (?)) = (((CAST (? as string)) || ("FUNC" (?))) || (?))"#,
         vec![
             Value::from("a"),
             Value::from(42_u64),

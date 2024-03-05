@@ -30,12 +30,6 @@ pub enum Buckets {
 }
 
 impl Buckets {
-    /// Get all buckets in the cluster.
-    #[must_use]
-    pub fn new_all() -> Self {
-        Buckets::All
-    }
-
     /// Get no buckets in the cluster (coordinator).
     #[must_use]
     pub fn new_empty() -> Self {
@@ -141,7 +135,9 @@ where
                         }
                     }
 
-                    // The right side is a regular row. So we have a case of `Eq` operator.
+                    // The right side is a regular row or subquery which distribution
+                    // didn't result in Motion creation (e.g. `"a" in (select "a" from t)`).
+                    // So we have a case of `Eq` operator.
                     // If we have a case of constants on the positions of the left keys,
                     // we can return `Buckets::Filtered`.
                     // E.g. we have query
@@ -197,14 +193,17 @@ where
         Ok(Some(merged))
     }
 
-    /// Inner logic of `bucket_discovery` for expressions (currently it's called only on SELECTION's
-    /// and JOIN's filters).
-    /// It splits given expression into DNF chains and calls `get_buckets_from_expr` on each simple
-    /// chain subexpression, later conjucting results.
+    /// Inner logic of `bucket_discovery` for expressions (currently it's called only on
+    /// `Selection` or `Join` filters).
+    /// `rel_children` is a set of relational children of `Selection` or `Join` node.
+    /// It splits given expression into DNF chains (`ORed` expressions) and calls `get_buckets_from_expr` on each simple
+    /// chain subexpression, later disjuncting results.
+    ///
+    /// In case there is just one expression (not `ANDed`) `chains` will remain empty.
     fn get_expression_tree_buckets(
         &self,
         expr_id: usize,
-        children: &[usize],
+        rel_children: &[usize],
     ) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;
@@ -228,7 +227,7 @@ where
         // otherwise we should use Buckets::Any.
         let default_buckets = {
             let mut default_buckets = Buckets::Any;
-            for child_id in children {
+            for child_id in rel_children {
                 let child_dist = ir_plan.get_rel_distribution(*child_id)?;
                 if matches!(child_dist, Distribution::Any | Distribution::Segment { .. }) {
                     default_buckets = Buckets::All;
@@ -318,7 +317,7 @@ where
                     {
                         self.bucket_map.insert(*output, Buckets::Any);
                     } else {
-                        self.bucket_map.insert(*output, Buckets::new_all());
+                        self.bucket_map.insert(*output, Buckets::All);
                     }
                 }
                 Relational::Motion {

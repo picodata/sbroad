@@ -1,40 +1,43 @@
 Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL) ~ EOF }
 
+// Helper rule to denote we have to update plan relations from metadata
+// (with Table which name corresponds to current node).
+// Note that atomic specifier helps to make inner Identifier rule silent
+Table     = @{ Identifier }
+// Helper rule to denote we have to create relational scan node.
+ScanTable = { Table }
+
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
-    /// Represents both RoleName and UserName.
-    RoleName = @{ Name }
     CreateUser = {
-        ^"create" ~ ^"user" ~ RoleName ~ (^"with")? ~ ^"password" ~ PasswordString ~
+        ^"create" ~ ^"user" ~ Identifier ~ (^"with")? ~ ^"password" ~ SingleQuotedString ~
         AuthMethod? ~ Option?
     }
-        PasswordString = _{ "'" ~ Password ~ "'" }
-            Password = @{ String }
     AlterUser = {
-        ^"alter" ~ ^"user" ~ RoleName ~ (^"with")? ~ AlterOption ~ Option?
+        ^"alter" ~ ^"user" ~ Identifier ~ (^"with")? ~ AlterOption ~ Option?
     }
         AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword }
             AlterLogin = { ^"login" }
             AlterNoLogin = { ^"nologin" }
-            AlterPassword = { ^"password" ~ PasswordString ~ AuthMethod? }
+            AlterPassword = { ^"password" ~ SingleQuotedString ~ AuthMethod? }
 	AuthMethod = { ^"using" ~ (ChapSha1 | Md5 | Ldap) }
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
             Ldap = { ^"ldap" }
-    DropUser = { ^"drop" ~ ^"user" ~ RoleName ~ Option? }
-    CreateRole = { ^"create" ~ ^"role" ~ RoleName ~ Option? }
-    DropRole = { ^"drop" ~ ^"role" ~ RoleName ~ Option? }
-    GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ RoleName ~ Option? }
-    RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ RoleName ~ Option? }
+    DropUser = { ^"drop" ~ ^"user" ~ Identifier ~ Option? }
+    CreateRole = { ^"create" ~ ^"role" ~ Identifier ~ Option? }
+    DropRole = { ^"drop" ~ ^"role" ~ Identifier ~ Option? }
+    GrantPrivilege = { ^"grant" ~ PrivBlock ~ ^"to" ~ Identifier ~ Option? }
+    RevokePrivilege = { ^"revoke" ~ PrivBlock ~ ^"from" ~ Identifier ~ Option? }
         PrivBlock = _{ PrivBlockPrivilege | PrivBlockRolePass }
             PrivBlockPrivilege = {Privilege ~ (PrivBlockUser | PrivBlockSpecificUser | PrivBlockRole
                                                 | PrivBlockSpecificRole | PrivBlockTable | PrivBlockSpecificTable)}
             PrivBlockUser = { ^"user" }
-            PrivBlockSpecificUser = { ^"on" ~ ^"user" ~ RoleName }
+            PrivBlockSpecificUser = { ^"on" ~ ^"user" ~ Identifier }
             PrivBlockRole = { ^"role" }
-            PrivBlockSpecificRole = { ^"on" ~ ^"role" ~ RoleName }
+            PrivBlockSpecificRole = { ^"on" ~ ^"role" ~ Identifier }
             PrivBlockTable = { ^"table" }
             PrivBlockSpecificTable = { ^"on" ~ ^"table" ~ Table }
-            PrivBlockRolePass = { RoleName }
+            PrivBlockRolePass = { Identifier }
         Privilege = _{ PrivilegeRead | PrivilegeWrite | PrivilegeExecute |
                       PrivilegeCreate | PrivilegeAlter | PrivilegeDrop |
                       PrivilegeSession | PrivilegeUsage }
@@ -53,48 +56,40 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc }
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
         Engine? ~ Distribution ~ Option?
     }
-    NewTable = @{ Table }
-    Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
-        ColumnDef = { ColumnDefName ~ ColumnDefType ~ ColumnDefIsNull? }
-        ColumnDefName = @{ ColumnName }
-        ColumnDefType = { TypeBool | TypeDecimal | TypeDouble
-             | TypeInt | TypeNumber | TypeScalar | TypeString
-             | TypeText | TypeUnsigned | TypeVarchar }
-        ColumnDefIsNull = { NotFlag? ~ ^"null" }
-    PrimaryKey = {
-        ^"primary" ~ ^"key" ~
-        "(" ~ PrimaryKeyColumn ~ ("," ~ PrimaryKeyColumn)* ~ ")"
-    }
-       PrimaryKeyColumn = @{ ColumnName }
-    Engine = { ^"using" ~ (Memtx | Vinyl) }
-        Memtx = { ^"memtx" }
-        Vinyl = { ^"vinyl" }
-    Distribution = { ^"distributed" ~ (Global | Sharding) }
-    Global = { ^"globally" }
-    Sharding = { ^"by" ~ "(" ~ ShardingColumn ~ ("," ~ ShardingColumn)* ~ ")"}
-       ShardingColumn = @{ ColumnName }
-
-    DropTable = { ^"drop" ~ ^"table" ~ DeletedTable ~ Option? }
-    	DeletedTable = @{ Table }
+        NewTable = @{Table}
+        Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
+            ColumnDef = { Identifier ~ ColumnDefType ~ ColumnDefIsNull? }
+            ColumnDefIsNull = { NotFlag? ~ ^"null" }
+        PrimaryKey = {
+            ^"primary" ~ ^"key" ~
+            "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")"
+        }
+        Engine = { ^"using" ~ (Memtx | Vinyl) }
+            Memtx = { ^"memtx" }
+            Vinyl = { ^"vinyl" }
+        Distribution = { ^"distributed" ~ (Global | Sharding) }
+        Global = { ^"globally" }
+        Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")"}
+    DropTable = { ^"drop" ~ ^"table" ~ Table ~ Option? }
 
     CreateProc = {
-        ^"create" ~ ^"procedure" ~ ProcName ~
-        "(" ~ ProcParams? ~ ")" ~ (^"language" ~ ProcLanguage)? ~
-        ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
+        ^"create" ~ ^"procedure" ~ Identifier
+        ~ ProcParams ~ (^"language" ~ ProcLanguage)?
+        ~ ((^"as" ~ "$$" ~ ProcBody ~ "$$") | (^"begin" ~ "atomic" ~ ProcBody ~ "end"))
+        ~ Option?
     }
-        ProcName = @{ Name }
-        ProcParams = { ProcParamDef ~ ("," ~ ProcParamDef)* }
-        ProcParamDef = { Type }
+        ProcParams = { "(" ~ ColumnDefType ~ ("," ~ ColumnDefType)* ~ ")" }
         ProcLanguage = { SQL }
-        SQL = { ^"sql" }
+            SQL = { ^"sql" }
         ProcBody = { (Insert | Update | Delete) }
 
     DropProc = { ^"drop" ~ ^"procedure" ~ ProcWithOptionalParams ~ Option? }
-        ProcWithOptionalParams = { ProcName ~ ("(" ~ ProcParams ~ ")")? }
+        ProcWithOptionalParams = { Identifier ~ ProcParams? }
 
 Block = { CallProc ~ Option? }
-    CallProc = { ^"call" ~ ProcName ~ "(" ~ ProcValues ~ ")" }
-        ProcValues = { (Value | Parameter)? ~ ("," ~ (Value | Parameter))* }
+    CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }
+        ProcValues = { ProcValue? ~ ("," ~ ProcValue)* }
+            ProcValue = _{ Literal | Parameter }
 
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
@@ -105,46 +100,36 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        Join? ~ WhereClause? ~
+        Join? ~ WhereClause? ~ 
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)?
     }
-        Projection = { Distinct? ~  (Asterisk | Column) ~ ("," ~ (Asterisk | Column))* }
-            Column = { ((Value ~ &(WHITESPACE | ",")) | Expr) ~ (^"as" ~ AliasName)? }
-                // May be inside of Value
-                Reference = { Name ~ ("." ~ Name)? }
-                    ColumnName = @{ Name }
-                    ScanName = @{ Name }
-                    AliasName = @{ Name }
-                Asterisk = { "*" }
+        Projection = { Distinct? ~ ProjectionElement ~ ("," ~ ProjectionElement)* }
+            ProjectionElement = _{ Asterisk | Column }
+            Column = { Expr ~ ((^"as")? ~ Identifier)? }
+            Asterisk = { "*" }
         WhereClause = _{ ^"where" ~ Selection }
         Selection = { Expr }
-        Scan = { (ScanTable | SubQuery) ~ (^"as" ~ ScanName)? }
-            ScanTable = { Table }
-            Table = @{ Name }
-        Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Condition }
-        JoinKind = _{ ( InnerJoinKind | LeftJoinKind ) }
-        InnerJoinKind = { ^"inner" }
-        LeftJoinKind = { ^"left" ~ (^"outer")? }
-        Condition = { Expr }
-        GroupBy = { GroupingElement ~ ("," ~ GroupingElement)* }
+        Scan = { (ScanTable | SubQuery) ~ ((^"as")? ~ Identifier)? }
+        Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Expr }
+            JoinKind = _{ ( InnerJoinKind | LeftJoinKind ) }
+                InnerJoinKind = { ^"inner" }
+                LeftJoinKind = { ^"left" ~ (^"outer")? }
+        GroupBy = { Expr ~ ("," ~ Expr)* }
         Having = { Expr }
     SubQuery = { "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
-    Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~
-    (Values | Select) ~ OnConflict? }
-        TargetColumns = { ColumnName ~ ("," ~ ColumnName)* }
+    Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) ~ OnConflict? }
+        TargetColumns = { Identifier ~ ("," ~ Identifier)* }
         OnConflict = _{ ^"on conflict" ~ ^"do" ~ (DoNothing | DoReplace | DoFail) }
         DoReplace = { ^"replace" }
         DoNothing = { ^"nothing" }
         DoFail = { ^"fail" }
     Update = { ^"update" ~ ScanTable ~ ^"set" ~ UpdateList ~ (UpdateFrom | WhereClause)? }
         UpdateList = { UpdateItem ~ ("," ~ UpdateItem)* }
-        UpdateItem = { ColumnName ~ "=" ~ ExprNotSubQuery }
-        /// Condition is used intentionally here for implementation
-        /// of Update transform.
-        UpdateFrom = _{ ^"from" ~ Scan ~ (^"where" ~ Condition)? }
-    Values = { ^"values" ~ ValuesRow ~ ("," ~ ValuesRow)* }
-        ValuesRow = { Row }
+        UpdateItem = { Identifier ~ "=" ~ Expr }
+        UpdateFrom = _{ ^"from" ~ Scan ~ (^"where" ~ Expr)? }
+    Values = { ^"values" ~ Row ~ ("," ~ Row)* }
+
     Option = _{ ^"option" ~ "(" ~ OptionParam ~ ("," ~ OptionParam)* ~ ")" }
     OptionParam = _{ Timeout | SqlVdbeMaxSteps | VTableMaxRows }
     Timeout = { ^"timeout" ~ "=" ~ Duration }
@@ -154,115 +139,79 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
     Delete = { ^"delete" ~ ^"from" ~ ScanTable ~ (^"where" ~ DeleteFilter)? }
     	DeleteFilter = { Expr }
 
-Expr = _{ BoolOp | Primary | Parentheses }
-    BoolOp = _{ Or | And | Unary | Between | Cmp }
-    ExprNotSubQuery =  _{ !SubQuery ~ Expr }
-    Parentheses = _{ "(" ~ Expr ~ ")" }
-    Primary = _{ SubQuery | ArithmeticExpr | Concat | Cast | Row | Function | Value }
-    Concat = { ConcatLeft ~ ^"||" ~ ConcatRight }
-        ConcatLeft = _{ Cast | Function | Reference | SingleQuotedString }
-        ConcatRight = _{ Concat | ConcatLeft }
-    ArithmeticExpr = _{ Addition | Multiplication | ArithParentheses }
-        ArithParentheses = { "(" ~ ArithmeticExpr ~ ")" }
-        ArithELeft = _{ Cast | Row | Function | ArithParentheses | Value }
-        Multiplication = { ArithELeft ~ (Multiply | Divide) ~ MultiplicationRight }
-            MultiplicationRight = _{ Multiplication | ArithELeft }
-        Addition = { AdditionLeft ~ (Add | Subtract) ~ AdditionRight }
-            AdditionLeft = _{ MultiplicationRight }
-            AdditionRight = _{ Addition | MultiplicationRight }
-        Multiply = { "*" }
-        Divide = { "/" }
-        Add = { "+" }
-        Subtract = { "-" }
-    Unary = _{ Not | IsNull | Exists }
-        Not = { NotFlag ~ (NotInnerWithParenthesis | NotInnerWithoutParentheses) }
-            NotInnerWithoutParentheses = _{ Unary | Cast | Between | Cmp | Function | Row | Parameter | True | False | Null | Reference }
-            NotInnerWithParenthesis = _{ "(" ~ (Or | And | NotInnerWithoutParentheses) ~ ")" }
-        Exists = { NotFlag? ~ ^"exists" ~ SubQuery }
-        IsNull = { Primary ~ ^"is" ~ NotFlag? ~ ^"null" }
-    Cmp = { Primary ~ CmpOp ~ Primary }
-        CmpOp = _{ Eq | In | NotEq | GtEq | Gt | LtEq | Lt }
-        Eq = { "=" }
-        In = { NotFlag? ~ ^"in" }
-        Gt = { ">" }
-        GtEq = { ">=" }
-        Lt = { "<" }
-        LtEq = { "<=" }
-        NotEq = { "<>" | "!=" }
-    Between = { BetweenLeft ~ NotFlag? ~ ^"between" ~ BetweenCenter ~ ^"and" ~ BetweenRight }
-        BetweenLeft = _{ Primary }
-        BetweenCenter = _{ Primary }
-        BetweenRight = _{ Primary }
-    And = { AndLeft ~ ^"and" ~ AndRight }
-        /// Expr without And and Or.
-        AndLeft = _{ Unary | Between | Cmp | Primary | Parentheses }
-        AndRight = _{ And | AndLeft }
-    Or = { OrLeft ~ ^"or" ~ OrRight }
-        OrLeft = _{ AndRight }
-        OrRight = _{ Or | OrLeft }
+// Note: it's atomic to silence inner rules.
+Identifier = @{ DoubleQuotedIdentifier | IdentifierInner  }
+    DoubleQuotedIdentifier = @{ ("\"" ~ IdentifierInner ~ "\"") }
+    IdentifierInner = @{ !(Keyword ~ ("(" | WHITESPACE | "," | EOF)) ~ (IdentifierNonDigit ~ (IdentifierNonDigit | ASCII_DIGIT)*) }
+        IdentifierNonDigit = _{ ('a'..'z' | 'A' .. 'Z' | 'А' .. 'Я' | 'а' .. 'я' | "-" | "_") }
+    Keyword = { ^"left" | ^"having" | ^"not" | ^"inner" | ^"group"
+                | ^"on" | ^"join" | ^"from" | ^"exists" | ^"except"
+                | ^"union" | ^"where" | ^"distinct" | ^"between" | ^"option"
+                | ^"values"}
 
-Function = { FunctionName ~ "(" ~ (CountAsterisk | (Distinct? ~  FunctionArgs)) ~ ")" }
-    FunctionName = @{ Name }
-    FunctionArgs = _{ (FunctionExpr ~ ("," ~ FunctionExpr)*)? }
-    FunctionExpr = _{ Parentheses | Primary }
-    CountAsterisk = { "*" }
+Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
+    ExprInfixOp = _{ Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }
+        Between       = { NotFlag? ~ ^"between" }
+        And           = { ^"and" }
+        Or            = { ^"or" }
+        ConcatInfixOp = { "||" }
+        ArithInfixOp  = _{ Add | Subtract | Multiply | Divide }
+            Add      = { "+" }
+            Subtract = { "-" }
+            Multiply = { "*" }
+            Divide   = { "/" }
+        CmpInfixOp    = _{ NotEq | GtEq | Gt | LtEq | Lt | Eq | Lt | In }
+            Eq    = { "=" }
+            Gt    = { ">" }
+            GtEq  = { ">=" }
+            Lt    = { "<" }
+            LtEq  = { "<=" }
+            NotEq = { "<>" | "!=" }
+            In    = { NotFlag? ~ ^"in" }
+    ExprAtomValue = _{ UnaryNot* ~ AtomicExpr ~ IsNullPostfix? }
+        UnaryNot   = @{ NotFlag }
+        IsNullPostfix = { ^"is" ~ NotFlag? ~ ^"null" }
+        AtomicExpr = _{ Literal | Parameter | Cast | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | SubQuery | Row }
+            Literal = { True | False | Null | Double | Decimal | Unsigned | Integer | SingleQuotedString }
+                True     = { ^"true" }
+                False    = { ^"false" }
+                Null     = { ^"null" }
+                Decimal = @{ Integer ~ ("." ~ ASCII_DIGIT*) }
+                Double = @{ Integer ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Integer) }
+                Integer = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
+                Unsigned = @{ ASCII_DIGIT+ }
+                SingleQuotedString = @{ OnlyQuotesSequence | AnythingButQuotesSequence }
+                    OnlyQuotesSequence = @{ ("'" ~ "'")+ }
+                    AnythingButQuotesSequence = @{ "'" ~ (!("'") ~ ANY)* ~ "'" }
+            Parameter = { PgParameter | TntParameter }
+                TntParameter = @{ "?" }
+                PgParameter = { "$" ~ Unsigned }
+            IdentifierWithOptionalContinuation = { Identifier ~ (ReferenceContinuation | FunctionInvocationContinuation)? }
+                ReferenceContinuation          = { "." ~ Identifier }
+                FunctionInvocationContinuation = { "(" ~ (CountAsterisk | FunctionArgs)? ~ ")" }
+                    FunctionArgs = { Distinct? ~ (Expr ~ ("," ~ Expr)*)? }
+                    CountAsterisk = { "*" }
+            ExpressionInParentheses = { "(" ~ Expr ~ ")" }
+            Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
+                TypeCast = _{ TypeAny | ColumnDefType }
+                ColumnDefType = { TypeBool | TypeDecimal | TypeDouble | TypeInt | TypeNumber
+                                   | TypeScalar | TypeString | TypeText | TypeUnsigned | TypeVarchar }
+                    TypeAny = { ^"any" }
+                    TypeBool = { (^"boolean" | ^"bool") }
+                    TypeDecimal = { ^"decimal" }
+                    TypeDouble = { ^"double" }
+                    TypeInt = { (^"integer" | ^"int") }
+                    TypeNumber = { ^"number" }
+                    TypeScalar = { ^"scalar" }
+                    TypeString = { ^"string" }
+                    TypeText = { ^"text" }
+                    TypeUnsigned = { ^"unsigned" }
+                    TypeVarchar = { ^"varchar" ~ "(" ~ Unsigned ~ ")" }
+            UnaryOperator = _{ Exists }
+                Exists = { NotFlag? ~ ^"exists" ~ SubQuery }
+            Row = { "(" ~ Expr ~ ("," ~ Expr)* ~ ")" }
 
 Distinct = { ^"distinct" }
 NotFlag = { ^"not" }
-
-Cast = { ^"cast" ~ "(" ~ CastExpr ~ ^"as" ~ Type ~ ")" }
-    CastExpr = _{ Parentheses | Primary }
-    Type = _{ TypeAny | TypeBool | TypeDecimal | TypeDouble
-             | TypeInt | TypeNumber | TypeScalar | TypeString
-             | TypeText | TypeUnsigned | TypeVarchar }
-    TypeAny = { ^"any" }
-    TypeBool = { (^"boolean" | ^"bool") }
-    TypeDecimal = { ^"decimal" }
-    TypeDouble = { ^"double" }
-    TypeInt = { (^"integer" | ^"int") }
-    TypeNumber = { ^"number" }
-    TypeScalar = { ^"scalar" }
-    TypeString = { ^"string" }
-    TypeText = { ^"text" }
-    TypeUnsigned = { ^"unsigned" }
-    TypeVarchar = { ^"varchar" ~ "(" ~ Length ~ ")" }
-        Length = @{ Unsigned }
-
-GroupingElement = _{ Expr }
-
-Name = @{ ("\"" ~ NameString ~ "\"") | NameString  }
-    NameString = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ ((NameLetters ~ (NameLetters | ASCII_DIGIT)+) | NameLetters+) }
-        NameLetters = _{ ('a'..'z' | 'A' .. 'Z' | 'А' .. 'Я' | 'а' .. 'я' | "-" | "_") }
-String = @{ !(WHITESPACE* ~ Keyword ~ WHITESPACE) ~ (Character | ("'" ~ "'") | "\"")* }
-Keyword = { ^"except" | ^"union" | ^"where" | ^"distinct" }
-Character = _{ LETTER | NUMBER | Other | OTHER_ALPHABETIC | Punctuation | SYMBOL }
-Punctuation = _{
-    CONNECTOR_PUNCTUATION
-    | DASH_PUNCTUATION
-    | OPEN_PUNCTUATION
-    | CLOSE_PUNCTUATION
-    | INITIAL_PUNCTUATION
-    | "." | "?" | "!" | ":" | ";" | ","
-}
-Other = _{ "\\" | "/" | "@" | "%" | "&" | "*" | "#" | "§" | "»" | WHITESPACE }
-
-Value = _{ Parameter | True | False | Null | Double | Decimal | Unsigned | Integer | Reference | SingleQuotedString }
-    True = @{ ^"true" }
-    False = @{ ^"false" }
-    Null = @{ ^"null" }
-    Decimal = @{ Integer ~ ("." ~ ASCII_DIGIT*) }
-    Double = @{ Integer ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ Integer) }
-    Integer = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
-    Unsigned = @{ ASCII_DIGIT+ }
-    SingleQuotedString = ${ "'" ~ String ~ "'" }
-    Row = {
-        ("(" ~ RowElem ~ ("," ~ RowElem)* ~ ")")
-        | (^"row" ~ "(" ~ RowElem ~ ("," ~ RowElem)* ~ ")")
-    }
-    RowElem = _{ Concat | Cast | Row | Function | Value }
-    Parameter = { PgParameter | TntParameter }
-    TntParameter = @{ "?" }
-    PgParameter = @{ "$" ~ Unsigned }
-
 EOF = { EOI | ";" }
 WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }

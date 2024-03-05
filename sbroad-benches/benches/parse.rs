@@ -1,22 +1,23 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
-use sbroad::executor::engine::mock::RouterRuntimeMock;
-use sbroad::executor::Query;
+use sbroad::executor::engine::mock::{RouterConfigurationMock, RouterRuntimeMock};
 use sbroad::frontend::sql::ast::AbstractSyntaxTree;
 use sbroad::frontend::Ast;
-use sbroad::ir::tree::Snapshot;
-use sbroad::ir::value::Value;
 
 use pest::Parser;
 use pest_derive::Parser;
+use sbroad::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
+use sbroad::executor::Query;
+use sbroad::ir::tree::Snapshot;
+use sbroad::ir::value::Value;
+use sbroad::ir::Plan;
 
 #[derive(Parser)]
 #[grammar = "../sbroad-core/src/frontend/sql/query.pest"]
 struct ParseTree;
 
 #[allow(clippy::too_many_lines)]
-fn query_sql() -> String {
-    let sql = r#"SELECT
+fn get_query_with_many_references() -> &'static str {
+    r#"SELECT
     *
     FROM
         (
@@ -234,127 +235,105 @@ fn query_sql() -> String {
             FROM
                 "test__gibdd_db__vehicle_reg_and_res100_actual"
             WHERE
-                "sys_from" <= ?
+                "sys_from" <= 1
         ) AS "t3"
     WHERE
-        "reestrid" = ?"#;
-
-    sql.into()
+        "reestrid" = ?"#
 }
 
+/// Note: every target query contains single parameter.
 fn get_target_queries() -> Vec<&'static str> {
     vec![
         r#"
         SELECT *
 FROM
-    (SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= ?
-            AND "sys_to" >= ?
+    (SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1 AND "sys_op" >= 1
     UNION ALL
-    SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= ?) AS "t3"
-WHERE "col1" = ?
-        AND ("col2" = ?
-        AND "amount" > ?)
+    SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1) AS "t3"
+WHERE "id" = 1
+        AND ("sysFrom" = ?
+        AND "sys_op" > 1)
         "#,
         r#"
         SELECT *
 FROM
-    (SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= ?
-            AND "sys_to" >= ?
+    (SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1 AND "sys_op" >= 1
     UNION ALL
-    SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= ?) AS "t3"
-WHERE ("col1" = ?
-        OR ("col1" = ?
-        OR "col1" = ?))
-        AND (("col2" = ?
-        OR "col2" = ?)
-        AND "amount" > ?)
+    SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1) AS "t3"
+WHERE ("id" = 1
+        OR ("id" = 1
+        OR "id" = 1))
+        AND (("sysFrom" = 1
+        OR "sysFrom" = 1)
+        AND "sys_op" > ?)
         "#,
         r#"
         SELECT *
 FROM
-    (SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    (SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1 AND "sys_op" >= 1
     UNION ALL
-    SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
+    SELECT "id", "sysFrom", "sys_op"
+    FROM "test_space"
+    WHERE "sysFrom" <= 1) AS "t3"
 INNER JOIN
-    (SELECT "id", "cola", "colb"
-    FROM "cola_colb_accounts_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
+    (SELECT "identification_number", "sys_op", "product_code"
+    FROM "hash_testing_hist"
+    WHERE "identification_number" <= 0 AND "sys_op" >= 0
     UNION ALL
-    SELECT "id", "cola", "colb"
-    FROM "cola_colb_accounts_actual"
-    WHERE "sys_from" <= 0) AS "t8"
-    ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND "t3"."col2" = 2
-AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))
-        "#,
-        r#"
-        SELECT *
-FROM
-    (SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
-    UNION ALL
-    SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-INNER JOIN
-    (SELECT "id", "cola", "colb"
-    FROM "cola_accounts_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
-    UNION ALL
-    SELECT "id", "cola", "colb"
-    FROM "cola_accounts_actual"
-    WHERE "sys_from" <= 0) AS "t8"
-    ON "t3"."account_id" = "t8"."id"
-WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)
-        "#,
-        r#"
-        SELECT *
-FROM
-    (SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_history"
-    WHERE "sys_from" <= 0 AND "sys_to" >= 0
-    UNION ALL
-    SELECT "col1", "col2", "account_id", "amount"
-    FROM "col1_col2_transactions_actual"
-    WHERE "sys_from" <= 0) AS "t3"
-WHERE "account_id" IN
-    (SELECT "id"
-    FROM
-        (SELECT "id", "cola", "colb"
-        FROM "cola_colb_accounts_history"
-        WHERE "sys_from" <= 0 AND "sys_to" >= 0
-        UNION ALL
-        SELECT "id", "cola", "colb"
-        FROM "cola_colb_accounts_actual"
-        WHERE "sys_from" <= 0) AS "t8"
-        WHERE "cola" = 1 AND "colb" = 2)
-    AND ("col1" = ? AND "col2" = 2)
+    SELECT "identification_number", "sys_op", "product_code"
+    FROM "hash_testing_hist"
+    WHERE "identification_number" <= 0) AS "t8"
+ON "t3"."id" = "t8"."identification_number"
+WHERE "t3"."sysFrom" = 1 AND "t3"."sys_op" = 2
+AND ("t8"."sys_op" = ? AND ("t8"."identification_number" = 2 AND "t3"."sys_op" > 0))
         "#,
     ]
 }
 
-fn parse_ast(pattern: &str) {
-    AbstractSyntaxTree::new(pattern).unwrap();
+fn bench_pure_pest_parsing(c: &mut Criterion) {
+    let many_references_query = get_query_with_many_references();
+    c.bench_function("pure_pest_parsing_many_references", |b| {
+        b.iter(|| black_box(ParseTree::parse(Rule::Command, many_references_query)));
+    });
+
+    let target_qureies = get_target_queries();
+    for (index, query) in target_qureies.iter().enumerate() {
+        let bench_name = format!("pure_pest_parsing_target_query{index}");
+        c.bench_function(bench_name.as_str(), |b| {
+            b.iter(|| black_box(ParseTree::parse(Rule::Command, query)));
+        });
+    }
 }
 
-fn bench_ast_build(c: &mut Criterion) {
-    c.bench_function("parsing_ast", |b| {
-        let sql_str = query_sql();
-        b.iter(|| parse_ast(&sql_str));
+fn parse(pattern: &str) -> Plan {
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(pattern, metadata).unwrap();
+    return plan;
+}
+
+fn bench_full_parsing(c: &mut Criterion) {
+    let many_references_query = get_query_with_many_references();
+    c.bench_function("full_parsing_many_references", |b| {
+        b.iter(|| black_box(parse(&many_references_query)));
     });
+
+    let target_queries = get_target_queries();
+    for (index, target_query) in target_queries.iter().enumerate() {
+        let bench_name = format!("full_parsing_target_query{index}");
+        c.bench_function(bench_name.as_str(), |b| {
+            b.iter(|| black_box(parse(&target_query)))
+        });
+    }
 }
 
 fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
@@ -368,48 +347,23 @@ fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     plan.to_sql(&nodes, &buckets, "").unwrap();
 }
 
+/// Note: it's disabled, because currently one of target queries fails on execution.
 fn bench_ir_build(c: &mut Criterion) {
     let mut engine = RouterRuntimeMock::new();
-    let sql = query_sql();
-    let mut sys_from: u64 = 42;
-    let mut reestrid: u64 = 666;
-    c.bench_function("building_ir", |b| {
-        b.iter(|| {
-            let params = vec![Value::from(sys_from), Value::from(reestrid)];
-            sys_from += 1;
-            reestrid += 1;
-            build_ir(&sql, params, &mut engine);
-        });
-    });
-}
+    let mut param: u64 = 42;
 
-fn bench_target_queries(c: &mut Criterion) {
-    let queries = get_target_queries();
-
-    for (index, query) in queries.iter().enumerate() {
-        let bench_name = format!("parsing_target_query{index}");
+    let target_queries = get_target_queries();
+    for (index, target_query) in target_queries.iter().enumerate() {
+        let bench_name = format!("building_ir_target_query{index}");
         c.bench_function(bench_name.as_str(), |b| {
-            b.iter(|| parse_ast(query));
+            b.iter(|| {
+                let params = vec![Value::from(param)];
+                param += 1;
+                build_ir(&target_query, params, &mut engine);
+            })
         });
     }
 }
 
-fn bench_pure_pest_parsing(c: &mut Criterion) {
-    let queries = get_target_queries();
-
-    for (index, query) in queries.iter().enumerate() {
-        let bench_name = format!("pure_pest_parsing_target_query{index}");
-        c.bench_function(bench_name.as_str(), |b| {
-            b.iter(|| black_box(ParseTree::parse(Rule::Command, query)));
-        });
-    }
-}
-
-criterion_group!(
-    benches,
-    bench_ir_build,
-    bench_ast_build,
-    bench_target_queries,
-    bench_pure_pest_parsing
-);
+criterion_group!(benches, bench_pure_pest_parsing, bench_full_parsing,);
 criterion_main!(benches);

@@ -103,6 +103,7 @@ fn expression_next<'nodes>(
     match iter.get_nodes().arena.get(iter.get_current()) {
         Some(Node::Expression(
             Expression::Alias { child, .. }
+            | Expression::ExprInParentheses { child, .. }
             | Expression::Cast { child, .. }
             | Expression::Unary { child, .. },
         )) => {

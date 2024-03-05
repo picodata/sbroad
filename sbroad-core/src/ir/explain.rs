@@ -21,9 +21,10 @@ use super::value::Value;
 
 #[derive(Debug, Serialize)]
 enum ColExpr {
+    Parentheses(Box<ColExpr>),
     Alias(Box<ColExpr>, String),
-    Arithmetic(Box<ColExpr>, BinaryOp, Box<ColExpr>, bool),
-    Bool(Box<ColExpr>, BinaryOp, Box<ColExpr>),
+    Arithmetic(Box<ColExpr>, Arithmetic, Box<ColExpr>),
+    Bool(Box<ColExpr>, Bool, Box<ColExpr>),
     Unary(Unary, Box<ColExpr>),
     Column(String, Type),
     Cast(Box<ColExpr>, CastType),
@@ -36,23 +37,15 @@ enum ColExpr {
 impl Display for ColExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ColExpr::Parentheses(child_expr) => format!("({child_expr})"),
             ColExpr::Alias(expr, name) => format!("{expr} -> {name}"),
-            ColExpr::Arithmetic(left, op, right, with_parentheses) => match with_parentheses {
-                false => format!("{left} {op} {right}"),
-                true => format!("({left} {op} {right})"),
-            },
-            ColExpr::Bool(left, op, right) => {
-                if let BinaryOp::BoolOp(Bool::Or) = op {
-                    format!("({left} {op} {right})")
-                } else {
-                    format!("{left} {op} {right}")
-                }
-            }
+            ColExpr::Arithmetic(left, op, right) => format!("{left} {op} {right}"),
+            ColExpr::Bool(left, op, right) => format!("{left} {op} {right}"),
             ColExpr::Unary(op, expr) => match op {
                 Unary::IsNull => format!("{expr} {op}"),
                 Unary::Exists => format!("{op} {expr}"),
                 Unary::Not => {
-                    if let ColExpr::Bool(_, BinaryOp::BoolOp(Bool::And), _) = **expr {
+                    if let ColExpr::Bool(_, Bool::And, _) = **expr {
                         format!("{op} ({expr})")
                     } else {
                         format!("{op} {expr}")
@@ -201,7 +194,6 @@ impl ColExpr {
                     left: _,
                     op,
                     right: _,
-                    with_parentheses,
                 } => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
@@ -215,14 +207,18 @@ impl ColExpr {
                         )
                     })?;
 
-                    let ar_expr = ColExpr::Arithmetic(
-                        Box::new(left),
-                        BinaryOp::ArithOp(op.clone()),
-                        Box::new(right),
-                        *with_parentheses,
-                    );
+                    let ar_expr = ColExpr::Arithmetic(Box::new(left), op.clone(), Box::new(right));
 
                     stack.push((ar_expr, id));
+                }
+                Expression::ExprInParentheses { .. } => {
+                    let (child_expr, _) = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "stack is empty while processing ALIAS expression".to_string(),
+                        )
+                    })?;
+                    let parentheses_expr = ColExpr::Parentheses(Box::new(child_expr));
+                    stack.push((parentheses_expr, id));
                 }
                 Expression::Alias { name, .. } => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
@@ -246,11 +242,7 @@ impl ColExpr {
                         )
                     })?;
 
-                    let bool_expr = ColExpr::Bool(
-                        Box::new(left),
-                        BinaryOp::BoolOp(op.clone()),
-                        Box::new(right),
-                    );
+                    let bool_expr = ColExpr::Bool(Box::new(left), op.clone(), Box::new(right));
 
                     stack.push((bool_expr, id));
                 }
@@ -604,23 +596,6 @@ impl Display for Row {
             .join(", ");
 
         write!(f, "ROW({cols})")
-    }
-}
-
-#[derive(Debug, Serialize)]
-enum BinaryOp {
-    ArithOp(Arithmetic),
-    BoolOp(Bool),
-}
-
-impl Display for BinaryOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let s = match &self {
-            BinaryOp::ArithOp(a) => a.to_string(),
-            BinaryOp::BoolOp(b) => b.to_string(),
-        };
-
-        write!(f, "{s}")
     }
 }
 

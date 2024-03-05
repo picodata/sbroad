@@ -65,6 +65,8 @@ pub enum Expression {
     /// Binary expression returning row result.
     ///
     /// Example: `a + b > 42`, `a + b < c + 1`, `1 + 2 != 2 * 2`.
+    ///
+    /// TODO: always cover children with parentheses (in to_sql).
     Arithmetic {
         /// Left branch expression node index in the plan node arena.
         left: usize,
@@ -72,12 +74,6 @@ pub enum Expression {
         op: operator::Arithmetic,
         /// Right branch expression node index in the plan node arena.
         right: usize,
-        /// Has expr parentheses or not. Important to keep this information
-        /// because we can not add parentheses for all exprs: we parse query
-        /// from the depth and from left to the right and not all arithmetic
-        /// operations are associative, example:
-        /// `(6 - 2) - 1 != 6 - (2 - 1)`, `(8 / 4) / 2 != 8 / (4 / 2))`.
-        with_parentheses: bool,
     },
     /// Type cast expression.
     ///
@@ -99,7 +95,7 @@ pub enum Expression {
     },
     /// Constant expressions.
     ///
-    // Example: `42`.
+    /// Example: `42`.
     Constant {
         /// Contained value (boolean, number, string or null)
         value: Value,
@@ -163,6 +159,9 @@ pub enum Expression {
     },
     /// Argument of `count` aggregate in `count(*)` expression
     CountAsterisk,
+    ExprInParentheses {
+        child: usize,
+    },
 }
 
 #[allow(dead_code)]
@@ -323,21 +322,21 @@ impl Expression {
 }
 
 impl Nodes {
+    /// Adds exression covered with parentheses node.
+    ///
+    /// # Errors
+    /// - child node is invalid
+    pub(crate) fn add_covered_with_parentheses(&mut self, child: usize) -> usize {
+        let covered_with_parentheses = Expression::ExprInParentheses { child };
+        self.push(Node::Expression(covered_with_parentheses))
+    }
+
     /// Adds alias node.
     ///
     /// # Errors
     /// - child node is invalid
     /// - name is empty
     pub fn add_alias(&mut self, name: &str, child: usize) -> Result<usize, SbroadError> {
-        self.arena.get(child).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {child}"))
-        })?;
-        if name.is_empty() {
-            return Err(SbroadError::Invalid(
-                Entity::Plan,
-                Some(String::from("name is empty")),
-            ));
-        }
         let alias = Expression::Alias {
             name: String::from(name),
             child,
@@ -379,7 +378,6 @@ impl Nodes {
         left: usize,
         op: operator::Arithmetic,
         right: usize,
-        with_parentheses: bool,
     ) -> Result<usize, SbroadError> {
         self.arena.get(left).ok_or_else(|| {
             SbroadError::NotFound(
@@ -393,42 +391,7 @@ impl Nodes {
                 format!("(right child of Arithmetic node) from arena with index {right}"),
             )
         })?;
-        Ok(self.push(Node::Expression(Expression::Arithmetic {
-            left,
-            op,
-            right,
-            with_parentheses,
-        })))
-    }
-
-    /// Set `with_parentheses` for arithmetic node.
-    ///
-    /// # Errors
-    /// - when left or right nodes are invalid
-    pub fn set_arithmetic_node_parentheses(
-        &mut self,
-        node_id: usize,
-        parentheses_to_set: bool,
-    ) -> Result<(), SbroadError> {
-        let arith_node = self.arena.get_mut(node_id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format!("(Arithmetic node) from arena with index {node_id}"),
-            )
-        })?;
-
-        if let Node::Expression(Expression::Arithmetic {
-            with_parentheses, ..
-        }) = arith_node
-        {
-            *with_parentheses = parentheses_to_set;
-            Ok(())
-        } else {
-            Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format!("expected Arithmetic with index {node_id}")),
-            ))
-        }
+        Ok(self.push(Node::Expression(Expression::Arithmetic { left, op, right })))
     }
 
     /// Adds reference node.
@@ -576,6 +539,11 @@ impl<'plan> Comparator<'plan> {
                     Expression::CountAsterisk => {
                         return Ok(matches!(right, Expression::CountAsterisk))
                     }
+                    Expression::ExprInParentheses { child: l_child } => {
+                        if let Expression::ExprInParentheses { child: r_child } = right {
+                            return self.are_subtrees_equal(*l_child, *r_child);
+                        }
+                    }
                     Expression::Bool {
                         left: left_left,
                         op: op_left,
@@ -596,17 +564,14 @@ impl<'plan> Comparator<'plan> {
                         op: op_left,
                         left: l_left,
                         right: r_left,
-                        with_parentheses: parens_left,
                     } => {
                         if let Expression::Arithmetic {
                             op: op_right,
                             left: l_right,
                             right: r_right,
-                            with_parentheses: parens_right,
                         } = right
                         {
                             return Ok(*op_left == *op_right
-                                && *parens_left == *parens_right
                                 && self.are_subtrees_equal(*l_left, *l_right)?
                                 && self.are_subtrees_equal(*r_left, *r_right)?);
                         }
@@ -717,6 +682,9 @@ impl<'plan> Comparator<'plan> {
             return;
         };
         match node {
+            Expression::ExprInParentheses { child } => {
+                self.hash_for_expr(*child, state, depth - 1);
+            }
             Expression::Alias { child, name } => {
                 name.hash(state);
                 self.hash_for_expr(*child, state, depth - 1);
@@ -726,14 +694,8 @@ impl<'plan> Comparator<'plan> {
                 self.hash_for_expr(*left, state, depth - 1);
                 self.hash_for_expr(*right, state, depth - 1);
             }
-            Expression::Arithmetic {
-                op,
-                left,
-                right,
-                with_parentheses,
-            } => {
+            Expression::Arithmetic { op, left, right } => {
                 op.hash(state);
-                with_parentheses.hash(state);
                 self.hash_for_expr(*left, state, depth - 1);
                 self.hash_for_expr(*right, state, depth - 1);
             }
@@ -826,7 +788,7 @@ impl Positions {
 /// (column name, scan name)
 pub(crate) type ColumnName<'column> = (&'column str, Option<&'column str>);
 
-/// Map of { column (with optional scan name) -> on which positions of relational node it's met }.
+/// Map of { column name (with optional scan name) -> on which positions of relational node it's met }.
 /// Built for concrete relational node. Every column from its (relational node) output is
 /// presented as a key in `map`.
 #[derive(Debug)]
@@ -947,22 +909,33 @@ impl Plan {
         self.nodes.add_row(list, distribution)
     }
 
-    /// Returns a list of columns from the child node outputs.
-    /// If the column list is empty then copies all the non-sharding columns
-    /// from the child node to a new tuple.
+    /// Returns a list of columns from the children relational nodes outputs.
+    ///
+    /// * If `col_names` is empty then copies all the columns
+    ///   from the child node to a new tuple.`need_sharding_column` indicates whether we want
+    ///   to copy sharding columns from the child relational node
+    /// * If `col_names` is not empty then copies only child output columns that correspond
+    ///   to that names.
+    ///
+    /// `need_aliases` indicates whether we'd like to copy aliases (their names) from the child
+    ///  node or whether we'd like to build raw References list.
     ///
     /// The `is_join` option "on" builds an output tuple for the left child and
     /// appends the right child's one to it. Otherwise we build an output tuple
     /// only from the first (left) child.
+    ///
     /// # Errors
     /// Returns `SbroadError`:
     /// - relation node contains invalid `Row` in the output
     /// - targets and children are inconsistent
     /// - column names don't exist
+    ///
+    /// # Panics
+    /// - `targets` has unreachable values
     #[allow(clippy::too_many_lines)]
     pub fn new_columns(
         &mut self,
-        children: &[usize],
+        child_rel_nodes: &[usize],
         is_join: bool,
         targets: &[usize],
         col_names: &[&str],
@@ -982,39 +955,30 @@ impl Plan {
                 targets.len()
             )));
         }
-
         if let Some(max) = targets.iter().max() {
-            if *max >= children.len() {
+            if *max >= child_rel_nodes.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format!(
                     "invalid children length: {}",
-                    children.len()
+                    child_rel_nodes.len()
                 )));
             }
         }
-        let mut result: Vec<usize> = Vec::new();
+
+        // List of columns to be passed into `Expression::Row`.
+        let mut result_row_list: Vec<usize> = Vec::new();
 
         if col_names.is_empty() {
             let required_targets = if is_join { targets } else { &targets[0..1] };
             for target_idx in required_targets {
-                let target_child: usize = if let Some(target) = targets.get(*target_idx) {
-                    *target
-                } else {
-                    return Err(SbroadError::NotFound(
-                        Entity::Node,
-                        "(child) pointed by target index".into(),
-                    ));
-                };
-                let child_node: usize = if let Some(child) = children.get(target_child) {
-                    *child
-                } else {
-                    return Err(SbroadError::NotFound(
-                        Entity::Node,
-                        format!("pointed by target child {target_child}"),
-                    ));
-                };
-                let relational_op = self.get_relation_node(child_node)?;
+                let target_rel_child_id = targets
+                    .get(*target_idx)
+                    .expect("target child not found among required");
+                let child_node_id = child_rel_nodes
+                    .get(*target_rel_child_id)
+                    .expect("child rel node not found");
+                let rel_node = self.get_relation_node(*child_node_id)?;
                 let child_row_list: Vec<(usize, usize)> = if let Expression::Row { list, .. } =
-                    self.get_expression_node(relational_op.output())?
+                    self.get_expression_node(rel_node.output())?
                 {
                     if need_sharding_column {
                         list.iter()
@@ -1041,7 +1005,8 @@ impl Plan {
                         Some("child node is not a row".into()),
                     ));
                 };
-                result.reserve(child_row_list.len());
+
+                result_row_list.reserve(child_row_list.len());
                 for (pos, alias_node) in child_row_list {
                     let expr = self.get_expression_node(alias_node)?;
                     let name: String = if let Expression::Alias { ref name, .. } = expr {
@@ -1065,32 +1030,21 @@ impl Plan {
                     let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
                     if need_aliases {
                         let a_id = self.nodes.add_alias(&name, r_id)?;
-                        result.push(a_id);
+                        result_row_list.push(a_id);
                     } else {
-                        result.push(r_id);
+                        result_row_list.push(r_id);
                     }
                 }
             }
 
-            return Ok(result);
+            return Ok(result_row_list);
         }
 
-        result.reserve(col_names.len());
-        let target_child: usize = if let Some(target) = targets.first() {
-            *target
-        } else {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                "Target is empty".into(),
-            ));
-        };
-        let child_node: usize = if let Some(child) = children.get(target_child) {
-            *child
-        } else {
-            return Err(SbroadError::NotFound(
-                Entity::Node,
-                "pointed by the target".into(),
-            ));
-        };
+        result_row_list.reserve(col_names.len());
+        let target_child = targets.first().expect("targets are empty");
+        let child_node = child_rel_nodes
+            .get(*target_child)
+            .expect("child_rel_nodes doesn't contain needed target");
 
         let mut col_names_set: HashSet<&str, RandomState> =
             HashSet::with_capacity_and_hasher(col_names.len(), RandomState::new());
@@ -1099,38 +1053,35 @@ impl Plan {
         }
 
         // Map of { column name (aliased) from child output -> its index in output }
-        let map = ColumnPositionMap::new(self, child_node)?;
+        let map = ColumnPositionMap::new(self, *child_node)?;
 
-        // Vec of { `map` key, targets, `map` value }
+        // Vec of { `map` key (column name), targets, `map` value (column index in child output) }
         let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
         for col in col_names {
             let pos = map.get(col)?;
             refs.push((col, targets.to_vec(), pos));
         }
 
-        let relational_op = self.get_relation_node(child_node)?;
+        let relational_op = self.get_relation_node(*child_node)?;
         let output_id = relational_op.output();
         let output = self.get_expression_node(output_id)?;
         let columns = output.clone_row_list()?;
         for (col, new_targets, pos) in refs {
-            let col_id = *columns.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::Column,
-                    format!("at position {pos} in the child output"),
-                )
-            })?;
+            let col_id = *columns
+                .get(pos)
+                .expect("Column id not found under relational child output");
             let col_expr = self.get_expression_node(col_id)?;
             let col_type = col_expr.calculate_type(self)?;
             let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
             if need_aliases {
                 let a_id = self.nodes.add_alias(col, r_id)?;
-                result.push(a_id);
+                result_row_list.push(a_id);
             } else {
-                result.push(r_id);
+                result_row_list.push(r_id);
             }
         }
 
-        Ok(result)
+        Ok(result_row_list)
     }
 
     /// New output for a single child node (with aliases).
@@ -1142,12 +1093,18 @@ impl Plan {
     /// - column names don't exist
     pub fn add_row_for_output(
         &mut self,
-        child: usize,
+        rel_node: usize,
         col_names: &[&str],
         need_sharding_column: bool,
     ) -> Result<usize, SbroadError> {
-        let list =
-            self.new_columns(&[child], false, &[0], col_names, true, need_sharding_column)?;
+        let list = self.new_columns(
+            &[rel_node],
+            false,
+            &[0],
+            col_names,
+            true,
+            need_sharding_column,
+        )?;
         self.nodes.add_row_of_aliases(list, None)
     }
 
@@ -1424,6 +1381,7 @@ impl Plan {
                 value: Value::Boolean(_) | Value::Null,
                 ..
             } => return Ok(true),
+            Expression::ExprInParentheses { child } => return self.is_trivalent(*child),
             Expression::Row { list, .. } => {
                 if let (Some(inner_id), None) = (list.first(), list.get(1)) {
                     return self.is_trivalent(*inner_id);

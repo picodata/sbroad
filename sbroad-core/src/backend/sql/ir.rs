@@ -350,6 +350,7 @@ impl ExecutionPlan {
                             Node::Expression(expr) => {
                                 match expr {
                                     Expression::Alias { .. }
+                                    | Expression::ExprInParentheses { .. }
                                     | Expression::Bool { .. }
                                     | Expression::Arithmetic { .. }
                                     | Expression::Cast { .. }

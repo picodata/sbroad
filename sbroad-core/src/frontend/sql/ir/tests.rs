@@ -8,8 +8,7 @@ use pretty_assertions::assert_eq;
 
 fn sql_to_optimized_ir_add_motions_err(query: &str) -> SbroadError {
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    let mut plan = AbstractSyntaxTree::transform_into_plan(query, metadata).unwrap();
     plan.replace_in_operator().unwrap();
     plan.push_down_not().unwrap();
     plan.split_columns().unwrap();
@@ -49,7 +48,7 @@ fn front_sql2() {
 
     let expected_explain = String::from(
         r#"projection ("hash_testing"."identification_number"::integer -> "identification_number", "hash_testing"."product_code"::string -> "product_code")
-    selection (ROW("hash_testing"."identification_number"::integer) = ROW(1::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('1'::string) or ROW("hash_testing"."identification_number"::integer) = ROW(2::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('2'::string))
+    selection ROW("hash_testing"."identification_number"::integer) = ROW(1::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('1'::string) or ROW("hash_testing"."identification_number"::integer) = ROW(2::unsigned) and ROW("hash_testing"."product_code"::string) = ROW('2'::string)
         scan "hash_testing"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -779,8 +778,7 @@ fn front_sql_groupby_invalid() {
     let input = r#"select "b", "a" from "t" group by "b""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    let mut plan = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap();
     let res = plan.optimize();
 
     assert_eq!(true, res.is_err());
@@ -791,8 +789,7 @@ fn front_sql_distinct_invalid() {
     let input = r#"select "b", bucket_id(distinct cast("a" as string)) from "t" group by "b", bucket_id(distinct cast("a" as string))"#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let plan = ast.resolve_metadata(metadata);
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
     let err = plan.unwrap_err();
 
     assert_eq!(
@@ -810,11 +807,11 @@ fn front_sql_aggregates() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_12"::unsigned -> "b", ROW(sum(("count_28"::integer))::decimal) + ROW(sum(("count_30"::integer))::decimal) -> "COL_1")
-    group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "count_28"::integer -> "count_28", "count_30"::integer -> "count_30")
+        r#"projection ("column_12"::unsigned -> "b", ROW(sum(("count_29"::integer))::decimal) + ROW(sum(("count_31"::integer))::decimal) -> "COL_1")
+    group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "count_29"::integer -> "count_29", "count_31"::integer -> "count_31")
         motion [policy: segment([ref("column_12")])]
             scan
-                projection ("t"."b"::unsigned -> "column_12", count(("t"."a"::unsigned))::integer -> "count_28", count(("t"."b"::unsigned))::integer -> "count_30")
+                projection ("t"."b"::unsigned -> "column_12", count(("t"."a"::unsigned))::integer -> "count_29", count(("t"."b"::unsigned))::integer -> "count_31")
                     group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
@@ -833,7 +830,7 @@ fn front_sql_avg_aggregate() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ((sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal) -> "COL_1", avg(distinct ("column_15"::decimal::double))::decimal -> "COL_2", ROW((sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal)) * ROW((sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal)) -> "COL_3")
+        r#"projection (sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal -> "COL_1", avg(distinct ("column_15"::decimal::double))::decimal -> "COL_2", ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal) * ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal) -> "COL_3")
     motion [policy: full]
         scan
             projection ("t"."b"::unsigned -> "column_15", sum(("t"."b"::unsigned))::decimal -> "sum_13", count(("t"."b"::unsigned))::integer -> "count_13")
@@ -1007,8 +1004,7 @@ fn front_sql_invalid_count_asterisk1() {
     let input = r#"SELECT sum(*) FROM "t" group by "b""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let plan = ast.resolve_metadata(metadata);
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
     let err = plan.unwrap_err();
 
     assert_eq!(
@@ -1116,9 +1112,7 @@ fn front_sql_aggregate_inside_aggregate() {
     let input = r#"select "b", count(sum("a")) from "t" group by "b""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast
-        .resolve_metadata(metadata)
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata)
         .unwrap()
         .optimize()
         .unwrap_err();
@@ -1134,9 +1128,7 @@ fn front_sql_column_outside_aggregate_no_groupby() {
     let input = r#"select "b", count("a") from "t""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast
-        .resolve_metadata(metadata)
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata)
         .unwrap()
         .optimize()
         .unwrap_err();
@@ -1229,11 +1221,11 @@ fn front_sql_pg_style_params3() {
     let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(42)]);
     let expected_explain = String::from(
         r#"projection ("column_31"::unsigned -> "COL_1")
-    having ROW(sum(("count_45"::integer))::decimal) > ROW(42::unsigned)
-        group by ("column_31"::unsigned) output: ("column_31"::unsigned -> "column_31", "count_45"::integer -> "count_45")
+    having ROW(sum(("count_46"::integer))::decimal) > ROW(42::unsigned)
+        group by ("column_31"::unsigned) output: ("column_31"::unsigned -> "column_31", "count_46"::integer -> "count_46")
             motion [policy: segment([ref("column_31")])]
                 scan
-                    projection (ROW("t"."a"::unsigned) + ROW(42::unsigned) -> "column_31", count(("t"."b"::unsigned))::integer -> "count_45")
+                    projection (ROW("t"."a"::unsigned) + ROW(42::unsigned) -> "column_31", count(("t"."b"::unsigned))::integer -> "count_46")
                         group by (ROW("t"."a"::unsigned) + ROW(42::unsigned)) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                             selection ROW("t"."a"::unsigned) = ROW(42::unsigned)
                                 scan "t"
@@ -1250,8 +1242,7 @@ fn front_sql_pg_style_params4() {
     let input = r#"select $1, ? from "t""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast.resolve_metadata(metadata).unwrap_err();
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
 
     assert_eq!(
         "invalid parameters usage. Got $n and ? parameters in one query!",
@@ -1264,8 +1255,7 @@ fn front_sql_pg_style_params5() {
     let input = r#"select $0 from "t""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast.resolve_metadata(metadata).unwrap_err();
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata).unwrap_err();
 
     assert_eq!(
         "invalid query: $n parameters are indexed from 1!",
@@ -1295,9 +1285,7 @@ fn front_sql_column_outside_aggregate() {
     let input = r#"select "b", "a", count("a") from "t" group by "b""#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let err = ast
-        .resolve_metadata(metadata)
+    let err = AbstractSyntaxTree::transform_into_plan(input, metadata)
         .unwrap()
         .optimize()
         .unwrap_err();
@@ -1631,11 +1619,11 @@ fn front_sql_groupby_expression2() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("column_16"::unsigned + ROW(sum(("count_35"::integer))::decimal) -> "COL_1")
-    group by ("column_16"::unsigned) output: ("column_16"::unsigned -> "column_16", "count_35"::integer -> "count_35")
-        motion [policy: segment([ref("column_16")])]
+        r#"projection ("column_17"::unsigned + ROW(sum(("count_37"::integer))::decimal) -> "COL_1")
+    group by ("column_17"::unsigned) output: ("column_17"::unsigned -> "column_17", "count_37"::integer -> "count_37")
+        motion [policy: segment([ref("column_17")])]
             scan
-                projection ((ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned)) -> "column_16", count(("t"."a"::unsigned))::integer -> "count_35")
+                projection ((ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned)) -> "column_17", count(("t"."a"::unsigned))::integer -> "count_37")
                     group by ((ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned))) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
@@ -1654,12 +1642,12 @@ fn front_sql_groupby_expression3() {
 
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
-        r#"projection ("column_16"::unsigned -> "COL_1", "column_26"::unsigned * ROW(sum(("sum_55"::decimal))::decimal) / ROW(sum(("count_61"::integer))::decimal) -> "COL_2")
-    group by ("column_16"::unsigned, "column_26"::unsigned) output: ("column_26"::unsigned -> "column_26", "column_16"::unsigned -> "column_16", "sum_55"::decimal -> "sum_55", "count_61"::integer -> "count_61")
-        motion [policy: segment([ref("column_16"), ref("column_26")])]
+        r#"projection ("column_16"::unsigned -> "COL_1", "column_27"::unsigned * ROW(sum(("sum_59"::decimal))::decimal) / ROW(sum(("count_65"::integer))::decimal) -> "COL_2")
+    group by ("column_27"::unsigned, "column_16"::unsigned) output: ("column_16"::unsigned -> "column_16", "column_27"::unsigned -> "column_27", "count_65"::integer -> "count_65", "sum_59"::decimal -> "sum_59")
+        motion [policy: segment([ref("column_27"), ref("column_16")])]
             scan
-                projection ((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)) -> "column_26", ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned) -> "column_16", sum((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)))::decimal -> "sum_55", count((ROW("t"."a"::unsigned) * ROW("t"."b"::unsigned)))::integer -> "count_61")
-                    group by (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned), (ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned))) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                projection (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned) -> "column_16", (ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)) -> "column_27", count((ROW("t"."a"::unsigned) * ROW("t"."b"::unsigned)))::integer -> "count_65", sum((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)))::decimal -> "sum_59")
+                    group by ((ROW("t"."c"::unsigned) * ROW("t"."d"::unsigned)), ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned)) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -1678,11 +1666,11 @@ fn front_sql_groupby_expression4() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("column_16"::unsigned -> "COL_1", "column_17"::unsigned -> "a")
-    group by ("column_16"::unsigned, "column_17"::unsigned) output: ("column_17"::unsigned -> "column_17", "column_16"::unsigned -> "column_16")
-        motion [policy: segment([ref("column_16"), ref("column_17")])]
+    group by ("column_17"::unsigned, "column_16"::unsigned) output: ("column_17"::unsigned -> "column_17", "column_16"::unsigned -> "column_16")
+        motion [policy: segment([ref("column_17"), ref("column_16")])]
             scan
                 projection ("t"."a"::unsigned -> "column_17", ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned) -> "column_16")
-                    group by (ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned), "t"."a"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                    group by ("t"."a"::unsigned, ROW("t"."a"::unsigned) + ROW("t"."b"::unsigned)) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -1773,10 +1761,10 @@ fn front_sql_left_join_single_left() {
     left join on ROW("T1"."A"::decimal) = ROW("T2"."B"::unsigned)
         motion [policy: segment([ref("A")])]
             scan "T1"
-                projection (ROW(sum(("sum_13"::decimal))::decimal) / ROW(3::unsigned) -> "A")
+                projection (ROW(sum(("sum_14"::decimal))::decimal) / ROW(3::unsigned) -> "A")
                     motion [policy: full]
                         scan
-                            projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_13")
+                            projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_14")
                                 scan "test_space"
         motion [policy: full]
             scan "T2"
@@ -1807,10 +1795,10 @@ fn front_sql_left_join_single_left2() {
     left join on ROW("T1"."A"::decimal) + ROW(3::unsigned) <> ROW("T2"."B"::unsigned)
         motion [policy: segment([ref("A")])]
             scan "T1"
-                projection (ROW(sum(("sum_13"::decimal))::decimal) / ROW(3::unsigned) -> "A")
+                projection (ROW(sum(("sum_14"::decimal))::decimal) / ROW(3::unsigned) -> "A")
                     motion [policy: full]
                         scan
-                            projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_13")
+                            projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_14")
                                 scan "test_space"
         motion [policy: full]
             scan "T2"
@@ -1840,10 +1828,10 @@ fn front_sql_left_join_single_both() {
         r#"projection ("T1"."A"::decimal -> "A", "T2"."B"::integer -> "B")
     left join on ROW("T1"."A"::decimal) <> ROW("T2"."B"::integer)
         scan "T1"
-            projection (ROW(sum(("sum_13"::decimal))::decimal) / ROW(3::unsigned) -> "A")
+            projection (ROW(sum(("sum_14"::decimal))::decimal) / ROW(3::unsigned) -> "A")
                 motion [policy: full]
                     scan
-                        projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_13")
+                        projection (sum(("test_space"."id"::unsigned))::decimal -> "sum_14")
                             scan "test_space"
         scan "T2"
             projection (sum(("count_38"::integer))::decimal -> "B")
@@ -1901,11 +1889,11 @@ fn front_sql_having1() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("column_12"::unsigned -> "a", sum(("sum_52"::decimal))::decimal -> "COL_1")
-    having ROW("column_12"::unsigned) > ROW(1::unsigned) and ROW(sum(distinct ("column_30"::decimal))::decimal) > ROW(1::unsigned)
-        group by ("column_12"::unsigned) output: ("column_30"::unsigned -> "column_30", "column_12"::unsigned -> "column_12", "sum_52"::decimal -> "sum_52")
+    having ROW("column_12"::unsigned) > ROW(1::unsigned) and ROW(sum(distinct ("column_27"::decimal))::decimal) > ROW(1::unsigned)
+        group by ("column_12"::unsigned) output: ("column_12"::unsigned -> "column_12", "column_27"::unsigned -> "column_27", "sum_52"::decimal -> "sum_52")
             motion [policy: segment([ref("column_12")])]
                 scan
-                    projection ("t"."b"::unsigned -> "column_30", "t"."a"::unsigned -> "column_12", sum(("t"."b"::unsigned))::decimal -> "sum_52")
+                    projection ("t"."a"::unsigned -> "column_12", "t"."b"::unsigned -> "column_27", sum(("t"."b"::unsigned))::decimal -> "sum_52")
                         group by ("t"."a"::unsigned, "t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                             scan "t"
 execution options:
@@ -1925,11 +1913,11 @@ fn front_sql_having2() {
 
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
-        r#"projection (ROW(sum(("sum_38"::decimal))::decimal) * ROW(count(distinct ("column_39"::integer))::integer) -> "COL_1", sum(("sum_38"::decimal))::decimal -> "COL_2")
-    having ROW(sum(distinct ("column_39"::decimal))::decimal) > ROW(1::unsigned) and ROW(sum(("sum_38"::decimal))::decimal) > ROW(1::unsigned)
+        r#"projection (ROW(sum(("sum_39"::decimal))::decimal) * ROW(count(distinct ("column_38"::integer))::integer) -> "COL_1", sum(("sum_39"::decimal))::decimal -> "COL_2")
+    having ROW(sum(distinct ("column_38"::decimal))::decimal) > ROW(1::unsigned) and ROW(sum(("sum_39"::decimal))::decimal) > ROW(1::unsigned)
         motion [policy: full]
             scan
-                projection ("t"."b"::unsigned -> "column_39", sum(("t"."a"::unsigned))::decimal -> "sum_38")
+                projection ("t"."b"::unsigned -> "column_38", sum(("t"."a"::unsigned))::decimal -> "sum_39")
                     group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
                         scan "t"
 execution options:
@@ -2333,7 +2321,7 @@ fn front_sql_insert_1() {
         r#"insert "t" on conflict: fail
     motion [policy: segment([value(NULL), ref("a")])]
         projection ("t"."a"::unsigned -> "a")
-            selection (ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(2::unsigned) and ROW("t"."b"::unsigned) = ROW(3::unsigned))
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(2::unsigned) and ROW("t"."b"::unsigned) = ROW(3::unsigned)
                 scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -2374,7 +2362,7 @@ fn front_sql_insert_3() {
         r#"insert "t" on conflict: fail
     motion [policy: segment([ref("b"), ref("a")])]
         projection ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b")
-            selection (ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(3::unsigned) and ROW("t"."b"::unsigned) = ROW(4::unsigned))
+            selection ROW("t"."a"::unsigned) = ROW(1::unsigned) and ROW("t"."b"::unsigned) = ROW(2::unsigned) or ROW("t"."a"::unsigned) = ROW(3::unsigned) and ROW("t"."b"::unsigned) = ROW(4::unsigned)
                 scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -2452,8 +2440,7 @@ fn front_sql_insert_7() {
     let input = r#"insert into "hash_testing" ("identification_number", "product_code", "bucket_id") values (1, 2, 3)"#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let plan = ast.resolve_metadata(metadata);
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
     let err = plan.unwrap_err();
     assert_eq!(
         true,
@@ -2636,10 +2623,10 @@ fn front_sql_update6() {
 subquery $0:
 motion [policy: full]
                     scan
-                        projection (sum(("sum_18"::decimal))::decimal -> "S")
+                        projection (sum(("sum_17"::decimal))::decimal -> "S")
                             motion [policy: full]
                                 scan
-                                    projection (sum(("t3"."b"::integer))::decimal -> "sum_18")
+                                    projection (sum(("t3"."b"::integer))::decimal -> "sum_17")
                                         scan "t3"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -2731,7 +2718,7 @@ fn front_sql_not_or() {
         "#,
         vec![],
         r#"projection ("COLUMN_1"::unsigned -> "COLUMN_1")
-    selection (not ROW(true::boolean) or ROW(true::boolean))
+    selection not ROW(true::boolean) or ROW(true::boolean)
         scan
             values
                 value row (data=ROW(1::unsigned))
@@ -2839,13 +2826,13 @@ fn front_sql_not_complex_query() {
                 (select not "id" as "nid" from "test_space") as "ts"
                 inner join
                 (select not not "id" as "nnid" from "test_space") as "nts"
-                on not "nid" = "nnid" * (?) or not 1 = cast((not not true) as bool)
+                on not "nid" = "nnid" * (?) or not false = cast((not not true) as bool)
             where not exists (select * from (values (1)) where not true = (?))
         "#,
         vec![Value::from(1), Value::from(1), Value::from(true)],
-        r#"projection (not (not ROW('true'::string::bool) and ROW(1::unsigned) + ROW(1::integer) <> ROW(false::boolean)) -> "COL_1")
+        r#"projection (not (not ('true'::string::bool) and ROW(1::unsigned) + (1::integer) <> ROW(false::boolean)) -> "COL_1")
     selection not exists ROW($0)
-        join on (ROW("ts"."nid"::boolean) <> ROW("nts"."nnid"::boolean) * ROW(1::integer) or ROW(1::unsigned) <> ROW(not not ROW(true::boolean)::bool))
+        join on ROW("ts"."nid"::boolean) <> ROW("nts"."nnid"::boolean) * (1::integer) or ROW(false::boolean) <> ROW((not not ROW(true::boolean))::bool)
             scan "ts"
                 projection (not ROW("test_space"."id"::unsigned) -> "nid")
                     scan "test_space"
@@ -2856,7 +2843,7 @@ fn front_sql_not_complex_query() {
 subquery $0:
 scan
             projection ("COLUMN_1"::unsigned -> "COLUMN_1")
-                selection not ROW(true::boolean) = ROW(true::boolean)
+                selection not ROW(true::boolean) = (true::boolean)
                     scan
                         values
                             value row (data=ROW(1::unsigned))
@@ -2890,8 +2877,7 @@ fn front_sql_check_non_null_columns_specified() {
     let input = r#"insert into "test_space" ("sys_op") values (1)"#;
 
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(input).unwrap();
-    let plan = ast.resolve_metadata(metadata);
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
     let err = plan.unwrap_err();
     assert_eq!(
         true,

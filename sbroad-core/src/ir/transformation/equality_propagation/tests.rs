@@ -17,13 +17,13 @@ fn equality_propagation1() {
         format!(
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
-            r#"and ("t"."c") = ("t"."a") or ("t"."d") = (?))"#,
+            r#"WHERE ("t"."c") = (?) and ("t"."a") = (?) and ("t"."b") = (?)"#,
+            r#"and ("t"."c") = ("t"."a") or ("t"."d") = (?)"#,
         ),
         vec![
             Value::from(1_u64),
-            Value::from(2_u64),
             Value::from(1_u64),
+            Value::from(2_u64),
             Value::from(1_u64),
         ],
     );
@@ -59,9 +59,9 @@ fn equality_propagation3() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."a") = (?)"#,
+            r#"WHERE ("t"."a") = (?) and ("t"."a") = (?) and ("t"."b") = (?)"#,
         ),
-        vec![Value::from(1_u64), Value::Null, Value::Null],
+        vec![Value::Null, Value::from(1_u64), Value::Null],
     );
 
     assert_eq!(
@@ -79,14 +79,14 @@ fn equality_propagation4() {
         format!(
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."a") = (?)"#,
+            r#"WHERE ("t"."b") = (?) and ("t"."a") = (?) and ("t"."a") = (?)"#,
             r#"and ("t"."b") = (?) and ("t"."b") = ("t"."a")"#,
         ),
         vec![
             Value::from(1_u64),
             Value::Null,
-            Value::Null,
             Value::from(1_u64),
+            Value::Null,
         ],
     );
 
@@ -105,8 +105,8 @@ fn equality_propagation5() {
         format!(
             "{} {} {} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("t"."a") = (?) and ("t"."b") = (?)"#,
-            r#"and ("t"."c") = (?) and ("t"."d") = (?)"#,
+            r#"WHERE ("t"."d") = (?) and ("t"."c") = (?)"#,
+            r#"and ("t"."a") = (?) and ("t"."b") = (?)"#,
             r#"and ("t"."c") = ("t"."b") and ("t"."b") = ("t"."a")"#,
             r#"and ("t"."a") = ("t"."d")"#,
         ),

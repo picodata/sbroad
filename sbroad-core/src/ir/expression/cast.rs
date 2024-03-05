@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::errors::{Entity, SbroadError};
-use crate::frontend::sql::ast::Type as AstType;
+use crate::frontend::sql::ast::Rule;
 use crate::ir::expression::Expression;
 use crate::ir::relation::Type as RelationType;
 use crate::ir::{Node, Plan};
@@ -23,24 +23,24 @@ pub enum Type {
     Varchar(usize),
 }
 
-impl TryFrom<&AstType> for Type {
+impl TryFrom<&Rule> for Type {
     type Error = SbroadError;
 
     /// Pay attention that we can't build `Type::Varchar(length)` from string
     /// because it has an additional length parameter. It should be constructed
     /// separately.
-    fn try_from(ast_type: &AstType) -> Result<Self, Self::Error> {
+    fn try_from(ast_type: &Rule) -> Result<Self, Self::Error> {
         match ast_type {
-            AstType::TypeAny => Ok(Type::Any),
-            AstType::TypeBool => Ok(Type::Boolean),
-            AstType::TypeDecimal => Ok(Type::Decimal),
-            AstType::TypeDouble => Ok(Type::Double),
-            AstType::TypeInt => Ok(Type::Integer),
-            AstType::TypeNumber => Ok(Type::Number),
-            AstType::TypeScalar => Ok(Type::Scalar),
-            AstType::TypeString => Ok(Type::String),
-            AstType::TypeText => Ok(Type::Text),
-            AstType::TypeUnsigned => Ok(Type::Unsigned),
+            Rule::TypeAny => Ok(Type::Any),
+            Rule::TypeBool => Ok(Type::Boolean),
+            Rule::TypeDecimal => Ok(Type::Decimal),
+            Rule::TypeDouble => Ok(Type::Double),
+            Rule::TypeInt => Ok(Type::Integer),
+            Rule::TypeNumber => Ok(Type::Number),
+            Rule::TypeScalar => Ok(Type::Scalar),
+            Rule::TypeString => Ok(Type::String),
+            Rule::TypeText => Ok(Type::Text),
+            Rule::TypeUnsigned => Ok(Type::Unsigned),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some(format!("{ast_type:?}")),

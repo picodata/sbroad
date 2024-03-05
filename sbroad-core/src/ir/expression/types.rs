@@ -37,7 +37,9 @@ impl Expression {
     /// - the row list contains non-expression nodes;
     pub fn calculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
         match self {
-            Expression::Alias { child, .. } => plan.get_node_type(*child),
+            Expression::Alias { child, .. } | Expression::ExprInParentheses { child } => {
+                plan.get_node_type(*child)
+            }
             Expression::Bool { .. } | Expression::Unary { .. } => Ok(Type::Boolean),
             Expression::Arithmetic {
                 left, right, op, ..

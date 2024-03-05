@@ -118,7 +118,7 @@ impl From<HashSet<Key, RepeatableState>> for KeySet {
     }
 }
 
-/// Tuple distribution in the cluster.
+/// Tuple distribution (location in cluster) in the cluster.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Distribution {
     /// The output of relational operator with this distribution
@@ -580,23 +580,23 @@ impl Plan {
         Ok(())
     }
 
-    // Join, Having or Selection
-    // may have references that refer only to one
-    // child (or two in case of Join),
-    // but their final distribution also depends
-    // on subqueries. Currently this dependency
-    // arises only when non-sq children (required children)
-    // have Distribution::Global.
-    //
-    // This method checks whether node is Join, Selection or Having,
-    // and if all required children have Global distribution, it computes
-    // the correct distribution in case there are any subqueries. Otherwise,
-    // it retuns `None`.
-    //
-    // # Errors
-    // - node is not relational
-    // - incorrect number of children for node
-    // - missing Motion(Full) for sq with Any distribution
+    /// Join, Having or Selection
+    /// may have references that refer only to one
+    /// child (or two in case of Join),
+    /// but their final distribution also depends
+    /// on subqueries. Currently this dependency
+    /// arises only when non-sq children (required children)
+    /// have `Distribution::Global`.
+    ///
+    /// This method checks whether node is Join, Selection or Having,
+    /// and if all required children have Global distribution, it computes
+    /// the correct distribution in case there are any subqueries. Otherwise,
+    /// it returns `None`.
+    ///
+    /// # Errors
+    /// - node is not relational
+    /// - incorrect number of children for node
+    /// - missing Motion(Full) for sq with Any distribution
     pub(crate) fn dist_from_subqueries(
         &self,
         node_id: usize,

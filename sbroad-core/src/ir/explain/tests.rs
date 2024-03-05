@@ -208,7 +208,7 @@ WHERE "id" IN (SELECT "id"
 
     let mut actual_explain = String::new();
     actual_explain.push_str(r#"projection ("t"."id"::unsigned -> "id", "t"."FIRST_NAME"::string -> "FIRST_NAME")
-    selection (ROW("t"."id"::unsigned) in ROW($0) or ROW("t"."id"::unsigned) in ROW($1))
+    selection ROW("t"."id"::unsigned) in ROW($0) or ROW("t"."id"::unsigned) in ROW($1)
         scan "t"
             union all
                 projection ("test_space"."id"::unsigned -> "id", "test_space"."FIRST_NAME"::string -> "FIRST_NAME")

@@ -65,7 +65,7 @@ fn not_or() {
     let expected = PatternWithParams::new(
         format!(
             "{}",
-            r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?) and (?)"#,
+            r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) and (?))"#,
         ),
         vec![Value::Unsigned(1), Value::from(true), Value::from(false)],
     );
@@ -77,7 +77,7 @@ fn not_or() {
 #[test]
 fn not_dnf() {
     let initial_input = r#"SELECT "a" FROM "t"
-    WHERE NOT (("a" != 1 AND "b" != 2 OR "a" != 3) AND "c" != 4)"#;
+    WHERE NOT ((("a" != 1 AND "b" != 2) OR "a" != 3) AND "c" != 4)"#;
     let actual = check_transformation(initial_input, vec![], &push_down_not);
     let actual_after_dnf = check_transformation(actual.pattern.as_str(), actual.params, &set_dnf);
 
@@ -96,7 +96,7 @@ fn not_nothing_to_push_down() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") <> (?) and ("t"."b") <> (?) or ("t"."a") <> (?)) and ("t"."c") <> (?)"#,
+            r#"WHERE ((("t"."a") <> (?) and ("t"."b") <> (?) or ("t"."a") <> (?)) and ("t"."c") <> (?))"#,
         ),
         vec![
             Value::from(1_u64),

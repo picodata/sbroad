@@ -30,8 +30,7 @@ pub fn sql_to_optimized_ir(query: &str, params: Vec<Value>) -> Plan {
 #[must_use]
 pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
     let metadata = &RouterConfigurationMock::new();
-    let ast = AbstractSyntaxTree::new(query).unwrap();
-    let mut plan = ast.resolve_metadata(metadata).unwrap();
+    let mut plan = AbstractSyntaxTree::transform_into_plan(query, metadata).unwrap();
     plan.bind_params(params).unwrap();
     plan.apply_options().unwrap();
     plan

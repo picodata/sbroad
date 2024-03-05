@@ -360,11 +360,14 @@ fn global_tbl_join1() {
 
 #[test]
 fn global_tbl_join2() {
+    // t2 sharded by (e, f)
+    // Note that "a" in join condition relates to the left join scan as soon as under its right scan
+    // we have an "A" aliased column.
     let query = r#"
-    select * from "global_t" 
-    inner join (select "a" as a from "global_t")
-    on ("a", "b") in (select "e", "f" from "t2")
-"#;
+        select * from "global_t"
+        inner join (select "a" as a from "global_t")
+        on ("a", "b") in (select "e", "f" from "t2")
+    "#;
 
     let coordinator = RouterRuntimeMock::new();
     let mut query = Query::new(&coordinator, query, vec![]).unwrap();

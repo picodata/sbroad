@@ -15,7 +15,7 @@ fn bool_in1() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ((("t"."a") = (?) or ("t"."a") = (?)) or ("t"."a") = (?))"#,
+            r#"WHERE ("t"."a") = (?) or ("t"."a") = (?) or ("t"."a") = (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
@@ -34,7 +34,7 @@ fn bool_in2() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ((("t"."a", "t"."b") = (?, ?) or ("t"."a", "t"."b") = (?, ?)) or ("t"."a", "t"."b") = (?, ?))"#,
+            r#"WHERE ("t"."a", "t"."b") = (?, ?) or ("t"."a", "t"."b") = (?, ?) or ("t"."a", "t"."b") = (?, ?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -54,12 +54,16 @@ fn bool_in2() {
 
 #[test]
 fn bool_in3() {
+    // Note: as soon as DNF transformation is not applied, there are not parentheses around OR
+    //       operator (that is an invalid SQL transformation).
+    //       In case we apply the whole optimization transformation, we'll get a correct output
+    //       query.
     let input = r#"SELECT "a" FROM "t" WHERE "a" IN (1, 2) AND "b" IN (3)"#;
     let expected = PatternWithParams::new(
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) or ("t"."a") = (?)) and ("t"."b") = (?)"#,
+            r#"WHERE ("t"."a") = (?) or ("t"."a") = (?) and ("t"."b") = (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(3_u64)],
     );
@@ -78,7 +82,7 @@ fn bool_in4() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (CAST ((("t"."a") = (?) or ("t"."a") = (?)) as int)) - (?) = (?)"#,
+            r#"WHERE (CAST (("t"."a") = (?) or ("t"."a") = (?) as int)) - (?) = (?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -102,7 +106,7 @@ fn bool_in5() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("FUNC" ((("t"."a") = (?) or ("t"."a") = (?)))) < (?)"#,
+            r#"WHERE ("FUNC" (("t"."a") = (?) or ("t"."a") = (?))) < (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(2_u64), Value::from(1_u64)],
     );

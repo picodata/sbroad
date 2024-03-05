@@ -85,6 +85,24 @@ pub struct Chain {
     nodes: VecDeque<usize>,
 }
 
+/// Helper function to identify whether we are dealing with AND/OR operator that
+/// may be covered with parentheses.
+fn optionally_covered_and_or(expr_id: usize, plan: &Plan) -> Result<Option<usize>, SbroadError> {
+    let expr = plan.get_expression_node(expr_id)?;
+    let and_or = match expr {
+        Expression::Bool { op, .. } => {
+            if matches!(op, Bool::And) || matches!(op, Bool::Or) {
+                Some(expr_id)
+            } else {
+                None
+            }
+        }
+        Expression::ExprInParentheses { child } => optionally_covered_and_or(*child, plan)?,
+        _ => None,
+    };
+    Ok(and_or)
+}
+
 impl Chain {
     fn with_capacity(capacity: usize) -> Self {
         Chain {
@@ -101,18 +119,14 @@ impl Chain {
     }
 
     /// Append a new node to the chain. Keep AND and OR nodes in the back,
-    /// while other nodes in the front of the chain double-ended queue.
+    /// while other nodes in the front of the chain queue.
     fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), SbroadError> {
-        let expr = plan.get_expression_node(expr_id)?;
-        if let Expression::Bool {
-            op: Bool::And | Bool::Or,
-            ..
-        } = expr
-        {
-            self.nodes.push_back(expr_id);
-            return Ok(());
+        let and_or = optionally_covered_and_or(expr_id, plan)?;
+        if let Some(and_or_id) = and_or {
+            self.nodes.push_back(and_or_id);
+        } else {
+            self.nodes.push_front(expr_id);
         }
-        self.nodes.push_front(expr_id);
         Ok(())
     }
 

@@ -198,6 +198,7 @@ fn subtree_next<'plan>(
             Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => None,
             Node::Expression(exp) => match exp {
                 Expression::Alias { child, .. }
+                | Expression::ExprInParentheses { child }
                 | Expression::Cast { child, .. }
                 | Expression::Unary { child, .. } => {
                     let step = *iter.get_child().borrow();

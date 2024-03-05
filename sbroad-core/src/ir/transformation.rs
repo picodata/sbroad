@@ -91,7 +91,7 @@ impl Plan {
     }
 
     /// Transforms all expression subtrees in the plan
-    /// for selection and inner join nodes using the
+    /// for selection and join nodes using the
     /// defined function.
     ///
     /// # Errors
@@ -151,6 +151,7 @@ impl Plan {
         let filter = |node_id: usize| -> bool {
             if let Ok(Node::Expression(
                 Expression::Bool { .. }
+                | Expression::ExprInParentheses { .. }
                 | Expression::Arithmetic { .. }
                 | Expression::Alias { .. }
                 | Expression::Row { .. }
@@ -200,6 +201,7 @@ impl Plan {
                 // add it to the filter above.
                 match expr {
                     Expression::Alias { child, .. }
+                    | Expression::ExprInParentheses { child, .. }
                     | Expression::Cast { child, .. }
                     | Expression::Unary { child, .. } => {
                         if let Some(new_id) = map.get(child) {

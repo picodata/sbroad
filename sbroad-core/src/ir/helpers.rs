@@ -5,7 +5,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
-use crate::ir::Plan;
+use crate::ir::{Node, Plan};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
 use std::hash::BuildHasher;
@@ -67,12 +67,26 @@ impl Plan {
             write!(buf, "expression: ")?;
             match expr {
                 Expression::Alias { name, child } => {
-                    let child_expr = self.get_expression_node(*child);
-                    if let Ok(child_expr) = child_expr {
-                        writeln!(buf, "Alias [name = {name}, child = {child_expr:?}]")?;
-                    } else {
-                        writeln!(buf, "Alias [name = {name}, child = NOT_FOUND]")?;
+                    let child_node = self.get_node(*child).expect("Alias must have a child node");
+                    match child_node {
+                        Node::Expression(child_expr) => {
+                            writeln!(buf, "Alias [name = {name}, child = {child_expr:?}]")?;
+                        }
+                        Node::Parameter => {
+                            writeln!(buf, "Alias [name = {name}, child = parameter]")?;
+                        }
+                        Node::Relational(rel) => {
+                            writeln!(buf, "Alias [name = {name}, child = {rel:?}]")?;
+                        }
+                        // TODO: fix `fix_betweens` logic to cover SubQueries with References.
+                        _ => unreachable!("unexpected Alias child node"),
                     }
+                }
+                Expression::ExprInParentheses { child } => {
+                    writeln!(buf, "Parentheses")?;
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Child")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
                 }
                 Expression::Bool { op, left, right } => {
                     writeln!(buf, "Bool [op: {op}]")?;

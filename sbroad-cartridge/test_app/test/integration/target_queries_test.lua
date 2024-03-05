@@ -481,7 +481,7 @@ FROM
     SELECT "col1", "col2", "account_id", "amount"
     FROM "col1_col2_transactions_actual"
     WHERE "sys_from" <= 0) AS "t3"
-WHERE ROW("col1", "col2") IN
+WHERE ("col1", "col2") IN
     (SELECT "id", "cola"
     FROM
         (SELECT "id", "cola", "colb"

@@ -376,6 +376,12 @@ impl Plan {
             if let Node::Expression(right) = r {
                 match left {
                     Expression::Alias { .. } => {}
+                    Expression::ExprInParentheses { child: l_child } => {
+                        // TODO: Should we compare expressions ignoring parentheses?
+                        if let Expression::ExprInParentheses { child: r_child } = right {
+                            return self.are_subtrees_equal(*l_child, *r_child);
+                        }
+                    }
                     Expression::CountAsterisk => {
                         return Ok(matches!(right, Expression::CountAsterisk))
                     }
@@ -399,17 +405,14 @@ impl Plan {
                         op: op_left,
                         left: l_left,
                         right: r_left,
-                        with_parentheses: parens_left,
                     } => {
                         if let Expression::Arithmetic {
                             op: op_right,
                             left: l_right,
                             right: r_right,
-                            with_parentheses: parens_right,
                         } = right
                         {
                             return Ok(*op_left == *op_right
-                                && *parens_left == *parens_right
                                 && self.are_subtrees_equal(*l_left, *l_right)?
                                 && self.are_subtrees_equal(*r_left, *r_right)?);
                         }
@@ -517,13 +520,6 @@ impl Plan {
     /// - invalid children count
     /// - failed to create output for `GroupBy`
     pub fn add_groupby_from_ast(&mut self, children: &[usize]) -> Result<usize, SbroadError> {
-        if children.len() < 2 {
-            return Err(SbroadError::Invalid(
-                Entity::Relational,
-                Some("Expected GroupBy to have at least one child".into()),
-            ));
-        }
-
         let Some((first_child, other)) = children.split_first() else {
             return Err(SbroadError::UnexpectedNumberOfValues(
                 "GroupBy ast has no children".into(),

@@ -16,8 +16,8 @@ fn dnf1() {
         format!(
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
-            r#"or ("t"."a") = (?) and ("t"."c") = (?))"#,
+            r#"WHERE ("t"."a") = (?) and ("t"."b") = (?) and ("t"."c") = (?)"#,
+            r#"or ("t"."a") = (?) and ("t"."c") = (?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -39,8 +39,8 @@ fn dnf2() {
         format!(
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (((("t"."a") = (?) and ("t"."a") = (?) or ("t"."c") = (?) and ("t"."a") = (?))"#,
-            r#"or ("t"."a") = (?) and ("t"."b") = (?)) or ("t"."c") = (?) and ("t"."b") = (?))"#,
+            r#"WHERE ("t"."a") = (?) and ("t"."a") = (?) or ("t"."c") = (?) and ("t"."a") = (?)"#,
+            r#"or ("t"."a") = (?) and ("t"."b") = (?) or ("t"."c") = (?) and ("t"."b") = (?)"#,
         ),
         vec![
             Value::from(3_u64),
@@ -65,7 +65,7 @@ fn dnf3() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
+            r#"WHERE ("t"."a") = (?) and (?) or ("t"."b") = (?) and (?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -86,7 +86,7 @@ fn dnf4() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and (?) or ("t"."b") = (?) and (?))"#,
+            r#"WHERE ("t"."a") = (?) and (?) or ("t"."b") = (?) and (?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -107,7 +107,7 @@ fn dnf5() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and ((?)) or ("t"."b") = (?) and ((?)))"#,
+            r#"WHERE ("t"."a") = (?) and ((?)) or ("t"."b") = (?) and ((?))"#,
         ),
         vec![
             Value::from(1_u64),
@@ -128,7 +128,7 @@ fn dnf6() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a") = (?) and ("t"."c") = (?) or ("t"."b") = (?))"#,
+            r#"WHERE ("t"."a") = (?) and ("t"."c") = (?) or ("t"."b") = (?)"#,
         ),
         vec![Value::from(1_u64), Value::from(1_u64), Value::from(2_u64)],
     );

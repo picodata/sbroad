@@ -104,6 +104,7 @@ impl ReferredMap {
                     referred.insert(node_id, res);
                 }
                 Expression::Alias { child, .. }
+                | Expression::ExprInParentheses { child }
                 | Expression::Cast { child, .. }
                 | Expression::Unary { child, .. } => {
                     referred.insert(
@@ -212,6 +213,7 @@ impl EqualityCols {
     ) -> Option<EqualityCols> {
         let result = match op.op {
             Bool::And => EqualityCols::eq_cols_for_and(op.left, op.right, refers_to, node_eq_cols),
+            Bool::Between => unreachable!("Between in eq_cols"),
             Bool::Or
             | Bool::Eq
             | Bool::In

@@ -2,6 +2,7 @@
 //!
 //! Contains operator nodes that transform the tuples in IR tree.
 
+use crate::frontend::sql::get_unnamed_column_alias;
 use ahash::RandomState;
 
 use crate::collection;
@@ -44,6 +45,8 @@ pub enum Bool {
     NotEq,
     /// `||`
     Or,
+    /// `between`
+    Between,
 }
 
 impl Bool {
@@ -79,6 +82,7 @@ impl Display for Bool {
             Bool::Lt => "<",
             Bool::LtEq => "<=",
             Bool::NotEq => "<>",
+            Bool::Between => unreachable!("Between in op fmt"),
         };
 
         write!(f, "{op}")
@@ -1067,7 +1071,7 @@ impl Plan {
         // Generate aliases to projection expressions, because
         // it is assumed that any projection column always has an alias.
         for (pos, expr_id) in projection_cols.iter_mut().enumerate() {
-            let alias = format!("COL_{pos}");
+            let alias = get_unnamed_column_alias(pos);
             let alias_id = self.nodes.push(Node::Expression(Expression::Alias {
                 child: *expr_id,
                 name: alias,
@@ -1429,35 +1433,26 @@ impl Plan {
         Ok(proj_id)
     }
 
-    /// Adds selection node
+    /// Adds `Select` node.
     ///
     /// # Errors
     /// - children list is empty
     /// - filter expression is not boolean
     /// - children nodes are not relational
     /// - first child output tuple is not valid
+    ///
+    /// # Panics
+    /// - `children` is empty
     pub fn add_select(&mut self, children: &[usize], filter: usize) -> Result<usize, SbroadError> {
-        let first_child: usize = match children.len() {
-            0 => {
-                return Err(SbroadError::UnexpectedNumberOfValues(
-                    "children list is empty".into(),
-                ))
-            }
-            _ => children[0],
-        };
+        let first_child: usize = *children
+            .first()
+            .expect("No children passed to `add_select`");
 
         if !self.is_trivalent(filter)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
                 Some("filter expression is not a trivalent expression.".into()),
             ));
-        }
-
-        for child in children {
-            if let Node::Relational(_) = self.get_node(*child)? {
-            } else {
-                return Err(SbroadError::Invalid(Entity::Relational, None));
-            }
         }
 
         let output = self.add_row_for_output(first_child, &[], true)?;

@@ -544,6 +544,7 @@ impl ExecutionPlan {
                 }
                 Node::Expression(ref mut expr) => match expr {
                     Expression::Alias { ref mut child, .. }
+                    | Expression::ExprInParentheses { ref mut child }
                     | Expression::Cast { ref mut child, .. }
                     | Expression::Unary { ref mut child, .. } => {
                         *child = *translation.get(child).ok_or_else(|| {

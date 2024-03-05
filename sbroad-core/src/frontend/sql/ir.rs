@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use ahash::AHashMap;
+use pest::iterators::Pair;
 use tarantool::decimal::Decimal;
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::frontend::sql::ast::{ParseNode, Type};
+use crate::frontend::sql::ast::Rule;
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Arithmetic, Bool, Relational, Unary};
+use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
@@ -16,111 +17,47 @@ use crate::ir::{Node, Plan};
 
 use super::Between;
 
-impl Bool {
-    /// Creates `Bool` from ast node type.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the operator is invalid.
-    #[allow(dead_code)]
-    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
-        match s {
-            Type::And => Ok(Bool::And),
-            Type::Or => Ok(Bool::Or),
-            Type::Eq => Ok(Bool::Eq),
-            Type::In => Ok(Bool::In),
-            Type::Gt => Ok(Bool::Gt),
-            Type::GtEq => Ok(Bool::GtEq),
-            Type::Lt => Ok(Bool::Lt),
-            Type::LtEq => Ok(Bool::LtEq),
-            Type::NotEq => Ok(Bool::NotEq),
-            _ => Err(SbroadError::Invalid(
-                Entity::Operator,
-                Some(format!("bool operator: {s:?}")),
-            )),
-        }
-    }
-}
-
-impl Arithmetic {
-    /// Creates `Arithmetic` from ast node type.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the operator is invalid.
-    #[allow(dead_code)]
-    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
-        match s {
-            Type::Multiply => Ok(Arithmetic::Multiply),
-            Type::Add => Ok(Arithmetic::Add),
-            Type::Divide => Ok(Arithmetic::Divide),
-            Type::Subtract => Ok(Arithmetic::Subtract),
-            _ => Err(SbroadError::Invalid(
-                Entity::Operator,
-                Some(format!("Arithmetic: {s:?}")),
-            )),
-        }
-    }
-}
-
-impl Unary {
-    /// Creates `Unary` from ast node type.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the operator is invalid.
-    #[allow(dead_code)]
-    pub(super) fn from_node_type(s: &Type) -> Result<Self, SbroadError> {
-        match s {
-            Type::Not => Ok(Unary::Not),
-            Type::IsNull => Ok(Unary::IsNull),
-            Type::Exists => Ok(Unary::Exists),
-            _ => Err(SbroadError::Invalid(
-                Entity::Operator,
-                Some(format!("unary operator: {s:?}")),
-            )),
-        }
-    }
-}
-
 impl Value {
-    /// Creates `Value` from ast node type and text.
+    /// Creates `Value` from pest pair.
     ///
     /// # Errors
     /// Returns `SbroadError` when the operator is invalid.
     #[allow(dead_code)]
-    pub(super) fn from_node(s: &ParseNode) -> Result<Self, SbroadError> {
-        let val = match &s.value {
-            Some(v) => v.clone(),
-            None => String::new(),
-        };
+    pub(super) fn from_node(pair: &Pair<Rule>) -> Result<Self, SbroadError> {
+        let pair_string = pair.as_str();
 
-        match s.rule {
-            Type::False => Ok(false.into()),
-            Type::Null => Ok(Value::Null),
-            Type::Integer => Ok(val
+        match pair.as_rule() {
+            Rule::False => Ok(false.into()),
+            Rule::True => Ok(true.into()),
+            Rule::Null => Ok(Value::Null),
+            Rule::Integer => Ok(pair_string
                 .parse::<i64>()
                 .map_err(|e| {
                     SbroadError::ParsingError(Entity::Value, format!("i64 parsing error {e}"))
                 })?
                 .into()),
-            Type::Decimal => Ok(val
+            Rule::Decimal => Ok(pair_string
                 .parse::<Decimal>()
                 .map_err(|e| {
                     SbroadError::ParsingError(Entity::Value, format!("decimal parsing error {e:?}"))
                 })?
                 .into()),
-            Type::Double => Ok(val
+            Rule::Double => Ok(pair_string
                 .parse::<Double>()
                 .map_err(|e| {
                     SbroadError::ParsingError(Entity::Value, format!("double parsing error {e}"))
                 })?
                 .into()),
-            Type::Unsigned => Ok(val
+            Rule::Unsigned => Ok(pair_string
                 .parse::<u64>()
                 .map_err(|e| {
                     SbroadError::ParsingError(Entity::Value, format!("u64 parsing error {e}"))
                 })?
                 .into()),
-            Type::String => Ok(val.into()),
-            Type::True => Ok(true.into()),
+            Rule::SingleQuotedString => {
+                let pair_str = pair.as_str();
+                Ok(pair_str[1..pair_str.len() - 1].into())
+            }
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some("can not create Value from ParseNode".into()),
@@ -156,10 +93,16 @@ impl Translation {
     }
 }
 
+/// Helper struct used for `SubQuery` -> Reference replacement in `gather_sq_for_replacement`.
 #[derive(Hash, PartialEq, Debug)]
 struct SubQuery {
+    /// Relational operator that is a parent of current SubQuery.
+    /// E.g. Selection (in case SubQuery is met in WHERE expression).
     relational: usize,
+    /// Expression operator in which this SubQuery is met.
+    /// E.g. `Exists`.
     operator: usize,
+    /// SubQuery id in plan.
     sq: usize,
 }
 impl Eq for SubQuery {}
@@ -179,7 +122,7 @@ impl Plan {
         let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
         // Traverse expression trees of the selection and join nodes.
         // Gather all sub-queries in the boolean expressions there.
-        for (id, node) in self.nodes.iter().enumerate() {
+        for (relational_id, node) in self.nodes.iter().enumerate() {
             match node {
                 Node::Relational(
                     Relational::Selection { filter: tree, .. }
@@ -203,7 +146,7 @@ impl Plan {
                                 if let Node::Relational(Relational::ScanSubQuery { .. }) =
                                     self.get_node(*child)?
                                 {
-                                    set.insert(SubQuery::new(id, op_id, *child));
+                                    set.insert(SubQuery::new(relational_id, op_id, *child));
                                 }
                             }
                         } else if let Node::Expression(Expression::Unary { child, .. }) =
@@ -212,7 +155,7 @@ impl Plan {
                             if let Node::Relational(Relational::ScanSubQuery { .. }) =
                                 self.get_node(*child)?
                             {
-                                set.insert(SubQuery::new(id, op_id, *child));
+                                set.insert(SubQuery::new(relational_id, op_id, *child));
                             }
                         }
                     }
@@ -334,18 +277,6 @@ impl Plan {
         Ok(())
     }
 
-    // It is necessary to keep parentheses from original sql query
-    // We mark this arithmetic expressions to add in the future `()` as a part of SyntaxData
-    pub(super) fn fix_arithmetic_parentheses(
-        &mut self,
-        arithmetic_expression_ids: &[usize],
-    ) -> Result<(), SbroadError> {
-        for id in arithmetic_expression_ids {
-            self.nodes.set_arithmetic_node_parentheses(*id, true)?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
         let mut map = HashMap::new();
         let mut subtree =
@@ -360,6 +291,7 @@ impl Plan {
                 | Expression::Reference { .. }
                 | Expression::CountAsterisk => {}
                 Expression::Alias { ref mut child, .. }
+                | Expression::ExprInParentheses { ref mut child }
                 | Expression::Cast { ref mut child, .. }
                 | Expression::Unary { ref mut child, .. } => {
                     *child = *map.get(child).ok_or_else(|| {
@@ -463,6 +395,7 @@ impl SubtreeCloner {
                 ref mut child,
                 name: _,
             }
+            | Expression::ExprInParentheses { ref mut child }
             | Expression::Cast {
                 ref mut child,
                 to: _,
@@ -482,7 +415,6 @@ impl SubtreeCloner {
                 ref mut left,
                 ref mut right,
                 op: _,
-                with_parentheses: _,
             }
             | Expression::Concat {
                 ref mut left,

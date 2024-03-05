@@ -252,10 +252,15 @@ impl Slices {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Deserialize, Serialize)]
+pub enum OptionParamValue {
+    Value { val: Value },
+    Parameter { plan_id: usize },
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Deserialize, Serialize)]
 pub struct OptionSpec {
     pub kind: OptionKind,
-    pub val: Option<Value>,
-    pub param_id: Option<usize>,
+    pub val: OptionParamValue,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Deserialize, Serialize)]
@@ -407,7 +412,7 @@ pub struct Plan {
     /// Mapping between parameter plan id and corresponding value position in
     /// in values list. This is needed only for handling PG-like parameters
     /// in `bind_params` after which it becomes `None`.
-    /// If query uses tnt-like params, then this field is always `None`.
+    /// If query uses tnt-like params, then the map is empty.
     pub pg_params_map: HashMap<NodeId, ValueIdx>,
     /// SQL options. Initiliazed to defaults upon IR creation. Then bound to actual
     /// values after `bind_params` these options are set to their actual values.
@@ -506,7 +511,7 @@ impl Plan {
                     Some(format!("option {} specified more than once!", opt.kind)),
                 ));
             }
-            let Some(val) = opt.val else {
+            let OptionParamValue::Value { val } = opt.val else {
                 return Err(SbroadError::Invalid(Entity::OptionSpec, None));
             };
             match opt.kind {
@@ -765,6 +770,14 @@ impl Plan {
         self.nodes.add_bool(left, op, right)
     }
 
+    /// Add node covered with parentheses to the plan.
+    ///
+    /// # Errors
+    /// Returns `SbroadError` when the condition node can't append'.
+    pub fn add_covered_with_parentheses(&mut self, child: usize) -> usize {
+        self.nodes.add_covered_with_parentheses(child)
+    }
+
     /// Add arithmetic node to the plan.
     ///
     /// # Errors
@@ -774,10 +787,8 @@ impl Plan {
         left: usize,
         op: Arithmetic,
         right: usize,
-        with_parentheses: bool,
     ) -> Result<usize, SbroadError> {
-        self.nodes
-            .add_arithmetic_node(left, op, right, with_parentheses)
+        self.nodes.add_arithmetic_node(left, op, right)
     }
 
     /// Add unary operator node to the plan.
@@ -985,6 +996,7 @@ impl Plan {
     ) -> Result<(), SbroadError> {
         match self.get_mut_expression_node(parent_id)? {
             Expression::Unary { child, .. }
+            | Expression::ExprInParentheses { child }
             | Expression::Alias { child, .. }
             | Expression::Cast { child, .. } => {
                 if *child == old_id {

@@ -8,26 +8,12 @@ use crate::executor::engine::Metadata;
 use crate::ir::Plan;
 
 pub trait Ast {
-    fn empty() -> Self
-    where
-        Self: Sized;
-
-    /// Builds abstract syntax tree (AST) from SQL query.
+    /// Get `Plan` from `Ast`.
     ///
     /// # Errors
-    /// - SQL query is not valid or not supported.
-    fn new(query: &str) -> Result<Self, SbroadError>
-    where
-        Self: Sized;
-
-    /// AST is empty.
-    fn is_empty(&self) -> bool;
-
-    /// Build a plan from the AST with parameters as placeholders for the values.
-    ///
-    /// # Errors
-    /// - Failed to resolve AST nodes with cluster metadata.
-    fn resolve_metadata<M>(&self, metadata: &M) -> Result<Plan, SbroadError>
+    /// - Unable to fill `Ast` from pest pairs
+    /// - Unable to resolve metadata
+    fn transform_into_plan<M>(query: &str, metadata: &M) -> Result<Plan, SbroadError>
     where
         M: Metadata + Sized;
 }

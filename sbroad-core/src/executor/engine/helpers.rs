@@ -59,7 +59,9 @@ pub fn normalize_name_from_schema(s: &str) -> String {
     format!("\"{s}\"")
 }
 
-/// Get `s` in a view of "S" (uppercased, quoted).
+/// Transform:
+/// * "s" -> "s" (same cased, quoted)
+/// * s   -> "S" (uppercased, quoted)
 #[must_use]
 pub fn normalize_name_from_sql(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
@@ -68,7 +70,9 @@ pub fn normalize_name_from_sql(s: &str) -> String {
     format!("\"{}\"", s.to_uppercase())
 }
 
-/// Get `s` in a view of S (uppercased, unquoted).
+/// Transform:
+/// * "s" -> s (uppercased, unquoted)
+/// * s   -> S (same cased, unquoted)
 #[must_use]
 pub fn normalize_name_for_space_api(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {

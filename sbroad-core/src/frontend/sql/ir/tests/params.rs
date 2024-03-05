@@ -101,7 +101,7 @@ fn front_params5() {
 
     let expected_explain = String::from(
         r#"projection ("test_space"."id"::unsigned -> "id")
-    selection (ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or ROW("test_space"."id"::unsigned) in ROW($0))
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or ROW("test_space"."id"::unsigned) in ROW($0)
         scan "test_space"
 subquery $0:
 motion [policy: segment([ref("sysFrom")])]
@@ -138,7 +138,7 @@ fn front_params6() {
 
     let expected_explain = String::from(
         r#"projection ("test_space"."id"::unsigned -> "id")
-    selection (ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or not ROW("test_space"."id"::unsigned) in ROW($0))
+    selection ROW("test_space"."sys_op"::unsigned) = ROW(0::integer) or not ROW("test_space"."id"::unsigned) in ROW($0)
         scan "test_space"
 subquery $0:
 motion [policy: full]

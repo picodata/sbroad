@@ -67,10 +67,10 @@ fn selection2_latest() {
     let expected = PatternWithParams::new(
         [
             r#"SELECT "hash_testing"."product_code" FROM "hash_testing""#,
-            r#"WHERE (("hash_testing"."identification_number", "hash_testing"."identification_number", "hash_testing"."product_units") = ("hash_testing"."product_units", ?, ?)"#,
+            r#"WHERE ("hash_testing"."identification_number", "hash_testing"."product_units", "hash_testing"."identification_number") = ("hash_testing"."product_units", ?, ?)"#,
             r#"and ("hash_testing"."product_units") <> ("hash_testing"."sys_op")"#,
-            r#"or ("hash_testing"."identification_number", "hash_testing"."identification_number", "hash_testing"."product_units") = ("hash_testing"."product_units", ?, ?)"#,
-            r#"and ("hash_testing"."product_units") is null)"#
+            r#"or ("hash_testing"."identification_number", "hash_testing"."product_units", "hash_testing"."identification_number") = ("hash_testing"."product_units", ?, ?)"#,
+            r#"and ("hash_testing"."product_units") is null"#
         ].join(" "),
         vec![Value::Unsigned(1), Value::Unsigned(1), Value::Unsigned(1), Value::Unsigned(1)],
     );

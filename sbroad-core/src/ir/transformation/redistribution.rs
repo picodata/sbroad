@@ -1200,6 +1200,9 @@ impl Plan {
                 }
                 (Expression::Row { .. }, Expression::Row { .. }) => {
                     match bool_op.op {
+                        Bool::Between => {
+                            unreachable!("Between in redistribution")
+                        }
                         Bool::Eq | Bool::In => {
                             self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
                         }

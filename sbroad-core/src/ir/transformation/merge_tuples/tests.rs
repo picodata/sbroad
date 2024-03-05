@@ -15,13 +15,13 @@ fn merge_tuples1() {
         format!(
             "{} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE ("t"."a", "t"."b") = (?, ?) and (?) < ("t"."a") and ("t"."c") < (?)"#,
+            r#"WHERE ("t"."a", "t"."b") = (?, ?) and ("t"."c") < (?) and (?) < ("t"."a")"#,
         ),
         vec![
             Value::from(1_u64),
             Value::from(2_u64),
-            Value::from(4_u64),
             Value::from(3_u64),
+            Value::from(4_u64),
         ],
     );
 
@@ -37,16 +37,16 @@ fn merge_tuples2() {
         format!(
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
-            r#"WHERE (("t"."a", "t"."b") = (?, ?) and (?)"#,
-            r#"or (?) <= ("t"."a") and ("t"."c") >= (?) and (?))"#,
+            r#"WHERE ("t"."b", "t"."a") = (?, ?) and (?)"#,
+            r#"or ("t"."c") >= (?) and (?) and (?) <= ("t"."a")"#,
         ),
         vec![
-            Value::from(1_u64),
             Value::from(2_u64),
+            Value::from(1_u64),
             Value::Null,
-            Value::from(4_u64),
             Value::from(3_u64),
             Value::Boolean(true),
+            Value::from(4_u64),
         ],
     );
 

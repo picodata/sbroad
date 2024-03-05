@@ -175,12 +175,6 @@ fn selection() {
     // Correct Selection operator
     plan.add_select(&[scan_id], gt_id).unwrap();
 
-    // Invalid children list len
-    assert_eq!(
-        SbroadError::UnexpectedNumberOfValues("children list is empty".into(),),
-        plan.add_select(&[], gt_id).unwrap_err()
-    );
-
     // Non-trivalent filter
     assert_eq!(
         SbroadError::Invalid(
@@ -188,12 +182,6 @@ fn selection() {
             Some("filter expression is not a trivalent expression.".into())
         ),
         plan.add_select(&[scan_id], const_row).unwrap_err()
-    );
-
-    // Non-relational child
-    assert_eq!(
-        SbroadError::Invalid(Entity::Relational, None),
-        plan.add_select(&[const_row], gt_id).unwrap_err()
     );
 }
 

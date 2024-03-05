@@ -79,7 +79,8 @@ where
     exec_plan: ExecutionPlan,
     /// Coordinator runtime
     coordinator: &'a C,
-    /// Bucket map
+    /// Bucket map of view { plan output_id (Expression::Row) -> `Buckets` }.
+    /// It's supposed to denote relational nodes' output buckets destination.
     bucket_map: HashMap<usize, Buckets>,
 }
 
@@ -125,9 +126,8 @@ where
             plan = cached_plan.clone();
         }
         if plan.is_empty() {
-            let ast = C::ParseTree::new(sql)?;
             let metadata = &*coordinator.metadata()?;
-            plan = ast.resolve_metadata(metadata)?;
+            plan = C::ParseTree::transform_into_plan(sql, metadata)?;
             if coordinator.provides_versions() {
                 let mut table_version_map =
                     TableVersionMap::with_capacity(plan.relations.tables.len());

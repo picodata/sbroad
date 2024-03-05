@@ -64,7 +64,9 @@ fn call_expr_tree_not_push_down(
             matches!(
                 plan.get_node(node_id),
                 Ok(Node::Expression(
-                    Expression::Bool { .. } | Expression::Row { .. }
+                    Expression::ExprInParentheses { .. }
+                        | Expression::Bool { .. }
+                        | Expression::Row { .. }
                 ))
             )
         };
@@ -79,6 +81,11 @@ fn call_expr_tree_not_push_down(
         for (_, id) in &nodes {
             let expr = plan.get_mut_expression_node(*id)?;
             match expr {
+                Expression::ExprInParentheses { child } => {
+                    if let Some(new_id) = old_new_expression_map.get(child) {
+                        *child = *new_id;
+                    }
+                }
                 Expression::Bool { left, right, .. } => {
                     if let Some(new_id) = old_new_expression_map.get(left) {
                         *left = *new_id;
@@ -120,6 +127,7 @@ impl Bool {
             Bool::LtEq => Some((Bool::Gt, false)),
             Bool::NotEq => Some((Bool::Eq, false)),
             Bool::In => None,
+            Bool::Between => unreachable!("Between in not pushdown"),
         }
     }
 }
@@ -160,6 +168,9 @@ impl Plan {
         }
     }
 
+    // SELECT * FROM (values (1)) where true and not (true and false)
+    // SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) or (?))
+
     /// Recursive push down of `Not` operator.
     fn push_down_not_for_expression(
         &mut self,
@@ -169,6 +180,17 @@ impl Plan {
     ) -> Result<usize, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         let new_expr_id = match expr {
+            Expression::ExprInParentheses { child } => {
+                // In case we have expression `true and not (true and false)` we would like to
+                // save parentheses over not child:
+                // `true and false or true` != `true and (false or true)`.
+                let remember_old_child = *child;
+                let new_child = self.push_down_not_for_expression(*child, not_state, map)?;
+                if new_child != remember_old_child {
+                    map.insert(remember_old_child, new_child);
+                }
+                expr_id
+            }
             Expression::Constant { value } => {
                 if let NotState::Off = not_state {
                     expr_id

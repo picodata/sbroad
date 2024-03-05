@@ -319,7 +319,7 @@ impl SimpleAggregate {
                                 "final_aggregates: missing final aggregate for COUNT".into(),
                             )
                         })?;
-                    plan.add_arithmetic_to_plan(sum_aggr, Arithmetic::Divide, count_aggr, true)?
+                    plan.add_arithmetic_to_plan(sum_aggr, Arithmetic::Divide, count_aggr)?
                 }
                 _ => {
                     return Err(SbroadError::Unsupported(

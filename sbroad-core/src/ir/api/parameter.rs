@@ -4,7 +4,7 @@ use crate::ir::expression::Expression;
 use crate::ir::operator::Relational;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
-use crate::ir::{Node, Plan};
+use crate::ir::{Node, OptionParamValue, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -63,7 +63,7 @@ impl Plan {
 
         // Gather all parameter nodes from the tree to a hash set.
         // `param_node_ids` is used during first plan traversal (`row_ids` populating).
-        // `param_set_params` is used during second plan traversal (nodes transformation).
+        // `param_node_ids_cloned` is used during second plan traversal (nodes transformation).
         let mut param_node_ids = self.get_param_set();
         let mut param_node_ids_cloned = param_node_ids.clone();
 
@@ -130,12 +130,13 @@ impl Plan {
         let mut row_ids: HashMap<usize, usize, RandomState> =
             HashMap::with_hasher(RandomState::new());
 
-        if tnt_params_style && param_node_ids.len() - binded_params_counter > value_ids.len() {
+        let non_binded_params_len = param_node_ids.len() - binded_params_counter;
+        if tnt_params_style && non_binded_params_len > value_ids.len() {
             return Err(SbroadError::Invalid(
                 Entity::Value,
                 Some(format!(
                     "Expected at least {} values for parameters. Got {}.",
-                    param_node_ids.len() - binded_params_counter,
+                    non_binded_params_len,
                     value_ids.len()
                 )),
             ));
@@ -197,6 +198,9 @@ impl Plan {
                     Expression::Alias {
                         child: ref param_id,
                         ..
+                    }
+                    | Expression::ExprInParentheses {
+                        child: ref param_id,
                     }
                     | Expression::Cast {
                         child: ref param_id,
@@ -319,6 +323,9 @@ impl Plan {
                         child: ref mut param_id,
                         ..
                     }
+                    | Expression::ExprInParentheses {
+                        child: ref mut param_id,
+                    }
                     | Expression::Cast {
                         child: ref mut param_id,
                         ..
@@ -402,28 +409,22 @@ impl Plan {
     ///
     /// # Errors
     /// - User didn't provide parameter value for corresponding option parameter
-    pub fn bind_option_params(&mut self, params: &mut Vec<Value>) -> Result<usize, SbroadError> {
+    pub fn bind_option_params(&mut self, values: &mut Vec<Value>) -> Result<usize, SbroadError> {
         // Bind parameters in options to values.
         // Because the Option clause is the last clause in the
         // query the parameters are located in the end of params list.
         let mut binded_params_counter = 0usize;
         for opt in self.raw_options.iter_mut().rev() {
-            if opt.val.is_none() {
+            if let OptionParamValue::Parameter { plan_id: param_id } = opt.val {
                 if !self.pg_params_map.is_empty() {
                     // PG-like params syntax
-                    let Some(param_id) = opt.param_id else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(format!("no param id for option: {opt:?}")),
-                        ));
-                    };
                     let value_idx = *self.pg_params_map.get(&param_id).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
                             Some(format!("no value idx in map for option parameter: {opt:?}")),
                         )
                     })?;
-                    let value = params.get(value_idx).ok_or_else(|| {
+                    let value = values.get(value_idx).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
                             Some(format!(
@@ -431,10 +432,10 @@ impl Plan {
                             )),
                         )
                     })?;
-                    opt.val = Some(value.clone());
-                } else if let Some(v) = params.pop() {
+                    opt.val = OptionParamValue::Value { val: value.clone() };
+                } else if let Some(v) = values.pop() {
                     binded_params_counter += 1;
-                    opt.val = Some(v);
+                    opt.val = OptionParamValue::Value { val: v };
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
