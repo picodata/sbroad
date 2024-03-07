@@ -3,6 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
+use core::panic;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
@@ -109,6 +110,21 @@ fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, Sbro
         Entity::AST,
         Some("expected Timeout node to have exactly one child".into()),
     ))
+}
+
+fn parse_string_literal(ast: &AbstractSyntaxTree, node_id: usize) -> Result<String, SbroadError> {
+    let node = ast.nodes.get_node(node_id)?;
+    let str_ref = node
+        .value
+        .as_ref()
+        .expect("Rule node must contain string value.");
+    assert!(
+        node.rule == Rule::SingleQuotedString,
+        "Expected SingleQuotedString, got: {:?}",
+        node.rule
+    );
+
+    Ok(str_ref[1..str_ref.len() - 1].to_string())
 }
 
 /// Parse node from which we want to get String value.
@@ -2527,8 +2543,7 @@ impl AbstractSyntaxTree {
                                 .children
                                 .first()
                                 .expect("Password expected as a first child");
-                            let password =
-                                String::from(parse_string_value_node(self, *pwd_node_id)?);
+                            let password = parse_string_literal(self, *pwd_node_id)?;
 
                             let mut auth_method = get_default_auth_method();
                             if let Some(auth_method_node_id) = alter_option_node.children.get(1) {
@@ -2585,7 +2600,7 @@ impl AbstractSyntaxTree {
                             Some(String::from("Password expected as a second child")),
                         )
                     })?;
-                    let password = String::from(parse_string_value_node(self, *pwd_node_id)?);
+                    let password = parse_string_literal(self, *pwd_node_id)?;
 
                     let mut timeout = get_default_timeout();
                     let mut auth_method = get_default_auth_method();
