@@ -1255,16 +1255,7 @@ impl Plan {
                 // We'll need it later to update the condition expression (borrow checker).
                 let table = self.get_relation_or_error(relation)?;
                 let sharding_column_pos = table.get_bucket_id_position()?;
-
-                // Wrap relation with sub-query scan.
-                let scan_name = if let Some(alias_name) = alias {
-                    alias_name.clone()
-                } else {
-                    relation.clone()
-                };
-                let proj_id = self.add_proj(*child, &[], false)?;
-                let sq_id = self.add_sub_query(proj_id, Some(&scan_name))?;
-                children.push(sq_id);
+                let mut needs_bucket_id_column = false;
 
                 // Update references to the sub-query's output in the condition.
                 let mut condition_tree = BreadthFirst::with_capacity(
@@ -1276,13 +1267,31 @@ impl Plan {
                     .iter(condition)
                     .filter_map(|(_, id)| {
                         let expr = self.get_expression_node(id).ok();
-                        if let Some(Expression::Reference { .. }) = expr {
+                        if let Some(Expression::Reference { position, .. }) = expr {
+                            if Some(*position) == sharding_column_pos {
+                                needs_bucket_id_column = true;
+                            }
                             Some(id)
                         } else {
                             None
                         }
                     })
                     .collect::<Vec<_>>();
+
+                // Wrap relation with sub-query scan.
+                let scan_name = if let Some(alias_name) = alias {
+                    alias_name.clone()
+                } else {
+                    relation.clone()
+                };
+                let proj_id = self.add_proj(*child, &[], false, needs_bucket_id_column)?;
+                let sq_id = self.add_sub_query(proj_id, Some(&scan_name))?;
+                children.push(sq_id);
+
+                if needs_bucket_id_column {
+                    continue;
+                }
+
                 // we should update ONLY references that refer to current child (left, right)
                 let current_target = match join_child {
                     JoinChild::Inner => Some(vec![1_usize]),
@@ -1396,8 +1405,9 @@ impl Plan {
         child: usize,
         col_names: &[&str],
         is_distinct: bool,
+        needs_shard_col: bool,
     ) -> Result<usize, SbroadError> {
-        let output = self.add_row_for_output(child, col_names, false)?;
+        let output = self.add_row_for_output(child, col_names, needs_shard_col)?;
         let proj = Relational::Projection {
             children: vec![child],
             output,

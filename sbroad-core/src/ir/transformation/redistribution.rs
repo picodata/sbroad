@@ -12,7 +12,7 @@ use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
-use crate::ir::relation::TableKind;
+use crate::ir::relation::{TableKind, SHARD_COL_NAME};
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
     BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
@@ -27,6 +27,7 @@ pub(crate) mod eq_cols;
 pub(crate) mod groupby;
 pub(crate) mod left_join;
 
+#[derive(Debug)]
 pub(crate) enum JoinChild {
     Inner,
     Outer,
@@ -912,6 +913,37 @@ impl Plan {
         left_row_id: usize,
         right_row_id: usize,
     ) -> Result<MotionPolicy, SbroadError> {
+        {
+            // check for (a, t1.bucket_id, b) = (x, t2.bucket_id, y)
+            let get_shard_pos = |row_id: usize| -> Result<Option<usize>, SbroadError> {
+                let mut shard_pos = None;
+                let refs = self.get_row_list(row_id)?;
+                for (pos, ref_id) in refs.iter().enumerate() {
+                    let node @ Expression::Reference { .. } = self.get_expression_node(*ref_id)?
+                    else {
+                        continue;
+                    };
+
+                    // NB: This code assumes that user does not shoot himself in
+                    // the leg by renaming some column into `bucket_id` like here:
+                    // select * from (select "a" as "bucket_id", "bucket_id" as b from "t") join t2 on ...
+                    // If this happens, we will get wrong plan.
+                    // TODO: forbid renaming some column into `bucket_id` or renaming
+                    // `bucket_id` into something else.
+                    if SHARD_COL_NAME == self.get_alias_from_reference_node(node)? {
+                        shard_pos = Some(pos);
+                        break;
+                    }
+                }
+                Ok(shard_pos)
+            };
+            let left_shard_pos = get_shard_pos(left_row_id)?;
+            let right_shard_pos = get_shard_pos(right_row_id)?;
+            if left_shard_pos.is_some() && left_shard_pos == right_shard_pos {
+                return Ok(MotionPolicy::None);
+            }
+        }
+
         let left_dist = self.get_distribution(left_row_id)?;
         let right_dist = self.get_distribution(right_row_id)?;
         let row_map_left = self.build_row_map(left_row_id)?;

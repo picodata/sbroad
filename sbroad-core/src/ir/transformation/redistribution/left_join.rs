@@ -68,7 +68,7 @@ impl Plan {
 fn create_projection(plan: &mut Plan, join_id: usize) -> Result<usize, SbroadError> {
     let proj_columns_names = collect_projection_columns(plan, join_id)?;
     let proj_columns_refs: Vec<&str> = proj_columns_names.iter().map(String::as_str).collect();
-    let proj_id = plan.add_proj(join_id, &proj_columns_refs, false)?;
+    let proj_id = plan.add_proj(join_id, &proj_columns_refs, false, false)?;
     let output_id = plan.get_relational_output(proj_id)?;
     plan.replace_parent_in_subtree(output_id, Some(join_id), Some(proj_id))?;
     plan.set_distribution(output_id)?;

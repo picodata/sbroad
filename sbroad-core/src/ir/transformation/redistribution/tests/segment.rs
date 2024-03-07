@@ -48,7 +48,7 @@ fn sub_query1() {
     .unwrap();
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["b"], false).unwrap();
+    let proj_id = plan.add_proj(scan_t2_id, &["b"], false, false).unwrap();
     let sq_id = plan.add_sub_query(proj_id, None).unwrap();
     children.push(sq_id);
 

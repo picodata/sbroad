@@ -518,6 +518,65 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_sql_join_on_bucket_id1() {
+    let input = r#"select * from "t2" join (
+        select "bucket_id" from "test_space" where "id" = 1
+    ) as t_mv 
+    on t_mv."bucket_id" = "t2"."bucket_id";
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+    join on ROW("T_MV"."bucket_id"::unsigned) = ROW("t2"."bucket_id"::unsigned)
+        scan "t2"
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h", "t2"."bucket_id"::unsigned -> "bucket_id")
+                scan "t2"
+        scan "T_MV"
+            projection ("test_space"."bucket_id"::unsigned -> "bucket_id")
+                selection ROW("test_space"."id"::unsigned) = ROW(1::unsigned)
+                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_join_on_bucket_id2() {
+    let input = r#"select * from "t2" join (
+        select "bucket_id" from "test_space" where "id" = 1
+    ) as t_mv 
+    on t_mv."bucket_id" = "t2"."bucket_id" or "t2"."e" = "t2"."f";
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+    join on ROW("T_MV"."bucket_id"::unsigned) = ROW("t2"."bucket_id"::unsigned) or ROW("t2"."e"::unsigned) = ROW("t2"."f"::unsigned)
+        scan "t2"
+            projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h", "t2"."bucket_id"::unsigned -> "bucket_id")
+                scan "t2"
+        motion [policy: full]
+            scan "T_MV"
+                projection ("test_space"."bucket_id"::unsigned -> "bucket_id")
+                    selection ROW("test_space"."id"::unsigned) = ROW(1::unsigned)
+                        scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_exists_subquery_select_from_table() {
     let input = r#"SELECT "id" FROM "test_space" WHERE EXISTS (SELECT 0 FROM "hash_testing")"#;
 

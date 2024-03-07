@@ -36,7 +36,7 @@ fn sql_order_selection() {
     let eq_id = plan.nodes.add_bool(a_id, Bool::Eq, const_row).unwrap();
     let select_id = plan.add_select(&[scan_id], eq_id).unwrap();
 
-    let proj_id = plan.add_proj(select_id, &["a"], false).unwrap();
+    let proj_id = plan.add_proj(select_id, &["a"], false, false).unwrap();
     plan.set_top(proj_id).unwrap();
 
     // check the plan
