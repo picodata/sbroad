@@ -42,6 +42,7 @@ pub enum Type {
     Scalar,
     String,
     Number,
+    Uuid,
     Unsigned,
 }
 
@@ -56,6 +57,7 @@ impl fmt::Display for Type {
             Type::Scalar => write!(f, "scalar"),
             Type::String => write!(f, "string"),
             Type::Number => write!(f, "number"),
+            Type::Uuid => write!(f, "uuid"),
             Type::Unsigned => write!(f, "unsigned"),
             Type::Any => write!(f, "any"),
             Type::Map => write!(f, "map"),
@@ -72,6 +74,7 @@ impl From<&Type> for FieldType {
             Type::Integer => FieldType::Integer,
             Type::Number => FieldType::Number,
             Type::Scalar => FieldType::Scalar,
+            Type::Uuid => FieldType::Uuid,
             Type::String => FieldType::String,
             Type::Unsigned => FieldType::Unsigned,
             Type::Array => FieldType::Array,
@@ -91,6 +94,7 @@ impl From<&Type> for SpaceFieldType {
             Type::Number => SpaceFieldType::Number,
             Type::Scalar => SpaceFieldType::Scalar,
             Type::String => SpaceFieldType::String,
+            Type::Uuid => SpaceFieldType::Uuid,
             Type::Unsigned => SpaceFieldType::Unsigned,
             Type::Array => SpaceFieldType::Array,
             Type::Any => SpaceFieldType::Any,
@@ -142,6 +146,7 @@ impl Type {
             "number" => Ok(Type::Number),
             "scalar" => Ok(Type::Scalar),
             "string" | "text" => Ok(Type::String),
+            "uuid" => Ok(Type::Uuid),
             "unsigned" => Ok(Type::Unsigned),
             "array" => Ok(Type::Array),
             "any" => Ok(Type::Any),
@@ -158,7 +163,7 @@ impl Type {
     pub fn new_from_possibly_incorrect(s: &str) -> Result<Self, SbroadError> {
         match s.to_string().to_lowercase().as_str() {
             "boolean" | "decimal" | "double" | "integer" | "number" | "numeric" | "scalar"
-            | "string" | "text" | "unsigned" => Ok(Type::Scalar),
+            | "string" | "uuid" | "text" | "unsigned" => Ok(Type::Scalar),
             "array" => Ok(Type::Array),
             "map" => Ok(Type::Map),
             "any" => Ok(Type::Any),
@@ -182,6 +187,7 @@ impl Type {
                 | Type::Number
                 | Type::Scalar
                 | Type::String
+                | Type::Uuid
                 | Type::Unsigned
         )
     }
@@ -198,7 +204,7 @@ impl Type {
                     Type::Double | Type::Integer | Type::Unsigned | Type::Decimal | Type::Number,
                 )
                 | (Type::Scalar, Type::Scalar)
-                | (Type::String, Type::String)
+                | (Type::String | Type::Uuid, Type::String | Type::Uuid)
         )
     }
 }
@@ -248,6 +254,7 @@ impl From<Column> for Field {
             Type::Number => Field::number(column.name),
             Type::Scalar => Field::scalar(column.name),
             Type::String => Field::string(column.name),
+            Type::Uuid => Field::uuid(column.name),
             Type::Unsigned => Field::unsigned(column.name),
             Type::Array => Field::array(column.name),
             Type::Any => Field::any(column.name),
@@ -286,6 +293,7 @@ impl SerSerialize for Column {
             Type::Number => map.serialize_entry("type", "number")?,
             Type::Scalar => map.serialize_entry("type", "scalar")?,
             Type::String => map.serialize_entry("type", "string")?,
+            Type::Uuid => map.serialize_entry("type", "uuid")?,
             Type::Unsigned => map.serialize_entry("type", "unsigned")?,
             Type::Array => map.serialize_entry("type", "array")?,
             Type::Any => map.serialize_entry("type", "any")?,
@@ -349,6 +357,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
             }
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role, is_nullable)),
             "array" => Ok(Column::new(&column_name, Type::Array, role, is_nullable)),
+            "uuid" => Ok(Column::new(&column_name, Type::Uuid, role, is_nullable)),
             _ => Err(Error::custom("unsupported column type")),
         }
     }

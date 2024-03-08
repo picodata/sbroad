@@ -10,6 +10,49 @@ fn boolean() {
 }
 
 #[test]
+fn uuid() {
+    let uid = uuid::Uuid::new_v4();
+    let t_uid_1 = Uuid::parse_str(&uid.to_string()).unwrap();
+    let t_uid_2 = Uuid::parse_str(&uuid::Uuid::new_v4().to_string()).unwrap();
+    let v_uid = Value::Uuid(t_uid_1);
+
+    assert_eq!(Value::from(t_uid_1), v_uid);
+    assert_eq!(format!("{}", v_uid), uid.to_string());
+    assert_eq!(v_uid.get_type(), Type::Uuid);
+    assert_eq!(v_uid.eq(&Value::Uuid(t_uid_1)), Trivalent::True);
+    assert_eq!(v_uid.eq(&Value::Uuid(t_uid_2)), Trivalent::False);
+    assert_eq!(
+        v_uid.eq(&Value::String(t_uid_1.to_string())),
+        Trivalent::False
+    );
+    assert_eq!(
+        v_uid.partial_cmp(&Value::Uuid(t_uid_1)),
+        Some(TrivalentOrdering::Equal)
+    );
+    assert_ne!(
+        v_uid.partial_cmp(&Value::Uuid(t_uid_2)),
+        Some(TrivalentOrdering::Equal)
+    );
+    assert_eq!(
+        Value::String(uid.to_string()).cast(&Type::Uuid).is_ok(),
+        true
+    );
+    assert_eq!(v_uid.partial_cmp(&Value::String(t_uid_2.to_string())), None);
+}
+
+fn uuid_negative() {
+    assert_eq!(
+        Value::String("hello".to_string())
+            .cast(&Type::Uuid)
+            .unwrap_err(),
+        SbroadError::FailedTo(
+            Action::Serialize,
+            Some(Entity::Value),
+            "uuid hello into string: invalid length: expected one of [36, 32], found 5".to_string()
+        )
+    );
+}
+#[test]
 fn decimal() {
     assert_eq!(
         Value::Decimal(decimal!(0)),

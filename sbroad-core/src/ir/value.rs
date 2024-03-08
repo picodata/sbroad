@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tarantool::decimal::Decimal;
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::{FieldType, KeyDefPart};
+use tarantool::uuid::Uuid;
 
 use crate::error;
 use crate::errors::{Action, Entity, SbroadError};
@@ -130,6 +131,8 @@ pub enum Value {
     Unsigned(u64),
     /// Tuple type
     Tuple(Tuple),
+    /// Uuid type
+    Uuid(Uuid),
 }
 
 /// Custom Ordering using Trivalent instead of simple Equal.
@@ -185,6 +188,7 @@ impl fmt::Display for Value {
             Value::Decimal(v) => fmt::Display::fmt(v, f),
             Value::String(v) => write!(f, "'{v}'"),
             Value::Tuple(v) => write!(f, "{v}"),
+            Value::Uuid(v) => fmt::Display::fmt(v, f),
         }
     }
 }
@@ -272,6 +276,12 @@ impl From<Trivalent> for Value {
             Trivalent::True => Value::Boolean(true),
             Trivalent::Unknown => Value::Null,
         }
+    }
+}
+
+impl From<Uuid> for Value {
+    fn from(v: Uuid) -> Self {
+        Value::Uuid(v)
     }
 }
 
@@ -439,11 +449,14 @@ impl Value {
                 | Value::Decimal(_)
                 | Value::Double(_)
                 | Value::String(_)
+                | Value::Uuid(_)
                 | Value::Tuple(_) => Trivalent::False,
             },
             Value::Null => Trivalent::Unknown,
             Value::Integer(s) => match other {
-                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Uuid(_) | Value::Tuple(_) => {
+                    Trivalent::False
+                }
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (s == o).into(),
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
@@ -454,7 +467,9 @@ impl Value {
                 Value::Unsigned(o) => (&Decimal::from(*s) == o).into(),
             },
             Value::Double(s) => match other {
-                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) | Value::Uuid(_) => {
+                    Trivalent::False
+                }
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (*s == Double::from(*o)).into(),
                 // If double can't be converted to decimal without error then it is not equal to decimal.
@@ -466,7 +481,9 @@ impl Value {
                 }
             },
             Value::Decimal(s) => match other {
-                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) | Value::Uuid(_) => {
+                    Trivalent::False
+                }
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (s == &Decimal::from(*o)).into(),
                 Value::Decimal(o) => (s == o).into(),
@@ -475,7 +492,9 @@ impl Value {
                 Value::Unsigned(o) => (s == &Decimal::from(*o)).into(),
             },
             Value::Unsigned(s) => match other {
-                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) => Trivalent::False,
+                Value::Boolean(_) | Value::String(_) | Value::Uuid(_) | Value::Tuple(_) => {
+                    Trivalent::False
+                }
                 Value::Null => Trivalent::Unknown,
                 Value::Integer(o) => (Decimal::from(*s) == *o).into(),
                 Value::Decimal(o) => (&Decimal::from(*s) == o).into(),
@@ -491,6 +510,7 @@ impl Value {
                 | Value::Decimal(_)
                 | Value::Double(_)
                 | Value::Unsigned(_)
+                | Value::Uuid(_)
                 | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
                 Value::String(o) => s.eq(o).into(),
@@ -502,8 +522,20 @@ impl Value {
                 | Value::Double(_)
                 | Value::Unsigned(_)
                 | Value::String(_)
+                | Value::Uuid(_)
                 | Value::Tuple(_) => Trivalent::False,
                 Value::Null => Trivalent::Unknown,
+            },
+            Value::Uuid(s) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::String(_)
+                | Value::Unsigned(_)
+                | Value::Tuple(_) => Trivalent::False,
+                Value::Null => Trivalent::Unknown,
+                Value::Uuid(o) => s.eq(o).into(),
             },
         }
     }
@@ -518,6 +550,7 @@ impl Value {
             Value::Unsigned(_) => FieldType::Unsigned,
             Value::String(_) => FieldType::String,
             Value::Tuple(_) => FieldType::Array,
+            Value::Uuid(_) => FieldType::Uuid,
             Value::Null => FieldType::Any,
         };
         KeyDefPart {
@@ -526,6 +559,149 @@ impl Value {
             collation: None,
             is_nullable: true,
             path: None,
+        }
+    }
+
+    /// Compares two values.
+    /// The result uses four-valued logic (standard `Ordering` variants and
+    /// `Unknown` in case `Null` was met).
+    ///
+    /// Returns `None` in case of
+    /// * String casting Error or types mismatch.
+    /// * Float `NaN` comparison occurred.
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn partial_cmp(&self, other: &Value) -> Option<TrivalentOrdering> {
+        match self {
+            Value::Boolean(s) => match other {
+                Value::Boolean(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Unsigned(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::String(_)
+                | Value::Uuid(_)
+                | Value::Tuple(_) => None,
+            },
+            Value::Null => TrivalentOrdering::Unknown.into(),
+            Value::Integer(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Uuid(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                Value::Decimal(o) => TrivalentOrdering::from(Decimal::from(*s).cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to integer.
+                Value::Double(o) => {
+                    let self_converted = Decimal::from_str(&format!("{s}"));
+                    let other_converted = Decimal::from_str(&format!("{o}"));
+                    match (self_converted, other_converted) {
+                        (Ok(d1), Ok(d2)) => TrivalentOrdering::from(d1.cmp(&d2)).into(),
+                        _ => None,
+                    }
+                }
+                Value::Unsigned(o) => {
+                    TrivalentOrdering::from(Decimal::from(*s).cmp(&Decimal::from(*o))).into()
+                }
+            },
+            Value::Double(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Tuple(_) | Value::Uuid(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => {
+                    if let Some(ord) = s.partial_cmp(&Double::from(*o)) {
+                        TrivalentOrdering::from(ord).into()
+                    } else {
+                        None
+                    }
+                }
+                // If double can't be converted to decimal without error then it is not equal to decimal.
+                Value::Decimal(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{s}")) {
+                        TrivalentOrdering::from(d.cmp(o)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Double(o) => {
+                    if let Some(ord) = s.partial_cmp(o) {
+                        TrivalentOrdering::from(ord).into()
+                    } else {
+                        None
+                    }
+                }
+                // If double can't be converted to decimal without error then it is not equal to unsigned.
+                Value::Unsigned(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{s}")) {
+                        TrivalentOrdering::from(d.cmp(&Decimal::from(*o))).into()
+                    } else {
+                        None
+                    }
+                }
+            },
+            Value::Decimal(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Uuid(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => TrivalentOrdering::from(s.cmp(&Decimal::from(*o))).into(),
+                Value::Decimal(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to decimal.
+                Value::Double(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{o}")) {
+                        TrivalentOrdering::from(s.cmp(&d)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Unsigned(o) => TrivalentOrdering::from(s.cmp(&Decimal::from(*o))).into(),
+            },
+            Value::Unsigned(s) => match other {
+                Value::Boolean(_) | Value::String(_) | Value::Uuid(_) | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Integer(o) => {
+                    TrivalentOrdering::from(Decimal::from(*s).cmp(&Decimal::from(*o))).into()
+                }
+                Value::Decimal(o) => TrivalentOrdering::from(Decimal::from(*s).cmp(o)).into(),
+                // If double can't be converted to decimal without error then it is not equal to unsigned.
+                Value::Double(o) => {
+                    if let Ok(d) = Decimal::from_str(&format!("{o}")) {
+                        TrivalentOrdering::from(Decimal::from(*s).cmp(&d)).into()
+                    } else {
+                        None
+                    }
+                }
+                Value::Unsigned(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+            },
+            Value::String(s) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::Uuid(_)
+                | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::String(o) => TrivalentOrdering::from(s.cmp(o)).into(),
+            },
+            Value::Uuid(u) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::String(_)
+                | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+                Value::Uuid(o) => TrivalentOrdering::from(u.cmp(o)).into(),
+            },
+            Value::Tuple(_) => match other {
+                Value::Boolean(_)
+                | Value::Integer(_)
+                | Value::Decimal(_)
+                | Value::Double(_)
+                | Value::Unsigned(_)
+                | Value::String(_)
+                | Value::Uuid(_)
+                | Value::Tuple(_) => None,
+                Value::Null => TrivalentOrdering::Unknown.into(),
+            },
         }
     }
 
@@ -647,6 +823,23 @@ impl Value {
                     format!("{self:?} into string"),
                 )),
             },
+            Type::Uuid => match self {
+                Value::Uuid(_) => Ok(self.into()),
+                Value::String(v) => Ok(Value::Uuid(Uuid::parse_str(v).map_err(|e| {
+                    SbroadError::FailedTo(
+                        Action::Serialize,
+                        Some(Entity::Value),
+                        format!("uuid {v} into string: {e}"),
+                    )
+                })?)
+                .into()),
+                Value::Null => Ok(Value::Null.into()),
+                _ => Err(SbroadError::FailedTo(
+                    Action::Serialize,
+                    Some(Entity::Value),
+                    format!("{self:?} into uuid"),
+                )),
+            },
             Type::Number => match self {
                 Value::Integer(_) | Value::Decimal(_) | Value::Double(_) | Value::Unsigned(_) => {
                     Ok(self.into())
@@ -708,6 +901,7 @@ impl Value {
             Value::Boolean(_) => Type::Boolean,
             Value::String(_) => Type::String,
             Value::Tuple(_) => Type::Array,
+            Value::Uuid(_) => Type::Uuid,
             Value::Null => Type::Scalar,
         }
     }
@@ -728,6 +922,7 @@ impl ToHashString for Value {
             Value::Boolean(v) => v.to_string(),
             Value::String(v) => v.to_string(),
             Value::Tuple(v) => v.to_string(),
+            Value::Uuid(v) => v.to_string(),
             Value::Null => "NULL".to_string(),
         }
     }
@@ -777,6 +972,7 @@ pub enum MsgPackValue<'v> {
     Unsigned(&'v u64),
     String(&'v String),
     Tuple(&'v Tuple),
+    Uuid(&'v Uuid),
     Null(()),
 }
 
@@ -790,6 +986,7 @@ impl<'v> From<&'v Value> for MsgPackValue<'v> {
             Value::Null => MsgPackValue::Null(()),
             Value::String(v) => MsgPackValue::String(v),
             Value::Tuple(v) => MsgPackValue::Tuple(v),
+            Value::Uuid(v) => MsgPackValue::Uuid(v),
             Value::Unsigned(v) => MsgPackValue::Unsigned(v),
         }
     }
@@ -805,6 +1002,7 @@ pub enum LuaValue {
     Integer(i64),
     Unsigned(u64),
     String(String),
+    Uuid(Uuid),
     Tuple(Tuple),
     Null(()),
 }
@@ -819,6 +1017,7 @@ impl fmt::Display for LuaValue {
             LuaValue::Unsigned(v) => write!(f, "{v}"),
             LuaValue::String(v) => write!(f, "'{v}'"),
             LuaValue::Tuple(v) => write!(f, "{v}"),
+            LuaValue::Uuid(v) => write!(f, "{v}"),
             LuaValue::Null(()) => write!(f, "NULL"),
         }
     }
@@ -834,6 +1033,7 @@ impl From<Value> for LuaValue {
             Value::Null => LuaValue::Null(()),
             Value::String(v) => LuaValue::String(v),
             Value::Tuple(v) => LuaValue::Tuple(v),
+            Value::Uuid(v) => LuaValue::Uuid(v),
             Value::Unsigned(v) => LuaValue::Unsigned(v),
         }
     }
@@ -861,6 +1061,7 @@ impl From<LuaValue> for Value {
             LuaValue::Boolean(v) => Value::Boolean(v),
             LuaValue::String(v) => Value::String(v),
             LuaValue::Tuple(v) => Value::Tuple(v),
+            LuaValue::Uuid(v) => Value::Uuid(v),
             LuaValue::Null(()) => Value::Null,
         }
     }
@@ -876,6 +1077,7 @@ impl From<Value> for String {
             Value::Boolean(v) => v.to_string(),
             Value::String(v) => v,
             Value::Tuple(v) => v.to_string(),
+            Value::Uuid(v) => v.to_string(),
             Value::Null => "NULL".to_string(),
         }
     }
@@ -893,6 +1095,7 @@ impl<L: tlua::AsLua> tlua::Push<L> for Value {
             Value::Boolean(v) => v.push_to_lua(lua),
             Value::String(v) => v.push_to_lua(lua),
             Value::Tuple(v) => v.push_to_lua(lua),
+            Value::Uuid(v) => v.push_to_lua(lua),
             Value::Null => tlua::Null.push_to_lua(lua),
         }
     }
@@ -913,6 +1116,7 @@ where
             Value::Boolean(v) => v.push_into_lua(lua),
             Value::String(v) => v.push_into_lua(lua),
             Value::Tuple(v) => v.push_into_lua(lua),
+            Value::Uuid(v) => v.push_into_lua(lua),
             Value::Null => tlua::Null.push_into_lua(lua),
         }
     }
@@ -968,6 +1172,10 @@ where
         };
         let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
             Ok(v) => return Ok(Self::Tuple(v)),
+            Err((lua, _)) => lua,
+        };
+        let lua = match tlua::LuaRead::lua_read_at_position(lua, index) {
+            Ok(v) => return Ok(Self::Uuid(v)),
             Err((lua, _)) => lua,
         };
         let Err((lua, _)) = tlua::Null::lua_read_at_position(lua, index) else {

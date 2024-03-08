@@ -70,6 +70,7 @@ type        ::= 'ANY'
                 | 'STRING'
                 | 'TEXT'
                 | 'UNSIGNED'
+                | 'UUID'
                 | 'VARCHAR' ('(' length ')')?
 parameter   ::= '$' unsigned | '?'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?

@@ -19,6 +19,7 @@ pub enum Type {
     Scalar,
     String,
     Text,
+    Uuid,
     Unsigned,
     Varchar(usize),
 }
@@ -40,6 +41,7 @@ impl TryFrom<&Rule> for Type {
             Rule::TypeScalar => Ok(Type::Scalar),
             Rule::TypeString => Ok(Type::String),
             Rule::TypeText => Ok(Type::Text),
+            Rule::TypeUuid => Ok(Type::Uuid),
             Rule::TypeUnsigned => Ok(Type::Unsigned),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
@@ -64,6 +66,7 @@ impl TryFrom<&RelationType> for Type {
             RelationType::Unsigned => Ok(Type::Unsigned),
             RelationType::Map => Ok(Type::Map),
             RelationType::Any => Ok(Type::Any),
+            RelationType::Uuid => Ok(Type::Uuid),
             RelationType::Array => Err(SbroadError::Unsupported(
                 Entity::Type,
                 Some("array int the cast operation".to_string()),
@@ -85,6 +88,7 @@ impl From<&Type> for String {
             Type::Scalar => "scalar".to_string(),
             Type::String => "string".to_string(),
             Type::Text => "text".to_string(),
+            Type::Uuid => "uuid".to_string(),
             Type::Unsigned => "unsigned".to_string(),
             Type::Varchar(length) => format!("varchar({length})"),
         }
@@ -108,6 +112,7 @@ impl Type {
             Type::Double => RelationType::Double,
             Type::Integer => RelationType::Integer,
             Type::Number => RelationType::Number,
+            Type::Uuid => RelationType::Uuid,
             Type::String | Type::Text | Type::Varchar(_) => RelationType::String,
             Type::Unsigned => RelationType::Unsigned,
         }

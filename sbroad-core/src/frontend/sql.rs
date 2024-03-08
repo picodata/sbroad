@@ -157,6 +157,7 @@ fn parse_proc_params(
             Rule::TypeNumber => RelationType::Number,
             Rule::TypeScalar => RelationType::Scalar,
             Rule::TypeString | Rule::TypeText | Rule::TypeVarchar => RelationType::String,
+            Rule::TypeUuid => RelationType::Uuid,
             Rule::TypeUnsigned => RelationType::Unsigned,
             _ => unreachable!("Unexpected node: {type_node:?}"),
         };
@@ -383,6 +384,9 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                     }
                                     Rule::TypeUnsigned => {
                                         column_def.data_type = RelationType::Unsigned;
+                                    }
+                                    Rule::TypeUuid => {
+                                        column_def.data_type = RelationType::Uuid;
                                     }
                                     _ => {
                                         return Err(SbroadError::Invalid(

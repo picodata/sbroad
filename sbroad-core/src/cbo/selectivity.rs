@@ -338,6 +338,9 @@ pub fn calculate_filter_selectivity(
                 "Unable to calculate selectivity for array type column",
             )),
         )),
+        Type::Uuid => {
+            todo!("Don't know what to do here")
+        }
     }
 }
 

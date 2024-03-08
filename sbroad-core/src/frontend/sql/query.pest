@@ -107,7 +107,7 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        Join? ~ WhereClause? ~ 
+        Join? ~ WhereClause? ~
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)?
     }
@@ -203,7 +203,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
                 TypeCast = _{ TypeAny | ColumnDefType }
                 ColumnDefType = { TypeBool | TypeDecimal | TypeDouble | TypeInt | TypeNumber
-                                   | TypeScalar | TypeString | TypeText | TypeUnsigned | TypeVarchar }
+                                   | TypeScalar | TypeString | TypeText | TypeUnsigned | TypeVarchar | TypeUuid }
                     TypeAny = { ^"any" }
                     TypeBool = { (^"boolean" | ^"bool") }
                     TypeDecimal = { ^"decimal" }
@@ -213,6 +213,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
                     TypeScalar = { ^"scalar" }
                     TypeString = { ^"string" }
                     TypeText = { ^"text" }
+                    TypeUuid = { ^"uuid" }
                     TypeUnsigned = { ^"unsigned" }
                     TypeVarchar = { ^"varchar" ~ "(" ~ Unsigned ~ ")" }
             UnaryOperator = _{ Exists }

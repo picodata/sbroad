@@ -1372,3 +1372,34 @@ schema:
       engine: memtx
       sharding_key:
         - id
+    uuid_t:
+      format:
+        - type: uuid
+          name: id
+          is_nullable: false
+        - type: string
+          name: name
+          is_nullable: false
+        - type: unsigned
+          name: bucket_id
+          is_nullable: false
+      temporary: false
+      indexes:
+        - unique: true
+          parts:
+            - path: id
+              is_nullable: false
+              type: uuid
+          type: TREE
+          name: primary
+        - unique: false
+          parts:
+            - path: bucket_id
+              is_nullable: false
+              type: unsigned
+          type: TREE
+          name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+        - id
