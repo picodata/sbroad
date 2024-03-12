@@ -81,11 +81,6 @@ pub fn normalize_name_for_space_api(s: &str) -> String {
     s.to_uppercase()
 }
 
-#[must_use]
-pub fn is_sharding_column_name(name: &str) -> bool {
-    name == "\"bucket_id\"" || name == "bucket_id"
-}
-
 /// A helper function to encode the execution plan into a pair of binary data (see `Message`):
 /// * required data (plan id, parameters, etc.)
 /// * optional data (execution plan, etc.)

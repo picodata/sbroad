@@ -27,8 +27,6 @@ use super::distribution::Key;
 
 const DEFAULT_VALUE: Value = Value::Null;
 
-pub const SHARD_COL_NAME: &str = "\"bucket_id\"";
-
 /// Supported column types, which is used in a schema only.
 /// This `Type` is derived from the result's metadata.
 #[derive(Serialize, Default, Deserialize, PartialEq, Hash, Debug, Eq, Clone)]

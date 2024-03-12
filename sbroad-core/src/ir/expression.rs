@@ -14,7 +14,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
 
 use crate::errors::{Entity, SbroadError};
-use crate::executor::engine::helpers::is_sharding_column_name;
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Type;
@@ -1067,6 +1066,17 @@ impl Plan {
         // Vec of (column position in child output, column plan id, new_targets).
         let mut filtered_children_row_list: Vec<(usize, usize, Vec<usize>)> = Vec::new();
 
+        // Helper lambda to retrieve column positions we need to exclude from child `rel_id`.
+        let column_positions_to_exclude = |rel_id| -> Result<Vec<Position>, SbroadError> {
+            let positions = if need_sharding_column {
+                vec![]
+            } else {
+                let mut info = self.track_shard_column_pos(rel_id)?;
+                info.remove(&rel_id).unwrap_or_default()
+            };
+            Ok(positions)
+        };
+
         if let Some(columns_spec) = source.get_columns_spec() {
             let (rel_child, _) = source
                 .iter()
@@ -1087,12 +1097,13 @@ impl Plan {
                 ColumnsRetrievalSpec::Indices(indices) => indices.clone(),
             };
 
+            let exclude_positions = column_positions_to_exclude(rel_child)?;
+
             for index in indices {
                 let col_id = *child_node_row_list
                     .get(index)
                     .expect("Column id not found under relational child output");
-                let alias_name = self.get_expression_node(col_id)?.get_alias_name()?;
-                if is_sharding_column_name(alias_name) {
+                if exclude_positions.contains(&index) {
                     continue;
                 }
                 filtered_children_row_list.push((index, col_id, source.targets()));
@@ -1112,9 +1123,10 @@ impl Plan {
                         filtered_children_row_list.push((pos, *id, new_targets.clone()));
                     });
                 } else {
+                    let exclude_positions = column_positions_to_exclude(child_node_id)?;
+
                     for (pos, expr_id) in child_row_list.iter().enumerate() {
-                        let alias_name = self.get_expression_node(*expr_id)?.get_alias_name()?;
-                        if is_sharding_column_name(alias_name) {
+                        if exclude_positions.contains(&pos) {
                             continue;
                         }
                         filtered_children_row_list.push((pos, *expr_id, new_targets.clone()));

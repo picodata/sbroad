@@ -2,7 +2,9 @@ use crate::errors::SbroadError;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
+use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
+use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use pretty_assertions::assert_eq;
 
@@ -518,6 +520,101 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn track_shard_col_pos() {
+    let input = r#"
+    select "e", "bucket_id", "f" 
+    from "t2"
+    where "e" + "f" = 3
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
+    for (_, node_id) in dfs.iter(top) {
+        let node = plan.get_relation_node(node_id).unwrap();
+        match node {
+            Relational::ScanRelation { .. } | Relational::Selection { .. } => {
+                assert_eq!(&vec![4_usize], map.get(&node_id).unwrap())
+            }
+            Relational::Projection { .. } => {
+                assert_eq!(&vec![1_usize], map.get(&node_id).unwrap())
+            }
+            _ => {}
+        }
+    }
+
+    let input = r#"select t_mv."bucket_id", "t2"."bucket_id" from "t2" join (
+        select "bucket_id" from "test_space" where "id" = 1
+    ) as t_mv
+    on t_mv."bucket_id" = "t2"."bucket_id";
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
+    for (_, node_id) in dfs.iter(top) {
+        let node = plan.get_relation_node(node_id).unwrap();
+        if let Relational::Join { .. } = node {
+            assert_eq!(&vec![4_usize, 5_usize], map.get(&node_id).unwrap());
+        }
+    }
+    assert_eq!(&vec![0_usize, 1_usize], map.get(&top).unwrap());
+
+    let input = r#"select t_mv."bucket_id", "t2"."bucket_id" from "t2" join (
+        select "bucket_id" from "test_space" where "id" = 1
+    ) as t_mv
+    on t_mv."bucket_id" < "t2"."bucket_id";
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
+    for (_, node_id) in dfs.iter(top) {
+        let node = plan.get_relation_node(node_id).unwrap();
+        if let Relational::Join { .. } = node {
+            assert_eq!(&vec![4_usize], map.get(&node_id).unwrap());
+        }
+    }
+    assert_eq!(&vec![1_usize], map.get(&top).unwrap());
+
+    let input = r#"
+    select "bucket_id", "e" from "t2"
+    union all
+    select "id", "bucket_id" from "test_space"
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    assert_eq!(None, map.get(&top));
+
+    let input = r#"
+    select "bucket_id", "e" from "t2"
+    union all
+    select "bucket_id", "id" from "test_space"
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    assert_eq!(&vec![0_usize], map.get(&top).unwrap());
+
+    let input = r#"
+    select "e" from (select "bucket_id" as "e" from "t2")
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    assert_eq!(&vec![0_usize], map.get(&top).unwrap());
+
+    let input = r#"
+    select "e" as "bucket_id" from "t2"
+    "#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let top = plan.get_top().unwrap();
+    let map = plan.track_shard_column_pos(top).unwrap();
+    assert_eq!(None, map.get(&top));
+}
+
+#[test]
 fn front_sql_join_on_bucket_id1() {
     let input = r#"select * from "t2" join (
         select "bucket_id" from "test_space" where "id" = 1
@@ -567,6 +664,83 @@ fn front_sql_join_on_bucket_id2() {
                 projection ("test_space"."bucket_id"::unsigned -> "bucket_id")
                     selection ROW("test_space"."id"::unsigned) = ROW(1::unsigned)
                         scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_groupby_on_bucket_id() {
+    let input = r#"
+    select b, count(*) from (select "bucket_id" as b from "t2") as t 
+    group by b
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T"."B"::unsigned -> "B", count((*::integer))::integer -> "COL_1")
+    group by ("T"."B"::unsigned) output: ("T"."B"::unsigned -> "B")
+        scan "T"
+            projection ("t2"."bucket_id"::unsigned -> "B")
+                scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_sq_on_bucket_id() {
+    let input = r#"
+    select b, e from (select "bucket_id" as b, "e" as e from "t2") as t 
+    where (b, e) in (select "bucket_id", "id" from "test_space")
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("T"."B"::unsigned -> "B", "T"."E"::unsigned -> "E")
+    selection ROW("T"."B"::unsigned, "T"."E"::unsigned) in ROW($0, $0)
+        scan "T"
+            projection ("t2"."bucket_id"::unsigned -> "B", "t2"."e"::unsigned -> "E")
+                scan "t2"
+subquery $0:
+scan
+            projection ("test_space"."bucket_id"::unsigned -> "bucket_id", "test_space"."id"::unsigned -> "id")
+                scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_except_on_bucket_id() {
+    let input = r#"
+    select "e", "bucket_id" from "t2"
+    except
+    select "id", "bucket_id" from "test_space"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"except
+    projection ("t2"."e"::unsigned -> "e", "t2"."bucket_id"::unsigned -> "bucket_id")
+        scan "t2"
+    projection ("test_space"."id"::unsigned -> "id", "test_space"."bucket_id"::unsigned -> "bucket_id")
+        scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

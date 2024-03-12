@@ -32,8 +32,10 @@ use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
 
+use self::expression::Position;
 use self::parameters::Parameters;
 use self::relation::Relations;
+use self::transformation::redistribution::MotionPolicy;
 
 // TODO: remove when rust version in bumped in module
 #[allow(elided_lifetimes_in_associated_constant)]
@@ -1239,6 +1241,97 @@ impl Plan {
         })?;
         let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes());
         Ok(hash)
+    }
+}
+
+/// Relational node id -> positions of columns in output that refer to sharding column.
+pub type ShardColInfo = ahash::AHashMap<NodeId, Vec<Position>>;
+
+impl Plan {
+    /// Helper function to track position of the sharding column
+    /// for any relational node in the subtree defined by `top_id`.
+    ///
+    /// # Errors
+    /// - invalid references in the plan subtree
+    pub fn track_shard_column_pos(&self, top_id: usize) -> Result<ShardColInfo, SbroadError> {
+        let mut memo = ShardColInfo::with_capacity(REL_CAPACITY);
+        let mut dfs = PostOrder::with_capacity(|x| self.nodes.rel_iter(x), REL_CAPACITY);
+
+        for (_, node_id) in dfs.iter(top_id) {
+            let node = self.get_relation_node(node_id)?;
+
+            match node {
+                Relational::ScanRelation { relation, .. } => {
+                    let table = self.get_relation_or_error(relation)?;
+                    if let Ok(Some(pos)) = table.get_bucket_id_position() {
+                        memo.insert(node_id, vec![pos]);
+                    }
+                    continue;
+                }
+                Relational::Motion { policy, .. } => {
+                    // Any motion node that moves data invalidates
+                    // bucket_id column selected from that space.
+                    // Even Segment policy is no help, because it only
+                    // creates index on virtual table but does not actually
+                    // add or update bucket_id column.
+                    if !matches!(policy, MotionPolicy::Local | MotionPolicy::LocalSegment(_)) {
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+
+            let Some(children) = node.children() else {
+                continue;
+            };
+
+            let output = self.get_row_list(node.output())?;
+            for (pos, alias_id) in output.iter().enumerate() {
+                let ref_id = self.get_child_under_alias(*alias_id)?;
+                // If there is a parameter under alias
+                // and we haven't bound parameters yet,
+                // we will get an error.
+                let Ok(Expression::Reference {
+                    targets, position, ..
+                }) = self.get_expression_node(ref_id)
+                else {
+                    continue;
+                };
+                let Some(targets) = targets else {
+                    continue;
+                };
+
+                // For node with multiple targets (Union, Except, Intersect)
+                // we need that ALL targets would refer to the shard column.
+                let mut refers_to_shard_col = true;
+                for target in targets {
+                    let child_id = children.get(*target).ok_or_else(|| {
+                        SbroadError::Invalid(
+                            Entity::Plan,
+                            Some(format!(
+                                "invalid target ({target}) in reference with id: {ref_id}"
+                            )),
+                        )
+                    })?;
+                    let Some(candidates) = memo.get(child_id) else {
+                        refers_to_shard_col = false;
+                        break;
+                    };
+                    if !candidates.contains(position) {
+                        refers_to_shard_col = false;
+                        break;
+                    }
+                }
+
+                if refers_to_shard_col {
+                    memo.entry(node_id)
+                        .and_modify(|v| v.push(pos))
+                        .or_insert(vec![pos]);
+                }
+            }
+        }
+
+        Ok(memo)
     }
 }
 

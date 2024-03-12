@@ -1263,15 +1263,27 @@ impl Plan {
                     EXPR_CAPACITY,
                     EXPR_CAPACITY,
                 );
+                // we should update ONLY references that refer to current child (left, right)
+                let current_target = match join_child {
+                    JoinChild::Inner => Some(vec![1_usize]),
+                    JoinChild::Outer => Some(vec![0_usize]),
+                };
                 let refs = condition_tree
                     .iter(condition)
                     .filter_map(|(_, id)| {
                         let expr = self.get_expression_node(id).ok();
-                        if let Some(Expression::Reference { position, .. }) = expr {
-                            if Some(*position) == sharding_column_pos {
-                                needs_bucket_id_column = true;
+                        if let Some(Expression::Reference {
+                            position, targets, ..
+                        }) = expr
+                        {
+                            if *targets == current_target {
+                                if Some(*position) == sharding_column_pos {
+                                    needs_bucket_id_column = true;
+                                }
+                                Some(id)
+                            } else {
+                                None
                             }
-                            Some(id)
                         } else {
                             None
                         }
@@ -1292,11 +1304,6 @@ impl Plan {
                     continue;
                 }
 
-                // we should update ONLY references that refer to current child (left, right)
-                let current_target = match join_child {
-                    JoinChild::Inner => Some(vec![1_usize]),
-                    JoinChild::Outer => Some(vec![0_usize]),
-                };
                 if let Some(sharding_column_pos) = sharding_column_pos {
                     for ref_id in refs {
                         let expr = self.get_mut_expression_node(ref_id)?;

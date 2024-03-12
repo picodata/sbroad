@@ -1,6 +1,6 @@
 //! Resolve distribution conflicts and insert motion nodes to IR.
 
-use ahash::{AHashSet, RandomState};
+use ahash::{AHashMap, AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -12,13 +12,13 @@ use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
-use crate::ir::relation::{TableKind, SHARD_COL_NAME};
+use crate::ir::relation::TableKind;
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
     BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
 };
 use crate::ir::value::Value;
-use crate::ir::{Node, Plan};
+use crate::ir::{Node, Plan, ShardColInfo};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -432,6 +432,84 @@ impl Plan {
         }
     }
 
+    /// Check for join/sq equality on `bucket_id` column:
+    /// ```text
+    /// .. on (t1.a, t1.bucket_id) = (t2.b, t2.bucket_id)
+    ///
+    /// select * from t1 where bucket_id in (select bucket_id from t2)
+    /// ```
+    ///
+    /// In such case join/selection can be done locally.
+    fn has_eq_on_bucket_id(
+        &self,
+        left_row_id: usize,
+        right_row_id: usize,
+        rel_id: usize,
+        op: &Bool,
+        shard_col_info: &ShardColInfo,
+    ) -> Result<bool, SbroadError> {
+        if !(Bool::Eq == *op || Bool::In == *op) {
+            return Ok(false);
+        }
+        // It is possible that multiple columns in row refer to the shard column
+        // we need to find if there is a pair of such columns from different
+        // children for local join:
+        //
+        // select * from (select bucket_id as a from t1) as t1
+        // join (select bucket_id as b from t2) as t2
+        // on (1, a, b) = (2, b, 3)
+        //
+        // Equality pair `a = b` allows us to do local join.
+        //
+        // position in row that refers to shard column -> child id
+        let mut memo: AHashMap<usize, usize> = AHashMap::new();
+        let mut search_row = |row_id: usize| -> Result<bool, SbroadError> {
+            let refs = self.get_row_list(row_id)?;
+            for (pos_in_row, ref_id) in refs.iter().enumerate() {
+                let node @ Expression::Reference {
+                    targets,
+                    position: ref_pos,
+                    ..
+                } = self.get_expression_node(*ref_id)?
+                else {
+                    continue;
+                };
+                let targets = targets.as_ref().ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "ref ({ref_id}) in join condition with no targets: {node:?}"
+                        )),
+                    )
+                })?;
+                let child_idx = targets.first().ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Node,
+                        Some(format!(
+                            "ref ({ref_id}) in join condition with empty targets: {node:?}"
+                        )),
+                    )
+                })?;
+                let child_id = self.get_relational_child(rel_id, *child_idx)?;
+                if let Some(candidates) = shard_col_info.get(&child_id) {
+                    if !candidates.contains(ref_pos) {
+                        continue;
+                    }
+                    if let Some(other_child_id) = memo.get(&pos_in_row) {
+                        if *other_child_id != child_id {
+                            return Ok(true);
+                        }
+                    } else {
+                        memo.insert(pos_in_row, child_id);
+                    }
+                }
+            }
+
+            Ok(false)
+        };
+        Ok(search_row(left_row_id)? || search_row(right_row_id)?)
+    }
+
     /// Choose a `MotionPolicy` strategy for the inner row.
     ///
     /// # Errors
@@ -551,11 +629,33 @@ impl Plan {
         &self,
         rel_id: usize,
         op_id: usize,
+        shard_col_info: &ShardColInfo,
     ) -> Result<Vec<(usize, MotionPolicy)>, SbroadError> {
         let mut strategies: Vec<(usize, MotionPolicy)> = Vec::new();
         let bool_op = BoolOp::from_expr(self, op_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
         let right = self.get_additional_sq(rel_id, bool_op.right)?;
+
+        // If we eq/in where both rows contain bucket_id in same position
+        // we don't need Motion nodes.
+        if (left.is_some() || right.is_some())
+            && self.has_eq_on_bucket_id(
+                bool_op.left,
+                bool_op.right,
+                rel_id,
+                &bool_op.op,
+                shard_col_info,
+            )?
+        {
+            if let Some(left_sq) = left {
+                strategies.push((left_sq, MotionPolicy::None));
+            }
+            if let Some(right_sq) = right {
+                strategies.push((right_sq, MotionPolicy::None));
+            }
+            return Ok(strategies);
+        }
+
         match left {
             Some(left_sq) => {
                 match right {
@@ -648,13 +748,15 @@ impl Plan {
         }
 
         let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
+        let shard_col_info = self.track_shard_column_pos(select_id)?;
         for (_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
         for (_, bool_node) in &bool_nodes {
-            let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
+            let strategies =
+                self.get_sq_node_strategies_for_bool_op(select_id, *bool_node, &shard_col_info)?;
             for (id, policy) in strategies {
                 // In case we faced with `not ... in ...`, we
                 // have to change motion policy to Full.
@@ -912,36 +1014,16 @@ impl Plan {
         join_id: usize,
         left_row_id: usize,
         right_row_id: usize,
+        shard_col_info: &ShardColInfo,
     ) -> Result<MotionPolicy, SbroadError> {
-        {
-            // check for (a, t1.bucket_id, b) = (x, t2.bucket_id, y)
-            let get_shard_pos = |row_id: usize| -> Result<Option<usize>, SbroadError> {
-                let mut shard_pos = None;
-                let refs = self.get_row_list(row_id)?;
-                for (pos, ref_id) in refs.iter().enumerate() {
-                    let node @ Expression::Reference { .. } = self.get_expression_node(*ref_id)?
-                    else {
-                        continue;
-                    };
-
-                    // NB: This code assumes that user does not shoot himself in
-                    // the leg by renaming some column into `bucket_id` like here:
-                    // select * from (select "a" as "bucket_id", "bucket_id" as b from "t") join t2 on ...
-                    // If this happens, we will get wrong plan.
-                    // TODO: forbid renaming some column into `bucket_id` or renaming
-                    // `bucket_id` into something else.
-                    if SHARD_COL_NAME == self.get_alias_from_reference_node(node)? {
-                        shard_pos = Some(pos);
-                        break;
-                    }
-                }
-                Ok(shard_pos)
-            };
-            let left_shard_pos = get_shard_pos(left_row_id)?;
-            let right_shard_pos = get_shard_pos(right_row_id)?;
-            if left_shard_pos.is_some() && left_shard_pos == right_shard_pos {
-                return Ok(MotionPolicy::None);
-            }
+        if self.has_eq_on_bucket_id(
+            left_row_id,
+            right_row_id,
+            join_id,
+            &Bool::Eq,
+            shard_col_info,
+        )? {
+            return Ok(MotionPolicy::None);
         }
 
         let left_dist = self.get_distribution(left_row_id)?;
@@ -1141,6 +1223,7 @@ impl Plan {
             (inner, outer)
         };
 
+        let shard_col_info = self.track_shard_column_pos(rel_id)?;
         let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
         let filter = |node_id: usize| -> bool {
@@ -1190,7 +1273,8 @@ impl Plan {
             // Note, that we don't have to call `get_sq_node_strategy_for_unary_op` here, because
             // the only strategy it can return is `Motion::Full` for its child and all subqueries
             // are covered with `Motion::Full` by default.
-            let sq_strategies = self.get_sq_node_strategies_for_bool_op(rel_id, node_id)?;
+            let sq_strategies =
+                self.get_sq_node_strategies_for_bool_op(rel_id, node_id, &shard_col_info)?;
             let sq_strategies_len = sq_strategies.len();
             for (id, policy) in sq_strategies {
                 strategy.add_child(id, policy, Program::default());
@@ -1235,9 +1319,12 @@ impl Plan {
                         Bool::Between => {
                             unreachable!("Between in redistribution")
                         }
-                        Bool::Eq | Bool::In => {
-                            self.join_policy_for_eq(rel_id, bool_op.left, bool_op.right)?
-                        }
+                        Bool::Eq | Bool::In => self.join_policy_for_eq(
+                            rel_id,
+                            bool_op.left,
+                            bool_op.right,
+                            &shard_col_info,
+                        )?,
                         Bool::Gt | Bool::GtEq | Bool::Lt | Bool::LtEq | Bool::NotEq => {
                             MotionPolicy::Full
                         }
@@ -1763,6 +1850,36 @@ impl Plan {
         Ok(map)
     }
 
+    // Helper function to check whether except is done between
+    // sharded tables that both contain the bucket_id column
+    // at the same position in their outputs. In such case
+    // except can be done locally.
+    //
+    // Example:
+    // select "bucket_id" as a from t1
+    // except
+    // select "bucket_id" as b from t1
+    fn is_except_on_bucket_id(
+        &self,
+        rel_id: usize,
+        left_id: usize,
+        right_id: usize,
+    ) -> Result<bool, SbroadError> {
+        let shard_col_info = self.track_shard_column_pos(rel_id)?;
+        let Some(left_shard_positions) = shard_col_info.get(&left_id) else {
+            return Ok(false);
+        };
+        let Some(right_shard_positions) = shard_col_info.get(&right_id) else {
+            return Ok(false);
+        };
+        for l in left_shard_positions {
+            if right_shard_positions.contains(l) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     #[allow(clippy::too_many_lines)]
     fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
         if !matches!(self.get_relation_node(rel_id)?, Relational::Except { .. }) {
@@ -1782,6 +1899,10 @@ impl Plan {
         let right_id = self.get_relational_child(rel_id, 1)?;
         let left_dist = self.get_rel_distribution(left_id)?;
         let right_dist = self.get_rel_distribution(right_id)?;
+
+        if self.is_except_on_bucket_id(rel_id, left_id, right_id)? {
+            return Ok(map);
+        }
 
         let (left_motion, right_motion) = match (left_dist, right_dist) {
             (

@@ -1632,6 +1632,25 @@ impl Plan {
         if grouping_exprs.is_empty() && aggr_infos.is_empty() {
             return Ok(false);
         }
+
+        // Check for group by on bucket_id column
+        // in that case groupby can be done locally.
+        if !grouping_exprs.is_empty() {
+            let shard_col_info = self.track_shard_column_pos(final_proj_id)?;
+            for expr_id in &grouping_exprs {
+                let Expression::Reference { position, .. } = self.get_expression_node(*expr_id)?
+                else {
+                    continue;
+                };
+                let child_id = self.get_relational_from_reference_node(*expr_id)?;
+                if let Some(shard_positions) = shard_col_info.get(child_id) {
+                    if shard_positions.contains(position) {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
         let (local_proj_id, grouping_positions, local_aliases_map) =
             self.add_local_projection(upper, &mut aggr_infos, &grouping_exprs)?;
         let sq_id = self.add_sub_query(local_proj_id, None)?;
