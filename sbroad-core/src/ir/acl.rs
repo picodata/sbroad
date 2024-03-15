@@ -181,6 +181,9 @@ pub enum AlterOption {
         password: String,
         auth_method: String,
     },
+    Rename {
+        new_name: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

@@ -2567,6 +2567,16 @@ impl AbstractSyntaxTree {
                                 auth_method,
                             }
                         }
+                        Rule::AlterRename => {
+                            let identifier_node_id = alter_option_node
+                                .children
+                                .first()
+                                .expect("Expected to see an identifier node under AlterRename");
+                            let identifier = parse_identifier(self, *identifier_node_id)?;
+                            AlterOption::Rename {
+                                new_name: identifier,
+                            }
+                        }
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::ParseNode,

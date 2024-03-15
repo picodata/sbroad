@@ -15,10 +15,11 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
     AlterUser = {
         ^"alter" ~ ^"user" ~ Identifier ~ (^"with")? ~ AlterOption ~ TimeoutOption?
     }
-        AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword }
+        AlterOption = _{ AlterLogin | AlterNoLogin | AlterPassword | AlterRename }
             AlterLogin = { ^"login" }
             AlterNoLogin = { ^"nologin" }
             AlterPassword = { ^"password" ~ SingleQuotedString ~ AuthMethod? }
+            AlterRename = { ^"rename" ~ ^"to" ~ Identifier }
 	AuthMethod = { ^"using" ~ (ChapSha1 | Md5 | Ldap) }
             ChapSha1 = { ^"chap-sha1" }
             Md5 = { ^"md5" }
