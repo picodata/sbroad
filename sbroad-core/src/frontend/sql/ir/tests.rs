@@ -2897,6 +2897,8 @@ mod global;
 #[cfg(test)]
 mod insert;
 #[cfg(test)]
+mod join;
+#[cfg(test)]
 mod params;
 #[cfg(test)]
 mod single;

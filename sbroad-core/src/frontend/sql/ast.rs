@@ -197,22 +197,6 @@ impl PartialEq for AbstractSyntaxTree {
     }
 }
 
-/// Helper function to extract i-th element of array, when we sure it is safe
-/// But we don't want to panic if future changes break something, so we
-/// bubble out with error.
-///
-/// Supposed to be used only in `transform_select_X` methods!
-#[inline]
-fn get_or_err(arr: &[usize], idx: usize) -> Result<usize, SbroadError> {
-    arr.get(idx)
-        .ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues(format!(
-                "AST children array: {arr:?}. Requested index: {idx}"
-            ))
-        })
-        .map(|v| *v)
-}
-
 #[allow(dead_code)]
 impl AbstractSyntaxTree {
     /// Set the top of AST.
@@ -427,27 +411,11 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
-    /// `Select` node is not IR-friendly as it can have up to six children.
-    /// Transform this node in IR-way (to a binary sub-tree).
-    ///
-    /// The task of `transform_select_i` functions is to build nested structure of rules.
-    /// E.g. if we work with query `select ... from t ... where expr`, the initial structure like
-    /// `Select [
-    ///     children = [Projection, Scan(t), WhereClause(expr)]
-    /// ]`
-    /// will be transformed into
-    /// `Select [
-    ///     children = [Projection [
-    ///         children = [Scan(t) [
-    ///             children = [WhereClause(expr)]
-    ///         ]
-    ///     ]
-    /// ]`
-    ///
-    /// At the end of `transform_select` work all `Select` nodes are replaced with
-    /// their first child (always Projection):
-    /// * If some node contained Select as a child, we replace that child with Select child
-    /// * In case Select is a top node, it's replaced itself
+    /// Transform select AST to IR friendly one. At the end of transformation
+    /// all `Select` nodes are replaced with their first children (always `Projection`).
+    /// - When some node contains `Select` as a child, that child is replaced with
+    /// `Projection` (`Select`'s first child).
+    /// - When `Select` is a top node, its `Projection` (first child) becomes a new top.
     pub(super) fn transform_select(&mut self) -> Result<(), SbroadError> {
         let mut selects: HashSet<usize> = HashSet::new();
         for id in 0..self.nodes.arena.len() {
@@ -462,14 +430,7 @@ impl AbstractSyntaxTree {
         for node in &selects {
             let select = self.nodes.get_node(*node)?;
             let children: Vec<usize> = select.children.clone();
-            match children.len() {
-                2 => self.transform_select_2(*node, &children)?,
-                3 => self.transform_select_3(*node, &children)?,
-                4 => self.transform_select_4(*node, &children)?,
-                5 => self.transform_select_5(*node, &children)?,
-                6 => self.transform_select_6(*node, &children)?,
-                _ => return Err(SbroadError::Invalid(Entity::AST, None)),
-            }
+            self.reorder_select_children(*node, &children)?;
         }
 
         // Collect select nodes' parents.
@@ -508,191 +469,81 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
-    fn check<const N: usize, const M: usize>(
-        &self,
-        allowed: &[[Rule; N]; M],
-        select_children: &[usize],
+    fn reorder_select_children(
+        &mut self,
+        select_id: usize,
+        children: &[usize],
     ) -> Result<(), SbroadError> {
-        let allowed_len = if let Some(seq) = allowed.first() {
-            seq.len()
+        // SQL grammar produces a defined order of children in select node:
+        // 1. Projection: required
+        // 2. Scan: required (bind with Projection)
+        // 3. Join: optional (can be repeated multiple times)
+        // 4. Selection: optional
+        // 5. GroupBy: optional
+        // 6. Having: optional
+        //
+        // We need to reorder this sequence to the following:
+        // 1. Projection: required
+        // 2. Having: optional
+        // 3. GroupBy: optional
+        // 4. Selection: optional
+        // 5. Join: optional (can be repeated multiple times)
+        // 6. Scan: required
+        let mut proj_id: Option<usize> = None;
+        let mut scan_id: Option<usize> = None;
+        let mut join_ids = if children.len() > 2 {
+            Vec::with_capacity(children.len() - 2)
         } else {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                "Expected at least one sequence to check select children".into(),
-            ));
+            Vec::new()
         };
-        if select_children.len() != allowed_len {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "Expected select {allowed_len} children, got {}",
-                select_children.len()
-            )));
-        }
-        let mut is_match = false;
-        for seq in allowed {
-            let mut all_types_matched = true;
-            for (child, expected_type) in select_children.iter().zip(seq) {
-                let node = self.nodes.get_node(*child)?;
-                if node.rule != *expected_type {
-                    all_types_matched = false;
-                    break;
-                }
-            }
-            if all_types_matched {
-                is_match = true;
-                break;
+        let mut filter_id: Option<usize> = None;
+        let mut group_id: Option<usize> = None;
+        let mut having_id: Option<usize> = None;
+
+        for child_id in children {
+            let child = self.nodes.get_node(*child_id)?;
+            match child.rule {
+                Rule::Projection => proj_id = Some(*child_id),
+                Rule::Scan => scan_id = Some(*child_id),
+                Rule::Join => join_ids.push(*child_id),
+                Rule::Selection => filter_id = Some(*child_id),
+                Rule::GroupBy => group_id = Some(*child_id),
+                Rule::Having => having_id = Some(*child_id),
+                _ => panic!("{} {:?}", "Unexpected rule in select children:", child.rule),
             }
         }
-        if !is_match {
-            return Err(SbroadError::Invalid(
-                Entity::AST,
-                Some("Could not match select children to any expected sequence".into()),
-            ));
+
+        // Projection and Scan are required. If they are not present, there is an error
+        // in the SQL grammar.
+        let proj_id = proj_id.expect("Projection node is required in select node");
+        let scan_id = scan_id.expect("Scan node is required in select node");
+        let mut child_id = scan_id;
+
+        // The order of the nodes in the chain is partially reversed.
+        // Original nodes from grammar:
+        // Projection -> Scan -> Join1 -> ... -> JoinK -> Selection -> GroupBy -> Having.
+        // We need to change the order of the chain to:
+        // Projection -> Having -> GroupBy -> Selection -> JoinK -> ... -> Join1
+        let mut chain = Vec::with_capacity(children.len() - 1);
+        chain.push(proj_id);
+        if let Some(having_id) = having_id {
+            chain.push(having_id);
         }
-        Ok(())
-    }
+        if let Some(group_id) = group_id {
+            chain.push(group_id);
+        }
+        if let Some(filter_id) = filter_id {
+            chain.push(filter_id);
+        }
+        while let Some(join_id) = join_ids.pop() {
+            chain.push(join_id);
+        }
+        while let Some(id) = chain.pop() {
+            self.nodes.push_front_child(id, child_id)?;
+            child_id = id;
+        }
+        self.nodes.set_children(select_id, vec![child_id])?;
 
-    fn transform_select_2(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
-        let allowed = [[Rule::Projection, Rule::Scan]];
-        self.check(&allowed, children)?;
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 1)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
-        Ok(())
-    }
-
-    fn transform_select_3(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
-        let allowed = [
-            [Rule::Projection, Rule::Scan, Rule::Join],
-            [Rule::Projection, Rule::Scan, Rule::GroupBy],
-            [Rule::Projection, Rule::Scan, Rule::Selection],
-            [Rule::Projection, Rule::Scan, Rule::Having],
-        ];
-        self.check(&allowed, children)?;
-        self.nodes
-            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 2)?)?;
-        self.nodes
-            .set_children(select_id, vec![get_or_err(children, 0)?])?;
-        Ok(())
-    }
-
-    fn transform_select_4(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
-        let allowed = [
-            [Rule::Projection, Rule::Scan, Rule::Selection, Rule::GroupBy],
-            [Rule::Projection, Rule::Scan, Rule::Selection, Rule::Having],
-            [Rule::Projection, Rule::Scan, Rule::GroupBy, Rule::Having],
-            [Rule::Projection, Rule::Scan, Rule::Join, Rule::Selection],
-            [Rule::Projection, Rule::Scan, Rule::Join, Rule::GroupBy],
-            [Rule::Projection, Rule::Scan, Rule::Join, Rule::Having],
-        ];
-        self.check(&allowed, children)?;
-        // insert Selection | InnerJoin as first child of GroupBy
-        self.nodes
-            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
-        // insert Scan as first child of Selection | InnerJoin
-        self.nodes
-            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        // insert GroupBy as first child of Projection
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 3)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
-        Ok(())
-    }
-
-    fn transform_select_5(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
-        let allowed = [
-            [
-                Rule::Projection,
-                Rule::Scan,
-                Rule::Join,
-                Rule::Selection,
-                Rule::GroupBy,
-            ],
-            [
-                Rule::Projection,
-                Rule::Scan,
-                Rule::Join,
-                Rule::Selection,
-                Rule::Having,
-            ],
-            [
-                Rule::Projection,
-                Rule::Scan,
-                Rule::Join,
-                Rule::GroupBy,
-                Rule::Having,
-            ],
-            [
-                Rule::Projection,
-                Rule::Scan,
-                Rule::Selection,
-                Rule::GroupBy,
-                Rule::Having,
-            ],
-        ];
-        self.check(&allowed, children)?;
-        // insert Selection as first child of GroupBy
-        self.nodes
-            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 3)?)?;
-        // insert InnerJoin as first child of Selection
-        self.nodes
-            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
-        // insert Scan as first child of InnerJoin
-        self.nodes
-            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        // insert GroupBy as first child of Projection
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 4)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
-        Ok(())
-    }
-
-    fn transform_select_6(
-        &mut self,
-        select_id: usize,
-        children: &[usize],
-    ) -> Result<(), SbroadError> {
-        let allowed = [[
-            Rule::Projection,
-            Rule::Scan,
-            Rule::Join,
-            Rule::Selection,
-            Rule::GroupBy,
-            Rule::Having,
-        ]];
-        self.check(&allowed, children)?;
-        // insert GroupBy as first child of Having
-        self.nodes
-            .push_front_child(get_or_err(children, 5)?, get_or_err(children, 4)?)?;
-        // insert Selection as first child of GroupBy
-        self.nodes
-            .push_front_child(get_or_err(children, 4)?, get_or_err(children, 3)?)?;
-        // insert InnerJoin as first child of Selection
-        self.nodes
-            .push_front_child(get_or_err(children, 3)?, get_or_err(children, 2)?)?;
-        // insert Scan as first child of InnerJoin
-        self.nodes
-            .push_front_child(get_or_err(children, 2)?, get_or_err(children, 1)?)?;
-        // insert Having as first child of Projection
-        self.nodes
-            .push_front_child(get_or_err(children, 0)?, get_or_err(children, 5)?)?;
-        self.nodes.set_children(select_id, vec![children[0]])?;
         Ok(())
     }
 }

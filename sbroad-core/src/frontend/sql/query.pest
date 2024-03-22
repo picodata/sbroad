@@ -108,7 +108,7 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
-        Join? ~ WhereClause? ~
+        Join* ~ WhereClause? ~
         (^"group" ~ ^"by" ~ GroupBy)? ~
         (^"having" ~ Having)?
     }

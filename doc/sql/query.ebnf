@@ -13,7 +13,7 @@ select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
                         ((table | ('(' (select | values) ')')) (('AS')? name)?)
                     )
                     'ON' expression
-                )?
+                )*
                 ('WHERE' expression)?
                 ('GROUP' 'BY' expression (',' expression)*)?
                 ('HAVING' expression)?
