@@ -9,7 +9,7 @@ dql         ::= (select | values)
 select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
                 'FROM' (table | ('(' (select | values) ')')) (('AS')? name)?
                 (
-                    ('INNER')? 'JOIN' (
+                    ('INNER' | ('LEFT' ('OUTER')?))? 'JOIN' (
                         ((table | ('(' (select | values) ')')) (('AS')? name)?)
                     )
                     'ON' expression
