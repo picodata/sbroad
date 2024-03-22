@@ -23,7 +23,7 @@ use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::{ColumnPositionMap, Expression, ExpressionId};
+use crate::ir::expression::{ColumnPositionMap, Expression, ExpressionId, Position};
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
@@ -909,6 +909,8 @@ lazy_static::lazy_static! {
     };
 }
 
+/// Number of relational nodes we expect to retrieve column positions for.
+const COLUMN_POSITIONS_CACHE_CAPACITY: usize = 10;
 /// Total average number of Reference (`ReferenceContinuation`) rule nodes that we expect to get
 /// in the parsing result returned from pest. Used for preallocating `reference_to_name_map`.
 const REFERENCES_MAP_CAPACITY: usize = 50;
@@ -930,8 +932,14 @@ where
     /// We use information about row coverage later when handling Row expression and need to know
     /// whether we should uncover our reference.
     pub reference_to_name_map: HashMap<usize, (String, bool)>,
+    /// Flag indicating whether parameter in Tarantool (? mark) style was met.
     met_tnt_param: bool,
+    /// Flag indicating whether parameter in Postgres ($<index>) style was met.
     met_pg_param: bool,
+    /// Map of (relational_node_id, columns_position_map).
+    /// As `ColumnPositionMap` is used for parsing references and as it may be shared for the same
+    /// relational node we cache it so that we don't have to recreate it every time.
+    column_positions_cache: HashMap<usize, ColumnPositionMap>,
 }
 
 impl<'worker, M> ExpressionsWorker<'worker, M>
@@ -946,6 +954,33 @@ where
             reference_to_name_map: HashMap::with_capacity(REFERENCES_MAP_CAPACITY),
             met_tnt_param: false,
             met_pg_param: false,
+            column_positions_cache: HashMap::with_capacity(COLUMN_POSITIONS_CACHE_CAPACITY),
+        }
+    }
+
+    fn build_columns_map(&mut self, plan: &Plan, rel_id: usize) -> Result<(), SbroadError> {
+        if self.column_positions_cache.get(&rel_id).is_none() {
+            let new_map = ColumnPositionMap::new(plan, rel_id)?;
+            self.column_positions_cache.insert(rel_id, new_map);
+        }
+        Ok(())
+    }
+
+    fn columns_map_get_positions(
+        &self,
+        rel_id: usize,
+        col_name: &str,
+        scan_name: Option<&str>,
+    ) -> Result<Position, SbroadError> {
+        let col_map = self
+            .column_positions_cache
+            .get(&rel_id)
+            .expect("Columns map should be in the cache already");
+
+        if let Some(scan_name) = scan_name {
+            col_map.get_with_scan(col_name, Some(scan_name))
+        } else {
+            col_map.get(col_name)
         }
     }
 }
@@ -1396,24 +1431,15 @@ where
                     };
 
                     let plan_left_id = referred_relation_ids.first().expect("Reference must refer to at least one relational node");
-                    let left_col_map = ColumnPositionMap::new(plan, *plan_left_id)?;
+                    worker.build_columns_map(plan, *plan_left_id)?;
 
-                    let left_child_col_position = if let Some(ref scan_name) = scan_name {
-                        left_col_map.get_with_scan(&col_name, Some(scan_name))
-                    } else {
-                        left_col_map.get(&col_name)
-                    };
+                    let left_child_col_position = worker.columns_map_get_positions(*plan_left_id, &col_name, scan_name.as_deref());
 
                     let plan_right_id = referred_relation_ids.get(1);
                     let (ref_id, is_row) = if let Some(plan_right_id) = plan_right_id {
                         // Referencing Join node.
-                        let right_col_map = ColumnPositionMap::new(plan, *plan_right_id)?;
-
-                        let right_child_col_position = if let Some(scan_name) = scan_name {
-                            right_col_map.get_with_scan(&col_name, Some(&scan_name))
-                        } else {
-                            right_col_map.get(&col_name)
-                        };
+                        worker.build_columns_map(plan, *plan_right_id)?;
+                        let right_child_col_position = worker.columns_map_get_positions(*plan_right_id, &col_name, scan_name.as_deref());
 
                         let present_in_left = left_child_col_position.is_ok();
                         let present_in_right = right_child_col_position.is_ok();

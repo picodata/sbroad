@@ -8,6 +8,7 @@
 
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
@@ -785,26 +786,26 @@ impl Positions {
     }
 }
 
-/// (column name, scan name)
-pub(crate) type ColumnName<'column> = (&'column str, Option<&'column str>);
+/// Pair of (Column name, Option(Scan name)).
+pub(crate) type ColumnScanName = (SmolStr, Option<SmolStr>);
 
 /// Map of { column name (with optional scan name) -> on which positions of relational node it's met }.
 /// Built for concrete relational node. Every column from its (relational node) output is
 /// presented as a key in `map`.
 #[derive(Debug)]
-pub(crate) struct ColumnPositionMap<'column> {
+pub(crate) struct ColumnPositionMap {
     /// Binary tree map.
-    map: BTreeMap<ColumnName<'column>, Positions>,
-    /// Max Scan name (in alphabetical order) that some of columns in output can reference to.
+    map: BTreeMap<ColumnScanName, Positions>,
+    /// Max Scan name (in alphabetical order) that some of the columns in output can reference to.
     /// E.g. we have Join node that references to Scan nodes "aa" and "ab". The `max_scan_name` will
     /// be "ab".
     ///
     /// Used for querying binary tree `map` by ranges (see `ColumnPositionMap` `get` method below).
-    max_scan_name: Option<&'column str>,
+    max_scan_name: Option<SmolStr>,
 }
 
-impl<'plan> ColumnPositionMap<'plan> {
-    pub(crate) fn new(plan: &'plan Plan, rel_id: usize) -> Result<Self, SbroadError> {
+impl ColumnPositionMap {
+    pub(crate) fn new(plan: &Plan, rel_id: usize) -> Result<Self, SbroadError> {
         let rel_node = plan.get_relation_node(rel_id)?;
         let output = plan.get_expression_node(rel_node.output())?;
         let alias_ids = output.get_row_list()?;
@@ -813,19 +814,13 @@ impl<'plan> ColumnPositionMap<'plan> {
         let mut max_name = None;
         for (pos, alias_id) in alias_ids.iter().enumerate() {
             let alias = plan.get_expression_node(*alias_id)?;
-            let Expression::Alias { name, .. } = alias else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(format!("alias {alias_id} is not an Alias")),
-                ));
-            };
-            let scan_name = rel_node.scan_name(plan, pos)?;
-
+            let alias_name = SmolStr::from(alias.get_alias_name()?);
+            let scan_name = rel_node.scan_name(plan, pos)?.map(SmolStr::from);
             // For query `select "a", "b" as "a" from (select "a", "b" from t)`
             // column entry "a" will have `Position::Multiple` so that if parent operator will
             // reference "a" we won't be able to identify which of these two columns
             // will it reference.
-            map.entry((name.as_str(), scan_name))
+            map.entry((alias_name, scan_name.clone()))
                 .or_insert_with(Positions::new)
                 .push(pos);
             if max_name < scan_name {
@@ -841,8 +836,8 @@ impl<'plan> ColumnPositionMap<'plan> {
     /// Get position of relational output that corresponds to given `column`.
     /// Note that we don't specify a Scan name here (see `get_with_scan` below for that logic).
     pub(crate) fn get(&self, column: &str) -> Result<Position, SbroadError> {
-        let from_key = &(column, None);
-        let to_key = &(column, self.max_scan_name);
+        let from_key = (SmolStr::from(column), None);
+        let to_key = (SmolStr::from(column), self.max_scan_name.clone());
         let mut iter = self.map.range((Included(from_key), Included(to_key)));
         match (iter.next(), iter.next()) {
             // Map contains several values for the same `column`.
@@ -881,7 +876,7 @@ impl<'plan> ColumnPositionMap<'plan> {
         column: &str,
         scan: Option<&str>,
     ) -> Result<Position, SbroadError> {
-        let key = &(column, scan);
+        let key = &(SmolStr::from(column), scan.map(SmolStr::from));
         if let Some(position) = self.map.get(key) {
             if let Positions::Single(pos) = position {
                 return Ok(*pos);
