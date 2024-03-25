@@ -71,8 +71,8 @@ pub fn normalize_name_from_sql(s: &str) -> String {
 }
 
 /// Transform:
-/// * "s" -> s (uppercased, unquoted)
-/// * s   -> S (same cased, unquoted)
+/// * "s" -> s (same cased, unquoted)
+/// * s   -> S (uppercased, unquoted)
 #[must_use]
 pub fn normalize_name_for_space_api(s: &str) -> String {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {

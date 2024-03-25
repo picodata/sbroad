@@ -14,9 +14,7 @@ fn row_duplicate_column_names() {
     let c1_alias_a = plan.nodes.add_alias("a", c1).unwrap();
     let c2 = plan.nodes.add_const(Value::from(2_u64));
     let c2_alias_a = plan.nodes.add_alias("a", c2).unwrap();
-    plan.nodes
-        .add_row_of_aliases(vec![c1_alias_a, c2_alias_a], None)
-        .unwrap();
+    plan.nodes.add_row(vec![c1_alias_a, c2_alias_a], None);
 }
 
 #[test]

@@ -18,7 +18,7 @@ select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
                 ('GROUP' 'BY' expression (',' expression)*)?
                 ('HAVING' expression)?
                 ((('UNION' 'ALL') | ('EXCEPT' 'DISTINCT'?)) select)?
-projection  ::= '*' | expression (('AS')? name)? | aggregate
+projection  ::= (table '.')? '*' | expression (('AS')? name)? | aggregate
 expression  ::= (table '.')? column
                | expression ('IS' ('NOT')? 'NULL')
                | expression ('OR' | 'AND' | '*' | '/' | '+' | '-' | '=' | '>' | '<' | '>=' | '<=' | ('<>' | '!=')) expression

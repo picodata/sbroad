@@ -1173,7 +1173,7 @@ impl Plan {
         let dist = Distribution::Segment {
             keys: KeySet::from(keys),
         };
-        let output = self.nodes.add_row_of_aliases(refs, Some(dist))?;
+        let output = self.nodes.add_row(refs, Some(dist));
         let insert = Node::Relational(Relational::Insert {
             relation: relation.into(),
             columns,
@@ -1201,7 +1201,7 @@ impl Plan {
                 refs.push(col_alias_id);
             }
 
-            let output_id = nodes.add_row_of_aliases(refs, None)?;
+            let output_id = nodes.add_row(refs, None);
             let scan = Relational::ScanRelation {
                 output: output_id,
                 relation: String::from(table),
@@ -1421,7 +1421,7 @@ impl Plan {
         columns: &[usize],
         is_distinct: bool,
     ) -> Result<usize, SbroadError> {
-        let output = self.nodes.add_row_of_aliases(columns.to_vec(), None)?;
+        let output = self.nodes.add_row(columns.to_vec(), None);
         let proj = Relational::Projection {
             children: vec![child],
             output,

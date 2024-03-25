@@ -417,32 +417,6 @@ impl Nodes {
         self.push(Node::Expression(Expression::Row { list, distribution }))
     }
 
-    /// Adds row node, where every column has an alias.
-    /// Mostly used for relational node output.
-    ///
-    /// # Errors
-    /// - nodes in the list do not exist in the arena
-    /// - some nodes in the list are not aliases
-    pub fn add_row_of_aliases(
-        &mut self,
-        list: Vec<usize>,
-        distribution: Option<Distribution>,
-    ) -> Result<usize, SbroadError> {
-        for alias_id in &list {
-            let node = self.arena.get(*alias_id).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format!("from arena with index {alias_id}"))
-            })?;
-            if let Node::Expression(Expression::Alias { .. }) = node {
-                continue;
-            }
-            return Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some(format!("expected {alias_id}  to be alias, got {node:?}")),
-            ));
-        }
-        Ok(self.add_row(list, distribution))
-    }
-
     /// Adds unary boolean node.
     ///
     /// # Errors
@@ -833,7 +807,7 @@ impl ColumnPositionMap {
         })
     }
 
-    /// Get position of relational output that corresponds to given `column`.
+    /// Get position of relational node output that corresponds to given `column`.
     /// Note that we don't specify a Scan name here (see `get_with_scan` below for that logic).
     pub(crate) fn get(&self, column: &str) -> Result<Position, SbroadError> {
         let from_key = (SmolStr::from(column), None);
@@ -871,6 +845,7 @@ impl ColumnPositionMap {
         }
     }
 
+    /// Get position of relational node output that corresponds to given `scan.column`.
     pub(crate) fn get_with_scan(
         &self,
         column: &str,
@@ -896,6 +871,172 @@ impl ColumnPositionMap {
             format!("with name {column} and scan {scan:?}"),
         ))
     }
+
+    /// Get positions of all columns in relational node output
+    /// that corresponds to given `target_scan_name`.
+    pub(crate) fn get_by_scan_name(
+        &self,
+        target_scan_name: &str,
+    ) -> Result<Vec<Position>, SbroadError> {
+        let mut res = Vec::new();
+        for (_, positions) in self.map.iter().filter(|((_, scan_name), _)| {
+            if let Some(scan_name) = scan_name {
+                scan_name == target_scan_name
+            } else {
+                false
+            }
+        }) {
+            if let Positions::Single(pos) = positions {
+                res.push(*pos);
+            } else {
+                return Err(SbroadError::DuplicatedValue(format!(
+                    "column name for {target_scan_name} scan name is ambiguous"
+                )));
+            }
+        }
+
+        // Note: sorting of usizes doesn't take much time.
+        res.sort_unstable();
+        Ok(res)
+    }
+}
+
+/// Specification of column names/indices that we want to retrieve in `new_columns` call.
+#[derive(Clone)]
+pub enum ColumnsRetrievalSpec<'spec> {
+    Names(Vec<&'spec str>),
+    Indices(Vec<usize>),
+}
+
+/// Specification of targets to retrieve from join within `new_columns` call.
+pub enum JoinTargets<'targets> {
+    Left {
+        columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
+    },
+    Right {
+        columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
+    },
+    Both,
+}
+
+/// Indicator of relational nodes source for `new_columns` call.
+///
+/// If `columns_spec` is met, it means we'd like to retrieve only specific columns.
+/// Otherwise, we retrieve all the columns from children.
+pub enum NewColumnsSource<'targets> {
+    Join {
+        outer_child: usize,
+        inner_child: usize,
+        targets: JoinTargets<'targets>,
+    },
+    /// Enum variant used both for Except and UnionAll operators.
+    ExceptUnion {
+        left_child: usize,
+        right_child: usize,
+    },
+    /// Other relational nodes.
+    Other {
+        child: usize,
+        columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
+    },
+}
+
+/// Iterator needed for unified way of source nodes traversal during `new_columns` call.
+pub struct NewColumnSourceIterator<'iter> {
+    source: &'iter NewColumnsSource<'iter>,
+    index: usize,
+}
+
+impl<'targets> Iterator for NewColumnSourceIterator<'targets> {
+    // Pair of (relational node id, target id)
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<(usize, usize)> {
+        let result = match &self.source {
+            NewColumnsSource::Join {
+                outer_child,
+                inner_child,
+                targets,
+            } => match targets {
+                JoinTargets::Left { .. } => match self.index {
+                    0 => outer_child,
+                    _ => return None,
+                },
+                JoinTargets::Right { .. } => match self.index {
+                    0 => inner_child,
+                    _ => return None,
+                },
+                JoinTargets::Both => match self.index {
+                    0 => outer_child,
+                    1 => inner_child,
+                    _ => return None,
+                },
+            },
+            NewColumnsSource::ExceptUnion { left_child, .. } => match self.index {
+                // For the `UnionAll` and `Except` operators we need only the first
+                // child to get correct column names for a new tuple
+                // (the second child aliases would be shadowed). But each reference should point
+                // to both children to give us additional information
+                // during transformations.
+                0 => left_child,
+                _ => return None,
+            },
+            NewColumnsSource::Other { child, .. } => match self.index {
+                0 => child,
+                _ => return None,
+            },
+        };
+        let res = Some((*result, self.index));
+        self.index += 1;
+        res
+    }
+}
+
+impl<'iter, 'source: 'iter> IntoIterator for &'source NewColumnsSource<'iter> {
+    type Item = (usize, usize);
+    type IntoIter = NewColumnSourceIterator<'iter>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        NewColumnSourceIterator {
+            source: self,
+            index: 0,
+        }
+    }
+}
+
+impl<'source> NewColumnsSource<'source> {
+    fn is_join(&self) -> bool {
+        matches!(self, NewColumnsSource::Join { .. })
+    }
+
+    fn get_columns_spec(&self) -> Option<ColumnsRetrievalSpec> {
+        match self {
+            NewColumnsSource::Join { targets, .. } => match targets {
+                JoinTargets::Left { columns_spec } | JoinTargets::Right { columns_spec } => {
+                    columns_spec.clone()
+                }
+                JoinTargets::Both => None,
+            },
+            NewColumnsSource::ExceptUnion { .. } => None,
+            NewColumnsSource::Other { columns_spec, .. } => columns_spec.clone(),
+        }
+    }
+
+    fn targets(&self) -> Vec<usize> {
+        match self {
+            NewColumnsSource::Join { targets, .. } => match targets {
+                JoinTargets::Left { .. } => vec![0],
+                JoinTargets::Right { .. } => vec![1],
+                JoinTargets::Both => vec![0, 1],
+            },
+            NewColumnsSource::ExceptUnion { .. } => vec![0, 1],
+            NewColumnsSource::Other { .. } => vec![0],
+        }
+    }
+
+    fn iter(&'source self) -> NewColumnSourceIterator {
+        <&Self as IntoIterator>::into_iter(self)
+    }
 }
 
 impl Plan {
@@ -906,170 +1047,92 @@ impl Plan {
 
     /// Returns a list of columns from the children relational nodes outputs.
     ///
-    /// * If `col_names` is empty then copies all the columns
-    ///   from the child node to a new tuple.`need_sharding_column` indicates whether we want
-    ///   to copy sharding columns from the child relational node
-    /// * If `col_names` is not empty then copies only child output columns that correspond
-    ///   to that names.
-    ///
     /// `need_aliases` indicates whether we'd like to copy aliases (their names) from the child
     ///  node or whether we'd like to build raw References list.
-    ///
-    /// The `is_join` option "on" builds an output tuple for the left child and
-    /// appends the right child's one to it. Otherwise we build an output tuple
-    /// only from the first (left) child.
     ///
     /// # Errors
     /// Returns `SbroadError`:
     /// - relation node contains invalid `Row` in the output
-    /// - targets and children are inconsistent
     /// - column names don't exist
     ///
     /// # Panics
-    /// - `targets` has unreachable values
+    /// - Plan is in inconsistent state.
     #[allow(clippy::too_many_lines)]
     pub fn new_columns(
         &mut self,
-        child_rel_nodes: &[usize],
-        is_join: bool,
-        targets: &[usize],
-        col_names: &[&str],
+        source: &NewColumnsSource,
         need_aliases: bool,
         need_sharding_column: bool,
     ) -> Result<Vec<usize>, SbroadError> {
-        // We can pass two target children nodes only in case
-        // of `UnionAll` and `InnerJoin`.
-        // - For the `UnionAll` operator we need only the first
-        // child to get correct column names for a new tuple
-        // (the second child aliases would be shadowed). But each reference should point
-        // to both children to give us additional information
-        // during transformations.
-        if (targets.len() > 2) || targets.is_empty() {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "invalid target length: {}",
-                targets.len()
-            )));
-        }
-        if let Some(max) = targets.iter().max() {
-            if *max >= child_rel_nodes.len() {
-                return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                    "invalid children length: {}",
-                    child_rel_nodes.len()
-                )));
+        // Vec of (column position in child output, column plan id, new_targets).
+        let mut filtered_children_row_list: Vec<(usize, usize, Vec<usize>)> = Vec::new();
+
+        if let Some(columns_spec) = source.get_columns_spec() {
+            let (rel_child, _) = source
+                .iter()
+                .next()
+                .expect("Source must have a single target");
+
+            let relational_op = self.get_relation_node(rel_child)?;
+            let output_id = relational_op.output();
+            let child_node_row_list = self.get_row_list(output_id)?.to_vec();
+
+            let indices: Vec<usize> = match columns_spec {
+                ColumnsRetrievalSpec::Names(names) => {
+                    let col_name_pos_map = ColumnPositionMap::new(self, rel_child)?;
+                    let indices: Result<Vec<usize>, SbroadError> =
+                        names.iter().map(|n| col_name_pos_map.get(n)).collect();
+                    indices?
+                }
+                ColumnsRetrievalSpec::Indices(indices) => indices.clone(),
+            };
+
+            for index in indices {
+                let col_id = *child_node_row_list
+                    .get(index)
+                    .expect("Column id not found under relational child output");
+                let alias_name = self.get_expression_node(col_id)?.get_alias_name()?;
+                if is_sharding_column_name(alias_name) {
+                    continue;
+                }
+                filtered_children_row_list.push((index, col_id, source.targets()));
             }
-        }
-
-        // List of columns to be passed into `Expression::Row`.
-        let mut result_row_list: Vec<usize> = Vec::new();
-
-        if col_names.is_empty() {
-            let required_targets = if is_join { targets } else { &targets[0..1] };
-            for target_idx in required_targets {
-                let target_rel_child_id = targets
-                    .get(*target_idx)
-                    .expect("target child not found among required");
-                let child_node_id = child_rel_nodes
-                    .get(*target_rel_child_id)
-                    .expect("child rel node not found");
-                let rel_node = self.get_relation_node(*child_node_id)?;
-                let child_row_list: Vec<(usize, usize)> = if let Expression::Row { list, .. } =
-                    self.get_expression_node(rel_node.output())?
-                {
-                    if need_sharding_column {
-                        list.iter()
-                            .enumerate()
-                            .map(|(pos, id)| (pos, *id))
-                            .collect()
-                    } else {
-                        let mut new_list = Vec::with_capacity(list.len());
-                        for (pos, expr_id) in list.iter().enumerate() {
-                            if let Expression::Alias { name, .. } =
-                                self.get_expression_node(*expr_id)?
-                            {
-                                if is_sharding_column_name(name.as_str()) {
-                                    continue;
-                                }
-                            }
-                            new_list.push((pos, *expr_id));
-                        }
-                        new_list
-                    }
+        } else {
+            for (child_node_id, target_idx) in source {
+                let new_targets: Vec<usize> = if source.is_join() {
+                    vec![target_idx]
                 } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some("child node is not a row".into()),
-                    ));
+                    source.targets()
                 };
 
-                result_row_list.reserve(child_row_list.len());
-                for (pos, alias_node) in child_row_list {
-                    let expr = self.get_expression_node(alias_node)?;
-                    let name: String = if let Expression::Alias { ref name, .. } = expr {
-                        String::from(name)
-                    } else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Expression,
-                            Some(format!("expression {expr:?} is not an Alias")),
-                        ));
-                    };
-                    let new_targets: Vec<usize> = if is_join {
-                        // Reference in a join tuple first points to the left,
-                        // then to the right child.
-                        vec![*target_idx]
-                    } else {
-                        // Reference in union tuple points to **both** left and right children.
-                        targets.to_vec()
-                    };
-                    let col_type = expr.calculate_type(self)?;
-                    // Adds new references and aliases to arena (if we need them).
-                    let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
-                    if need_aliases {
-                        let a_id = self.nodes.add_alias(&name, r_id)?;
-                        result_row_list.push(a_id);
-                    } else {
-                        result_row_list.push(r_id);
+                let rel_node = self.get_relation_node(child_node_id)?;
+                let child_row_list = self.get_row_list(rel_node.output())?;
+                if need_sharding_column {
+                    child_row_list.iter().enumerate().for_each(|(pos, id)| {
+                        filtered_children_row_list.push((pos, *id, new_targets.clone()));
+                    });
+                } else {
+                    for (pos, expr_id) in child_row_list.iter().enumerate() {
+                        let alias_name = self.get_expression_node(*expr_id)?.get_alias_name()?;
+                        if is_sharding_column_name(alias_name) {
+                            continue;
+                        }
+                        filtered_children_row_list.push((pos, *expr_id, new_targets.clone()));
                     }
                 }
             }
+        };
 
-            return Ok(result_row_list);
-        }
+        // List of columns to be passed into `Expression::Row`.
+        let mut result_row_list: Vec<usize> = Vec::with_capacity(filtered_children_row_list.len());
+        for (pos, alias_node_id, new_targets) in filtered_children_row_list {
+            let alias_expr = self.get_expression_node(alias_node_id)?;
+            let alias_name = String::from(alias_expr.get_alias_name()?);
+            let col_type = alias_expr.calculate_type(self)?;
 
-        result_row_list.reserve(col_names.len());
-        let target_child = targets.first().expect("targets are empty");
-        let child_node = child_rel_nodes
-            .get(*target_child)
-            .expect("child_rel_nodes doesn't contain needed target");
-
-        let mut col_names_set: HashSet<&str, RandomState> =
-            HashSet::with_capacity_and_hasher(col_names.len(), RandomState::new());
-        for col_name in col_names {
-            col_names_set.insert(col_name);
-        }
-
-        // Map of { column name (aliased) from child output -> its index in output }
-        let map = ColumnPositionMap::new(self, *child_node)?;
-
-        // Vec of { `map` key (column name), targets, `map` value (column index in child output) }
-        let mut refs: Vec<(&str, Vec<usize>, usize)> = Vec::with_capacity(col_names.len());
-        for col in col_names {
-            let pos = map.get(col)?;
-            refs.push((col, targets.to_vec(), pos));
-        }
-
-        let relational_op = self.get_relation_node(*child_node)?;
-        let output_id = relational_op.output();
-        let output = self.get_expression_node(output_id)?;
-        let columns = output.clone_row_list()?;
-        for (col, new_targets, pos) in refs {
-            let col_id = *columns
-                .get(pos)
-                .expect("Column id not found under relational child output");
-            let col_expr = self.get_expression_node(col_id)?;
-            let col_type = col_expr.calculate_type(self)?;
             let r_id = self.nodes.add_ref(None, Some(new_targets), pos, col_type);
             if need_aliases {
-                let a_id = self.nodes.add_alias(col, r_id)?;
+                let a_id = self.nodes.add_alias(&alias_name, r_id)?;
                 result_row_list.push(a_id);
             } else {
                 result_row_list.push(r_id);
@@ -1077,6 +1140,29 @@ impl Plan {
         }
 
         Ok(result_row_list)
+    }
+
+    /// New output for a single child node (with aliases)
+    /// specified by indices we should retrieve from given `rel_node` output.
+    ///
+    /// # Errors
+    /// Returns `SbroadError`:
+    /// - child is an inconsistent relational node
+    pub fn add_row_by_indices(
+        &mut self,
+        rel_node: usize,
+        indices: Vec<usize>,
+        need_sharding_column: bool,
+    ) -> Result<usize, SbroadError> {
+        let list = self.new_columns(
+            &NewColumnsSource::Other {
+                child: rel_node,
+                columns_spec: Some(ColumnsRetrievalSpec::Indices(indices)),
+            },
+            true,
+            need_sharding_column,
+        )?;
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// New output for a single child node (with aliases).
@@ -1092,15 +1178,21 @@ impl Plan {
         col_names: &[&str],
         need_sharding_column: bool,
     ) -> Result<usize, SbroadError> {
+        let specific_columns = if col_names.is_empty() {
+            None
+        } else {
+            Some(ColumnsRetrievalSpec::Names(Vec::from(col_names)))
+        };
+
         let list = self.new_columns(
-            &[rel_node],
-            false,
-            &[0],
-            col_names,
+            &NewColumnsSource::Other {
+                child: rel_node,
+                columns_spec: specific_columns,
+            },
             true,
             need_sharding_column,
         )?;
-        self.nodes.add_row_of_aliases(list, None)
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// New output row for union node.
@@ -1113,8 +1205,15 @@ impl Plan {
         left: usize,
         right: usize,
     ) -> Result<usize, SbroadError> {
-        let list = self.new_columns(&[left, right], false, &[0, 1], &[], true, true)?;
-        self.nodes.add_row_of_aliases(list, None)
+        let list = self.new_columns(
+            &NewColumnsSource::ExceptUnion {
+                left_child: left,
+                right_child: right,
+            },
+            true,
+            true,
+        )?;
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// New output row for join node.
@@ -1125,8 +1224,16 @@ impl Plan {
     /// Returns `SbroadError`:
     /// - children are inconsistent relational nodes
     pub fn add_row_for_join(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
-        let list = self.new_columns(&[left, right], true, &[0, 1], &[], true, true)?;
-        self.nodes.add_row_of_aliases(list, None)
+        let list = self.new_columns(
+            &NewColumnsSource::Join {
+                outer_child: left,
+                inner_child: right,
+                targets: JoinTargets::Both,
+            },
+            true,
+            true,
+        )?;
+        Ok(self.nodes.add_row(list, None))
     }
 
     /// Project columns from the child node.
@@ -1142,7 +1249,20 @@ impl Plan {
         child: usize,
         col_names: &[&str],
     ) -> Result<usize, SbroadError> {
-        let list = self.new_columns(&[child], false, &[0], col_names, false, true)?;
+        let specific_columns = if col_names.is_empty() {
+            None
+        } else {
+            Some(ColumnsRetrievalSpec::Names(Vec::from(col_names)))
+        };
+
+        let list = self.new_columns(
+            &NewColumnsSource::Other {
+                child,
+                columns_spec: specific_columns,
+            },
+            false,
+            true,
+        )?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -1196,7 +1316,17 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, SbroadError> {
-        let list = self.new_columns(&[left, right], true, &[0], col_names, false, true)?;
+        let list = self.new_columns(
+            &NewColumnsSource::Join {
+                outer_child: left,
+                inner_child: right,
+                targets: JoinTargets::Left {
+                    columns_spec: Some(ColumnsRetrievalSpec::Names(Vec::from(col_names))),
+                },
+            },
+            false,
+            true,
+        )?;
         Ok(self.nodes.add_row(list, None))
     }
 
@@ -1214,7 +1344,17 @@ impl Plan {
         right: usize,
         col_names: &[&str],
     ) -> Result<usize, SbroadError> {
-        let list = self.new_columns(&[left, right], true, &[1], col_names, false, true)?;
+        let list = self.new_columns(
+            &NewColumnsSource::Join {
+                outer_child: left,
+                inner_child: right,
+                targets: JoinTargets::Right {
+                    columns_spec: Some(ColumnsRetrievalSpec::Names(Vec::from(col_names))),
+                },
+            },
+            false,
+            true,
+        )?;
         Ok(self.nodes.add_row(list, None))
     }
 

@@ -23,7 +23,9 @@ use crate::frontend::Ast;
 use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::{ColumnPositionMap, Expression, ExpressionId, Position};
+use crate::ir::expression::{
+    ColumnPositionMap, ColumnsRetrievalSpec, Expression, ExpressionId, Position,
+};
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
 use crate::ir::tree::traversal::PostOrder;
@@ -37,6 +39,7 @@ use crate::ir::acl::AlterOption;
 use crate::ir::acl::{Acl, GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::block::Block;
+use crate::ir::expression::NewColumnsSource;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
 use sbroad_proc::otm_child_span;
@@ -222,10 +225,10 @@ fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Rule::NewProc => {
-                new_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+                new_name = parse_identifier(ast, *child_id)?;
             }
             Rule::OldProc => {
-                old_name = normalize_name_for_space_api(parse_string_value_node(ast, *child_id)?);
+                old_name = parse_identifier(ast, *child_id)?;
             }
             Rule::ProcParams => {
                 params = Some(parse_proc_params(ast, child_node)?);
@@ -2098,16 +2101,26 @@ impl AbstractSyntaxTree {
                                 proj_columns.push(plan_alias_id);
                             }
                             Rule::Asterisk => {
-                                let plan_asterisk_id =
-                                    plan.add_row_for_output(plan_rel_child_id, &[], false)?;
-                                let Node::Expression(Expression::Row { list, .. }) =
-                                    plan.get_node(plan_asterisk_id).expect(
-                                        "`add_row_for_output` must've added an Expression::Row",
-                                    )
-                                else {
-                                    unreachable!("Row expected under Asterisk")
+                                let table_name_id = ast_column.children.first();
+                                let plan_asterisk_id = if let Some(table_name_id) = table_name_id {
+                                    let table_name =
+                                        parse_normalized_identifier(self, *table_name_id)?;
+
+                                    let col_name_pos_map =
+                                        ColumnPositionMap::new(&plan, plan_rel_child_id)?;
+                                    let filtered_col_ids =
+                                        col_name_pos_map.get_by_scan_name(&table_name)?;
+                                    plan.add_row_by_indices(
+                                        plan_rel_child_id,
+                                        filtered_col_ids,
+                                        false,
+                                    )?
+                                } else {
+                                    plan.add_row_for_output(plan_rel_child_id, &[], false)?
                                 };
-                                for row_id in list {
+
+                                let row_list = plan.get_row_list(plan_asterisk_id)?;
+                                for row_id in row_list {
                                     proj_columns.push(*row_id);
                                 }
                             }
@@ -2339,10 +2352,10 @@ impl AbstractSyntaxTree {
                         pk_columns.push(column.name.as_str());
                     }
                     let pk_column_ids = plan.new_columns(
-                        &[proj_child_id],
-                        false,
-                        &[0],
-                        pk_columns.as_ref(),
+                        &NewColumnsSource::Other {
+                            child: proj_child_id,
+                            columns_spec: Some(ColumnsRetrievalSpec::Names(pk_columns)),
+                        },
                         false,
                         false,
                     )?;
