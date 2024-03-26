@@ -14,6 +14,7 @@ sbroad-core = { path = "../sbroad-core", version = "0.1", features = ["mock"] }
 tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git" }
 pest = "2.0"
 pest_derive = "2.0"
+bincode = "1.3.3"
 
 [dev-dependencies]
 criterion = "0.3"

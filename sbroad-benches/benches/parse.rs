@@ -336,6 +336,39 @@ fn bench_full_parsing(c: &mut Criterion) {
     }
 }
 
+fn bench_serde_clone(c: &mut Criterion) {
+    let mut engine = RouterRuntimeMock::new();
+    let param: u64 = 42;
+    let params = vec![Value::from(param)];
+
+    let target_query = get_query_with_many_references();
+    let query = Query::new(&mut engine, target_query, params).unwrap();
+
+    let plan = query.get_exec_plan().get_ir_plan();
+
+    let bench_name = format!("serializing_plan_many_references");
+    c.bench_function(bench_name.as_str(), |b| {
+        b.iter(|| {
+            let _ser_bytes = bincode::serialize(plan).unwrap();
+        })
+    });
+
+    let bench_name = format!("deserializing_plan_many_references");
+    let ser_bytes: &[u8] = &bincode::serialize(plan).unwrap();
+    c.bench_function(bench_name.as_str(), |b| {
+        b.iter(|| {
+            let _deser_plan: Plan = bincode::deserialize(ser_bytes).unwrap();
+        })
+    });
+
+    let bench_name = format!("cloning_plan_many_references");
+    c.bench_function(bench_name.as_str(), |b| {
+        b.iter(|| {
+            let _new_plan = plan.clone();
+        })
+    });
+}
+
 fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
     let mut query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
@@ -365,5 +398,10 @@ fn bench_ir_build(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_pure_pest_parsing, bench_full_parsing,);
+criterion_group!(
+    benches,
+    bench_pure_pest_parsing,
+    bench_full_parsing,
+    bench_serde_clone
+);
 criterion_main!(benches);
