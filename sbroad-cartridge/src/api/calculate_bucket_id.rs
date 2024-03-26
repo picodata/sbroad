@@ -113,7 +113,7 @@ impl TryFrom<FunctionArgs> for Args {
 }
 
 #[no_mangle]
-pub extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let ret_code = load_config(&COORDINATOR_ENGINE);
     if ret_code != 0 {
         return ret_code;

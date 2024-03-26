@@ -13,7 +13,7 @@ use sbroad::{debug, error};
 
 /// Dispatch parameterized SQL query from coordinator to the segments.
 #[no_mangle]
-pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     let lua_params = match PatternWithParams::try_from(args) {
         Ok(params) => params,
         Err(e) => {
@@ -78,7 +78,7 @@ pub extern "C" fn dispatch_query(f_ctx: FunctionCtx, args: FunctionArgs) -> c_in
 }
 
 #[no_mangle]
-pub extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
+extern "C" fn execute(f_ctx: FunctionCtx, args: FunctionArgs) -> c_int {
     debug!(Option::from("decode_msgpack"), &format!("args: {args:?}"));
     let tuple_buf: Vec<u8> = TupleBuffer::from(Tuple::from(args)).into();
     let (raw_required, mut raw_optional) = match decode_msgpack(tuple_buf.as_slice()) {

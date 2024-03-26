@@ -226,7 +226,11 @@ impl StorageRuntime {
         Ok(result)
     }
 
-    #[allow(unused_variables)]
+    /// Executes provided plan.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if underlying DML/DQL implementation returns `Err`.
     pub fn execute_plan(
         &self,
         required: &mut RequiredData,

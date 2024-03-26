@@ -10,7 +10,7 @@ use sbroad::{executor::engine::QueryCache, log::tarantool_error};
 /// Flush cached configuration in the Rust memory of the coordinator runtime.
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
 #[no_mangle]
-pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
+extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
     COORDINATOR_ENGINE.with(|runtime| match runtime.try_borrow() {
         Ok(runtime) => {
             if let Err(e) = runtime.clear_config() {
@@ -35,7 +35,7 @@ pub extern "C" fn invalidate_coordinator_cache(ctx: FunctionCtx, _: FunctionArgs
 /// Flush cached configuration in the Rust memory of the segment runtime.
 /// This function should be invoked in the Lua cartridge application with `apply_config()`.
 #[no_mangle]
-pub extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
+extern "C" fn invalidate_segment_cache(ctx: FunctionCtx, _: FunctionArgs) -> c_int {
     SEGMENT_ENGINE.with(|runtime| match runtime.try_borrow() {
         Ok(runtime) => {
             if let Err(e) = runtime.clear_config() {

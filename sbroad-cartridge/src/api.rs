@@ -8,9 +8,9 @@ pub struct AsyncCommands {
     pub invalidate_segment_cache: bool,
 }
 
-thread_local!(static COORDINATOR_ENGINE: RefCell<RouterRuntime> = RefCell::new(RouterRuntime::new().unwrap()));
-thread_local!(static SEGMENT_ENGINE: RefCell<StorageRuntime> = RefCell::new(StorageRuntime::new().unwrap()));
-thread_local!(static ASYNC_COMMANDS: RefCell<AsyncCommands> = RefCell::new(AsyncCommands::default()));
+thread_local!(pub static COORDINATOR_ENGINE: RefCell<RouterRuntime> = RefCell::new(RouterRuntime::new().unwrap()));
+thread_local!(pub static SEGMENT_ENGINE: RefCell<StorageRuntime> = RefCell::new(StorageRuntime::new().unwrap()));
+thread_local!(pub static ASYNC_COMMANDS: RefCell<AsyncCommands> = RefCell::new(AsyncCommands::default()));
 
 pub mod calculate_bucket_id;
 pub mod exec_query;
