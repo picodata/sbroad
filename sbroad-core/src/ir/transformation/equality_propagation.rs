@@ -101,6 +101,7 @@ use crate::ir::Plan;
 use crate::otm::child_span;
 use itertools::Itertools;
 use sbroad_proc::otm_child_span;
+use smol_str::ToSmolStr;
 use std::collections::{HashMap, HashSet};
 
 /// A copy of the `Expression::Reference` with traits for the `HashSet`.
@@ -471,7 +472,7 @@ impl Chain {
             (Some(grouped_top_id), None) => Ok(grouped_top_id),
             (None, Some(other_top_id)) => Ok(other_top_id),
             (None, None) => Err(SbroadError::UnexpectedNumberOfValues(
-                "no expressions to merge, expected one or two".to_string(),
+                "no expressions to merge, expected one or two".to_smolstr(),
             )),
         }
     }

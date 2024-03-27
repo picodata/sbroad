@@ -67,9 +67,9 @@ fn dql_on_some(
         }
         Err(e) => {
             error!(Option::from("dql_on_some"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!(
-                "Lua error (IR dispatch): {e:?}"
-            )))
+            Err(SbroadError::LuaError(
+                format!("Lua error (IR dispatch): {e:?}").into(),
+            ))
         }
     }
 }
@@ -94,9 +94,9 @@ fn dml_on_some(
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             error!(Option::from("dml_on_some"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!(
-                "Lua error (IR dispatch): {e:?}"
-            )))
+            Err(SbroadError::LuaError(
+                format!("Lua error (IR dispatch): {e:?}").into(),
+            ))
         }
     }
 }
@@ -128,9 +128,9 @@ fn dql_on_all(
         }
         Err(e) => {
             error!(Option::from("dql_on_all"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!(
-                "Lua error (dispatch IR): {e:?}"
-            )))
+            Err(SbroadError::LuaError(
+                format!("Lua error (dispatch IR): {e:?}").into(),
+            ))
         }
     }
 }
@@ -155,9 +155,9 @@ fn dml_on_all(
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             error!(Option::from("dml_on_all"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!(
-                "Lua error (dispatch IR): {e:?}"
-            )))
+            Err(SbroadError::LuaError(
+                format!("Lua error (dispatch IR): {e:?}").into(),
+            ))
         }
     }
 }
@@ -193,7 +193,7 @@ pub fn exec_ir_on_some_buckets(
     let Buckets::Filtered(bucket_set) = buckets else {
         return Err(SbroadError::Invalid(
             Entity::Buckets,
-            Some(format!("Expected Buckets::Filtered, got {buckets:?}")),
+            Some(format!("Expected Buckets::Filtered, got {buckets:?}").into()),
         ));
     };
     let mut buckets = buckets;
@@ -211,9 +211,12 @@ pub fn exec_ir_on_some_buckets(
     // this way we could implement it for mock runtime for better testing
     let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
     if rs_bucket_vec.is_empty() {
-        return Err(SbroadError::UnexpectedNumberOfValues(format!(
-            "no replica sets were found for the buckets {buckets:?} to execute the query on"
-        )));
+        return Err(SbroadError::UnexpectedNumberOfValues(
+            format!(
+                "no replica sets were found for the buckets {buckets:?} to execute the query on"
+            )
+            .into(),
+        ));
     }
     let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
     let mut rs_message = HashMap::with_capacity(rs_ir.len());
@@ -392,7 +395,7 @@ fn disable_serialize_as_empty_opcode(
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected motion node on id {motion_id}")),
+                Some(format!("expected motion node on id {motion_id}").into()),
             ));
         };
         for op in &mut program.0 {
@@ -436,7 +439,7 @@ fn group(buckets: &Buckets) -> Result<GroupedBuckets, SbroadError> {
         Ok(v) => v,
         Err(e) => {
             error!(Option::from("buckets group"), &format!("{e:?}"));
-            return Err(SbroadError::LuaError(format!("{e:?}")));
+            return Err(SbroadError::LuaError(format!("{e:?}").into()));
         }
     };
 

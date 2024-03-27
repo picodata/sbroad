@@ -1140,6 +1140,7 @@ dependencies = [
  "sbroad-proc",
  "serde",
  "serde_yaml",
+ "smol_str",
  "tarantool",
  "uuid 1.4.0",
  "yaml-rust",

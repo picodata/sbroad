@@ -39,7 +39,7 @@ impl Plan {
             | Node::Acl(..)
             | Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node {node:?} (id {node_id}) is not Block type")),
+                Some(format!("node {node:?} (id {node_id}) is not Block type").into()),
             )),
         }
     }
@@ -58,7 +58,7 @@ impl Plan {
             | Node::Acl(..)
             | Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node {node:?} (id {node_id}) is not Block type")),
+                Some(format!("node {node:?} (id {node_id}) is not Block type").into()),
             )),
         }
     }

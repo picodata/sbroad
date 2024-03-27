@@ -1,5 +1,7 @@
 //! Helper module with functions and structures for the IR.
 
+use smol_str::{SmolStr, ToSmolStr};
+
 use crate::backend::sql::tree::{SyntaxData, SyntaxPlan};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression;
@@ -345,7 +347,7 @@ impl Plan {
                 return Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Plan),
-                    "Unable to get formatted arena string".to_string(),
+                    "Unable to get formatted arena string".to_smolstr(),
                 ));
             }
         }
@@ -374,7 +376,7 @@ impl SyntaxPlan<'_> {
         let top = self.top.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Top id should have already be set for SyntaxPlan",
                 )),
             )
@@ -383,7 +385,7 @@ impl SyntaxPlan<'_> {
             return Err(SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::SyntaxPlan),
-                "Unable to get formatted arena string".to_string(),
+                "Unable to get formatted arena string".to_smolstr(),
             ));
         }
         Ok(buf)

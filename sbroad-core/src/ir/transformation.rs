@@ -42,19 +42,25 @@ impl Plan {
         if !self.is_trivalent(left_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!(
-                    "Left expression is not a boolean expression or NULL: {:?}",
-                    self.get_expression_node(left_expr_id)?
-                )),
+                Some(
+                    format!(
+                        "Left expression is not a boolean expression or NULL: {:?}",
+                        self.get_expression_node(left_expr_id)?
+                    )
+                    .into(),
+                ),
             ));
         }
         if !self.is_trivalent(right_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!(
-                    "Right expression is not a boolean expression or NULL: {:?}",
-                    self.get_expression_node(right_expr_id)?
-                )),
+                Some(
+                    format!(
+                        "Right expression is not a boolean expression or NULL: {:?}",
+                        self.get_expression_node(right_expr_id)?
+                    )
+                    .into(),
+                ),
             ));
         }
         self.add_cond(left_expr_id, Bool::And, right_expr_id)
@@ -72,19 +78,25 @@ impl Plan {
         if !self.is_trivalent(left_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!(
-                    "left expression is not a boolean expression or NULL: {:?}",
-                    self.get_expression_node(left_expr_id)?
-                )),
+                Some(
+                    format!(
+                        "left expression is not a boolean expression or NULL: {:?}",
+                        self.get_expression_node(left_expr_id)?
+                    )
+                    .into(),
+                ),
             ));
         }
         if !self.is_trivalent(right_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!(
-                    "right expression is not a boolean expression or NULL: {:?}",
-                    self.get_expression_node(right_expr_id)?
-                )),
+                Some(
+                    format!(
+                        "right expression is not a boolean expression or NULL: {:?}",
+                        self.get_expression_node(right_expr_id)?
+                    )
+                    .into(),
+                ),
             ));
         }
         self.add_cond(left_expr_id, Bool::Or, right_expr_id)

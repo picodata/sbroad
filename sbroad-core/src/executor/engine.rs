@@ -2,6 +2,8 @@
 //!
 //! Traits that define an execution engine interface.
 
+use smol_str::SmolStr;
+
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
 use std::any::Any;
@@ -54,7 +56,7 @@ pub trait Metadata: Sized {
     /// # Errors
     /// - Metadata does not contain space
     /// - Metadata contains incorrect sharding key format
-    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError>;
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<SmolStr>, SbroadError>;
 
     /// Provides vector of the sharding key column positions in a tuple or an error
     ///
@@ -93,7 +95,7 @@ pub trait StorageCache {
     fn clear(&mut self) -> Result<(), SbroadError>;
 }
 
-pub type TableVersionMap = HashMap<String, u64>;
+pub type TableVersionMap = HashMap<SmolStr, u64>;
 
 pub trait QueryCache {
     type Cache;
@@ -159,8 +161,8 @@ pub trait Router: QueryCache {
     /// - Columns are not present in the sharding key of the space.
     fn extract_sharding_key_from_map<'rec>(
         &self,
-        space: String,
-        args: &'rec HashMap<String, Value>,
+        space: SmolStr,
+        args: &'rec HashMap<SmolStr, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError>;
 
     /// Extract a list of the sharding key values from a tuple for the given space.
@@ -169,7 +171,7 @@ pub trait Router: QueryCache {
     /// - Internal error in the table (should never happen, but we recheck).
     fn extract_sharding_key_from_tuple<'rec>(
         &self,
-        space: String,
+        space: SmolStr,
         args: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError>;
 

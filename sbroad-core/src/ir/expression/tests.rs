@@ -1,6 +1,7 @@
 use crate::ir::operator::Arithmetic;
 use crate::ir::tests::{column_integer_user_non_null, sharding_column};
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 
 use crate::ir::relation::{Column, SpaceEngine, Table, Type};
 use crate::ir::value::Value;
@@ -25,7 +26,7 @@ fn rel_nodes_from_reference_in_scan() {
 
     let t = Table::new_sharded(
         "t",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -47,7 +48,7 @@ fn rel_nodes_from_reference_in_proj() {
 
     let t = Table::new_sharded(
         "t",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -65,7 +66,7 @@ fn rel_nodes_from_reference_in_proj() {
 
 #[test]
 fn derive_expr_type() {
-    fn column(name: String, ty: Type) -> Column {
+    fn column(name: SmolStr, ty: Type) -> Column {
         Column {
             name,
             r#type: ty,
@@ -78,12 +79,12 @@ fn derive_expr_type() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column(String::from("a"), Type::Integer),
-            column(String::from("b"), Type::Integer),
-            column(String::from("c"), Type::Unsigned),
-            column(String::from("d"), Type::Decimal),
-            column(String::from("e"), Type::Decimal),
-            column(String::from("f"), Type::Double),
+            column(SmolStr::from("a"), Type::Integer),
+            column(SmolStr::from("b"), Type::Integer),
+            column(SmolStr::from("c"), Type::Unsigned),
+            column(SmolStr::from("d"), Type::Decimal),
+            column(SmolStr::from("e"), Type::Decimal),
+            column(SmolStr::from("f"), Type::Double),
             sharding_column(),
         ],
         &["a"],

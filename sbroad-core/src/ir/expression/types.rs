@@ -1,3 +1,5 @@
+use smol_str::ToSmolStr;
+
 use crate::{
     errors::{Entity, SbroadError},
     ir::{expression::Expression, relation::Type, Node, Plan},
@@ -9,22 +11,22 @@ impl Plan {
             Node::Expression(expr) => expr.calculate_type(self),
             Node::Relational(relational) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("relational node {relational:?} has no type")),
+                Some(format!("relational node {relational:?} has no type").into()),
             )),
             // Parameter nodes must recalculate their type during
             // binding (see `bind_params` function).
             Node::Parameter => Ok(Type::Scalar),
             Node::Ddl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("DDL node has no type".to_string()),
+                Some("DDL node has no type".to_smolstr()),
             )),
             Node::Acl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("ACL node has no type".to_string()),
+                Some("ACL node has no type".to_smolstr()),
             )),
             Node::Block(_) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("code block node has no type".to_string()),
+                Some("code block node has no type".to_smolstr()),
             )),
         }
     }
@@ -59,7 +61,7 @@ impl Expression {
                     _ => Err(SbroadError::Invalid(
                         Entity::Expression,
                         Some(format!("types {left_type} and {right_type} are not supported for arithmetic expression ({:?} {op:?} {:?})",
-                        plan.get_node(*left)?, plan.get_node(*right)?)),
+                        plan.get_node(*left)?, plan.get_node(*right)?).into()),
                     )),
                 }
             }
@@ -107,7 +109,7 @@ impl Expression {
             let parent_id = parent.ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Expression,
-                    Some("reference expression has no parent".to_string()),
+                    Some("reference expression has no parent".to_smolstr()),
                 )
             })?;
             let parent_rel = plan.get_relation_node(parent_id)?;
@@ -118,15 +120,18 @@ impl Expression {
                 let target_children = parent_rel.children().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,
-                        Some("reference expression has no target relation".to_string()),
+                        Some("reference expression has no target relation".to_smolstr()),
                     )
                 })?;
                 let target_rel_id = *target_children.get(*target).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,
-                        Some(format!(
-                            "reference expression has no target relation at position {target}"
-                        )),
+                        Some(
+                            format!(
+                                "reference expression has no target relation at position {target}"
+                            )
+                            .into(),
+                        ),
                     )
                 })?;
                 let target_rel = plan.get_relation_node(target_rel_id)?;
@@ -134,9 +139,12 @@ impl Expression {
                 let column_id = *columns.get(*position).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,
-                        Some(format!(
-                            "reference expression has no target column at position {position}"
-                        )),
+                        Some(
+                            format!(
+                                "reference expression has no target column at position {position}"
+                            )
+                            .into(),
+                        ),
                     )
                 })?;
                 let col_expr = plan.get_expression_node(column_id)?;

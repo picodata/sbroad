@@ -39,6 +39,7 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
 use sbroad_proc::otm_child_span;
+use smol_str::ToSmolStr;
 
 pub mod bucket;
 pub mod engine;
@@ -120,7 +121,7 @@ where
 
         let mut plan = Plan::new();
         let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Create, Some(Entity::Query), format!("{e:?}"))
+            SbroadError::FailedTo(Action::Create, Some(Entity::Query), format!("{e:?}").into())
         })?;
         if let Some(cached_plan) = cache.get(&key)? {
             plan = cached_plan.clone();
@@ -135,7 +136,7 @@ where
                     if tbl.is_system() {
                         continue;
                     }
-                    let normalized = normalize_name_for_space_api(tbl_name);
+                    let normalized = normalize_name_for_space_api(tbl_name).to_smolstr();
                     let version = coordinator.get_table_version(normalized.as_str())?;
                     table_version_map.insert(normalized, version);
                 }

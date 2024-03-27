@@ -4,6 +4,7 @@ use crate::ir::expression::Expression;
 use crate::ir::relation::Type;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, ToSmolStr};
 
 use super::expression::FunctionFeature;
 
@@ -19,14 +20,14 @@ pub enum Behavior {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Function {
-    pub name: String,
+    pub name: SmolStr,
     pub behavior: Behavior,
     pub func_type: Type,
 }
 
 impl Function {
     #[must_use]
-    pub fn new(name: String, behavior: Behavior, func_type: Type) -> Self {
+    pub fn new(name: SmolStr, behavior: Behavior, func_type: Type) -> Self {
         Self {
             name,
             behavior,
@@ -35,7 +36,7 @@ impl Function {
     }
 
     #[must_use]
-    pub fn new_stable(name: String, func_type: Type) -> Self {
+    pub fn new_stable(name: SmolStr, func_type: Type) -> Self {
         Self::new(name, Behavior::Stable, func_type)
     }
 
@@ -60,11 +61,11 @@ impl Plan {
         if !function.is_stable() {
             return Err(SbroadError::Invalid(
                 Entity::SQLFunction,
-                Some(format!("function {} is not stable", function.name)),
+                Some(format!("function {} is not stable", function.name).into()),
             ));
         }
         let func_expr = Expression::StableFunction {
-            name: function.name.to_string(),
+            name: function.name.to_smolstr(),
             children,
             feature,
             func_type: function.func_type.clone(),
@@ -91,7 +92,7 @@ impl Plan {
                         Entity::Query,
                         Some(format!(
                             "GROUP_CONCAT aggregate function can have one or two arguments at most. Got: {} arguments", children.len()
-                        )),
+                        ).into()),
                     ));
                 }
                 if is_distinct && children.len() == 2 {
@@ -99,7 +100,7 @@ impl Plan {
                         Entity::Query,
                         Some(format!(
                             "distinct GROUP_CONCAT aggregate function has only one argument. Got: {} arguments", children.len()
-                        )),
+                        ).into()),
                     ));
                 }
             }
@@ -107,7 +108,7 @@ impl Plan {
                 if children.len() != 1 {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
-                        Some(format!("Expected one argument for aggregate: {function}.")),
+                        Some(format!("Expected one argument for aggregate: {function}.").into()),
                     ));
                 }
             }
@@ -118,7 +119,7 @@ impl Plan {
             None
         };
         let func_expr = Expression::StableFunction {
-            name: function.to_lowercase(),
+            name: function.to_lowercase().to_smolstr(),
             children,
             feature,
             func_type: Type::from(kind),

@@ -6,6 +6,7 @@ use crate::ir::expression::Expression;
 use crate::ir::relation::Type as RelationType;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, ToSmolStr};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -45,7 +46,7 @@ impl TryFrom<&Rule> for Type {
             Rule::TypeUnsigned => Ok(Type::Unsigned),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some(format!("{ast_type:?}")),
+                Some(format!("{ast_type:?}").into()),
             )),
         }
     }
@@ -69,35 +70,35 @@ impl TryFrom<&RelationType> for Type {
             RelationType::Uuid => Ok(Type::Uuid),
             RelationType::Array => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some("array int the cast operation".to_string()),
+                Some("array int the cast operation".to_smolstr()),
             )),
         }
     }
 }
 
-impl From<&Type> for String {
+impl From<&Type> for SmolStr {
     fn from(t: &Type) -> Self {
         match t {
-            Type::Any => "any".to_string(),
-            Type::Map => "map".to_string(),
-            Type::Boolean => "bool".to_string(),
-            Type::Decimal => "decimal".to_string(),
-            Type::Double => "double".to_string(),
-            Type::Integer => "int".to_string(),
-            Type::Number => "number".to_string(),
-            Type::Scalar => "scalar".to_string(),
-            Type::String => "string".to_string(),
-            Type::Text => "text".to_string(),
-            Type::Uuid => "uuid".to_string(),
-            Type::Unsigned => "unsigned".to_string(),
-            Type::Varchar(length) => format!("varchar({length})"),
+            Type::Any => "any".to_smolstr(),
+            Type::Map => "map".to_smolstr(),
+            Type::Boolean => "bool".to_smolstr(),
+            Type::Decimal => "decimal".to_smolstr(),
+            Type::Double => "double".to_smolstr(),
+            Type::Integer => "int".to_smolstr(),
+            Type::Number => "number".to_smolstr(),
+            Type::Scalar => "scalar".to_smolstr(),
+            Type::String => "string".to_smolstr(),
+            Type::Text => "text".to_smolstr(),
+            Type::Uuid => "uuid".to_smolstr(),
+            Type::Unsigned => "unsigned".to_smolstr(),
+            Type::Varchar(length) => format!("varchar({length})").to_smolstr(),
         }
     }
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", String::from(self))
+        write!(f, "{}", SmolStr::from(self))
     }
 }
 

@@ -353,7 +353,7 @@ pub fn extract_params<S: ::std::hash::BuildHasher>(
     id: Option<String>,
     pattern: &str,
 ) -> (String, Context) {
-    let id = id.unwrap_or_else(|| query_id(pattern));
+    let id = id.unwrap_or_else(|| query_id(pattern).to_string());
     let ctx = if let Some(mut carrier) = context {
         debug!(
             Option::from("parameters extraction"),

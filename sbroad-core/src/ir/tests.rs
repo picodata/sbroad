@@ -1,6 +1,7 @@
 use super::*;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 use std::fs;
 use std::path::Path;
 
@@ -12,7 +13,7 @@ use std::path::Path;
 /// Used only for tests purposes.
 #[must_use]
 #[cfg(test)]
-pub fn column_integer_user_non_null(name: String) -> Column {
+pub fn column_integer_user_non_null(name: SmolStr) -> Column {
     Column {
         name,
         r#type: Type::Integer,
@@ -27,7 +28,7 @@ pub fn column_integer_user_non_null(name: String) -> Column {
 /// Used only for tests purposes.
 #[must_use]
 #[cfg(test)]
-pub fn column_user_non_null(name: String, r#type: Type) -> Column {
+pub fn column_user_non_null(name: SmolStr, r#type: Type) -> Column {
     Column {
         name,
         r#type,
@@ -45,7 +46,7 @@ pub fn column_user_non_null(name: String, r#type: Type) -> Column {
 #[cfg(test)]
 pub fn sharding_column() -> Column {
     Column {
-        name: String::from("bucket_id"),
+        name: SmolStr::from("bucket_id"),
         r#type: Type::Unsigned,
         role: ColumnRole::Sharding,
         is_nullable: true,

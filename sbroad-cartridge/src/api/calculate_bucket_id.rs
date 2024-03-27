@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use sbroad::errors::{Entity, SbroadError};
 use tarantool::tuple::{RawBytes, Tuple};
-
+use smol_str::{format_smolstr, SmolStr};
 use serde::{de::Deserializer, Deserialize, Serialize};
 
 use crate::api::helper::load_config;
@@ -15,10 +15,10 @@ use sbroad::ir::value::{LuaValue, Value};
 #[derive(Debug, Default, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values
 pub struct ArgsMap {
-    /// A key:value `HashMap` with key String and custom type Value
-    pub rec: HashMap<String, Value>,
-    /// Space name as `String`
-    pub space: String,
+    /// A key:value `HashMap` with key SmolStr and custom type Value
+    pub rec: HashMap<SmolStr, Value>,
+    /// Space name as `SmolStr`
+    pub space: SmolStr,
 }
 
 /// Custom deserializer of the input function arguments
@@ -29,10 +29,10 @@ impl<'de> Deserialize<'de> for ArgsMap {
     {
         #[derive(Deserialize)]
         #[serde(rename = "FunctionArgs")]
-        struct StructHelper(HashMap<String, LuaValue>, String);
+        struct StructHelper(HashMap<SmolStr, LuaValue>, SmolStr);
 
         let mut struct_helper = StructHelper::deserialize(deserializer)?;
-        let rec: HashMap<String, Value> = struct_helper
+        let rec: HashMap<SmolStr, Value> = struct_helper
             .0
             .drain()
             .map(|(key, encoded)| (key, Value::from(encoded)))
@@ -50,8 +50,8 @@ impl<'de> Deserialize<'de> for ArgsMap {
 pub struct ArgsTuple {
     /// Vec of custom type Value
     pub rec: Vec<Value>,
-    /// Space name as `String`
-    pub space: String,
+    /// Space name as `SmolStr`
+    pub space: SmolStr,
 }
 
 /// Custom deserializer of the input function arguments
@@ -62,7 +62,7 @@ impl<'de> Deserialize<'de> for ArgsTuple {
     {
         #[derive(Deserialize)]
         #[serde(rename = "FunctionArgs")]
-        struct StructHelper(Vec<LuaValue>, String);
+        struct StructHelper(Vec<LuaValue>, SmolStr);
 
         let mut struct_helper = StructHelper::deserialize(deserializer)?;
         let rec: Vec<Value> = struct_helper.0.drain(..).map(Value::from).collect();
@@ -78,7 +78,7 @@ impl<'de> Deserialize<'de> for ArgsTuple {
 /// Lua function params
 pub struct ArgsString {
     /// The input string for calculating bucket
-    pub rec: String,
+    pub rec: SmolStr,
 }
 
 enum Args {
@@ -103,7 +103,7 @@ impl TryFrom<&Tuple> for Args {
 
         Err(SbroadError::ParsingError(
             Entity::Args,
-            format!(
+            format_smolstr!(
                 "expected string, tuple with a space name, or map with a space name as an argument, \
                 got args {:?}",
                 &tuple

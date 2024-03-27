@@ -11,6 +11,7 @@ use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, Type};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
+use smol_str::SmolStr;
 use std::any::Any;
 use std::fmt::Display;
 use std::num::TryFromIntError;
@@ -44,7 +45,7 @@ impl<T: Scalar> ColumnStats<T> {
             }
             _ => Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Unexpected boolean operator met for selectivity estimation: {operator:?}",
                 )),
             )),
@@ -103,7 +104,7 @@ impl<T: Scalar> ColumnStats<T> {
             ),
             _ => Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Unexpected boolean operator met for selectivity estimation: {operator:?}",
                 )),
             )),
@@ -161,9 +162,12 @@ fn downcast_column_stats<'stats, T: Scalar>(
     } else {
         Err(SbroadError::Invalid(
             Entity::Statistics,
-            Some(format!(
-                "Unable to downcast {column_name} column statistics to {column_type:?} type"
-            )),
+            Some(
+                format!(
+                    "Unable to downcast {column_name} column statistics to {column_type:?} type"
+                )
+                .into(),
+            ),
         ))
     }
 }
@@ -178,7 +182,7 @@ pub fn decimal_from_str(value: &dyn Display) -> Result<Decimal, SbroadError> {
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to cast {value} to decimal")),
+            Some(format!("Unable to cast {value} to decimal").into()),
         ))
     }
 }
@@ -193,7 +197,7 @@ pub fn double_from_str(value: &dyn Display) -> Result<Double, SbroadError> {
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to cast {value} to double")),
+            Some(format!("Unable to cast {value} to double").into()),
         ))
     }
 }
@@ -202,7 +206,7 @@ impl From<DecimalToIntError> for SbroadError {
     fn from(_: DecimalToIntError) -> Self {
         Self::Invalid(
             Entity::Value,
-            Some(String::from("Unable to convert decimal to int")),
+            Some(SmolStr::from("Unable to convert decimal to int")),
         )
     }
 }
@@ -211,7 +215,7 @@ impl From<TryFromIntError> for SbroadError {
     fn from(_: TryFromIntError) -> Self {
         Self::Invalid(
             Entity::Value,
-            Some(String::from("Unable to convert int into wanted type")),
+            Some(SmolStr::from("Unable to convert int into wanted type")),
         )
     }
 }
@@ -246,18 +250,17 @@ pub fn calculate_filter_selectivity(
     let column = table.columns.get(*colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,
-            Some(format!(
-                "Column with name {table_name} is not found in metadata",
-            )),
+            Some(format!("Column with name {table_name} is not found in metadata",).into()),
         )
     })?;
     let column_type = &column.r#type;
 
     let types_mismatch_error = Err(SbroadError::Invalid(
         Entity::Statistics,
-        Some(format!(
-            "Column type {column_type:?} mismatches with constant type {constant:?}"
-        )),
+        Some(
+            format!("Column type {column_type:?} mismatches with constant type {constant:?}")
+                .into(),
+        ),
     ));
 
     match column_type {
@@ -334,7 +337,7 @@ pub fn calculate_filter_selectivity(
         }
         Type::Array | Type::Any | Type::Map => Err(SbroadError::Invalid(
             Entity::Statistics,
-            Some(String::from(
+            Some(SmolStr::from(
                 "Unable to calculate selectivity for array type column",
             )),
         )),
@@ -367,9 +370,7 @@ pub fn calculate_condition_selectivity(
     let left_column = left_table.columns.get(*left_colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,
-            Some(format!(
-                "Column with name {left_table_name} is not found in metadata",
-            )),
+            Some(format!("Column with name {left_table_name} is not found in metadata",).into()),
         )
     })?;
     let left_column_type = &left_column.r#type;
@@ -386,18 +387,19 @@ pub fn calculate_condition_selectivity(
     let right_column = right_table.columns.get(*right_colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,
-            Some(format!(
-                "Column with name {right_table_name} is not found in metadata",
-            )),
+            Some(format!("Column with name {right_table_name} is not found in metadata",).into()),
         )
     })?;
     let right_column_type = &right_column.r#type;
 
     let types_mismatch_error = Err(SbroadError::Invalid(
         Entity::Statistics,
-        Some(format!(
-            "Column types {left_column_type:?} and {right_column_type:?} doesn't correspond."
-        )),
+        Some(
+            format!(
+                "Column types {left_column_type:?} and {right_column_type:?} doesn't correspond."
+            )
+            .into(),
+        ),
     ));
 
     match (left_column_type, right_column_type) {

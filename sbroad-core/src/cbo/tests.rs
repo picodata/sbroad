@@ -1,3 +1,5 @@
+use smol_str::SmolStr;
+
 use crate::cbo::histogram::HistogramBuckets;
 use crate::cbo::histogram::{Histogram, Scalar};
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
@@ -20,7 +22,7 @@ pub fn construct_i64_buckets(
     let casted_buckets_count = i64::try_from(buckets_count).map_err(|_| {
         SbroadError::Invalid(
             Entity::Value,
-            Some(String::from("Unable to cast buckets_count to i64")),
+            Some(SmolStr::from("Unable to cast buckets_count to i64")),
         )
     })?;
     let bucket_len = (value_max - value_min) / casted_buckets_count;
@@ -29,7 +31,7 @@ pub fn construct_i64_buckets(
         let next_index = i64::try_from(i + 1).map_err(|_| {
             SbroadError::Invalid(
                 Entity::Value,
-                Some(String::from("Unable to cast next index to i64")),
+                Some(SmolStr::from("Unable to cast next index to i64")),
             )
         })?;
         let adding = next_index * bucket_len;
@@ -76,7 +78,7 @@ pub fn get_table_column_stats_upcasted<T>(
 
     let column_stats_upcasted = coordinator
         .get_column_stats(&TableColumnPair::new(
-            String::from(table_name),
+            SmolStr::from(table_name),
             column_index,
         ))
         .unwrap()
@@ -99,7 +101,7 @@ pub fn get_table_column_stats_downcasted<T: Scalar>(
 
     let column_stats_upcasted = coordinator
         .get_column_stats(&TableColumnPair::new(
-            String::from(table_name),
+            SmolStr::from(table_name),
             column_index,
         ))
         .unwrap()

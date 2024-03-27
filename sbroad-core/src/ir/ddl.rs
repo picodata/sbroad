@@ -113,7 +113,7 @@ impl Ddl {
         .map_err(|e| {
             SbroadError::Invalid(
                 Entity::SpaceMetadata,
-                Some(format!("timeout parsing error {e:?}")),
+                Some(format!("timeout parsing error {e:?}").into()),
             )
         })
     }
@@ -131,7 +131,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}")),
+                Some(format!("node is not DDL type: {node:?}").into()),
             )),
         }
     }
@@ -147,7 +147,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}")),
+                Some(format!("node is not DDL type: {node:?}").into()),
             )),
         }
     }
@@ -165,7 +165,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}")),
+                Some(format!("node is not DDL type: {node:?}").into()),
             )),
         }
     }

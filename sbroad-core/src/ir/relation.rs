@@ -8,6 +8,7 @@
 //! * Relation, representing named tables (`Relations` as a map of { name -> table })
 
 use ahash::AHashMap;
+use smol_str::{SmolStr, ToSmolStr};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Formatter};
@@ -124,7 +125,7 @@ impl TryFrom<SpaceFieldType> for Type {
             | SpaceFieldType::Interval
             | SpaceFieldType::Datetime => Err(SbroadError::NotImplemented(
                 Entity::Type,
-                field_type.to_string(),
+                field_type.to_smolstr(),
             )),
         }
     }
@@ -151,7 +152,7 @@ impl Type {
             "array" => Ok(Type::Array),
             "any" => Ok(Type::Any),
             "map" => Ok(Type::Map),
-            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_string())),
+            v => Err(SbroadError::NotImplemented(Entity::Type, v.to_smolstr())),
         }
     }
 
@@ -169,7 +170,7 @@ impl Type {
             "any" => Ok(Type::Any),
             v => Err(SbroadError::Invalid(
                 Entity::Type,
-                Some(format!("Unexpected type {v} met during ")),
+                Some(format!("Unexpected type {v} met during ").into()),
             )),
         }
     }
@@ -223,7 +224,7 @@ pub enum ColumnRole {
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct Column {
     /// Column name.
-    pub name: String,
+    pub name: SmolStr,
     /// Column type.
     pub r#type: Type,
     /// Column role.
@@ -236,7 +237,7 @@ pub struct Column {
 impl Default for Column {
     fn default() -> Self {
         Column {
-            name: String::default(),
+            name: SmolStr::default(),
             r#type: Type::default(),
             role: ColumnRole::default(),
             is_nullable: true,
@@ -449,7 +450,7 @@ impl TryFrom<&str> for SpaceEngine {
             _ => Err(SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::SpaceEngine),
-                format!("unsupported space engine type: {value}"),
+                format!("unsupported space engine type: {value}").into(),
             )),
         }
     }
@@ -469,10 +470,13 @@ impl<'column> ColumnPositions<'column> {
         for (pos, col) in columns.iter().enumerate() {
             let name = col.name.as_str();
             if let Some(old_pos) = map.insert(name, pos) {
-                return Err(SbroadError::DuplicatedValue(format!(
-                    r#"Table "{}" has a duplicating column "{}" at positions {} and {}"#,
-                    table, name, old_pos, pos,
-                )));
+                return Err(SbroadError::DuplicatedValue(
+                    format!(
+                        r#"Table "{}" has a duplicating column "{}" at positions {} and {}"#,
+                        table, name, old_pos, pos,
+                    )
+                    .into(),
+                ));
             }
         }
         map.shrink_to_fit();
@@ -528,7 +532,7 @@ fn table_new_impl<'column>(
                     SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::Column),
-                        format!("column {name} not found at position {pos}"),
+                        format!("column {name} not found at position {pos}").into(),
                     )
                 })?;
                 Ok(pos)
@@ -547,7 +551,7 @@ pub struct Table {
     /// Primary key of the table (column positions).
     pub primary_key: Key,
     /// Unique table name.
-    pub name: String,
+    pub name: SmolStr,
     pub kind: TableKind,
 }
 
@@ -632,7 +636,7 @@ impl Table {
                 return Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Table),
-                    format!("{e:?}"),
+                    format!("{e:?}").into(),
                 ))
             }
         };
@@ -657,7 +661,7 @@ impl Table {
             if !in_range {
                 return Err(SbroadError::Invalid(
                     Entity::Value,
-                    Some(format!("key positions must be less than {}", cols.len())),
+                    Some(format!("key positions must be less than {}", cols.len()).into()),
                 ));
             }
         }
@@ -686,10 +690,9 @@ impl Table {
             Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
                 "Table has more than one bucket_id column".into(),
             )),
-            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "Table {} has no bucket_id columns",
-                self.name
-            ))),
+            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(
+                format!("Table {} has no bucket_id columns", self.name).into(),
+            )),
         }
     }
 
@@ -710,9 +713,9 @@ impl Table {
     ///
     /// # Errors
     /// - Table internal inconsistency.
-    pub fn get_sharding_column_names(&self) -> Result<Vec<String>, SbroadError> {
+    pub fn get_sharding_column_names(&self) -> Result<Vec<SmolStr>, SbroadError> {
         let sk = self.get_sk()?;
-        let mut names: Vec<String> = Vec::with_capacity(sk.len());
+        let mut names: Vec<SmolStr> = Vec::with_capacity(sk.len());
         for pos in sk {
             names.push(
                 self.columns
@@ -723,7 +726,8 @@ impl Table {
                             format!(
                                 "(distribution column) at position {} for Table {}",
                                 *pos, self.name
-                            ),
+                            )
+                            .into(),
                         )
                     })?
                     .name
@@ -745,7 +749,7 @@ impl Table {
             } => Ok(&shard_key.positions),
             TableKind::GlobalSpace | TableKind::SystemSpace => Err(SbroadError::Invalid(
                 Entity::Table,
-                Some(format!("expected sharded table. Name: {}", self.name)),
+                Some(format!("expected sharded table. Name: {}", self.name).into()),
             )),
         }
     }
@@ -764,13 +768,14 @@ impl Table {
                     format!(
                         "(distribution column) at position {} for Table {}",
                         *pos, self.name
-                    ),
+                    )
+                    .into(),
                 )
             })?;
             let field_no = u32::try_from(*pos).map_err(|e| {
                 SbroadError::Invalid(
                     Entity::Table,
-                    Some(format!("sharding key (position {pos}) error: {e}")),
+                    Some(format!("sharding key (position {pos}) error: {e}").into()),
                 )
             })?;
             let part = KeyDefPart {
@@ -781,7 +786,7 @@ impl Table {
             };
             parts.push(part);
         }
-        KeyDef::new(&parts).map_err(|e| SbroadError::Invalid(Entity::Table, Some(e.to_string())))
+        KeyDef::new(&parts).map_err(|e| SbroadError::Invalid(Entity::Table, Some(e.to_smolstr())))
     }
 
     #[must_use]
@@ -792,7 +797,7 @@ impl Table {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Relations {
-    pub tables: HashMap<String, Table>,
+    pub tables: HashMap<SmolStr, Table>,
 }
 
 impl Default for Relations {
@@ -818,7 +823,7 @@ impl Relations {
         self.tables.get(name)
     }
 
-    pub fn drain(&mut self) -> HashMap<String, Table> {
+    pub fn drain(&mut self) -> HashMap<SmolStr, Table> {
         std::mem::take(&mut self.tables)
     }
 }
@@ -830,18 +835,24 @@ impl Relations {
 pub fn space_pk_columns(
     space_name: &str,
     space_columns: &[Column],
-) -> Result<Vec<String>, SbroadError> {
+) -> Result<Vec<SmolStr>, SbroadError> {
     let space = Space::find(space_name)
-        .ok_or_else(|| SbroadError::NotFound(Entity::Space, space_name.to_string()))?;
+        .ok_or_else(|| SbroadError::NotFound(Entity::Space, space_name.to_smolstr()))?;
     let index: Space = SystemSpace::Index.into();
     let tuple = index
         .get(&[space.id(), 0])
-        .map_err(|e| SbroadError::FailedTo(Action::Get, Some(Entity::Index), format!("{e}")))?
+        .map_err(|e| {
+            SbroadError::FailedTo(Action::Get, Some(Entity::Index), format!("{e}").into())
+        })?
         .ok_or_else(|| {
-            SbroadError::NotFound(Entity::PrimaryKey, format!("for space {space_name}"))
+            SbroadError::NotFound(Entity::PrimaryKey, format!("for space {space_name}").into())
         })?;
     let pk_meta = tuple.decode::<IndexMetadata>().map_err(|e| {
-        SbroadError::FailedTo(Action::Decode, Some(Entity::PrimaryKey), format!("{e}"))
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::PrimaryKey),
+            format!("{e}").into(),
+        )
     })?;
     let mut primary_key = Vec::with_capacity(pk_meta.parts.len());
     for part in pk_meta.parts {
@@ -850,9 +861,7 @@ pub fn space_pk_columns(
         } else {
             return Err(SbroadError::Invalid(
                 Entity::PrimaryKey,
-                Some(format!(
-                    "part of {space_name} has unexpected format: {part:?}"
-                )),
+                Some(format!("part of {space_name} has unexpected format: {part:?}").into()),
             ));
         };
         let col = space_columns
@@ -860,9 +869,10 @@ pub fn space_pk_columns(
             .ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::PrimaryKey,
-                    Some(format!(
-                        "{space_name} part referes to unknown column position: {col_pos}"
-                    )),
+                    Some(
+                        format!("{space_name} part referes to unknown column position: {col_pos}")
+                            .into(),
+                    ),
                 )
             })?
             .name

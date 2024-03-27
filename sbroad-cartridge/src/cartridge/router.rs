@@ -5,6 +5,7 @@ use sbroad::executor::engine::helpers::vshard::{
     exec_ir_on_all_buckets, exec_ir_on_some_buckets, get_random_bucket,
 };
 use sbroad::executor::engine::{QueryCache, Vshard};
+use smol_str::SmolStr;
 
 use std::any::Any;
 use std::cell::{Ref, RefCell};
@@ -55,13 +56,21 @@ impl ConfigurationProvider for RouterRuntime {
 
     fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
         self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })
     }
 
     fn clear_config(&self) -> Result<(), SbroadError> {
         let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })?;
         *metadata = Self::Configuration::new();
         Ok(())
@@ -69,7 +78,11 @@ impl ConfigurationProvider for RouterRuntime {
 
     fn is_config_empty(&self) -> Result<bool, SbroadError> {
         let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })?;
         Ok(metadata.is_empty())
     }
@@ -84,7 +97,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting schema"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
 
@@ -93,7 +106,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting waiting timeout"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
 
@@ -105,7 +118,7 @@ impl ConfigurationProvider for RouterRuntime {
                     usize::try_from(val).map_err(|_| {
                         SbroadError::Invalid(
                             Entity::Cache,
-                            Some(format!("router cache capacity is too big: {capacity}")),
+                            Some(format!("router cache capacity is too big: {capacity}").into()),
                         )
                     })?
                 }
@@ -114,7 +127,7 @@ impl ConfigurationProvider for RouterRuntime {
                         Option::from("getting router cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
 
@@ -123,7 +136,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(column) => column,
                 Err(e) => {
                     error!(Option::from("getting sharding column"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
 
@@ -141,7 +154,11 @@ impl ConfigurationProvider for RouterRuntime {
 
     fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError> {
         let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })?;
         *cached_metadata = metadata;
         Ok(())
@@ -165,7 +182,7 @@ impl QueryCache for RouterRuntime {
         self.ir_cache
             .try_borrow_mut()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}").into())
             })?
             .clear()?;
         Ok(())
@@ -176,7 +193,7 @@ impl QueryCache for RouterRuntime {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}"))
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}").into())
             })?
             .capacity())
     }
@@ -196,7 +213,11 @@ impl Router for RouterRuntime {
 
     fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError> {
         self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })
     }
 
@@ -228,18 +249,22 @@ impl Router for RouterRuntime {
 
     fn extract_sharding_key_from_map<'rec>(
         &self,
-        space: String,
-        map: &'rec HashMap<String, Value>,
+        space: SmolStr,
+        map: &'rec HashMap<SmolStr, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e:?}").into(),
+            )
         })?;
         sharding_key_from_map(&*metadata, &space, map)
     }
 
     fn extract_sharding_key_from_tuple<'rec>(
         &self,
-        space: String,
+        space: SmolStr,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_key_from_tuple(&*self.cached_config()?, &space, rec)

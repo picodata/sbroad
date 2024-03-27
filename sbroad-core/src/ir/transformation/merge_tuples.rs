@@ -20,6 +20,7 @@ use crate::ir::tree::traversal::EXPR_CAPACITY;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+use smol_str::ToSmolStr;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 fn call_expr_tree_merge_tuples(
@@ -73,9 +74,7 @@ impl Chain {
                 // We don't expect nested AND/OR expressions in DNF.
                 return Err(SbroadError::Unsupported(
                     Entity::Operator,
-                    Some(format!(
-                        "AND/OR expressions are not supported: {bool_expr:?}"
-                    )),
+                    Some(format!("AND/OR expressions are not supported: {bool_expr:?}").into()),
                 ));
             }
 
@@ -181,7 +180,7 @@ impl Chain {
             (Some(grouped_top_id), None) => Ok(grouped_top_id),
             (None, Some(other_top_id)) => Ok(other_top_id),
             (None, None) => Err(SbroadError::UnexpectedNumberOfValues(
-                "no expressions to merge, expected one or twoe".to_string(),
+                "no expressions to merge, expected one or twoe".to_smolstr(),
             )),
         }
     }
@@ -318,7 +317,7 @@ impl Plan {
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Expression,
-                                Some(format!("expected alias expression: {expr_mut:?}")),
+                                Some(format!("expected alias expression: {expr_mut:?}").into()),
                             ));
                         }
                     }
@@ -344,7 +343,9 @@ impl Plan {
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Expression,
-                                    Some(format!("expected boolean expression: {expr_mut:?}")),
+                                    Some(
+                                        format!("expected boolean expression: {expr_mut:?}").into(),
+                                    ),
                                 ));
                             }
                         }
@@ -371,7 +372,10 @@ impl Plan {
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Expression,
-                                    Some(format!("expected Arithmetic expression: {expr_mut:?}")),
+                                    Some(
+                                        format!("expected Arithmetic expression: {expr_mut:?}")
+                                            .into(),
+                                    ),
                                 ));
                             }
                         }
@@ -390,12 +394,12 @@ impl Plan {
                                 } else {
                                     return Err(SbroadError::UnexpectedNumberOfValues(format!(
                                         "expected a column at position {pos} in the row {expr_mut:?}"
-                                    )));
+                                    ).into()));
                                 }
                             } else {
                                 return Err(SbroadError::Invalid(
                                     Entity::Expression,
-                                    Some(format!("expected row expression: {expr_mut:?}")),
+                                    Some(format!("expected row expression: {expr_mut:?}").into()),
                                 ));
                             }
                         }

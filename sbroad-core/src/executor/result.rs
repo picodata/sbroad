@@ -12,6 +12,7 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
+use smol_str::{SmolStr, ToSmolStr};
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::Encode;
 
@@ -107,7 +108,7 @@ impl TryInto<Column> for &MetadataColumn {
             )),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some(format!("column type {}", self.r#type)),
+                Some(format!("column type {}", self.r#type).into()),
             )),
         }
     }
@@ -144,7 +145,7 @@ impl ProducerResult {
     /// - convert to virtual table error
     pub fn as_virtual_table(
         &mut self,
-        column_names: Vec<String>,
+        column_names: Vec<SmolStr>,
         possibly_incorrect_types: bool,
     ) -> Result<VirtualTable, SbroadError> {
         let mut vtable = VirtualTable::new();
@@ -171,10 +172,10 @@ impl ProducerResult {
         for (vcol, name) in vtable
             .get_mut_columns()
             .iter_mut()
-            .zip(column_names.into_iter().map(|qsq| {
+            .zip(column_names.into_iter().map(|qsq: SmolStr| {
                 if let Some(qs) = qsq.strip_suffix('"') {
                     if let Some(s) = qs.strip_prefix('"') {
-                        s.to_string()
+                        s.to_smolstr()
                     } else {
                         qsq
                     }

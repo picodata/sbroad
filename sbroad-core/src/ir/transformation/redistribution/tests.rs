@@ -6,6 +6,7 @@ use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::Plan;
 use crate::ir::Slices;
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 use std::fs;
 use std::path::Path;
 
@@ -19,7 +20,7 @@ fn full_motion_less_for_sub_query() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
@@ -32,8 +33,8 @@ fn full_motion_less_for_sub_query() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         &["a"],
         &["a"],
@@ -83,8 +84,8 @@ fn full_motion_non_segment_outer_for_sub_query() {
     let t1 = Table::new_sharded(
         "t1",
         vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         &["a"],
         &["a"],
@@ -97,7 +98,7 @@ fn full_motion_non_segment_outer_for_sub_query() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Vinyl,
@@ -145,7 +146,7 @@ fn local_sub_query() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -157,7 +158,7 @@ fn local_sub_query() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -204,7 +205,7 @@ fn multiple_sub_queries() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -217,8 +218,8 @@ fn multiple_sub_queries() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         &["a"],
         &["a"],

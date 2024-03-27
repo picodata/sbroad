@@ -5,6 +5,7 @@ use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::tree::traversal::{PostOrder, REL_CAPACITY};
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 use std::fs;
 use std::path::Path;
 
@@ -15,10 +16,10 @@ fn proj_preserve_dist_key() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -163,7 +164,7 @@ fn projection_any_dist_for_expr() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     // check explain first
-    let expected_explain = String::from(
+    let expected_explain = SmolStr::from(
         r#"projection (sum(("count_13"::integer))::decimal -> "COL_1")
     motion [policy: full]
         scan

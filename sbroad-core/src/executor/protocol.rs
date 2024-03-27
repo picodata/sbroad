@@ -122,7 +122,7 @@ impl TryFrom<RequiredData> for Vec<u8> {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}"),
+                format!("to binary: {e:?}").into(),
             )
         })
     }
@@ -136,7 +136,7 @@ impl TryFrom<&[u8]> for RequiredData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::RequiredData),
-                format!("{e:?}"),
+                format!("{e:?}").into(),
             )
         })
     }
@@ -222,7 +222,7 @@ impl TryFrom<OptionalData> for Vec<u8> {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}"),
+                format!("to binary: {e:?}").into(),
             )
         })
     }
@@ -236,7 +236,7 @@ impl TryFrom<&[u8]> for OptionalData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::RequiredData),
-                format!("{e:?}"),
+                format!("{e:?}").into(),
             )
         })
     }
@@ -257,7 +257,7 @@ impl OptionalData {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}"),
+                format!("to binary: {e:?}").into(),
             )
         })
     }
@@ -271,7 +271,7 @@ impl OptionalData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::OptionalData),
-                format!("{e:?}"),
+                format!("{e:?}").into(),
             )
         })
     }

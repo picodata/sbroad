@@ -1,5 +1,6 @@
 use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
+use smol_str::ToSmolStr;
 use std::collections::HashSet;
 
 use crate::errors::{Action, Entity, SbroadError};
@@ -155,7 +156,7 @@ where
                                 *right_columns.get(*position).ok_or_else(|| {
                                     SbroadError::NotFound(
                                         Entity::Column,
-                                        format!("at position {position} for right row"),
+                                        format!("at position {position} for right row").into(),
                                     )
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;
@@ -359,7 +360,7 @@ where
                             // child's buckets.
                             let child_id = children.first().ok_or_else(|| {
                                 SbroadError::UnexpectedNumberOfValues(
-                                    "Motion node should have exactly one child".to_string(),
+                                    "Motion node should have exactly one child".to_smolstr(),
                                 )
                             })?;
                             let child_rel =
@@ -371,7 +372,7 @@ where
                                     SbroadError::FailedTo(
                                         Action::Retrieve,
                                         Some(Entity::Buckets),
-                                        "of the child from the bucket map.".to_string(),
+                                        "of the child from the bucket map.".to_smolstr(),
                                     )
                                 })?
                                 .clone();
@@ -381,7 +382,9 @@ where
                     MotionPolicy::None => {
                         return Err(SbroadError::Invalid(
                             Entity::Motion,
-                            Some("local motion policy should never appear in the plan".to_string()),
+                            Some(
+                                "local motion policy should never appear in the plan".to_smolstr(),
+                            ),
                         ));
                     }
                 },
@@ -396,7 +399,7 @@ where
                             SbroadError::FailedTo(
                                 Action::Retrieve,
                                 Some(Entity::Buckets),
-                                "of the child from the bucket map.".to_string(),
+                                "of the child from the bucket map.".to_smolstr(),
                             )
                         })?
                         .clone();
@@ -422,7 +425,7 @@ where
                             SbroadError::FailedTo(
                                 Action::Retrieve,
                                 Some(Entity::Buckets),
-                                "of the child from the bucket map.".to_string(),
+                                "of the child from the bucket map.".to_smolstr(),
                             )
                         })?
                         .clone();
@@ -448,14 +451,14 @@ where
                                 SbroadError::FailedTo(
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
-                                    "of the first except child from the bucket map.".to_string(),
+                                    "of the first except child from the bucket map.".to_smolstr(),
                                 )
                             })?
                             .clone();
                         self.bucket_map.insert(*output, first_buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
-                            "current node should have exactly two children".to_string(),
+                            "current node should have exactly two children".to_smolstr(),
                         ));
                     }
                 }
@@ -474,7 +477,8 @@ where
                                 SbroadError::FailedTo(
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
-                                    "of the first union all child from the bucket map.".to_string(),
+                                    "of the first union all child from the bucket map."
+                                        .to_smolstr(),
                                 )
                             })?;
                         let second_buckets =
@@ -483,14 +487,14 @@ where
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
                                     "of the second union all child from the bucket map."
-                                        .to_string(),
+                                        .to_smolstr(),
                                 )
                             })?;
                         let buckets = first_buckets.disjunct(second_buckets)?;
                         self.bucket_map.insert(*output, buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
-                            "current node should have exactly two children".to_string(),
+                            "current node should have exactly two children".to_smolstr(),
                         ));
                     }
                 }
@@ -509,7 +513,8 @@ where
                                 SbroadError::FailedTo(
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
-                                    "of the first intersect child from the bucket map.".to_string(),
+                                    "of the first intersect child from the bucket map."
+                                        .to_smolstr(),
                                 )
                             })?;
                         let second_buckets =
@@ -518,14 +523,14 @@ where
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
                                     "of the second intersect child from the bucket map."
-                                        .to_string(),
+                                        .to_smolstr(),
                                 )
                             })?;
                         let buckets = first_buckets.disjunct(second_buckets)?;
                         self.bucket_map.insert(*output, buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
-                            "current node should have exactly two children".to_string(),
+                            "current node should have exactly two children".to_smolstr(),
                         ));
                     }
                 }
@@ -539,7 +544,7 @@ where
                     // when the filter returns no buckets to reduce.
                     let child_id = children.first().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "current node should have exactly one child".to_string(),
+                            "current node should have exactly one child".to_smolstr(),
                         )
                     })?;
                     let child_rel = self.exec_plan.get_ir_plan().get_relation_node(*child_id)?;
@@ -550,7 +555,7 @@ where
                             SbroadError::FailedTo(
                                 Action::Retrieve,
                                 Some(Entity::Buckets),
-                                "of the selection child from the bucket map.".to_string(),
+                                "of the selection child from the bucket map.".to_smolstr(),
                             )
                         })?
                         .clone();
@@ -578,7 +583,7 @@ where
                                 SbroadError::FailedTo(
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
-                                    "of the inner child from the bucket map.".to_string(),
+                                    "of the inner child from the bucket map.".to_smolstr(),
                                 )
                             })?
                             .clone();
@@ -589,7 +594,7 @@ where
                                 SbroadError::FailedTo(
                                     Action::Retrieve,
                                     Some(Entity::Buckets),
-                                    "of the outer child from the bucket map.".to_string(),
+                                    "of the outer child from the bucket map.".to_smolstr(),
                                 )
                             })?
                             .clone();
@@ -608,7 +613,7 @@ where
                         self.bucket_map.insert(output_id, join_buckets);
                     } else {
                         return Err(SbroadError::UnexpectedNumberOfValues(
-                            "current node should have at least two children".to_string(),
+                            "current node should have at least two children".to_smolstr(),
                         ));
                     }
                 }
@@ -628,7 +633,7 @@ where
                 SbroadError::FailedTo(
                     Action::Retrieve,
                     Some(Entity::Buckets),
-                    "of the top relation from the bucket map.".to_string(),
+                    "of the top relation from the bucket map.".to_smolstr(),
                 )
             })?
             .clone();

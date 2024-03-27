@@ -1,6 +1,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::value::double::Double;
 use itertools::enumerate;
+use smol_str::SmolStr;
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
 
@@ -88,16 +89,16 @@ impl<'bytes> Bytes<'bytes> {
             let power_base = i64::try_from(index + 1).map_err(|_| {
                 SbroadError::Invalid(
                     Entity::Value,
-                    Some(String::from("Unable to cast index to i64")),
+                    Some(SmolStr::from("Unable to cast index to i64")),
                 )
             })?;
             let power = Decimal::from(-power_base);
             let base_shift = Decimal::pow(base, power).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Statistics,
-                    Some(format!(
-                        "Unable to raise a Decimal {base} to chosen power {power}"
-                    )),
+                    Some(
+                        format!("Unable to raise a Decimal {base} to chosen power {power}").into(),
+                    ),
                 )
             })?;
             result += Decimal::from(constrained_byte - low_bound) * base_shift;
@@ -260,7 +261,7 @@ pub fn scale_strings(
     if value.is_empty() || left_bound.is_empty() || right_bound.is_empty() {
         return Err(SbroadError::Invalid(
             Entity::Value,
-            Some(String::from("One of the passed strings is empty")),
+            Some(SmolStr::from("One of the passed strings is empty")),
         ));
     }
 
@@ -278,7 +279,7 @@ pub fn scale_strings(
     let (Some(mut low_bound), Some(mut high_bound)) = (low_bound, high_bound) else {
         return Err(SbroadError::Invalid(
             Entity::Value,
-            Some(String::from("One of the passed strings is empty")),
+            Some(SmolStr::from("One of the passed strings is empty")),
         ));
     };
 
@@ -357,7 +358,7 @@ pub fn decimal_boundaries_occupied_fraction(
             SbroadError::Invalid(
                 Entity::Value,
                 Some(format!(
-                    "Converted high_bound {right_boundary} must be greater than converted low_bound {left_boundary}")
+                    "Converted high_bound {right_boundary} must be greater than converted low_bound {left_boundary}").into()
                 ),
             )
         )
@@ -366,7 +367,7 @@ pub fn decimal_boundaries_occupied_fraction(
             SbroadError::Invalid(
                 Entity::Value,
                 Some(format!(
-                    "Converted value {value} must lie between converted low_bound {left_boundary} and converted high_bound {right_boundary}")
+                    "Converted value {value} must lie between converted low_bound {left_boundary} and converted high_bound {right_boundary}").into()
                 ),
             )
         )

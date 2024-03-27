@@ -2,6 +2,7 @@ use crate::debug;
 use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::collections::hash_map::IntoIter;
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -56,7 +57,7 @@ impl TryFrom<&Tuple> for PatternWithParams {
             Ok(encoded) => Ok(PatternWithParams::try_from(encoded)?),
             Err(e) => Err(SbroadError::ParsingError(
                 Entity::PatternWithParams,
-                format!("{e:?}"),
+                format!("{e:?}").into(),
             )),
         }
     }
@@ -131,7 +132,9 @@ impl PatternWithParams {
 
     #[must_use]
     pub fn clone_id(&self) -> String {
-        self.id.clone().unwrap_or_else(|| query_id(&self.pattern))
+        self.id
+            .clone()
+            .unwrap_or_else(|| query_id(&self.pattern).to_string())
     }
 
     pub fn extract_context(&mut self) -> Context {
@@ -175,7 +178,7 @@ impl TmpSpaceMap {
             return Err(SbroadError::FailedTo(
                 Action::Insert,
                 Some(Entity::Space),
-                format!("in the temporary space map ({name})"),
+                format!("in the temporary space map ({name})").into(),
             ));
         }
         self.inner.insert(name, space);
@@ -203,7 +206,7 @@ impl ExecutionPlan {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Expression,
-                            Some(format!("parameter {value:?} is not a constant")),
+                            Some(format!("parameter {value:?} is not a constant").into()),
                         ));
                     }
                 }
@@ -373,7 +376,7 @@ impl ExecutionPlan {
                                             SbroadError::FailedTo(
                                                 Action::Put,
                                                 Some(Entity::Value),
-                                                format!("constant value to SQL: {e}"),
+                                                format!("constant value to SQL: {e}").into(),
                                             )
                                         })?;
                                     }
@@ -393,7 +396,8 @@ impl ExecutionPlan {
                                                             Entity::Name,
                                                             format!(
                                                                 "for column at position {position}"
-                                                            ),
+                                                            )
+                                                            .into(),
                                                         )
                                                     })?;
                                                 if let Some(name) = (*vt).get_alias() {
@@ -440,7 +444,7 @@ impl ExecutionPlan {
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Expression,
-                                Some(format!("parameter {value:?} is not a constant")),
+                                Some(format!("parameter {value:?} is not a constant").into()),
                             ));
                         }
                     }
@@ -456,7 +460,7 @@ impl ExecutionPlan {
                                 {
                                     c.name.clone()
                                 } else {
-                                    format!("\"{}\"", c.name)
+                                    SmolStr::from(format!("\"{}\"", c.name))
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -465,7 +469,7 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Serialize,
                                 Some(Entity::VirtualTable),
-                                format!("SQL builder: {e}"),
+                                format!("SQL builder: {e}").into(),
                             )
                         })?;
                         // BETWEEN can refer to the same virtual table multiple times.

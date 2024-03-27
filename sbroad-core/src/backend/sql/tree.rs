@@ -1,6 +1,6 @@
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
-
+use smol_str::SmolStr;
 use std::collections::HashMap;
 use std::mem::take;
 
@@ -19,7 +19,7 @@ use sbroad_proc::otm_child_span;
 #[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub enum SyntaxData {
     /// "as alias_name"
-    Alias(String),
+    Alias(SmolStr),
     /// "cast"
     Cast,
     /// ")"
@@ -83,7 +83,7 @@ pub struct SyntaxNode {
 }
 
 impl SyntaxNode {
-    fn new_alias(name: String) -> Self {
+    fn new_alias(name: SmolStr) -> Self {
         SyntaxNode {
             data: SyntaxData::Alias(name),
             left: None,
@@ -327,7 +327,7 @@ impl SyntaxNodes {
                 return Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::SyntaxNodes),
-                    format!("{e:?}"),
+                    format!("{e:?}").into(),
                 ))
             }
         };
@@ -340,7 +340,7 @@ impl SyntaxNodes {
     /// - current node is invalid (doesn't exist in arena)
     pub fn get_syntax_node(&self, id: usize) -> Result<&SyntaxNode, SbroadError> {
         self.arena.get(id).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {id}"))
+            SbroadError::NotFound(Entity::Node, format!("from arena with index {id}").into())
         })
     }
 
@@ -352,7 +352,7 @@ impl SyntaxNodes {
         self.arena.get_mut(id).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable) from arena with index {id}"),
+                format!("(mutable) from arena with index {id}").into(),
             )
         })
     }
@@ -362,10 +362,9 @@ impl SyntaxNodes {
     /// # Errors
     /// - nothing was found
     fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, SbroadError> {
-        self.map
-            .get(&plan_id)
-            .copied()
-            .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("({plan_id}) in the map")))
+        self.map.get(&plan_id).copied().ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, format!("({plan_id}) in the map").into())
+        })
     }
 
     /// Push a new syntax node to arena
@@ -511,21 +510,15 @@ impl<'p> SyntaxPlan<'p> {
         match node {
             Node::Ddl(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!(
-                    "DDL node {node:?} is not supported in the syntax plan"
-                )),
+                Some(format!("DDL node {node:?} is not supported in the syntax plan").into()),
             )),
             Node::Acl(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!(
-                    "ACL node {node:?} is not supported in the syntax plan"
-                )),
+                Some(format!("ACL node {node:?} is not supported in the syntax plan").into()),
             )),
             Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!(
-                    "Block node {node:?} is not supported in the syntax plan"
-                )),
+                Some(format!("Block node {node:?} is not supported in the syntax plan").into()),
             )),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
@@ -536,9 +529,7 @@ impl<'p> SyntaxPlan<'p> {
                 | Relational::Delete { .. }
                 | Relational::Update { .. } => Err(SbroadError::Invalid(
                     Entity::SyntaxPlan,
-                    Some(format!(
-                        "DML node {node:?} is not supported in the syntax plan"
-                    )),
+                    Some(format!("DML node {node:?} is not supported in the syntax plan").into()),
                 )),
                 Relational::Join {
                     children,
@@ -631,7 +622,9 @@ impl<'p> SyntaxPlan<'p> {
                     children, filter, ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format!("{node:?} has no children."))
+                        SbroadError::UnexpectedNumberOfValues(
+                            format!("{node:?} has no children.").into(),
+                        )
                     })?;
                     let filter_id = match self.snapshot {
                         Snapshot::Latest => *filter,
@@ -739,14 +732,17 @@ impl<'p> SyntaxPlan<'p> {
                         let child_sp_id = *self.nodes.map.get(&child_plan_id).ok_or_else(|| {
                             SbroadError::Invalid(
                                 Entity::SyntaxPlan,
-                                Some(format!("motion child {child_plan_id} is not found in map")),
+                                Some(
+                                    format!("motion child {child_plan_id} is not found in map")
+                                        .into(),
+                                ),
                             )
                         })?;
                         self.nodes.map.insert(id, child_sp_id);
                         return Ok(child_sp_id);
                     }
                     let vtable = self.plan.get_motion_vtable(id)?;
-                    let vtable_alias = vtable.get_alias().map(String::from);
+                    let vtable_alias = vtable.get_alias();
 
                     // There are some cases when motion child is not a `SubQuery` and when
                     // it has an alias. E.g. in case of a `INSERT ... SELECT ...` its child
@@ -762,10 +758,15 @@ impl<'p> SyntaxPlan<'p> {
                             if name.is_empty() {
                                 return Err(SbroadError::Invalid(
                                     Entity::VirtualTable,
-                                    Some(format!("Vtable {vtable:?} has an empty alias name")),
+                                    Some(
+                                        format!("Vtable {vtable:?} has an empty alias name").into(),
+                                    ),
                                 ));
                             }
-                            children.push(self.nodes.push_syntax_node(SyntaxNode::new_alias(name)));
+                            children.push(
+                                self.nodes
+                                    .push_syntax_node(SyntaxNode::new_alias(name.clone())),
+                            );
                         }
                         children
                     } else {
@@ -817,7 +818,7 @@ impl<'p> SyntaxPlan<'p> {
                             self.nodes.push_syntax_node(SyntaxNode::new_open()),
                             self.nodes.get_syntax_node_id(*child)?,
                             self.nodes
-                                .push_syntax_node(SyntaxNode::new_alias(String::from(to))),
+                                .push_syntax_node(SyntaxNode::new_alias(SmolStr::from(to))),
                             self.nodes.push_syntax_node(SyntaxNode::new_close()),
                         ],
                     );
@@ -881,7 +882,7 @@ impl<'p> SyntaxPlan<'p> {
                         let first_child_id = *list.first().ok_or_else(|| {
                             SbroadError::Invalid(
                                 Entity::Expression,
-                                Some(String::from("Row node should have child list node")),
+                                Some(SmolStr::from("Row node should have child list node")),
                             )
                         })?;
                         let first_child = ir_plan.get_expression_node(first_child_id)?;
@@ -1279,7 +1280,9 @@ impl OrderedSyntaxNodes {
                 &self
                     .arena
                     .get(*id)
-                    .ok_or_else(|| SbroadError::NotFound(Entity::SyntaxNode, format!("(id {id})")))?
+                    .ok_or_else(|| {
+                        SbroadError::NotFound(Entity::SyntaxNode, format!("(id {id})").into())
+                    })?
                     .data,
             );
         }

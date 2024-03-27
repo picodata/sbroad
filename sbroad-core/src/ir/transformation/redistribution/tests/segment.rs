@@ -10,6 +10,7 @@ use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target}
 use crate::ir::{Node, Plan};
 use ahash::RandomState;
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -25,7 +26,7 @@ fn sub_query1() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -38,8 +39,8 @@ fn sub_query1() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         &["a"],
         &["a"],

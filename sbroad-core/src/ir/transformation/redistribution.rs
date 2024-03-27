@@ -2,6 +2,7 @@
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, ToSmolStr};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -232,7 +233,7 @@ fn join_policy_for_or(
         (MotionPolicy::LocalSegment(_) | MotionPolicy::Local, _)
         | (_, MotionPolicy::LocalSegment(_) | MotionPolicy::Local) => Err(SbroadError::Invalid(
             Entity::Motion,
-            Some("LocalSegment motion is not supported for joins".to_string()),
+            Some("LocalSegment motion is not supported for joins".to_smolstr()),
         )),
         (MotionPolicy::Full, _) | (_, MotionPolicy::Full) => Ok(MotionPolicy::Full),
         (MotionPolicy::None, _) => Ok(right_policy.clone()),
@@ -256,7 +257,7 @@ fn join_policy_for_and(
         (MotionPolicy::LocalSegment(_) | MotionPolicy::Local, _)
         | (_, MotionPolicy::LocalSegment(_) | MotionPolicy::Local) => Err(SbroadError::Invalid(
             Entity::Motion,
-            Some("LocalSegment motion is not supported for joins".to_string()),
+            Some("LocalSegment motion is not supported for joins".to_smolstr()),
         )),
         (MotionPolicy::Full, _) => Ok(right_policy.clone()),
         (_, MotionPolicy::Full) => Ok(left_policy.clone()),
@@ -385,7 +386,7 @@ impl Plan {
                 || {
                     Err(SbroadError::UnexpectedNumberOfValues(format!(
                         "Failed to get the first sub-query node from the list of relational nodes: {rel_nodes:?}."
-                    )))
+                    ).into()))
                 },
                 |sq_id| Ok(Some(*sq_id)),
             ),
@@ -479,7 +480,7 @@ impl Plan {
                         Entity::Node,
                         Some(format!(
                             "ref ({ref_id}) in join condition with no targets: {node:?}"
-                        )),
+                        ).into()),
                     )
                 })?;
                 let child_idx = targets.first().ok_or_else(|| {
@@ -487,7 +488,7 @@ impl Plan {
                         Entity::Node,
                         Some(format!(
                             "ref ({ref_id}) in join condition with empty targets: {node:?}"
-                        )),
+                        ).into()),
                     )
                 })?;
                 let child_id = self.get_relational_child(rel_id, *child_idx)?;
@@ -543,7 +544,7 @@ impl Plan {
                     // Redistribute the inner tuples using the first key from the outer tuple.
                     return keys_outer.iter().next().map_or_else(
                         || {
-                            Err(SbroadError::UnexpectedNumberOfValues(String::from(
+                            Err(SbroadError::UnexpectedNumberOfValues(SmolStr::from(
                                 "Failed to get the first distribution key from the outer row.",
                             )))
                         },
@@ -708,7 +709,7 @@ impl Plan {
         let Expression::Unary { child, op } = unary_op_expr else {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!("Expected Unary expression, got {unary_op_expr:?}")),
+                Some(format!("Expected Unary expression, got {unary_op_expr:?}").into()),
             ));
         };
 
@@ -742,7 +743,7 @@ impl Plan {
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("Expected Not operator, got {not_node:?}")),
+                    Some(format!("Expected Not operator, got {not_node:?}").into()),
                 ));
             }
         }
@@ -815,7 +816,10 @@ impl Plan {
         let mut children_set: HashSet<usize> = HashSet::new();
         for pos in &key.positions {
             let column_id = *row_map.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Column, format!("{pos} in row map {row_map:?}"))
+                SbroadError::NotFound(
+                    Entity::Column,
+                    format!("{pos} in row map {row_map:?}").into(),
+                )
             })?;
             if let Expression::Reference { targets, .. } = self.get_expression_node(column_id)? {
                 if let Some(targets) = targets {
@@ -823,7 +827,7 @@ impl Plan {
                         let child_id = *join_children.get(*target).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Target,
-                                format!("{target} in join children {join_children:?}"),
+                                format!("{target} in join children {join_children:?}").into(),
                             )
                         })?;
                         children_set.insert(child_id);
@@ -941,7 +945,7 @@ impl Plan {
             let column_id = *condition_row_map.get(pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Column,
-                    format!("{pos} in row map {condition_row_map:?}"),
+                    format!("{pos} in row map {condition_row_map:?}").into(),
                 )
             })?;
             if let Expression::Reference {
@@ -1114,7 +1118,7 @@ impl Plan {
                 )?;
                 if let Distribution::Global = child_dist {
                     return Err(SbroadError::UnsupportedOpForGlobalTables(
-                        node.name().to_string(),
+                        node.name().to_smolstr(),
                     ));
                 }
             }
@@ -1566,18 +1570,20 @@ impl Plan {
         let (outer_id, inner_id) = if let Some(children) = self.get_relational_children(join_id)? {
             (
                 *children.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(format!(
-                        "join {join_id} has no children!"
-                    ))
+                    SbroadError::UnexpectedNumberOfValues(
+                        format!("join {join_id} has no children!").into(),
+                    )
                 })?,
                 *children.get(1).ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(format!("join {join_id} has one child!"))
+                    SbroadError::UnexpectedNumberOfValues(
+                        format!("join {join_id} has one child!").into(),
+                    )
                 })?,
             )
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("join {join_id} has no children!")),
+                Some(format!("join {join_id} has no children!").into()),
             ));
         };
         let outer_dist = self.get_distribution(self.get_relational_output(outer_id)?)?;
@@ -1595,7 +1601,9 @@ impl Plan {
         let subqueries = self
             .get_relational_children(join_id)?
             .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(format!("join {join_id} has no children!"))
+                SbroadError::UnexpectedNumberOfValues(
+                    format!("join {join_id} has no children!").into(),
+                )
             })?
             .split_at(2)
             .1;
@@ -1675,7 +1683,7 @@ impl Plan {
             ) {
                 return Err(SbroadError::Invalid(
                     Entity::Update,
-                    Some(format!("expected Projection under Update ({update_id})")),
+                    Some(format!("expected Projection under Update ({update_id})").into()),
                 ));
             }
             match kind {
@@ -1706,10 +1714,13 @@ impl Plan {
                         if !keys.iter().any(|key| *key == expected_key) {
                             return Err(SbroadError::Invalid(
                                 Entity::Update,
-                                Some(format!(
+                                Some(
+                                    format!(
                                     "expected sharded update child to be \
                                  always distributed on old sharding key. Child dist: {child_dist:?}"
-                                )),
+                                )
+                                    .into(),
+                                ),
                             ));
                         }
                     } else {
@@ -1753,7 +1764,9 @@ impl Plan {
                                     .ok_or_else(|| {
                                         SbroadError::Invalid(
                                             Entity::Table,
-                                            Some(format!("invalid shar key position: {pos}")),
+                                            Some(
+                                                format!("invalid shar key position: {pos}").into(),
+                                            ),
                                         )
                                     })?
                                     .name;
@@ -1765,19 +1778,25 @@ impl Plan {
                         if !keys.iter().any(|key| key.positions == expected_positions) {
                             return Err(SbroadError::Invalid(
                                 Entity::Update,
-                                Some(format!(
-                                    "for local update expected children below \
+                                Some(
+                                    format!(
+                                        "for local update expected children below \
                                   Projection to have update table dist. Got: {pr_child_dist:?}"
-                                )),
+                                    )
+                                    .into(),
+                                ),
                             ));
                         }
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Update,
-                            Some(format!(
-                                "expected child below projection to have Segment dist,\
+                            Some(
+                                format!(
+                                    "expected child below projection to have Segment dist,\
                              got: {pr_child_dist:?}"
-                            )),
+                                )
+                                .into(),
+                            ),
                         ));
                     }
 
@@ -1788,7 +1807,7 @@ impl Plan {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected Update node on id {update_id}")),
+                Some(format!("expected Update node on id {update_id}").into()),
             ))
         }
     }
@@ -1799,10 +1818,9 @@ impl Plan {
         let space = self.dml_node_table(rel_id)?;
         let pk_len = space.primary_key.positions.len();
         if pk_len == 0 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                "empty primary key for space {}",
-                space.name()
-            )));
+            return Err(SbroadError::UnexpectedNumberOfValues(
+                format!("empty primary key for space {}", space.name()).into(),
+            ));
         }
         // We expect that the columns in the child projection of the DELETE operator
         let pk_pos: Vec<usize> = (0..pk_len).collect();
@@ -1946,10 +1964,13 @@ impl Plan {
                 let key = keys.iter().next().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Distribution,
-                        Some(format!(
-                            "{} {} {right_id}",
-                            "Segment distribution with no keys.", "Except right child:"
-                        )),
+                        Some(
+                            format!(
+                                "{} {} {right_id}",
+                                "Segment distribution with no keys.", "Except right child:"
+                            )
+                            .into(),
+                        ),
                     )
                 })?;
                 (MotionPolicy::Segment(key.into()), MotionPolicy::None)
@@ -2054,11 +2075,14 @@ impl Plan {
             let left_output_row = self.get_expression_node(left_output_id)?.get_row_list()?;
             let right_output_row = self.get_expression_node(right_output_id)?.get_row_list()?;
             if left_output_row.len() != right_output_row.len() {
-                return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                    "Except node children have different row lengths: left {}, right {}",
-                    left_output_row.len(),
-                    right_output_row.len()
-                )));
+                return Err(SbroadError::UnexpectedNumberOfValues(
+                    format!(
+                        "Except node children have different row lengths: left {}, right {}",
+                        left_output_row.len(),
+                        right_output_row.len()
+                    )
+                    .into(),
+                ));
             }
         }
 
@@ -2172,7 +2196,7 @@ impl Plan {
                 Relational::Motion { .. } => {
                     // We can apply this transformation only once,
                     // i.e. to the plan without any motion nodes.
-                    return Err(SbroadError::DuplicatedValue(String::from(
+                    return Err(SbroadError::DuplicatedValue(SmolStr::from(
                         "IR already has Motion nodes.",
                     )));
                 }

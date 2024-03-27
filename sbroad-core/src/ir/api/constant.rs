@@ -82,7 +82,7 @@ impl Plan {
                     Entity::Expression,
                     Some(format!(
                         "Restoring parameters filed: node {const_node:?} (id: {id}) is not of a constant type"
-                    )),
+                    ).into()),
                 ));
             }
             self.nodes.replace(id, const_node)?;

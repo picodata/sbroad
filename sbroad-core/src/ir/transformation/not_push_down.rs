@@ -13,6 +13,7 @@ use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+use smol_str::SmolStr;
 use std::collections::HashMap;
 
 /// Enum representing status of Not push down traversal.
@@ -155,7 +156,7 @@ impl Plan {
                 } else {
                     Err(SbroadError::Invalid(
                         Entity::Expression,
-                        Some(String::from(
+                        Some(SmolStr::from(
                             "Expected to get Unary::Not, got: {parent_not_op:?}",
                         )),
                     ))
@@ -204,7 +205,9 @@ impl Plan {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Node,
-                                Some(format!("Unexpected constant node under Not: {expr:?}")),
+                                Some(
+                                    format!("Unexpected constant node under Not: {expr:?}").into(),
+                                ),
                             ));
                         }
                     }
@@ -247,7 +250,7 @@ impl Plan {
                 let list_len = list.len();
                 if list_len == 1 {
                     let child_id = *list.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(String::from(
+                        SbroadError::UnexpectedNumberOfValues(SmolStr::from(
                             "Row under Not doesn't have children.",
                         ))
                     })?;

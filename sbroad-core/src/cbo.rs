@@ -7,6 +7,8 @@
 //! in some places with indication of function names and corresponding lines of code.
 //! `PostgreSQL` version: `REL_15_2`.
 
+use smol_str::SmolStr;
+
 use crate::cbo::histogram::{merge_histograms, Histogram, HistogramRowsNumberPair, Scalar};
 use crate::errors::{Entity, SbroadError};
 use std::fmt::Debug;
@@ -73,11 +75,11 @@ pub struct ColumnVolumeInfo {
 /// Alias for pair of table name and column id in the table.
 /// Used as a key for statistics retrieval from system space.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TableColumnPair(String, usize);
+pub struct TableColumnPair(SmolStr, usize);
 
 #[allow(dead_code)]
 impl TableColumnPair {
-    pub(crate) fn new(table_name: String, column_id: usize) -> Self {
+    pub(crate) fn new(table_name: SmolStr, column_id: usize) -> Self {
         Self(table_name, column_id)
     }
 }
@@ -111,7 +113,7 @@ pub fn merge_stats<T: Scalar>(
         .ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Unable to find min value among column statistics",
                 )),
             )
@@ -125,7 +127,7 @@ pub fn merge_stats<T: Scalar>(
         .ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Unable to find min value among column statistics",
                 )),
             )
@@ -153,14 +155,14 @@ pub fn merge_stats<T: Scalar>(
         0 => None,
         1 => {
             let TableColumnStatsPair(_, column_stats) = vec_of_stats.first().ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(String::from("No histograms to merge"))
+                SbroadError::UnexpectedNumberOfValues(SmolStr::from("No histograms to merge"))
             })?;
             if let Some(histogram) = &column_stats.histogram {
                 Some(histogram.clone())
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Histogram,
-                    Some(String::from("Columns stats must have non None histogram")),
+                    Some(SmolStr::from("Columns stats must have non None histogram")),
                 ));
             }
         }

@@ -119,7 +119,7 @@ fn convert_to_vtable() {
         r.as_virtual_table(
             col_names
                 .into_iter()
-                .map(std::string::ToString::to_string)
+                .map(smol_str::ToSmolStr::to_smolstr)
                 .collect(),
             false
         )

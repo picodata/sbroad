@@ -10,16 +10,16 @@ use std::collections::HashMap;
 fn virtual_table_1() {
     let mut vtable = VirtualTable::new();
 
-    vtable.add_column(column_integer_user_non_null(String::from("name")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("name")));
 
     vtable.add_tuple(vec![Value::from(1_u64)]);
 
     vtable.set_alias("test").unwrap();
 
     let expected = VirtualTable {
-        columns: vec![column_integer_user_non_null(String::from("name"))],
+        columns: vec![column_integer_user_non_null(SmolStr::from("name"))],
         tuples: vec![vec![Value::from(1_u64)]],
-        name: Some(String::from("test")),
+        name: Some(SmolStr::from("test")),
         primary_key: None,
         bucket_index: VTableIndex::new(),
     };
@@ -31,8 +31,8 @@ fn virtual_table_1() {
 #[test]
 fn virtual_table_2() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(column_integer_user_non_null(String::from("a")));
-    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
@@ -47,11 +47,11 @@ fn virtual_table_2() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         tuples: vec![tuple1, tuple2],
-        name: Some(String::from("t")),
+        name: Some(SmolStr::from("t")),
         primary_key: None,
         bucket_index: VTableIndex {
             value: HashMap::from_iter(vec![(1301, vec![1]), (3940, vec![0])]),
@@ -65,8 +65,8 @@ fn virtual_table_2() {
 #[test]
 fn virtual_table_3() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(column_integer_user_non_null(String::from("a")));
-    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
@@ -82,11 +82,11 @@ fn virtual_table_3() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         tuples: vec![tuple1, tuple2],
-        name: Some(String::from("t")),
+        name: Some(SmolStr::from("t")),
         primary_key: Some(vec![1]),
         bucket_index: VTableIndex {
             value: HashMap::from_iter(vec![(1301, vec![1]), (3940, vec![0])]),
@@ -109,8 +109,8 @@ fn vtable_rearrange_for_update() {
         new_sh_key_value.clone(),
         old_sh_key_value.clone(),
     ];
-    vtable.add_column(column_integer_user_non_null(String::from("a")));
-    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
     vtable.set_alias("t").unwrap();
     vtable.add_tuple(tuple);
 
@@ -132,11 +132,11 @@ fn vtable_rearrange_for_update() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         tuples: vec![vec![pk_value.clone(), new_sh_key_value], vec![pk_value]],
-        name: Some(String::from("t")),
+        name: Some(SmolStr::from("t")),
         primary_key: Some(vec![0]),
         bucket_index: expected_index,
     };
@@ -149,8 +149,8 @@ fn vtable_add_missing_from1() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(String::from("a")));
-    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
     vtable.set_alias("t").unwrap();
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(4_u64)]);
@@ -159,7 +159,7 @@ fn vtable_add_missing_from1() {
     vtable.set_primary_key(&[0]).unwrap();
 
     let mut from_vtable = VirtualTable::new();
-    from_vtable.add_column(column_integer_user_non_null(String::from("a")));
+    from_vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
     from_vtable.set_alias("s").unwrap();
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
@@ -171,8 +171,8 @@ fn vtable_add_missing_from1() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         tuples: vec![
             vec![Value::from(1_u64), Value::from(3_u64)],
@@ -180,7 +180,7 @@ fn vtable_add_missing_from1() {
             vec![Value::from(2_u64), Value::from(5_u64)],
             vec![Value::from(3_u64), Value::Null],
         ],
-        name: Some(String::from("t")),
+        name: Some(SmolStr::from("t")),
         primary_key: Some(vec![0]),
         bucket_index: expected_index,
     };
@@ -193,8 +193,8 @@ fn vtable_add_missing_from2() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(String::from("a")));
-    vtable.add_column(column_integer_user_non_null(String::from("b")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
     vtable.set_alias("t").unwrap();
     vtable.set_alias("t").unwrap();
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
@@ -203,7 +203,7 @@ fn vtable_add_missing_from2() {
     vtable.set_primary_key(&[0]).unwrap();
 
     let mut from_vtable = VirtualTable::new();
-    from_vtable.add_column(column_integer_user_non_null(String::from("a")));
+    from_vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
     from_vtable.set_alias("s").unwrap();
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(2_u64)]);
@@ -217,8 +217,8 @@ fn vtable_add_missing_from2() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
         ],
         tuples: vec![
             vec![Value::from(1_u64), Value::from(3_u64)],
@@ -227,7 +227,7 @@ fn vtable_add_missing_from2() {
             vec![Value::from(3_u64), Value::Null],
             vec![Value::from(3_u64), Value::Null],
         ],
-        name: Some(String::from("t")),
+        name: Some(SmolStr::from("t")),
         primary_key: Some(vec![0]),
         bucket_index: expected_index,
     };

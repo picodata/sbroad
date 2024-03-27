@@ -4,6 +4,7 @@ use std::mem::take;
 
 use itertools::Itertools;
 use serde::Serialize;
+use smol_str::{SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
@@ -23,14 +24,14 @@ use super::value::Value;
 #[derive(Debug, Serialize)]
 enum ColExpr {
     Parentheses(Box<ColExpr>),
-    Alias(Box<ColExpr>, String),
+    Alias(Box<ColExpr>, SmolStr),
     Arithmetic(Box<ColExpr>, Arithmetic, Box<ColExpr>),
     Bool(Box<ColExpr>, Bool, Box<ColExpr>),
     Unary(Unary, Box<ColExpr>),
     Column(String, Type),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(String, Vec<ColExpr>, Option<FunctionFeature>, Type),
+    StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type),
     Row(Row),
     None,
 }
@@ -114,7 +115,7 @@ impl ColExpr {
                 Expression::Cast { to, .. } => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing CAST expression".to_string(),
+                            "stack is empty while processing CAST expression".to_smolstr(),
                         )
                     })?;
                     let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
@@ -145,12 +146,12 @@ impl ColExpr {
                 Expression::Concat { .. } => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing CONCAT expression".to_string(),
+                            "stack is empty while processing CONCAT expression".to_smolstr(),
                         )
                     })?;
                     let (left, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing CONCAT expression".to_string(),
+                            "stack is empty while processing CONCAT expression".to_smolstr(),
                         )
                     })?;
                     let concat_expr = ColExpr::Concat(Box::new(left), Box::new(right));
@@ -172,7 +173,7 @@ impl ColExpr {
                     while len > 0 {
                         let (arg, _) = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
-                                format!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression"),
+                                format!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression").into(),
                             )
                         })?;
                         args.push(arg);
@@ -193,7 +194,7 @@ impl ColExpr {
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
-                                format!("stack is empty, expected to pop {len} element while processing ROW expression"),
+                                format!("stack is empty, expected to pop {len} element while processing ROW expression").into(),
                             )
                         })?;
                         row.push(expr);
@@ -211,13 +212,13 @@ impl ColExpr {
                 } => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing ARITHMETIC expression".to_string(),
+                            "stack is empty while processing ARITHMETIC expression".to_smolstr(),
                         )
                     })?;
 
                     let (left, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing ARITHMETIC expression".to_string(),
+                            "stack is empty while processing ARITHMETIC expression".to_smolstr(),
                         )
                     })?;
 
@@ -228,7 +229,7 @@ impl ColExpr {
                 Expression::ExprInParentheses { .. } => {
                     let (child_expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing ALIAS expression".to_string(),
+                            "stack is empty while processing ALIAS expression".to_smolstr(),
                         )
                     })?;
                     let parentheses_expr = ColExpr::Parentheses(Box::new(child_expr));
@@ -237,7 +238,7 @@ impl ColExpr {
                 Expression::Alias { name, .. } => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing ALIAS expression".to_string(),
+                            "stack is empty while processing ALIAS expression".to_smolstr(),
                         )
                     })?;
                     let alias_expr = ColExpr::Alias(Box::new(expr), name.clone());
@@ -246,13 +247,13 @@ impl ColExpr {
                 Expression::Bool { op, .. } => {
                     let (right, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing BOOL expression".to_string(),
+                            "stack is empty while processing BOOL expression".to_smolstr(),
                         )
                     })?;
 
                     let (left, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing BOOL expression".to_string(),
+                            "stack is empty while processing BOOL expression".to_smolstr(),
                         )
                     })?;
 
@@ -263,7 +264,7 @@ impl ColExpr {
                 Expression::Unary { op, .. } => {
                     let (expr, _) = stack.pop().ok_or_else(|| {
                         SbroadError::UnexpectedNumberOfValues(
-                            "stack is empty while processing UNARY expression".to_string(),
+                            "stack is empty while processing UNARY expression".to_smolstr(),
                         )
                     })?;
                     let alias_expr = ColExpr::Unary(op.clone(), Box::new(expr));
@@ -274,7 +275,7 @@ impl ColExpr {
 
         let (expr, _) = stack
             .pop()
-            .ok_or_else(|| SbroadError::UnexpectedNumberOfValues("stack is empty".to_string()))?;
+            .ok_or_else(|| SbroadError::UnexpectedNumberOfValues("stack is empty".to_smolstr()))?;
         Ok(expr)
     }
 }
@@ -385,9 +386,9 @@ impl Display for GroupBy {
 
 #[derive(Debug, Serialize)]
 struct Update {
-    /// List of colums in sql query
-    table: String,
-    update_statements: Vec<(String, String)>,
+    /// List of columns in sql query
+    table: SmolStr,
+    update_statements: Vec<(SmolStr, SmolStr)>,
 }
 
 impl Update {
@@ -400,12 +401,12 @@ impl Update {
             ..
         } = plan.get_relation_node(update_id)?
         {
-            let mut update_statements: Vec<(String, String)> =
+            let mut update_statements: Vec<(SmolStr, SmolStr)> =
                 Vec::with_capacity(update_columns_map.len());
             let table = plan.relations.get(rel).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("invalid table {rel} in Update node")),
+                    Some(format!("invalid table {rel} in Update node").into()),
                 )
             })?;
             let output_list = plan.get_row_list(*output_id)?;
@@ -417,16 +418,19 @@ impl Update {
                     .ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!("invalid column index {col_idx} in Update node")),
+                            Some(format!("invalid column index {col_idx} in Update node").into()),
                         )
                     })?;
                 let proj_alias = {
                     let alias_id = *output_list.get(*proj_col).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!(
-                                "invalid update projection position {proj_col} in Update node"
-                            )),
+                            Some(
+                                format!(
+                                    "invalid update projection position {proj_col} in Update node"
+                                )
+                                .into(),
+                            ),
                         )
                     })?;
                     let node = plan.get_expression_node(alias_id)?;
@@ -435,23 +439,24 @@ impl Update {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!(
-                                "expected alias as top in Update output, got: {node:?}"
-                            )),
+                            Some(
+                                format!("expected alias as top in Update output, got: {node:?}")
+                                    .into(),
+                            ),
                         ));
                     }
                 };
                 update_statements.push((col_name, proj_alias));
             }
             let result = Update {
-                table: rel.to_string(),
+                table: rel.clone(),
                 update_statements,
             };
             return Ok(result);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("explain: expected Update node on id: {update_id}")),
+            Some(format!("explain: expected Update node on id: {update_id}").into()),
         ))
     }
 }
@@ -474,15 +479,15 @@ impl Display for Update {
 #[derive(Debug, Serialize)]
 struct Scan {
     /// Table name
-    table: String,
+    table: SmolStr,
 
     /// Table alias
-    alias: Option<String>,
+    alias: Option<SmolStr>,
 }
 
 impl Scan {
     #[allow(dead_code)]
-    fn new(table: String, alias: Option<String>) -> Self {
+    fn new(table: SmolStr, alias: Option<SmolStr>) -> Self {
         Scan { table, alias }
     }
 }
@@ -575,16 +580,19 @@ impl Row {
                             let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::SubQuery,
-                                    format!("with index {rel_id} in the map"),
+                                    format!("with index {rel_id} in the map").into(),
                                 )
                             })?;
                             row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!(
+                                Some(
+                                    format!(
                                     "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
-                                )),
+                                )
+                                    .into(),
+                                ),
                             ));
                         }
                     } else {
@@ -731,14 +739,14 @@ impl Display for InnerJoin {
 #[derive(Debug, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
-    Delete(String),
+    Delete(SmolStr),
     Except,
     Intersect,
     GroupBy(GroupBy),
     InnerJoin(InnerJoin),
     ValueRow(ColExpr),
     Value,
-    Insert(String, ConflictStrategy),
+    Insert(SmolStr, ConflictStrategy),
     Projection(Projection),
     Scan(Scan),
     Selection(ColExpr),
@@ -920,8 +928,8 @@ impl FullExplain {
                     relation, alias, ..
                 } => {
                     let s = Scan::new(
-                        relation.to_string(),
-                        alias.as_ref().map(ToString::to_string),
+                        relation.to_smolstr(),
+                        alias.as_ref().map(ToSmolStr::to_smolstr),
                     );
                     Some(ExplainNode::Scan(s))
                 }
@@ -997,7 +1005,7 @@ impl FullExplain {
                     let collect_targets = |s: &IrMotionKey| -> Result<Vec<Target>, SbroadError> {
                         let child_id = children.first().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
-                                "current node should have exactly one child".to_string(),
+                                "current node should have exactly one child".to_smolstr(),
                             )
                         })?;
 
@@ -1011,7 +1019,7 @@ impl FullExplain {
                                     let col_id = *col_list.get(*pos).ok_or_else(|| {
                                         SbroadError::NotFound(
                                             Entity::Target,
-                                            format!("reference with position {pos}"),
+                                            format!("reference with position {pos}").into(),
                                         )
                                     })?;
                                     let col_name = ir
@@ -1132,7 +1140,7 @@ impl FullExplain {
                     current_node.children.push(values);
 
                     Some(ExplainNode::Insert(
-                        relation.into(),
+                        relation.to_smolstr(),
                         conflict_strategy.clone(),
                     ))
                 }
@@ -1156,7 +1164,7 @@ impl FullExplain {
 
                     current_node.children.push(values);
 
-                    Some(ExplainNode::Delete(relation.into()))
+                    Some(ExplainNode::Delete(relation.to_smolstr()))
                 }
             };
             stack.push(current_node);

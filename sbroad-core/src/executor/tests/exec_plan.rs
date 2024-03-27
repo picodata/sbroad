@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
@@ -103,7 +104,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
 
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(column_user_non_null(
-        String::from("FIRST_NAME"),
+        SmolStr::from("FIRST_NAME"),
         Type::String,
     ));
 
@@ -168,15 +169,15 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         .unwrap();
     let mut virtual_table = VirtualTable::new();
     virtual_table.add_column(column_user_non_null(
-        String::from("column_12"),
+        SmolStr::from("column_12"),
         Type::String,
     ));
     virtual_table.add_column(column_user_non_null(
-        String::from("column_13"),
+        SmolStr::from("column_13"),
         Type::Integer,
     ));
     virtual_table.add_column(column_user_non_null(
-        String::from("column_14"),
+        SmolStr::from("column_14"),
         Type::Integer,
     ));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
@@ -253,19 +254,19 @@ fn exec_plan_subtree_aggregates() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("sys_op")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("sum_42")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_37")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("sum_49")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_51")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("sys_op")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("sum_42")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_37")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("sum_49")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_51")));
     virtual_table.add_column(column_user_non_null(
-        String::from("group_concat_58"),
+        SmolStr::from("group_concat_58"),
         Type::String,
     ));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_61")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("total_64")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("min_67")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("max_70")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_61")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("total_64")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("min_67")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("max_70")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -344,8 +345,8 @@ fn exec_plan_subtree_aggregates_no_groupby() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("column_19")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_13")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_19")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_13")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -564,7 +565,7 @@ fn exec_plan_subtree_count_asterisk() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_13")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_13")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -632,9 +633,9 @@ fn exec_plan_subtree_having() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("column_63")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("column_12")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_58")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_63")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_12")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_58")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -714,9 +715,9 @@ fn exec_plan_subtree_having_without_groupby() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("column_63")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("column_12")));
-    virtual_table.add_column(column_integer_user_non_null(String::from("count_58")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_63")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("column_12")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("count_58")));
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -866,7 +867,7 @@ fn global_union_all2() {
     query.exec_plan.take_subtree(motion_child).unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("e")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("e")));
     virtual_table.add_tuple(vec![Value::Integer(1)]);
     let exec_plan = query.get_mut_exec_plan();
     exec_plan
@@ -947,7 +948,7 @@ fn global_union_all3() {
     query.exec_plan.take_subtree(sq_motion_child).unwrap();
 
     let mut sq_vtable = VirtualTable::new();
-    sq_vtable.add_column(column_integer_user_non_null(String::from("f")));
+    sq_vtable.add_column(column_integer_user_non_null(SmolStr::from("f")));
     sq_vtable.add_tuple(vec![Value::Integer(1)]);
     query
         .exec_plan
@@ -965,7 +966,7 @@ fn global_union_all3() {
     // these tuples must belong to different replicasets
     let tuple1 = vec![Value::Integer(3)];
     let tuple2 = vec![Value::Integer(2929)];
-    groupby_vtable.add_column(column_integer_user_non_null(String::from("column_51")));
+    groupby_vtable.add_column(column_integer_user_non_null(SmolStr::from("column_51")));
     groupby_vtable.add_tuple(tuple1.clone());
     groupby_vtable.add_tuple(tuple2.clone());
     if let MotionPolicy::Segment(key) =
@@ -1127,7 +1128,7 @@ fn global_except() {
         );
 
         let mut virtual_table = VirtualTable::new();
-        virtual_table.add_column(column_integer_user_non_null(String::from("e")));
+        virtual_table.add_column(column_integer_user_non_null(SmolStr::from("e")));
         virtual_table.add_tuple(vec![Value::Integer(1)]);
         query
             .get_mut_exec_plan()

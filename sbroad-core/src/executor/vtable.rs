@@ -5,6 +5,7 @@ use std::vec;
 
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
@@ -62,7 +63,7 @@ pub struct VirtualTable {
     /// "Raw" tuples (list of values)
     tuples: Vec<VTableTuple>,
     /// Unique table name (we need to generate it ourselves).
-    name: Option<String>,
+    name: Option<SmolStr>,
     /// Column positions that form a primary key.
     primary_key: Option<Vec<ColumnPosition>>,
     /// Index groups tuples by the buckets:
@@ -183,13 +184,13 @@ impl VirtualTable {
     /// # Errors
     /// - Try to set an empty alias name to the virtual table.
     pub fn set_alias(&mut self, name: &str) -> Result<(), SbroadError> {
-        self.name = Some(String::from(name));
+        self.name = Some(SmolStr::from(name));
         Ok(())
     }
 
     /// Get vtable alias name
     #[must_use]
-    pub fn get_alias(&self) -> Option<&String> {
+    pub fn get_alias(&self) -> Option<&SmolStr> {
         self.name.as_ref()
     }
 
@@ -212,9 +213,12 @@ impl VirtualTable {
                     let tuple = self.tuples.get(*pointer).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::VirtualTable,
-                            Some(format!(
-                                "Tuple with position {pointer} in the bucket index not found"
-                            )),
+                            Some(
+                                format!(
+                                    "Tuple with position {pointer} in the bucket index not found"
+                                )
+                                .into(),
+                            ),
                         )
                     })?;
                     result.tuples.push(tuple.clone());
@@ -248,7 +252,7 @@ impl VirtualTable {
                                 Entity::DistributionKey,
                                 format!(
                                 "failed to find a distribution key column {pos} in the tuple {tuple:?}."
-                            ),
+                            ).into(),
                             )
                         })?;
                         shard_key_tuple.push(part);
@@ -285,7 +289,8 @@ impl VirtualTable {
                     format!(
                         "primary key in the virtual table {:?} contains invalid position {pos}.",
                         self.name
-                    ),
+                    )
+                    .into(),
                 ));
             }
         }
@@ -332,10 +337,13 @@ impl VirtualTable {
                     let value = insert_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::TupleBuilderCommand,
-                            Some(format!(
-                                "expected position {pos} with tuple len: {}",
-                                insert_tuple.len()
-                            )),
+                            Some(
+                                format!(
+                                    "expected position {pos} with tuple len: {}",
+                                    insert_tuple.len()
+                                )
+                                .into(),
+                            ),
                         )
                     })?;
                     if let Some(elem) = delete_tuple.get_mut(idx) {
@@ -350,9 +358,10 @@ impl VirtualTable {
                 let Some(v) = insert_tuple.pop() else {
                     return Err(SbroadError::Invalid(
                         Entity::MotionOpcode,
-                        Some(format!(
-                            "invalid number of old shard columns: {old_shard_columns_len}"
-                        )),
+                        Some(
+                            format!("invalid number of old shard columns: {old_shard_columns_len}")
+                                .into(),
+                        ),
                     ));
                 };
                 old_shard_key.push(v);
@@ -430,10 +439,13 @@ impl VirtualTable {
                 let value = update_tuple.get(*pos).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::TupleBuilderCommand,
-                        Some(format!(
-                            "invalid pos: {pos} for update tuple with len: {}",
-                            update_tuple.len()
-                        )),
+                        Some(
+                            format!(
+                                "invalid pos: {pos} for update tuple with len: {}",
+                                update_tuple.len()
+                            )
+                            .into(),
+                        ),
                     )
                 })?;
                 update_tuple_shard_key.push(value);

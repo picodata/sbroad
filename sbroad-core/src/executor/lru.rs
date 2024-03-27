@@ -1,3 +1,5 @@
+use smol_str::ToSmolStr;
+
 use crate::error;
 use crate::errors::{Action, Entity, SbroadError};
 use std::collections::{hash_map::Entry, HashMap};
@@ -101,14 +103,17 @@ where
     }
 
     fn get_node(&self, key: &Option<Key>) -> Result<&LRUNode<Key, Value>, SbroadError> {
-        self.map
-            .get(key)
-            .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("(LRU) with key {key:?}")))
+        self.map.get(key).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Node, format!("(LRU) with key {key:?}").into())
+        })
     }
 
     fn get_node_mut(&mut self, key: &Option<Key>) -> Result<&mut LRUNode<Key, Value>, SbroadError> {
         self.map.get_mut(key).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("(mutable LRU) with key {key:?}"))
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("(mutable LRU) with key {key:?}").into(),
+            )
         })
     }
 
@@ -179,7 +184,7 @@ where
             let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
-                    format!("(mutable LRU) with key {:?}", &head_prev_id),
+                    format!("(mutable LRU) with key {:?}", &head_prev_id).into(),
                 )
             })?;
             evict_fn(&mut head_prev.value)?;
@@ -236,7 +241,7 @@ where
         if capacity == 0 {
             return Err(SbroadError::Invalid(
                 Entity::Cache,
-                Some("LRU cache capacity must be greater than zero".to_string()),
+                Some("LRU cache capacity must be greater than zero".to_smolstr()),
             ));
         }
         let head = LRUNode::sentinel();
@@ -269,7 +274,7 @@ where
             Err(SbroadError::FailedTo(
                 Action::Retrieve,
                 Some(Entity::Value),
-                format!("from the LRU cache for a key {key:?}"),
+                format!("from the LRU cache for a key {key:?}").into(),
             ))
         }
     }

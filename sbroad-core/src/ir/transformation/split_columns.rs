@@ -59,7 +59,7 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("node is not a boolean expression: {top_expr:?}")),
+                    Some(format!("node is not a boolean expression: {top_expr:?}").into()),
                 ));
             }
         };
@@ -77,7 +77,7 @@ impl Plan {
             if left_list.len() != right_list.len() {
                 return Err(SbroadError::UnexpectedNumberOfValues(format!(
                     "left and right rows have different number of columns: {left_expr:?}, {right_expr:?}"
-                )));
+                ).into()));
             }
             let pairs = left_list
                 .iter()

@@ -22,10 +22,10 @@ fn scan_rel() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -60,10 +60,10 @@ fn scan_rel_serialized() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Number),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Number),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -96,10 +96,10 @@ fn projection() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -128,7 +128,7 @@ fn projection() {
 
     // Try to build projection from the non-existing node
     assert_eq!(
-        SbroadError::NotFound(Entity::Node, "from arena with index 42".to_string()),
+        SbroadError::NotFound(Entity::Node, "from arena with index 42".to_smolstr()),
         plan.add_proj(42, &["a"], false, false).unwrap_err()
     );
 }
@@ -154,10 +154,10 @@ fn selection() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -205,7 +205,7 @@ fn except() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -217,7 +217,7 @@ fn except() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -237,8 +237,8 @@ fn except() {
     let t3 = Table::new_sharded(
         "t3",
         vec![
-            column_user_non_null(String::from("a"), Type::Unsigned),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["a"],
@@ -263,7 +263,7 @@ fn insert() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -276,8 +276,8 @@ fn insert() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_user_non_null(String::from("a"), Type::Unsigned),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
             Column::new("c", Type::Unsigned, ColumnRole::Sharding, true),
         ],
         &["a"],
@@ -331,7 +331,7 @@ fn union_all() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -342,7 +342,7 @@ fn union_all() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_user_non_null(String::from("a"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Unsigned)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -361,8 +361,8 @@ fn union_all_col_amount_mismatch() {
     let t1 = Table::new_sharded(
         "t1",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["a"],
@@ -376,7 +376,7 @@ fn union_all_col_amount_mismatch() {
     // Check errors for children with different amount of column
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_user_non_null(String::from("b"), Type::Unsigned)],
+        vec![column_user_non_null(SmolStr::from("b"), Type::Unsigned)],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
@@ -401,8 +401,8 @@ fn sub_query() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
         ],
         &["a"],
         &["b"],
@@ -449,7 +449,7 @@ fn selection_with_sub_query() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_integer_user_non_null(String::from("a"))],
+        vec![column_integer_user_non_null(SmolStr::from("a"))],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -461,7 +461,7 @@ fn selection_with_sub_query() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_integer_user_non_null(String::from("b"))],
+        vec![column_integer_user_non_null(SmolStr::from("b"))],
         &["b"],
         &["b"],
         SpaceEngine::Memtx,
@@ -506,8 +506,8 @@ fn join() {
     let t1 = Table::new_sharded(
         "t1",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
             sharding_column(),
         ],
         &["a"],
@@ -521,8 +521,8 @@ fn join() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_user_non_null(String::from("c"), Type::Boolean),
-            column_user_non_null(String::from("d"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::Boolean),
+            column_user_non_null(SmolStr::from("d"), Type::Unsigned),
             sharding_column(),
         ],
         &["d"],
@@ -567,8 +567,8 @@ fn join_duplicate_columns() {
     let t1 = Table::new_sharded(
         "t1",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
             sharding_column(),
         ],
         &["a"],
@@ -582,8 +582,8 @@ fn join_duplicate_columns() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("d"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("d"), Type::Unsigned),
             sharding_column(),
         ],
         &["d"],

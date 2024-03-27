@@ -2,6 +2,7 @@
 
 extern crate yaml_rust;
 
+use smol_str::SmolStr;
 use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
@@ -26,13 +27,13 @@ pub struct RouterConfiguration {
     cache_capacity: usize,
 
     /// Sharding column names.
-    sharding_column: String,
+    sharding_column: SmolStr,
 
     /// IR table segments from the cluster spaces
-    tables: HashMap<String, Table>,
+    tables: HashMap<SmolStr, Table>,
 
     /// IR functions
-    functions: HashMap<String, Function>,
+    functions: HashMap<SmolStr, Function>,
 }
 
 impl Default for RouterConfiguration {
@@ -48,7 +49,7 @@ impl RouterConfiguration {
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
-            sharding_column: String::new(),
+            sharding_column: SmolStr::default(),
             functions: HashMap::new(),
         }
     }
@@ -96,9 +97,12 @@ impl RouterConfiguration {
                             None => {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
-                                    Some(format!(
-                                        "column name of table {current_space_name} is invalid"
-                                    )),
+                                    Some(
+                                        format!(
+                                            "column name of table {current_space_name} is invalid"
+                                        )
+                                        .into(),
+                                    ),
                                 ))
                             }
                         };
@@ -109,7 +113,7 @@ impl RouterConfiguration {
                                     Entity::ClusterSchema,
                                     Some(format!(
                                         "Type not found for columns {name} of table {current_space_name}"
-                                    )),
+                                    ).into()),
                                 ))
                             }
                         };
@@ -118,9 +122,12 @@ impl RouterConfiguration {
                             None => {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
-                                    Some(format!(
+                                    Some(
+                                        format!(
                                     "column is_nullable of table {current_space_name} is invalid"
-                                )),
+                                )
+                                        .into(),
+                                    ),
                                 ))
                             }
                         };
@@ -148,7 +155,7 @@ impl RouterConfiguration {
                     continue;
                 };
 
-                let shard_key: Vec<String> = if let Some(shard_key) =
+                let shard_key: Vec<SmolStr> = if let Some(shard_key) =
                     params["sharding_key"].as_vec()
                 {
                     let mut result = Vec::new();
@@ -179,25 +186,28 @@ impl RouterConfiguration {
                     let pk = indexes.first().ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::PrimaryKey,
-                            format!("for space {current_space_name}"),
+                            format!("for space {current_space_name}").into(),
                         )
                     })?;
                     let pk_parts = pk["parts"].as_vec().ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::PrimaryKey,
-                            Some(format!(
-                                "for space {current_space_name}: failed to get index parts"
-                            )),
+                            Some(
+                                format!(
+                                    "for space {current_space_name}: failed to get index parts"
+                                )
+                                .into(),
+                            ),
                         )
                     })?;
 
                     pk_parts.iter().map(|p| {
                         let name = p["path"].as_str().ok_or_else(|| SbroadError::Invalid(
                            Entity::PrimaryKey,
-                           Some(format!("for space {current_space_name}: failed to get index part field")))
+                           Some(format!("for space {current_space_name}: failed to get index part field").into()))
                         )?;
                         Ok(normalize_name_from_schema(name))
-                    }).collect::<Result<Vec<String>, SbroadError>>()?
+                    }).collect::<Result<Vec<SmolStr>, SbroadError>>()?
                 } else {
                     warn!(
                         Option::from("configuration parsing"),
@@ -224,17 +234,17 @@ impl RouterConfiguration {
                     continue;
                 };
 
-                let table_name: String = normalize_name_from_schema(current_space_name);
+                let table_name: SmolStr = normalize_name_from_schema(current_space_name);
                 debug!(
                     Option::from("configuration parsing"),
                     &format!(
                         "Table's original name: {current_space_name}, qualified name {table_name}"
                     ),
                 );
-                let shard_key_str = shard_key.iter().map(String::as_str).collect::<Vec<&str>>();
+                let shard_key_str = shard_key.iter().map(SmolStr::as_str).collect::<Vec<&str>>();
                 let primary_key_str = primary_key
                     .iter()
-                    .map(String::as_str)
+                    .map(SmolStr::as_str)
                     .collect::<Vec<&str>>();
                 let t = Table::new_sharded(
                     &table_name,
@@ -270,7 +280,7 @@ impl RouterConfiguration {
         }
     }
 
-    pub fn set_sharding_column(&mut self, column: String) {
+    pub fn set_sharding_column(&mut self, column: SmolStr) {
         self.sharding_column = column;
     }
 }
@@ -307,7 +317,7 @@ impl Metadata for RouterConfiguration {
     }
 
     /// Get sharding key's column names by a space name
-    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<SmolStr>, SbroadError> {
         let table = self.table(space)?;
         table.get_sharding_column_names()
     }

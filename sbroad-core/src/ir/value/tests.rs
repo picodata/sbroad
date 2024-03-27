@@ -48,7 +48,8 @@ fn uuid_negative() {
         SbroadError::FailedTo(
             Action::Serialize,
             Some(Entity::Value),
-            "uuid hello into string: invalid length: expected one of [36, 32], found 5".to_string()
+            "uuid hello into string: invalid length: expected one of [36, 32], found 5"
+                .to_smolstr()
         )
     );
 }
@@ -283,7 +284,7 @@ fn arithmetic() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some("Can't cast Double(Double { value: NaN }) to decimal".to_string()),
+            Some("Can't cast Double(Double { value: NaN }) to decimal".to_smolstr()),
         )),
         Value::Double(Double::from(f64::NAN)).add(&Value::Integer(1))
     );
@@ -331,7 +332,7 @@ fn arithmetic() {
         Err(SbroadError::Invalid(
             Entity::Value,
             Some(
-                "Only numerical values can be casted to Decimal. String(\"\") was met".to_string()
+                "Only numerical values can be casted to Decimal. String(\"\") was met".to_smolstr()
             )
         )),
         Value::from("").div(&Value::Unsigned(2))
@@ -339,7 +340,7 @@ fn arithmetic() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some("Can not divide Integer(1) by zero Integer(0)".to_string())
+            Some("Can not divide Integer(1) by zero Integer(0)".to_smolstr())
         )),
         Value::Integer(1).div(&Value::Integer(0))
     );
@@ -372,7 +373,7 @@ fn concatenation() {
     assert_eq!(
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some("Integer(1) and String(\"b\") must be strings to be concatenated".to_string())
+            Some("Integer(1) and String(\"b\") must be strings to be concatenated".to_smolstr())
         )),
         Value::Integer(1).concat(&Value::from("b"))
     )
@@ -412,7 +413,7 @@ fn and_or() {
             Entity::Value,
             Some(
                 "Integer(1) and Boolean(false) must be booleans to be applied to OR operation"
-                    .to_string()
+                    .to_smolstr()
             )
         )),
         Value::Integer(1).or(&Value::from(false))

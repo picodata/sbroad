@@ -8,10 +8,10 @@ use crate::ir::tests::column_user_non_null;
 
 #[test]
 fn column() {
-    let a = column_user_non_null(String::from("a"), Type::Boolean);
-    assert_eq!(a, column_user_non_null(String::from("a"), Type::Boolean));
-    assert_ne!(a, column_user_non_null(String::from("a"), Type::String));
-    assert_ne!(a, column_user_non_null(String::from("b"), Type::Boolean));
+    let a = column_user_non_null(SmolStr::from("a"), Type::Boolean);
+    assert_eq!(a, column_user_non_null(SmolStr::from("a"), Type::Boolean));
+    assert_ne!(a, column_user_non_null(SmolStr::from("a"), Type::String));
+    assert_ne!(a, column_user_non_null(SmolStr::from("b"), Type::Boolean));
 }
 
 #[test]
@@ -19,10 +19,10 @@ fn table_seg() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -40,7 +40,7 @@ fn table_seg() {
 fn table_seg_name() {
     let t = Table::new_sharded(
         "t",
-        vec![column_user_non_null(String::from("a"), Type::Boolean)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -55,19 +55,19 @@ fn table_seg_duplicate_columns() {
         Table::new_sharded(
             "t",
             vec![
-                column_user_non_null(String::from("a"), Type::Boolean),
-                column_user_non_null(String::from("b"), Type::Unsigned),
-                column_user_non_null(String::from("c"), Type::String),
-                column_user_non_null(String::from("a"), Type::String),
+                column_user_non_null(SmolStr::from("a"), Type::Boolean),
+                column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+                column_user_non_null(SmolStr::from("c"), Type::String),
+                column_user_non_null(SmolStr::from("a"), Type::String),
             ],
             &["b", "a"],
             &["b", "a"],
             SpaceEngine::Memtx,
         )
         .unwrap_err(),
-        SbroadError::DuplicatedValue(format!(
-            r#"Table "t" has a duplicating column "a" at positions 0 and 3"#,
-        ))
+        SbroadError::DuplicatedValue(
+            format!(r#"Table "t" has a duplicating column "a" at positions 0 and 3"#,).into()
+        )
     );
 }
 
@@ -76,9 +76,9 @@ fn table_seg_dno_bucket_id_column() {
     let t1 = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],
@@ -87,16 +87,18 @@ fn table_seg_dno_bucket_id_column() {
     .unwrap();
 
     assert_eq!(
-        SbroadError::UnexpectedNumberOfValues(format!("Table {} has no bucket_id columns", "t")),
+        SbroadError::UnexpectedNumberOfValues(
+            format!("Table {} has no bucket_id columns", "t").into()
+        ),
         t1.get_bucket_id_position().unwrap_err()
     );
 
     let t2 = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
             Column::new("bucket_id", Type::String, ColumnRole::Sharding, false),
             Column::new("bucket_id2", Type::String, ColumnRole::Sharding, false),
         ],
@@ -118,10 +120,10 @@ fn table_seg_wrong_key() {
         Table::new_sharded(
             "t",
             vec![
-                column_user_non_null(String::from("a"), Type::Boolean),
-                column_user_non_null(String::from("b"), Type::Unsigned),
-                column_user_non_null(String::from("c"), Type::String),
-                column_user_non_null(String::from("d"), Type::String),
+                column_user_non_null(SmolStr::from("a"), Type::Boolean),
+                column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+                column_user_non_null(SmolStr::from("c"), Type::String),
+                column_user_non_null(SmolStr::from("d"), Type::String),
             ],
             &["a", "e"],
             &["a"],
@@ -139,7 +141,7 @@ fn table_seg_compound_type_in_key() {
             "t",
             vec![
                 Column::new("bucket_id", Type::Unsigned, ColumnRole::Sharding, false),
-                column_user_non_null(String::from("a"), Type::Array),
+                column_user_non_null(SmolStr::from("a"), Type::Array),
             ],
             &["a"],
             &["a"],
@@ -158,12 +160,12 @@ fn table_seg_serialized() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Number),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
-            column_user_non_null(String::from("e"), Type::Integer),
-            column_user_non_null(String::from("f"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Number),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("e"), Type::Integer),
+            column_user_non_null(SmolStr::from("f"), Type::Unsigned),
         ],
         &["a", "d"],
         &["a", "d"],
@@ -254,7 +256,7 @@ fn table_seg_serialized_no_columns() {
 
 #[test]
 fn column_msgpack_serialize() {
-    let c = column_user_non_null(String::from("name"), Type::Boolean);
+    let c = column_user_non_null(SmolStr::from("name"), Type::Boolean);
 
     assert_eq!(
         vec![
@@ -265,7 +267,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = column_user_non_null(String::from("name"), Type::String);
+    let c = column_user_non_null(SmolStr::from("name"), Type::String);
 
     assert_eq!(
         vec![
@@ -276,7 +278,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = column_user_non_null(String::from("name"), Type::Integer);
+    let c = column_user_non_null(SmolStr::from("name"), Type::Integer);
 
     assert_eq!(
         vec![
@@ -287,7 +289,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = column_user_non_null(String::from("name"), Type::Unsigned);
+    let c = column_user_non_null(SmolStr::from("name"), Type::Unsigned);
 
     assert_eq!(
         vec![
@@ -298,7 +300,7 @@ fn column_msgpack_serialize() {
         rmp_serde::to_vec(&c).unwrap()
     );
 
-    let c = column_user_non_null(String::from("name"), Type::Number);
+    let c = column_user_non_null(SmolStr::from("name"), Type::Number);
 
     assert_eq!(
         vec![
@@ -312,7 +314,7 @@ fn column_msgpack_serialize() {
 
 #[test]
 fn column_msgpack_deserialize() {
-    let c = column_user_non_null(String::from("name"), Type::Boolean);
+    let c = column_user_non_null(SmolStr::from("name"), Type::Boolean);
 
     let expected_msgpack = vec![
         0x83, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x6E, 0x61, 0x6D, 0x65, 0xA4, 0x74, 0x79, 0x70,
@@ -333,10 +335,10 @@ fn table_converting() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("b"), Type::Unsigned),
-            column_user_non_null(String::from("c"), Type::String),
-            column_user_non_null(String::from("d"), Type::String),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Unsigned),
+            column_user_non_null(SmolStr::from("c"), Type::String),
+            column_user_non_null(SmolStr::from("d"), Type::String),
         ],
         &["b", "a"],
         &["b", "a"],

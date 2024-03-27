@@ -1,4 +1,5 @@
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
@@ -89,9 +90,9 @@ fn empty_motion1_test() {
 fn t2_empty() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
-    virtual_table.add_column(column_integer_user_non_null(String::from("g")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("g")));
 
-    virtual_table.add_column(column_integer_user_non_null(String::from("h")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("h")));
 
     virtual_table.set_alias("\"t2\"").unwrap();
 

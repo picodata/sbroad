@@ -1,4 +1,5 @@
 use serde::Serialize;
+use smol_str::{SmolStr, ToSmolStr};
 use std::fmt;
 use tarantool::error::Error;
 use tarantool::transaction::TransactionError;
@@ -280,57 +281,59 @@ pub enum SbroadError {
     DoSkip,
     /// Some value that is considered to be unique is duplicated.
     /// Second param represents description.
-    DuplicatedValue(String),
+    DuplicatedValue(SmolStr),
     /// Process of Action variant failed.
     /// Second param represents object of action.
     /// Third param represents reason of fail.
-    FailedTo(Action, Option<Entity>, String),
+    FailedTo(Action, Option<Entity>, SmolStr),
     /// Object is invalid.
     /// Second param represents description and can be empty (None).
-    Invalid(Entity, Option<String>),
-    LuaError(String),
+    Invalid(Entity, Option<SmolStr>),
+    LuaError(SmolStr),
     /// Object not found.
     /// Second param represents description or name that let to identify object.
-    NotFound(Entity, String),
+    NotFound(Entity, SmolStr),
     /// Object is not implemented yet.
     /// Second param represents description or name.
-    NotImplemented(Entity, String),
+    NotImplemented(Entity, SmolStr),
     /// Error raised by object parsing.
     /// Second param represents error description.
-    ParsingError(Entity, String),
+    ParsingError(Entity, SmolStr),
     /// Unexpected number of values (list length etc.).
     /// Second param is information what was expected and what got.
-    UnexpectedNumberOfValues(String),
+    UnexpectedNumberOfValues(SmolStr),
     /// Object is not supported.
     /// Second param represents description or name that let to identify object.
     /// and can be empty (None).
-    Unsupported(Entity, Option<String>),
+    Unsupported(Entity, Option<SmolStr>),
     OutdatedStorageSchema,
     UseOfBothParamsStyles,
-    UnsupportedOpForGlobalTables(String),
+    UnsupportedOpForGlobalTables(SmolStr),
 }
 
 impl fmt::Display for SbroadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let p = match self {
-            SbroadError::DoSkip => DO_SKIP.to_string(),
-            SbroadError::DuplicatedValue(s) => format!("duplicated value: {s}"),
+        let p: SmolStr = match self {
+            SbroadError::DoSkip => DO_SKIP.to_smolstr(),
+            SbroadError::DuplicatedValue(s) => format!("duplicated value: {s}").to_smolstr(),
             SbroadError::FailedTo(a, e, s) => match e {
-                Some(entity) => format!("failed to {a} {entity}: {s}"),
-                None => format!("failed to {a} {s}"),
+                Some(entity) => format!("failed to {a} {entity}: {s}").to_smolstr(),
+                None => format!("failed to {a} {s}").to_smolstr(),
             },
             SbroadError::Invalid(e, s) => match s {
-                Some(msg) => format!("invalid {e}: {msg}"),
-                None => format!("invalid {e}"),
+                Some(msg) => format!("invalid {e}: {msg}").to_smolstr(),
+                None => format!("invalid {e}").to_smolstr(),
             },
-            SbroadError::NotFound(e, s) => format!("{e} {s} not found"),
-            SbroadError::NotImplemented(e, s) => format!("{e} {s} not implemented"),
-            SbroadError::ParsingError(e, s) => format!("{e} parsing error: {s}"),
+            SbroadError::NotFound(e, s) => format!("{e} {s} not found").to_smolstr(),
+            SbroadError::NotImplemented(e, s) => format!("{e} {s} not implemented").to_smolstr(),
+            SbroadError::ParsingError(e, s) => format!("{e} parsing error: {s}").to_smolstr(),
             SbroadError::Unsupported(e, s) => match s {
-                Some(msg) => format!("unsupported {e}: {msg}"),
-                None => format!("unsupported {e}"),
+                Some(msg) => format!("unsupported {e}: {msg}").to_smolstr(),
+                None => format!("unsupported {e}").to_smolstr(),
             },
-            SbroadError::UnexpectedNumberOfValues(s) => format!("unexpected number of values: {s}"),
+            SbroadError::UnexpectedNumberOfValues(s) => {
+                format!("unexpected number of values: {s}").to_smolstr()
+            }
             SbroadError::LuaError(e) => e.clone(),
             SbroadError::UseOfBothParamsStyles => {
                 "invalid parameters usage. Got $n and ? parameters in one query!".into()
@@ -339,7 +342,7 @@ impl fmt::Display for SbroadError {
                 "storage schema version different from router".into()
             }
             SbroadError::UnsupportedOpForGlobalTables(op) => {
-                format!("{op} is not supported for global tables")
+                format!("{op} is not supported for global tables").to_smolstr()
             }
         };
 
@@ -354,7 +357,7 @@ impl<E: fmt::Debug> From<TransactionError<E>> for SbroadError {
         SbroadError::FailedTo(
             Action::Create,
             Some(Entity::Transaction),
-            format!("{error:?}"),
+            format!("{error:?}").to_smolstr(),
         )
     }
 }
@@ -364,7 +367,7 @@ impl From<Error> for SbroadError {
         SbroadError::FailedTo(
             Action::Create,
             Some(Entity::Tarantool),
-            format!("{error:?}"),
+            format!("{error:?}").to_smolstr(),
         )
     }
 }

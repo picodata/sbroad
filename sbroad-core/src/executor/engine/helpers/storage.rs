@@ -1,3 +1,5 @@
+use smol_str::ToSmolStr;
+
 use crate::errors::{Entity, SbroadError};
 
 pub mod meta;
@@ -20,7 +22,7 @@ impl PreparedStmt {
         self.0.as_ref().ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statement,
-                Some("Statement is not prepared".to_string()),
+                Some("Statement is not prepared".to_smolstr()),
             )
         })
     }

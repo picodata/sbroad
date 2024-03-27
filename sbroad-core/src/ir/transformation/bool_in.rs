@@ -44,7 +44,7 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("Node is not a boolean IN expression: {top_expr:?}")),
+                    Some(format!("Node is not a boolean IN expression: {top_expr:?}").into()),
                 ));
             }
         };

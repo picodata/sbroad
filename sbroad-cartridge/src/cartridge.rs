@@ -8,6 +8,7 @@ use std::cell::Ref;
 
 use sbroad::error;
 use sbroad::errors::SbroadError;
+use smol_str::ToSmolStr;
 use tarantool::tlua::LuaFunction;
 
 /// Cartridge cluster configuration provider.
@@ -56,9 +57,9 @@ fn bucket_count() -> Result<u64, SbroadError> {
             Ok(v) => v,
             Err(e) => {
                 error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-                return Err(SbroadError::LuaError(format!(
-                    "Failed lua function load: {e}"
-                )));
+                return Err(SbroadError::LuaError(
+                    format!("Failed lua function load: {e}").into(),
+                ));
             }
         };
 
@@ -66,7 +67,7 @@ fn bucket_count() -> Result<u64, SbroadError> {
         Ok(r) => r,
         Err(e) => {
             error!(Option::from("set_bucket_count"), &format!("{e:?}"));
-            return Err(SbroadError::LuaError(e.to_string()));
+            return Err(SbroadError::LuaError(e.to_smolstr()));
         }
     };
 

@@ -47,7 +47,7 @@ pub enum Expression {
     /// Example: `42 as a`.
     Alias {
         /// Alias name.
-        name: String,
+        name: SmolStr,
         /// Child expression node index in the plan node arena.
         child: usize,
     },
@@ -142,7 +142,7 @@ pub enum Expression {
     /// changed only after restarting the cluster).
     StableFunction {
         /// Function name.
-        name: String,
+        name: SmolStr,
         /// Function arguments.
         children: Vec<usize>,
         /// Optional function feature.
@@ -367,7 +367,7 @@ impl Nodes {
     /// - name is empty
     pub fn add_alias(&mut self, name: &str, child: usize) -> Result<usize, SbroadError> {
         let alias = Expression::Alias {
-            name: String::from(name),
+            name: SmolStr::from(name),
             child,
         };
         Ok(self.push(Node::Expression(alias)))
@@ -386,13 +386,13 @@ impl Nodes {
         self.arena.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(left child of boolean node) from arena with index {left}"),
+                format!("(left child of boolean node) from arena with index {left}").into(),
             )
         })?;
         self.arena.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(right child of boolean node) from arena with index {right}"),
+                format!("(right child of boolean node) from arena with index {right}").into(),
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Bool { left, op, right })))
@@ -411,13 +411,13 @@ impl Nodes {
         self.arena.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(left child of Arithmetic node) from arena with index {left}"),
+                format!("(left child of Arithmetic node) from arena with index {left}").into(),
             )
         })?;
         self.arena.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(right child of Arithmetic node) from arena with index {right}"),
+                format!("(right child of Arithmetic node) from arena with index {right}").into(),
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Arithmetic { left, op, right })))
@@ -455,7 +455,10 @@ impl Nodes {
         child: usize,
     ) -> Result<usize, SbroadError> {
         self.arena.get(child).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {child}"))
+            SbroadError::NotFound(
+                Entity::Node,
+                format!("from arena with index {child}").into(),
+            )
         })?;
         Ok(self.push(Node::Expression(Expression::Unary { op, child })))
     }
@@ -851,9 +854,9 @@ impl ColumnPositionMap {
             // }
             //
             // So that given just a column name we can't say what column to refer to.
-            (Some(..), Some(..)) => Err(SbroadError::DuplicatedValue(format!(
-                "column name {column} is ambiguous"
-            ))),
+            (Some(..), Some(..)) => Err(SbroadError::DuplicatedValue(
+                format!("column name {column} is ambiguous").into(),
+            )),
             // Map contains single value for the given `column`.
             (Some((_, position)), None) => {
                 if let Positions::Single(pos) = position {
@@ -862,13 +865,13 @@ impl ColumnPositionMap {
                 // In case we have query like
                 // `select "a", "a" from (select "a" from t)`
                 // where single column is met on several positions.
-                Err(SbroadError::DuplicatedValue(format!(
-                    "column name {column} is ambiguous"
-                )))
+                Err(SbroadError::DuplicatedValue(
+                    format!("column name {column} is ambiguous").into(),
+                ))
             }
             _ => Err(SbroadError::NotFound(
                 Entity::Column,
-                format!("with name {column}"),
+                format!("with name {column}").into(),
             )),
         }
     }
@@ -890,13 +893,13 @@ impl ColumnPositionMap {
             //
             // Even given `scan` we can't identify which of these two columns do we need to
             // refer to.
-            return Err(SbroadError::DuplicatedValue(format!(
-                "column name {column} is ambiguous"
-            )));
+            return Err(SbroadError::DuplicatedValue(
+                format!("column name {column} is ambiguous").into(),
+            ));
         }
         Err(SbroadError::NotFound(
             Entity::Column,
-            format!("with name {column} and scan {scan:?}"),
+            format!("with name {column} and scan {scan:?}").into(),
         ))
     }
 
@@ -917,9 +920,9 @@ impl ColumnPositionMap {
             if let Positions::Single(pos) = positions {
                 res.push(*pos);
             } else {
-                return Err(SbroadError::DuplicatedValue(format!(
-                    "column name for {target_scan_name} scan name is ambiguous"
-                )));
+                return Err(SbroadError::DuplicatedValue(
+                    format!("column name for {target_scan_name} scan name is ambiguous").into(),
+                ));
             }
         }
 
@@ -1350,9 +1353,9 @@ impl Plan {
         parent: Option<usize>,
     ) -> Result<usize, SbroadError> {
         let sq_id = *children.get(target).ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues(format!(
-                "invalid target index: {target} (children: {children:?})",
-            ))
+            SbroadError::UnexpectedNumberOfValues(
+                format!("invalid target index: {target} (children: {children:?})",).into(),
+            )
         })?;
         let sq_rel = self.get_relation_node(sq_id)?;
         let sq_output_id = sq_rel.output();
@@ -1444,7 +1447,7 @@ impl Plan {
             let Some(referred_rel_id) = parent else {
                 return Err(SbroadError::NotFound(
                     Entity::Node,
-                    format!("that is Reference ({ref_id}) parent"),
+                    format!("that is Reference ({ref_id}) parent").into(),
                 ));
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
@@ -1470,9 +1473,9 @@ impl Plan {
                             if let Relational::Motion { .. } = rel {
                                 return Ok(referred_rel_id);
                             }
-                            return Err(SbroadError::UnexpectedNumberOfValues(format!(
-                                "Relational node {rel:?} has no children"
-                            )));
+                            return Err(SbroadError::UnexpectedNumberOfValues(
+                                format!("Relational node {rel:?} has no children").into(),
+                            ));
                         }
                         _ => {
                             return Err(SbroadError::UnexpectedNumberOfValues(
@@ -1529,7 +1532,10 @@ impl Plan {
             } = reference
             {
                 let referred_rel_id = parent.ok_or_else(|| {
-                    SbroadError::NotFound(Entity::Node, format!("that is Reference ({id}) parent"))
+                    SbroadError::NotFound(
+                        Entity::Node,
+                        format!("that is Reference ({id}) parent").into(),
+                    )
                 })?;
                 let rel = self.get_relation_node(referred_rel_id)?;
                 if let Some(children) = rel.children() {
@@ -1630,9 +1636,9 @@ impl Plan {
     ) -> Result<Value, SbroadError> {
         let node = self.get_expression_node(row_id)?;
         if let Expression::Row { list, .. } = node {
-            let const_node_id = list
-                .get(child_num)
-                .ok_or_else(|| SbroadError::NotFound(Entity::Node, format!("{child_num}")))?;
+            let const_node_id = list.get(child_num).ok_or_else(|| {
+                SbroadError::NotFound(Entity::Node, format!("{child_num}").into())
+            })?;
 
             let v = self.get_expression_node(*const_node_id)?.as_const_value()?;
 

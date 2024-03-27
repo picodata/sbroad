@@ -71,7 +71,11 @@ impl TmpSpace {
             };
 
             let space = Space::create(&name, &options).map_err(|e| {
-                SbroadError::FailedTo(Action::Create, Some(Entity::Space), format!("{name}: {e}"))
+                SbroadError::FailedTo(
+                    Action::Create,
+                    Some(Entity::Space),
+                    format!("{name}: {e}").into(),
+                )
             })?;
             let cleanup = |space: Space| match space.drop() {
                 Ok(_) => {}
@@ -89,7 +93,7 @@ impl TmpSpace {
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::Index),
-                        format!("{pk_name} for space {name}: {e}"),
+                        format!("{pk_name} for space {name}: {e}").into(),
                     ));
                 }
             }
@@ -107,7 +111,7 @@ impl TmpSpace {
                         return Err(SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Bytes),
-                            format!("to tuple: {e}"),
+                            format!("to tuple: {e}").into(),
                         ));
                     }
                 };
@@ -118,7 +122,7 @@ impl TmpSpace {
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Tuple),
-                            format!("tuple {tuple:?} into {name}: {e}"),
+                            format!("tuple {tuple:?} into {name}: {e}").into(),
                         ));
                     }
                 }

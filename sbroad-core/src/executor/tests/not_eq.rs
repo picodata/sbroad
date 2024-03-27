@@ -1,4 +1,5 @@
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
@@ -71,7 +72,7 @@ fn not_eq2_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(String::from("id")));
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
     virtual_table.add_tuple(vec![Value::from(3_u64)]);
     query
         .coordinator

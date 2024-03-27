@@ -13,6 +13,7 @@ use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
 use sbroad::{debug, error, warn};
+use smol_str::ToSmolStr;
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::fmt::Display;
@@ -60,7 +61,7 @@ impl QueryCache for StorageRuntime {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}").into())
             })?
             .0
             .capacity())
@@ -70,7 +71,7 @@ impl QueryCache for StorageRuntime {
         self.cache
             .try_borrow_mut()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}"))
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}").into())
             })?
             .clear()?;
         Ok(())
@@ -90,13 +91,21 @@ impl ConfigurationProvider for StorageRuntime {
 
     fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
         self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })
     }
 
     fn clear_config(&self) -> Result<(), SbroadError> {
         let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e}").into(),
+            )
         })?;
         *metadata = Self::Configuration::new();
         Ok(())
@@ -104,7 +113,11 @@ impl ConfigurationProvider for StorageRuntime {
 
     fn is_config_empty(&self) -> Result<bool, SbroadError> {
         let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e:?}").into(),
+            )
         })?;
         Ok(metadata.is_empty())
     }
@@ -122,11 +135,11 @@ impl ConfigurationProvider for StorageRuntime {
                         Option::from("getting storage cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
             let storage_capacity = usize::try_from(capacity)
-                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e:?}"))))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e:?}").into())))?;
 
             let storage_cache_size_bytes: LuaFunction<_> =
                 lua.eval("return get_storage_cache_size_bytes;").unwrap();
@@ -137,11 +150,11 @@ impl ConfigurationProvider for StorageRuntime {
                         Option::from("getting storage cache size bytes"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}")));
+                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
                 }
             };
             let storage_size_bytes = usize::try_from(cache_size_bytes)
-                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e}"))))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e}").into())))?;
 
             let mut metadata = StorageConfiguration::new();
             metadata.storage_capacity = storage_capacity;
@@ -154,7 +167,11 @@ impl ConfigurationProvider for StorageRuntime {
 
     fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError> {
         let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e:?}").into(),
+            )
         })?;
         let storage_size_bytes = metadata.storage_size_bytes;
         *cached_metadata = metadata;
@@ -174,14 +191,14 @@ impl Vshard for StorageRuntime {
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_on_all is not supported on the storage".to_string()),
+            Some("exec_ir_on_all is not supported on the storage".to_smolstr()),
         ))
     }
 
     fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_locally is not supported for the cartridge runtime".to_string()),
+            Some("exec_ir_locally is not supported for the cartridge runtime".to_smolstr()),
         ))
     }
 
@@ -204,7 +221,7 @@ impl Vshard for StorageRuntime {
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_on_some is not supported on the storage".to_string()),
+            Some("exec_ir_on_some is not supported on the storage".to_smolstr()),
         ))
     }
 }

@@ -56,7 +56,7 @@ impl FromStr for Double {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Double {
             value: s.parse::<f64>().map_err(|_| {
-                SbroadError::ParsingError(Entity::Value, format!("{s} is not a valid f64"))
+                SbroadError::ParsingError(Entity::Value, format!("{s} is not a valid f64").into())
             })?,
         })
     }

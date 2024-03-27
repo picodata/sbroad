@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use pretty_assertions::assert_eq;
+use smol_str::ToSmolStr;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::ir::operator::{Arithmetic, Bool, Unary};
@@ -21,7 +22,7 @@ fn sql_order_selection() {
     let mut plan = Plan::default();
     let t = Table::new_sharded(
         "t",
-        vec![column_user_non_null(String::from("a"), Type::Boolean)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -100,10 +101,10 @@ fn sql_arbitrary_projection_plan() {
     let t = Table::new_sharded(
         "t",
         vec![
-            column_integer_user_non_null(String::from("a")),
-            column_integer_user_non_null(String::from("b")),
-            column_integer_user_non_null(String::from("c")),
-            column_integer_user_non_null(String::from("d")),
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("c")),
+            column_integer_user_non_null(SmolStr::from("d")),
             sharding_column(),
         ],
         &["a"],
@@ -221,7 +222,7 @@ fn sql_arbitrary_projection_plan() {
     // alias
     assert_eq!(Some(&SyntaxData::PlanId(25)), nodes_iter.next());
     assert_eq!(
-        Some(&SyntaxData::Alias("COL_1".to_string())),
+        Some(&SyntaxData::Alias("COL_1".to_smolstr())),
         nodes_iter.next()
     );
     // from

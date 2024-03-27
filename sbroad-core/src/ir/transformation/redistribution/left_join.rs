@@ -1,6 +1,8 @@
 //! Left Join trasformation logic when outer child has Global distribution
 //! and inner child has Segment or Any distribution.
 
+use smol_str::SmolStr;
+
 use crate::{
     errors::{Entity, SbroadError},
     ir::{
@@ -40,7 +42,7 @@ impl Plan {
         let Some(parent_id) = self.find_parent_rel(join_id)? else {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
-                Some(format!("join ({join_id}) has no parent!")),
+                Some(format!("join ({join_id}) has no parent!").into()),
             ));
         };
         let projection_id = create_projection(self, join_id)?;
@@ -67,7 +69,7 @@ impl Plan {
 
 fn create_projection(plan: &mut Plan, join_id: usize) -> Result<usize, SbroadError> {
     let proj_columns_names = collect_projection_columns(plan, join_id)?;
-    let proj_columns_refs: Vec<&str> = proj_columns_names.iter().map(String::as_str).collect();
+    let proj_columns_refs: Vec<&str> = proj_columns_names.iter().map(SmolStr::as_str).collect();
     let proj_id = plan.add_proj(join_id, &proj_columns_refs, false, false)?;
     let output_id = plan.get_relational_output(proj_id)?;
     plan.replace_parent_in_subtree(output_id, Some(join_id), Some(proj_id))?;
@@ -76,7 +78,10 @@ fn create_projection(plan: &mut Plan, join_id: usize) -> Result<usize, SbroadErr
 }
 
 // Returns a list of column aliases from join node output.
-fn collect_projection_columns(plan: &mut Plan, join_id: usize) -> Result<Vec<String>, SbroadError> {
+fn collect_projection_columns(
+    plan: &mut Plan,
+    join_id: usize,
+) -> Result<Vec<SmolStr>, SbroadError> {
     // TODO: currently we use all columns from joined tables,
     // but it is possible that a lot of columns are not used
     // above in the plan, we can remove unused columns to
@@ -84,7 +89,7 @@ fn collect_projection_columns(plan: &mut Plan, join_id: usize) -> Result<Vec<Str
     // https://git.picodata.io/picodata/picodata/sbroad/-/issues/36
     let output_id = plan.get_relational_output(join_id)?;
     let columns_len = plan.get_row_list(output_id)?.len();
-    let mut projection_columns: Vec<String> = Vec::with_capacity(columns_len);
+    let mut projection_columns: Vec<SmolStr> = Vec::with_capacity(columns_len);
     for idx in 0..columns_len {
         let expr_id = *plan.get_row_list(output_id)?.get(idx).ok_or_else(|| {
             SbroadError::UnexpectedNumberOfValues("output row size changed".into())
@@ -94,7 +99,7 @@ fn collect_projection_columns(plan: &mut Plan, join_id: usize) -> Result<Vec<Str
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node ({join_id}) output columns is not alias")),
+                Some(format!("node ({join_id}) output columns is not alias").into()),
             ));
         }
     }

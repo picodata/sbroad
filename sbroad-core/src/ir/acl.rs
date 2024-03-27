@@ -63,7 +63,7 @@ fn check_privilege(privilege: Privilege, accepted: &[Privilege]) -> Result<(), S
     if !accepted.contains(&privilege) {
         return Err(SbroadError::Invalid(
             Entity::Privilege,
-            Some(format!("Supported privileges are: {accepted:?}")),
+            Some(format!("Supported privileges are: {accepted:?}").into()),
         ));
     }
     Ok(())
@@ -243,7 +243,7 @@ impl Acl {
         .map_err(|e| {
             SbroadError::Invalid(
                 Entity::SpaceMetadata,
-                Some(format!("timeout parsing error {e:?}")),
+                Some(format!("timeout parsing error {e:?}").into()),
             )
         })
     }
@@ -261,7 +261,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}")),
+                Some(format!("node is not ACL type: {node:?}").into()),
             )),
         }
     }
@@ -277,7 +277,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}")),
+                Some(format!("node is not ACL type: {node:?}").into()),
             )),
         }
     }
@@ -295,7 +295,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}")),
+                Some(format!("node is not ACL type: {node:?}").into()),
             )),
         }
     }

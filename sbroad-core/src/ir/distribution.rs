@@ -1,6 +1,7 @@
 //! Tuple distribution module.
 
 use ahash::{AHashMap, RandomState};
+use smol_str::ToSmolStr;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -48,13 +49,13 @@ impl Key {
                         SbroadError::FailedTo(
                             Action::Create,
                             Some(Entity::Column),
-                            format!("column {name} not found at position {pos}"),
+                            format!("column {name} not found at position {pos}").into(),
                         )
                     })?;
                     if !column.r#type.is_scalar() {
                         return Err(SbroadError::Invalid(
                             Entity::Column,
-                            Some(format!("column {name} at position {pos} is not scalar",)),
+                            Some(format!("column {name} at position {pos} is not scalar",).into()),
                         ));
                     }
                     Ok(pos)
@@ -86,7 +87,7 @@ impl TryFrom<&MotionKey> for KeySet {
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::DistributionKey),
-                        format!("found value target in motion key: {v}"),
+                        format!("found value target in motion key: {v}").into(),
                     ));
                 }
             }
@@ -160,7 +161,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                    Some(format!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
             }
             (
                 Distribution::Segment {
@@ -193,7 +194,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                    Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
             }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
             (
@@ -227,7 +228,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
+                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
             }
             (Distribution::Global, Distribution::Global) => {
                 // this case is handled by `dist_from_subqueries``
@@ -330,7 +331,9 @@ impl ReferenceInfo {
             {
                 // As the row is located in the branch relational node, the targets should be non-empty.
                 let targets = targets.as_ref().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues("Reference targets are empty".to_string())
+                    SbroadError::UnexpectedNumberOfValues(
+                        "Reference targets are empty".to_smolstr(),
+                    )
                 })?;
                 ref_map.reserve(targets.len());
                 ref_nodes.reserve(targets.len());
@@ -338,7 +341,7 @@ impl ReferenceInfo {
                     let referred_id = parent_children.get(*target).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Expression,
-                            "reference points to invalid column".to_string(),
+                            "reference points to invalid column".to_smolstr(),
                         )
                     })?;
                     ref_nodes.append(*referred_id);
@@ -416,7 +419,7 @@ impl Plan {
         ) {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected projection on id: {proj_id}")),
+                Some(format!("expected projection on id: {proj_id}").into()),
             ));
         };
 
@@ -450,7 +453,7 @@ impl Plan {
         let children = self.get_relational_children(proj_id)?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("projection node ({proj_id}) has no children")),
+                Some(format!("projection node ({proj_id}) has no children").into()),
             )
         })?;
         let ref_info = ReferenceInfo::new(output_id, self, children)?;
@@ -497,7 +500,7 @@ impl Plan {
                 ReferredNodes::None => {
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
-                        Some("the row contains no references".to_string()),
+                        Some("the row contains no references".to_smolstr()),
                     ));
                 }
                 ReferredNodes::Single(child_id) => {
@@ -527,7 +530,7 @@ impl Plan {
                 ReferredNodes::Multiple(_) => {
                     return Err(SbroadError::DuplicatedValue(
                         "Row contains multiple references to the same node (and in is not VALUES)"
-                            .to_string(),
+                            .to_smolstr(),
                     ));
                 }
             }
@@ -550,7 +553,7 @@ impl Plan {
                     if targets.is_some() {
                         return Err(SbroadError::Invalid(
                             Entity::Expression,
-                            Some("References to the children targets in the leaf (relation scan) node are not supported".to_string()),
+                            Some("References to the children targets in the leaf (relation scan) node are not supported".to_smolstr()),
                         ));
                     }
                     table_map.insert(*position, pos);
@@ -634,9 +637,7 @@ impl Plan {
                     // distribution.
                     return Err(SbroadError::Invalid(
                         Entity::Distribution,
-                        Some(format!(
-                            "expected Motion(Full) for subquery child ({sq_id})"
-                        )),
+                        Some(format!("expected Motion(Full) for subquery child ({sq_id})").into()),
                     ));
                 }
                 Distribution::Single | Distribution::Global => {}
@@ -664,7 +665,7 @@ impl Plan {
                     None => {
                         return Err(SbroadError::Invalid(
                             Entity::Distribution,
-                            Some("distribution is uninitialized".to_string()),
+                            Some("distribution is uninitialized".to_smolstr()),
                         ));
                     }
                     Some(Distribution::Single) => return Ok(Distribution::Single),
@@ -728,7 +729,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Expression,
-            Some("the node is not a row type".to_string()),
+            Some("the node is not a row type".to_smolstr()),
         ))
     }
 
@@ -751,7 +752,7 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Relational,
-                    Some("expected Except, UnionAll or InnerJoin".to_string()),
+                    Some("expected Except, UnionAll or InnerJoin".to_smolstr()),
                 ));
             }
         };
@@ -765,7 +766,7 @@ impl Plan {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some("expected Row".to_string()),
+                Some("expected Row".to_smolstr()),
             ));
         };
 
@@ -783,24 +784,24 @@ impl Plan {
                 Entity::Distribution,
                 Some(
                     "Failed to get distribution for a relational node (try its row output tuple)."
-                        .to_string(),
+                        .to_smolstr(),
                 ),
             )),
             Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Distribution,
-                Some("Failed to get distribution for a parameter node.".to_string()),
+                Some("Failed to get distribution for a parameter node.".to_smolstr()),
             )),
             Node::Ddl(_) => Err(SbroadError::Invalid(
                 Entity::Distribution,
-                Some("Failed to get distribution for a DDL node.".to_string()),
+                Some("Failed to get distribution for a DDL node.".to_smolstr()),
             )),
             Node::Acl(_) => Err(SbroadError::Invalid(
                 Entity::Distribution,
-                Some("Failed to get distribution for a ACL node.".to_string()),
+                Some("Failed to get distribution for a ACL node.".to_smolstr()),
             )),
             Node::Block(_) => Err(SbroadError::Invalid(
                 Entity::Distribution,
-                Some("Failed to get distribution for a code block node.".to_string()),
+                Some("Failed to get distribution for a code block node.".to_smolstr()),
             )),
         }
     }

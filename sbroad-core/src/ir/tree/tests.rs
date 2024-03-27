@@ -5,6 +5,7 @@ use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAP
 use crate::ir::value::Value;
 use crate::ir::{Expression, Plan};
 use pretty_assertions::assert_eq;
+use smol_str::SmolStr;
 
 #[test]
 fn expression_bft() {
@@ -56,7 +57,7 @@ fn relational_post() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_user_non_null(String::from("a"), Type::Boolean)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -67,7 +68,7 @@ fn relational_post() {
 
     let t2 = Table::new_sharded(
         "t2",
-        vec![column_user_non_null(String::from("a"), Type::Boolean)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -120,7 +121,7 @@ fn selection_subquery_dfs_post() {
 
     let t1 = Table::new_sharded(
         "t1",
-        vec![column_user_non_null(String::from("a"), Type::Boolean)],
+        vec![column_user_non_null(SmolStr::from("a"), Type::Boolean)],
         &["a"],
         &["a"],
         SpaceEngine::Memtx,
@@ -133,8 +134,8 @@ fn selection_subquery_dfs_post() {
     let t2 = Table::new_sharded(
         "t2",
         vec![
-            column_user_non_null(String::from("b"), Type::Boolean),
-            column_user_non_null(String::from("c"), Type::Boolean),
+            column_user_non_null(SmolStr::from("b"), Type::Boolean),
+            column_user_non_null(SmolStr::from("c"), Type::Boolean),
         ],
         &["b"],
         &["b"],
@@ -210,8 +211,8 @@ fn subtree_dfs_post() {
     let t1 = Table::new_sharded(
         "t1",
         vec![
-            column_user_non_null(String::from("a"), Type::Boolean),
-            column_user_non_null(String::from("c"), Type::Boolean),
+            column_user_non_null(SmolStr::from("a"), Type::Boolean),
+            column_user_non_null(SmolStr::from("c"), Type::Boolean),
         ],
         &["a", "c"],
         &["a", "c"],

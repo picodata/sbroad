@@ -3,6 +3,7 @@
 use crate::cbo::histogram::{Bucket, BucketType, HistogramBuckets, Scalar};
 use crate::errors::{Entity, SbroadError};
 use itertools::enumerate;
+use smol_str::SmolStr;
 use std::cmp::Ordering;
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
@@ -76,9 +77,7 @@ pub fn get_expected_number_of_buckets() -> Result<u64, SbroadError> {
     let Ok(decimal_error) = Decimal::try_from(EXPECTED_MERGING_ERROR) else {
         return Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!(
-                "Unable to convert {EXPECTED_MERGING_ERROR} to decimal"
-            )),
+            Some(format!("Unable to convert {EXPECTED_MERGING_ERROR} to decimal").into()),
         ));
     };
     let number_of_buckets =
@@ -88,7 +87,7 @@ pub fn get_expected_number_of_buckets() -> Result<u64, SbroadError> {
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to convert {number_of_buckets} to u64")),
+            Some(format!("Unable to convert {number_of_buckets} to u64").into()),
         ))
     }
 }
@@ -106,7 +105,7 @@ pub fn get_max_buckets_frequency_error(total_buckets_rows_number: u64) -> Result
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to convert {error} to u64")),
+            Some(format!("Unable to convert {error} to u64").into()),
         ))
     }
 }
@@ -148,7 +147,7 @@ impl<T: Scalar> BucketsWithAccumulatedFrequencies<T> {
         if boundaries.len() < 2 {
             return Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Boundaries list must contain at least 2 values",
                 )),
             ));
@@ -171,7 +170,7 @@ impl<T: Scalar> BucketsWithAccumulatedFrequencies<T> {
             if index == boundaries.len() - 1 && *frequency != 0 {
                 return Err(SbroadError::Invalid(
                     Entity::Statistics,
-                    Some(String::from(
+                    Some(SmolStr::from(
                         "Last boundary in histograms boundaries must be equal to 0",
                     )),
                 ));
@@ -208,7 +207,7 @@ impl<T: Scalar> BucketsWithAccumulatedFrequencies<T> {
         self.vec.first().ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Value,
-                Some(String::from("There is no buckets in merged array")),
+                Some(SmolStr::from("There is no buckets in merged array")),
             )
         })
     }
@@ -272,7 +271,7 @@ fn normalize_buckets<T: Scalar>(
         {
             return Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Normalization algorithm resulted in a bucket with unacceptable frequency error"))
+                Some(SmolStr::from("Normalization algorithm resulted in a bucket with unacceptable frequency error"))
             ));
         }
         if first_added {
@@ -365,7 +364,7 @@ pub fn merge_buckets<T: Scalar>(
     if (normalized_buckets.len() as u64) != expected_number_of_buckets {
         return Err(SbroadError::Invalid(
             Entity::Statistics,
-            Some(String::from(
+            Some(SmolStr::from(
                 "Normalization algorithm returned unexpected number of buckets",
             )),
         ));

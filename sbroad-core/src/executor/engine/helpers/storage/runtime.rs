@@ -26,7 +26,7 @@ pub fn prepare(pattern: &str) -> Result<PreparedStmt, SbroadError> {
         }
         Err(e) => {
             error!(Option::from("prepare"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }
@@ -43,7 +43,7 @@ pub fn unprepare(stmt: &mut PreparedStmt) -> Result<(), SbroadError> {
         Ok(()) => Ok(()),
         Err(e) => {
             error!(Option::from("unprepare"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }
@@ -66,7 +66,7 @@ pub fn read_prepared(
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_prepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }
@@ -92,7 +92,7 @@ pub fn read_unprepared(
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_unprepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }
@@ -114,7 +114,7 @@ pub fn write_prepared(
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_prepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }
@@ -135,7 +135,7 @@ pub fn write_unprepared(
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_unprepared"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format!("{e:?}")))
+            Err(SbroadError::LuaError(format!("{e:?}").into()))
         }
     }
 }

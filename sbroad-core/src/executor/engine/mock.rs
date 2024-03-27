@@ -1,3 +1,4 @@
+use smol_str::{SmolStr, ToSmolStr};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
@@ -43,10 +44,10 @@ use super::{Metadata, QueryCache};
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct RouterConfigurationMock {
-    functions: HashMap<String, Function>,
-    tables: HashMap<String, Table>,
+    functions: HashMap<SmolStr, Function>,
+    tables: HashMap<SmolStr, Table>,
     bucket_count: u64,
-    sharding_column: String,
+    sharding_column: SmolStr,
 }
 
 impl Metadata for RouterConfigurationMock {
@@ -54,7 +55,10 @@ impl Metadata for RouterConfigurationMock {
         let name = normalize_name_from_sql(table_name);
         match self.tables.get(&name) {
             Some(v) => Ok(v.clone()),
-            None => Err(SbroadError::NotFound(Entity::Space, table_name.to_string())),
+            None => Err(SbroadError::NotFound(
+                Entity::Space,
+                table_name.to_smolstr(),
+            )),
         }
     }
 
@@ -74,7 +78,7 @@ impl Metadata for RouterConfigurationMock {
         self.sharding_column.as_str()
     }
 
-    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<String>, SbroadError> {
+    fn sharding_key_by_space(&self, space: &str) -> Result<Vec<SmolStr>, SbroadError> {
         let table = self.table(space)?;
         table.get_sharding_column_names()
     }
@@ -124,7 +128,7 @@ impl RouterConfigurationMock {
         let sharding_key = &["\"identification_number\"", "\"product_code\""];
         let primary_key = &["\"product_code\"", "\"identification_number\""];
         tables.insert(
-            "\"hash_testing\"".to_string(),
+            "\"hash_testing\"".to_smolstr(),
             Table::new_sharded(
                 "\"hash_testing\"",
                 columns.clone(),
@@ -136,7 +140,7 @@ impl RouterConfigurationMock {
         );
 
         tables.insert(
-            "\"hash_testing_hist\"".to_string(),
+            "\"hash_testing_hist\"".to_smolstr(),
             Table::new_sharded(
                 "\"hash_testing_hist\"",
                 columns.clone(),
@@ -149,7 +153,7 @@ impl RouterConfigurationMock {
 
         let sharding_key = &["\"identification_number\""];
         tables.insert(
-            "\"hash_single_testing\"".to_string(),
+            "\"hash_single_testing\"".to_smolstr(),
             Table::new_sharded(
                 "\"hash_single_testing\"",
                 columns.clone(),
@@ -161,7 +165,7 @@ impl RouterConfigurationMock {
         );
 
         tables.insert(
-            "\"hash_single_testing_hist\"".to_string(),
+            "\"hash_single_testing_hist\"".to_smolstr(),
             Table::new_sharded(
                 "\"hash_single_testing_hist\"",
                 columns,
@@ -183,7 +187,7 @@ impl RouterConfigurationMock {
         let primary_key = &["\"id\""];
 
         tables.insert(
-            "\"test_space\"".to_string(),
+            "\"test_space\"".to_smolstr(),
             Table::new_sharded(
                 "\"test_space\"",
                 columns.clone(),
@@ -195,7 +199,7 @@ impl RouterConfigurationMock {
         );
 
         tables.insert(
-            "\"test_space_hist\"".to_string(),
+            "\"test_space_hist\"".to_smolstr(),
             Table::new_sharded(
                 "\"test_space_hist\"",
                 columns,
@@ -213,7 +217,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"id\""];
         let primary_key: &[&str] = &["\"id\""];
         tables.insert(
-            "\"history\"".to_string(),
+            "\"history\"".to_smolstr(),
             Table::new_sharded(
                 "\"history\"",
                 columns,
@@ -232,7 +236,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"A\"", "\"B\""];
         let primary_key: &[&str] = &["\"B\""];
         tables.insert(
-            "\"TBL\"".to_string(),
+            "\"TBL\"".to_smolstr(),
             Table::new_sharded(
                 "\"TBL\"",
                 columns,
@@ -253,7 +257,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         let primary_key: &[&str] = &["\"b\""];
         tables.insert(
-            "\"t\"".to_string(),
+            "\"t\"".to_smolstr(),
             Table::new_sharded(
                 "\"t\"",
                 columns,
@@ -272,7 +276,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\"", "\"b\""];
         let primary_key: &[&str] = &["\"a\"", "\"b\""];
         tables.insert(
-            "\"t1\"".to_string(),
+            "\"t1\"".to_smolstr(),
             Table::new_sharded(
                 "\"t1\"",
                 columns,
@@ -293,7 +297,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"e\"", "\"f\""];
         let primary_key: &[&str] = &["\"g\"", "\"h\""];
         tables.insert(
-            "\"t2\"".to_string(),
+            "\"t2\"".to_smolstr(),
             Table::new_sharded(
                 "\"t2\"",
                 columns,
@@ -312,7 +316,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"a\""];
         let primary_key: &[&str] = &["\"a\""];
         tables.insert(
-            "\"t3\"".to_string(),
+            "\"t3\"".to_smolstr(),
             Table::new_sharded(
                 "\"t3\"",
                 columns,
@@ -331,7 +335,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"c\""];
         let primary_key: &[&str] = &["\"d\""];
         tables.insert(
-            "\"t4\"".to_string(),
+            "\"t4\"".to_smolstr(),
             Table::new_sharded(
                 "\"t4\"",
                 columns,
@@ -348,7 +352,7 @@ impl RouterConfigurationMock {
         ];
         let primary_key: &[&str] = &["\"a\""];
         tables.insert(
-            "\"global_t\"".to_string(),
+            "\"global_t\"".to_smolstr(),
             Table::new_global("\"global_t\"", columns, primary_key).unwrap(),
         );
 
@@ -857,7 +861,7 @@ impl RouterConfigurationMock {
         let sharding_key: &[&str] = &["\"reestrid\""];
         let primary_key: &[&str] = &["\"reestrid\""];
         tables.insert(
-            "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_string(),
+            "\"test__gibdd_db__vehicle_reg_and_res100_actual\"".to_smolstr(),
             Table::new_sharded(
                 "\"test__gibdd_db__vehicle_reg_and_res100_actual\"",
                 columns.clone(),
@@ -868,7 +872,7 @@ impl RouterConfigurationMock {
             .unwrap(),
         );
         tables.insert(
-            "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_string(),
+            "\"test__gibdd_db__vehicle_reg_and_res100_history\"".to_smolstr(),
             Table::new_sharded(
                 "\"test__gibdd_db__vehicle_reg_and_res100_history\"",
                 columns,
@@ -1042,7 +1046,7 @@ impl QueryCache for RouterRuntimeMock {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}"))
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}").into())
             })?
             .capacity())
     }
@@ -1067,14 +1071,14 @@ impl Vshard for RouterRuntimeMock {
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_on_all is not supported for the mock runtime".to_string()),
+            Some("exec_ir_on_all is not supported for the mock runtime".to_smolstr()),
         ))
     }
 
     fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_locally is not supported for the mock runtime".to_string()),
+            Some("exec_ir_locally is not supported for the mock runtime".to_smolstr()),
         ))
     }
 
@@ -1110,7 +1114,7 @@ impl Vshard for &RouterRuntimeMock {
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_on_all is not supported for the mock runtime".to_string()),
+            Some("exec_ir_on_all is not supported for the mock runtime".to_smolstr()),
         ))
     }
 
@@ -1129,7 +1133,7 @@ impl Vshard for &RouterRuntimeMock {
     fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
-            Some("exec_ir_locally is not supported for the mock runtime".to_string()),
+            Some("exec_ir_locally is not supported for the mock runtime".to_smolstr()),
         ))
     }
 
@@ -1218,7 +1222,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing_hist\"".to_string(), 0),
+            TableColumnPair::new("\"hash_testing_hist\"".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1281,7 +1285,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing\"".to_string(), 0),
+            TableColumnPair::new("\"hash_testing\"".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1314,7 +1318,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"hash_testing\"".to_string(), 3),
+            TableColumnPair::new("\"hash_testing\"".to_smolstr(), 3),
             Rc::new(boxed_column_stats),
         );
 
@@ -1373,7 +1377,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_string(), 0),
+            TableColumnPair::new("\"test_space\"".to_smolstr(), 0),
             Rc::new(boxed_column_stats),
         );
 
@@ -1404,7 +1408,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_string(), 1),
+            TableColumnPair::new("\"test_space\"".to_smolstr(), 1),
             Rc::new(boxed_column_stats),
         );
 
@@ -1463,7 +1467,7 @@ impl RouterRuntimeMock {
             )),
         ));
         column_statistics_cache.insert(
-            TableColumnPair::new("\"test_space\"".to_string(), 2),
+            TableColumnPair::new("\"test_space\"".to_smolstr(), 2),
             Rc::new(boxed_column_stats),
         );
 
@@ -1491,7 +1495,11 @@ impl Router for RouterRuntimeMock {
 
     fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError> {
         self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Metadata), format!("{e:?}"))
+            SbroadError::FailedTo(
+                Action::Borrow,
+                Some(Entity::Metadata),
+                format!("{e:?}").into(),
+            )
         })
     }
 
@@ -1506,7 +1514,7 @@ impl Router for RouterRuntimeMock {
         } else {
             Err(SbroadError::NotFound(
                 Entity::VirtualTable,
-                format!("for motion node {motion_node_id}"),
+                format!("for motion node {motion_node_id}").into(),
             ))
         }
     }
@@ -1542,7 +1550,7 @@ impl Router for RouterRuntimeMock {
         }
 
         // Sort results to make tests reproducible.
-        result.rows.sort_by_key(|k| k[0].to_string());
+        result.rows.sort_by_key(|k| k[0].to_smolstr());
         Ok(Box::new(result))
     }
 
@@ -1552,15 +1560,15 @@ impl Router for RouterRuntimeMock {
 
     fn extract_sharding_key_from_map<'rec>(
         &self,
-        space: String,
-        args: &'rec HashMap<String, Value>,
+        space: SmolStr,
+        args: &'rec HashMap<SmolStr, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_key_from_map(&*self.metadata.borrow(), &space, args)
     }
 
     fn extract_sharding_key_from_tuple<'rec>(
         &self,
-        space: String,
+        space: SmolStr,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_key_from_tuple(&*self.metadata.borrow(), &space, rec)
@@ -1578,7 +1586,7 @@ impl Statistics for RouterRuntimeMock {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Couldn't borrow table statistics")),
+                Some(SmolStr::from("Couldn't borrow table statistics")),
             ))
         }
     }
@@ -1596,7 +1604,7 @@ impl Statistics for RouterRuntimeMock {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Couldn't borrow initial column statistics")),
+                Some(SmolStr::from("Couldn't borrow initial column statistics")),
             ))
         }
     }
@@ -1617,7 +1625,7 @@ impl Statistics for RouterRuntimeMock {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Couldn't borrow table statistics")),
+                Some(SmolStr::from("Couldn't borrow table statistics")),
             ))
         }
     }
@@ -1639,7 +1647,7 @@ impl Statistics for RouterRuntimeMock {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Couldn't borrow initial column statistics")),
+                Some(SmolStr::from("Couldn't borrow initial column statistics")),
             ))
         }
     }

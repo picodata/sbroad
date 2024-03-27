@@ -10,6 +10,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::value::double::Double;
 use itertools::enumerate;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -167,7 +168,7 @@ impl Scalar for Double {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(format!("Boundaries occupied fraction calculation resulted in invalid f64 fraction: {fraction_f64}"))
+                Some(format!("Boundaries occupied fraction calculation resulted in invalid f64 fraction: {fraction_f64}").into())
             ))
         }
     }
@@ -182,7 +183,7 @@ impl Scalar for bool {
     ) -> Result<Decimal, SbroadError> {
         Err(SbroadError::Invalid(
             Entity::Statistics,
-            Some(String::from(
+            Some(SmolStr::from(
                 "There is no need to calculate buckets fraction for bool column",
             )),
         ))
@@ -305,7 +306,7 @@ impl<T: Scalar> McvSet<T> {
         floored_values_number.to_u64().ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Unable to calculate mcv value number")),
+                Some(SmolStr::from("Unable to calculate mcv value number")),
             )
         })
     }
@@ -359,7 +360,7 @@ impl<T: Scalar> Bucket<T> {
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Statistics,
-                        Some(String::from(
+                        Some(SmolStr::from(
                             "From boundary must have been passed for\
                     NonFirst bucket",
                         )),
@@ -377,7 +378,7 @@ impl<T: Scalar> Bucket<T> {
             BucketType::First { from_boundary } => Ok(from_boundary.clone()),
             BucketType::NonFirst => Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Can't get from value of non first bucket")),
+                Some(SmolStr::from("Can't get from value of non first bucket")),
             )),
         }
     }
@@ -458,7 +459,7 @@ impl<T: Scalar> TryFrom<&mut Vec<T>> for HistogramBuckets<T> {
         if boundaries.len() < 2 {
             return Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from(
+                Some(SmolStr::from(
                     "Boundaries list must contain at least 2 values",
                 )),
             ));
@@ -566,7 +567,7 @@ impl<T: Scalar> Histogram<T> {
         floored_decimal_freq.to_u64().ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Statistics,
-                Some(String::from("Unable to calculate buckets frequency")),
+                Some(SmolStr::from("Unable to calculate buckets frequency")),
             )
         })
     }
