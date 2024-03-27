@@ -54,7 +54,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeUsage = { ^"usage" }
             PrivilegeWrite = { ^"write" }
 
-DDL = _{ CreateTable | DropTable | CreateProc | DropProc | RenameProc }
+DDL = _{ CreateTable | DropTable | CreateIndex | CreateProc | DropProc | RenameProc }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
@@ -93,6 +93,31 @@ DDL = _{ CreateTable | DropTable | CreateProc | DropProc | RenameProc }
     RenameProc = { ^"alter" ~ ^"procedure" ~ OldProc ~ ProcParams? ~ ^"rename" ~ ^"to" ~ NewProc ~ TimeoutOption? }
         OldProc = @{ Identifier }
         NewProc = @{ Identifier }
+
+    CreateIndex = {
+        ^"create" ~ Unique? ~ ^"index" ~ Identifier ~ ^"on" ~ Table
+        ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ TimeoutOption? 
+    }
+    Unique = { ^"unique" }
+    IndexType = { ^"using" ~ (Tree | Hash | RTree | BitSet) }
+        Tree = { ^"tree" }
+        Hash = { ^"hash" }
+        RTree = { ^"rtree" }
+        BitSet = { ^"bitset" }
+    Parts = { Identifier ~ ("," ~ Identifier)* }
+    IndexOptions = { ^"with" ~ "(" ~ IndexOptionParam ~ ("," ~ IndexOptionParam)* ~ ")" }
+    IndexOptionParam = { BloomFpr | PageSize | RangeSize | RunCountPerLevel | RunSizeRatio
+                         | Dimension | Distance | Hint }
+        BloomFpr = { ^"bloom_fpr" ~ "=" ~ Decimal }
+        PageSize = { ^"page_size" ~ "=" ~ Unsigned }
+        RangeSize = { ^"range_size" ~  "=" ~Unsigned }
+        RunCountPerLevel = { ^"run_count_per_level" ~  "=" ~Unsigned }
+        RunSizeRatio = { ^"run_size_ratio" ~ "=" ~ Decimal }
+        Dimension = { ^"dimension" ~ "=" ~ Unsigned }
+        Distance = { ^"distance" ~ "=" ~ (Euclid | Manhattan) } 
+            Euclid = { ^"euclid" }
+            Manhattan = { ^"manhattan" }
+        Hint = { ^"hint" ~ "=" ~ (True | False) }
 
 Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }

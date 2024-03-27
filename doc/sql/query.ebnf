@@ -93,11 +93,39 @@ grant       ::= 'GRANT' (
                 )
                 'TO' (role | user)
 
-ddl         ::= (alter_procedure | create_procedure | create_table | drop_procedure | drop_table)
+ddl         ::= (alter_procedure | create_index | create_procedure | create_table
+                | drop_procedure | drop_table)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
                      'RENAME' 'TO' procedure
+create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
+                 ('USING' ('TREE' | 'HASH' | 'RTREE' | 'BITSET'))?
+                 '(' column (',' column)* ')' ('WITH' '('
+                     (
+                         ('BLOOM_FPR' '=' decimal)
+                         | ('PAGE_SIZE' '=' unsigned)
+                         | ('RANGE_SIZE' '=' unsigned)
+                         | ('RUN_COUNT_PER_LEVEL' '=' unsigned)
+                         | ('RUN_SIZE_RATIO' '=' decimal)
+                         | ('DIMENSION' '=' unsigned)
+                         | ('DISTANCE' '=' ('EUCLID' | 'MANHATTAN'))
+                         | ('HINT' '=' (TRUE | FALSE))
+                     )
+                     (
+                        ','
+                         (
+                             ('BLOOM_FPR' '=' decimal)
+                             | ('PAGE_SIZE' '=' unsigned)
+                             | ('RANGE_SIZE' '=' unsigned)
+                             | ('RUN_COUNT_PER_LEVEL' '=' unsigned)
+                             | ('RUN_SIZE_RATIO' '=' decimal)
+                             | ('DIMENSION' '=' unsigned)
+                             | ('DISTANCE' '=' ('EUCLID' | 'MANHATTAN'))
+                             | ('HINT' '=' (TRUE | FALSE))
+                         )
+                     )*
+                 ')')?
 create_procedure ::= 'CREATE' 'PROCEDURE' procedure '(' type (',' type)* ')'
                      ('language' 'SQL')? (
                          ('as' '$$' (insert | update | delete) '$$')

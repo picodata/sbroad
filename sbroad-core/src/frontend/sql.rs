@@ -12,6 +12,7 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
+use tarantool::index::{IndexType, RtreeIndexDistanceType};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::{helpers::normalize_name_for_space_api, Metadata};
@@ -43,6 +44,7 @@ use crate::ir::block::Block;
 use crate::ir::expression::NewColumnsSource;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::ColumnPosition;
+use crate::warn;
 use sbroad_proc::otm_child_span;
 use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
@@ -324,6 +326,139 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
         params,
         timeout,
     })
+}
+
+fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    assert_eq!(node.rule, Rule::CreateIndex);
+    let mut name = String::new();
+    let mut table_name = String::new();
+    let mut columns = Vec::new();
+    let mut unique = false;
+    let mut index_type = IndexType::Tree;
+    let mut bloom_fpr = None;
+    let mut page_size = None;
+    let mut range_size = None;
+    let mut run_count_per_level = None;
+    let mut run_size_ratio = None;
+    let mut dimension = None;
+    let mut distance = None;
+    let mut hint = None;
+    let mut timeout = get_default_timeout();
+
+    let first_child = |node: &ParseNode| -> &ParseNode {
+        let child_id = node.children.first().expect("Expected to see first child");
+        ast.nodes
+            .get_node(*child_id)
+            .expect("Expected to see first child node")
+    };
+    let decimal_value = |node: &ParseNode| -> Decimal {
+        Decimal::from_str(
+            first_child(node)
+                .value
+                .as_ref()
+                .expect("Expected to see Decimal value")
+                .as_str(),
+        )
+        .expect("Expected to parse decimal value")
+    };
+    let u32_value = |node: &ParseNode| -> u32 {
+        first_child(node)
+            .value
+            .as_ref()
+            .expect("Expected to see u32 value")
+            .parse()
+            .expect("Expected to parse u32 value")
+    };
+    let bool_value = |node: &ParseNode| -> bool {
+        first_child(node)
+            .value
+            .as_ref()
+            .expect("Expected to see boolean value")
+            .parse()
+            .expect("Expected to parse boolean value")
+    };
+
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::Unique => unique = true,
+            Rule::Identifier => name = parse_identifier(ast, *child_id)?,
+            Rule::Table => table_name = parse_identifier(ast, *child_id)?,
+            Rule::IndexType => {
+                let type_node = first_child(child_node);
+                match type_node.rule {
+                    Rule::Tree => index_type = IndexType::Tree,
+                    Rule::Hash => index_type = IndexType::Hash,
+                    Rule::RTree => index_type = IndexType::Rtree,
+                    Rule::BitSet => index_type = IndexType::Bitset,
+                    _ => panic!("Unexpected type node: {type_node:?}"),
+                }
+            }
+            Rule::Parts => {
+                let parts_node = ast.nodes.get_node(*child_id)?;
+                columns.reserve(parts_node.children.len());
+                for part_id in &parts_node.children {
+                    let part_node = ast.nodes.get_node(*part_id)?;
+                    if part_node.rule != Rule::Identifier {
+                        panic!("Unexpected part node: {part_node:?}");
+                    }
+                    columns.push(parse_identifier(ast, *part_id)?);
+                }
+            }
+            Rule::IndexOptions => {
+                let options_node = ast.nodes.get_node(*child_id)?;
+                for option_id in &options_node.children {
+                    let option_param_node = ast.nodes.get_node(*option_id)?;
+                    if option_param_node.rule != Rule::IndexOptionParam {
+                        panic!("Unexpected option node: {option_param_node:?}");
+                    }
+                    let param_node = first_child(option_param_node);
+                    match param_node.rule {
+                        Rule::BloomFpr => bloom_fpr = Some(decimal_value(param_node)),
+                        Rule::PageSize => page_size = Some(u32_value(param_node)),
+                        Rule::RangeSize => range_size = Some(u32_value(param_node)),
+                        Rule::RunCountPerLevel => run_count_per_level = Some(u32_value(param_node)),
+                        Rule::RunSizeRatio => run_size_ratio = Some(decimal_value(param_node)),
+                        Rule::Dimension => dimension = Some(u32_value(param_node)),
+                        Rule::Distance => {
+                            let distance_node = first_child(param_node);
+                            match distance_node.rule {
+                                Rule::Euclid => distance = Some(RtreeIndexDistanceType::Euclid),
+                                Rule::Manhattan => {
+                                    distance = Some(RtreeIndexDistanceType::Manhattan)
+                                }
+                                _ => panic!("Unexpected distance node: {distance_node:?}"),
+                            }
+                        }
+                        Rule::Hint => {
+                            hint = Some(bool_value(param_node));
+                            warn!(None, "Hint option is not supported yet");
+                        }
+                        _ => panic!("Unexpected option param node: {param_node:?}"),
+                    }
+                }
+            }
+            Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
+            _ => panic!("Unexpected index rule: {child_node:?}"),
+        }
+    }
+    let index = Ddl::CreateIndex {
+        name,
+        table_name,
+        columns,
+        unique,
+        index_type,
+        bloom_fpr,
+        page_size,
+        range_size,
+        run_count_per_level,
+        run_size_ratio,
+        dimension,
+        distance,
+        hint,
+        timeout,
+    };
+    Ok(index)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -2558,6 +2693,11 @@ impl AbstractSyntaxTree {
                 Rule::CallProc => {
                     let call_proc = parse_call_proc(self, node, pairs_map, &mut worker, &mut plan)?;
                     let plan_id = plan.nodes.push(Node::Block(call_proc));
+                    map.add(id, plan_id);
+                }
+                Rule::CreateIndex => {
+                    let create_index = parse_create_index(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(create_index));
                     map.add(id, plan_id);
                 }
                 Rule::CreateProc => {

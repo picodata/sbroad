@@ -3,8 +3,11 @@ use crate::{
     ir::{relation::Type, Node, Plan},
 };
 use serde::{Deserialize, Serialize};
-use tarantool::decimal::Decimal;
 use tarantool::space::SpaceEngineType;
+use tarantool::{
+    decimal::Decimal,
+    index::{IndexType, RtreeIndexDistanceType},
+};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
@@ -68,6 +71,22 @@ pub enum Ddl {
         params: Option<Vec<ParamDef>>,
         timeout: Decimal,
     },
+    CreateIndex {
+        name: String,
+        table_name: String,
+        columns: Vec<String>,
+        unique: bool,
+        index_type: IndexType,
+        bloom_fpr: Option<Decimal>,
+        page_size: Option<u32>,
+        range_size: Option<u32>,
+        run_count_per_level: Option<u32>,
+        run_size_ratio: Option<Decimal>,
+        dimension: Option<u32>,
+        distance: Option<RtreeIndexDistanceType>,
+        hint: Option<bool>,
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -79,6 +98,7 @@ impl Ddl {
         match self {
             Ddl::CreateTable { ref timeout, .. }
             | Ddl::DropTable { ref timeout, .. }
+            | Ddl::CreateIndex { ref timeout, .. }
             | Ddl::CreateProc { ref timeout, .. }
             | Ddl::DropProc { ref timeout, .. }
             | Ddl::RenameRoutine { ref timeout, .. } => timeout,
