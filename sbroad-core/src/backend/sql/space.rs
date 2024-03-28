@@ -7,7 +7,6 @@ use crate::ir::relation::SpaceEngine;
 mod prod_imports {
     pub use crate::error;
     pub use crate::errors::{Action, Entity};
-    pub use crate::ir::relation::Column;
     pub use crate::ir::value::{EncodedValue, Value};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
     pub use tarantool::space::{Field, Space, SpaceCreateOptions, SpaceType};

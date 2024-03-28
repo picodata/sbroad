@@ -328,6 +328,7 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     assert_eq!(node.rule, Rule::CreateIndex);
     let mut name = String::new();
@@ -398,10 +399,11 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 let parts_node = ast.nodes.get_node(*child_id)?;
                 columns.reserve(parts_node.children.len());
                 for part_id in &parts_node.children {
-                    let part_node = ast.nodes.get_node(*part_id)?;
-                    if part_node.rule != Rule::Identifier {
-                        panic!("Unexpected part node: {part_node:?}");
-                    }
+                    let single_part_node = ast.nodes.get_node(*part_id)?;
+                    assert!(
+                        single_part_node.rule == Rule::Identifier,
+                        "Unexpected part node: {single_part_node:?}"
+                    );
                     columns.push(parse_identifier(ast, *part_id)?);
                 }
             }
@@ -409,9 +411,10 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 let options_node = ast.nodes.get_node(*child_id)?;
                 for option_id in &options_node.children {
                     let option_param_node = ast.nodes.get_node(*option_id)?;
-                    if option_param_node.rule != Rule::IndexOptionParam {
-                        panic!("Unexpected option node: {option_param_node:?}");
-                    }
+                    assert!(
+                        option_param_node.rule == Rule::IndexOptionParam,
+                        "Unexpected option node: {option_param_node:?}"
+                    );
                     let param_node = first_child(option_param_node);
                     match param_node.rule {
                         Rule::BloomFpr => bloom_fpr = Some(decimal_value(param_node)),
@@ -425,7 +428,7 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             match distance_node.rule {
                                 Rule::Euclid => distance = Some(RtreeIndexDistanceType::Euclid),
                                 Rule::Manhattan => {
-                                    distance = Some(RtreeIndexDistanceType::Manhattan)
+                                    distance = Some(RtreeIndexDistanceType::Manhattan);
                                 }
                                 _ => panic!("Unexpected distance node: {distance_node:?}"),
                             }
@@ -1338,7 +1341,7 @@ impl ParseExpression {
             }
             ParseExpression::Cast { cast_type, child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
-                plan.add_cast(child_plan_id, cast_type.to_owned())?
+                plan.add_cast(child_plan_id, cast_type.clone())?
             }
             ParseExpression::Between {
                 is_not,
@@ -1413,10 +1416,10 @@ impl ParseExpression {
                         plan.add_concat(left_row_id, right_row_id)?
                     }
                     ParseExpressionInfixOperator::InfixArithmetic(arith) => {
-                        plan.add_arithmetic_to_plan(left_row_id, arith.to_owned(), right_row_id)?
+                        plan.add_arithmetic_to_plan(left_row_id, arith.clone(), right_row_id)?
                     }
                     ParseExpressionInfixOperator::InfixBool(bool) => {
-                        plan.add_cond(left_row_id, bool.to_owned(), right_row_id)?
+                        plan.add_cond(left_row_id, bool.clone(), right_row_id)?
                     }
                 };
                 if *is_not {
@@ -1428,7 +1431,7 @@ impl ParseExpression {
             ParseExpression::Prefix { op, child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
                 let child_covered_with_row = plan.row(child_plan_id)?;
-                plan.add_unary(op.to_owned(), child_covered_with_row)?
+                plan.add_unary(op.clone(), child_covered_with_row)?
             }
             ParseExpression::Function {
                 name,
@@ -1540,7 +1543,7 @@ where
     PRATT_PARSER
         .map_primary(|primary| {
             let parse_expr = match primary.as_rule() {
-                Rule::Expr => {
+                Rule::Expr | Rule::Literal => {
                     parse_expr_pratt(primary.into_inner(), referred_relation_ids, worker, plan)?
                 }
                 Rule::ExpressionInParentheses => {
@@ -1733,9 +1736,6 @@ where
                         children.push(child_parse_expr);
                     }
                     ParseExpression::Row { children }
-                }
-                Rule::Literal => {
-                    parse_expr_pratt(primary.into_inner(), referred_relation_ids, worker, plan)?
                 }
                 Rule::Decimal
                 | Rule::Double

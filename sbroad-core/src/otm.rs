@@ -30,9 +30,7 @@ pub mod fiber;
 mod tracing_imports {
     pub use crate::error;
     pub use crate::otm::fiber::fiber_id;
-    pub use crate::warn;
     pub use opentelemetry::baggage::BaggageExt;
-    pub use tarantool::error::Error as TntError;
 }
 
 #[cfg(all(feature = "tracing", not(feature = "mock")))]
