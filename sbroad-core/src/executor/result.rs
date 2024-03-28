@@ -98,6 +98,7 @@ impl TryInto<Column> for &MetadataColumn {
                 ColumnRole::User,
                 true,
             )),
+            "uuid" => Ok(Column::new(&self.name, Type::Uuid, ColumnRole::User, true)),
             "unsigned" => Ok(Column::new(
                 &self.name,
                 Type::Unsigned,

@@ -117,9 +117,9 @@ impl TryFrom<SpaceFieldType> for Type {
             SpaceFieldType::String => Ok(Type::String),
             SpaceFieldType::Unsigned => Ok(Type::Unsigned),
             SpaceFieldType::Array => Ok(Type::Array),
+            SpaceFieldType::Uuid => Ok(Type::Uuid),
             SpaceFieldType::Any
             | SpaceFieldType::Varbinary
-            | SpaceFieldType::Uuid
             | SpaceFieldType::Map
             | SpaceFieldType::Interval
             | SpaceFieldType::Datetime => Err(SbroadError::NotImplemented(
