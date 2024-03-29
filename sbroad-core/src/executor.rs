@@ -39,7 +39,6 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
 use sbroad_proc::otm_child_span;
-use smol_str::ToSmolStr;
 
 pub mod bucket;
 pub mod engine;
@@ -136,7 +135,7 @@ where
                     if tbl.is_system() {
                         continue;
                     }
-                    let normalized = normalize_name_for_space_api(tbl_name).to_smolstr();
+                    let normalized = normalize_name_for_space_api(tbl_name);
                     let version = coordinator.get_table_version(normalized.as_str())?;
                     table_version_map.insert(normalized, version);
                 }

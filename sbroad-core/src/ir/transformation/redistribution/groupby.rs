@@ -831,8 +831,8 @@ impl Plan {
                                 let n = self.get_expression_node(id)?;
                                 if let Expression::Reference { .. } = n {
                                     let alias = match self.get_alias_from_reference_node(n) {
-                                        Ok(v) => v.to_string(),
-                                        Err(e) => e.to_string(),
+                                        Ok(v) => v.to_smolstr(),
+                                        Err(e) => e.to_smolstr(),
                                     };
                                     return Err(SbroadError::Invalid(Entity::Query,
                                                                     Some(format!("found column reference ({alias}) outside aggregate function").into())));

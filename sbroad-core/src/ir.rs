@@ -4,7 +4,7 @@
 
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
-use smol_str::ToSmolStr;
+use smol_str::{SmolStr, ToSmolStr};
 use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -1224,7 +1224,7 @@ impl Plan {
 
     /// # Errors
     /// - serialization error (to binary)
-    pub fn pattern_id(&self, top_id: usize) -> Result<String, SbroadError> {
+    pub fn pattern_id(&self, top_id: usize) -> Result<SmolStr, SbroadError> {
         let mut dfs =
             PostOrder::with_capacity(|x| self.subtree_iter(x, false), self.nodes.next_id());
         dfs.populate_nodes(top_id);
@@ -1240,7 +1240,7 @@ impl Plan {
                 format!("plan nodes to binary: {e:?}").into(),
             )
         })?;
-        let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes());
+        let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes()).to_smolstr();
         Ok(hash)
     }
 }
@@ -1309,9 +1309,10 @@ impl Plan {
                     let child_id = children.get(*target).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
-                            Some(format!(
-                                "invalid target ({target}) in reference with id: {ref_id}"
-                            ).into()),
+                            Some(
+                                format!("invalid target ({target}) in reference with id: {ref_id}")
+                                    .into(),
+                            ),
                         )
                     })?;
                     let Some(candidates) = memo.get(child_id) else {

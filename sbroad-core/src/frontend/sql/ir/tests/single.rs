@@ -1,3 +1,5 @@
+use smol_str::{SmolStr, ToSmolStr};
+
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
@@ -13,7 +15,7 @@ enum Policy {
     None,
     Local,
     Full,
-    Segment(Vec<String>),
+    Segment(Vec<SmolStr>),
 }
 
 impl Policy {
@@ -21,8 +23,8 @@ impl Policy {
         Policy::Segment(
             targets
                 .iter()
-                .map(|x| (*x).to_string())
-                .collect::<Vec<String>>(),
+                .map(|x| (*x).to_smolstr())
+                .collect::<Vec<SmolStr>>(),
         )
     }
 }
@@ -38,7 +40,7 @@ impl Plan {
                 MotionPolicy::Local => Policy::Local,
                 MotionPolicy::Segment(MotionKey { targets })
                 | MotionPolicy::LocalSegment(MotionKey { targets }) => {
-                    let mut new_targets: Vec<String> = Vec::with_capacity(targets.len());
+                    let mut new_targets: Vec<SmolStr> = Vec::with_capacity(targets.len());
                     let aliases = self.get_relational_aliases(node_id).unwrap();
                     for t in targets {
                         match t {
@@ -46,16 +48,16 @@ impl Plan {
                                 let a = aliases.get(*position).unwrap();
                                 let striped_alias = if let Some(s) = a.strip_prefix('\"') {
                                     if let Some(ss) = s.strip_suffix('\"') {
-                                        ss.to_string()
+                                        ss.to_smolstr()
                                     } else {
-                                        a.to_string()
+                                        a.to_smolstr()
                                     }
                                 } else {
-                                    a.to_string()
+                                    a.to_smolstr()
                                 };
                                 new_targets.push(striped_alias);
                             }
-                            Target::Value(value) => new_targets.push(value.to_string()),
+                            Target::Value(value) => new_targets.push(value.to_smolstr()),
                         }
                     }
                     Policy::Segment(new_targets)

@@ -58,8 +58,8 @@ fn get_default_timeout() -> Decimal {
     Decimal::from_str(&format!("{DEFAULT_TIMEOUT_F64}")).expect("default timeout casting failed")
 }
 
-fn get_default_auth_method() -> String {
-    String::from(DEFAULT_AUTH_METHOD)
+fn get_default_auth_method() -> SmolStr {
+    SmolStr::from(DEFAULT_AUTH_METHOD)
 }
 
 /// Helper structure to fix the double linking
@@ -125,7 +125,7 @@ fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, Sbro
     ))
 }
 
-fn parse_string_literal(ast: &AbstractSyntaxTree, node_id: usize) -> Result<String, SbroadError> {
+fn parse_string_literal(ast: &AbstractSyntaxTree, node_id: usize) -> Result<SmolStr, SbroadError> {
     let node = ast.nodes.get_node(node_id)?;
     let str_ref = node
         .value
@@ -137,7 +137,7 @@ fn parse_string_literal(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Stri
         node.rule
     );
 
-    Ok(str_ref[1..str_ref.len() - 1].to_string())
+    Ok(str_ref[1..str_ref.len() - 1].to_smolstr())
 }
 
 /// Parse node from which we want to get String value.
@@ -227,8 +227,8 @@ fn parse_rename_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
         ));
     }
 
-    let mut old_name: String = String::new();
-    let mut new_name: String = String::new();
+    let mut old_name = SmolStr::default();
+    let mut new_name = SmolStr::default();
     let mut params: Option<Vec<ParamDef>> = None;
     let mut timeout = get_default_timeout();
     for child_id in &node.children {
@@ -266,7 +266,7 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
     let params = parse_proc_params(ast, proc_params)?;
 
     let language = Language::SQL;
-    let mut body: String = String::new();
+    let mut body = SmolStr::default();
     let mut timeout = get_default_timeout();
     for child_id in node.children.iter().skip(2) {
         let child_node = ast.nodes.get_node(*child_id)?;
@@ -300,7 +300,7 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
 fn parse_proc_with_optional_params(
     ast: &AbstractSyntaxTree,
     node: &ParseNode,
-) -> Result<(String, Option<Vec<ParamDef>>), SbroadError> {
+) -> Result<(SmolStr, Option<Vec<ParamDef>>), SbroadError> {
     let proc_name_id = node.children.first().expect("Expected to get Proc name");
     let proc_name = parse_identifier(ast, *proc_name_id)?;
 
@@ -495,10 +495,10 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             Some("create table".into()),
         ));
     }
-    let mut table_name: String = String::new();
+    let mut table_name = SmolStr::default();
     let mut columns: Vec<ColumnDef> = Vec::new();
-    let mut pk_keys: Vec<String> = Vec::new();
-    let mut shard_key: Vec<String> = Vec::new();
+    let mut pk_keys: Vec<SmolStr> = Vec::new();
+    let mut shard_key: Vec<SmolStr> = Vec::new();
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
     let mut timeout = get_default_timeout();
     for child_id in &node.children {
@@ -780,10 +780,8 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
 
 /// Get String value under node that is considered to be an identifier
 /// (on which rules on name normalization should be applied).
-fn parse_identifier(ast: &AbstractSyntaxTree, node_id: usize) -> Result<String, SbroadError> {
-    Ok(normalize_name_for_space_api(parse_string_value_node(
-        ast, node_id,
-    )?))
+fn parse_identifier(ast: &AbstractSyntaxTree, node_id: usize) -> Result<SmolStr, SbroadError> {
+    Ok(normalize_name_for_space_api(parse_string_value_node(ast, node_id)?).to_smolstr())
 }
 
 fn parse_normalized_identifier(
@@ -800,7 +798,7 @@ fn parse_normalized_identifier(
 fn parse_grant_revoke(
     node: &ParseNode,
     ast: &AbstractSyntaxTree,
-) -> Result<(GrantRevokeType, String, Decimal), SbroadError> {
+) -> Result<(GrantRevokeType, SmolStr, Decimal), SbroadError> {
     let privilege_block_node_id = node
         .children
         .first()
@@ -2021,7 +2019,7 @@ impl AbstractSyntaxTree {
             // Save node to AST.
             let arena_node_id = self.nodes.push_node(ParseNode::new(
                 stack_node.pair.as_rule(),
-                Some(String::from(stack_node.pair.as_str())),
+                Some(SmolStr::from(stack_node.pair.as_str())),
             ));
 
             // Save procedure body (a special case).
@@ -2029,7 +2027,7 @@ impl AbstractSyntaxTree {
                 let span = stack_node.pair.as_span();
                 let body = &query[span.start()..span.end()];
                 self.nodes
-                    .update_value(arena_node_id, Some(String::from(body)))?;
+                    .update_value(arena_node_id, Some(SmolStr::from(body)))?;
             }
 
             // Update parent's node children list.
@@ -2828,7 +2826,7 @@ impl AbstractSyntaxTree {
                     map.add(id, plan_id);
                 }
                 Rule::DropTable => {
-                    let mut table_name: String = String::new();
+                    let mut table_name = SmolStr::default();
                     let mut timeout = get_default_timeout();
                     for child_id in &node.children {
                         let child_node = self.nodes.get_node(*child_id)?;
@@ -2899,7 +2897,7 @@ impl AbstractSyntaxTree {
                                     .children
                                     .first()
                                     .expect("Method expected under AuthMethod node");
-                                auth_method = String::from(parse_string_value_node(
+                                auth_method = SmolStr::from(parse_string_value_node(
                                     self,
                                     *auth_method_string_node_id,
                                 )?);
@@ -2972,7 +2970,7 @@ impl AbstractSyntaxTree {
                                     .children
                                     .first()
                                     .expect("Method expected under AuthMethod node");
-                                auth_method = String::from(parse_string_value_node(
+                                auth_method = SmolStr::from(parse_string_value_node(
                                     self,
                                     *auth_method_node_id,
                                 )?);

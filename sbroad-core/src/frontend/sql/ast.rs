@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem::swap;
 
 use pest::iterators::Pair;
+use smol_str::SmolStr;
 
 use crate::errors::{Entity, SbroadError};
 
@@ -22,12 +23,12 @@ pub(super) struct ParseTree;
 pub struct ParseNode {
     pub(in crate::frontend::sql) children: Vec<usize>,
     pub(in crate::frontend::sql) rule: Rule,
-    pub(in crate::frontend::sql) value: Option<String>,
+    pub(in crate::frontend::sql) value: Option<SmolStr>,
 }
 
 #[allow(dead_code)]
 impl ParseNode {
-    pub(super) fn new(rule: Rule, value: Option<String>) -> Self {
+    pub(super) fn new(rule: Rule, value: Option<SmolStr>) -> Self {
         ParseNode {
             children: vec![],
             rule,
@@ -151,7 +152,7 @@ impl ParseNodes {
     ///
     /// # Errors
     /// - Target node is present in the arena.
-    pub fn update_value(&mut self, node: usize, value: Option<String>) -> Result<(), SbroadError> {
+    pub fn update_value(&mut self, node: usize, value: Option<SmolStr>) -> Result<(), SbroadError> {
         let node = self.arena.get_mut(node).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,

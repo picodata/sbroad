@@ -75,11 +75,11 @@ pub fn normalize_name_from_sql(s: &str) -> SmolStr {
 /// * "s" -> s (same cased, unquoted)
 /// * s   -> S (uppercased, unquoted)
 #[must_use]
-pub fn normalize_name_for_space_api(s: &str) -> String {
+pub fn normalize_name_for_space_api(s: &str) -> SmolStr {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
-        return String::from(&s[1..s.len() - 1]);
+        return SmolStr::from(&s[1..s.len() - 1]);
     }
-    s.to_uppercase()
+    s.to_uppercase().to_smolstr()
 }
 
 /// A helper function to encode the execution plan into a pair of binary data (see `Message`):
@@ -98,7 +98,7 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
                 exec_plan.get_ir_plan().pattern_id(top_id)?
             } else {
                 // plan id is used as cache key on storages, no need to calculate it.
-                String::new()
+                SmolStr::default()
             };
             let sp_top_id = exec_plan.get_ir_plan().get_top()?;
             let sp = SyntaxPlan::new(&exec_plan, sp_top_id, Snapshot::Oldest)?;
@@ -135,7 +135,7 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
                     Some(format!("expected motion node under dml node, got: {motion:?}",).into()),
                 ));
             };
-            let mut sub_plan_id = String::new();
+            let mut sub_plan_id = SmolStr::default();
             // SQL is needed only for the motion node subtree.
             // HACK: we don't actually need SQL when the subtree is already
             //       materialized into a virtual table on the router.
@@ -975,7 +975,7 @@ pub fn sharding_key_from_tuple<'tuple>(
 pub fn exec_if_in_cache<R: QueryCache>(
     runtime: &R,
     params: &[Value],
-    plan_id: &String,
+    plan_id: &SmolStr,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
 ) -> Result<Option<Box<dyn Any>>, SbroadError>
@@ -989,7 +989,7 @@ where
         .map_err(|e| {
             SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}").into())
         })?
-        .get(plan_id)?
+        .get(&plan_id.to_string())?
     {
         let stmt_id = stmt.id()?;
         // The statement was found in the cache, so we can execute it.
@@ -1049,7 +1049,7 @@ fn cache_miss_read_prepared(
 pub fn prepare_and_read<R: Vshard + QueryCache>(
     runtime: &R,
     pattern_with_params: &PatternWithParams,
-    plan_id: &String,
+    plan_id: &SmolStr,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
     schema_info: &SchemaInfo,

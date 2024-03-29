@@ -1,5 +1,6 @@
 use crate::ir::{Entity, Node, Plan, SbroadError};
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, ToSmolStr};
 use tarantool::decimal::Decimal;
 
 use super::ddl::ParamDef;
@@ -29,32 +30,32 @@ pub enum GrantRevokeType {
     },
     SpecificUser {
         privilege: Privilege,
-        user_name: String,
+        user_name: SmolStr,
     },
     Role {
         privilege: Privilege,
     },
     SpecificRole {
         privilege: Privilege,
-        role_name: String,
+        role_name: SmolStr,
     },
     Table {
         privilege: Privilege,
     },
     SpecificTable {
         privilege: Privilege,
-        table_name: String,
+        table_name: SmolStr,
     },
     Procedure {
         privilege: Privilege,
     },
     SpecificProcedure {
         privilege: Privilege,
-        proc_name: String,
+        proc_name: SmolStr,
         proc_params: Option<Vec<ParamDef>>,
     },
     RolePass {
-        role_name: String,
+        role_name: SmolStr,
     },
 }
 
@@ -82,7 +83,7 @@ impl GrantRevokeType {
 
     /// # Errors
     /// - Unacceptable privilege for specific user was passed.
-    pub fn specific_user(privilege: Privilege, user_name: String) -> Result<Self, SbroadError> {
+    pub fn specific_user(privilege: Privilege, user_name: SmolStr) -> Result<Self, SbroadError> {
         check_privilege(privilege, &[Privilege::Alter, Privilege::Drop])?;
         Ok(Self::SpecificUser {
             privilege,
@@ -99,7 +100,7 @@ impl GrantRevokeType {
 
     /// # Errors
     /// - Unacceptable privilege for specific role was passed.
-    pub fn specific_role(privilege: Privilege, role_name: String) -> Result<Self, SbroadError> {
+    pub fn specific_role(privilege: Privilege, role_name: SmolStr) -> Result<Self, SbroadError> {
         check_privilege(privilege, &[Privilege::Drop])?;
         Ok(Self::SpecificRole {
             privilege,
@@ -125,7 +126,7 @@ impl GrantRevokeType {
 
     /// # Errors
     /// - Unacceptable privilege for specific table was passed.
-    pub fn specific_table(privilege: Privilege, table_name: String) -> Result<Self, SbroadError> {
+    pub fn specific_table(privilege: Privilege, table_name: SmolStr) -> Result<Self, SbroadError> {
         check_privilege(
             privilege,
             &[
@@ -155,7 +156,7 @@ impl GrantRevokeType {
     /// - Unacceptable privilege for specific procedure was passed.
     pub fn specific_procedure(
         privilege: Privilege,
-        proc_name: String,
+        proc_name: SmolStr,
         proc_params: Option<Vec<ParamDef>>,
     ) -> Result<Self, SbroadError> {
         check_privilege(privilege, &[Privilege::Drop, Privilege::Execute])?;
@@ -167,7 +168,7 @@ impl GrantRevokeType {
     }
 
     #[must_use]
-    pub fn role_pass(role_name: String) -> Self {
+    pub fn role_pass(role_name: SmolStr) -> Self {
         Self::RolePass { role_name }
     }
 }
@@ -178,47 +179,47 @@ pub enum AlterOption {
     Login,
     NoLogin,
     Password {
-        password: String,
-        auth_method: String,
+        password: SmolStr,
+        auth_method: SmolStr,
     },
     Rename {
-        new_name: String,
+        new_name: SmolStr,
     },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Acl {
     DropRole {
-        name: String,
+        name: SmolStr,
         timeout: Decimal,
     },
     DropUser {
-        name: String,
+        name: SmolStr,
         timeout: Decimal,
     },
     CreateRole {
-        name: String,
+        name: SmolStr,
         timeout: Decimal,
     },
     CreateUser {
-        name: String,
-        password: String,
-        auth_method: String,
+        name: SmolStr,
+        password: SmolStr,
+        auth_method: SmolStr,
         timeout: Decimal,
     },
     AlterUser {
-        name: String,
+        name: SmolStr,
         alter_option: AlterOption,
         timeout: Decimal,
     },
     GrantPrivilege {
         grant_type: GrantRevokeType,
-        grantee_name: String,
+        grantee_name: SmolStr,
         timeout: Decimal,
     },
     RevokePrivilege {
         revoke_type: GrantRevokeType,
-        grantee_name: String,
+        grantee_name: SmolStr,
         timeout: Decimal,
     },
 }
@@ -238,7 +239,7 @@ impl Acl {
             | Acl::RevokePrivilege { ref timeout, .. }
             | Acl::GrantPrivilege { ref timeout, .. } => timeout,
         }
-        .to_string()
+        .to_smolstr()
         .parse()
         .map_err(|e| {
             SbroadError::Invalid(

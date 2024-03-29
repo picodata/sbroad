@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use sbroad_proc::otm_child_span;
+use smol_str::ToSmolStr;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
 use crate::ir::ExecuteOptions;
@@ -20,7 +21,7 @@ pub fn prepare(pattern: &str) -> Result<PreparedStmt, SbroadError> {
         Ok(stmt_id) => {
             let stmt = Statement {
                 id: stmt_id,
-                pattern: pattern.to_string(),
+                pattern: pattern.to_smolstr(),
             };
             Ok(PreparedStmt(Some(stmt)))
         }

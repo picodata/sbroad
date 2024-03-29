@@ -478,17 +478,21 @@ impl Plan {
                 let targets = targets.as_ref().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(format!(
-                            "ref ({ref_id}) in join condition with no targets: {node:?}"
-                        ).into()),
+                        Some(
+                            format!("ref ({ref_id}) in join condition with no targets: {node:?}")
+                                .into(),
+                        ),
                     )
                 })?;
                 let child_idx = targets.first().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(format!(
-                            "ref ({ref_id}) in join condition with empty targets: {node:?}"
-                        ).into()),
+                        Some(
+                            format!(
+                                "ref ({ref_id}) in join condition with empty targets: {node:?}"
+                            )
+                            .into(),
+                        ),
                     )
                 })?;
                 let child_id = self.get_relational_child(rel_id, *child_idx)?;

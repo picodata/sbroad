@@ -3,13 +3,14 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::{Node, NodeId, Plan};
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Block {
     /// Procedure body.
     Procedure {
         /// The name of the procedure.
-        name: String,
+        name: SmolStr,
         /// Passed values to the procedure.
         values: Vec<NodeId>,
     },
@@ -18,7 +19,7 @@ pub enum Block {
 impl Default for Block {
     fn default() -> Self {
         Block::Procedure {
-            name: String::new(),
+            name: SmolStr::default(),
             values: vec![],
         }
     }

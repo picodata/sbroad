@@ -1160,7 +1160,7 @@ fn check_subtree_hashes_are_equal(
     values2: Vec<Value>,
 ) {
     let coordinator = RouterRuntimeMock::new();
-    let get_hash = |sql: &str, values: Vec<Value>| -> String {
+    let get_hash = |sql: &str, values: Vec<Value>| -> SmolStr {
         let mut query = Query::new(&coordinator, sql, values).unwrap();
         query
             .get_mut_exec_plan()

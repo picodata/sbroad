@@ -1,5 +1,6 @@
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::collections::HashMap;
 use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
 
@@ -91,7 +92,7 @@ pub struct RequiredData {
     // Unique ID for concrete plan represented in a view of BLAKE3 hash.
     // Needed for plans execution results being cached
     // (e.g. see `encode_plan` -> `QueryType::DQL` -> `pattern_id`).
-    pub plan_id: String,
+    pub plan_id: SmolStr,
     pub parameters: Vec<Value>,
     pub query_type: QueryType,
     pub can_be_cached: bool,
@@ -103,7 +104,7 @@ pub struct RequiredData {
 impl Default for RequiredData {
     fn default() -> Self {
         RequiredData {
-            plan_id: String::new(),
+            plan_id: SmolStr::default(),
             parameters: vec![],
             query_type: QueryType::DQL,
             can_be_cached: true,
@@ -145,7 +146,7 @@ impl TryFrom<&[u8]> for RequiredData {
 impl RequiredData {
     #[must_use]
     pub fn new(
-        plan_id: String,
+        plan_id: SmolStr,
         parameters: Vec<Value>,
         query_type: QueryType,
         can_be_cached: bool,

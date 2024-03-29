@@ -3,6 +3,7 @@ use crate::{
     ir::{relation::Type, Node, Plan},
 };
 use serde::{Deserialize, Serialize};
+use smol_str::{SmolStr, ToSmolStr};
 use tarantool::space::SpaceEngineType;
 use tarantool::{
     decimal::Decimal,
@@ -11,7 +12,7 @@ use tarantool::{
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
-    pub name: String,
+    pub name: SmolStr,
     pub data_type: Type,
     pub is_nullable: bool,
 }
@@ -19,7 +20,7 @@ pub struct ColumnDef {
 impl Default for ColumnDef {
     fn default() -> Self {
         Self {
-            name: String::default(),
+            name: SmolStr::default(),
             data_type: Type::default(),
             is_nullable: true,
         }
@@ -40,34 +41,34 @@ pub enum Language {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Ddl {
     CreateTable {
-        name: String,
+        name: SmolStr,
         format: Vec<ColumnDef>,
-        primary_key: Vec<String>,
+        primary_key: Vec<SmolStr>,
         /// If `None`, create global table.
-        sharding_key: Option<Vec<String>>,
+        sharding_key: Option<Vec<SmolStr>>,
         /// Vinyl is supported only for sharded tables.
         engine_type: SpaceEngineType,
         timeout: Decimal,
     },
     DropTable {
-        name: String,
+        name: SmolStr,
         timeout: Decimal,
     },
     CreateProc {
-        name: String,
+        name: SmolStr,
         params: Vec<ParamDef>,
-        body: String,
+        body: SmolStr,
         language: Language,
         timeout: Decimal,
     },
     DropProc {
-        name: String,
+        name: SmolStr,
         params: Option<Vec<ParamDef>>,
         timeout: Decimal,
     },
     RenameRoutine {
-        old_name: String,
-        new_name: String,
+        old_name: SmolStr,
+        new_name: SmolStr,
         params: Option<Vec<ParamDef>>,
         timeout: Decimal,
     },
@@ -108,7 +109,7 @@ impl Ddl {
             | Ddl::DropProc { ref timeout, .. }
             | Ddl::RenameRoutine { ref timeout, .. } => timeout,
         }
-        .to_string()
+        .to_smolstr()
         .parse()
         .map_err(|e| {
             SbroadError::Invalid(

@@ -131,7 +131,7 @@ impl ExecutionPlan {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some("invalid motion node".to_string().into()),
+                Some("invalid motion node".into()),
             ));
         };
         for op_idx in 0..program_len {

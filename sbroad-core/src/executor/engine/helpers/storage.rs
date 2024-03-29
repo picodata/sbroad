@@ -1,4 +1,4 @@
-use smol_str::ToSmolStr;
+use smol_str::{SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 
@@ -7,7 +7,7 @@ pub mod runtime;
 
 pub struct Statement {
     id: u32,
-    pattern: String,
+    pattern: SmolStr,
 }
 
 #[derive(Default)]
