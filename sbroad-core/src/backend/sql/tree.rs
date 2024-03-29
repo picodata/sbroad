@@ -387,179 +387,16 @@ struct Select {
     proj: usize,
     /// Scan syntax node
     scan: usize,
-    /// Selection syntax node
-    selection: Option<usize>,
-    /// Join syntax node
-    join: Option<usize>,
-    /// GroupBy syntax node
-    groupby: Option<usize>,
-    /// Having syntax node
-    having: Option<usize>,
 }
 
-type NodeAdder = fn(&mut Select, usize, &SyntaxPlan) -> Result<bool, SbroadError>;
-
 impl Select {
-    fn add_one_of(
-        id: usize,
-        select: &mut Select,
-        sp: &SyntaxPlan,
-        adders: &[NodeAdder],
-    ) -> Result<bool, SbroadError> {
-        for add in adders {
-            if add(select, id, sp)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    fn add_inner_join(
-        select: &mut Select,
-        id: usize,
-        sp: &SyntaxPlan,
-    ) -> Result<bool, SbroadError> {
-        let sn = sp.nodes.get_syntax_node(id)?;
-        let left_id = sn.left_id_or_err()?;
-        let sn_left = sp.nodes.get_syntax_node(left_id)?;
-        let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-        if let Node::Relational(Relational::Join { .. }) = sp.plan_node_or_err(&sn.data)? {
-            select.join = Some(id);
-            if let Node::Relational(
-                Relational::ScanRelation { .. }
-                | Relational::ScanSubQuery { .. }
-                | Relational::Motion { .. },
-            ) = plan_node_left
-            {
-                select.scan = left_id;
-                return Ok(true);
-            }
-            return Err(SbroadError::Invalid(
-                Entity::SyntaxPlan,
-                Some(format!(
-                    "Expected a scan or motion after InnerJoin. Got: {plan_node_left:?}"
-                )),
-            ));
-        }
-        Ok(false)
-    }
-
-    fn add_selection(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
-        let sn = sp.nodes.get_syntax_node(id)?;
-        if let Node::Relational(Relational::Selection { .. }) = sp.plan_node_or_err(&sn.data)? {
-            select.selection = Some(id);
-            let left_id = sn.left_id_or_err()?;
-            let sn_left = sp.nodes.get_syntax_node(left_id)?;
-            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-            if let Node::Relational(
-                Relational::ScanRelation { .. } | Relational::ScanSubQuery { .. },
-            ) = plan_node_left
-            {
-                select.scan = left_id;
-                return Ok(true);
-            }
-            if !Select::add_one_of(left_id, select, sp, &[Select::add_inner_join])? {
-                return Err(SbroadError::Invalid(
-                    Entity::SyntaxPlan,
-                    Some(format!(
-                        "expected InnerJoin or Scan after Selection. Got {plan_node_left:?}"
-                    )),
-                ));
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn add_groupby(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
-        let sn = sp.nodes.get_syntax_node(id)?;
-        if let Node::Relational(Relational::GroupBy { .. }) = sp.plan_node_or_err(&sn.data)? {
-            select.groupby = Some(id);
-            let left_id = sn.left_id_or_err()?;
-            let sn_left = sp.nodes.get_syntax_node(left_id)?;
-            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-            if let Node::Relational(
-                Relational::ScanRelation { .. }
-                | Relational::ScanSubQuery { .. }
-                | Relational::Motion { .. },
-            ) = plan_node_left
-            {
-                select.scan = left_id;
-                return Ok(true);
-            }
-            if !Select::add_one_of(
-                left_id,
-                select,
-                sp,
-                &[Select::add_selection, Select::add_inner_join],
-            )? {
-                return Err(SbroadError::Invalid(
-                    Entity::SyntaxPlan,
-                    Some(format!(
-                        "expected Scan or InnerJoin, or Selection after GroupBy. Got {plan_node_left:?}"
-                    ))));
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn add_having(select: &mut Select, id: usize, sp: &SyntaxPlan) -> Result<bool, SbroadError> {
-        let sn = sp.nodes.get_syntax_node(id)?;
-        if let Node::Relational(Relational::Having { .. }) = sp.plan_node_or_err(&sn.data)? {
-            select.having = Some(id);
-            let left_id = sn.left_id_or_err()?;
-            let sn_left = sp.nodes.get_syntax_node(left_id)?;
-            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-            if let Node::Relational(
-                Relational::ScanRelation { .. }
-                | Relational::ScanSubQuery { .. }
-                | Relational::Motion { .. },
-            ) = plan_node_left
-            {
-                select.scan = left_id;
-                return Ok(true);
-            }
-            if !Select::add_one_of(
-                left_id,
-                select,
-                sp,
-                &[
-                    Select::add_selection,
-                    Select::add_inner_join,
-                    Select::add_groupby,
-                ],
-            )? {
-                return Err(SbroadError::Invalid(
-                    Entity::SyntaxPlan,
-                    Some(format!(
-                        "expected Scan or InnerJoin, or Selection, or GroupBy after Having. Got {plan_node_left:?}"
-                    ))));
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
     /// `Select` node constructor.
     ///
     /// There are several valid combinations of the `SELECT` command.
     /// The general view of all such commands is:
-    /// `Projection` -> set of additional relational operators (possibly empty) -> `Scan`,
-    /// where additional operators are: `Selection`, `Join`, `GroupBy`, `Having`.
-    ///
-    /// Some examples of valid sequences:
-    /// - `Projection` -> `Scan`
-    /// - `Projection` -> `Selection` -> `Join` -> `Scan`
-    /// - `Projection` -> `GroupBy` -> `Selection` -> `Join` -> `Scan`
-    /// - `Projection` -> `Having` -> `GroupBy` -> `Scan`
-    ///
-    /// Using functions `add_one_of` and `add_<rel_op_name>` constructor recursively traverses
-    /// `SyntaxNode`s tree and tries to add new children operators. In case none of allowed/required
-    /// children operators were met, it throws an error.
+    /// `Projection` -> set of additional relational operators (possibly empty) -> `Scan`
+    /// The main goal of this function is to find `Projection` and `Scan` nodes for
+    /// further reordering of the syntax tree.
     fn new(
         sp: &SyntaxPlan,
         parent: Option<usize>,
@@ -573,38 +410,27 @@ impl Select {
                 branch,
                 proj: id,
                 scan: 0,
-                selection: None,
-                join: None,
-                groupby: None,
-                having: None,
             };
-            let left_id = sn.left_id_or_err()?;
-            let sn_left = sp.nodes.get_syntax_node(left_id)?;
-            let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
-            if let Node::Relational(
-                Relational::ScanRelation { .. }
-                | Relational::ScanSubQuery { .. }
-                | Relational::Motion { .. },
-            ) = plan_node_left
-            {
-                select.scan = left_id;
-            } else if !Select::add_one_of(
-                left_id,
-                &mut select,
-                sp,
-                &[
-                    Select::add_selection,
-                    Select::add_inner_join,
-                    Select::add_groupby,
-                    Select::add_having,
-                ],
-            )? {
-                return Err(SbroadError::Invalid(
-                    Entity::SyntaxPlan,
-                    Some(format!(
-                        "expected Scan, InnerJoin, Selection, GroupBy, Having after Projection. Got {plan_node_left:?}"
-                    ))));
+
+            // Iterate over the left branch subtree of the projection node to find
+            // the scan node (leaf node without children).
+            let mut node = sp.nodes.get_syntax_node(id)?;
+            loop {
+                let left_id = node.left_id_or_err()?;
+                let sn_left = sp.nodes.get_syntax_node(left_id)?;
+                let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
+                if let Node::Relational(
+                    Relational::ScanRelation { .. }
+                    | Relational::ScanSubQuery { .. }
+                    | Relational::Motion { .. },
+                ) = plan_node_left
+                {
+                    select.scan = left_id;
+                    break;
+                }
+                node = sn_left;
             }
+
             if select.scan != 0 {
                 return Ok(Some(select));
             }

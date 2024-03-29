@@ -708,3 +708,32 @@ FROM
         {6, "a", "a", 0, 6, "a"},
     })
 end
+
+left_join.test_left_multi_join= function()
+    local api = cluster:server("api-1").net_box
+    local r, err = api:call("sbroad.execute", {
+        [[
+        SELECT space1."yearquarter", space2."name" FROM space1
+        LEFT JOIN space2
+        ON space1."a_to" = space2."a" AND space1."b_to" = space2."b"
+        AND space1."yearquarter" = space2."yearquarter"
+        LEFT JOIN space2 as space3
+        ON space1."a_to" = space3."a" AND space1."b_to" = space3."b"
+        WHERE space2."yearquarter" = 4
+        ]], {}
+    })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        {name = "SPACE1.yearquarter", type = "integer"},
+        {name = "SPACE2.name", type = "string"},
+    })
+    t.assert_items_equals(r.rows, {
+        {4, "a"},
+        {4, "a"},
+        {4, "a"},
+        {4, "a"},
+        {4, "a"},
+        {4, "a"},
+        {4, "a"}
+    })
+end

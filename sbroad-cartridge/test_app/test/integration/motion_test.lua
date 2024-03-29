@@ -303,3 +303,26 @@ g.test_subquery_under_motion_with_alias = function()
         }
     })
 end
+
+g.test_nested_joins_with_motions = function()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT t1."id" FROM "testing_space" as t1
+        JOIN "space_simple_shard_key" as t2
+        ON t1."id" = t2."id"
+        JOIN "space_simple_shard_key_hist" as t3
+        ON t2."id" = t3."id"
+        WHERE t1."id" = 1
+    ]], {} })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "T1.id", type = "integer"},
+        },
+        rows = {
+            {1}
+        }
+    })
+end
