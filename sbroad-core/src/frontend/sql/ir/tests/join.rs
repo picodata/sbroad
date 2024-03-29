@@ -105,3 +105,34 @@ vtable_max_rows = 5000
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
+
+#[test]
+fn milti_join4() {
+    let input = r#"SELECT "t1"."a" FROM "t1" JOIN "t1" as "t2" ON "t1"."a" = "t2"."a"
+    JOIN "t3" ON "t1"."a" = "t3"."a"
+"#;
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t1"."a"::string -> "a")
+    join on ROW("t1"."a"::string) = ROW("t3"."a"::string)
+        join on ROW("t1"."a"::string) = ROW("t2"."a"::string)
+            scan "t1"
+                projection ("t1"."a"::string -> "a", "t1"."b"::integer -> "b")
+                    scan "t1"
+            motion [policy: full]
+                scan "t2"
+                    projection ("t2"."a"::string -> "a", "t2"."b"::integer -> "b")
+                        scan "t1" -> "t2"
+        motion [policy: full]
+            scan "t3"
+                projection ("t3"."a"::string -> "a", "t3"."b"::integer -> "b")
+                    scan "t3"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}

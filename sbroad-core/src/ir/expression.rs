@@ -900,14 +900,28 @@ impl ColumnPositionMap {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ColumnWithScan<'column> {
+    pub column: &'column str,
+    pub scan: Option<&'column str>,
+}
+
+impl<'column> ColumnWithScan<'column> {
+    #[must_use]
+    pub fn new(column: &'column str, scan: Option<&'column str>) -> Self {
+        ColumnWithScan { column, scan }
+    }
+}
+
 /// Specification of column names/indices that we want to retrieve in `new_columns` call.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ColumnsRetrievalSpec<'spec> {
-    Names(Vec<&'spec str>),
+    Names(Vec<ColumnWithScan<'spec>>),
     Indices(Vec<usize>),
 }
 
 /// Specification of targets to retrieve from join within `new_columns` call.
+#[derive(Debug)]
 pub enum JoinTargets<'targets> {
     Left {
         columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
@@ -922,6 +936,7 @@ pub enum JoinTargets<'targets> {
 ///
 /// If `columns_spec` is met, it means we'd like to retrieve only specific columns.
 /// Otherwise, we retrieve all the columns from children.
+#[derive(Debug)]
 pub enum NewColumnsSource<'targets> {
     Join {
         outer_child: usize,
@@ -1087,14 +1102,21 @@ impl Plan {
             let output_id = relational_op.output();
             let child_node_row_list = self.get_row_list(output_id)?.to_vec();
 
-            let indices: Vec<usize> = match columns_spec {
+            let mut indices: Vec<usize> = Vec::new();
+            match columns_spec {
                 ColumnsRetrievalSpec::Names(names) => {
                     let col_name_pos_map = ColumnPositionMap::new(self, rel_child)?;
-                    let indices: Result<Vec<usize>, SbroadError> =
-                        names.iter().map(|n| col_name_pos_map.get(n)).collect();
-                    indices?
+                    indices.reserve(names.len());
+                    for ColumnWithScan { column, scan } in names {
+                        let index = if scan.is_some() {
+                            col_name_pos_map.get_with_scan(column, scan)?
+                        } else {
+                            col_name_pos_map.get(column)?
+                        };
+                        indices.push(index);
+                    }
                 }
-                ColumnsRetrievalSpec::Indices(indices) => indices.clone(),
+                ColumnsRetrievalSpec::Indices(idx) => indices = idx.clone(),
             };
 
             let exclude_positions = column_positions_to_exclude(rel_child)?;
@@ -1193,7 +1215,11 @@ impl Plan {
         let specific_columns = if col_names.is_empty() {
             None
         } else {
-            Some(ColumnsRetrievalSpec::Names(Vec::from(col_names)))
+            let col_names: Vec<ColumnWithScan> = col_names
+                .iter()
+                .map(|name| ColumnWithScan::new(name, None))
+                .collect();
+            Some(ColumnsRetrievalSpec::Names(col_names))
         };
 
         let list = self.new_columns(
@@ -1264,7 +1290,11 @@ impl Plan {
         let specific_columns = if col_names.is_empty() {
             None
         } else {
-            Some(ColumnsRetrievalSpec::Names(Vec::from(col_names)))
+            let col_names: Vec<ColumnWithScan> = col_names
+                .iter()
+                .map(|name| ColumnWithScan::new(name, None))
+                .collect();
+            Some(ColumnsRetrievalSpec::Names(col_names))
         };
 
         let list = self.new_columns(
@@ -1326,14 +1356,14 @@ impl Plan {
         &mut self,
         left: usize,
         right: usize,
-        col_names: &[&str],
+        col_names: &[ColumnWithScan],
     ) -> Result<usize, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Join {
                 outer_child: left,
                 inner_child: right,
                 targets: JoinTargets::Left {
-                    columns_spec: Some(ColumnsRetrievalSpec::Names(Vec::from(col_names))),
+                    columns_spec: Some(ColumnsRetrievalSpec::Names(col_names.to_vec())),
                 },
             },
             false,
@@ -1354,14 +1384,14 @@ impl Plan {
         &mut self,
         left: usize,
         right: usize,
-        col_names: &[&str],
+        col_names: &[ColumnWithScan],
     ) -> Result<usize, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Join {
                 outer_child: left,
                 inner_child: right,
                 targets: JoinTargets::Right {
-                    columns_spec: Some(ColumnsRetrievalSpec::Names(Vec::from(col_names))),
+                    columns_spec: Some(ColumnsRetrievalSpec::Names(col_names.to_vec())),
                 },
             },
             false,

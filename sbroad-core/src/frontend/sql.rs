@@ -24,7 +24,7 @@ use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
-    ColumnPositionMap, ColumnsRetrievalSpec, Expression, ExpressionId, Position,
+    ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId, Position,
 };
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
@@ -1455,16 +1455,18 @@ where
                                 )),
                             ));
                         } else if present_in_left {
+                            let col_with_scan = ColumnWithScan::new(&col_name, scan_name.as_deref());
                             plan.add_row_from_left_branch(
                                 *plan_left_id,
                                 *plan_right_id,
-                                &[&col_name],
+                                &[col_with_scan],
                             )?
                         } else if present_in_right {
+                            let col_with_scan = ColumnWithScan::new(&col_name, scan_name.as_deref());
                             plan.add_row_from_right_branch(
                                 *plan_left_id,
                                 *plan_right_id,
-                                &[&col_name],
+                                &[col_with_scan],
                             )?
                         } else {
                             return Err(SbroadError::NotFound(
@@ -2349,7 +2351,8 @@ impl AbstractSyntaxTree {
                                 )),
                             )
                         })?;
-                        pk_columns.push(column.name.as_str());
+                        let col_with_scan = ColumnWithScan::new(column.name.as_str(), None);
+                        pk_columns.push(col_with_scan);
                     }
                     let pk_column_ids = plan.new_columns(
                         &NewColumnsSource::Other {

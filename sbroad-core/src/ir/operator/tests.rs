@@ -6,6 +6,7 @@ use pretty_assertions::assert_eq;
 use crate::collection;
 use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
+use crate::ir::expression::ColumnWithScan;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::tests::{column_user_non_null, sharding_column};
@@ -533,10 +534,10 @@ fn join() {
     let scan_t2 = plan.add_scan("t2", None).unwrap();
 
     let a_row = plan
-        .add_row_from_left_branch(scan_t1, scan_t2, &["a"])
+        .add_row_from_left_branch(scan_t1, scan_t2, &[ColumnWithScan::new("a", None)])
         .unwrap();
     let d_row = plan
-        .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
+        .add_row_from_right_branch(scan_t1, scan_t2, &[ColumnWithScan::new("d", None)])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     let join = plan
@@ -594,10 +595,10 @@ fn join_duplicate_columns() {
     let scan_t2 = plan.add_scan("t2", None).unwrap();
 
     let a_row = plan
-        .add_row_from_left_branch(scan_t1, scan_t2, &["a"])
+        .add_row_from_left_branch(scan_t1, scan_t2, &[ColumnWithScan::new("a", None)])
         .unwrap();
     let d_row = plan
-        .add_row_from_right_branch(scan_t1, scan_t2, &["d"])
+        .add_row_from_right_branch(scan_t1, scan_t2, &[ColumnWithScan::new("d", None)])
         .unwrap();
     let condition = plan.nodes.add_bool(a_row, Bool::Eq, d_row).unwrap();
     let join = plan
