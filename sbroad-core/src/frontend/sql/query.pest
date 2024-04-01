@@ -156,7 +156,9 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
                             &IdentifierInapplicableSymbol }
         RegularIdentifierFirstApplicableSymbol = { !(IdentifierInapplicableSymbol | ASCII_DIGIT) ~ ANY }
         RegularIdentifierApplicableSymbol = { !IdentifierInapplicableSymbol ~ ANY }
-        IdentifierInapplicableSymbol = { WHITESPACE | "." | "," | "(" | EOF | ")" | "\"" }
+        IdentifierInapplicableSymbol = { WHITESPACE | "." | "," | "(" | EOF | ")" | "\""
+                                       | "'" | ArithInfixOp | ConcatInfixOp | NotEq | GtEq
+                                       | Gt | LtEq | Lt | Eq | Lt }
         KeywordCoverage = { Keyword ~ IdentifierInapplicableSymbol }
             // Note: In case two keywords with the same prefix are met, shorter ones must go after longest.
             //       E.g. ^"in" must go after ^"insert" because keywords traversal stops on the first match.

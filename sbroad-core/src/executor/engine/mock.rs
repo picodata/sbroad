@@ -222,6 +222,25 @@ impl RouterConfigurationMock {
         );
 
         let columns = vec![
+            Column::new("\"A\"", Type::Unsigned, ColumnRole::User, true),
+            Column::new("\"B\"", Type::Unsigned, ColumnRole::User, false),
+            Column::new("\"bucket_id\"", Type::Unsigned, ColumnRole::Sharding, true),
+        ];
+        let sharding_key: &[&str] = &["\"A\"", "\"B\""];
+        let primary_key: &[&str] = &["\"B\""];
+        tables.insert(
+            "\"TBL\"".to_string(),
+            Table::new_sharded(
+                "\"TBL\"",
+                columns,
+                sharding_key,
+                primary_key,
+                SpaceEngine::Memtx,
+            )
+            .unwrap(),
+        );
+
+        let columns = vec![
             Column::new("\"a\"", Type::Unsigned, ColumnRole::User, true),
             Column::new("\"b\"", Type::Unsigned, ColumnRole::User, false),
             Column::new("\"c\"", Type::Unsigned, ColumnRole::User, true),

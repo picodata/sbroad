@@ -428,14 +428,35 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_check_arbitraty_utf_in_identifiers() {
     let input = r#"SELECT "id" "from", "id" as "select", "id"
-                               "123»*&%ښ۞@Ƶǖselect.""''\\"
-                                , "id" aц1&@$//Ƶǖ%^&*«»§*&%ښ۞@Ƶǖ FROM "test_space" *&%ښ۞@Ƶǖ"#;
+                               "123»&%ښ۞@Ƶǖselect.""''\\"
+                                , "id" aц1&@$Ƶǖ%^&«»§&%ښ۞@Ƶǖ FROM "test_space" &%ښ۞@Ƶǖ"#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("*&%ښ۞@ƵǕ"."id"::unsigned -> "from", "*&%ښ۞@ƵǕ"."id"::unsigned -> "select", "*&%ښ۞@ƵǕ"."id"::unsigned -> "123»*&%ښ۞@Ƶǖselect.""''\\", "*&%ښ۞@ƵǕ"."id"::unsigned -> "AЦ1&@$//ƵǕ%^&*«»§*&%ښ۞@ƵǕ")
-    scan "test_space" -> "*&%ښ۞@ƵǕ"
+        r#"projection ("&%ښ۞@ƵǕ"."id"::unsigned -> "from", "&%ښ۞@ƵǕ"."id"::unsigned -> "select", "&%ښ۞@ƵǕ"."id"::unsigned -> "123»&%ښ۞@Ƶǖselect.""''\\", "&%ښ۞@ƵǕ"."id"::unsigned -> "AЦ1&@$ƵǕ%^&«»§&%ښ۞@ƵǕ")
+    scan "test_space" -> "&%ښ۞@ƵǕ"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_check_inapplicatable_symbols() {
+    let input = r#"
+    SELECT a*a, B+B, a-a
+    FROM TBL
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (ROW("TBL"."A"::unsigned) * ROW("TBL"."A"::unsigned) -> "COL_1", ROW("TBL"."B"::unsigned) + ROW("TBL"."B"::unsigned) -> "COL_2", ROW("TBL"."A"::unsigned) - ROW("TBL"."A"::unsigned) -> "COL_3")
+    scan "TBL"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
