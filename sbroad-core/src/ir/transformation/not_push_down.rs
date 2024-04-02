@@ -13,7 +13,7 @@ use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 
 /// Enum representing status of Not push down traversal.
@@ -205,9 +205,9 @@ impl Plan {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Node,
-                                Some(
-                                    format!("Unexpected constant node under Not: {expr:?}").into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "Unexpected constant node under Not: {expr:?}"
+                                )),
                             ));
                         }
                     }

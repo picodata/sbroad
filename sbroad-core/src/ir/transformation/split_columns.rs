@@ -19,6 +19,7 @@ use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+use smol_str::format_smolstr;
 
 fn call_expr_tree_split_columns(
     plan: &mut Plan,
@@ -59,7 +60,9 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("node is not a boolean expression: {top_expr:?}").into()),
+                    Some(format_smolstr!(
+                        "node is not a boolean expression: {top_expr:?}"
+                    )),
                 ));
             }
         };
@@ -75,9 +78,9 @@ impl Plan {
         ) = (left_expr, right_expr)
         {
             if left_list.len() != right_list.len() {
-                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                     "left and right rows have different number of columns: {left_expr:?}, {right_expr:?}"
-                ).into()));
+                )));
             }
             let pairs = left_list
                 .iter()

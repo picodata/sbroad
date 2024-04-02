@@ -13,7 +13,7 @@ use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
 use sbroad::{debug, error, warn};
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::fmt::Display;
@@ -28,19 +28,19 @@ pub struct StorageRuntime {
     cache: RefCell<CartridgeCache>,
 }
 
-pub struct CartridgeCache(LRUCache<String, PreparedStmt>);
+pub struct CartridgeCache(LRUCache<SmolStr, PreparedStmt>);
 
 impl StorageCache for CartridgeCache {
     fn put(
         &mut self,
-        plan_id: String,
+        plan_id: SmolStr,
         stmt: PreparedStmt,
         _: &SchemaInfo,
     ) -> Result<(), SbroadError> {
         self.0.put(plan_id, stmt)
     }
 
-    fn get(&mut self, plan_id: &String) -> Result<Option<&PreparedStmt>, SbroadError> {
+    fn get(&mut self, plan_id: &SmolStr) -> Result<Option<&PreparedStmt>, SbroadError> {
         self.0.get(plan_id)
     }
 
@@ -61,7 +61,11 @@ impl QueryCache for StorageRuntime {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}").into())
+                SbroadError::FailedTo(
+                    Action::Borrow,
+                    Some(Entity::Cache),
+                    format_smolstr!("{e:?}"),
+                )
             })?
             .0
             .capacity())
@@ -71,7 +75,7 @@ impl QueryCache for StorageRuntime {
         self.cache
             .try_borrow_mut()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}").into())
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format_smolstr!("{e:?}"))
             })?
             .clear()?;
         Ok(())
@@ -94,7 +98,7 @@ impl ConfigurationProvider for StorageRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })
     }
@@ -104,7 +108,7 @@ impl ConfigurationProvider for StorageRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })?;
         *metadata = Self::Configuration::new();
@@ -116,7 +120,7 @@ impl ConfigurationProvider for StorageRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })?;
         Ok(metadata.is_empty())
@@ -135,11 +139,11 @@ impl ConfigurationProvider for StorageRuntime {
                         Option::from("getting storage cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
             let storage_capacity = usize::try_from(capacity)
-                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e:?}").into())))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format_smolstr!("{e:?}"))))?;
 
             let storage_cache_size_bytes: LuaFunction<_> =
                 lua.eval("return get_storage_cache_size_bytes;").unwrap();
@@ -150,11 +154,11 @@ impl ConfigurationProvider for StorageRuntime {
                         Option::from("getting storage cache size bytes"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
             let storage_size_bytes = usize::try_from(cache_size_bytes)
-                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format!("{e}").into())))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Cache, Some(format_smolstr!("{e}"))))?;
 
             let mut metadata = StorageConfiguration::new();
             metadata.storage_capacity = storage_capacity;
@@ -170,7 +174,7 @@ impl ConfigurationProvider for StorageRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })?;
         let storage_size_bytes = metadata.storage_size_bytes;
@@ -232,7 +236,7 @@ impl StorageRuntime {
     /// # Errors
     /// - Failed to initialize the LRU cache.
     pub fn new() -> Result<Self, SbroadError> {
-        let cache: LRUCache<String, PreparedStmt> =
+        let cache: LRUCache<SmolStr, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
             metadata: RefCell::new(StorageConfiguration::new()),

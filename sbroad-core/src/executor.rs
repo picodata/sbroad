@@ -39,6 +39,7 @@ use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
 use sbroad_proc::otm_child_span;
+use smol_str::{format_smolstr, SmolStr};
 
 pub mod bucket;
 pub mod engine;
@@ -112,7 +113,7 @@ where
     /// - Failed to apply optimizing transformations to IR plan.
     pub fn new(coordinator: &'a C, sql: &str, params: Vec<Value>) -> Result<Self, SbroadError>
     where
-        C::Cache: Cache<String, Plan>,
+        C::Cache: Cache<SmolStr, Plan>,
         C::ParseTree: Ast,
     {
         let key = query_id(sql);
@@ -120,7 +121,11 @@ where
 
         let mut plan = Plan::new();
         let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(Action::Create, Some(Entity::Query), format!("{e:?}").into())
+            SbroadError::FailedTo(
+                Action::Create,
+                Some(Entity::Query),
+                format_smolstr!("{e:?}"),
+            )
         })?;
         if let Some(cached_plan) = cache.get(&key)? {
             plan = cached_plan.clone();
@@ -258,7 +263,7 @@ where
     ///
     /// # Errors
     /// - Failed to build explain
-    pub fn to_explain(&self) -> Result<String, SbroadError> {
+    pub fn to_explain(&self) -> Result<SmolStr, SbroadError> {
         self.exec_plan.get_ir_plan().as_explain()
     }
 

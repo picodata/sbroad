@@ -3,7 +3,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::{Node, NodeId, Plan};
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Block {
@@ -40,7 +40,9 @@ impl Plan {
             | Node::Acl(..)
             | Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node {node:?} (id {node_id}) is not Block type").into()),
+                Some(format_smolstr!(
+                    "node {node:?} (id {node_id}) is not Block type"
+                )),
             )),
         }
     }
@@ -59,7 +61,9 @@ impl Plan {
             | Node::Acl(..)
             | Node::Parameter => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node {node:?} (id {node_id}) is not Block type").into()),
+                Some(format_smolstr!(
+                    "node {node:?} (id {node_id}) is not Block type"
+                )),
             )),
         }
     }

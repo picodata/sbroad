@@ -19,6 +19,7 @@ use opentelemetry::sdk::trace::Span;
 use opentelemetry::trace::{SpanBuilder, SpanKind, TraceContextExt, Tracer};
 #[allow(unused_imports)]
 use opentelemetry::{Context, KeyValue};
+use smol_str::{SmolStr, ToSmolStr};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -280,8 +281,8 @@ pub fn current_id() -> Option<String> {
 
 #[inline]
 #[must_use]
-pub fn query_id(pattern: &str) -> String {
-    Base64::encode_string(blake3::hash(pattern.as_bytes()).to_hex().as_bytes())
+pub fn query_id(pattern: &str) -> SmolStr {
+    Base64::encode_string(blake3::hash(pattern.as_bytes()).to_hex().as_bytes()).to_smolstr()
 }
 
 #[allow(unused_variables)]

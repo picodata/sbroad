@@ -1,4 +1,4 @@
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, SimpleAggregate};
@@ -320,7 +320,9 @@ impl<'plan> ExpressionMapper<'plan> {
             };
             return Err(SbroadError::Invalid(
                 Entity::Query,
-                Some(format!("column {column_name} is not found in grouping expressions!").into()),
+                Some(format_smolstr!(
+                    "column {column_name} is not found in grouping expressions!"
+                )),
             ));
         }
         for child in self.plan.nodes.aggregate_iter(current, false) {
@@ -552,7 +554,7 @@ impl Plan {
                         if Expression::is_aggregate_name(name) {
                             return Err(SbroadError::Invalid(
                                 Entity::Query,
-                                Some(format!("aggregate functions are not allowed inside grouping expression. Got aggregate: {name}").into())
+                                Some(format_smolstr!("aggregate functions are not allowed inside grouping expression. Got aggregate: {name}"))
                             ));
                         }
                     }
@@ -562,7 +564,7 @@ impl Plan {
             if !contains_at_least_one_col {
                 return Err(SbroadError::Invalid(
                     Entity::Query,
-                    Some(format!("grouping expression must contain at least one column. Invalid expression number: {pos}").into())
+                    Some(format_smolstr!("grouping expression must contain at least one column. Invalid expression number: {pos}"))
                 ));
             }
         }
@@ -625,7 +627,9 @@ impl Plan {
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("unexpected relational node ({node_id}): {node:?}").into()),
+                        Some(format_smolstr!(
+                            "unexpected relational node ({node_id}): {node:?}"
+                        )),
                     ))
                 }
             }
@@ -674,15 +678,15 @@ impl Plan {
             let c = *self
                 .get_relational_children(rel_id)?
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("expected relation node ({rel_id}) to have children!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "expected relation node ({rel_id}) to have children!"
+                    ))
                 })?
                 .first()
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("expected relation node ({rel_id}) to have children!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "expected relation node ({rel_id}) to have children!"
+                    ))
                 })?;
             Ok(c)
         };
@@ -699,7 +703,10 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Plan,
-            Some(format!("too many nodes ({}) in Reduce stage", finals.len()).into()),
+            Some(format_smolstr!(
+                "too many nodes ({}) in Reduce stage",
+                finals.len()
+            )),
         ))
     }
 
@@ -835,7 +842,7 @@ impl Plan {
                                         Err(e) => e.to_smolstr(),
                                     };
                                     return Err(SbroadError::Invalid(Entity::Query,
-                                                                    Some(format!("found column reference ({alias}) outside aggregate function").into())));
+                                                                    Some(format_smolstr!("found column reference ({alias}) outside aggregate function"))));
                                 }
                             }
                         }
@@ -1070,14 +1077,14 @@ impl Plan {
                     .expr_iter(info.aggr.fun_id, false)
                     .collect::<Vec<usize>>();
                 if args.len() > 1 && !matches!(info.aggr.kind, AggregateKind::GRCONCAT) {
-                    return Err(SbroadError::UnexpectedNumberOfValues(
-                        format!("aggregate ({info:?}) have more than one argument").into(),
-                    ));
+                    return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "aggregate ({info:?}) have more than one argument"
+                    )));
                 }
                 *args.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("Aggregate function has no children: {info:?}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "Aggregate function has no children: {info:?}"
+                    ))
                 })?
             };
             let expr = GroupingExpression::new(argument, self);
@@ -1128,13 +1135,13 @@ impl Plan {
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("missing position for local GroupBy column with local alias: {local_alias}").into())
+                        Some(format_smolstr!("missing position for local GroupBy column with local alias: {local_alias}"))
                     ));
                 }
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("invalid map with unique grouping expressions. Could not find grouping expression with id: {expr_id}").into())));
+                    Some(format_smolstr!("invalid map with unique grouping expressions. Could not find grouping expression with id: {expr_id}"))));
             }
         }
         let child_id = self
@@ -1160,9 +1167,9 @@ impl Plan {
             HashSet::with_hasher(RepeatableState);
         for pos in 0..aggr_infos.len() {
             let info = aggr_infos.get(pos).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    format!("invalid idx of aggregate infos ({pos})").into(),
-                )
+                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "invalid idx of aggregate infos ({pos})"
+                ))
             })?;
             if info.is_distinct {
                 continue;
@@ -1175,7 +1182,7 @@ impl Plan {
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Aggregate,
-                        Some(format!("invalid fun_id: {}", info.aggr.fun_id).into()),
+                        Some(format_smolstr!("invalid fun_id: {}", info.aggr.fun_id)),
                     ));
                 }
             };
@@ -1189,9 +1196,9 @@ impl Plan {
                 if let Some(sig) = unique_local_aggregates.get(&signature) {
                     if let Some(alias) = &sig.local_alias {
                         let info = aggr_infos.get_mut(pos).ok_or_else(|| {
-                            SbroadError::UnexpectedNumberOfValues(
-                                format!("invalid idx of aggregate infos ({pos})").into(),
-                            )
+                            SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                                "invalid idx of aggregate infos ({pos})"
+                            ))
                         })?;
                         info.aggr.lagg_alias.insert(kind, alias.clone());
                     } else {
@@ -1202,9 +1209,9 @@ impl Plan {
                     }
                 } else {
                     let info = aggr_infos.get_mut(pos).ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            format!("invalid idx of aggregate infos ({pos})").into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                            "invalid idx of aggregate infos ({pos})"
+                        ))
                     })?;
                     let alias = Rc::new(generate_local_alias_for_aggr(
                         &kind,
@@ -1266,7 +1273,9 @@ impl Plan {
             let Some(local_alias) = local_aliases_map.get(expr_id) else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("could not find local alias for GroupBy expr ({expr_id})").into()),
+                    Some(format_smolstr!(
+                        "could not find local alias for GroupBy expr ({expr_id})"
+                    )),
                 ));
             };
             let position = child_map.get(local_alias)?;
@@ -1274,12 +1283,9 @@ impl Plan {
             if !col_type.is_scalar() {
                 return Err(SbroadError::Invalid(
                     Entity::Type,
-                    Some(
-                        format!(
+                    Some(format_smolstr!(
                         "add_final_groupby: GroupBy expr ({expr_id}) is not scalar ({col_type})!"
-                    )
-                        .into(),
-                    ),
+                    )),
                 ));
             }
             let new_col = Expression::Reference {
@@ -1349,15 +1355,15 @@ impl Plan {
             let child_id = *self
                 .get_relational_children(rel_id)?
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("expected relation node ({rel_id}) to have children!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "expected relation node ({rel_id}) to have children!"
+                    ))
                 })?
                 .first()
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("expected relation node ({rel_id}) to have children!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "expected relation node ({rel_id}) to have children!"
+                    ))
                 })?;
             let alias_to_pos_map = ColumnPositionMap::new(self, child_id)?;
             let mut nodes = Vec::with_capacity(group.len());
@@ -1365,12 +1371,9 @@ impl Plan {
                 let Some(local_alias) = local_aliases_map.get(&gr_expr_id) else {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(
-                            format!(
-                                "failed to find local alias for groupby expression {gr_expr_id}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "failed to find local alias for groupby expression {gr_expr_id}"
+                        )),
                     ));
                 };
                 let position = alias_to_pos_map.get(local_alias)?;
@@ -1378,10 +1381,9 @@ impl Plan {
                 if !col_type.is_scalar() {
                     return Err(SbroadError::Invalid(
                         Entity::Type,
-                        Some(
-                            format!("patch_finals: expected scalar expression, found: {col_type}")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "patch_finals: expected scalar expression, found: {col_type}"
+                        )),
                     ));
                 };
                 let new_ref = Expression::Reference {
@@ -1401,15 +1403,12 @@ impl Plan {
                         Relational::Projection { .. } => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(
-                                    format!(
-                                        "{} {gr_expr_id} {} {expr_id} {}",
-                                        "invalid mapping between group by expression",
-                                        "and projection one: expression",
-                                        "has no parent",
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "{} {gr_expr_id} {} {expr_id} {}",
+                                    "invalid mapping between group by expression",
+                                    "and projection one: expression",
+                                    "has no parent",
+                                )),
                             ))
                         }
                         Relational::Having { filter, .. } => {
@@ -1418,7 +1417,7 @@ impl Plan {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(format!("unexpected node in Reduce stage: {rel_id}").into()),
+                                Some(format_smolstr!("unexpected node in Reduce stage: {rel_id}")),
                             ))
                         }
                     }
@@ -1479,7 +1478,7 @@ impl Plan {
                     let child_id = *children.first().ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!("Having ({node_id}) has no children!").into()),
+                            Some(format_smolstr!("Having ({node_id}) has no children!")),
                         )
                     })?;
                     let output = self.add_row_for_output(child_id, &[], true)?;
@@ -1489,7 +1488,7 @@ impl Plan {
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("Unexpected node in reduce stage: {node:?}").into()),
+                        Some(format_smolstr!("Unexpected node in reduce stage: {node:?}")),
                     ))
                 }
             }
@@ -1510,19 +1509,17 @@ impl Plan {
                 *children.first().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!("patch aggregates: rel node ({parent}) has no children!")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "patch aggregates: rel node ({parent}) has no children!"
+                        )),
                     )
                 })?
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(
-                        format!("patch aggregates: rel node on id: {parent} has no children!")
-                            .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "patch aggregates: rel node on id: {parent} has no children!"
+                    )),
                 ));
             };
             let alias_to_pos_map = ColumnPositionMap::new(self, child_id)?;
@@ -1546,12 +1543,9 @@ impl Plan {
                     let node = self.get_mut_relation_node(parent)?;
                     return Err(SbroadError::Invalid(
                         Entity::Aggregate,
-                        Some(
-                            format!(
-                                "aggregate info for {node:?} that hat no parent! Info: {info:?}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "aggregate info for {node:?} that hat no parent! Info: {info:?}"
+                        )),
                     ));
                 }
             }
@@ -1593,18 +1587,17 @@ impl Plan {
                 *children.first().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(format!("final GroupBy ({motion_parent}) has no children!").into()),
+                        Some(format_smolstr!(
+                            "final GroupBy ({motion_parent}) has no children!"
+                        )),
                     )
                 })?
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(
-                        format!(
-                            "expected to have GroupBy under reduce nodes on id: {motion_parent}"
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "expected to have GroupBy under reduce nodes on id: {motion_parent}"
+                    )),
                 ));
             };
             let mut strategy = Strategy::new(motion_parent);

@@ -9,6 +9,7 @@ use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
 use ahash::RandomState;
+use smol_str::format_smolstr;
 use std::collections::{HashMap, HashSet};
 
 impl Plan {
@@ -81,12 +82,9 @@ impl Plan {
             let invalid_idx = |param_id: usize, value_idx: usize| {
                 SbroadError::Invalid(
                     Entity::Plan,
-                    Some(
-                        format!(
-                            "out of bounds value index {value_idx} for pg parameter {param_id}"
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "out of bounds value index {value_idx} for pg parameter {param_id}"
+                    )),
                 )
             };
 
@@ -100,9 +98,9 @@ impl Plan {
                 }
                 let value_idx = *pg_params_map.get(param_id).ok_or(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(
-                        format!("value index not found for parameter with id: {param_id}",).into(),
-                    ),
+                    Some(format_smolstr!(
+                        "value index not found for parameter with id: {param_id}",
+                    )),
                 ))?;
                 if used_values.get(value_idx).copied().unwrap_or(true) {
                     let Some(value) = values.get(value_idx) else {
@@ -137,14 +135,11 @@ impl Plan {
         if tnt_params_style && non_binded_params_len > value_ids.len() {
             return Err(SbroadError::Invalid(
                 Entity::Value,
-                Some(
-                    format!(
-                        "Expected at least {} values for parameters. Got {}.",
-                        non_binded_params_len,
-                        value_ids.len()
-                    )
-                    .into(),
-                ),
+                Some(format_smolstr!(
+                    "Expected at least {} values for parameters. Got {}.",
+                    non_binded_params_len,
+                    value_ids.len()
+                )),
             ));
         }
 
@@ -164,17 +159,16 @@ impl Plan {
                     - *pg_params_map.get(&param_id).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
-                            Some(
-                                format!("value index not found for parameter with id: {param_id}",)
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "value index not found for parameter with id: {param_id}",
+                            )),
                         )
                     })?
             };
             let val_id = value_ids.get(value_idx).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
-                    format!("(Parameter) in position {value_idx}").into(),
+                    format_smolstr!("(Parameter) in position {value_idx}"),
                 )
             })?;
             Ok(*val_id)
@@ -280,7 +274,10 @@ impl Plan {
         // Closure to retrieve a corresponding row for a parameter node.
         let get_row = |param_id: usize| -> Result<usize, SbroadError> {
             let row_id = row_ids.get(&param_id).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format!("(Row) at position {param_id}").into())
+                SbroadError::NotFound(
+                    Entity::Node,
+                    format_smolstr!("(Row) at position {param_id}"),
+                )
             })?;
             Ok(*row_id)
         };
@@ -431,18 +428,17 @@ impl Plan {
                     let value_idx = *self.pg_params_map.get(&param_id).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
-                            Some(
-                                format!("no value idx in map for option parameter: {opt:?}").into(),
-                            ),
+                            Some(format_smolstr!(
+                                "no value idx in map for option parameter: {opt:?}"
+                            )),
                         )
                     })?;
                     let value = values.get(value_idx).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
-                            Some(
-                                format!("invalid value idx {value_idx}, for option: {opt:?}")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "invalid value idx {value_idx}, for option: {opt:?}"
+                            )),
                         )
                     })?;
                     opt.val = OptionParamValue::Value { val: value.clone() };
@@ -452,9 +448,10 @@ impl Plan {
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
-                        Some(
-                            format!("no parameter value specified for option: {}", opt.kind).into(),
-                        ),
+                        Some(format_smolstr!(
+                            "no parameter value specified for option: {}",
+                            opt.kind
+                        )),
                     ));
                 }
             }

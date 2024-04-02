@@ -90,26 +90,20 @@ fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, Sbro
         if duration_node.rule != Rule::Duration {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(
-                    format!(
-                        "AST table option duration node {:?} contains unexpected children",
-                        duration_node,
-                    )
-                    .into(),
-                ),
+                Some(format_smolstr!(
+                    "AST table option duration node {:?} contains unexpected children",
+                    duration_node,
+                )),
             ));
         }
         if let Some(duration_value) = duration_node.value.as_ref() {
             let res = Decimal::from_str(duration_value).map_err(|_| {
                 SbroadError::Invalid(
                     Entity::Node,
-                    Some(
-                        format!(
-                            "AST table duration node {:?} contains invalid value",
-                            duration_node,
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "AST table duration node {:?} contains invalid value",
+                        duration_node,
+                    )),
                 )
             })?;
             return Ok(res);
@@ -555,13 +549,10 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                     _ => {
                                         return Err(SbroadError::Invalid(
                                             Entity::Node,
-                                            Some(
-                                                format!(
-                                                    "AST column type node {:?} has unexpected type",
-                                                    type_node,
-                                                )
-                                                .into(),
-                                            ),
+                                            Some(format_smolstr!(
+                                                "AST column type node {:?} has unexpected type",
+                                                type_node,
+                                            )),
                                         ));
                                     }
                                 }
@@ -578,31 +569,28 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         } else {
                                             return Err(SbroadError::Invalid(
                                                 Entity::Node,
-                                                Some(format!(
+                                                Some(format_smolstr!(
                                                     "Expected NotFlag node, got: {:?}",
                                                     not_flag_node,
-                                                ).into())))
+                                                ))))
                                         }
                                     }
                                     _ => return Err(SbroadError::Invalid(
                                         Entity::Node,
-                                        Some(format!(
+                                        Some(format_smolstr!(
                                             "AST column null node {:?} contains unexpected children",
                                             def_child_node,
-                                        ).into()),
+                                        )),
                                     )),
                                 }
                             }
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
-                                    Some(
-                                        format!(
-                                            "AST column def node {:?} contains unexpected children",
-                                            def_child_node,
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "AST column def node {:?} contains unexpected children",
+                                        def_child_node,
+                                    )),
                                 ));
                             }
                         }
@@ -631,7 +619,9 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                     if !column_found {
                         return Err(SbroadError::Invalid(
                             Entity::Column,
-                            Some(format!("Primary key column {pk_col_name} not found.").into()),
+                            Some(format_smolstr!(
+                                "Primary key column {pk_col_name} not found."
+                            )),
                         ));
                     }
                     pk_keys.push(pk_col_name);
@@ -654,26 +644,20 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Node,
-                                Some(
-                                    format!(
-                                        "AST table engine node {:?} contains unexpected children",
-                                        engine_type_node,
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "AST table engine node {:?} contains unexpected children",
+                                    engine_type_node,
+                                )),
                             ));
                         }
                     }
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!(
-                                "AST table engine node {:?} contains unexpected children",
-                                child_node,
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "AST table engine node {:?} contains unexpected children",
+                            child_node,
+                        )),
                     ));
                 }
             }
@@ -695,12 +679,9 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                 if !column_found {
                                     return Err(SbroadError::Invalid(
                                         Entity::Column,
-                                        Some(
-                                            format!(
-                                                "Sharding key column {shard_col_name} not found."
-                                            )
-                                            .into(),
-                                        ),
+                                        Some(format_smolstr!(
+                                            "Sharding key column {shard_col_name} not found."
+                                        )),
                                     ));
                                 }
 
@@ -710,26 +691,20 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Node,
-                                Some(
-                                    format!(
+                                Some(format_smolstr!(
                                     "AST table distribution node {:?} contains unexpected children",
                                     distribution_type_node,
-                                )
-                                    .into(),
-                                ),
+                                )),
                             ));
                         }
                     }
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!(
-                                "AST table distribution node {:?} contains unexpected children",
-                                child_node,
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "AST table distribution node {:?} contains unexpected children",
+                            child_node,
+                        )),
                     ));
                 }
             }
@@ -739,13 +714,10 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(
-                        format!(
-                            "AST create table node {:?} contains unexpected children",
-                            child_node,
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "AST create table node {:?} contains unexpected children",
+                        child_node,
+                    )),
                 ));
             }
         }
@@ -823,10 +795,9 @@ fn parse_grant_revoke(
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Privilege,
-                        Some(
-                            format!("Expected to see Privilege node. Got: {privilege_node:?}")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "Expected to see Privilege node. Got: {privilege_node:?}"
+                        )),
                     ))
                 }
             };
@@ -874,12 +845,9 @@ fn parse_grant_revoke(
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::ParseNode,
-                        Some(
-                            format!(
-                                "Expected specific priv block, got: {inner_privilege_block_node:?}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "Expected specific priv block, got: {inner_privilege_block_node:?}"
+                        )),
                     ))
                 }
             }
@@ -895,7 +863,9 @@ fn parse_grant_revoke(
         _ => {
             return Err(SbroadError::Invalid(
                 Entity::ParseNode,
-                Some(format!("Expected specific priv block, got: {privilege_block_node:?}").into()),
+                Some(format_smolstr!(
+                    "Expected specific priv block, got: {privilege_block_node:?}"
+                )),
             ))
         }
     };
@@ -1008,9 +978,9 @@ fn parse_option<M: Metadata>(
                     str_value.parse::<u64>().map_err(|_| {
                         SbroadError::Invalid(
                             Entity::Query,
-                            Some(
-                                format!("option value is not unsigned integer: {str_value}").into(),
-                            ),
+                            Some(format_smolstr!(
+                                "option value is not unsigned integer: {str_value}"
+                            )),
                         )
                     })?
                 } else {
@@ -1027,7 +997,9 @@ fn parse_option<M: Metadata>(
         _ => {
             return Err(SbroadError::Invalid(
                 AST,
-                Some(format!("unexpected child of option. id: {option_node_id}").into()),
+                Some(format_smolstr!(
+                    "unexpected child of option. id: {option_node_id}"
+                )),
             ))
         }
     };
@@ -1508,7 +1480,7 @@ impl ParseExpression {
                         // Later this code block should handle other function behaviors.
                         return Err(SbroadError::Invalid(
                             Entity::SQLFunction,
-                            Some(format!("function {name} is not stable.").into()),
+                            Some(format_smolstr!("function {name} is not stable.")),
                         ));
                     }
                 }
@@ -1644,9 +1616,9 @@ where
                                             if "count" != normalized_name.as_str() {
                                                 return Err(SbroadError::Invalid(
                                                     Entity::Query,
-                                                    Some(format!(
+                                                    Some(format_smolstr!(
                                                         "\"*\" is allowed only inside \"count\" aggregate function. Got: {normalized_name}",
-                                                    ).into())
+                                                    ))
                                                 ));
                                             }
                                             let count_asterisk_plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
@@ -1715,9 +1687,9 @@ where
                         let ref_id = if present_in_left && present_in_right {
                             return Err(SbroadError::Invalid(
                                 Entity::Column,
-                                Some(format!(
+                                Some(format_smolstr!(
                                     "column name '{col_name}' is present in both join children",
-                                ).into()),
+                                )),
                             ));
                         } else if present_in_left {
                             let col_with_scan = ColumnWithScan::new(&col_name, scan_name.as_deref());
@@ -1736,7 +1708,7 @@ where
                         } else {
                             return Err(SbroadError::NotFound(
                                 Entity::Column,
-                                format!("'{col_name}' in the join children",).into(),
+                                format_smolstr!("'{col_name}' in the join children",),
                             ));
                         };
                         (ref_id, true)
@@ -1745,7 +1717,7 @@ where
                         let Ok(col_position) = left_child_col_position else {
                             return Err(SbroadError::NotFound(
                                 Entity::Column,
-                                format!("with name {col_name}").into(),
+                                format_smolstr!("with name {col_name}"),
                             ));
                         };
                         let child = plan.get_relation_node(*plan_left_id)?;
@@ -1840,7 +1812,7 @@ where
                                 .map_err(|e| {
                                     SbroadError::ParsingError(
                                         Entity::Value,
-                                        format!("failed to parse varchar length: {e:?}").into(),
+                                        format_smolstr!("failed to parse varchar length: {e:?}"),
                                     )
                                 })?;
                             Ok(CastType::Varchar(len))
@@ -1943,7 +1915,7 @@ where
 /// Generate an alias for the unnamed projection expressions.
 #[must_use]
 pub fn get_unnamed_column_alias(pos: usize) -> SmolStr {
-    format!("COL_{pos}").to_smolstr()
+    format_smolstr!("COL_{pos}")
 }
 
 /// Map of { `AbstractSyntaxTree` node id -> parsing pairs copy, corresponding to ast node }.
@@ -2000,7 +1972,7 @@ impl AbstractSyntaxTree {
             Err(e) => {
                 return Err(SbroadError::ParsingError(
                     Entity::Rule,
-                    format!("{e}").into(),
+                    format_smolstr!("{e}"),
                 ))
             }
         };
@@ -2205,13 +2177,10 @@ impl AbstractSyntaxTree {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::AST,
-                                Some(
-                                    format!(
-                                        "expected join kind node as 1 child of join. Got: {:?}",
-                                        ast_kind_node,
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "expected join kind node as 1 child of join. Got: {:?}",
+                                    ast_kind_node,
+                                )),
                             ))
                         }
                     };
@@ -2399,10 +2368,10 @@ impl AbstractSyntaxTree {
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Type,
-                                    Some(format!(
+                                    Some(format_smolstr!(
                                         "expected a Column, Asterisk, ArithmeticExprAlias in projection, got {:?}.",
                                         ast_column.rule
-                                    ).into()),
+                                    )),
                                 ));
                             }
                         }
@@ -2467,7 +2436,7 @@ impl AbstractSyntaxTree {
                         .ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Table,
-                                format!("{scan_relation} among plan relations").into(),
+                                format_smolstr!("{scan_relation} among plan relations"),
                             )
                         })?
                         .clone();
@@ -2514,25 +2483,19 @@ impl AbstractSyntaxTree {
                                 if pk_positions.contains(pos) {
                                     return Err(SbroadError::Invalid(
                                         Entity::Query,
-                                        Some(
-                                            format!(
-                                                "it is illegal to update primary key column: {}",
-                                                col_name
-                                            )
-                                            .into(),
-                                        ),
+                                        Some(format_smolstr!(
+                                            "it is illegal to update primary key column: {}",
+                                            col_name
+                                        )),
                                     ));
                                 }
                                 if update_defs.contains_key(pos) {
                                     return Err(SbroadError::Invalid(
                                         Entity::Query,
-                                        Some(
-                                            format!(
+                                        Some(format_smolstr!(
                                             "The same column is specified twice in update list: {}",
                                             col_name
-                                        )
-                                            .into(),
-                                        ),
+                                        )),
                                     ));
                                 }
                                 update_defs.insert(*pos, expr_plan_node_id);
@@ -2541,7 +2504,7 @@ impl AbstractSyntaxTree {
                                 return Err(SbroadError::FailedTo(
                                     Action::Update,
                                     Some(Entity::Column),
-                                    format!("system column {col_name} cannot be updated").into(),
+                                    format_smolstr!("system column {col_name} cannot be updated"),
                                 ))
                             }
                             None => {
@@ -2606,13 +2569,10 @@ impl AbstractSyntaxTree {
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Node,
-                                Some(
-                                    format!(
-                                        "AST delete node {:?} contains unexpected children",
-                                        first_child_node,
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "AST delete node {:?} contains unexpected children",
+                                    first_child_node,
+                                )),
                             ));
                         }
                     };
@@ -2624,13 +2584,11 @@ impl AbstractSyntaxTree {
                         let column: &Column = table.columns.get(*pos).ok_or_else(|| {
                             SbroadError::Invalid(
                                 Entity::Table,
-                                Some(
-                                    format!(
-                                        "{} {} {pos}",
-                                        "primary key refers to non-existing column", "at position",
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "{} {} {pos}",
+                                    "primary key refers to non-existing column",
+                                    "at position",
+                                )),
                             )
                         })?;
                         let col_with_scan = ColumnWithScan::new(column.name.as_str(), None);
@@ -2677,13 +2635,10 @@ impl AbstractSyntaxTree {
                                 _ => {
                                     return Err(SbroadError::Invalid(
                                         Entity::AST,
-                                        Some(
-                                            format!(
-                                                "expected conflict strategy on \
+                                        Some(format_smolstr!(
+                                            "expected conflict strategy on \
                                 AST id ({child_id}). Got: {rule:?}"
-                                            )
-                                            .into(),
-                                        ),
+                                        )),
                                     ))
                                 }
                             };
@@ -2702,7 +2657,7 @@ impl AbstractSyntaxTree {
                         let rel = plan.relations.get(&relation).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Table,
-                                format!("{relation} among plan relations").into(),
+                                format_smolstr!("{relation} among plan relations"),
                             )
                         })?;
                         for column in &rel.columns {
@@ -2712,10 +2667,10 @@ impl AbstractSyntaxTree {
                             if !column.is_nullable && !selected_col_names.contains(&column.name) {
                                 return Err(SbroadError::Invalid(
                                     Entity::Column,
-                                    Some(
-                                        format!("NonNull column {} must be specified", column.name)
-                                            .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "NonNull column {} must be specified",
+                                        column.name
+                                    )),
                                 ));
                             }
                         }
@@ -2840,13 +2795,10 @@ impl AbstractSyntaxTree {
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
-                                    Some(
-                                        format!(
-                                            "AST drop table node {:?} contains unexpected children",
-                                            child_node,
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "AST drop table node {:?} contains unexpected children",
+                                        child_node,
+                                    )),
                                 ));
                             }
                         }
@@ -2978,12 +2930,9 @@ impl AbstractSyntaxTree {
                             _ => {
                                 return Err(SbroadError::Invalid(
                                     Entity::Node,
-                                    Some(
-                                        format!(
-                                            "ACL node contains unexpected child: {child_node:?}",
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "ACL node contains unexpected child: {child_node:?}",
+                                    )),
                                 ));
                             }
                         }

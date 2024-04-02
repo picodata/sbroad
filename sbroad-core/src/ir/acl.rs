@@ -1,6 +1,6 @@
 use crate::ir::{Entity, Node, Plan, SbroadError};
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::decimal::Decimal;
 
 use super::ddl::ParamDef;
@@ -64,7 +64,7 @@ fn check_privilege(privilege: Privilege, accepted: &[Privilege]) -> Result<(), S
     if !accepted.contains(&privilege) {
         return Err(SbroadError::Invalid(
             Entity::Privilege,
-            Some(format!("Supported privileges are: {accepted:?}").into()),
+            Some(format_smolstr!("Supported privileges are: {accepted:?}")),
         ));
     }
     Ok(())
@@ -244,7 +244,7 @@ impl Acl {
         .map_err(|e| {
             SbroadError::Invalid(
                 Entity::SpaceMetadata,
-                Some(format!("timeout parsing error {e:?}").into()),
+                Some(format_smolstr!("timeout parsing error {e:?}")),
             )
         })
     }
@@ -262,7 +262,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}").into()),
+                Some(format_smolstr!("node is not ACL type: {node:?}")),
             )),
         }
     }
@@ -278,7 +278,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}").into()),
+                Some(format_smolstr!("node is not ACL type: {node:?}")),
             )),
         }
     }
@@ -296,7 +296,7 @@ impl Plan {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not ACL type: {node:?}").into()),
+                Some(format_smolstr!("node is not ACL type: {node:?}")),
             )),
         }
     }

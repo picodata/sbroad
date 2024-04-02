@@ -2,7 +2,7 @@
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::cmp::Ordering;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
@@ -384,9 +384,9 @@ impl Plan {
         match sq_set.len().cmp(&1) {
             Ordering::Equal | Ordering::Greater => sq_set.iter().next().map_or_else(
                 || {
-                    Err(SbroadError::UnexpectedNumberOfValues(format!(
+                    Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                         "Failed to get the first sub-query node from the list of relational nodes: {rel_nodes:?}."
-                    ).into()))
+                    )))
                 },
                 |sq_id| Ok(Some(*sq_id)),
             ),
@@ -478,21 +478,17 @@ impl Plan {
                 let targets = targets.as_ref().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!("ref ({ref_id}) in join condition with no targets: {node:?}")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "ref ({ref_id}) in join condition with no targets: {node:?}"
+                        )),
                     )
                 })?;
                 let child_idx = targets.first().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!(
-                                "ref ({ref_id}) in join condition with empty targets: {node:?}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "ref ({ref_id}) in join condition with empty targets: {node:?}"
+                        )),
                     )
                 })?;
                 let child_id = self.get_relational_child(rel_id, *child_idx)?;
@@ -713,7 +709,9 @@ impl Plan {
         let Expression::Unary { child, op } = unary_op_expr else {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
-                Some(format!("Expected Unary expression, got {unary_op_expr:?}").into()),
+                Some(format_smolstr!(
+                    "Expected Unary expression, got {unary_op_expr:?}"
+                )),
             ));
         };
 
@@ -747,7 +745,7 @@ impl Plan {
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("Expected Not operator, got {not_node:?}").into()),
+                    Some(format_smolstr!("Expected Not operator, got {not_node:?}")),
                 ));
             }
         }
@@ -822,7 +820,7 @@ impl Plan {
             let column_id = *row_map.get(pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Column,
-                    format!("{pos} in row map {row_map:?}").into(),
+                    format_smolstr!("{pos} in row map {row_map:?}"),
                 )
             })?;
             if let Expression::Reference { targets, .. } = self.get_expression_node(column_id)? {
@@ -831,7 +829,7 @@ impl Plan {
                         let child_id = *join_children.get(*target).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Target,
-                                format!("{target} in join children {join_children:?}").into(),
+                                format_smolstr!("{target} in join children {join_children:?}"),
                             )
                         })?;
                         children_set.insert(child_id);
@@ -949,7 +947,7 @@ impl Plan {
             let column_id = *condition_row_map.get(pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Column,
-                    format!("{pos} in row map {condition_row_map:?}").into(),
+                    format_smolstr!("{pos} in row map {condition_row_map:?}"),
                 )
             })?;
             if let Expression::Reference {
@@ -1574,20 +1572,20 @@ impl Plan {
         let (outer_id, inner_id) = if let Some(children) = self.get_relational_children(join_id)? {
             (
                 *children.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("join {join_id} has no children!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "join {join_id} has no children!"
+                    ))
                 })?,
                 *children.get(1).ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("join {join_id} has one child!").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "join {join_id} has one child!"
+                    ))
                 })?,
             )
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("join {join_id} has no children!").into()),
+                Some(format_smolstr!("join {join_id} has no children!")),
             ));
         };
         let outer_dist = self.get_distribution(self.get_relational_output(outer_id)?)?;
@@ -1605,9 +1603,9 @@ impl Plan {
         let subqueries = self
             .get_relational_children(join_id)?
             .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    format!("join {join_id} has no children!").into(),
-                )
+                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "join {join_id} has no children!"
+                ))
             })?
             .split_at(2)
             .1;
@@ -1687,7 +1685,9 @@ impl Plan {
             ) {
                 return Err(SbroadError::Invalid(
                     Entity::Update,
-                    Some(format!("expected Projection under Update ({update_id})").into()),
+                    Some(format_smolstr!(
+                        "expected Projection under Update ({update_id})"
+                    )),
                 ));
             }
             match kind {
@@ -1718,13 +1718,10 @@ impl Plan {
                         if !keys.iter().any(|key| *key == expected_key) {
                             return Err(SbroadError::Invalid(
                                 Entity::Update,
-                                Some(
-                                    format!(
+                                Some(format_smolstr!(
                                     "expected sharded update child to be \
                                  always distributed on old sharding key. Child dist: {child_dist:?}"
-                                )
-                                    .into(),
-                                ),
+                                )),
                             ));
                         }
                     } else {
@@ -1768,9 +1765,9 @@ impl Plan {
                                     .ok_or_else(|| {
                                         SbroadError::Invalid(
                                             Entity::Table,
-                                            Some(
-                                                format!("invalid shar key position: {pos}").into(),
-                                            ),
+                                            Some(format_smolstr!(
+                                                "invalid shar key position: {pos}"
+                                            )),
                                         )
                                     })?
                                     .name;
@@ -1782,25 +1779,19 @@ impl Plan {
                         if !keys.iter().any(|key| key.positions == expected_positions) {
                             return Err(SbroadError::Invalid(
                                 Entity::Update,
-                                Some(
-                                    format!(
-                                        "for local update expected children below \
+                                Some(format_smolstr!(
+                                    "for local update expected children below \
                                   Projection to have update table dist. Got: {pr_child_dist:?}"
-                                    )
-                                    .into(),
-                                ),
+                                )),
                             ));
                         }
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Update,
-                            Some(
-                                format!(
-                                    "expected child below projection to have Segment dist,\
+                            Some(format_smolstr!(
+                                "expected child below projection to have Segment dist,\
                              got: {pr_child_dist:?}"
-                                )
-                                .into(),
-                            ),
+                            )),
                         ));
                     }
 
@@ -1811,7 +1802,7 @@ impl Plan {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected Update node on id {update_id}").into()),
+                Some(format_smolstr!("expected Update node on id {update_id}")),
             ))
         }
     }
@@ -1822,9 +1813,10 @@ impl Plan {
         let space = self.dml_node_table(rel_id)?;
         let pk_len = space.primary_key.positions.len();
         if pk_len == 0 {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!("empty primary key for space {}", space.name()).into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "empty primary key for space {}",
+                space.name()
+            )));
         }
         // We expect that the columns in the child projection of the DELETE operator
         let pk_pos: Vec<usize> = (0..pk_len).collect();
@@ -1968,13 +1960,11 @@ impl Plan {
                 let key = keys.iter().next().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Distribution,
-                        Some(
-                            format!(
-                                "{} {} {right_id}",
-                                "Segment distribution with no keys.", "Except right child:"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "{} {} {right_id}",
+                            "Segment distribution with no keys.",
+                            "Except right child:"
+                        )),
                     )
                 })?;
                 (MotionPolicy::Segment(key.into()), MotionPolicy::None)
@@ -2079,14 +2069,11 @@ impl Plan {
             let left_output_row = self.get_expression_node(left_output_id)?.get_row_list()?;
             let right_output_row = self.get_expression_node(right_output_id)?.get_row_list()?;
             if left_output_row.len() != right_output_row.len() {
-                return Err(SbroadError::UnexpectedNumberOfValues(
-                    format!(
-                        "Except node children have different row lengths: left {}, right {}",
-                        left_output_row.len(),
-                        right_output_row.len()
-                    )
-                    .into(),
-                ));
+                return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "Except node children have different row lengths: left {}, right {}",
+                    left_output_row.len(),
+                    right_output_row.len()
+                )));
             }
         }
 

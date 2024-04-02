@@ -1,4 +1,4 @@
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::error;
 use crate::errors::{Action, Entity, SbroadError};
@@ -104,7 +104,7 @@ where
 
     fn get_node(&self, key: &Option<Key>) -> Result<&LRUNode<Key, Value>, SbroadError> {
         self.map.get(key).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("(LRU) with key {key:?}").into())
+            SbroadError::NotFound(Entity::Node, format_smolstr!("(LRU) with key {key:?}"))
         })
     }
 
@@ -112,7 +112,7 @@ where
         self.map.get_mut(key).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable LRU) with key {key:?}").into(),
+                format_smolstr!("(mutable LRU) with key {key:?}"),
             )
         })
     }
@@ -184,7 +184,7 @@ where
             let head_prev = map.get_mut(&head_prev_id).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
-                    format!("(mutable LRU) with key {:?}", &head_prev_id).into(),
+                    format_smolstr!("(mutable LRU) with key {:?}", &head_prev_id),
                 )
             })?;
             evict_fn(&mut head_prev.value)?;
@@ -274,7 +274,7 @@ where
             Err(SbroadError::FailedTo(
                 Action::Retrieve,
                 Some(Entity::Value),
-                format!("from the LRU cache for a key {key:?}").into(),
+                format_smolstr!("from the LRU cache for a key {key:?}"),
             ))
         }
     }

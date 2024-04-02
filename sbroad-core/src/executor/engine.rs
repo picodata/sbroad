@@ -74,7 +74,7 @@ pub trait StorageCache {
     /// - invalid `schema_info`
     fn put(
         &mut self,
-        plan_id: String,
+        plan_id: SmolStr,
         stmt: PreparedStmt,
         schema_info: &SchemaInfo,
     ) -> Result<(), SbroadError>;
@@ -86,7 +86,7 @@ pub trait StorageCache {
     /// # Errors
     /// - failed to get schema version for some table
     #[allow(clippy::ptr_arg)]
-    fn get(&mut self, plan_id: &String) -> Result<Option<&PreparedStmt>, SbroadError>;
+    fn get(&mut self, plan_id: &SmolStr) -> Result<Option<&PreparedStmt>, SbroadError>;
 
     /// Clears the cache.
     ///
@@ -153,7 +153,7 @@ pub trait Router: QueryCache {
     /// # Errors
     /// - Internal error. Under normal conditions we should always return
     ///   formatted explain successfully.
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError>;
+    fn explain_format(&self, explain: SmolStr) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Extract a list of the sharding key values from a map for the given space.
     ///
@@ -242,7 +242,7 @@ pub trait Statistics {
     /// - Table statistics couldn't be mutually borrowed.
     fn update_table_stats(
         &mut self,
-        table_name: String,
+        table_name: SmolStr,
         table_stats: TableStats,
     ) -> Result<(), SbroadError>;
 

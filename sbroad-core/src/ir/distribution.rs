@@ -1,7 +1,7 @@
 //! Tuple distribution module.
 
 use ahash::{AHashMap, RandomState};
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -49,13 +49,15 @@ impl Key {
                         SbroadError::FailedTo(
                             Action::Create,
                             Some(Entity::Column),
-                            format!("column {name} not found at position {pos}").into(),
+                            format_smolstr!("column {name} not found at position {pos}"),
                         )
                     })?;
                     if !column.r#type.is_scalar() {
                         return Err(SbroadError::Invalid(
                             Entity::Column,
-                            Some(format!("column {name} at position {pos} is not scalar",).into()),
+                            Some(format_smolstr!(
+                                "column {name} at position {pos} is not scalar"
+                            )),
                         ));
                     }
                     Ok(pos)
@@ -87,7 +89,7 @@ impl TryFrom<&MotionKey> for KeySet {
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::DistributionKey),
-                        format!("found value target in motion key: {v}").into(),
+                        format_smolstr!("found value target in motion key: {v}"),
                     ));
                 }
             }
@@ -161,7 +163,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
+                    Some(format_smolstr!("union child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (
                 Distribution::Segment {
@@ -194,7 +196,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
+                    Some(format_smolstr!("union/except child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (Distribution::Any, _) | (_, Distribution::Any) => Distribution::Any,
             (
@@ -228,7 +230,7 @@ impl Distribution {
             (Distribution::Single, _) | (_, Distribution::Single) => {
                 return Err(SbroadError::Invalid(
                     Entity::Distribution,
-                    Some(format!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}").into())));
+                    Some(format_smolstr!("join child has unexpected distribution Single. Left: {left:?}, right: {right:?}"))));
             }
             (Distribution::Global, Distribution::Global) => {
                 // this case is handled by `dist_from_subqueries``
@@ -419,7 +421,7 @@ impl Plan {
         ) {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected projection on id: {proj_id}").into()),
+                Some(format_smolstr!("expected projection on id: {proj_id}")),
             ));
         };
 
@@ -453,7 +455,9 @@ impl Plan {
         let children = self.get_relational_children(proj_id)?.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("projection node ({proj_id}) has no children").into()),
+                Some(format_smolstr!(
+                    "projection node ({proj_id}) has no children"
+                )),
             )
         })?;
         let ref_info = ReferenceInfo::new(output_id, self, children)?;
@@ -637,7 +641,9 @@ impl Plan {
                     // distribution.
                     return Err(SbroadError::Invalid(
                         Entity::Distribution,
-                        Some(format!("expected Motion(Full) for subquery child ({sq_id})").into()),
+                        Some(format_smolstr!(
+                            "expected Motion(Full) for subquery child ({sq_id})"
+                        )),
                     ));
                 }
                 Distribution::Single | Distribution::Global => {}

@@ -12,7 +12,7 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::Encode;
 
@@ -108,7 +108,7 @@ impl TryInto<Column> for &MetadataColumn {
             )),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some(format!("column type {}", self.r#type).into()),
+                Some(format_smolstr!("column type {}", self.r#type)),
             )),
         }
     }

@@ -65,9 +65,9 @@ fn table_seg_duplicate_columns() {
             SpaceEngine::Memtx,
         )
         .unwrap_err(),
-        SbroadError::DuplicatedValue(
-            format!(r#"Table "t" has a duplicating column "a" at positions 0 and 3"#,).into()
-        )
+        SbroadError::DuplicatedValue(format_smolstr!(
+            r#"Table "t" has a duplicating column "a" at positions 0 and 3"#,
+        ))
     );
 }
 
@@ -87,9 +87,10 @@ fn table_seg_dno_bucket_id_column() {
     .unwrap();
 
     assert_eq!(
-        SbroadError::UnexpectedNumberOfValues(
-            format!("Table {} has no bucket_id columns", "t").into()
-        ),
+        SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+            "Table {} has no bucket_id columns",
+            "t"
+        )),
         t1.get_bucket_id_position().unwrap_err()
     );
 

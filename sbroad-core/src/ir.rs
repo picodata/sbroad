@@ -4,7 +4,7 @@
 
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -96,7 +96,7 @@ impl Nodes {
         match self.arena.get(id) {
             None => Err(SbroadError::NotFound(
                 Entity::Node,
-                format!("from arena with index {id}").into(),
+                format_smolstr!("from arena with index {id}"),
             )),
             Some(node) => Ok(node),
         }
@@ -106,7 +106,7 @@ impl Nodes {
         match self.arena.get_mut(id) {
             None => Err(SbroadError::NotFound(
                 Entity::Node,
-                format!("from arena with index {id}").into(),
+                format_smolstr!("from arena with index {id}"),
             )),
             Some(node) => Ok(node),
         }
@@ -166,9 +166,9 @@ impl Nodes {
     /// - The node with the given position doesn't exist.
     pub fn replace(&mut self, id: usize, node: Node) -> Result<Node, SbroadError> {
         if id >= self.arena.len() {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!("can't replace node with id {id} as it is out of arena bounds").into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "can't replace node with id {id} as it is out of arena bounds"
+            )));
         }
         let old_node = std::mem::replace(&mut self.arena[id], node);
         Ok(old_node)
@@ -511,7 +511,10 @@ impl Plan {
             if !used_options.insert(opt.kind.clone()) {
                 return Err(SbroadError::Invalid(
                     Query,
-                    Some(format!("option {} specified more than once!", opt.kind).into()),
+                    Some(format_smolstr!(
+                        "option {} specified more than once!",
+                        opt.kind
+                    )),
                 ));
             }
             let OptionParamValue::Value { val } = opt.val else {
@@ -530,10 +533,10 @@ impl Plan {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::OptionSpec,
-                            Some(
-                                format!("expected option {} to be unsigned got: {val:?}", opt.kind)
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "expected option {} to be unsigned got: {val:?}",
+                                opt.kind
+                            )),
                         ));
                     }
                 }
@@ -541,20 +544,20 @@ impl Plan {
                     if let Value::Unsigned(limit) = val {
                         if let Some(vtable_rows_count) = values_count {
                             if limit < vtable_rows_count as u64 {
-                                return Err(SbroadError::UnexpectedNumberOfValues(format!(
+                                return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                                     "Exceeded maximum number of rows ({limit}) in virtual table: {}",
                                     vtable_rows_count
-                                ).into()));
+                                )));
                             }
                         }
                         self.options.vtable_max_rows = limit;
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::OptionSpec,
-                            Some(
-                                format!("expected option {} to be unsigned got: {val:?}", opt.kind)
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "expected option {} to be unsigned got: {val:?}",
+                                opt.kind
+                            )),
                         ));
                     }
                 }
@@ -578,7 +581,7 @@ impl Plan {
         match self.nodes.arena.get(id) {
             None => Err(SbroadError::NotFound(
                 Entity::Node,
-                format!("from arena with index {id}").into(),
+                format_smolstr!("from arena with index {id}"),
             )),
             Some(node) => Ok(node),
         }
@@ -593,7 +596,7 @@ impl Plan {
         match self.nodes.arena.get_mut(id) {
             None => Err(SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable) from arena with index {id}").into(),
+                format_smolstr!("(mutable) from arena with index {id}"),
             )),
             Some(node) => Ok(node),
         }
@@ -619,9 +622,9 @@ impl Plan {
     /// # Errors
     /// - no relation with given name
     pub fn get_relation_or_error(&self, name: &str) -> Result<&Table, SbroadError> {
-        self.relations
-            .get(name)
-            .ok_or_else(|| SbroadError::NotFound(Entity::Table, format!("with name {name}").into()))
+        self.relations.get(name).ok_or_else(|| {
+            SbroadError::NotFound(Entity::Table, format_smolstr!("with name {name}"))
+        })
     }
 
     /// Get relation of a scan node
@@ -635,7 +638,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected scan node, got: {node:?}").into()),
+            Some(format_smolstr!("expected scan node, got: {node:?}")),
         ))
     }
 
@@ -655,9 +658,9 @@ impl Plan {
             .ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Column,
-                    Some(
-                        format!("invalid column position {col_idx} for table {table_name}").into(),
-                    ),
+                    Some(format_smolstr!(
+                        "invalid column position {col_idx} for table {table_name}"
+                    )),
                 )
             })
     }
@@ -751,7 +754,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("node is not Relational type: {n:?}").into()),
+            Some(format_smolstr!("node is not Relational type: {n:?}")),
         ))
     }
 
@@ -872,7 +875,7 @@ impl Plan {
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not Relational type: {node:?}").into()),
+                Some(format_smolstr!("node is not Relational type: {node:?}")),
             )),
         }
     }
@@ -942,7 +945,9 @@ impl Plan {
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node ({node_id}) is not expression type: {node:?}").into()),
+                Some(format_smolstr!(
+                    "node ({node_id}) is not expression type: {node:?}"
+                )),
             )),
         }
     }
@@ -1034,7 +1039,7 @@ impl Plan {
         Err(SbroadError::FailedTo(
             Action::Replace,
             Some(Entity::Expression),
-            format!("parent expression ({parent_id}) has no child with id {old_id}").into(),
+            format_smolstr!("parent expression ({parent_id}) has no child with id {old_id}"),
         ))
     }
 
@@ -1047,15 +1052,15 @@ impl Plan {
         let node = self.get_relation_node(groupby_id)?;
         if let Relational::GroupBy { gr_cols, .. } = node {
             let col_id = gr_cols.get(col_idx).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    format!("groupby column index out of range. Node: {node:?}").into(),
-                )
+                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "groupby column index out of range. Node: {node:?}"
+                ))
             })?;
             return Ok(*col_id);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("Expected GroupBy node. Got: {node:?}").into()),
+            Some(format_smolstr!("Expected GroupBy node. Got: {node:?}")),
         ))
     }
 
@@ -1068,15 +1073,15 @@ impl Plan {
         let node = self.get_relation_node(proj_id)?;
         if let Relational::Projection { output, .. } = node {
             let col_id = self.get_row_list(*output)?.get(col_idx).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    format!("projection column index out of range. Node: {node:?}").into(),
-                )
+                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "projection column index out of range. Node: {node:?}"
+                ))
             })?;
             return Ok(*col_id);
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("Expected Projection node. Got: {node:?}").into()),
+            Some(format_smolstr!("Expected Projection node. Got: {node:?}")),
         ))
     }
 
@@ -1091,7 +1096,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("Expected GroupBy node. Got: {node:?}").into()),
+            Some(format_smolstr!("Expected GroupBy node. Got: {node:?}")),
         ))
     }
 
@@ -1111,7 +1116,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("Expected GroupBy node. Got: {node:?}").into()),
+            Some(format_smolstr!("Expected GroupBy node. Got: {node:?}")),
         ))
     }
 
@@ -1174,7 +1179,7 @@ impl Plan {
                         .ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Node,
-                                format!("type Column with index {column_index_in_list}").into(),
+                                format_smolstr!("type Column with index {column_index_in_list}"),
                             )
                         })?;
 
@@ -1188,7 +1193,7 @@ impl Plan {
                         .ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::Column,
-                                format!("at position {position} in row list").into(),
+                                format_smolstr!("at position {position} in row list"),
                             )
                         })?;
 
@@ -1237,7 +1242,7 @@ impl Plan {
             SbroadError::FailedTo(
                 Action::Serialize,
                 None,
-                format!("plan nodes to binary: {e:?}").into(),
+                format_smolstr!("plan nodes to binary: {e:?}"),
             )
         })?;
         let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes()).to_smolstr();
@@ -1309,10 +1314,9 @@ impl Plan {
                     let child_id = children.get(*target).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Plan,
-                            Some(
-                                format!("invalid target ({target}) in reference with id: {ref_id}")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "invalid target ({target}) in reference with id: {ref_id}"
+                            )),
                         )
                     })?;
                     let Some(candidates) = memo.get(child_id) else {

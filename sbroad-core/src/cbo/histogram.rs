@@ -10,7 +10,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::value::double::Double;
 use itertools::enumerate;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -168,7 +168,7 @@ impl Scalar for Double {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Statistics,
-                Some(format!("Boundaries occupied fraction calculation resulted in invalid f64 fraction: {fraction_f64}").into())
+                Some(format_smolstr!("Boundaries occupied fraction calculation resulted in invalid f64 fraction: {fraction_f64}"))
             ))
         }
     }

@@ -7,7 +7,7 @@ use std::num::NonZeroI32;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::decimal::Decimal;
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::{FieldType, KeyDefPart};
@@ -29,8 +29,8 @@ impl Display for Tuple {
             "[{}]",
             self.0
                 .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<String>>()
+                .map(ToSmolStr::to_smolstr)
+                .collect::<Vec<SmolStr>>()
                 .join(",")
         )
     }
@@ -308,16 +308,16 @@ pub(crate) fn value_to_decimal_or_error(value: &Value) -> Result<Decimal, Sbroad
             } else {
                 Err(SbroadError::Invalid(
                     Entity::Value,
-                    Some(format!("Can't cast {value:?} to decimal").into()),
+                    Some(format_smolstr!("Can't cast {value:?} to decimal")),
                 ))
             }
         }
         Value::Decimal(s) => Ok(*s),
         _ => Err(SbroadError::Invalid(
             Entity::Value,
-            Some(
-                format!("Only numerical values can be casted to Decimal. {value:?} was met").into(),
-            ),
+            Some(format_smolstr!(
+                "Only numerical values can be casted to Decimal. {value:?} was met"
+            )),
         )),
     }
 }
@@ -371,7 +371,7 @@ impl Value {
         if other_decimal == 0 {
             Err(SbroadError::Invalid(
                 Entity::Value,
-                Some(format!("Can not divide {self:?} by zero {other:?}").into()),
+                Some(format_smolstr!("Can not divide {self:?} by zero {other:?}")),
             ))
         } else {
             Ok(Value::from(self_decimal / other_decimal))
@@ -398,7 +398,9 @@ impl Value {
         let (Value::String(s), Value::String(o)) = (self, other) else {
             return Err(SbroadError::Invalid(
                 Entity::Value,
-                Some(format!("{self:?} and {other:?} must be strings to be concatenated").into()),
+                Some(format_smolstr!(
+                    "{self:?} and {other:?} must be strings to be concatenated"
+                )),
             ));
         };
 
@@ -414,12 +416,9 @@ impl Value {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
             return Err(SbroadError::Invalid(
                 Entity::Value,
-                Some(
-                    format!(
-                        "{self:?} and {other:?} must be booleans to be applied to AND operation"
-                    )
-                    .into(),
-                ),
+                Some(format_smolstr!(
+                    "{self:?} and {other:?} must be booleans to be applied to AND operation"
+                )),
             ));
         };
 
@@ -435,12 +434,9 @@ impl Value {
         let (Value::Boolean(s), Value::Boolean(o)) = (self, other) else {
             return Err(SbroadError::Invalid(
                 Entity::Value,
-                Some(
-                    format!(
-                        "{self:?} and {other:?} must be booleans to be applied to OR operation"
-                    )
-                    .into(),
-                ),
+                Some(format_smolstr!(
+                    "{self:?} and {other:?} must be booleans to be applied to OR operation"
+                )),
             ));
         };
 
@@ -731,7 +727,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into map").into(),
+                    format_smolstr!("{self:?} into map"),
                 )),
             },
             Type::Array => match self {
@@ -739,7 +735,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into array").into(),
+                    format_smolstr!("{self:?} into array"),
                 )),
             },
             Type::Boolean => match self {
@@ -748,7 +744,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into boolean").into(),
+                    format_smolstr!("{self:?} into boolean"),
                 )),
             },
             Type::Decimal => match self {
@@ -758,7 +754,7 @@ impl Value {
                         SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Value),
-                            format!("{e:?}").into(),
+                            format_smolstr!("{e:?}"),
                         )
                     })?,
                 )
@@ -769,7 +765,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into decimal").into(),
+                    format_smolstr!("{self:?} into decimal"),
                 )),
             },
             Type::Double => match self {
@@ -781,7 +777,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into double").into(),
+                    format_smolstr!("{self:?} into double"),
                 )),
             },
             Type::Integer => match self {
@@ -790,7 +786,7 @@ impl Value {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
-                        format!("{self:?} into integer").into(),
+                        format_smolstr!("{self:?} into integer"),
                     )
                 })?)
                 .into()),
@@ -810,7 +806,7 @@ impl Value {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
-                        format!("u64 {v} into i64: {e}").into(),
+                        format_smolstr!("u64 {v} into i64: {e}"),
                     )
                 })?)
                 .into()),
@@ -818,14 +814,14 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into integer").into(),
+                    format_smolstr!("{self:?} into integer"),
                 )),
             },
             Type::Scalar => match self {
                 Value::Tuple(_) => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into scalar").into(),
+                    format_smolstr!("{self:?} into scalar"),
                 )),
                 _ => Ok(self.into()),
             },
@@ -835,7 +831,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into string").into(),
+                    format_smolstr!("{self:?} into string"),
                 )),
             },
             Type::Uuid => match self {
@@ -844,7 +840,7 @@ impl Value {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
-                        format!("uuid {v} into string: {e}").into(),
+                        format_smolstr!("uuid {v} into string: {e}"),
                     )
                 })?)
                 .into()),
@@ -852,7 +848,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into uuid").into(),
+                    format_smolstr!("{self:?} into uuid"),
                 )),
             },
             Type::Number => match self {
@@ -863,7 +859,7 @@ impl Value {
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into number").into(),
+                    format_smolstr!("{self:?} into number"),
                 )),
             },
             Type::Unsigned => match self {
@@ -872,7 +868,7 @@ impl Value {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
-                        format!("i64 {v} into u64: {e}").into(),
+                        format_smolstr!("i64 {v} into u64: {e}"),
                     )
                 })?)
                 .into()),
@@ -880,7 +876,7 @@ impl Value {
                     SbroadError::FailedTo(
                         Action::Serialize,
                         Some(Entity::Value),
-                        format!("{self:?} into unsigned").into(),
+                        format_smolstr!("{self:?} into unsigned"),
                     )
                 })?)
                 .into()),
@@ -893,14 +889,14 @@ impl Value {
                         SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Value),
-                            format!("{self:?} into unsigned").into(),
+                            format_smolstr!("{self:?} into unsigned"),
                         )
                     }),
                 Value::Null => Ok(Value::Null.into()),
                 _ => Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Value),
-                    format!("{self:?} into unsigned").into(),
+                    format_smolstr!("{self:?} into unsigned"),
                 )),
             },
         }

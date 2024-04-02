@@ -69,7 +69,7 @@ fn front_explain_select_sql1() {
     let metadata = &RouterRuntimeMock::new();
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
-    let expected_explain = String::from(
+    let expected_explain = SmolStr::from(
         r#"projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")
     scan "hash_testing" -> "t"
 execution options:
@@ -78,7 +78,7 @@ vtable_max_rows = 5000
 "#,
     );
 
-    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
         assert_eq!(expected_explain, *actual_explain);
     } else {
         panic!("Explain must be string")
@@ -94,7 +94,7 @@ fn front_explain_select_sql2() {
     let metadata = &RouterRuntimeMock::new();
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
-    let expected_explain = format!(
+    let expected_explain: SmolStr = format_smolstr!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"union all"#,
         r#"    projection ("t"."identification_number"::integer -> "c1", "t"."product_code"::string -> "product_code")"#,
@@ -106,7 +106,7 @@ fn front_explain_select_sql2() {
         r#"vtable_max_rows = 5000"#,
     );
 
-    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
         assert_eq!(expected_explain, *actual_explain);
     } else {
         panic!("Explain must be string")
@@ -122,7 +122,7 @@ fn front_explain_select_sql3() {
     let metadata = &RouterRuntimeMock::new();
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
-    let expected_explain = format!(
+    let expected_explain: SmolStr = format_smolstr!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"projection ("q1"."a"::string -> "a")"#,
         r#"    join on ROW("q1"."a"::string) = ROW("q2"."a2"::string)"#,
@@ -137,7 +137,7 @@ fn front_explain_select_sql3() {
         r#"vtable_max_rows = 5000"#,
     );
 
-    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
         assert_eq!(expected_explain, *actual_explain);
     } else {
         panic!("explain must be string")
@@ -153,7 +153,7 @@ fn front_explain_select_sql4() {
     let metadata = &RouterRuntimeMock::new();
     let mut query = Query::new(metadata, sql, vec![]).unwrap();
 
-    let expected_explain = format!(
+    let expected_explain: SmolStr = format_smolstr!(
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         r#"projection ("q2"."a"::string -> "a")"#,
         r#"    join on ROW("q1"."a"::string) = ROW("q2"."a"::string)"#,
@@ -168,7 +168,7 @@ fn front_explain_select_sql4() {
         r#"vtable_max_rows = 5000"#,
     );
 
-    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<String>() {
+    if let Ok(actual_explain) = query.dispatch().unwrap().downcast::<SmolStr>() {
         assert_eq!(expected_explain, *actual_explain);
     } else {
         panic!("explain must be string")

@@ -2,7 +2,7 @@ use crate::debug;
 use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::collections::hash_map::IntoIter;
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -57,7 +57,7 @@ impl TryFrom<&Tuple> for PatternWithParams {
             Ok(encoded) => Ok(PatternWithParams::try_from(encoded)?),
             Err(e) => Err(SbroadError::ParsingError(
                 Entity::PatternWithParams,
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )),
         }
     }
@@ -150,12 +150,12 @@ impl From<PatternWithParams> for String {
 
 #[derive(Debug)]
 pub struct TmpSpaceMap {
-    inner: AHashMap<String, TmpSpace>,
+    inner: AHashMap<SmolStr, TmpSpace>,
 }
 
 impl IntoIterator for TmpSpaceMap {
-    type Item = (String, TmpSpace);
-    type IntoIter = IntoIter<String, TmpSpace>;
+    type Item = (SmolStr, TmpSpace);
+    type IntoIter = IntoIter<SmolStr, TmpSpace>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
@@ -173,12 +173,12 @@ impl TmpSpaceMap {
         self.inner.get(name)
     }
 
-    fn insert(&mut self, name: String, space: TmpSpace) -> Result<(), SbroadError> {
+    fn insert(&mut self, name: SmolStr, space: TmpSpace) -> Result<(), SbroadError> {
         if self.inner.contains_key(&name) {
             return Err(SbroadError::FailedTo(
                 Action::Insert,
                 Some(Entity::Space),
-                format!("in the temporary space map ({name})").into(),
+                format_smolstr!("in the temporary space map ({name})"),
             ));
         }
         self.inner.insert(name, space);
@@ -206,7 +206,7 @@ impl ExecutionPlan {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Expression,
-                            Some(format!("parameter {value:?} is not a constant").into()),
+                            Some(format_smolstr!("parameter {value:?} is not a constant")),
                         ));
                     }
                 }
@@ -376,7 +376,7 @@ impl ExecutionPlan {
                                             SbroadError::FailedTo(
                                                 Action::Put,
                                                 Some(Entity::Value),
-                                                format!("constant value to SQL: {e}").into(),
+                                                format_smolstr!("constant value to SQL: {e}"),
                                             )
                                         })?;
                                     }
@@ -394,10 +394,9 @@ impl ExecutionPlan {
                                                     .ok_or_else(|| {
                                                         SbroadError::NotFound(
                                                             Entity::Name,
-                                                            format!(
+                                                            format_smolstr!(
                                                                 "for column at position {position}"
-                                                            )
-                                                            .into(),
+                                                            ),
                                                         )
                                                     })?;
                                                 if let Some(name) = (*vt).get_alias() {
@@ -444,7 +443,7 @@ impl ExecutionPlan {
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Expression,
-                                Some(format!("parameter {value:?} is not a constant").into()),
+                                Some(format_smolstr!("parameter {value:?} is not a constant")),
                             ));
                         }
                     }
@@ -460,7 +459,7 @@ impl ExecutionPlan {
                                 {
                                     c.name.clone()
                                 } else {
-                                    SmolStr::from(format!("\"{}\"", c.name))
+                                    format_smolstr!("\"{}\"", c.name)
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -469,7 +468,7 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Serialize,
                                 Some(Entity::VirtualTable),
-                                format!("SQL builder: {e}").into(),
+                                format_smolstr!("SQL builder: {e}"),
                             )
                         })?;
                         // BETWEEN can refer to the same virtual table multiple times.

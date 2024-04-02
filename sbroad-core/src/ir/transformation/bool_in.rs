@@ -17,6 +17,7 @@ use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+use smol_str::format_smolstr;
 
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
 fn call_expr_tree_replace_in(
@@ -44,7 +45,9 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("Node is not a boolean IN expression: {top_expr:?}").into()),
+                    Some(format_smolstr!(
+                        "Node is not a boolean IN expression: {top_expr:?}"
+                    )),
                 ));
             }
         };

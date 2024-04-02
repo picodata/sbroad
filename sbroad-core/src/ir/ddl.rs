@@ -3,7 +3,7 @@ use crate::{
     ir::{relation::Type, Node, Plan},
 };
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::space::SpaceEngineType;
 use tarantool::{
     decimal::Decimal,
@@ -114,7 +114,7 @@ impl Ddl {
         .map_err(|e| {
             SbroadError::Invalid(
                 Entity::SpaceMetadata,
-                Some(format!("timeout parsing error {e:?}").into()),
+                Some(format_smolstr!("timeout parsing error {e:?}")),
             )
         })
     }
@@ -132,7 +132,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}").into()),
+                Some(format_smolstr!("node is not DDL type: {node:?}")),
             )),
         }
     }
@@ -148,7 +148,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}").into()),
+                Some(format_smolstr!("node is not DDL type: {node:?}")),
             )),
         }
     }
@@ -166,7 +166,7 @@ impl Plan {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node is not DDL type: {node:?}").into()),
+                Some(format_smolstr!("node is not DDL type: {node:?}")),
             )),
         }
     }

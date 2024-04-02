@@ -1,4 +1,4 @@
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type;
@@ -100,12 +100,9 @@ impl AggregateKind {
             (_, _) => {
                 return Err(SbroadError::Invalid(
                     Entity::Aggregate,
-                    Some(
-                        format!(
+                    Some(format_smolstr!(
                         "invalid local aggregate {local_aggregate} for original aggregate: {self}"
-                    )
-                        .into(),
-                    ),
+                    )),
                 ))
             }
         };
@@ -184,7 +181,9 @@ impl SimpleAggregate {
             let local_alias = self.lagg_alias.get(&self.kind).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Aggregate,
-                    Some(format!("missing local alias for distinct aggregate: {self:?}").into()),
+                    Some(format_smolstr!(
+                        "missing local alias for distinct aggregate: {self:?}"
+                    )),
                 )
             })?;
             let position = alias_to_pos.get(local_alias)?;
@@ -196,12 +195,9 @@ impl SimpleAggregate {
                 let local_alias = self.lagg_alias.get(&aggr_kind).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Aggregate,
-                        Some(
-                            format!(
-                                "missing local alias for local aggregate ({aggr_kind}): {self:?}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "missing local alias for local aggregate ({aggr_kind}): {self:?}"
+                        )),
                     )
                 })?;
                 let position = alias_to_pos.get(local_alias)?;
@@ -277,10 +273,10 @@ impl SimpleAggregate {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Aggregate,
-                            Some(
-                                format!("fun_id ({}) points to other expression node", self.fun_id)
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "fun_id ({}) points to other expression node",
+                                self.fun_id
+                            )),
                         ));
                     }
                 }
@@ -335,7 +331,9 @@ impl SimpleAggregate {
                 _ => {
                     return Err(SbroadError::Unsupported(
                         Entity::Aggregate,
-                        Some(format!("aggregate with multiple final aggregates: {self:?}").into()),
+                        Some(format_smolstr!(
+                            "aggregate with multiple final aggregates: {self:?}"
+                        )),
                     ))
                 }
             }

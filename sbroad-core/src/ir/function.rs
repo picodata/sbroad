@@ -4,7 +4,7 @@ use crate::ir::expression::Expression;
 use crate::ir::relation::Type;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use super::expression::FunctionFeature;
 
@@ -61,7 +61,7 @@ impl Plan {
         if !function.is_stable() {
             return Err(SbroadError::Invalid(
                 Entity::SQLFunction,
-                Some(format!("function {} is not stable", function.name).into()),
+                Some(format_smolstr!("function {} is not stable", function.name)),
             ));
         }
         let func_expr = Expression::StableFunction {
@@ -90,17 +90,17 @@ impl Plan {
                 if children.len() > 2 || children.is_empty() {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
-                        Some(format!(
+                        Some(format_smolstr!(
                             "GROUP_CONCAT aggregate function can have one or two arguments at most. Got: {} arguments", children.len()
-                        ).into()),
+                        )),
                     ));
                 }
                 if is_distinct && children.len() == 2 {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
-                        Some(format!(
+                        Some(format_smolstr!(
                             "distinct GROUP_CONCAT aggregate function has only one argument. Got: {} arguments", children.len()
-                        ).into()),
+                        )),
                     ));
                 }
             }
@@ -108,7 +108,9 @@ impl Plan {
                 if children.len() != 1 {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
-                        Some(format!("Expected one argument for aggregate: {function}.").into()),
+                        Some(format_smolstr!(
+                            "Expected one argument for aggregate: {function}."
+                        )),
                     ));
                 }
             }

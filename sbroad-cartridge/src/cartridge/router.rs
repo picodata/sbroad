@@ -5,7 +5,7 @@ use sbroad::executor::engine::helpers::vshard::{
     exec_ir_on_all_buckets, exec_ir_on_some_buckets, get_random_bucket,
 };
 use sbroad::executor::engine::{QueryCache, Vshard};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 use std::any::Any;
 use std::cell::{Ref, RefCell};
@@ -48,7 +48,7 @@ use super::ConfigurationProvider;
 pub struct RouterRuntime {
     metadata: RefCell<RouterConfiguration>,
     bucket_count: u64,
-    ir_cache: RefCell<LRUCache<String, Plan>>,
+    ir_cache: RefCell<LRUCache<SmolStr, Plan>>,
 }
 
 impl ConfigurationProvider for RouterRuntime {
@@ -59,7 +59,7 @@ impl ConfigurationProvider for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })
     }
@@ -69,7 +69,7 @@ impl ConfigurationProvider for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })?;
         *metadata = Self::Configuration::new();
@@ -81,7 +81,7 @@ impl ConfigurationProvider for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })?;
         Ok(metadata.is_empty())
@@ -97,7 +97,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting schema"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
 
@@ -106,7 +106,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(res) => res,
                 Err(e) => {
                     error!(Option::from("getting waiting timeout"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
 
@@ -118,7 +118,9 @@ impl ConfigurationProvider for RouterRuntime {
                     usize::try_from(val).map_err(|_| {
                         SbroadError::Invalid(
                             Entity::Cache,
-                            Some(format!("router cache capacity is too big: {capacity}").into()),
+                            Some(format_smolstr!(
+                                "router cache capacity is too big: {capacity}"
+                            )),
                         )
                     })?
                 }
@@ -127,7 +129,7 @@ impl ConfigurationProvider for RouterRuntime {
                         Option::from("getting router cache capacity"),
                         &format!("{e:?}"),
                     );
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
 
@@ -136,7 +138,7 @@ impl ConfigurationProvider for RouterRuntime {
                 Ok(column) => column,
                 Err(e) => {
                     error!(Option::from("getting sharding column"), &format!("{e:?}"));
-                    return Err(SbroadError::LuaError(format!("{e:?}").into()));
+                    return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
                 }
             };
 
@@ -157,7 +159,7 @@ impl ConfigurationProvider for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })?;
         *cached_metadata = metadata;
@@ -166,7 +168,7 @@ impl ConfigurationProvider for RouterRuntime {
 }
 
 impl QueryCache for RouterRuntime {
-    type Cache = LRUCache<String, Plan>;
+    type Cache = LRUCache<SmolStr, Plan>;
 
     fn cache(&self) -> &RefCell<Self::Cache>
     where
@@ -182,7 +184,7 @@ impl QueryCache for RouterRuntime {
         self.ir_cache
             .try_borrow_mut()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format!("{e:?}").into())
+                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format_smolstr!("{e:?}"))
             })?
             .clear()?;
         Ok(())
@@ -193,7 +195,7 @@ impl QueryCache for RouterRuntime {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}").into())
+                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format_smolstr!("{e}"))
             })?
             .capacity())
     }
@@ -216,7 +218,7 @@ impl Router for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e}").into(),
+                format_smolstr!("{e}"),
             )
         })
     }
@@ -232,7 +234,7 @@ impl Router for RouterRuntime {
         dispatch_impl(self, plan, top_id, buckets)
     }
 
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {
+    fn explain_format(&self, explain: SmolStr) -> Result<Box<dyn Any>, SbroadError> {
         explain_format(&explain)
     }
 
@@ -256,7 +258,7 @@ impl Router for RouterRuntime {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })?;
         sharding_key_from_map(&*metadata, &space, map)
@@ -290,7 +292,7 @@ impl Statistics for RouterRuntime {
     #[allow(unused_variables)]
     fn update_table_stats(
         &mut self,
-        table_name: String,
+        table_name: SmolStr,
         table_stats: TableStats,
     ) -> Result<(), SbroadError> {
         // Will be added later.
@@ -314,7 +316,7 @@ impl RouterRuntime {
     /// # Errors
     /// - Failed to detect the correct amount of buckets.
     pub fn new() -> Result<Self, SbroadError> {
-        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None)?;
+        let cache: LRUCache<SmolStr, Plan> = LRUCache::new(DEFAULT_CAPACITY, None)?;
         let result = RouterRuntime {
             metadata: RefCell::new(RouterConfiguration::new()),
             bucket_count: bucket_count()?,

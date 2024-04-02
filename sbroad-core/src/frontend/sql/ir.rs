@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use ahash::AHashMap;
 use pest::iterators::Pair;
+use smol_str::format_smolstr;
 use tarantool::decimal::Decimal;
 
 use crate::errors::{Action, Entity, SbroadError};
@@ -35,7 +36,7 @@ impl Value {
                 .map_err(|e| {
                     SbroadError::ParsingError(
                         Entity::Value,
-                        format!("i64 parsing error {e}").into(),
+                        format_smolstr!("i64 parsing error {e}"),
                     )
                 })?
                 .into()),
@@ -44,7 +45,7 @@ impl Value {
                 .map_err(|e| {
                     SbroadError::ParsingError(
                         Entity::Value,
-                        format!("decimal parsing error {e:?}").into(),
+                        format_smolstr!("decimal parsing error {e:?}"),
                     )
                 })?
                 .into()),
@@ -53,7 +54,7 @@ impl Value {
                 .map_err(|e| {
                     SbroadError::ParsingError(
                         Entity::Value,
-                        format!("double parsing error {e}").into(),
+                        format_smolstr!("double parsing error {e}"),
                     )
                 })?
                 .into()),
@@ -62,7 +63,7 @@ impl Value {
                 .map_err(|e| {
                     SbroadError::ParsingError(
                         Entity::Value,
-                        format!("u64 parsing error {e}").into(),
+                        format_smolstr!("u64 parsing error {e}"),
                     )
                 })?
                 .into()),
@@ -99,7 +100,7 @@ impl Translation {
         self.map.get(&old).copied().ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(parse node) [{old}] in translation map").into(),
+                format_smolstr!("(parse node) [{old}] in translation map"),
             )
         })
     }
@@ -307,7 +308,7 @@ impl Plan {
                 | Expression::Cast { ref mut child, .. }
                 | Expression::Unary { ref mut child, .. } => {
                     *child = *map.get(child).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})").into())
+                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
                     })?;
                 }
                 Expression::Bool {
@@ -326,10 +327,10 @@ impl Plan {
                     ..
                 } => {
                     *left = *map.get(left).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})").into())
+                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
                     })?;
                     *right = *map.get(right).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format!("(id {id})").into())
+                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
                     })?;
                 }
                 Expression::Row {
@@ -341,7 +342,7 @@ impl Plan {
                 } => {
                     for child in children {
                         *child = *map.get(child).ok_or_else(|| {
-                            SbroadError::NotFound(Entity::SubTree, format!("(id {id})").into())
+                            SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
                         })?;
                     }
                 }
@@ -374,7 +375,7 @@ impl SubtreeCloner {
             .ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("new node not found for old id: {old_id}").into()),
+                    Some(format_smolstr!("new node not found for old id: {old_id}")),
                 )
             })
             .copied()
@@ -642,9 +643,9 @@ impl SubtreeCloner {
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
-                        Some(
-                            format!("clone: expected relational or expression on id: {id}").into(),
-                        ),
+                        Some(format_smolstr!(
+                            "clone: expected relational or expression on id: {id}"
+                        )),
                     ))
                 }
             };
@@ -653,12 +654,9 @@ impl SubtreeCloner {
             if let Some(old_new_id) = old {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(
-                        format!(
-                            "clone: node with id {id} was mapped twice: {old_new_id}, {new_id}"
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "clone: node with id {id} was mapped twice: {old_new_id}, {new_id}"
+                    )),
                 ));
             }
         }
@@ -671,7 +669,9 @@ impl SubtreeCloner {
             .ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("invalid subtree traversal with top: {top_id}").into()),
+                    Some(format_smolstr!(
+                        "invalid subtree traversal with top: {top_id}"
+                    )),
                 )
             })
             .copied()?;

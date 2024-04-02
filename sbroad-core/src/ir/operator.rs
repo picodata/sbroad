@@ -7,7 +7,7 @@ use ahash::RandomState;
 
 use crate::collection;
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -155,9 +155,9 @@ impl Unary {
             "exists" => Ok(Unary::Exists),
             _ => Err(SbroadError::Invalid(
                 Entity::Operator,
-                Some(
-                    format!("expected `is null` or `is not null`, got unary operator `{s}`").into(),
-                ),
+                Some(format_smolstr!(
+                    "expected `is null` or `is not null`, got unary operator `{s}`"
+                )),
             )),
         }
     }
@@ -712,10 +712,9 @@ impl Relational {
                 let col_id = *list.get(output_alias_position).ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Column,
-                        format!(
+                        format_smolstr!(
                             "at position {output_alias_position} of Row, {self:?}, {output_row:?}"
-                        )
-                        .into(),
+                        ),
                     )
                 })?;
                 let col_node = plan.get_expression_node(col_id)?;
@@ -725,9 +724,9 @@ impl Relational {
                         let rel_id = *plan.get_relational_from_reference_node(*child)?;
                         let rel_node = plan.get_relation_node(rel_id)?;
                         if rel_node == self {
-                            return Err(SbroadError::DuplicatedValue(format!(
+                            return Err(SbroadError::DuplicatedValue(format_smolstr!(
                                 "Reference to the same node {rel_node:?} at position {output_alias_position}"
-                            ).into()));
+                            )));
                         }
                         return rel_node.scan_name(plan, *pos);
                     }
@@ -830,9 +829,9 @@ impl Plan {
         let left_row_len = child_row_len(left, self)?;
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                 "children tuples have mismatching amount of columns in except node: left {left_row_len}, right {right_row_len}"
-            ).into()));
+            )));
         }
 
         let output = self.add_row_for_union_except(left, right)?;
@@ -919,13 +918,19 @@ impl Plan {
             let col: &Column = table.columns.get(col_pos).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Table,
-                    Some(format!("expected to have at least {} columns", col_pos + 1).into()),
+                    Some(format_smolstr!(
+                        "expected to have at least {} columns",
+                        col_pos + 1
+                    )),
                 )
             })?;
             let output_pos = *table_position_map.get(&col_pos).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("Expected {} column in update child output", &col.name).into()),
+                    Some(format_smolstr!(
+                        "Expected {} column in update child output",
+                        &col.name
+                    )),
                 )
             })?;
             let col_type = col.r#type.clone();
@@ -1003,9 +1008,9 @@ impl Plan {
             for i in 0..shard_key_len {
                 let table = self.get_relation_or_error(relation)?;
                 let col_pos = *table.get_sk()?.get(i).ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid shard col position {i}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid shard col position {i}"
+                    ))
                 })?;
                 let shard_col_expr_id =
                     create_ref_from_column(self, relation, &child_map, col_pos)?;
@@ -1116,7 +1121,7 @@ impl Plan {
         let rel = self.relations.get(relation).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Table,
-                format!("{relation} among plan relations").into(),
+                format_smolstr!("{relation} among plan relations"),
             )
         })?;
         let columns: Vec<usize> = if columns.is_empty() {
@@ -1140,7 +1145,7 @@ impl Plan {
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Column),
-                            format!("system column {name} cannot be inserted").into(),
+                            format_smolstr!("system column {name} cannot be inserted"),
                         ))
                     }
                     None => {
@@ -1161,15 +1166,12 @@ impl Plan {
             ));
         };
         if child_output_list_len != columns.len() {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!(
-                    "invalid number of values: {}. Table {} expects {} column(s).",
-                    child_output_list_len,
-                    relation,
-                    columns.len()
-                )
-                .into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "invalid number of values: {}. Table {} expects {} column(s).",
+                child_output_list_len,
+                relation,
+                columns.len()
+            )));
         }
 
         let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
@@ -1223,7 +1225,7 @@ impl Plan {
         }
         Err(SbroadError::NotFound(
             Entity::Table,
-            format!("{table} among the plan relations").into(),
+            format_smolstr!("{table} among the plan relations"),
         ))
     }
 
@@ -1372,10 +1374,9 @@ impl Plan {
             MotionPolicy::None => {
                 return Err(SbroadError::Invalid(
                     Entity::Motion,
-                    Some(
-                        format!("add_motion: got MotionPolicy::None for child_id: {child_id}")
-                            .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "add_motion: got MotionPolicy::None for child_id: {child_id}"
+                    )),
                 ))
             }
             MotionPolicy::Segment(key) | MotionPolicy::LocalSegment(key) => {
@@ -1581,9 +1582,9 @@ impl Plan {
         let left_row_len = child_row_len(left, self)?;
         let right_row_len = child_row_len(right, self)?;
         if left_row_len != right_row_len {
-            return Err(SbroadError::UnexpectedNumberOfValues(format!(
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                 "children tuples have mismatching amount of columns in union all node: left {left_row_len}, right {right_row_len}"
-            ).into()));
+            )));
         }
 
         let output = self.add_row_for_union_except(left, right)?;
@@ -1683,9 +1684,9 @@ impl Plan {
         let columns = last_output.clone_row_list()?;
         for (pos, name) in names.iter().enumerate() {
             let col_id = *columns.get(pos).ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(
-                    format!("Values node has no column at position {pos}").into(),
-                )
+                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "Values node has no column at position {pos}"
+                ))
             })?;
             let col_expr = self.get_expression_node(col_id)?;
             let col_type = col_expr.calculate_type(self)?;
@@ -1741,7 +1742,9 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected output of Relational node {rel_id} to be Row").into()),
+            Some(format_smolstr!(
+                "expected output of Relational node {rel_id} to be Row"
+            )),
         ))
     }
 
@@ -1776,22 +1779,24 @@ impl Plan {
                 let child_id = *children.get(child_idx).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Relational,
-                        Some(
-                            format!("rel node {rel:?} has no child with idx ({child_idx})").into(),
-                        ),
+                        Some(format_smolstr!(
+                            "rel node {rel:?} has no child with idx ({child_idx})"
+                        )),
                     )
                 })?;
                 Ok(child_id)
             } else {
                 Err(SbroadError::Invalid(
                     Entity::Relational,
-                    Some(format!("rel node {rel:?} has no children. Id: ({rel_id})").into()),
+                    Some(format_smolstr!(
+                        "rel node {rel:?} has no children. Id: ({rel_id})"
+                    )),
                 ))
             };
         }
         Err(SbroadError::NotFound(
             Entity::Relational,
-            format!("with id ({rel_id})").into(),
+            format_smolstr!("with id ({rel_id})"),
         ))
     }
 
@@ -1809,7 +1814,9 @@ impl Plan {
             _ => {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("expected Join, Having or Selection on id ({node_id})").into()),
+                    Some(format_smolstr!(
+                        "expected Join, Having or Selection on id ({node_id})"
+                    )),
                 ))
             }
         };
@@ -1850,7 +1857,7 @@ impl Plan {
         let Some(children) = node.mut_children() else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node ({parent_id}) has no children").into()),
+                Some(format_smolstr!("node ({parent_id}) has no children")),
             ));
         };
         for child_id in children {
@@ -1862,7 +1869,9 @@ impl Plan {
 
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("node ({parent_id}) has no child with id ({old_child_id})").into()),
+            Some(format_smolstr!(
+                "node ({parent_id}) has no child with id ({old_child_id})"
+            )),
         ))
     }
 
@@ -1908,7 +1917,7 @@ impl Plan {
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("Expected a values row: {values_row:?}").into()),
+                    Some(format_smolstr!("Expected a values row: {values_row:?}")),
                 ));
             };
         let data = self.get_expression_node(data_id)?;
@@ -1917,7 +1926,7 @@ impl Plan {
         let output_list = output.clone_row_list()?;
         for (pos, alias_id) in output_list.iter().enumerate() {
             let new_child_id = *data_list.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format!("at position {pos}").into())
+                SbroadError::NotFound(Entity::Node, format_smolstr!("at position {pos}"))
             })?;
             let alias = self.get_mut_expression_node(*alias_id)?;
             if let Expression::Alias { ref mut child, .. } = alias {
@@ -1925,7 +1934,7 @@ impl Plan {
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!("expected an alias: {alias:?}").into()),
+                    Some(format_smolstr!("expected an alias: {alias:?}")),
                 ));
             }
         }
@@ -2014,7 +2023,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected Motion, got: {node:?}").into()),
+            Some(format_smolstr!("expected Motion, got: {node:?}")),
         ))
     }
 }

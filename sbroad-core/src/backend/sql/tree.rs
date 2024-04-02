@@ -1,6 +1,6 @@
 use ahash::RandomState;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 use std::mem::take;
 
@@ -33,7 +33,7 @@ pub enum SyntaxData {
     /// "distinct"
     Distinct,
     /// Inline sql string
-    Inline(String),
+    Inline(SmolStr),
     /// "from"
     From,
     /// "leading"
@@ -45,7 +45,7 @@ pub enum SyntaxData {
     /// "("
     OpenParenthesis,
     /// "=, >, <, and, or, ..."
-    Operator(String),
+    Operator(SmolStr),
     /// plan node id
     PlanId(usize),
     /// parameter (a wrapper over a plan constants)
@@ -327,7 +327,7 @@ impl SyntaxNodes {
                 return Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::SyntaxNodes),
-                    format!("{e:?}").into(),
+                    format_smolstr!("{e:?}"),
                 ))
             }
         };
@@ -340,7 +340,7 @@ impl SyntaxNodes {
     /// - current node is invalid (doesn't exist in arena)
     pub fn get_syntax_node(&self, id: usize) -> Result<&SyntaxNode, SbroadError> {
         self.arena.get(id).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {id}").into())
+            SbroadError::NotFound(Entity::Node, format_smolstr!("from arena with index {id}"))
         })
     }
 
@@ -352,7 +352,7 @@ impl SyntaxNodes {
         self.arena.get_mut(id).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable) from arena with index {id}").into(),
+                format_smolstr!("(mutable) from arena with index {id}"),
             )
         })
     }
@@ -363,7 +363,7 @@ impl SyntaxNodes {
     /// - nothing was found
     fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, SbroadError> {
         self.map.get(&plan_id).copied().ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("({plan_id}) in the map").into())
+            SbroadError::NotFound(Entity::Node, format_smolstr!("({plan_id}) in the map"))
         })
     }
 
@@ -510,15 +510,21 @@ impl<'p> SyntaxPlan<'p> {
         match node {
             Node::Ddl(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!("DDL node {node:?} is not supported in the syntax plan").into()),
+                Some(format_smolstr!(
+                    "DDL node {node:?} is not supported in the syntax plan"
+                )),
             )),
             Node::Acl(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!("ACL node {node:?} is not supported in the syntax plan").into()),
+                Some(format_smolstr!(
+                    "ACL node {node:?} is not supported in the syntax plan"
+                )),
             )),
             Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::SyntaxPlan,
-                Some(format!("Block node {node:?} is not supported in the syntax plan").into()),
+                Some(format_smolstr!(
+                    "Block node {node:?} is not supported in the syntax plan"
+                )),
             )),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
@@ -529,7 +535,9 @@ impl<'p> SyntaxPlan<'p> {
                 | Relational::Delete { .. }
                 | Relational::Update { .. } => Err(SbroadError::Invalid(
                     Entity::SyntaxPlan,
-                    Some(format!("DML node {node:?} is not supported in the syntax plan").into()),
+                    Some(format_smolstr!(
+                        "DML node {node:?} is not supported in the syntax plan"
+                    )),
                 )),
                 Relational::Join {
                     children,
@@ -622,9 +630,9 @@ impl<'p> SyntaxPlan<'p> {
                     children, filter, ..
                 } => {
                     let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            format!("{node:?} has no children.").into(),
-                        )
+                        SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                            "{node:?} has no children."
+                        ))
                     })?;
                     let filter_id = match self.snapshot {
                         Snapshot::Latest => *filter,
@@ -714,7 +722,7 @@ impl<'p> SyntaxPlan<'p> {
                         let is_enabled = matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
                         if is_enabled {
                             let output_len = self.plan.get_ir_plan().get_row_list(*output)?.len();
-                            let empty_select = format!(
+                            let empty_select = format_smolstr!(
                                 "select {}null where false",
                                 "null, ".repeat(output_len - 1)
                             );
@@ -732,10 +740,9 @@ impl<'p> SyntaxPlan<'p> {
                         let child_sp_id = *self.nodes.map.get(&child_plan_id).ok_or_else(|| {
                             SbroadError::Invalid(
                                 Entity::SyntaxPlan,
-                                Some(
-                                    format!("motion child {child_plan_id} is not found in map")
-                                        .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "motion child {child_plan_id} is not found in map"
+                                )),
                             )
                         })?;
                         self.nodes.map.insert(id, child_sp_id);
@@ -758,9 +765,9 @@ impl<'p> SyntaxPlan<'p> {
                             if name.is_empty() {
                                 return Err(SbroadError::Invalid(
                                     Entity::VirtualTable,
-                                    Some(
-                                        format!("Vtable {vtable:?} has an empty alias name").into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "Vtable {vtable:?} has an empty alias name"
+                                    )),
                                 ));
                             }
                             children.push(
@@ -1281,7 +1288,7 @@ impl OrderedSyntaxNodes {
                     .arena
                     .get(*id)
                     .ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SyntaxNode, format!("(id {id})").into())
+                        SbroadError::NotFound(Entity::SyntaxNode, format_smolstr!("(id {id})"))
                     })?
                     .data,
             );

@@ -1,3 +1,5 @@
+use smol_str::format_smolstr;
+
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
 use crate::ir::value::Value;
@@ -80,9 +82,9 @@ impl Plan {
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
-                    Some(format!(
+                    Some(format_smolstr!(
                         "Restoring parameters filed: node {const_node:?} (id: {id}) is not of a constant type"
-                    ).into()),
+                    )),
                 ));
             }
             self.nodes.replace(id, const_node)?;

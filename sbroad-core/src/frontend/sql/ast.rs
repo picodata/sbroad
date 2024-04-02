@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem::swap;
 
 use pest::iterators::Pair;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 use crate::errors::{Entity, SbroadError};
 
@@ -58,7 +58,10 @@ impl ParseNodes {
     /// - Failed to get a node from arena.
     pub fn get_node(&self, node: usize) -> Result<&ParseNode, SbroadError> {
         self.arena.get(node).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format!("from arena with index {node}").into())
+            SbroadError::NotFound(
+                Entity::Node,
+                format_smolstr!("from arena with index {node}"),
+            )
         })
     }
 
@@ -70,7 +73,7 @@ impl ParseNodes {
         self.arena.get_mut(node).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable) from arena with index {node}").into(),
+                format_smolstr!("(mutable) from arena with index {node}"),
             )
         })
     }
@@ -140,7 +143,7 @@ impl ParseNodes {
             let parent_node = self.arena.get_mut(parent).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
-                    format!("(mutable) from arena with index {parent}").into(),
+                    format_smolstr!("(mutable) from arena with index {parent}"),
                 )
             })?;
             parent_node.children.insert(0, child);
@@ -156,7 +159,7 @@ impl ParseNodes {
         let node = self.arena.get_mut(node).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("(mutable) from arena with index {node}").into(),
+                format_smolstr!("(mutable) from arena with index {node}"),
             )
         })?;
         node.value = value;
@@ -240,7 +243,7 @@ impl AbstractSyntaxTree {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::ParseNode,
-                Some(format!("expected join parse node, got: {node:?}").into()),
+                Some(format_smolstr!("expected join parse node, got: {node:?}")),
             ));
         }
         Ok(())
@@ -398,10 +401,9 @@ impl AbstractSyntaxTree {
             if filter_node.rule != Rule::DeleteFilter {
                 return Err(SbroadError::Invalid(
                     Entity::ParseNode,
-                    Some(
-                        format!("expected delete filter as a second child, got: {filter_node:?}")
-                            .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "expected delete filter as a second child, got: {filter_node:?}"
+                    )),
                 ));
             }
             let mut new_filter_children = Vec::with_capacity(filter_node.children.len() + 1);
@@ -450,7 +452,7 @@ impl AbstractSyntaxTree {
             let child_id = *parent.children.get(children_pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
-                    format!("at expected position {children_pos}").into(),
+                    format_smolstr!("at expected position {children_pos}"),
                 )
             })?;
             let child = self.nodes.get_node(child_id)?;

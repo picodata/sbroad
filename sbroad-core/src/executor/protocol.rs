@@ -1,6 +1,6 @@
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
 
@@ -123,7 +123,7 @@ impl TryFrom<RequiredData> for Vec<u8> {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}").into(),
+                format_smolstr!("to binary: {e:?}"),
             )
         })
     }
@@ -137,7 +137,7 @@ impl TryFrom<&[u8]> for RequiredData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::RequiredData),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })
     }
@@ -223,7 +223,7 @@ impl TryFrom<OptionalData> for Vec<u8> {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}").into(),
+                format_smolstr!("to binary: {e:?}"),
             )
         })
     }
@@ -237,7 +237,7 @@ impl TryFrom<&[u8]> for OptionalData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::RequiredData),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })
     }
@@ -258,7 +258,7 @@ impl OptionalData {
             SbroadError::FailedTo(
                 Action::Serialize,
                 Some(Entity::RequiredData),
-                format!("to binary: {e:?}").into(),
+                format_smolstr!("to binary: {e:?}"),
             )
         })
     }
@@ -272,7 +272,7 @@ impl OptionalData {
             SbroadError::FailedTo(
                 Action::Deserialize,
                 Some(Entity::OptionalData),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })
     }

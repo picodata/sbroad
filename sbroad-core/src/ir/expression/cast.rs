@@ -6,7 +6,7 @@ use crate::ir::expression::Expression;
 use crate::ir::relation::Type as RelationType;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -46,7 +46,7 @@ impl TryFrom<&Rule> for Type {
             Rule::TypeUnsigned => Ok(Type::Unsigned),
             _ => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some(format!("{ast_type:?}").into()),
+                Some(format_smolstr!("{ast_type:?}")),
             )),
         }
     }
@@ -91,7 +91,7 @@ impl From<&Type> for SmolStr {
             Type::Text => "text".to_smolstr(),
             Type::Uuid => "uuid".to_smolstr(),
             Type::Unsigned => "unsigned".to_smolstr(),
-            Type::Varchar(length) => format!("varchar({length})").to_smolstr(),
+            Type::Varchar(length) => format_smolstr!("varchar({length})"),
         }
     }
 }

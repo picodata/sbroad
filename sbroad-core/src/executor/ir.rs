@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
@@ -108,7 +108,7 @@ impl ExecutionPlan {
 
         Err(SbroadError::NotFound(
             Entity::VirtualTable,
-            format!("for Motion node ({motion_id})").into(),
+            format_smolstr!("for Motion node ({motion_id})"),
         ))
     }
 
@@ -177,9 +177,9 @@ impl ExecutionPlan {
                         ));
                     };
                     let Some(from_vtable) = vtables.mut_map().remove(&motion_id) else {
-                        return Err(SbroadError::UnexpectedNumberOfValues(
-                            format!("expected virtual table for motion {motion_id}").into(),
-                        ));
+                        return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                            "expected virtual table for motion {motion_id}"
+                        )));
                     };
                     let from_vtable = Rc::try_unwrap(from_vtable).map_err(|_| {
                         SbroadError::FailedTo(
@@ -310,26 +310,23 @@ impl ExecutionPlan {
         if !node.is_motion() {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
-                Some(format!("current node ({node_id}) is not motion").into()),
+                Some(format_smolstr!("current node ({node_id}) is not motion")),
             ));
         }
 
         let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("that is Motion {node_id} child(ren)").into(),
+                format_smolstr!("that is Motion {node_id} child(ren)"),
             )
         })?;
 
         if children.len() != 1 {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!(
-                    "Motion node ({}) must have a single child only (actual {})",
-                    node_id,
-                    children.len()
-                )
-                .into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "Motion node ({}) must have a single child only (actual {})",
+                node_id,
+                children.len()
+            )));
         }
 
         let child_id = children.first().ok_or_else(|| {
@@ -349,26 +346,23 @@ impl ExecutionPlan {
         if !node.is_subquery() {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("current node ({node_id}) is not sub query").to_smolstr()),
+                Some(format_smolstr!("current node ({node_id}) is not sub query")),
             ));
         }
 
         let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format!("that is Subquery {node_id} child(ren)").into(),
+                format_smolstr!("that is Subquery {node_id} child(ren)"),
             )
         })?;
 
         if children.len() != 1 {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!(
-                    "Sub query node ({}) must have a single child only (actual {})",
-                    node_id,
-                    children.len()
-                )
-                .into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "Sub query node ({}) must have a single child only (actual {})",
+                node_id,
+                children.len()
+            )));
         }
 
         let child_id = children.first().ok_or_else(|| {
@@ -395,7 +389,7 @@ impl ExecutionPlan {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
-                Some(format!("node ({motion_id}) is not motion").into()),
+                Some(format_smolstr!("node ({motion_id}) is not motion")),
             ));
         }
         Ok(())
@@ -442,7 +436,7 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Build,
                                 Some(Entity::SubTree),
-                                format!("could not find data node id {data} in the map").into(),
+                                format_smolstr!("could not find data node id {data} in the map"),
                             )
                         })?;
                     }
@@ -469,8 +463,9 @@ impl ExecutionPlan {
                                 SbroadError::FailedTo(
                                     Action::Build,
                                     Some(Entity::SubTree),
-                                    format!("could not find child node id {child_id} in the map")
-                                        .into(),
+                                    format_smolstr!(
+                                        "could not find child node id {child_id} in the map"
+                                    ),
                                 )
                             })?;
                         }
@@ -482,7 +477,7 @@ impl ExecutionPlan {
                             let new_col_id = *translation.get(col_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::Node,
-                                    format!("grouping column {col_id} in translation map").into(),
+                                    format_smolstr!("grouping column {col_id} in translation map"),
                                 )
                             })?;
                             new_plan.replace_parent_in_subtree(new_col_id, None, Some(next_id))?;
@@ -495,7 +490,7 @@ impl ExecutionPlan {
                     *rel.mut_output() = *translation.get(&output).ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::Node,
-                            format!("as output node {output} in relational node {rel:?}").into(),
+                            format_smolstr!("as output node {output} in relational node {rel:?}"),
                         )
                     })?;
                     new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
@@ -524,9 +519,9 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Build,
                                 Some(Entity::SubTree),
-                                format!(
+                                format_smolstr!(
                                     "could not find filter/condition node id {undo_expr_id} in the map"
-                                ).into(),
+                                ),
                             )
                         })?;
                         new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
@@ -544,10 +539,9 @@ impl ExecutionPlan {
                                 SbroadError::FailedTo(
                                     Action::Build,
                                     Some(Entity::SubTree),
-                                    format!(
+                                    format_smolstr!(
                                         "could not find relation {relation} in the original plan"
-                                    )
-                                    .into(),
+                                    ),
                                 )
                             })?
                             .clone();
@@ -563,7 +557,7 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Build,
                                 Some(Entity::SubTree),
-                                format!("could not find child node id {child} in the map").into(),
+                                format_smolstr!("could not find child node id {child} in the map"),
                             )
                         })?;
                     }
@@ -586,16 +580,18 @@ impl ExecutionPlan {
                             SbroadError::FailedTo(
                                 Action::Build,
                                 Some(Entity::SubTree),
-                                format!("could not find left child node id {left} in the map")
-                                    .into(),
+                                format_smolstr!(
+                                    "could not find left child node id {left} in the map"
+                                ),
                             )
                         })?;
                         *right = *translation.get(right).ok_or_else(|| {
                             SbroadError::FailedTo(
                                 Action::Build,
                                 Some(Entity::SubTree),
-                                format!("could not find right child node id {right} in the map")
-                                    .into(),
+                                format_smolstr!(
+                                    "could not find right child node id {right} in the map"
+                                ),
                             )
                         })?;
                     }
@@ -615,8 +611,9 @@ impl ExecutionPlan {
                                 SbroadError::FailedTo(
                                     Action::Build,
                                     Some(Entity::SubTree),
-                                    format!("could not find child node id {child} in the map")
-                                        .into(),
+                                    format_smolstr!(
+                                        "could not find child node id {child} in the map"
+                                    ),
                                 )
                             })?;
                         }
@@ -698,11 +695,10 @@ impl ExecutionPlan {
                 return Err(SbroadError::FailedTo(
                     Action::Build,
                     Some(Entity::Plan),
-                    format!(
+                    format_smolstr!(
                         "cannot build execution plan for DML query with multiple engines: {:?}",
                         self.get_ir_plan().relations.tables
-                    )
-                    .into(),
+                    ),
                 ));
             }
         }

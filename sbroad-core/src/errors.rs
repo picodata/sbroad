@@ -1,5 +1,5 @@
 use serde::Serialize;
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::fmt;
 use tarantool::error::Error;
 use tarantool::transaction::TransactionError;
@@ -148,73 +148,73 @@ pub enum Entity {
 impl fmt::Display for Entity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
-            Entity::Acl => "ACL".to_string(),
-            Entity::Args => "args".to_string(),
-            Entity::AST => "AST".to_string(),
-            Entity::Aggregate => "aggregate".to_string(),
-            Entity::AggregateCollector => "aggregate collector".to_string(),
-            Entity::AggregateSignature => "aggregate signature".to_string(),
-            Entity::Buckets => "buckets".to_string(),
-            Entity::Bytes => "bytes".to_string(),
-            Entity::Cache => "cache".to_string(),
-            Entity::Chain => "chain".to_string(),
-            Entity::ClusterSchema => "cluster schema".to_string(),
-            Entity::Column => "column".to_string(),
-            Entity::Distribution => "distribution".to_string(),
-            Entity::DistributionKey => "distribution key".to_string(),
-            Entity::Engine => "engine".to_string(),
-            Entity::Expression => "expression".to_string(),
-            Entity::ExpressionMapper => "expression mapper".to_string(),
-            Entity::Histogram => "histogram".to_string(),
-            Entity::Index => "index".to_string(),
-            Entity::KeyDef => "key definition".to_string(),
-            Entity::Metadata => "metadata".to_string(),
-            Entity::Motion => "motion".to_string(),
-            Entity::MotionOpcode => "motion opcode".to_string(),
-            Entity::MsgPack => "msgpack".to_string(),
-            Entity::Name => "name".to_string(),
-            Entity::Node => "node".to_string(),
-            Entity::Operator => "operator".to_string(),
-            Entity::PatternWithParams => "pattern with parameters".to_string(),
-            Entity::Plan => "plan".to_string(),
-            Entity::PrimaryKey => "primary key".to_string(),
-            Entity::Privilege => "privilege".to_string(),
-            Entity::ProducerResult => "producer result".to_string(),
-            Entity::ParseNode => "parse node".to_string(),
-            Entity::Query => "query".to_string(),
-            Entity::Relational => "relational".to_string(),
-            Entity::RequiredData => "required data".to_string(),
-            Entity::ReferredNodes => "referred nodes".to_string(),
-            Entity::Routine => "routine".to_string(),
-            Entity::Rule => "rule".to_string(),
-            Entity::Runtime => "runtime".to_string(),
-            Entity::Option => "option".to_string(),
-            Entity::OptionalData => "optional data".to_string(),
-            Entity::OptionSpec => "OptionSpec".to_string(),
-            Entity::Schema => "schema".to_string(),
-            Entity::ShardingKey => "sharding key".to_string(),
-            Entity::Space => "space".to_string(),
-            Entity::SpaceEngine => "space engine".to_string(),
-            Entity::SpaceMetadata => "space metadata".to_string(),
-            Entity::SQLFunction => "SQL function".to_string(),
-            Entity::Statement => "statement".to_string(),
-            Entity::Statistics => "statistics".to_string(),
-            Entity::SubQuery => "sub-query plan subtree".to_string(),
-            Entity::SubTree => "execution plan subtree".to_string(),
-            Entity::SyntaxNode => "syntax node".to_string(),
-            Entity::SyntaxNodes => "syntax nodes".to_string(),
-            Entity::SyntaxPlan => "syntax plan".to_string(),
-            Entity::Table => "table".to_string(),
-            Entity::Tarantool => "tarantool".to_string(),
-            Entity::Target => "target".to_string(),
-            Entity::Transaction => "transaction".to_string(),
-            Entity::Tuple => "tuple".to_string(),
-            Entity::TupleBuilderCommand => "TupleBuilderCommand".to_string(),
-            Entity::Type => "type".to_string(),
-            Entity::Update => "Update node".to_string(),
-            Entity::Value => "value".to_string(),
-            Entity::VirtualTable => "virtual table".to_string(),
-            Entity::VTableKey => "virtual table key".to_string(),
+            Entity::Acl => "ACL".to_smolstr(),
+            Entity::Args => "args".to_smolstr(),
+            Entity::AST => "AST".to_smolstr(),
+            Entity::Aggregate => "aggregate".to_smolstr(),
+            Entity::AggregateCollector => "aggregate collector".to_smolstr(),
+            Entity::AggregateSignature => "aggregate signature".to_smolstr(),
+            Entity::Buckets => "buckets".to_smolstr(),
+            Entity::Bytes => "bytes".to_smolstr(),
+            Entity::Cache => "cache".to_smolstr(),
+            Entity::Chain => "chain".to_smolstr(),
+            Entity::ClusterSchema => "cluster schema".to_smolstr(),
+            Entity::Column => "column".to_smolstr(),
+            Entity::Distribution => "distribution".to_smolstr(),
+            Entity::DistributionKey => "distribution key".to_smolstr(),
+            Entity::Engine => "engine".to_smolstr(),
+            Entity::Expression => "expression".to_smolstr(),
+            Entity::ExpressionMapper => "expression mapper".to_smolstr(),
+            Entity::Histogram => "histogram".to_smolstr(),
+            Entity::Index => "index".to_smolstr(),
+            Entity::KeyDef => "key definition".to_smolstr(),
+            Entity::Metadata => "metadata".to_smolstr(),
+            Entity::Motion => "motion".to_smolstr(),
+            Entity::MotionOpcode => "motion opcode".to_smolstr(),
+            Entity::MsgPack => "msgpack".to_smolstr(),
+            Entity::Name => "name".to_smolstr(),
+            Entity::Node => "node".to_smolstr(),
+            Entity::Operator => "operator".to_smolstr(),
+            Entity::PatternWithParams => "pattern with parameters".to_smolstr(),
+            Entity::Plan => "plan".to_smolstr(),
+            Entity::PrimaryKey => "primary key".to_smolstr(),
+            Entity::Privilege => "privilege".to_smolstr(),
+            Entity::ProducerResult => "producer result".to_smolstr(),
+            Entity::ParseNode => "parse node".to_smolstr(),
+            Entity::Query => "query".to_smolstr(),
+            Entity::Relational => "relational".to_smolstr(),
+            Entity::RequiredData => "required data".to_smolstr(),
+            Entity::ReferredNodes => "referred nodes".to_smolstr(),
+            Entity::Routine => "routine".to_smolstr(),
+            Entity::Rule => "rule".to_smolstr(),
+            Entity::Runtime => "runtime".to_smolstr(),
+            Entity::Option => "option".to_smolstr(),
+            Entity::OptionalData => "optional data".to_smolstr(),
+            Entity::OptionSpec => "OptionSpec".to_smolstr(),
+            Entity::Schema => "schema".to_smolstr(),
+            Entity::ShardingKey => "sharding key".to_smolstr(),
+            Entity::Space => "space".to_smolstr(),
+            Entity::SpaceEngine => "space engine".to_smolstr(),
+            Entity::SpaceMetadata => "space metadata".to_smolstr(),
+            Entity::SQLFunction => "SQL function".to_smolstr(),
+            Entity::Statement => "statement".to_smolstr(),
+            Entity::Statistics => "statistics".to_smolstr(),
+            Entity::SubQuery => "sub-query plan subtree".to_smolstr(),
+            Entity::SubTree => "execution plan subtree".to_smolstr(),
+            Entity::SyntaxNode => "syntax node".to_smolstr(),
+            Entity::SyntaxNodes => "syntax nodes".to_smolstr(),
+            Entity::SyntaxPlan => "syntax plan".to_smolstr(),
+            Entity::Table => "table".to_smolstr(),
+            Entity::Tarantool => "tarantool".to_smolstr(),
+            Entity::Target => "target".to_smolstr(),
+            Entity::Transaction => "transaction".to_smolstr(),
+            Entity::Tuple => "tuple".to_smolstr(),
+            Entity::TupleBuilderCommand => "TupleBuilderCommand".to_smolstr(),
+            Entity::Type => "type".to_smolstr(),
+            Entity::Update => "Update node".to_smolstr(),
+            Entity::Value => "value".to_smolstr(),
+            Entity::VirtualTable => "virtual table".to_smolstr(),
+            Entity::VTableKey => "virtual table key".to_smolstr(),
         };
         write!(f, "{p}")
     }
@@ -248,26 +248,26 @@ pub enum Action {
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p = match self {
-            Action::Add => "add".to_string(),
-            Action::Borrow => "borrow".to_string(),
-            Action::Build => "build".to_string(),
-            Action::Clear => "clear".to_string(),
-            Action::Create => "create".to_string(),
-            Action::Delete => "delete".to_string(),
-            Action::Decode => "decode".to_string(),
-            Action::Drop => "drop".to_string(),
-            Action::Find => "find".to_string(),
-            Action::Deserialize => "deserialize".to_string(),
-            Action::Get => "get".to_string(),
-            Action::Insert => "insert".to_string(),
-            Action::Prepare => "prepare".to_string(),
-            Action::Put => "put".to_string(),
-            Action::Replace => "replace".to_string(),
-            Action::ReplaceOnConflict => "replace on conflict".to_string(),
-            Action::Retrieve => "retrieve".to_string(),
-            Action::Serialize => "serialize".to_string(),
-            Action::Update => "update".to_string(),
-            Action::Upsert => "upsert".to_string(),
+            Action::Add => "add".to_smolstr(),
+            Action::Borrow => "borrow".to_smolstr(),
+            Action::Build => "build".to_smolstr(),
+            Action::Clear => "clear".to_smolstr(),
+            Action::Create => "create".to_smolstr(),
+            Action::Delete => "delete".to_smolstr(),
+            Action::Decode => "decode".to_smolstr(),
+            Action::Drop => "drop".to_smolstr(),
+            Action::Find => "find".to_smolstr(),
+            Action::Deserialize => "deserialize".to_smolstr(),
+            Action::Get => "get".to_smolstr(),
+            Action::Insert => "insert".to_smolstr(),
+            Action::Prepare => "prepare".to_smolstr(),
+            Action::Put => "put".to_smolstr(),
+            Action::Replace => "replace".to_smolstr(),
+            Action::ReplaceOnConflict => "replace on conflict".to_smolstr(),
+            Action::Retrieve => "retrieve".to_smolstr(),
+            Action::Serialize => "serialize".to_smolstr(),
+            Action::Update => "update".to_smolstr(),
+            Action::Upsert => "upsert".to_smolstr(),
         };
         write!(f, "{p}")
     }
@@ -315,24 +315,24 @@ impl fmt::Display for SbroadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let p: SmolStr = match self {
             SbroadError::DoSkip => DO_SKIP.to_smolstr(),
-            SbroadError::DuplicatedValue(s) => format!("duplicated value: {s}").to_smolstr(),
+            SbroadError::DuplicatedValue(s) => format_smolstr!("duplicated value: {s}"),
             SbroadError::FailedTo(a, e, s) => match e {
-                Some(entity) => format!("failed to {a} {entity}: {s}").to_smolstr(),
-                None => format!("failed to {a} {s}").to_smolstr(),
+                Some(entity) => format_smolstr!("failed to {a} {entity}: {s}"),
+                None => format_smolstr!("failed to {a} {s}"),
             },
             SbroadError::Invalid(e, s) => match s {
-                Some(msg) => format!("invalid {e}: {msg}").to_smolstr(),
-                None => format!("invalid {e}").to_smolstr(),
+                Some(msg) => format_smolstr!("invalid {e}: {msg}"),
+                None => format_smolstr!("invalid {e}"),
             },
-            SbroadError::NotFound(e, s) => format!("{e} {s} not found").to_smolstr(),
-            SbroadError::NotImplemented(e, s) => format!("{e} {s} not implemented").to_smolstr(),
-            SbroadError::ParsingError(e, s) => format!("{e} parsing error: {s}").to_smolstr(),
+            SbroadError::NotFound(e, s) => format_smolstr!("{e} {s} not found"),
+            SbroadError::NotImplemented(e, s) => format_smolstr!("{e} {s} not implemented"),
+            SbroadError::ParsingError(e, s) => format_smolstr!("{e} parsing error: {s}"),
             SbroadError::Unsupported(e, s) => match s {
-                Some(msg) => format!("unsupported {e}: {msg}").to_smolstr(),
-                None => format!("unsupported {e}").to_smolstr(),
+                Some(msg) => format_smolstr!("unsupported {e}: {msg}"),
+                None => format_smolstr!("unsupported {e}"),
             },
             SbroadError::UnexpectedNumberOfValues(s) => {
-                format!("unexpected number of values: {s}").to_smolstr()
+                format_smolstr!("unexpected number of values: {s}")
             }
             SbroadError::LuaError(e) => e.clone(),
             SbroadError::UseOfBothParamsStyles => {
@@ -342,7 +342,7 @@ impl fmt::Display for SbroadError {
                 "storage schema version different from router".into()
             }
             SbroadError::UnsupportedOpForGlobalTables(op) => {
-                format!("{op} is not supported for global tables").to_smolstr()
+                format_smolstr!("{op} is not supported for global tables")
             }
         };
 
@@ -357,7 +357,7 @@ impl<E: fmt::Debug> From<TransactionError<E>> for SbroadError {
         SbroadError::FailedTo(
             Action::Create,
             Some(Entity::Transaction),
-            format!("{error:?}").to_smolstr(),
+            format_smolstr!("{error:?}"),
         )
     }
 }
@@ -367,7 +367,7 @@ impl From<Error> for SbroadError {
         SbroadError::FailedTo(
             Action::Create,
             Some(Entity::Tarantool),
-            format!("{error:?}").to_smolstr(),
+            format_smolstr!("{error:?}"),
         )
     }
 }

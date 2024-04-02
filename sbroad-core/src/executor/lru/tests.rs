@@ -2,7 +2,7 @@ use super::{Cache, LRUCache};
 use crate::errors::SbroadError;
 use crate::ir::Plan;
 use pretty_assertions::assert_eq;
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 #[test]
 fn lru1() {
@@ -27,9 +27,9 @@ fn lru3() {
     let evict_fn = Box::new(|value: &mut String| {
         let value_old = value.clone();
         value.push_str("_old");
-        Err(SbroadError::UnexpectedNumberOfValues(
-            format!("changed {value_old} to {value} during cache eviction").into(),
-        ))
+        Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+            "changed {value_old} to {value} during cache eviction"
+        )))
     });
     let mut cache: LRUCache<usize, String> = LRUCache::new(1, Some(evict_fn)).unwrap();
     cache.put(1, "one".to_string()).unwrap();

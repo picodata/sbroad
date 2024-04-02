@@ -3,7 +3,7 @@
 use crate::cbo::histogram::{Bucket, BucketType, HistogramBuckets, Scalar};
 use crate::errors::{Entity, SbroadError};
 use itertools::enumerate;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::cmp::Ordering;
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
@@ -77,7 +77,9 @@ pub fn get_expected_number_of_buckets() -> Result<u64, SbroadError> {
     let Ok(decimal_error) = Decimal::try_from(EXPECTED_MERGING_ERROR) else {
         return Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to convert {EXPECTED_MERGING_ERROR} to decimal").into()),
+            Some(format_smolstr!(
+                "Unable to convert {EXPECTED_MERGING_ERROR} to decimal"
+            )),
         ));
     };
     let number_of_buckets =
@@ -87,7 +89,9 @@ pub fn get_expected_number_of_buckets() -> Result<u64, SbroadError> {
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to convert {number_of_buckets} to u64").into()),
+            Some(format_smolstr!(
+                "Unable to convert {number_of_buckets} to u64"
+            )),
         ))
     }
 }
@@ -105,7 +109,7 @@ pub fn get_max_buckets_frequency_error(total_buckets_rows_number: u64) -> Result
     } else {
         Err(SbroadError::Invalid(
             Entity::Value,
-            Some(format!("Unable to convert {error} to u64").into()),
+            Some(format_smolstr!("Unable to convert {error} to u64")),
         ))
     }
 }

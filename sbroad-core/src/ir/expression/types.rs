@@ -1,4 +1,4 @@
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::{
     errors::{Entity, SbroadError},
@@ -11,7 +11,9 @@ impl Plan {
             Node::Expression(expr) => expr.calculate_type(self),
             Node::Relational(relational) => Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("relational node {relational:?} has no type").into()),
+                Some(format_smolstr!(
+                    "relational node {relational:?} has no type"
+                )),
             )),
             // Parameter nodes must recalculate their type during
             // binding (see `bind_params` function).
@@ -60,8 +62,8 @@ impl Expression {
                     (Type::Unsigned, Type::Unsigned) => Ok(Type::Unsigned),
                     _ => Err(SbroadError::Invalid(
                         Entity::Expression,
-                        Some(format!("types {left_type} and {right_type} are not supported for arithmetic expression ({:?} {op:?} {:?})",
-                        plan.get_node(*left)?, plan.get_node(*right)?).into()),
+                        Some(format_smolstr!("types {left_type} and {right_type} are not supported for arithmetic expression ({:?} {op:?} {:?})",
+                        plan.get_node(*left)?, plan.get_node(*right)?)),
                     )),
                 }
             }
@@ -126,12 +128,9 @@ impl Expression {
                 let target_rel_id = *target_children.get(*target).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,
-                        Some(
-                            format!(
-                                "reference expression has no target relation at position {target}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "reference expression has no target relation at position {target}"
+                        )),
                     )
                 })?;
                 let target_rel = plan.get_relation_node(target_rel_id)?;
@@ -139,12 +138,9 @@ impl Expression {
                 let column_id = *columns.get(*position).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,
-                        Some(
-                            format!(
-                                "reference expression has no target column at position {position}"
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "reference expression has no target column at position {position}"
+                        )),
                     )
                 })?;
                 let col_expr = plan.get_expression_node(column_id)?;

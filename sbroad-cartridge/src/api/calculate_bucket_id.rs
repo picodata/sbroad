@@ -106,7 +106,11 @@ impl TryFrom<&Tuple> for Args {
             format_smolstr!(
                 "expected string, tuple with a space name, or map with a space name as an argument, \
                 got args {:?}",
+<<<<<<< HEAD
                 &tuple
+=======
+                &value
+>>>>>>> eac5d15 (Change String to SmolStr in SbroadError)
             ),
         ))
     }

@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 use crate::errors::{Entity, SbroadError};
 use serde::{Deserialize, Serialize};
+use smol_str::format_smolstr;
 use tarantool::tlua;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -56,7 +57,7 @@ impl FromStr for Double {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Double {
             value: s.parse::<f64>().map_err(|_| {
-                SbroadError::ParsingError(Entity::Value, format!("{s} is not a valid f64").into())
+                SbroadError::ParsingError(Entity::Value, format_smolstr!("{s} is not a valid f64"))
             })?,
         })
     }

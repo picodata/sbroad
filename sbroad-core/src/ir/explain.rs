@@ -4,7 +4,7 @@ use std::mem::take;
 
 use itertools::Itertools;
 use serde::Serialize;
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
@@ -173,7 +173,7 @@ impl ColExpr {
                     while len > 0 {
                         let (arg, _) = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
-                                format!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression").into(),
+                                format_smolstr!("stack is empty, expected to pop {len} element while processing STABLE FUNCTION expression"),
                             )
                         })?;
                         args.push(arg);
@@ -194,7 +194,7 @@ impl ColExpr {
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
-                                format!("stack is empty, expected to pop {len} element while processing ROW expression").into(),
+                                format_smolstr!("stack is empty, expected to pop {len} element while processing ROW expression"),
                             )
                         })?;
                         row.push(expr);
@@ -406,7 +406,7 @@ impl Update {
             let table = plan.relations.get(rel).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("invalid table {rel} in Update node").into()),
+                    Some(format_smolstr!("invalid table {rel} in Update node")),
                 )
             })?;
             let output_list = plan.get_row_list(*output_id)?;
@@ -418,19 +418,18 @@ impl Update {
                     .ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!("invalid column index {col_idx} in Update node").into()),
+                            Some(format_smolstr!(
+                                "invalid column index {col_idx} in Update node"
+                            )),
                         )
                     })?;
                 let proj_alias = {
                     let alias_id = *output_list.get(*proj_col).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Node,
-                            Some(
-                                format!(
-                                    "invalid update projection position {proj_col} in Update node"
-                                )
-                                .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "invalid update projection position {proj_col} in Update node"
+                            )),
                         )
                     })?;
                     let node = plan.get_expression_node(alias_id)?;
@@ -439,10 +438,9 @@ impl Update {
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Node,
-                            Some(
-                                format!("expected alias as top in Update output, got: {node:?}")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "expected alias as top in Update output, got: {node:?}"
+                            )),
                         ));
                     }
                 };
@@ -456,7 +454,9 @@ impl Update {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("explain: expected Update node on id: {update_id}").into()),
+            Some(format_smolstr!(
+                "explain: expected Update node on id: {update_id}"
+            )),
         ))
     }
 }
@@ -580,19 +580,16 @@ impl Row {
                             let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::SubQuery,
-                                    format!("with index {rel_id} in the map").into(),
+                                    format_smolstr!("with index {rel_id} in the map"),
                                 )
                             })?;
                             row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
                         } else {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
-                                Some(
-                                    format!(
+                                Some(format_smolstr!(
                                     "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
-                                )
-                                    .into(),
-                                ),
+                                )),
                             ));
                         }
                     } else {
@@ -760,22 +757,24 @@ enum ExplainNode {
 impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
-            ExplainNode::Delete(s) => format!("delete {s}"),
-            ExplainNode::Except => "except".to_string(),
-            ExplainNode::InnerJoin(i) => i.to_string(),
-            ExplainNode::ValueRow(r) => format!("value row (data={r})"),
-            ExplainNode::Value => "values".to_string(),
-            ExplainNode::Insert(s, conflict) => format!("insert {s} on conflict: {conflict}"),
-            ExplainNode::Projection(e) => e.to_string(),
-            ExplainNode::GroupBy(p) => p.to_string(),
-            ExplainNode::Scan(s) => s.to_string(),
-            ExplainNode::Selection(s) => format!("selection {s}"),
-            ExplainNode::Having(s) => format!("having {s}"),
-            ExplainNode::UnionAll => "union all".to_string(),
-            ExplainNode::Intersect => "intersect".to_string(),
-            ExplainNode::Update(u) => u.to_string(),
-            ExplainNode::SubQuery(s) => s.to_string(),
-            ExplainNode::Motion(m) => m.to_string(),
+            ExplainNode::Delete(s) => format_smolstr!("delete {s}"),
+            ExplainNode::Except => "except".to_smolstr(),
+            ExplainNode::InnerJoin(i) => i.to_smolstr(),
+            ExplainNode::ValueRow(r) => format_smolstr!("value row (data={r})"),
+            ExplainNode::Value => "values".to_smolstr(),
+            ExplainNode::Insert(s, conflict) => {
+                format_smolstr!("insert {s} on conflict: {conflict}")
+            }
+            ExplainNode::Projection(e) => e.to_smolstr(),
+            ExplainNode::GroupBy(p) => p.to_smolstr(),
+            ExplainNode::Scan(s) => s.to_smolstr(),
+            ExplainNode::Selection(s) => format_smolstr!("selection {s}"),
+            ExplainNode::Having(s) => format_smolstr!("having {s}"),
+            ExplainNode::UnionAll => "union all".to_smolstr(),
+            ExplainNode::Intersect => "intersect".to_smolstr(),
+            ExplainNode::Update(u) => u.to_smolstr(),
+            ExplainNode::SubQuery(s) => s.to_smolstr(),
+            ExplainNode::Motion(m) => m.to_smolstr(),
         };
 
         write!(f, "{s}")
@@ -1019,7 +1018,7 @@ impl FullExplain {
                                     let col_id = *col_list.get(*pos).ok_or_else(|| {
                                         SbroadError::NotFound(
                                             Entity::Target,
-                                            format!("reference with position {pos}").into(),
+                                            format_smolstr!("reference with position {pos}"),
                                         )
                                     })?;
                                     let col_name = ir
@@ -1182,10 +1181,10 @@ impl Plan {
     /// # Errors
     /// - Failed to get top node
     /// - Failed to build explain
-    pub fn as_explain(&self) -> Result<String, SbroadError> {
+    pub fn as_explain(&self) -> Result<SmolStr, SbroadError> {
         let top_id = self.get_top()?;
         let explain = FullExplain::new(self, top_id)?;
-        Ok(explain.to_string())
+        Ok(explain.to_smolstr())
     }
 }
 

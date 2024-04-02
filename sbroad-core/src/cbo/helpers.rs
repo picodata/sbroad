@@ -1,7 +1,7 @@
 use crate::errors::{Entity, SbroadError};
 use crate::ir::value::double::Double;
 use itertools::enumerate;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
 
@@ -96,9 +96,9 @@ impl<'bytes> Bytes<'bytes> {
             let base_shift = Decimal::pow(base, power).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Statistics,
-                    Some(
-                        format!("Unable to raise a Decimal {base} to chosen power {power}").into(),
-                    ),
+                    Some(format_smolstr!(
+                        "Unable to raise a Decimal {base} to chosen power {power}"
+                    )),
                 )
             })?;
             result += Decimal::from(constrained_byte - low_bound) * base_shift;
@@ -357,8 +357,8 @@ pub fn decimal_boundaries_occupied_fraction(
         Err(
             SbroadError::Invalid(
                 Entity::Value,
-                Some(format!(
-                    "Converted high_bound {right_boundary} must be greater than converted low_bound {left_boundary}").into()
+                Some(format_smolstr!(
+                    "Converted high_bound {right_boundary} must be greater than converted low_bound {left_boundary}")
                 ),
             )
         )
@@ -366,8 +366,8 @@ pub fn decimal_boundaries_occupied_fraction(
         Err(
             SbroadError::Invalid(
                 Entity::Value,
-                Some(format!(
-                    "Converted value {value} must lie between converted low_bound {left_boundary} and converted high_bound {right_boundary}").into()
+                Some(format_smolstr!(
+                    "Converted value {value} must lie between converted low_bound {left_boundary} and converted high_bound {right_boundary}")
                 ),
             )
         )

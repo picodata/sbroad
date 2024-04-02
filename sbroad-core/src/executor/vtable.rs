@@ -5,7 +5,7 @@ use std::vec;
 
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
@@ -213,12 +213,9 @@ impl VirtualTable {
                     let tuple = self.tuples.get(*pointer).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::VirtualTable,
-                            Some(
-                                format!(
-                                    "Tuple with position {pointer} in the bucket index not found"
-                                )
-                                .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "Tuple with position {pointer} in the bucket index not found"
+                            )),
                         )
                     })?;
                     result.tuples.push(tuple.clone());
@@ -250,9 +247,9 @@ impl VirtualTable {
                         let part = tuple.get(*col_idx).ok_or_else(|| {
                             SbroadError::NotFound(
                                 Entity::DistributionKey,
-                                format!(
+                                format_smolstr!(
                                 "failed to find a distribution key column {pos} in the tuple {tuple:?}."
-                            ).into(),
+                            ),
                             )
                         })?;
                         shard_key_tuple.push(part);
@@ -286,11 +283,10 @@ impl VirtualTable {
             if pos >= &self.columns.len() {
                 return Err(SbroadError::NotFound(
                     Entity::Column,
-                    format!(
+                    format_smolstr!(
                         "primary key in the virtual table {:?} contains invalid position {pos}.",
                         self.name
-                    )
-                    .into(),
+                    ),
                 ));
             }
         }
@@ -337,13 +333,10 @@ impl VirtualTable {
                     let value = insert_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::TupleBuilderCommand,
-                            Some(
-                                format!(
-                                    "expected position {pos} with tuple len: {}",
-                                    insert_tuple.len()
-                                )
-                                .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "expected position {pos} with tuple len: {}",
+                                insert_tuple.len()
+                            )),
                         )
                     })?;
                     if let Some(elem) = delete_tuple.get_mut(idx) {
@@ -358,10 +351,9 @@ impl VirtualTable {
                 let Some(v) = insert_tuple.pop() else {
                     return Err(SbroadError::Invalid(
                         Entity::MotionOpcode,
-                        Some(
-                            format!("invalid number of old shard columns: {old_shard_columns_len}")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "invalid number of old shard columns: {old_shard_columns_len}"
+                        )),
                     ));
                 };
                 old_shard_key.push(v);
@@ -439,13 +431,10 @@ impl VirtualTable {
                 let value = update_tuple.get(*pos).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::TupleBuilderCommand,
-                        Some(
-                            format!(
-                                "invalid pos: {pos} for update tuple with len: {}",
-                                update_tuple.len()
-                            )
-                            .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "invalid pos: {pos} for update tuple with len: {}",
+                            update_tuple.len()
+                        )),
                     )
                 })?;
                 update_tuple_shard_key.push(value);

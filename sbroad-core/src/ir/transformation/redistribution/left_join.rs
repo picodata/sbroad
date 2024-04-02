@@ -1,7 +1,7 @@
 //! Left Join trasformation logic when outer child has Global distribution
 //! and inner child has Segment or Any distribution.
 
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 use crate::{
     errors::{Entity, SbroadError},
@@ -42,7 +42,7 @@ impl Plan {
         let Some(parent_id) = self.find_parent_rel(join_id)? else {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
-                Some(format!("join ({join_id}) has no parent!").into()),
+                Some(format_smolstr!("join ({join_id}) has no parent!")),
             ));
         };
         let projection_id = create_projection(self, join_id)?;
@@ -99,7 +99,9 @@ fn collect_projection_columns(
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("node ({join_id}) output columns is not alias").into()),
+                Some(format_smolstr!(
+                    "node ({join_id}) output columns is not alias"
+                )),
             ));
         }
     }

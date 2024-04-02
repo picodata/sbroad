@@ -2,7 +2,7 @@
 
 extern crate yaml_rust;
 
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
@@ -97,12 +97,9 @@ impl RouterConfiguration {
                             None => {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
-                                    Some(
-                                        format!(
-                                            "column name of table {current_space_name} is invalid"
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "column name of table {current_space_name} is invalid"
+                                    )),
                                 ))
                             }
                         };
@@ -111,9 +108,9 @@ impl RouterConfiguration {
                             None => {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
-                                    Some(format!(
+                                    Some(format_smolstr!(
                                         "Type not found for columns {name} of table {current_space_name}"
-                                    ).into()),
+                                    )),
                                 ))
                             }
                         };
@@ -122,12 +119,9 @@ impl RouterConfiguration {
                             None => {
                                 return Err(SbroadError::Invalid(
                                     Entity::ClusterSchema,
-                                    Some(
-                                        format!(
+                                    Some(format_smolstr!(
                                     "column is_nullable of table {current_space_name} is invalid"
-                                )
-                                        .into(),
-                                    ),
+                                )),
                                 ))
                             }
                         };
@@ -186,25 +180,22 @@ impl RouterConfiguration {
                     let pk = indexes.first().ok_or_else(|| {
                         SbroadError::NotFound(
                             Entity::PrimaryKey,
-                            format!("for space {current_space_name}").into(),
+                            format_smolstr!("for space {current_space_name}"),
                         )
                     })?;
                     let pk_parts = pk["parts"].as_vec().ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::PrimaryKey,
-                            Some(
-                                format!(
-                                    "for space {current_space_name}: failed to get index parts"
-                                )
-                                .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "for space {current_space_name}: failed to get index parts"
+                            )),
                         )
                     })?;
 
                     pk_parts.iter().map(|p| {
                         let name = p["path"].as_str().ok_or_else(|| SbroadError::Invalid(
                            Entity::PrimaryKey,
-                           Some(format!("for space {current_space_name}: failed to get index part field").into()))
+                           Some(format_smolstr!("for space {current_space_name}: failed to get index part field")))
                         )?;
                         Ok(normalize_name_from_schema(name))
                     }).collect::<Result<Vec<SmolStr>, SbroadError>>()?

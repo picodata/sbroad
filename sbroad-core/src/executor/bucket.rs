@@ -1,6 +1,6 @@
 use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 use std::collections::HashSet;
 
 use crate::errors::{Action, Entity, SbroadError};
@@ -156,7 +156,7 @@ where
                                 *right_columns.get(*position).ok_or_else(|| {
                                     SbroadError::NotFound(
                                         Entity::Column,
-                                        format!("at position {position} for right row").into(),
+                                        format_smolstr!("at position {position} for right row"),
                                     )
                                 })?;
                             let right_column_expr = ir_plan.get_expression_node(right_column_id)?;

@@ -15,11 +15,12 @@ mod prod_imports {
 
 #[cfg(not(feature = "mock"))]
 use prod_imports::*;
+use smol_str::{format_smolstr, SmolStr};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct TmpSpace {
-    pub name: String,
+    pub name: SmolStr,
 }
 
 impl TmpSpace {
@@ -74,7 +75,7 @@ impl TmpSpace {
                 SbroadError::FailedTo(
                     Action::Create,
                     Some(Entity::Space),
-                    format!("{name}: {e}").into(),
+                    format_smolstr!("{name}: {e}"),
                 )
             })?;
             let cleanup = |space: Space| match space.drop() {
@@ -93,7 +94,7 @@ impl TmpSpace {
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::Index),
-                        format!("{pk_name} for space {name}: {e}").into(),
+                        format_smolstr!("{pk_name} for space {name}: {e}"),
                     ));
                 }
             }
@@ -111,7 +112,7 @@ impl TmpSpace {
                         return Err(SbroadError::FailedTo(
                             Action::Serialize,
                             Some(Entity::Bytes),
-                            format!("to tuple: {e}").into(),
+                            format_smolstr!("to tuple: {e}"),
                         ));
                     }
                 };
@@ -122,7 +123,7 @@ impl TmpSpace {
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Tuple),
-                            format!("tuple {tuple:?} into {name}: {e}").into(),
+                            format_smolstr!("tuple {tuple:?} into {name}: {e}"),
                         ));
                     }
                 }
@@ -132,13 +133,13 @@ impl TmpSpace {
     }
 
     #[must_use]
-    pub fn generate_space_name(base: &str, motion_id: usize) -> String {
-        format!("TMP_{base}_{motion_id}")
+    pub fn generate_space_name(base: &str, motion_id: usize) -> SmolStr {
+        format_smolstr!("TMP_{base}_{motion_id}")
     }
 
     #[must_use]
-    pub fn generate_pk_name(base: &str, motion_id: usize) -> String {
-        format!("PK_TMP_{base}_{motion_id}")
+    pub fn generate_pk_name(base: &str, motion_id: usize) -> SmolStr {
+        format_smolstr!("PK_TMP_{base}_{motion_id}")
     }
 }
 

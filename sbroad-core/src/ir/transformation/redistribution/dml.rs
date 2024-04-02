@@ -4,7 +4,7 @@ use crate::ir::relation::{Column, Table};
 use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::Plan;
 use ahash::AHashMap;
-use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, ToSmolStr};
 
 use super::{MotionKey, Target};
 
@@ -30,7 +30,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("dml node with id {dml_node_id}").into()),
+            Some(format_smolstr!("dml node with id {dml_node_id}")),
         ))
     }
 
@@ -51,7 +51,9 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("INSERT with id {insert_id} (conflict strategy))").into()),
+            Some(format_smolstr!(
+                "INSERT with id {insert_id} (conflict strategy))"
+            )),
         ))
     }
 
@@ -73,16 +75,13 @@ impl Plan {
         if columns.len() != child_row.len() {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(
-                    format!(
-                        "INSERT with id {} has {} columns, but the child node with id {} has {}",
-                        insert_id,
-                        columns.len(),
-                        child_id,
-                        child_row.len()
-                    )
-                    .into(),
-                ),
+                Some(format_smolstr!(
+                    "INSERT with id {} has {} columns, but the child node with id {} has {}",
+                    insert_id,
+                    columns.len(),
+                    child_id,
+                    child_row.len()
+                )),
             ));
         }
 
@@ -99,7 +98,7 @@ impl Plan {
                 table.columns.get(*pos).ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Column,
-                        format!("in the table {table:?} at position {pos}").into(),
+                        format_smolstr!("in the table {table:?} at position {pos}"),
                     )
                 })?;
                 // We need a default value for the key column.
@@ -122,7 +121,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected insert node on id {insert_id}").into()),
+            Some(format_smolstr!("expected insert node on id {insert_id}")),
         ))
     }
 
@@ -140,7 +139,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("DML node with id {node_id}").into()),
+            Some(format_smolstr!("DML node with id {node_id}")),
         ))
     }
 
@@ -167,7 +166,7 @@ impl Plan {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("expected sharded Update, got: {node:?}").into()),
+                Some(format_smolstr!("expected sharded Update, got: {node:?}")),
             ));
         }
         Ok(())
@@ -194,7 +193,9 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected sharded Update with delete len, got: {node:?}").into()),
+            Some(format_smolstr!(
+                "expected sharded Update with delete len, got: {node:?}"
+            )),
         ))
     }
 
@@ -213,13 +214,13 @@ impl Plan {
             if let Some(op) = program.0.get(opcode_idx) {
                 return Ok(op);
             }
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                format!("Invalid motion opcode index: {opcode_idx}").into(),
-            ));
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "Invalid motion opcode index: {opcode_idx}"
+            )));
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected Motion, got: {node:?}").into()),
+            Some(format_smolstr!("expected Motion, got: {node:?}")),
         ))
     }
 
@@ -235,7 +236,7 @@ impl Plan {
         }
         Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("expected Update node, got: {node:?}").into()),
+            Some(format_smolstr!("expected Update node, got: {node:?}")),
         ))
     }
 }

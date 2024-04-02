@@ -1,7 +1,7 @@
 use ahash::AHashMap;
 
 use itertools::enumerate;
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::{
     any::Any,
     cmp::Ordering,
@@ -57,7 +57,7 @@ pub mod vshard;
 
 #[must_use]
 pub fn normalize_name_from_schema(s: &str) -> SmolStr {
-    format!("\"{s}\"").to_smolstr()
+    format_smolstr!("\"{s}\"")
 }
 
 /// Transform:
@@ -68,7 +68,7 @@ pub fn normalize_name_from_sql(s: &str) -> SmolStr {
     if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
         return s.to_smolstr();
     }
-    format!("\"{}\"", s.to_uppercase()).to_smolstr()
+    format_smolstr!("\"{}\"", s.to_uppercase())
 }
 
 /// Transform:
@@ -115,16 +115,15 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
                 | Relational::Update { children, .. } => *children.first().ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Plan,
-                        Some(
-                            format!("expected at least one child under DML node {sp_top:?}",)
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "expected at least one child under DML node {sp_top:?}",
+                        )),
                     )
                 })?,
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::Plan,
-                        Some(format!("unsupported DML statement: {sp_top:?}",).into()),
+                        Some(format_smolstr!("unsupported DML statement: {sp_top:?}",)),
                     ));
                 }
             };
@@ -132,7 +131,9 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
             let Relational::Motion { policy, .. } = motion else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("expected motion node under dml node, got: {motion:?}",).into()),
+                    Some(format_smolstr!(
+                        "expected motion node under dml node, got: {motion:?}",
+                    )),
                 ));
             };
             let mut sub_plan_id = SmolStr::default();
@@ -154,7 +155,9 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
                 // so we mustn't got here.
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format!("unsupported motion policy under DML node: {policy:?}",).into()),
+                    Some(format_smolstr!(
+                        "unsupported motion policy under DML node: {policy:?}",
+                    )),
                 ));
             };
             (ordered, sub_plan_id)
@@ -196,20 +199,22 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
-            format!("array length: {e:?}").into(),
+            format_smolstr!("array length: {e:?}"),
         )
     })? as usize;
     if array_len != 2 {
         return Err(SbroadError::Invalid(
             Entity::Tuple,
-            Some(format!("expected tuple of 2 elements, got {array_len}").into()),
+            Some(format_smolstr!(
+                "expected tuple of 2 elements, got {array_len}"
+            )),
         ));
     }
     let req_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
-            format!("read required data length: {e:?}").into(),
+            format_smolstr!("read required data length: {e:?}"),
         )
     })? as usize;
     let mut required: Vec<u8> = vec![0_u8; req_len];
@@ -217,7 +222,7 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
-            format!("read required data: {e:?}").into(),
+            format_smolstr!("read required data: {e:?}"),
         )
     })?;
 
@@ -225,7 +230,7 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
-            format!("read optional data string length: {e:?}").into(),
+            format_smolstr!("read optional data string length: {e:?}"),
         )
     })? as usize;
     let mut optional: Vec<u8> = vec![0_u8; opt_len];
@@ -233,7 +238,7 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
-            format!("read optional data: {e:?}").into(),
+            format_smolstr!("read optional data: {e:?}"),
         )
     })?;
 
@@ -325,18 +330,18 @@ fn init_local_update_tuple_builder(
                 .columns
                 .get(*table_pos)
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid position in update table: {table_pos}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid position in update table: {table_pos}"
+                    ))
                 })?
                 .r#type;
             let vtable_type = &vtable
                 .get_columns()
                 .get(*tuple_pos)
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid position in update vtable: {tuple_pos}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid position in update vtable: {tuple_pos}"
+                    ))
                 })?
                 .r#type;
             if rel_type == vtable_type {
@@ -353,23 +358,20 @@ fn init_local_update_tuple_builder(
             let table_pos = *rel.primary_key.positions.get(idx).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Update,
-                    Some(
-                        format!(
-                            "invalid primary key positions: len: {}, expected len: {}",
-                            pk_positions.len(),
-                            rel.primary_key.positions.len()
-                        )
-                        .into(),
-                    ),
+                    Some(format_smolstr!(
+                        "invalid primary key positions: len: {}, expected len: {}",
+                        pk_positions.len(),
+                        rel.primary_key.positions.len()
+                    )),
                 )
             })?;
             let rel_type = &rel
                 .columns
                 .get(table_pos)
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid primary key position in table: {table_pos}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid primary key position in table: {table_pos}"
+                    ))
                 })?
                 .r#type;
             let vtable_type = &vtable
@@ -378,7 +380,7 @@ fn init_local_update_tuple_builder(
                 .ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Update,
-                        Some(format!("invalid pk position: {pk_pos}").into()),
+                        Some(format_smolstr!("invalid pk position: {pk_pos}")),
                     )
                 })?
                 .r#type;
@@ -395,7 +397,7 @@ fn init_local_update_tuple_builder(
     }
     Err(SbroadError::Invalid(
         Entity::Node,
-        Some(format!("expected Update on id ({update_id})").into()),
+        Some(format_smolstr!("expected Update on id ({update_id})")),
     ))
 }
 
@@ -443,9 +445,9 @@ fn init_insert_tuple_builder(
                 .get_columns()
                 .get(tuple_pos)
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid index in virtual table: {tuple_pos}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid index in virtual table: {tuple_pos}"
+                    ))
                 })?
                 .r#type;
             let rel_type = &table_col.r#type;
@@ -480,7 +482,9 @@ fn init_sharded_update_tuple_builder(
     else {
         return Err(SbroadError::Invalid(
             Entity::Node,
-            Some(format!("update tuple builder: expected update node on id: {update_id}").into()),
+            Some(format_smolstr!(
+                "update tuple builder: expected update node on id: {update_id}"
+            )),
         ));
     };
     let relation = plan.dml_node_table(update_id)?;
@@ -498,9 +502,9 @@ fn init_sharded_update_tuple_builder(
                 .get_columns()
                 .get(tuple_pos)
                 .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(
-                        format!("invalid index in virtual table: {tuple_pos}").into(),
-                    )
+                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "invalid index in virtual table: {tuple_pos}"
+                    ))
                 })?
                 .r#type;
             let rel_type = &table_col.r#type;
@@ -520,7 +524,9 @@ fn init_sharded_update_tuple_builder(
 
             return Err(SbroadError::Invalid(
                 Entity::Update,
-                Some(format!("user column {pos} not found in update column map").into()),
+                Some(format_smolstr!(
+                    "user column {pos} not found in update column map"
+                )),
             ));
         }
     }
@@ -543,7 +549,7 @@ pub fn empty_query_result(plan: &ExecutionPlan) -> Result<Option<Box<dyn Any>>, 
         QueryType::DML => {
             let result = ConsumerResult::default();
             let tuple = Tuple::new(&(result,))
-                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}").into())))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format_smolstr!("{e:?}"))))?;
             Ok(Some(Box::new(tuple) as Box<dyn Any>))
         }
         QueryType::DQL => {
@@ -567,7 +573,7 @@ pub fn empty_query_result(plan: &ExecutionPlan) -> Result<Option<Box<dyn Any>>, 
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
-                        Some(format!("expected alias, got {column:?}").into()),
+                        Some(format_smolstr!("expected alias, got {column:?}")),
                     ));
                 };
                 metadata.push(MetadataColumn::new(
@@ -581,7 +587,7 @@ pub fn empty_query_result(plan: &ExecutionPlan) -> Result<Option<Box<dyn Any>>, 
             };
 
             let tuple = Tuple::new(&(result,))
-                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}").into())))?;
+                .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format_smolstr!("{e:?}"))))?;
             Ok(Some(Box::new(tuple) as Box<dyn Any>))
         }
     }
@@ -599,7 +605,7 @@ pub fn explain_format(explain: &str) -> Result<Box<dyn Any>, SbroadError> {
         Err(e) => Err(SbroadError::FailedTo(
             Action::Create,
             Some(Entity::Tuple),
-            format!("{e}").into(),
+            format_smolstr!("{e}"),
         )),
     }
 }
@@ -655,7 +661,7 @@ pub fn dispatch_by_buckets(
                     if !vtable.get_bucket_index().is_empty() {
                         return Err(SbroadError::Invalid(
                             Entity::Motion,
-                            Some(format!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!").into()),
+                            Some(format_smolstr!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!")),
                         ));
                     }
                 }
@@ -721,7 +727,7 @@ pub(crate) fn materialize_values(
             let Relational::ValuesRow { data, .. } = row_node else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("Expected ValuesRow, got {row_node:?}").into()),
+                    Some(format_smolstr!("Expected ValuesRow, got {row_node:?}")),
                 ));
             };
             plan.get_ir_plan()
@@ -731,7 +737,9 @@ pub(crate) fn materialize_values(
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format!("Values node {child_node:?} must contain children").into()),
+                Some(format_smolstr!(
+                    "Values node {child_node:?} must contain children"
+                )),
             ));
         };
         let mut nullable_column_indices = HashSet::with_capacity(columns_len);
@@ -760,7 +768,7 @@ pub(crate) fn materialize_values(
                             .ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::Column,
-                                    format!("at position {idx} in the row").into(),
+                                    format_smolstr!("at position {idx} in the row"),
                                 )
                             })?;
                     let column_node_ref = plan.get_mut_ir_plan().get_mut_node(column_id)?;
@@ -773,9 +781,9 @@ pub(crate) fn materialize_values(
                     } else {
                         return Err(SbroadError::Invalid(
                             Entity::Node,
-                            Some(format!(
+                            Some(format_smolstr!(
                                 "VALUES rows supports only constants in its columns (got: {column_node:?})."
-                            ).into()),
+                            )),
                         ));
                     }
                 }
@@ -783,7 +791,9 @@ pub(crate) fn materialize_values(
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("value node child ({child_id}) is not a values row node!").into()),
+                    Some(format_smolstr!(
+                        "value node child ({child_id}) is not a values row node!"
+                    )),
                 ));
             }
         }
@@ -808,7 +818,9 @@ pub(crate) fn materialize_values(
             } else {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
-                    Some(format!("output column ({column_id}) is not an alias node!").into()),
+                    Some(format_smolstr!(
+                        "output column ({column_id}) is not an alias node!"
+                    )),
                 ));
             }
         }
@@ -843,7 +855,7 @@ pub fn materialize_motion(
             SbroadError::FailedTo(
                 Action::Decode,
                 Some(Entity::Tuple),
-                format!("motion node {motion_node_id}. {e}").into(),
+                format_smolstr!("motion node {motion_node_id}. {e}"),
             )
         })?;
         data.get_mut(0)
@@ -904,7 +916,7 @@ pub fn sharding_key_from_tuple<'tuple>(
             let value = tuple.get(*position).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::ShardingKey,
-                    format!("position {position:?} in the tuple {tuple:?}").into(),
+                    format_smolstr!("position {position:?} in the tuple {tuple:?}"),
                 )
             })?;
             sharding_tuple.push(value);
@@ -931,9 +943,9 @@ pub fn sharding_key_from_tuple<'tuple>(
                 Ordering::Equal => {
                     return Err(SbroadError::Invalid(
                         Entity::Tuple,
-                        Some(format!(
+                        Some(format_smolstr!(
                             r#"the tuple {tuple:?} contains a "bucket_id" position {position} in a sharding key {sharding_positions:?}"#
-                        ).into()),
+                        )),
                     ));
                 }
                 Ordering::Greater => *position - 1,
@@ -941,7 +953,7 @@ pub fn sharding_key_from_tuple<'tuple>(
             let value = tuple.get(corrected_pos).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::ShardingKey,
-                    format!("position {corrected_pos:?} in the tuple {tuple:?}").into(),
+                    format_smolstr!("position {corrected_pos:?} in the tuple {tuple:?}"),
                 )
             })?;
             sharding_tuple.push(value);
@@ -950,15 +962,12 @@ pub fn sharding_key_from_tuple<'tuple>(
     } else {
         Err(SbroadError::Invalid(
             Entity::Tuple,
-            Some(
-                format!(
-                    "the tuple {:?} was expected to have {} filed(s), got {}.",
-                    tuple,
-                    table_col_amount - 1,
-                    tuple.len()
-                )
-                .into(),
-            ),
+            Some(format_smolstr!(
+                "the tuple {:?} was expected to have {} filed(s), got {}.",
+                tuple,
+                table_col_amount - 1,
+                tuple.len()
+            )),
         ))
     }
 }
@@ -987,9 +996,9 @@ where
         .cache()
         .try_borrow_mut()
         .map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e}").into())
+            SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format_smolstr!("{e}"))
         })?
-        .get(&plan_id.to_string())?
+        .get(plan_id)?
     {
         let stmt_id = stmt.id()?;
         // The statement was found in the cache, so we can execute it.
@@ -1075,10 +1084,10 @@ where
                     SbroadError::FailedTo(
                         Action::Put,
                         None,
-                        format!("prepared statement {stmt:?} into the cache: {e:?}").into(),
+                        format_smolstr!("prepared statement {stmt:?} into the cache: {e:?}"),
                     )
                 })?
-                .put(plan_id.to_string(), stmt, schema_info)?;
+                .put(plan_id.clone(), stmt, schema_info)?;
             // The statement was found in the cache, so we can execute it.
             debug!(
                 Option::from("execute plan"),
@@ -1185,7 +1194,9 @@ where
         Relational::Update { .. } => execute_update_on_storage(runtime, &mut optional, required),
         _ => Err(SbroadError::Invalid(
             Entity::Plan,
-            Some(format!("expected DML node on the plan top, got {top:?}").into()),
+            Some(format_smolstr!(
+                "expected DML node on the plan top, got {top:?}"
+            )),
         )),
     }
 }
@@ -1214,14 +1225,14 @@ where
         SbroadError::FailedTo(
             Action::Deserialize,
             Some(Entity::Tuple),
-            format!("motion node {child_id}. {e:?}").into(),
+            format_smolstr!("motion node {child_id}. {e:?}"),
         )
     })?;
     let mut data = tuple.decode::<Vec<ProducerResult>>().map_err(|e| {
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::Tuple),
-            format!("motion node {child_id}. {e}").into(),
+            format_smolstr!("motion node {child_id}. {e}"),
         )
     })?;
     let vtable = data
@@ -1269,7 +1280,7 @@ where
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Space,
-            Some(format!("space {space_name} not found").into()),
+            Some(format_smolstr!("space {space_name} not found")),
         )
     })?;
     transaction(|| -> Result<(), SbroadError> {
@@ -1307,7 +1318,7 @@ fn execute_sharded_update(
                 return Err(SbroadError::FailedTo(
                     Action::Delete,
                     Some(Entity::Tuple),
-                    format!("{tnt_err:?}").into(),
+                    format_smolstr!("{tnt_err:?}"),
                 ));
             }
         }
@@ -1317,7 +1328,7 @@ fn execute_sharded_update(
             let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::VirtualTable,
-                    Some(format!("invalid tuple position in index: {pos}").into()),
+                    Some(format_smolstr!("invalid tuple position in index: {pos}")),
                 )
             })?;
 
@@ -1329,12 +1340,9 @@ fn execute_sharded_update(
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
                                     Entity::Tuple,
-                                    Some(
-                                        format!(
-                                            "column at position {pos} not found in virtual table"
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
                                 )
                             })?;
                             insert_tuple.push(EncodedValue::Ref(value.into()));
@@ -1343,12 +1351,9 @@ fn execute_sharded_update(
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
                                     Entity::Tuple,
-                                    Some(
-                                        format!(
-                                            "column at position {pos} not found in virtual table"
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
                                 )
                             })?;
                             insert_tuple.push(value.cast(table_type)?);
@@ -1359,7 +1364,7 @@ fn execute_sharded_update(
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::TupleBuilderCommand,
-                                Some(format!("got command {command:?} for update insert").into()),
+                                Some(format_smolstr!("got command {command:?} for update insert")),
                             ));
                         }
                     }
@@ -1370,7 +1375,7 @@ fn execute_sharded_update(
                     return Err(SbroadError::FailedTo(
                         Action::Insert,
                         Some(Entity::Tuple),
-                        format!("{e:?}").into(),
+                        format_smolstr!("{e:?}"),
                     ));
                 }
                 result.row_count += 1;
@@ -1399,10 +1404,9 @@ fn execute_local_update(
                     let value = vt_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Tuple,
-                            Some(
-                                format!("column at position {pos} not found in virtual table")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "column at position {pos} not found in virtual table"
+                            )),
                         )
                     })?;
                     let op = [
@@ -1416,10 +1420,9 @@ fn execute_local_update(
                     let value = vt_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Tuple,
-                            Some(
-                                format!("column at position {pos} not found in virtual table")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "column at position {pos} not found in virtual table"
+                            )),
                         )
                     })?;
                     key_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
@@ -1428,10 +1431,9 @@ fn execute_local_update(
                     let value = vt_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Tuple,
-                            Some(
-                                format!("column at position {pos} not found in virtual table")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "column at position {pos} not found in virtual table"
+                            )),
                         )
                     })?;
                     key_tuple.push(value.cast(table_type)?);
@@ -1440,10 +1442,9 @@ fn execute_local_update(
                     let value = vt_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Tuple,
-                            Some(
-                                format!("column at position {pos} not found in virtual table")
-                                    .into(),
-                            ),
+                            Some(format_smolstr!(
+                                "column at position {pos} not found in virtual table"
+                            )),
                         )
                     })?;
                     let op = [
@@ -1456,14 +1457,14 @@ fn execute_local_update(
                 _ => {
                     return Err(SbroadError::Invalid(
                         Entity::TupleBuilderCommand,
-                        Some(format!("got command {command:?} for update").into()),
+                        Some(format_smolstr!("got command {command:?} for update")),
                     ));
                 }
             }
         }
         let update_res = space.update(&key_tuple, &update_tuple);
         update_res.map_err(|e| {
-            SbroadError::FailedTo(Action::Update, Some(Entity::Space), format!("{e}").into())
+            SbroadError::FailedTo(Action::Update, Some(Entity::Space), format_smolstr!("{e}"))
         })?;
         result.row_count += 1;
     }
@@ -1496,7 +1497,7 @@ where
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Space,
-            Some(format!("space {space_name} not found").into()),
+            Some(format_smolstr!("space {space_name} not found")),
         )
     })?;
     transaction(|| -> Result<(), SbroadError> {
@@ -1507,22 +1508,18 @@ where
                     let value = vt_tuple.get(*pos).ok_or_else(|| {
                         SbroadError::Invalid(
                             Entity::Tuple,
-                            Some(
-                                format!(
+                            Some(format_smolstr!(
                                 "column at position {pos} not found in the delete virtual table"
-                            )
-                                .into(),
-                            ),
+                            )),
                         )
                     })?;
                     delete_tuple.push(EncodedValue::Ref(value.into()));
                 } else {
                     return Err(SbroadError::Invalid(
                         Entity::Tuple,
-                        Some(
-                            format!("unexpected tuple builder cmd for delete primary key: {cmd:?}")
-                                .into(),
-                        ),
+                        Some(format_smolstr!(
+                            "unexpected tuple builder cmd for delete primary key: {cmd:?}"
+                        )),
                     ));
                 }
             }
@@ -1530,7 +1527,7 @@ where
                 return Err(SbroadError::FailedTo(
                     Action::Delete,
                     Some(Entity::Tuple),
-                    format!("{tnt_err:?}").into(),
+                    format_smolstr!("{tnt_err:?}"),
                 ));
             }
             result.row_count += 1;
@@ -1580,7 +1577,7 @@ where
     let space = Space::find(&space_name).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Space,
-            Some(format!("space {space_name} not found").into()),
+            Some(format_smolstr!("space {space_name} not found")),
         )
     })?;
     let plan = optional.exec_plan.get_ir_plan();
@@ -1596,7 +1593,9 @@ where
                 let vt_tuple = vtable.get_tuples().get(*pos).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::VirtualTable,
-                        Some(format!("tuple at position {pos} not found in virtual table").into()),
+                        Some(format_smolstr!(
+                            "tuple at position {pos} not found in virtual table"
+                        )),
                     )
                 })?;
                 let mut insert_tuple = Vec::with_capacity(builder.len());
@@ -1609,12 +1608,9 @@ where
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
                                     Entity::Tuple,
-                                    Some(
-                                        format!(
-                                            "column at position {pos} not found in virtual table"
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
                                 )
                             })?;
                             insert_tuple.push(EncodedValue::Ref(value.into()));
@@ -1623,12 +1619,9 @@ where
                             let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
                                 SbroadError::Invalid(
                                     Entity::Tuple,
-                                    Some(
-                                        format!(
-                                            "column at position {pos} not found in virtual table"
-                                        )
-                                        .into(),
-                                    ),
+                                    Some(format_smolstr!(
+                                        "column at position {pos} not found in virtual table"
+                                    )),
                                 )
                             })?;
                             insert_tuple.push(value.cast(table_type)?);
@@ -1642,12 +1635,9 @@ where
                         _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Tuple,
-                                Some(
-                                    format!(
-                                        "unexpected tuple builder command for insert: {command:?}"
-                                    )
-                                    .into(),
-                                ),
+                                Some(format_smolstr!(
+                                    "unexpected tuple builder command for insert: {command:?}"
+                                )),
                             ));
                         }
                     }
@@ -1681,7 +1671,7 @@ where
                                     SbroadError::FailedTo(
                                         Action::ReplaceOnConflict,
                                         Some(Entity::Space),
-                                        format!("{e}").into(),
+                                        format_smolstr!("{e}"),
                                     )
                                 })?;
                                 result.row_count += 1;
@@ -1690,7 +1680,7 @@ where
                                 return Err(SbroadError::FailedTo(
                                     Action::Insert,
                                     Some(Entity::Space),
-                                    format!("{tnt_err}").into(),
+                                    format_smolstr!("{tnt_err}"),
                                 ));
                             }
                         }
@@ -1705,7 +1695,7 @@ where
                     SbroadError::FailedTo(
                         Action::Insert,
                         Some(Entity::Space),
-                        format!("{e}").into(),
+                        format_smolstr!("{e}"),
                     )
                 })?;
                 result.row_count += 1;
@@ -1739,7 +1729,7 @@ where
 
     let result = execute_dml_on_storage(runtime, raw_optional, required)?;
     let tuple = Tuple::new(&(result,))
-        .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format!("{e:?}").into())))?;
+        .map_err(|e| SbroadError::Invalid(Entity::Tuple, Some(format_smolstr!("{e:?}"))))?;
     Ok(Box::new(tuple) as Box<dyn Any>)
 }
 
@@ -1844,16 +1834,16 @@ pub fn sharding_key_from_map<'rec, S: ::std::hash::BuildHasher>(
             let value = map.get(*column).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::ShardingKey,
-                    format!("column {column:?} in the map {map:?}").into(),
+                    format_smolstr!("column {column:?} in the map {map:?}"),
                 )
             })?;
             tuple.push(value);
         } else {
             return Err(SbroadError::NotFound(
                 Entity::ShardingKey,
-                format!(
+                format_smolstr!(
                     "(quoted) column {quoted_column:?} in the quoted map {quoted_map:?} (original map: {map:?})"
-                ).into()));
+                )));
         }
     }
     Ok(tuple)

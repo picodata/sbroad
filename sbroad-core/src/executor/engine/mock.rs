@@ -1,4 +1,4 @@
-use smol_str::{SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::cmp::Ordering;
@@ -989,8 +989,8 @@ impl VshardMock {
 pub struct RouterRuntimeMock {
     metadata: RefCell<RouterConfigurationMock>,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
-    ir_cache: RefCell<LRUCache<String, Plan>>,
-    table_statistics_cache: RefCell<HashMap<String, Rc<TableStats>>>,
+    ir_cache: RefCell<LRUCache<SmolStr, Plan>>,
+    table_statistics_cache: RefCell<HashMap<SmolStr, Rc<TableStats>>>,
     initial_column_statistics_cache: RefCell<HashMap<TableColumnPair, Rc<Box<dyn Any>>>>,
     pub vshard_mock: VshardMock,
 }
@@ -1030,7 +1030,7 @@ impl ProducerResult {
 }
 
 impl QueryCache for RouterRuntimeMock {
-    type Cache = LRUCache<String, Plan>;
+    type Cache = LRUCache<SmolStr, Plan>;
 
     fn clear_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.borrow_mut() = LRUCache::new(self.cache_capacity()?, None)?;
@@ -1046,7 +1046,11 @@ impl QueryCache for RouterRuntimeMock {
             .cache()
             .try_borrow()
             .map_err(|e| {
-                SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format!("{e:?}").into())
+                SbroadError::FailedTo(
+                    Action::Borrow,
+                    Some(Entity::Cache),
+                    format_smolstr!("{e:?}"),
+                )
             })?
             .capacity())
     }
@@ -1176,22 +1180,22 @@ impl RouterRuntimeMock {
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     #[must_use]
     pub fn new() -> Self {
-        let cache: LRUCache<String, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
+        let cache: LRUCache<SmolStr, Plan> = LRUCache::new(DEFAULT_CAPACITY, None).unwrap();
 
         let mut table_statistics_cache = HashMap::new();
         let hash_testing_hist_rows_number = 1000.0;
         table_statistics_cache.insert(
-            "\"hash_testing_hist\"".to_string(),
+            "\"hash_testing_hist\"".to_smolstr(),
             Rc::new(TableStats::new(hash_testing_hist_rows_number as u64)),
         );
         let hash_testing_rows_number = 10000.0;
         table_statistics_cache.insert(
-            "\"hash_testing\"".to_string(),
+            "\"hash_testing\"".to_smolstr(),
             Rc::new(TableStats::new(hash_testing_rows_number as u64)),
         );
         let test_space_rows_number = 25000.0;
         table_statistics_cache.insert(
-            "\"test_space\"".to_string(),
+            "\"test_space\"".to_smolstr(),
             Rc::new(TableStats::new(test_space_rows_number as u64)),
         );
 
@@ -1498,7 +1502,7 @@ impl Router for RouterRuntimeMock {
             SbroadError::FailedTo(
                 Action::Borrow,
                 Some(Entity::Metadata),
-                format!("{e:?}").into(),
+                format_smolstr!("{e:?}"),
             )
         })
     }
@@ -1514,7 +1518,7 @@ impl Router for RouterRuntimeMock {
         } else {
             Err(SbroadError::NotFound(
                 Entity::VirtualTable,
-                format!("for motion node {motion_node_id}").into(),
+                format_smolstr!("for motion node {motion_node_id}"),
             ))
         }
     }
@@ -1554,7 +1558,7 @@ impl Router for RouterRuntimeMock {
         Ok(Box::new(result))
     }
 
-    fn explain_format(&self, explain: String) -> Result<Box<dyn Any>, SbroadError> {
+    fn explain_format(&self, explain: SmolStr) -> Result<Box<dyn Any>, SbroadError> {
         Ok(Box::new(explain))
     }
 
@@ -1611,7 +1615,7 @@ impl Statistics for RouterRuntimeMock {
 
     fn update_table_stats(
         &mut self,
-        table_name: String,
+        table_name: SmolStr,
         table_stats: TableStats,
     ) -> Result<(), SbroadError> {
         if let Ok(mut borrow_res) = self.table_statistics_cache.try_borrow_mut() {
