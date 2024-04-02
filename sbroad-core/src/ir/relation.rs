@@ -36,6 +36,7 @@ pub enum Type {
     Map,
     Array,
     Boolean,
+    Datetime,
     Decimal,
     Double,
     Integer,
@@ -53,6 +54,7 @@ impl fmt::Display for Type {
             Type::Array => write!(f, "array"),
             Type::Boolean => write!(f, "boolean"),
             Type::Decimal => write!(f, "decimal"),
+            Type::Datetime => write!(f, "datetime"),
             Type::Double => write!(f, "double"),
             Type::Integer => write!(f, "integer"),
             Type::Scalar => write!(f, "scalar"),
@@ -71,6 +73,7 @@ impl From<&Type> for FieldType {
         match data_type {
             Type::Boolean => FieldType::Boolean,
             Type::Decimal => FieldType::Decimal,
+            Type::Datetime => FieldType::Datetime,
             Type::Double => FieldType::Double,
             Type::Integer => FieldType::Integer,
             Type::Number => FieldType::Number,
@@ -89,6 +92,7 @@ impl From<&Type> for SpaceFieldType {
     fn from(data_type: &Type) -> Self {
         match data_type {
             Type::Boolean => SpaceFieldType::Boolean,
+            Type::Datetime => SpaceFieldType::Datetime,
             Type::Decimal => SpaceFieldType::Decimal,
             Type::Double => SpaceFieldType::Double,
             Type::Integer => SpaceFieldType::Integer,
@@ -110,6 +114,7 @@ impl TryFrom<SpaceFieldType> for Type {
     fn try_from(field_type: SpaceFieldType) -> Result<Self, Self::Error> {
         match field_type {
             SpaceFieldType::Boolean => Ok(Type::Boolean),
+            SpaceFieldType::Datetime => Ok(Type::Datetime),
             SpaceFieldType::Decimal => Ok(Type::Decimal),
             SpaceFieldType::Double => Ok(Type::Double),
             SpaceFieldType::Integer => Ok(Type::Integer),
@@ -122,8 +127,7 @@ impl TryFrom<SpaceFieldType> for Type {
             SpaceFieldType::Any
             | SpaceFieldType::Varbinary
             | SpaceFieldType::Map
-            | SpaceFieldType::Interval
-            | SpaceFieldType::Datetime => Err(SbroadError::NotImplemented(
+            | SpaceFieldType::Interval => Err(SbroadError::NotImplemented(
                 Entity::Type,
                 field_type.to_smolstr(),
             )),
@@ -141,6 +145,7 @@ impl Type {
     pub fn new(s: &str) -> Result<Self, SbroadError> {
         match s.to_string().to_lowercase().as_str() {
             "boolean" => Ok(Type::Boolean),
+            "datetime" => Ok(Type::Datetime),
             "decimal" => Ok(Type::Decimal),
             "double" => Ok(Type::Double),
             "integer" => Ok(Type::Integer),
@@ -167,6 +172,7 @@ impl Type {
             | "string" | "uuid" | "text" | "unsigned" => Ok(Type::Scalar),
             "array" => Ok(Type::Array),
             "map" => Ok(Type::Map),
+            "datetime" => Ok(Type::Datetime),
             "any" => Ok(Type::Any),
             v => Err(SbroadError::Invalid(
                 Entity::Type,
@@ -182,6 +188,7 @@ impl Type {
         matches!(
             self,
             Type::Boolean
+                | Type::Datetime
                 | Type::Decimal
                 | Type::Double
                 | Type::Integer
@@ -249,6 +256,7 @@ impl From<Column> for Field {
     fn from(column: Column) -> Self {
         let field = match column.r#type {
             Type::Boolean => Field::boolean(column.name),
+            Type::Datetime => Field::datetime(column.name),
             Type::Decimal => Field::decimal(column.name),
             Type::Double => Field::double(column.name),
             Type::Integer => Field::integer(column.name),
@@ -288,6 +296,7 @@ impl SerSerialize for Column {
         map.serialize_entry("name", &self.name)?;
         match &self.r#type {
             Type::Boolean => map.serialize_entry("type", "boolean")?,
+            Type::Datetime => map.serialize_entry("type", "datetime")?,
             Type::Decimal => map.serialize_entry("type", "decimal")?,
             Type::Double => map.serialize_entry("type", "double")?,
             Type::Integer => map.serialize_entry("type", "integer")?,
@@ -348,6 +357,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
 
         match column_type.as_str() {
             "boolean" => Ok(Column::new(&column_name, Type::Boolean, role, is_nullable)),
+            "datetime" => Ok(Column::new(&column_name, Type::Datetime, role, is_nullable)),
             "decimal" => Ok(Column::new(&column_name, Type::Decimal, role, is_nullable)),
             "double" => Ok(Column::new(&column_name, Type::Double, role, is_nullable)),
             "integer" => Ok(Column::new(&column_name, Type::Integer, role, is_nullable)),
@@ -359,7 +369,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role, is_nullable)),
             "array" => Ok(Column::new(&column_name, Type::Array, role, is_nullable)),
             "uuid" => Ok(Column::new(&column_name, Type::Uuid, role, is_nullable)),
-            _ => Err(Error::custom("unsupported column type")),
+            s => Err(Error::custom(format!("unsupported column type: {s}"))),
         }
     }
 }

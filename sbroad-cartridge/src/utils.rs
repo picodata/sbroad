@@ -1,6 +1,7 @@
 use std::{fmt::Display, os::raw::c_int};
 
 use tarantool::{
+    error::IntoBoxError,
     proc::Return,
     tuple::{FunctionCtx, Tuple},
 };
@@ -41,7 +42,7 @@ impl Return for RawProcResult {
 #[derive(Debug, Clone)]
 pub struct RetResult<T, E>(pub Result<T, E>);
 
-impl<T: Return, E: Display> Return for RetResult<T, E> {
+impl<T: Return, E: Display + IntoBoxError> Return for RetResult<T, E> {
     fn ret(self, ctx: FunctionCtx) -> c_int {
         match self.0 {
             Ok(ok) => ok.ret(ctx),

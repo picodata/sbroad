@@ -1073,9 +1073,9 @@ dependencies = [
 
 [[package]]
 name = "rmp-serde"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3eedffbfcc6a428f230c04baf8f59bd73c1781361e4286111fe900849aaddaf"
+checksum = "25786b0d276110195fa3d6f3f31299900cf71dfbd6c28450f3f58a0e7f7a347e"
 dependencies = [
  "byteorder",
  "rmp",
@@ -1162,7 +1162,7 @@ dependencies = [
  "pest_derive",
  "pretty_assertions",
  "rand",
- "rmp-serde 1.0.0",
+ "rmp-serde 1.1.0",
  "sbroad-proc",
  "serde",
  "serde_yaml",
@@ -1342,8 +1342,8 @@ dependencies = [
 
 [[package]]
 name = "tarantool"
-version = "4.0.0"
-source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#b3f5303309ee5f07ba71d830d9f04df633895e14"
+version = "5.0.0"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#dbebcc0aace0264b7ba9569e9a8a672b972c95ea"
 dependencies = [
  "async-trait",
  "base64",
@@ -1357,7 +1357,7 @@ dependencies = [
  "once_cell",
  "refpool",
  "rmp",
- "rmp-serde 1.0.0",
+ "rmp-serde 1.1.0",
  "rmpv",
  "serde",
  "serde_bytes",
@@ -1374,7 +1374,7 @@ dependencies = [
 [[package]]
 name = "tarantool-proc"
 version = "3.0.0"
-source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#b3f5303309ee5f07ba71d830d9f04df633895e14"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#dbebcc0aace0264b7ba9569e9a8a672b972c95ea"
 dependencies = [
  "darling",
  "proc-macro-error",
@@ -1462,8 +1462,8 @@ dependencies = [
 
 [[package]]
 name = "tlua"
-version = "2.0.0"
-source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#b3f5303309ee5f07ba71d830d9f04df633895e14"
+version = "3.1.0"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#dbebcc0aace0264b7ba9569e9a8a672b972c95ea"
 dependencies = [
  "libc",
  "serde",
@@ -1474,7 +1474,7 @@ dependencies = [
 [[package]]
 name = "tlua-derive"
 version = "0.2.0"
-source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#b3f5303309ee5f07ba71d830d9f04df633895e14"
+source = "git+https://git.picodata.io/picodata/picodata/tarantool-module.git#dbebcc0aace0264b7ba9569e9a8a672b972c95ea"
 dependencies = [
  "proc-macro2 1.0.79",
  "quote 1.0.35",

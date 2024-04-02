@@ -66,3 +66,4 @@ _G.write = function(stmt_id, stmt, params, options)
 
     return box.tuple.new{res}
 end
+

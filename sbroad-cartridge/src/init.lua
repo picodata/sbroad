@@ -24,7 +24,11 @@ local function calculate_bucket_id(values, space_name) -- luacheck: no unused ar
         return nil, result
     end
 
-    return rust.calculate_bucket_id(values, space_name)
+    if space_name then
+        return rust.calculate_bucket_id(values, space_name)
+    end
+
+    return rust.calculate_bucket_id(values)
 end
 
 

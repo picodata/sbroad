@@ -259,10 +259,11 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
                 TrimTarget = { Expr }
             Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
                 TypeCast = _{ TypeAny | ColumnDefType }
-                ColumnDefType = { TypeBool | TypeDecimal | TypeDouble | TypeInt | TypeNumber
+                ColumnDefType = { TypeBool | TypeDatetime | TypeDecimal | TypeDouble | TypeInt | TypeNumber
                                    | TypeScalar | TypeString | TypeText | TypeUnsigned | TypeVarchar | TypeUuid }
                     TypeAny = { ^"any" }
                     TypeBool = { (^"boolean" | ^"bool") }
+                    TypeDatetime = { ^"datetime" }
                     TypeDecimal = { ^"decimal" }
                     TypeDouble = { ^"double" }
                     TypeInt = { (^"integer" | ^"int") }

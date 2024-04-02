@@ -25,7 +25,7 @@ use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::{Node, Plan};
 
-type ExecutorTuple = Vec<LuaValue>;
+pub type ExecutorTuple = Vec<LuaValue>;
 
 #[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
 pub struct MetadataColumn {
@@ -60,6 +60,12 @@ impl TryInto<Column> for &MetadataColumn {
             "boolean" => Ok(Column::new(
                 &self.name,
                 Type::Boolean,
+                ColumnRole::User,
+                true,
+            )),
+            "datetime" => Ok(Column::new(
+                &self.name,
+                Type::Datetime,
                 ColumnRole::User,
                 true,
             )),

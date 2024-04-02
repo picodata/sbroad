@@ -13,6 +13,7 @@ pub enum Type {
     Any,
     Map,
     Boolean,
+    Datetime,
     Decimal,
     Double,
     Integer,
@@ -58,6 +59,7 @@ impl TryFrom<&RelationType> for Type {
     fn try_from(relational_type: &RelationType) -> Result<Self, Self::Error> {
         match relational_type {
             RelationType::Boolean => Ok(Type::Boolean),
+            RelationType::Datetime => Ok(Type::Datetime),
             RelationType::Decimal => Ok(Type::Decimal),
             RelationType::Double => Ok(Type::Double),
             RelationType::Integer => Ok(Type::Integer),
@@ -82,6 +84,7 @@ impl From<&Type> for SmolStr {
             Type::Any => "any".to_smolstr(),
             Type::Map => "map".to_smolstr(),
             Type::Boolean => "bool".to_smolstr(),
+            Type::Datetime => "datetime".to_smolstr(),
             Type::Decimal => "decimal".to_smolstr(),
             Type::Double => "double".to_smolstr(),
             Type::Integer => "int".to_smolstr(),
@@ -109,6 +112,7 @@ impl Type {
             Type::Any | Type::Scalar => RelationType::Scalar,
             Type::Map => RelationType::Map,
             Type::Boolean => RelationType::Boolean,
+            Type::Datetime => RelationType::Datetime,
             Type::Decimal => RelationType::Decimal,
             Type::Double => RelationType::Double,
             Type::Integer => RelationType::Integer,

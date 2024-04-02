@@ -1,9 +1,8 @@
 local t = require('luatest')
-local datetime = require("datetime")
 local g = t.group('integration_api')
+local datetime = require('datetime')
 
 local helper = require('test.helper.cluster_no_replication')
-local config_handler = require('test.helper.config_handler')
 local cluster = nil
 
 g.before_all(function()
@@ -62,6 +61,17 @@ g.before_each(
         })
         t.assert_equals(err, nil)
         t.assert_equals(r, {row_count = 2})
+
+        -- "datetime_t" contains:
+        -- ['20.08.2021 +3', 1]
+        -- ['21.08.2021 +0', 1]
+        r, err = api:call("sbroad.execute", {
+            [[insert into "datetime_t" ("dt", "a") values (?, ?), (?, ?)]],
+            { datetime.new({day = 20,month = 8,year = 2021,tzoffset  = 180}), 1,
+            datetime.new({day = 21,month = 8,year = 2021,tzoffset  = 180}), 1}
+        })
+        t.assert_equals(err, nil)
+        t.assert_equals(r, {row_count = 2})
     end
 )
 
@@ -73,6 +83,7 @@ g.after_each(
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage1:call("box.execute", { [[truncate table "t"]] })
+        storage1:call("box.execute", { [[truncate table "datetime_t"]] })
 
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "testing_space"]] })
@@ -80,13 +91,9 @@ g.after_each(
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage2:call("box.execute", { [[truncate table "t"]] })
+        storage2:call("box.execute", { [[truncate table "datetime_t"]] })
     end
 )
-
-g.after_test("test_unsupported_column", function()
-    local default_config = config_handler.get_init_config(helper.root)
-    cluster:upload_config(default_config)
-end)
 
 g.after_all(function()
     helper.stop_test_cluster()
@@ -200,68 +207,11 @@ g.test_query_errored = function()
     local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })
     t.assert_equals(tostring(err), "Sbroad Error: build query: column with name \"NotFoundColumn\" not found")
 
-    local invalid_type_param = datetime.new{
-        nsec = 123456789,
-        sec = 20,
-        min = 25,
-        hour = 18,
-        day = 20,
-        month = 8,
-        year = 2021,
-        tzoffset  = 180
-    }
-
-    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {invalid_type_param} })
-    t.assert_str_contains(
-        tostring(err),
-        "Sbroad Error: build params: pattern with parameters parsing error"
-    )
-
     -- check err when params lenght is less then amount of sign `?`
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {} })
     t.assert_equals(
         tostring(err),
         "Sbroad Error: build query: invalid node: parameter node does not refer to an expression"
-    )
-end
-
-g.test_unsupported_column = function()
-    local api = cluster:server("api-1").net_box
-
-    local config = cluster:download_config()
-    local space_with_unsupported_column = {
-        format = {
-            { type = "integer", name = "id", is_nullable = false },
-            { type = "datetime", name = "unsupported_column", is_nullable = false },
-            { type = "unsigned", name = "bucket_id", is_nullable = true },
-        },
-        temporary = false,
-        engine = "memtx",
-        is_local = false,
-        sharding_key = { "id" },
-        indexes = {
-            {
-                unique = true,
-                parts = {{ path = "id", type = "integer", is_nullable = false}},
-                name = "id",
-                type = "TREE"
-            },
-            {
-                unique = false,
-                parts = { { path = "bucket_id", type = "unsigned", is_nullable = true } },
-                name = "bucket_id",
-                type = "TREE"
-            }
-        }
-    }
-
-    config["schema"]["spaces"]["space_with_unsupported_column"] = space_with_unsupported_column
-    cluster:upload_config(config)
-
-    local _, err = api:call("sbroad.execute", { [[SELECT * FROM "space_with_unsupported_column"]], {} })
-    t.assert_str_contains(
-        tostring(err),
-        "type datetime not implemented"
     )
 end
 
@@ -527,3 +477,79 @@ g.test_pg_style_params2 = function()
         },
     })
 end
+
+g.test_datetime_select = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT * from "datetime_t"
+    ]]})
+
+    t.assert_equals(err, nil)
+    local expected_rows = {
+        { datetime.new({day = 20,month = 8,year = 2021,tzoffset = 180}), 1},
+        { datetime.new({day = 21,month = 8,year = 2021,tzoffset = 180}), 1},
+    }
+    t.assert_equals(r.metadata, {
+        {name = "dt", type = "datetime"},
+        {name = "a", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, expected_rows)
+end
+
+g.test_datetime_insert = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        insert into "datetime_t" select to_date(COLUMN_1, '%c'),
+        cast(COLUMN_2 as int) from
+        (values ('Thu Jan  1 03:44:00 1970', 100))
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+
+    r, err = api:call("sbroad.execute", { [[
+        SELECT * from "datetime_t"
+        where "a" = 100
+    ]]})
+
+    t.assert_equals(err, nil)
+    local expected_rows = {
+        { datetime.new({day = 1,month = 1,year = 1970}), 100},
+    }
+    t.assert_equals(r.metadata, {
+        {name = "dt", type = "datetime"},
+        {name = "a", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, expected_rows)
+end
+
+g.after_test('test_datetime_insert', function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        delete from "datetime_t" where "a" = 100
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 1})
+end)
+
+g.test_datetime_motion = function ()
+    local api = cluster:server("api-1").net_box
+
+    -- inner table for such condition is always
+    -- broadcasted to all other nodes
+    local r, err = api:call("sbroad.execute", { [[
+        select "a" as "u" from (select "id" from "testing_space") join "datetime_t"
+        on true
+    ]]})
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "u", type = "integer"},
+        },
+        rows = { {1}, {1} },
+    })
+end
+

@@ -10,6 +10,7 @@ use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use crate::errors::SbroadError;
 use crate::executor::bucket::Buckets;
@@ -19,6 +20,7 @@ use crate::executor::protocol::SchemaInfo;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::function::Function;
 use crate::ir::relation::Table;
+use crate::ir::relation::Type;
 use crate::ir::value::Value;
 
 use super::ir::{ConnectionType, QueryType};
@@ -63,6 +65,20 @@ pub trait Metadata: Sized {
     /// # Errors
     /// - Metadata does not contain space
     fn sharding_positions_by_space(&self, space: &str) -> Result<Vec<usize>, SbroadError>;
+}
+
+pub fn get_builtin_functions() -> &'static [Function] {
+    // Once lock is used because of concurrent access in tests.
+    static mut BUILTINS: OnceLock<Vec<Function>> = OnceLock::new();
+
+    unsafe {
+        BUILTINS.get_or_init(|| {
+            vec![
+                Function::new_stable("\"TO_DATE\"".into(), Type::Datetime),
+                Function::new_stable("\"TRIM\"".into(), Type::String),
+            ]
+        })
+    }
 }
 
 pub trait StorageCache {

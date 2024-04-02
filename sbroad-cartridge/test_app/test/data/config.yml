@@ -1403,3 +1403,34 @@ schema:
       engine: memtx
       sharding_key:
         - id
+    datetime_t:
+      format:
+        - type: datetime
+          name: dt
+          is_nullable: false
+        - type: integer
+          name: a
+          is_nullable: false
+        - type: unsigned
+          name: bucket_id
+          is_nullable: false
+      temporary: false
+      indexes:
+        - unique: true
+          parts:
+            - path: dt
+              is_nullable: false
+              type: datetime
+          type: TREE
+          name: primary
+        - unique: false
+          parts:
+            - path: bucket_id
+              is_nullable: false
+              type: unsigned
+          type: TREE
+          name: bucket_id
+      is_local: false
+      engine: memtx
+      sharding_key:
+        - dt

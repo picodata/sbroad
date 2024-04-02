@@ -39,7 +39,7 @@ use crate::ir::Plan;
 
 use super::helpers::vshard::{prepare_rs_to_ir_map, GroupedBuckets};
 use super::helpers::{dispatch_by_buckets, normalize_name_from_sql};
-use super::{Metadata, QueryCache};
+use super::{get_builtin_functions, Metadata, QueryCache};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -110,6 +110,9 @@ impl RouterConfigurationMock {
         let mut functions = HashMap::new();
         functions.insert(name_func, fn_func);
         functions.insert(name_trim, trim_func);
+        for f in get_builtin_functions() {
+            functions.insert(f.name.clone(), f.clone());
+        }
 
         let mut tables = HashMap::new();
 

@@ -222,7 +222,7 @@ impl TryFrom<OptionalData> for Vec<u8> {
         bincode::serialize(&value).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Serialize,
-                Some(Entity::RequiredData),
+                Some(Entity::OptionalData),
                 format_smolstr!("to binary: {e:?}"),
             )
         })
@@ -236,7 +236,7 @@ impl TryFrom<&[u8]> for OptionalData {
         bincode::deserialize(value).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Deserialize,
-                Some(Entity::RequiredData),
+                Some(Entity::OptionalData),
                 format_smolstr!("{e:?}"),
             )
         })

@@ -298,8 +298,8 @@ fn exec_plan_subtree_aggregates() {
             format!(
                 "{} {} {} {} {} {}",
                 r#"SELECT "T1"."sys_op" as "column_12", ("T1"."id") * ("T1"."sys_op") as "column_49","#,
-                r#""T1"."id" as "column_46", group_concat ("T1"."id", ?) as "group_concat_58","#,
-                r#"sum ("T1"."id") as "sum_42", count ("T1"."id") as "count_61", total ("T1"."id") as "total_64","#,
+                r#""T1"."id" as "column_46", total ("T1"."id") as "total_64","#,
+                r#"sum ("T1"."id") as "sum_42", count ("T1"."id") as "count_61", group_concat ("T1"."id", ?) as "group_concat_58","#,
                 r#"min ("T1"."id") as "min_67", max ("T1"."id") as "max_70", count ("T1"."sysFrom") as "count_37""#,
                 r#"FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,

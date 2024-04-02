@@ -1,5 +1,6 @@
 local sbroad_common = require('sbroad.init')
 local sbroad_storage = require('sbroad.storage')
+local sbroad_builtins = require('sbroad.builtins')
 
 local function init(opts) -- luacheck: no unused args
     if rawget(_G, 'sbroad') == nil then
@@ -9,6 +10,9 @@ local function init(opts) -- luacheck: no unused args
     _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
 
     sbroad_common.init(opts.is_master)
+    if opts.is_master then
+        sbroad_builtins.init()
+    end
 
     return true
 end

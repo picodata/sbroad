@@ -8,7 +8,7 @@ use yaml_rust::{Yaml, YamlLoader};
 
 use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::engine::helpers::{normalize_name_from_schema, normalize_name_from_sql};
-use sbroad::executor::engine::Metadata;
+use sbroad::executor::engine::{get_builtin_functions, Metadata};
 use sbroad::executor::lru::DEFAULT_CAPACITY;
 use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
@@ -45,12 +45,18 @@ impl Default for RouterConfiguration {
 impl RouterConfiguration {
     #[must_use]
     pub fn new() -> Self {
+        let builtins = get_builtin_functions();
+        let mut functions = HashMap::with_capacity(builtins.len());
+        for f in builtins {
+            functions.insert(f.name.clone(), f.clone());
+        }
+
         RouterConfiguration {
             waiting_timeout: 360,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
             sharding_column: SmolStr::default(),
-            functions: HashMap::new(),
+            functions,
         }
     }
 

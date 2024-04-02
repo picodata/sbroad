@@ -333,7 +333,7 @@ pub fn calculate_filter_selectivity(
         Type::Scalar => {
             todo!("Don't know what to do here")
         }
-        Type::Array | Type::Any | Type::Map => Err(SbroadError::Invalid(
+        Type::Array | Type::Any | Type::Map | Type::Datetime => Err(SbroadError::Invalid(
             Entity::Statistics,
             Some(SmolStr::from(
                 "Unable to calculate selectivity for array type column",

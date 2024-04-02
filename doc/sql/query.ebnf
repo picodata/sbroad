@@ -32,6 +32,7 @@ expression  ::= (table '.')? column
                | ('(' (expression(',' expression)*) ')')
                | 'NOT' expression
                | '(' expression ')'
+               | 'TO_DATE' '(' expression',' format ')'
                | 'TRIM' '(' ((('LEADING' | 'TRAILING' | 'BOTH')? expression) | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM' expression ')'
 aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' expression ')'
                | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
@@ -154,6 +155,7 @@ drop_table     ::= 'DROP' 'TABLE' table
 drop_role      ::= 'DROP' 'ROLE' role
 drop_user      ::= 'DROP' 'USER' user
 type        ::= ('BOOL' | 'BOOLEAN')
+                | 'DATETIME'
                 | 'DECIMAL'
                 | 'DOUBLE'
                 | ('INT' | 'INTEGER')

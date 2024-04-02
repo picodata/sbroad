@@ -3215,6 +3215,24 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_sql_to_date() {
+    assert_explain_eq(
+        r#"
+            SELECT to_date(COLUMN_1, '%Y/%d/%m') FROM (values ('2010/10/10'))
+        "#,
+        vec![],
+        r#"projection ("TO_DATE"(("COLUMN_1"::string, '%Y/%d/%m'::string))::datetime -> "COL_1")
+    scan
+        values
+            value row (data=ROW('2010/10/10'::string))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    )
+}
+
+#[test]
 fn front_sql_check_non_null_columns_specified() {
     let input = r#"insert into "test_space" ("sys_op") values (1)"#;
 

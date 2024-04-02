@@ -522,6 +522,9 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                     Rule::TypeBool => {
                                         column_def.data_type = RelationType::Boolean;
                                     }
+                                    Rule::TypeDatetime => {
+                                        column_def.data_type = RelationType::Datetime;
+                                    }
                                     Rule::TypeDecimal => {
                                         column_def.data_type = RelationType::Decimal;
                                     }
@@ -675,14 +678,26 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             for shard_col_id in &shard_node.children {
                                 let shard_col_name = parse_identifier(ast, *shard_col_id)?;
 
-                                let column_found = columns.iter().any(|c| c.name == shard_col_name);
-                                if !column_found {
+                                let column_found =
+                                    columns.iter().find(|c| c.name == shard_col_name);
+                                if column_found.is_none() {
                                     return Err(SbroadError::Invalid(
                                         Entity::Column,
                                         Some(format_smolstr!(
                                             "Sharding key column {shard_col_name} not found."
                                         )),
                                     ));
+                                }
+
+                                if let Some(column) = column_found {
+                                    if !column.data_type.is_scalar() {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::Column,
+                                            Some(format_smolstr!(
+                                                "Sharding key column {shard_col_name} is not of scalar type."
+                                            )),
+                                        ));
+                                    }
                                 }
 
                                 shard_key.push(shard_col_name);
