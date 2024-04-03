@@ -94,7 +94,7 @@ grant       ::= 'GRANT' (
                 'TO' (role | user)
 
 ddl         ::= (alter_procedure | create_index | create_procedure | create_table
-                | drop_procedure | drop_table)
+                | drop_index | drop_procedure | drop_table)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
@@ -148,6 +148,7 @@ alter_user     ::= 'ALTER' 'USER' user
                        | 'PASSWORD' "'" password "'" ('USING' ('CHAP-SHA1' | 'LDAP' | 'MD5'))?
                        | 'RENAME' 'TO' user
                    )
+drop_index     ::= 'DROP' 'INDEX' index
 drop_procedure ::= 'DROP' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
 drop_table     ::= 'DROP' 'TABLE' table
 drop_role      ::= 'DROP' 'ROLE' role

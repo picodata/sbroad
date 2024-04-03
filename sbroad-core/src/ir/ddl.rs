@@ -87,6 +87,10 @@ pub enum Ddl {
         hint: Option<bool>,
         timeout: Decimal,
     },
+    DropIndex {
+        name: String,
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -99,6 +103,7 @@ impl Ddl {
             Ddl::CreateTable { ref timeout, .. }
             | Ddl::DropTable { ref timeout, .. }
             | Ddl::CreateIndex { ref timeout, .. }
+            | Ddl::DropIndex { ref timeout, .. }
             | Ddl::CreateProc { ref timeout, .. }
             | Ddl::DropProc { ref timeout, .. }
             | Ddl::RenameRoutine { ref timeout, .. } => timeout,

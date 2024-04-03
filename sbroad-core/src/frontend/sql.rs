@@ -464,6 +464,21 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     Ok(index)
 }
 
+fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    assert_eq!(node.rule, Rule::DropIndex);
+    let mut name = String::new();
+    let mut timeout = get_default_timeout();
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::Identifier => name = parse_identifier(ast, *child_id)?,
+            Rule::Timeout => timeout = get_timeout(ast, *child_id)?,
+            _ => panic!("Unexpected drop index node: {child_node:?}"),
+        }
+    }
+    Ok(Ddl::DropIndex { name, timeout })
+}
+
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::uninlined_format_args)]
 fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
@@ -2728,6 +2743,11 @@ impl AbstractSyntaxTree {
                         timeout,
                     };
                     let plan_id = plan.nodes.push(Node::Acl(revoke_privilege));
+                    map.add(id, plan_id);
+                }
+                Rule::DropIndex => {
+                    let drop_index = parse_drop_index(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(drop_index));
                     map.add(id, plan_id);
                 }
                 Rule::DropRole => {

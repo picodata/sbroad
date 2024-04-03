@@ -54,7 +54,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeUsage = { ^"usage" }
             PrivilegeWrite = { ^"write" }
 
-DDL = _{ CreateTable | DropTable | CreateIndex | CreateProc | DropProc | RenameProc }
+DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropProc | RenameProc }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
@@ -118,6 +118,8 @@ DDL = _{ CreateTable | DropTable | CreateIndex | CreateProc | DropProc | RenameP
             Euclid = { ^"euclid" }
             Manhattan = { ^"manhattan" }
         Hint = { ^"hint" ~ "=" ~ (True | False) }
+
+    DropIndex = { ^"drop" ~ ^"index" ~ Identifier ~ TimeoutOption? }
 
 Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }
