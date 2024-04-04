@@ -272,7 +272,9 @@ fn subtree_next<'plan>(
                             .get_relational_from_reference_node(iter.get_current())
                         {
                             match iter.get_plan().get_relation_node(*rel_id) {
-                                Ok(rel_node) if rel_node.is_subquery() || rel_node.is_motion() => {
+                                Ok(rel_node)
+                                    if rel_node.is_subquery_or_cte() || rel_node.is_motion() =>
+                                {
                                     // Check if the sub-query is an additional one.
                                     let parent = iter.get_plan().get_relation_node(parent_id);
                                     let mut is_additional = false;
@@ -350,6 +352,18 @@ fn subtree_next<'plan>(
                         return children.get(step);
                     }
                     if iter.need_output() && step == children.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(output);
+                    }
+                    None
+                }
+                Relational::ScanCte { child, output, .. } => {
+                    let step = *iter.get_child().borrow();
+                    if step == 0 {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(child);
+                    }
+                    if iter.need_output() && step == 1 {
                         *iter.get_child().borrow_mut() += 1;
                         return Some(output);
                     }

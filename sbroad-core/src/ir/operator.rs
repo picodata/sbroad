@@ -18,7 +18,7 @@ use super::api::children::{Children, MutChildren};
 use super::expression::{ColumnPositionMap, Expression};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
-use super::{Node, Plan};
+use super::{Node, NodeId, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
@@ -316,6 +316,14 @@ pub struct OrderByElement {
 /// relation algebra logic.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Relational {
+    ScanCte {
+        /// CTE's name.
+        alias: SmolStr,
+        /// Contains exactly one single element (projection node index).
+        child: usize,
+        /// An output tuple with aliases.
+        output: usize,
+    },
     Except {
         /// Left child id
         left: usize,
@@ -500,7 +508,8 @@ impl Relational {
     #[must_use]
     pub fn output(&self) -> usize {
         match self {
-            Relational::Except { output, .. }
+            Relational::ScanCte { output, .. }
+            | Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
             | Relational::OrderBy { output, .. }
             | Relational::Having { output, .. }
@@ -525,7 +534,8 @@ impl Relational {
     #[must_use]
     pub fn mut_output(&mut self) -> &mut usize {
         match self {
-            Relational::Except { output, .. }
+            Relational::ScanCte { output, .. }
+            | Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
             | Relational::OrderBy { output, .. }
             | Relational::Update { output, .. }
@@ -550,7 +560,9 @@ impl Relational {
     #[must_use]
     pub fn children(&self) -> Children<'_> {
         match self {
-            Relational::OrderBy { child, .. } => Children::Single(child),
+            Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
+                Children::Single(child)
+            }
             Relational::Except { left, right, .. }
             | Relational::Intersect { left, right, .. }
             | Relational::UnionAll { left, right, .. }
@@ -576,9 +588,7 @@ impl Relational {
     pub fn mut_children(&mut self) -> MutChildren<'_> {
         // return MutChildren { node: self };
         match self {
-            Relational::OrderBy { ref mut child, .. } => {
-                // let children = std::slice::from_mut(child);
-                // Some(children)
+            Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
                 MutChildren::Single(child)
             }
             Relational::Except { left, right, .. }
@@ -651,10 +661,13 @@ impl Relational {
         matches!(self, &Relational::Motion { .. })
     }
 
-    /// Checks that the node is a sub-query scan.
+    /// Checks that the node is a sub-query or CTE scan.
     #[must_use]
-    pub fn is_subquery(&self) -> bool {
-        matches!(self, &Relational::ScanSubQuery { .. })
+    pub fn is_subquery_or_cte(&self) -> bool {
+        matches!(
+            self,
+            &Relational::ScanSubQuery { .. } | &Relational::ScanCte { .. }
+        )
     }
 
     /// Sets new children to relational node.
@@ -727,6 +740,14 @@ impl Relational {
                 if children.len() != 1 {
                     unreachable!("ORDER BY may have only a single relational child");
                 }
+                // It is safe to unwrap here, because the length is already checked above.
+                *child = children[0];
+            }
+            Relational::ScanCte { ref mut child, .. } => {
+                if children.len() != 1 {
+                    unreachable!("CTE may have only a single relational child");
+                }
+                // It is safe to unwrap here, because the length is already checked above.
                 *child = children[0];
             }
             Relational::ScanRelation { .. } => {
@@ -791,6 +812,7 @@ impl Relational {
                 }
                 Ok(None)
             }
+            Relational::ScanCte { alias, .. } => Ok(Some(alias)),
             Relational::ScanSubQuery { alias, .. } | Relational::Motion { alias, .. } => {
                 if let Some(name) = alias.as_ref() {
                     if !name.is_empty() {
@@ -818,6 +840,7 @@ impl Relational {
             Relational::Join { .. } => "Join",
             Relational::Motion { .. } => "Motion",
             Relational::Projection { .. } => "Projection",
+            Relational::ScanCte { .. } => "CTE",
             Relational::ScanRelation { .. } => "Scan",
             Relational::ScanSubQuery { .. } => "Subquery",
             Relational::Selection { .. } => "Selection",
@@ -1654,6 +1677,76 @@ impl Plan {
         let sq_id = self.nodes.push(Node::Relational(sq));
         self.replace_parent_in_subtree(output, None, Some(sq_id))?;
         Ok(sq_id)
+    }
+
+    /// Appends a new CTE node to the plan arena.
+    ///
+    /// # Errors
+    /// - CTE has incorrect amount of columns;
+    ///
+    /// # Panics
+    /// - child node is not a valid relational node.
+    pub fn add_cte(
+        &mut self,
+        child: NodeId,
+        alias: SmolStr,
+        columns: Vec<SmolStr>,
+    ) -> Result<NodeId, SbroadError> {
+        let child_node = self
+            .get_relation_node(child)
+            .expect("CTE child node is not a relational node");
+        let mut child_id = child;
+
+        if !columns.is_empty() {
+            let mut child_output_id = child_node.output();
+            // If the child node is VALUES, we need to wrap it with a subquery
+            // to change names in projection.
+            if matches!(child_node, Relational::Values { .. }) {
+                let sq_id = self
+                    .add_sub_query(child_id, Some(&alias))
+                    .expect("add subquery for values");
+                child_id = self
+                    .add_proj(sq_id, &[], false, false)
+                    .expect("add projection for values");
+                child_output_id = self
+                    .get_relational_output(child_id)
+                    .expect("projection has an output tuple");
+            }
+
+            // If CTE has explicit column names, let's rename the columns in the child projection.
+            let child_columns = self
+                .get_expression_node(child_output_id)
+                .expect("output row")
+                .clone_row_list()?;
+            if child_columns.len() != columns.len() {
+                return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "expected {} columns in CTE, got {}",
+                    child_columns.len(),
+                    columns.len()
+                )));
+            }
+            for (col_id, col_name) in child_columns.into_iter().zip(columns.into_iter()) {
+                let col_alias = self
+                    .get_mut_expression_node(col_id)
+                    .expect("column expression");
+                if let Expression::Alias { name, .. } = col_alias {
+                    *name = col_name;
+                } else {
+                    panic!("Expected a row of aliases in the output tuple");
+                };
+            }
+        }
+
+        let output = self
+            .add_row_for_output(child_id, &[], true)
+            .expect("output row for CTE");
+        let cte = Relational::ScanCte {
+            alias,
+            child: child_id,
+            output,
+        };
+        let cte_id = self.nodes.push(Node::Relational(cte));
+        Ok(cte_id)
     }
 
     /// Adds union all node.

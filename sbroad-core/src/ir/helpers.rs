@@ -206,6 +206,13 @@ impl Plan {
                 Relational::Projection { .. } => {
                     writeln!(buf, "Projection")?;
                 }
+                Relational::ScanCte { alias, .. } => {
+                    writeln!(buf, "ScanCte")?;
+                    if !alias.is_empty() {
+                        formatted_tabulate(buf, tabulation_number + 1)?;
+                        writeln!(buf, "Alias: {alias}")?;
+                    }
+                }
                 Relational::ScanSubQuery { alias, .. } => {
                     writeln!(buf, "ScanSubQuery")?;
                     if let Some(alias) = alias {
@@ -323,7 +330,7 @@ impl Plan {
                         writeln!(buf, "Child_id = {child}")?;
                     }
                 }
-                Relational::OrderBy { child, .. } => {
+                Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "Children:")?;
                     formatted_tabulate(buf, tabulation_number + 2)?;
@@ -343,6 +350,7 @@ impl Plan {
                 | Relational::Insert { output, .. }
                 | Relational::Intersect { output, .. }
                 | Relational::Projection { output, .. }
+                | Relational::ScanCte { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::GroupBy { output, .. }
                 | Relational::OrderBy { output, .. }
@@ -370,7 +378,7 @@ impl Plan {
     ///
     /// # Errors
     /// Fail to format one of the relational node.
-    pub fn formatted_arena_subtree(&mut self, node_id: usize) -> Result<String, SbroadError> {
+    pub fn formatted_arena_subtree(&self, node_id: usize) -> Result<String, SbroadError> {
         let mut ir_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), EXPR_CAPACITY);
         ir_tree.populate_nodes(node_id);
         let nodes = ir_tree.take_nodes();
@@ -392,7 +400,7 @@ impl Plan {
     ///
     /// # Errors
     /// Fail to format one of the relational node.
-    pub fn formatted_arena(&mut self) -> Result<String, SbroadError> {
+    pub fn formatted_arena(&self) -> Result<String, SbroadError> {
         let top_id = self.get_top()?;
         self.formatted_arena_subtree(top_id)
     }

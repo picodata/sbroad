@@ -11,7 +11,7 @@ use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Rela
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
-use crate::ir::Node;
+use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -352,6 +352,69 @@ impl SyntaxNodes {
         }
     }
 
+    fn add_cte(&mut self, plan: &Plan, id: usize) -> Result<usize, SbroadError> {
+        let cte = plan.get_relation_node(id)?;
+        let Relational::ScanCte { alias, child, .. } = cte else {
+            panic!("expected CTE node");
+        };
+        let child_sp_id = self.get_syntax_node_id(*child)?;
+        let children: Vec<usize> = vec![
+            self.push_syntax_node(SyntaxNode::new_open()),
+            child_sp_id,
+            self.push_syntax_node(SyntaxNode::new_close()),
+            self.push_syntax_node(SyntaxNode::new_alias(alias.clone())),
+        ];
+        let sn = SyntaxNode::new_pointer(id, None, children);
+        Ok(self.push_syntax_node(sn))
+    }
+
+    fn add_order_by(&mut self, plan: &Plan, id: usize) -> Result<usize, SbroadError> {
+        let order_by = plan.get_relation_node(id)?;
+        let Relational::OrderBy {
+            order_by_elements,
+            child,
+            ..
+        } = order_by
+        else {
+            panic!("expect ORDER BY node");
+        };
+        let mut children: Vec<usize> = Vec::with_capacity(order_by_elements.len() * 3 - 1);
+        let mut wrapped_syntax_nodes =
+            |elem: &OrderByElement, need_comma: bool| -> Result<[Option<usize>; 3], SbroadError> {
+                let mut nodes = [None, None, None];
+                match elem.entity {
+                    OrderByEntity::Expression { expr_id } => {
+                        nodes[0] = Some(self.get_syntax_node_id(expr_id)?);
+                    }
+                    OrderByEntity::Index { value } => {
+                        let sn = SyntaxNode::new_order_index(value);
+                        nodes[0] = Some(self.push_syntax_node(sn));
+                    }
+                }
+                if let Some(order_type) = &elem.order_type {
+                    let sn = SyntaxNode::new_order_type(order_type);
+                    nodes[1] = Some(self.push_syntax_node(sn));
+                }
+                if need_comma {
+                    nodes[2] = Some(self.push_syntax_node(SyntaxNode::new_comma()));
+                }
+                Ok(nodes)
+            };
+        if let Some((last, other)) = order_by_elements.split_last() {
+            for elem in other {
+                for id in wrapped_syntax_nodes(elem, true)?.into_iter().flatten() {
+                    children.push(id);
+                }
+            }
+            for id in wrapped_syntax_nodes(last, false)?.into_iter().flatten() {
+                children.push(id);
+            }
+        }
+
+        let sn = SyntaxNode::new_pointer(id, Some(self.get_syntax_node_id(*child)?), children);
+        Ok(self.push_syntax_node(sn))
+    }
+
     /// Construct syntax nodes from the YAML file.
     ///
     /// # Errors
@@ -487,6 +550,7 @@ impl Select {
                 let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
                 if let Node::Relational(
                     Relational::ScanRelation { .. }
+                    | Relational::ScanCte { .. }
                     | Relational::ScanSubQuery { .. }
                     | Relational::Motion { .. },
                 ) = plan_node_left
@@ -641,55 +705,8 @@ impl<'p> SyntaxPlan<'p> {
                     }
                     Err(SbroadError::Invalid(Entity::Node, None))
                 }
-                Relational::OrderBy {
-                    order_by_elements,
-                    child,
-                    ..
-                } => {
-                    let mut right: Vec<usize> = Vec::with_capacity(order_by_elements.len());
-
-                    let mut get_order_by_elements =
-                        |element: &OrderByElement,
-                         need_comma: bool|
-                         -> Result<Vec<usize>, SbroadError> {
-                            let mut nodes = Vec::with_capacity(3);
-                            let OrderByElement { entity, order_type } = element;
-                            match entity {
-                                OrderByEntity::Expression { expr_id } => {
-                                    nodes.push(self.nodes.get_syntax_node_id(*expr_id)?);
-                                }
-                                OrderByEntity::Index { value } => {
-                                    nodes.push(
-                                        self.nodes
-                                            .push_syntax_node(SyntaxNode::new_order_index(*value)),
-                                    );
-                                }
-                            }
-                            if let Some(order_type) = &element.order_type {
-                                nodes.push(
-                                    self.nodes
-                                        .push_syntax_node(SyntaxNode::new_order_type(order_type)),
-                                );
-                            }
-                            if need_comma {
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                            }
-                            Ok(nodes)
-                        };
-
-                    if let Some((last, other)) = order_by_elements.split_last() {
-                        for order_by_element in other {
-                            right.extend(get_order_by_elements(order_by_element, true)?);
-                        }
-                        right.extend(get_order_by_elements(last, false)?);
-                    }
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*child)?),
-                        right,
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
+                Relational::OrderBy { .. } => self.nodes.add_order_by(ir_plan, id),
+                Relational::ScanCte { .. } => self.nodes.add_cte(ir_plan, id),
                 Relational::ScanSubQuery { .. } => self.nodes.add_sq(rel, id),
                 Relational::GroupBy {
                     children, gr_cols, ..

@@ -281,7 +281,9 @@ impl ExecutionPlan {
         let top_id = &self.get_motion_child(node_id)?;
         let rel = self.get_ir_plan().get_relation_node(*top_id)?;
         match rel {
-            Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
+            Relational::ScanSubQuery { .. } | Relational::ScanCte { .. } => {
+                self.get_ir_plan().get_relational_child(*top_id, 0)
+            }
             Relational::Except { .. }
             | Relational::GroupBy { .. }
             | Relational::OrderBy { .. }
@@ -330,35 +332,6 @@ impl ExecutionPlan {
         }
 
         let child_id = children.get(0).expect("Motion has no children");
-
-        Ok(*child_id)
-    }
-
-    /// Extract subquery child node. Subquery node must contains only one child
-    ///
-    /// # Errors
-    /// - node is not `Relation` type
-    /// - node does not contain children
-    fn get_subquery_child(&self, node_id: usize) -> Result<usize, SbroadError> {
-        let node = self.get_ir_plan().get_relation_node(node_id)?;
-        if !node.is_subquery() {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!("current node ({node_id}) is not sub query")),
-            ));
-        }
-
-        let children = self.plan.get_relational_children(node_id)?;
-
-        if children.len() != 1 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                "Sub query node ({}) must have a single child only (actual {})",
-                node_id,
-                children.len()
-            )));
-        }
-
-        let child_id = children.get(0).expect("could not find subquery child");
 
         Ok(*child_id)
     }
@@ -412,7 +385,8 @@ impl ExecutionPlan {
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
         for (_, node_id) in nodes {
-            // We have already processed this node (sub-queries in BETWEEN can be referred twice).
+            // We have already processed this node (sub-queries in BETWEEN
+            // and CTEs can be referred twice).
             if translation.contains_key(&node_id) {
                 continue;
             }
@@ -535,6 +509,7 @@ impl ExecutionPlan {
                         | Relational::Intersect { .. }
                         | Relational::Projection { .. }
                         | Relational::ScanSubQuery { .. }
+                        | Relational::ScanCte { .. }
                         | Relational::Union { .. }
                         | Relational::UnionAll { .. }
                         | Relational::Values { .. } => {}

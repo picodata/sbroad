@@ -3,6 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
+use ahash::AHashMap;
 use core::panic;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
@@ -86,6 +87,9 @@ impl Between {
         }
     }
 }
+
+// Helper map to store CTE node ids by their names.
+type CTEs = AHashMap<SmolStr, NodeId>;
 
 #[allow(clippy::uninlined_format_args)]
 fn get_timeout(ast: &AbstractSyntaxTree, node_id: usize) -> Result<Decimal, SbroadError> {
@@ -768,6 +772,116 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
         }
     };
     Ok(create_sharded_table)
+}
+
+fn parse_select_full(
+    ast: &AbstractSyntaxTree,
+    node_id: usize,
+    map: &mut Translation,
+) -> Result<(), SbroadError> {
+    let node = ast.nodes.get_node(node_id)?;
+    assert_eq!(node.rule, Rule::SelectFull);
+    let mut top_id = None;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::Cte => continue,
+            Rule::SelectWithOptionalContinuation => {
+                let select_id = map.get(*child_id)?;
+                top_id = Some(select_id);
+            }
+            _ => unreachable!("Unexpected node: {child_node:?}"),
+        }
+    }
+    let top_id = top_id.expect("Select must contain at least one child");
+    map.add(node_id, top_id);
+    Ok(())
+}
+
+fn parse_scan_cte_or_table<M>(
+    ast: &AbstractSyntaxTree,
+    metadata: &M,
+    node_id: usize,
+    map: &mut Translation,
+    ctes: &mut CTEs,
+    plan: &mut Plan,
+) -> Result<(), SbroadError>
+where
+    M: Metadata,
+{
+    let node = ast.nodes.get_node(node_id)?;
+    assert_eq!(node.rule, Rule::ScanCteOrTable);
+    let scan_name = parse_normalized_identifier(ast, node_id)?;
+    // First we try to find a table with the given name.
+    let table = metadata.table(scan_name.as_str());
+    match table {
+        Ok(table) => {
+            // We should also check that CTE with the same name doesn't exist.
+            if ctes.contains_key(&scan_name) {
+                return Err(SbroadError::Invalid(
+                    Entity::Table,
+                    Some(format_smolstr!(
+                        "table with name {scan_name} is already defined as a CTE",
+                    )),
+                ));
+            }
+            plan.add_rel(table);
+            let scan_id = plan.add_scan(scan_name.as_str(), None)?;
+            map.add(node_id, scan_id);
+        }
+        Err(SbroadError::NotFound(..)) => {
+            // If the table is not found, we try to find a CTE with the given name.
+            let cte_id = *ctes.get(&scan_name).ok_or_else(|| {
+                SbroadError::NotFound(Entity::Table, format_smolstr!("with name {scan_name}"))
+            })?;
+            map.add(node_id, cte_id);
+        }
+        Err(e) => return Err(e),
+    }
+    Ok(())
+}
+
+fn parse_cte(
+    ast: &AbstractSyntaxTree,
+    node_id: usize,
+    map: &mut Translation,
+    ctes: &mut CTEs,
+    plan: &mut Plan,
+) -> Result<(), SbroadError> {
+    let node = ast.nodes.get_node(node_id)?;
+    assert_eq!(node.rule, Rule::Cte);
+    let mut name = None;
+    let mut columns = Vec::with_capacity(node.children.len());
+    let mut top_id = None;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::Identifier => {
+                name = Some(parse_normalized_identifier(ast, *child_id)?);
+            }
+            Rule::CteColumn => {
+                let column_name = parse_normalized_identifier(ast, *child_id)?;
+                columns.push(column_name);
+            }
+            Rule::SelectWithOptionalContinuation | Rule::Values => {
+                let select_id = map.get(*child_id)?;
+                top_id = Some(select_id);
+            }
+            _ => unreachable!("Unexpected node: {child_node:?}"),
+        }
+    }
+    let name = name.expect("CTE must have a name");
+    let child_id = top_id.expect("CTE must contain a single child");
+    if ctes.get(&name).is_some() {
+        return Err(SbroadError::Invalid(
+            Entity::Cte,
+            Some(format_smolstr!("CTE with name {name} is already defined")),
+        ));
+    }
+    let cte_id = plan.add_cte(child_id, name.clone(), columns)?;
+    ctes.insert(name, cte_id);
+    map.add(node_id, cte_id);
+    Ok(())
 }
 
 /// Get String value under node that is considered to be an identifier
@@ -2336,6 +2450,7 @@ impl AbstractSyntaxTree {
         // Is it global for every `ValuesRow` met in the AST.
         let mut col_idx: usize = 0;
         let mut worker = ExpressionsWorker::new(metadata);
+        let mut ctes = CTEs::new();
 
         for (_, id) in dft_post.iter(top) {
             let node = self.nodes.get_node(id)?;
@@ -2369,6 +2484,12 @@ impl AbstractSyntaxTree {
                         None,
                     )?;
                     map.add(id, scan_id);
+                }
+                Rule::ScanCteOrTable => {
+                    parse_scan_cte_or_table(self, metadata, id, &mut map, &mut ctes, &mut plan)?;
+                }
+                Rule::Cte => {
+                    parse_cte(self, id, &mut map, &mut ctes, &mut plan)?;
                 }
                 Rule::Table => {
                     // The thing is we don't want to normalize name.
@@ -2522,6 +2643,9 @@ impl AbstractSyntaxTree {
                     let select_plan_node_id =
                         parse_select(Pairs::single(select_pair), pos_to_ast_id, &map, &mut plan)?;
                     map.add(id, select_plan_node_id);
+                }
+                Rule::SelectFull => {
+                    parse_select_full(self, id, &mut map)?;
                 }
                 Rule::Projection => {
                     let (rel_child_id, other_children) = node

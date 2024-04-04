@@ -1143,6 +1143,7 @@ impl Plan {
             | Relational::OrderBy { .. }
             | Relational::Having { .. }
             | Relational::Join { .. }
+            | Relational::ScanCte { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
             | Relational::ValuesRow { .. }
@@ -1845,6 +1846,25 @@ impl Plan {
         Ok(map)
     }
 
+    fn resolve_cte_conflicts(&mut self, cte_id: usize) -> Result<Strategy, SbroadError> {
+        // We always gather CTE data on the router node.
+        let mut map = Strategy::new(cte_id);
+        let child_id = self.get_relational_child(cte_id, 0)?;
+        let child_output_id = self.get_relation_node(child_id)?.output();
+        let child_dist = self.get_distribution(child_output_id)?;
+        match child_dist {
+            Distribution::Global | Distribution::Single => {
+                // The data is already on the router node, no need to build a virtual table.
+                map.add_child(child_id, MotionPolicy::None, Program::default());
+            }
+            Distribution::Any | Distribution::Segment { .. } => {
+                // Build a virtual table on the router node.
+                map.add_child(child_id, MotionPolicy::Full, Program::default());
+            }
+        }
+        Ok(map)
+    }
+
     // Helper function to check whether except is done between
     // sharded tables that both contain the bucket_id column
     // at the same position in their outputs. In such case
@@ -2267,6 +2287,21 @@ impl Plan {
                     let strategy = self.resolve_union_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
+                }
+                Relational::ScanCte { output, .. } => {
+                    let strategy = self.resolve_cte_conflicts(id)?;
+                    self.create_motion_nodes(strategy)?;
+                    // We don't materialize CTEs with global and single distribution.
+                    // So, for global child let's preserve global distribution for CTE.
+                    // Otherwise force a single distribution.
+                    let child_id = self.get_relational_child(id, 0)?;
+                    let child_dist =
+                        self.get_distribution(self.get_relational_output(child_id)?)?;
+                    if matches!(child_dist, Distribution::Global) {
+                        self.set_dist(output, Distribution::Global)?;
+                    } else {
+                        self.set_dist(output, Distribution::Single)?;
+                    }
                 }
             }
         }

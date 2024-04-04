@@ -3456,6 +3456,8 @@ fn non_existent_references_in_values_do_not_panic() {
 }
 
 #[cfg(test)]
+mod cte;
+#[cfg(test)]
 mod global;
 #[cfg(test)]
 mod insert;

@@ -1,11 +1,15 @@
 statement   ::= explain | ddl | dml | dql | acl | call
 explain     ::= 'EXPLAIN' ( dml | dql )
 
-dql         ::= (select | values)
+dql         ::= (cte | values)
                 ( 'OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
                 ')')?
+cte         ::= ('WITH'
+                cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')'
+                (',' cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')')*
+                )? select
 select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
                 'FROM' (table | ('(' (select | values) ')')) (('AS')? name)?
                 (

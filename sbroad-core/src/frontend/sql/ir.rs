@@ -530,6 +530,11 @@ impl SubtreeCloner {
                 output: _,
                 relation: _,
             }
+            | Relational::ScanCte {
+                alias: _,
+                output: _,
+                child: _,
+            }
             | Relational::ScanSubQuery {
                 alias: _,
                 children: _,

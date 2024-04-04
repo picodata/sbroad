@@ -201,7 +201,10 @@ g.test_query_errored = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "NotFoundSpace"]], {} })
-    t.assert_equals(tostring(err), "Sbroad Error: build query: space \"NotFoundSpace\" not found")
+    t.assert_equals(
+        tostring(err),
+        "Sbroad Error: build query: table with name \"NotFoundSpace\" not found"
+    )
 
     -- luacheck: max line length 140
     local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })

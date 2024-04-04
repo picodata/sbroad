@@ -361,6 +361,7 @@ impl ExecutionPlan {
                                     sql.push_str(relation);
                                 }
                                 Relational::ScanSubQuery { .. }
+                                | Relational::ScanCte { .. }
                                 | Relational::Motion { .. }
                                 | Relational::ValuesRow { .. } => {}
                                 Relational::Selection { .. } => sql.push_str("WHERE"),

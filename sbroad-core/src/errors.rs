@@ -35,6 +35,8 @@ pub enum Entity {
     ClusterSchema,
     /// general variant
     Column,
+    /// CTE
+    Cte,
     /// corresponds to enum Distribution
     Distribution,
     /// tarantool distribution key
@@ -160,6 +162,7 @@ impl fmt::Display for Entity {
             Entity::Chain => "chain".to_smolstr(),
             Entity::ClusterSchema => "cluster schema".to_smolstr(),
             Entity::Column => "column".to_smolstr(),
+            Entity::Cte => "CTE".to_smolstr(),
             Entity::Distribution => "distribution".to_smolstr(),
             Entity::DistributionKey => "distribution key".to_smolstr(),
             Entity::Engine => "engine".to_smolstr(),

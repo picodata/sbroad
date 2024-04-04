@@ -6,6 +6,7 @@ Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL) ~ EOF }
 Table     = @{ Identifier }
 // Helper rule to denote we have to create relational scan node.
 ScanTable = { Table }
+ScanCteOrTable = @{ Table }
 
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     CreateUser = {
@@ -129,12 +130,19 @@ Block = { CallProc ~ DqlOption? }
 ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
-Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~ DqlOption? }
+Query = { (SelectFull | Values | Insert | Update | Delete) ~ DqlOption? }
+    SelectFull = {
+        (^"with" ~ Cte ~ ("," ~ Cte)*)?
+        ~ SelectWithOptionalContinuation
+    }
+    SelectOp = _{ UnionAllOp | ExceptOp | UnionOp }
+        UnionOp = { ^"union" }
+        ExceptOp = { (^"except" ~ ^"distinct") | ^"except" }
+        UnionAllOp = { ^"union" ~ ^"all" }
     SelectWithOptionalContinuation = { Select ~ (SelectOp ~ Select)* }
-        SelectOp = _{ UnionAllOp | ExceptOp | UnionOp }
-            UnionOp = { ^"union" }
-            ExceptOp = { (^"except" ~ ^"distinct") | ^"except" }
-            UnionAllOp = { ^"union" ~ ^"all" }
+    Cte = { Identifier ~ ("(" ~ CteColumn ~ ("," ~ CteColumn)* ~ ")")? ~ ^"as"
+            ~ "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
+    CteColumn = @{ Identifier }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         Join* ~ WhereClause? ~
@@ -142,25 +150,25 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         (^"having" ~ Having)? ~
         (^"order" ~ ^"by" ~ OrderBy)?
     }
-        Projection = { Distinct? ~ ProjectionElement ~ ("," ~ ProjectionElement)* }
-            ProjectionElement = _{ Asterisk | Column }
-            Column = { Expr ~ ((^"as")? ~ Identifier)? }
-            Asterisk = { (Identifier ~ ".")? ~ "*" }
-        WhereClause = _{ ^"where" ~ Selection }
-        Selection = { Expr }
-        Scan = { (ScanTable | SubQuery) ~ ((^"as")? ~ Identifier)? }
-        Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Expr }
-            JoinKind = _{ ( InnerJoinKind | LeftJoinKind ) }
-                InnerJoinKind = { ^"inner" }
-                LeftJoinKind = { ^"left" ~ (^"outer")? }
-        GroupBy = { Expr ~ ("," ~ Expr)* }
-        Having = { Expr }
-        OrderBy = { OrderByElement ~ ("," ~ OrderByElement)* }
-            OrderByElement = { Expr ~ OrderFlag? }
-            OrderFlag = _{ Asc | Desc }
-                Asc = { ^"asc" }
-                Desc = { ^"desc" }
-    SubQuery = { "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
+    Projection = { Distinct? ~ ProjectionElement ~ ("," ~ ProjectionElement)* }
+        ProjectionElement = _{ Asterisk | Column }
+        Column = { Expr ~ ((^"as")? ~ Identifier)? }
+        Asterisk = { (Identifier ~ ".")? ~ "*" }
+    WhereClause = _{ ^"where" ~ Selection }
+    Selection = { Expr }
+    Scan = { (ScanCteOrTable| SubQuery) ~ ((^"as")? ~ Identifier)? }
+    Join = { JoinKind? ~ ^"join" ~ Scan ~ ^"on" ~ Expr }
+        JoinKind = _{ ( InnerJoinKind | LeftJoinKind ) }
+            InnerJoinKind = { ^"inner" }
+            LeftJoinKind = { ^"left" ~ (^"outer")? }
+    GroupBy = { Expr ~ ("," ~ Expr)* }
+    Having = { Expr }
+    OrderBy = { OrderByElement ~ ("," ~ OrderByElement)* }
+        OrderByElement = { Expr ~ OrderFlag? }
+        OrderFlag = _{ Asc | Desc }
+            Asc = { ^"asc" }
+            Desc = { ^"desc" }
+    SubQuery = { "(" ~ (SelectFull | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) ~ OnConflict? }
         TargetColumns = { Identifier ~ ("," ~ Identifier)* }
         OnConflict = _{ ^"on conflict" ~ ^"do" ~ (DoNothing | DoReplace | DoFail) }

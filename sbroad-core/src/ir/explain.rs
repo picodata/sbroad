@@ -23,7 +23,7 @@ use super::operator::{Arithmetic, Bool, Unary};
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 enum ColExpr {
     Parentheses(Box<ColExpr>),
     Alias(Box<ColExpr>, SmolStr),
@@ -290,7 +290,7 @@ impl ColExpr {
 /// index will indicate to which of them Reference is pointing).
 type SubQueryRefMap = HashMap<usize, usize>;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Projection {
     /// List of colums in sql query
     cols: Vec<ColExpr>,
@@ -332,7 +332,7 @@ impl Display for Projection {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct GroupBy {
     /// List of colums in sql query
     gr_cols: Vec<ColExpr>,
@@ -389,7 +389,7 @@ impl Display for GroupBy {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 enum OrderByExpr {
     Expr { expr: ColExpr },
     Index { value: usize },
@@ -404,7 +404,7 @@ impl Display for OrderByExpr {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct OrderByPair {
     expr: OrderByExpr,
     order_type: Option<OrderByType>,
@@ -420,7 +420,7 @@ impl Display for OrderByPair {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct OrderBy {
     order_by_elements: Vec<OrderByPair>,
 }
@@ -465,7 +465,7 @@ impl Display for OrderBy {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Update {
     /// List of columns in sql query
     table: SmolStr,
@@ -557,7 +557,7 @@ impl Display for Update {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Scan {
     /// Table name
     table: SmolStr,
@@ -587,7 +587,7 @@ impl Display for Scan {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Ref {
     /// Reference to subquery index in `FullExplain` parts
     number: usize,
@@ -606,7 +606,7 @@ impl Display for Ref {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 enum RowVal {
     ColumnExpr(ColExpr),
     SqRef(Ref),
@@ -623,7 +623,7 @@ impl Display for RowVal {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Row {
     /// List of sql values in `WHERE` cause
     cols: Vec<RowVal>,
@@ -699,7 +699,7 @@ impl Display for Row {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct SubQuery {
     /// Subquery alias. For subquery in `WHERE` cause alias is `None`.
     alias: Option<String>,
@@ -723,7 +723,7 @@ impl Display for SubQuery {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct Motion {
     policy: MotionPolicy,
 }
@@ -740,7 +740,7 @@ impl Display for Motion {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 enum MotionPolicy {
     None,
     Full,
@@ -761,7 +761,7 @@ impl Display for MotionPolicy {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct MotionKey {
     pub targets: Vec<Target>,
 }
@@ -779,7 +779,7 @@ impl Display for MotionKey {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 enum Target {
     Reference(String),
     Value(Value),
@@ -794,7 +794,7 @@ impl Display for Target {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct InnerJoin {
     condition: ColExpr,
     kind: JoinKind,
@@ -814,7 +814,7 @@ impl Display for InnerJoin {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 #[allow(dead_code)]
 enum ExplainNode {
     Delete(SmolStr),
@@ -835,11 +835,13 @@ enum ExplainNode {
     Update(Update),
     SubQuery(SubQuery),
     Motion(Motion),
+    Cte(SmolStr, Ref),
 }
 
 impl Display for ExplainNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match &self {
+            ExplainNode::Cte(s, r) => format_smolstr!("scan cte {s}({r})"),
             ExplainNode::Delete(s) => format_smolstr!("delete {s}"),
             ExplainNode::Except => "except".to_smolstr(),
             ExplainNode::InnerJoin(i) => i.to_smolstr(),
@@ -867,7 +869,7 @@ impl Display for ExplainNode {
 }
 
 /// Describe sql query (or subquery) as recursive type
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 struct ExplainTreePart {
     /// Level hepls to detect count of idents
     #[serde(skip_serializing)]
@@ -920,7 +922,7 @@ impl ExplainTreePart {
 struct FullExplain {
     /// Main sql subtree
     main_query: ExplainTreePart,
-    /// Related part of query which describe as `WHERE` cause subqueries
+    /// Independent sub-trees of main sql query (e.g. sub-queries in `WHERE` cause, CTEs, etc.)
     subqueries: Vec<ExplainTreePart>,
     /// Options imposed during query execution
     exec_options: Vec<(OptionKind, Value)>,
@@ -1028,6 +1030,15 @@ impl FullExplain {
                         alias.as_ref().map(ToSmolStr::to_smolstr),
                     );
                     Some(ExplainNode::Scan(s))
+                }
+                Relational::ScanCte { alias, .. } => {
+                    let child = stack.pop().expect("CTE node must have exactly one child");
+                    let existing_pos = result.subqueries.iter().position(|sq| *sq == child);
+                    let pos = existing_pos.unwrap_or_else(|| {
+                        result.subqueries.push(child);
+                        result.subqueries.len() - 1
+                    });
+                    Some(ExplainNode::Cte(alias.clone(), Ref::new(pos)))
                 }
                 Relational::Selection {
                     children, filter, ..
