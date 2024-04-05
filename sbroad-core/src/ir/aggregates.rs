@@ -285,6 +285,7 @@ impl SimpleAggregate {
                 children,
                 is_distinct,
                 func_type: RelType::from(final_func),
+                trim_kind: None,
             };
             let aggr_id = plan.nodes.push(Node::Expression(final_aggr));
             final_aggregates.insert(local_kind, aggr_id);

@@ -473,17 +473,20 @@ impl Plan {
                         children: children_left,
                         is_distinct: distinct_left,
                         func_type: func_type_left,
+                        trim_kind: trim_kind_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
                             is_distinct: distinct_right,
                             func_type: func_type_right,
+                            trim_kind: trim_kind_right,
                         } = right
                         {
                             return Ok(name_left == name_right
                                 && distinct_left == distinct_right
                                 && func_type_left == func_type_right
+                                && trim_kind_left == trim_kind_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));
@@ -990,7 +993,7 @@ impl Plan {
         // We can reuse aggregate expression between local aggregates, because
         // all local aggregates are located inside the same motion subtree and we
         // assume that each local aggregate does not need to modify its expression
-        let local_fun_id = self.add_stable_function(&fun, arguments.to_vec())?;
+        let local_fun_id = self.add_stable_function(&fun, arguments.to_vec(), None)?;
         let alias_id = self.nodes.add_alias(local_alias, local_fun_id)?;
         Ok(alias_id)
     }

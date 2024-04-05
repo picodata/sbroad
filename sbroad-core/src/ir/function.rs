@@ -5,6 +5,8 @@ use crate::ir::relation::Type;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 
+use super::expression::TrimKind;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Behavior {
     /// The function is a stable function, it does not have any side effects.
@@ -53,6 +55,7 @@ impl Plan {
         &mut self,
         function: &Function,
         children: Vec<usize>,
+        trim_kind: Option<TrimKind>,
     ) -> Result<usize, SbroadError> {
         if !function.is_stable() {
             return Err(SbroadError::Invalid(
@@ -65,6 +68,7 @@ impl Plan {
             children,
             is_distinct: false,
             func_type: function.func_type.clone(),
+            trim_kind,
         };
         let func_id = self.nodes.push(Node::Expression(func_expr));
         Ok(func_id)
@@ -114,6 +118,7 @@ impl Plan {
             children,
             is_distinct,
             func_type: Type::from(kind),
+            trim_kind: None,
         };
         let id = self.nodes.push(Node::Expression(func_expr));
         Ok(id)

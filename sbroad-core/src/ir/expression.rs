@@ -147,6 +147,9 @@ pub enum Expression {
         children: Vec<usize>,
         /// If this function is an aggregate function: whether it is marked DISTINCT or not
         is_distinct: bool,
+        /// Some if function is `trim`. This is the kind of `trim` function that can be set
+        /// by using keywords LEADING, TRAILING or BOTH.
+        trim_kind: Option<TrimKind>,
         /// Function return type.
         func_type: Type,
     },
@@ -162,6 +165,25 @@ pub enum Expression {
     ExprInParentheses {
         child: usize,
     },
+}
+
+#[derive(Default, Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
+pub enum TrimKind {
+    #[default]
+    Both,
+    Leading,
+    Trailing,
+}
+
+impl TrimKind {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TrimKind::Leading => "LEADING",
+            TrimKind::Trailing => "TRAILING",
+            TrimKind::Both => "BOTH",
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -613,17 +635,20 @@ impl<'plan> Comparator<'plan> {
                         children: children_left,
                         is_distinct: distinct_left,
                         func_type: func_type_left,
+                        trim_kind: trim_kind_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
                             is_distinct: distinct_right,
                             func_type: func_type_right,
+                            trim_kind: trim_kind_right,
                         } = right
                         {
                             return Ok(name_left == name_right
                                 && distinct_left == distinct_right
                                 && func_type_left == func_type_right
+                                && trim_kind_left == trim_kind_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));
@@ -713,10 +738,12 @@ impl<'plan> Comparator<'plan> {
                 children,
                 is_distinct,
                 func_type,
+                trim_kind,
             } => {
                 is_distinct.hash(state);
                 func_type.hash(state);
                 name.hash(state);
+                trim_kind.hash(state);
                 for child in children {
                     self.hash_for_expr(*child, state, depth - 1);
                 }

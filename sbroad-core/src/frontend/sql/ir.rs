@@ -428,10 +428,7 @@ impl SubtreeCloner {
                 distribution: _,
             }
             | Expression::StableFunction {
-                ref mut children,
-                name: _,
-                is_distinct: _,
-                func_type: _,
+                ref mut children, ..
             } => {
                 *children = self.copy_list(&*children)?;
             }

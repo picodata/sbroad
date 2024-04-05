@@ -25,6 +25,7 @@ use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
     ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId, Position,
+    TrimKind,
 };
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
@@ -729,6 +730,76 @@ fn parse_grant_revoke(
     Ok((grant_revoke_type, grantee_name, timeout))
 }
 
+fn parse_trim_function_args<M: Metadata>(
+    function_name: String,
+    function_args: Pair<'_, Rule>,
+    referred_relation_ids: &[usize],
+    worker: &mut ExpressionsWorker<M>,
+    plan: &mut Plan,
+) -> Result<ParseExpression, SbroadError> {
+    let normalized_name = function_name.to_lowercase();
+    if "trim" != normalized_name.as_str() {
+        return Err(SbroadError::Invalid(
+            Entity::Query,
+            Some(format!(
+                "Trim function artuments format is allowed only inside \"trim\" function. Got: {normalized_name}",
+            ))
+        ));
+    }
+    let mut parse_exprs_args = Vec::new();
+    let mut kind = None;
+    let mut removal_chars = None;
+    let mut string = None;
+
+    let args_inner = function_args.into_inner();
+    for arg_pair in args_inner {
+        match arg_pair.as_rule() {
+            Rule::TrimKind => {
+                for kind_pair in arg_pair.into_inner() {
+                    match kind_pair.as_rule() {
+                        Rule::TrimKindBoth => kind = Some(TrimKind::Both),
+                        Rule::TrimKindLeading => kind = Some(TrimKind::Leading),
+                        Rule::TrimKindTrailing => kind = Some(TrimKind::Trailing),
+                        rule => unreachable!("Expected TrimKind variant. Got: {rule:?}"),
+                    }
+                }
+            }
+            Rule::TrimChars => {
+                removal_chars = Some(parse_expr_pratt(
+                    arg_pair.into_inner(),
+                    referred_relation_ids,
+                    worker,
+                    plan,
+                )?);
+            }
+            Rule::TrimString => {
+                string = Some(parse_expr_pratt(
+                    arg_pair.into_inner(),
+                    referred_relation_ids,
+                    worker,
+                    plan,
+                )?);
+            }
+            rule => unreachable!("Unexpected rule under TrimFunctionArgs: {rule:?}"),
+        }
+    }
+    let string = string.expect("string is required by grammar");
+
+    if let Some(removal_chars) = removal_chars {
+        parse_exprs_args.push(removal_chars);
+    }
+    parse_exprs_args.push(string);
+    // mark this function as `trim` function
+    let trim_kind = Some(kind.unwrap_or_default());
+
+    Ok(ParseExpression::Function {
+        name: function_name,
+        args: parse_exprs_args,
+        is_distinct: false,
+        trim_kind,
+    })
+}
+
 /// Common logic for `SqlVdbeMaxSteps` and `VTableMaxRows` parsing.
 fn parse_option<M: Metadata>(
     ast: &AbstractSyntaxTree,
@@ -1013,6 +1084,7 @@ enum ParseExpression {
         name: String,
         args: Vec<ParseExpression>,
         is_distinct: bool,
+        trim_kind: Option<TrimKind>,
     },
     Row {
         children: Vec<ParseExpression>,
@@ -1230,6 +1302,7 @@ impl ParseExpression {
                 name,
                 args,
                 is_distinct,
+                trim_kind,
             } => {
                 let mut plan_arg_ids = Vec::new();
                 for arg in args {
@@ -1246,7 +1319,7 @@ impl ParseExpression {
                 } else {
                     let func = worker.metadata.function(name)?;
                     if func.is_stable() {
-                        plan.add_stable_function(func, plan_arg_ids)?
+                        plan.add_stable_function(func, plan_arg_ids, trim_kind.clone())?
                     } else {
                         // At the moment we don't support any non-stable functions.
                         // Later this code block should handle other function behaviors.
@@ -1420,6 +1493,15 @@ where
                                                 parse_exprs_args.push(arg_expr);
                                             }
                                         }
+                                        Rule::TrimFunctionArgs => {
+                                            return parse_trim_function_args(
+                                                function_name,
+                                                function_args,
+                                                referred_relation_ids,
+                                                worker,
+                                                plan
+                                            );
+                                        }
                                         rule => unreachable!("{}", format!("Unexpected rule under FunctionInvocation: {rule:?}"))
                                     }
                                 }
@@ -1427,6 +1509,7 @@ where
                                     name: function_name,
                                     args: parse_exprs_args,
                                     is_distinct,
+                                    trim_kind: None
                                 })
                             }
                             rule => unreachable!("Expr::parse expected identifier continuation, found {:?}", rule)

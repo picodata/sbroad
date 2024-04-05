@@ -288,6 +288,9 @@ impl ExecutionPlan {
                     SyntaxData::Distinct => sql.push_str("DISTINCT"),
                     SyntaxData::Inline(content) => sql.push_str(content),
                     SyntaxData::From => sql.push_str("FROM"),
+                    SyntaxData::Leading => sql.push_str("LEADING"),
+                    SyntaxData::Both => sql.push_str("BOTH"),
+                    SyntaxData::Trailing => sql.push_str("TRAILING"),
                     SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                     SyntaxData::OpenParenthesis => sql.push('('),
                     SyntaxData::PlanId(id) => {

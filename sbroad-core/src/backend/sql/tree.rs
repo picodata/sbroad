@@ -6,7 +6,7 @@ use std::mem::take;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, TrimKind};
 use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
@@ -36,6 +36,12 @@ pub enum SyntaxData {
     Inline(String),
     /// "from"
     From,
+    /// "leading"
+    Leading,
+    /// "both"
+    Both,
+    /// "trailing"
+    Trailing,
     /// "("
     OpenParenthesis,
     /// "=, >, <, and, or, ..."
@@ -144,6 +150,30 @@ impl SyntaxNode {
     fn new_from() -> Self {
         SyntaxNode {
             data: SyntaxData::From,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_leading() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Leading,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_both() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Both,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_trailing() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Trailing,
             left: None,
             right: Vec::new(),
         }
@@ -961,20 +991,46 @@ impl<'p> SyntaxPlan<'p> {
                 Expression::StableFunction {
                     children,
                     is_distinct,
+                    trim_kind,
                     ..
                 } => {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    if *is_distinct {
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
-                    }
-                    if let Some((last, others)) = children.split_last() {
-                        for child in others {
-                            nodes.push(self.nodes.get_syntax_node_id(*child)?);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                    if let Some(kind) = trim_kind {
+                        // `trim` function has a special format. For instance, here how we can
+                        // call it: trim(leading 'a' from 'ab').
+                        match kind {
+                            TrimKind::Leading => {
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_leading()));
+                            }
+                            TrimKind::Trailing => {
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_trailing()));
+                            }
+                            TrimKind::Both => {
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_both()));
+                            }
                         }
-                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
+
+                        if let Some((string, removal_chars)) = children.split_last() {
+                            for child in removal_chars {
+                                nodes.push(self.nodes.get_syntax_node_id(*child)?);
+                            }
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
+                            nodes.push(self.nodes.get_syntax_node_id(*string)?);
+                        }
+                    } else {
+                        if *is_distinct {
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
+                        }
+                        if let Some((last, others)) = children.split_last() {
+                            for child in others {
+                                nodes.push(self.nodes.get_syntax_node_id(*child)?);
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                            }
+                            nodes.push(self.nodes.get_syntax_node_id(*last)?);
+                        }
                     }
+
                     nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
                     let sn = SyntaxNode::new_pointer(id, None, nodes);
                     Ok(self.nodes.push_syntax_node(sn))
