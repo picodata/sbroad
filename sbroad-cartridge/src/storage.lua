@@ -1,8 +1,8 @@
 require('strict').on()
-require('sbroad')
 require('sbroad.core-storage')
 
 local cartridge = require('cartridge')
+local rust = require("sbroad.rust")
 
 _G.get_storage_cache_capacity = function()
     local cfg = cartridge.config_get_readonly()
@@ -24,30 +24,10 @@ _G.get_storage_cache_size_bytes = function()
     return cfg["storage_cache_size_bytes"]
 end
 
-local function init(is_master)
-    if is_master then
-        box.schema.func.create(
-            'libsbroad.execute',
-            { if_not_exists = true, language = 'C' }
-        )
-
-        box.schema.func.create(
-            'libsbroad.invalidate_segment_cache',
-            { if_not_exists = true, language = 'C' }
-        )
-
-        box.schema.func.create(
-            'libsbroad.rpc_mock',
-            { if_not_exists = true, language = 'C' }
-        )
-    end
-end
-
-local function invalidate_cache()
-    box.func["libsbroad.invalidate_segment_cache"]:call({})
+local function invalidate_cache(...)
+    return rust.invalidate_segment_cache(...)
 end
 
 return {
-    init = init,
     invalidate_cache = invalidate_cache,
 }

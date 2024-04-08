@@ -62,7 +62,7 @@ option_queries.test_basic = function()
     local _, err = api:call("sbroad.execute", {
         query_str .. [[ option(sql_vdbe_max_steps = 5) ]]
     })
-    t.assert_str_contains(err.message, [[Reached a limit on max executed vdbe opcodes. Limit: 5]])
+    t.assert_str_contains(err, [[Reached a limit on max executed vdbe opcodes. Limit: 5]])
 
     -- check query works without limit
     local r
@@ -93,7 +93,7 @@ option_queries.test_dml = function()
     local _, err = api:call("sbroad.execute", {
         query_str .. [[ option(sql_vdbe_max_steps = 10) ]]
     })
-    t.assert_str_contains(err.message, [[Reached a limit on max executed vdbe opcodes. Limit: 10]])
+    t.assert_str_contains(err, [[Reached a limit on max executed vdbe opcodes. Limit: 10]])
 
     -- check query works without limit
     local r
@@ -108,21 +108,21 @@ option_queries.test_invalid = function()
     local _, err = api:call("sbroad.execute", {
         query_str .. [[ option(sql_vdbe_max_steps = 10, sql_vdbe_max_steps = 11) ]]
     })
-    t.assert_str_contains(err.message, [[option sql_vdbe_max_steps specified more than once!]])
+    t.assert_str_contains(err, [[option sql_vdbe_max_steps specified more than once!]])
 
     _, err = api:call("sbroad.execute", {
         query_str .. [[ option(sql_vdbe_max_steps = ?) ]], { -1 }
     })
-    t.assert_str_contains(err.message, [[expected option sql_vdbe_max_steps to be unsigned got: Integer(-1)]])
+    t.assert_str_contains(err, [[expected option sql_vdbe_max_steps to be unsigned got: Integer(-1)]])
     _, err = api:call("sbroad.execute", {
         query_str .. [[ option(vtable_max_rows = ?) ]], { -1 }
     })
-    t.assert_str_contains(err.message, [[expected option vtable_max_rows to be unsigned got: Integer(-1)]])
+    t.assert_str_contains(err, [[expected option vtable_max_rows to be unsigned got: Integer(-1)]])
 
     _, err = api:call("sbroad.execute", {
         query_str .. [[ option(bad_option = 1) ]]
     })
-    t.assert_str_contains(err.message, [[Sbroad Error: rule parsing error]])
+    t.assert_str_contains(err, [[Sbroad Error: build query: rule parsing error]])
 end
 
 option_queries.test_vtable_max_rows_on_storage = function()
@@ -131,7 +131,7 @@ option_queries.test_vtable_max_rows_on_storage = function()
     local _, err = api:call("sbroad.execute", {
         query_str .. [[ option(vtable_max_rows = 1) ]]
     })
-    t.assert_str_contains(err.message, [[Exceeded maximum number of rows (1) in virtual table: 2]])
+    t.assert_str_contains(err, [[Exceeded maximum number of rows (1) in virtual table: 2]])
 
     local r
     r, err = api:call("sbroad.execute", { query_str .. [[ option(vtable_max_rows = 6) ]] })
@@ -145,7 +145,7 @@ option_queries.test_vtable_max_rows_insert_values = function()
     local _, err = api:call("sbroad.execute", {
         query_str .. [[ option(vtable_max_rows = 1) ]]
     })
-    t.assert_str_contains(err.message, [[Exceeded maximum number of rows (1) in virtual table: 3]])
+    t.assert_str_contains(err, [[Exceeded maximum number of rows (1) in virtual table: 3]])
 end
 
 option_queries.test_vtable_max_rows_on_router = function()
@@ -157,7 +157,7 @@ option_queries.test_vtable_max_rows_on_router = function()
     -- on storages the result table <= 5 (assuming each storage
     -- has at least one row). On router the VTable will have
     -- 6 rows
-    t.assert_str_contains(err.message, [[Exceeded maximum number of rows (5) in virtual table: 6]])
+    t.assert_str_contains(err, [[Exceeded maximum number of rows (5) in virtual table: 6]])
 
     local r
     r, err = api:call("sbroad.execute", { query_str .. [[ option(vtable_max_rows = 7) ]] })

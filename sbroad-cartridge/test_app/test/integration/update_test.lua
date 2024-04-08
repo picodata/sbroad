@@ -169,7 +169,7 @@ update_queries.test_invalid = function()
     _, err = api:call("sbroad.execute", {
         [[ update "testing_space" set "product_units" = select sum("id") from "t" where "id" = 1]], {}
     })
-    t.assert_str_contains(tostring(err), "Sbroad Error: rule parsing error")
+    t.assert_str_contains(tostring(err), "Sbroad Error: build query: rule parsing error")
 
     -- wrong type for column, no conversion is possible
     _, err = api:call("sbroad.execute", {
@@ -181,7 +181,7 @@ update_queries.test_invalid = function()
     _, err = api:call("sbroad.execute", {
         [[ update "testing_space" set "testing_space"."product_units" = 1]], {}
     })
-    t.assert_str_contains(tostring(err), "Sbroad Error: rule parsing error")
+    t.assert_str_contains(tostring(err), "Sbroad Error: build query: rule parsing error")
 end
 
 update_queries.test_where = function()

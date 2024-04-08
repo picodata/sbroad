@@ -24,11 +24,28 @@ local constants = {
 }
 constants = protect(constants)
 
-local function module_name()
-    if package.loaded['pico'] ~= nil then
-	return ''
+--- Checks if building against picodata - mainly needed because stored procs should be used then.
+local function pico_compat()
+  return package.loaded["pico"] ~= nil
+end
+
+--- Make correct function name to be passed when executed via `proc_call_fn_name()`(see below).
+local function proc_fn_name(func_name)
+  if pico_compat() then
+    return '.' .. func_name
+  else
+    return "sbroad.procs." .. func_name
+  end
+end
+
+--- Function that calls other local functions whose name supplied as argument.
+--- Picodata relies on stored procs as for now, so it's `box.schema.func.call`,
+--- whereas cartridge impl relies on custom caller impl based on `box.lib`.
+local function proc_call_fn_name()
+    if pico_compat() then
+	    return 'box.schema.func.call'
     else
-	return 'libsbroad'
+	    return 'sbroad.call_proc'
     end
 end
 
@@ -67,29 +84,37 @@ local function dql_error(err, rs_uuid)
     error(err)
 end
 
+-- On older versions of tarantool there was a bug which made all FFI
+-- stored procedures' wrap their return values into an additional
+-- msgpack array (they call it "multireturn", but you couldn't put
+-- multiple values in there, it was hard-coded to be 1 element). But
+-- thankfully it was fixed and now we get to rewrite all of our code...
+-- Yay!
+-- See https://github.com/tarantool/tarantool/issues/4799
+local function is_iproto_multireturn_supported()
+  if compat_mt == nil then
+    return false
+  end
+
+  -- We want to just call `compat.c_func_iproto_multireturn:is_new()`,
+  -- but it throws an exception when the option is unknown.
+  local ok, opt = pcall(compat_mt.__index, compat, 'c_func_iproto_multireturn')
+  return ok and opt:is_new()
+end
+
 local function unwrap_execute_result(result)
-    if compat_mt == nil then
-        return result[1]
-    end
-    -- We want to just call `compat.c_func_iproto_multireturn:is_new()`,
-    -- but it throws an exception when the option is unknown.
-    local ok, opt = pcall(compat_mt.__index, compat, 'c_func_iproto_multireturn')
-    if ok and opt:is_new() then
-        -- On older versions of tarantool there was a bug which made all FFI
-        -- stored procedures' wrap their return values into an additional
-        -- msgpack array (they call it "multireturn", but you couldn't put
-        -- multiple values in there, it was hard-coded to be 1 element). But
-        -- thankfully it was fixed and now we get to rewrite all of our code...
-        -- Yay!
-        -- See https://github.com/tarantool/tarantool/issues/4799
-        return result
+    if is_iproto_multireturn_supported() then
+      return result
     else
-        return result[1]
+      return result[1]
     end
 end
 
 return {
-    module_name = module_name,
+    is_iproto_multireturn_supported = is_iproto_multireturn_supported,
+    pico_compat = pico_compat,
+    proc_call_fn_name = proc_call_fn_name,
+    proc_fn_name = proc_fn_name,
     vtable_limit_exceeded = vtable_limit_exceeded,
     dql_error = dql_error,
     format_result = format_result,

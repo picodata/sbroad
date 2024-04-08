@@ -1,10 +1,12 @@
 local checks = require('checks')
 local core = require('sbroad.core')
+local rust = require("sbroad.rust")
 
 local function init (is_master)
     if is_master then
         core.init()
     end
+    rust.init()
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args
@@ -22,17 +24,7 @@ local function calculate_bucket_id(values, space_name) -- luacheck: no unused ar
         return nil, result
     end
 
-    has_err, result = pcall(
-        function()
-            return box.func["libsbroad.calculate_bucket_id"]:call({ values,  space_name })
-        end
-    )
-
-    if has_err == false then
-        return nil, result
-    end
-
-    return result
+    return rust.calculate_bucket_id(values, space_name)
 end
 
 

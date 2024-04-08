@@ -26,6 +26,6 @@ g.test_call_proc = function()
     )
     t.assert_equals(
             string.format("%s", err),
-            [[Sbroad Error: Blocks of commands are not supported]]
+            [[Sbroad Error: blocks of commands are not supported]]
     )
 end

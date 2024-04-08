@@ -40,11 +40,19 @@ impl TryFrom<FunctionArgs> for PatternWithParams {
     type Error = SbroadError;
 
     fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
+        (&Tuple::from(value)).try_into()
+    }
+}
+
+impl TryFrom<&Tuple> for PatternWithParams {
+    type Error = SbroadError;
+
+    fn try_from(value: &Tuple) -> Result<Self, Self::Error> {
         debug!(
             Option::from("argument parsing"),
             &format!("Query parameters: {value:?}"),
         );
-        match Tuple::from(value).decode::<EncodedPatternWithParams>() {
+        match value.decode::<EncodedPatternWithParams>() {
             Ok(encoded) => Ok(PatternWithParams::try_from(encoded)?),
             Err(e) => Err(SbroadError::ParsingError(
                 Entity::PatternWithParams,

@@ -9,14 +9,12 @@ local function init(opts) -- luacheck: no unused args
     _G.sbroad.calculate_bucket_id = sbroad_common.calculate_bucket_id
 
     sbroad_common.init(opts.is_master)
-    sbroad_storage.init(opts.is_master)
 
     return true
 end
 
 local function apply_config(conf, opts) -- luacheck: no unused args
-    sbroad_storage.invalidate_cache()
-    return true
+    return sbroad_storage.invalidate_cache()
 end
 
 return {

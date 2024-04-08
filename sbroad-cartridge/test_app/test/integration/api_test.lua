@@ -194,11 +194,11 @@ g.test_query_errored = function()
     local api = cluster:server("api-1").net_box
 
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "NotFoundSpace"]], {} })
-    t.assert_equals(tostring(err), "Sbroad Error: space \"NotFoundSpace\" not found")
+    t.assert_equals(tostring(err), "Sbroad Error: build query: space \"NotFoundSpace\" not found")
 
     -- luacheck: max line length 140
     local _, err = api:call("sbroad.execute", { [[SELECT "NotFoundColumn" FROM "testing_space"]], {} })
-    t.assert_equals(tostring(err), "Sbroad Error: column with name \"NotFoundColumn\" not found")
+    t.assert_equals(tostring(err), "Sbroad Error: build query: column with name \"NotFoundColumn\" not found")
 
     local invalid_type_param = datetime.new{
         nsec = 123456789,
@@ -214,14 +214,14 @@ g.test_query_errored = function()
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {invalid_type_param} })
     t.assert_str_contains(
         tostring(err),
-        "Sbroad Error: pattern with parameters parsing error"
+        "Sbroad Error: build params: pattern with parameters parsing error"
     )
 
     -- check err when params lenght is less then amount of sign `?`
     local _, err = api:call("sbroad.execute", { [[SELECT * FROM "testing_space" where "id" = ?]], {} })
     t.assert_equals(
         tostring(err),
-        "Sbroad Error: invalid node: parameter node does not refer to an expression"
+        "Sbroad Error: build query: invalid node: parameter node does not refer to an expression"
     )
 end
 

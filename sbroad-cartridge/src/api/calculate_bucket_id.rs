@@ -1,16 +1,16 @@
 use std::collections::HashMap;
-use std::os::raw::c_int;
 
 use sbroad::errors::{Entity, SbroadError};
-use tarantool::tuple::{FunctionArgs, FunctionCtx, Tuple};
+use tarantool::tuple::{RawBytes, Tuple};
 
 use serde::{de::Deserializer, Deserialize, Serialize};
 
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
+use crate::utils::{wrap_proc_result, ProcResult};
+use anyhow::Context;
 use sbroad::executor::engine::{Router, Vshard};
 use sbroad::ir::value::{LuaValue, Value};
-use sbroad::log::tarantool_error;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 /// Tuple with space name and `key:value` map of values
@@ -87,17 +87,17 @@ enum Args {
     Map(ArgsMap),
 }
 
-impl TryFrom<FunctionArgs> for Args {
+impl TryFrom<&Tuple> for Args {
     type Error = SbroadError;
 
-    fn try_from(value: FunctionArgs) -> Result<Self, Self::Error> {
-        if let Ok(args) = Tuple::from(&value).decode::<ArgsString>() {
+    fn try_from(tuple: &Tuple) -> Result<Self, Self::Error> {
+        if let Ok(args) = tuple.decode::<ArgsString>() {
             return Ok(Self::String(args));
         }
-        if let Ok(args) = Tuple::from(&value).decode::<ArgsTuple>() {
+        if let Ok(args) = tuple.decode::<ArgsTuple>() {
             return Ok(Self::Tuple(args));
         }
-        if let Ok(args) = Tuple::from(&value).decode::<ArgsMap>() {
+        if let Ok(args) = tuple.decode::<ArgsMap>() {
             return Ok(Self::Map(args));
         }
 
@@ -106,55 +106,38 @@ impl TryFrom<FunctionArgs> for Args {
             format!(
                 "expected string, tuple with a space name, or map with a space name as an argument, \
                 got args {:?}",
-                &value
+                &tuple
             ),
         ))
     }
 }
 
-#[no_mangle]
-extern "C" fn calculate_bucket_id(ctx: FunctionCtx, args: FunctionArgs) -> c_int {
-    let ret_code = load_config(&COORDINATOR_ENGINE);
-    if ret_code != 0 {
-        return ret_code;
-    }
+#[tarantool::proc(packed_args)]
+fn calculate_bucket_id(args: &RawBytes) -> ProcResult<u64> {
+    wrap_proc_result(
+        "calculate_bucket_id".into(),
+        calculate_bucket_id_inner(args),
+    )
+}
+
+fn calculate_bucket_id_inner(args: &RawBytes) -> anyhow::Result<u64> {
+    let tuple = Tuple::try_from_slice(args)?;
+    let args = Args::try_from(&tuple)?;
+    load_config(&COORDINATOR_ENGINE)?;
 
     COORDINATOR_ENGINE.with(|engine| {
-        let runtime = match engine.try_borrow() {
-            Ok(runtime) => runtime,
-            Err(e) => {
-                return tarantool_error(&format!(
-                    "Failed to borrow the runtime while calculating a bucket id: {e:?}",
-                ));
-            }
-        };
-
-        let res = match Args::try_from(args) {
-            Ok(Args::String(params)) => {
+        let runtime = engine.try_borrow().context("borrow runtime")?;
+        Ok(match args {
+            Args::String(params) => {
                 let bucket_str = Value::from(params.rec);
-                runtime.determine_bucket_id(&[&bucket_str])
+                runtime.determine_bucket_id(&[&bucket_str])?
             }
-            Ok(Args::Tuple(params)) => {
-                match runtime.extract_sharding_key_from_tuple(params.space, &params.rec) {
-                    Ok(tuple) => runtime.determine_bucket_id(&tuple),
-                    Err(e) => Err(e),
-                }
-            }
-            Ok(Args::Map(params)) => {
-                match runtime.extract_sharding_key_from_map(params.space, &params.rec) {
-                    Ok(tuple) => runtime.determine_bucket_id(&tuple),
-                    Err(e) => Err(e),
-                }
-            }
-            Err(e) => Err(e),
-        };
-
-        match res {
-            Ok(bucket_id) => {
-                ctx.return_mp(&bucket_id).unwrap();
-                0
-            }
-            Err(e) => tarantool_error(&format!("{e}")),
-        }
+            Args::Tuple(params) => runtime
+                .extract_sharding_key_from_tuple(params.space, &params.rec)
+                .map(|tuple| runtime.determine_bucket_id(&tuple))??,
+            Args::Map(params) => runtime
+                .extract_sharding_key_from_map(params.space, &params.rec)
+                .map(|tuple| runtime.determine_bucket_id(&tuple))??,
+        })
     })
 }

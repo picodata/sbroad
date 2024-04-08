@@ -11,15 +11,13 @@ local function init(opts) -- luacheck: no unused args
     _G.sbroad.execute = sbroad_router.execute
     _G.sbroad.trace = sbroad_router.trace
 
-    sbroad_router.init(opts.is_master)
     sbroad_common.init(opts.is_master)
 
     return true
 end
 
 local function apply_config(conf, opts) -- luacheck: no unused args
-    sbroad_router.invalidate_cache()
-    return true
+    return sbroad_router.invalidate_cache()
 end
 
 return {

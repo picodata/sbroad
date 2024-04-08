@@ -134,7 +134,7 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
     --
     for uuid, rs_args in pairs(uuid_to_args) do
         local rs = replicasets[uuid]
-        local args = {'storage_map', rid, 'box.schema.func.call', {func, rs_args['required'], rs_args['optional']}}
+        local args = {'storage_map', rid, helper.proc_call_fn_name(), {func, rs_args['required'], rs_args['optional']}}
         res, err = rs:callrw('vshard.storage._call', args, opts_map)
         if res == nil then
             err_uuid = uuid
@@ -216,7 +216,7 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
     local result
     local call_opts = { is_async = true }
 
-    local exec_fn = helper.module_name() .. ".execute"
+    local exec_fn = helper.proc_fn_name("execute")
     if #uuid_to_args == 1 then
         -- When read request is executed only on one
         -- storage, we don't care about bucket rebalancing.
@@ -263,7 +263,7 @@ end
 
 _G.dql_on_all = function(required, optional, waiting_timeout, vtable_max_rows)
     local replicasets = vshard.router.routeall()
-    local exec_fn = helper.module_name() .. ".execute"
+    local exec_fn = helper.proc_fn_name("execute")
     local uuid_to_args = {}
     for uuid, _ in pairs(replicasets) do
         uuid_to_args[uuid] = { required = required, optional = optional }
@@ -283,7 +283,7 @@ end
 
 _G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
     local result = nil
-    local exec_fn = helper.module_name() .. ".execute"
+    local exec_fn = helper.proc_fn_name("execute")
     local futures = {}
 
     for rs_uuid, map in pairs(tbl_rs_ir) do
@@ -338,7 +338,7 @@ _G.dml_on_all = function(required, optional, is_readonly, waiting_timeout)
     local replicas = vshard.router.routeall()
     local result = nil
     local futures = {}
-    local exec_fn = helper.module_name() .. ".execute"
+    local exec_fn = helper.proc_fn_name("execute")
 
     for _, replica in pairs(replicas) do
         if is_readonly then

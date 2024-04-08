@@ -4,6 +4,7 @@ require('sbroad.core-router')
 local helper = require('sbroad.helper')
 
 local cartridge = require('cartridge')
+local rust = require("sbroad.rust")
 
 _G.get_schema = function()
     return cartridge.get_schema()
@@ -39,43 +40,19 @@ _G.get_sharding_column = function()
     return cfg["executor_sharding_column"]
 end
 
-local function init(if_master)
-    if if_master then
-        box.schema.func.create(
-            'libsbroad.invalidate_coordinator_cache',
-            { if_not_exists = true, language = 'C' }
-        )
-
-        box.schema.func.create(
-            'libsbroad.dispatch_query',
-            { if_not_exists = true, language = 'C' }
-        )
-    end
-end
-
-local function invalidate_cache ()
-    box.func["libsbroad.invalidate_coordinator_cache"]:call({})
-end
-
-
 local function execute(query, params)
-    local has_err, parser_res = pcall(
-        function()
-            return box.func["libsbroad.dispatch_query"]:call({
-                query, params, box.NULL, box.NULL, helper.constants.STAT_TRACER,
-            })
-        end
-    )
-
-    if has_err == false then
-        return nil, parser_res
+    local result, err = rust.dispatch_query(query, params, box.NULL, box.NULL, helper.constants.STAT_TRACER)
+    if err then
+      return nil, err
     end
+    return helper.format_result(result[1])
+end
 
-    return helper.format_result(parser_res[1])
+local function invalidate_cache(...)
+    return rust.invalidate_coordinator_cache(...)
 end
 
 return {
-    init=init,
     invalidate_cache = invalidate_cache,
     execute = execute,
 }

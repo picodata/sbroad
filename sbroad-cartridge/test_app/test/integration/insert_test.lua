@@ -503,7 +503,7 @@ g.test_insert_on_conflict_do_replace_fails_for_secondary_unique_index = function
     VALUES (2, 1, 1)
     ON CONFLICT DO REPLACE
     ]]})
-    t.assert_str_contains(err.message,
+    t.assert_str_contains(tostring(err),
             "TupleFound: Duplicate key exists in unique index \\\\\\\"secondary\\\\\\\"")
 end
 
