@@ -145,11 +145,8 @@ pub enum Expression {
         name: String,
         /// Function arguments.
         children: Vec<usize>,
-        /// If this function is an aggregate function: whether it is marked DISTINCT or not
-        is_distinct: bool,
-        /// Some if function is `trim`. This is the kind of `trim` function that can be set
-        /// by using keywords LEADING, TRAILING or BOTH.
-        trim_kind: Option<TrimKind>,
+        /// Optional function feature.
+        feature: Option<FunctionFeature>,
         /// Function return type.
         func_type: Type,
     },
@@ -167,6 +164,16 @@ pub enum Expression {
     },
 }
 
+#[derive(Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
+pub enum FunctionFeature {
+    /// Current function is an aggregate function and is marked as DISTINCT.
+    Distinct,
+    /// Current function is `trim` function.
+    Trim(TrimKind),
+}
+
+/// This is the kind of `trim` function that can be set
+/// by using keywords LEADING, TRAILING or BOTH.
 #[derive(Default, Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
 pub enum TrimKind {
     #[default]
@@ -633,22 +640,19 @@ impl<'plan> Comparator<'plan> {
                     Expression::StableFunction {
                         name: name_left,
                         children: children_left,
-                        is_distinct: distinct_left,
+                        feature: feature_left,
                         func_type: func_type_left,
-                        trim_kind: trim_kind_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
-                            is_distinct: distinct_right,
+                            feature: feature_right,
                             func_type: func_type_right,
-                            trim_kind: trim_kind_right,
                         } = right
                         {
                             return Ok(name_left == name_right
-                                && distinct_left == distinct_right
+                                && feature_left == feature_right
                                 && func_type_left == func_type_right
-                                && trim_kind_left == trim_kind_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));
@@ -736,14 +740,12 @@ impl<'plan> Comparator<'plan> {
             Expression::StableFunction {
                 name,
                 children,
-                is_distinct,
                 func_type,
-                trim_kind,
+                feature,
             } => {
-                is_distinct.hash(state);
+                feature.hash(state);
                 func_type.hash(state);
                 name.hash(state);
-                trim_kind.hash(state);
                 for child in children {
                     self.hash_for_expr(*child, state, depth - 1);
                 }

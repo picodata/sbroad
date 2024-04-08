@@ -3,7 +3,7 @@ use crate::ir::aggregates::{generate_local_alias_for_aggr, AggregateKind, Simple
 use crate::ir::distribution::Distribution;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::expression::{
-    ColumnPositionMap, Comparator, Expression, ReferencePolicy, EXPR_HASH_DEPTH,
+    ColumnPositionMap, Comparator, Expression, FunctionFeature, ReferencePolicy, EXPR_HASH_DEPTH,
 };
 use crate::ir::operator::Relational;
 use crate::ir::relation::Type;
@@ -180,10 +180,8 @@ impl<'plan> AggrCollector<'plan> {
 
     fn find(&mut self, current: usize, parent: Option<usize>) -> Result<(), SbroadError> {
         let expr = self.plan.get_expression_node(current)?;
-        if let StableFunction {
-            name, is_distinct, ..
-        } = expr
-        {
+        if let StableFunction { name, feature, .. } = expr {
+            let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
             if let Some(aggr) = SimpleAggregate::new(name, current) {
                 let Some(parent_rel) = self.parent_rel else {
                     return Err(SbroadError::Invalid(Entity::AggregateCollector, None));
@@ -192,7 +190,7 @@ impl<'plan> AggrCollector<'plan> {
                     parent_rel,
                     parent_expr: parent,
                     aggr,
-                    is_distinct: *is_distinct,
+                    is_distinct,
                 };
                 self.infos.push(info);
                 return Ok(());
@@ -471,22 +469,19 @@ impl Plan {
                     Expression::StableFunction {
                         name: name_left,
                         children: children_left,
-                        is_distinct: distinct_left,
+                        feature: feature_left,
                         func_type: func_type_left,
-                        trim_kind: trim_kind_left,
                     } => {
                         if let Expression::StableFunction {
                             name: name_right,
                             children: children_right,
-                            is_distinct: distinct_right,
+                            feature: feature_right,
                             func_type: func_type_right,
-                            trim_kind: trim_kind_right,
                         } = right
                         {
                             return Ok(name_left == name_right
-                                && distinct_left == distinct_right
+                                && feature_left == feature_right
                                 && func_type_left == func_type_right
-                                && trim_kind_left == trim_kind_right
                                 && children_left.iter().zip(children_right.iter()).all(
                                     |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
                                 ));

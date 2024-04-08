@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use super::expression::{ColumnPositionMap, Position};
+use super::expression::{ColumnPositionMap, FunctionFeature, Position};
 
 /// The kind of aggregate function
 ///
@@ -280,12 +280,16 @@ impl SimpleAggregate {
                 }
                 _ => vec![ref_id],
             };
+            let feature = if is_distinct {
+                Some(FunctionFeature::Distinct)
+            } else {
+                None
+            };
             let final_aggr = Expression::StableFunction {
                 name: final_func.to_string(),
                 children,
-                is_distinct,
+                feature,
                 func_type: RelType::from(final_func),
-                trim_kind: None,
             };
             let aggr_id = plan.nodes.push(Node::Expression(final_aggr));
             final_aggregates.insert(local_kind, aggr_id);

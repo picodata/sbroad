@@ -6,7 +6,7 @@ use std::mem::take;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::{Expression, TrimKind};
+use crate::ir::expression::{Expression, FunctionFeature, TrimKind};
 use crate::ir::operator::{Bool, Relational, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
@@ -989,14 +989,11 @@ impl<'p> SyntaxPlan<'p> {
                     Ok(self.nodes.push_syntax_node(sn))
                 }
                 Expression::StableFunction {
-                    children,
-                    is_distinct,
-                    trim_kind,
-                    ..
+                    children, feature, ..
                 } => {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    if let Some(kind) = trim_kind {
+                    if let Some(FunctionFeature::Trim(kind)) = feature {
                         // `trim` function has a special format. For instance, here how we can
                         // call it: trim(leading 'a' from 'ab').
                         match kind {
@@ -1019,7 +1016,7 @@ impl<'p> SyntaxPlan<'p> {
                             nodes.push(self.nodes.get_syntax_node_id(*string)?);
                         }
                     } else {
-                        if *is_distinct {
+                        if let Some(FunctionFeature::Distinct) = feature {
                             nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
                         }
                         if let Some((last, others)) = children.split_last() {

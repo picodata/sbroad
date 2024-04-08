@@ -24,8 +24,8 @@ use crate::ir::ddl::{ColumnDef, Ddl};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
-    ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId, Position,
-    TrimKind,
+    ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId,
+    FunctionFeature, Position, TrimKind,
 };
 use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
@@ -789,14 +789,12 @@ fn parse_trim_function_args<M: Metadata>(
         parse_exprs_args.push(removal_chars);
     }
     parse_exprs_args.push(string);
-    // mark this function as `trim` function
-    let trim_kind = Some(kind.unwrap_or_default());
+    let trim_kind = kind.unwrap_or_default();
 
     Ok(ParseExpression::Function {
         name: function_name,
         args: parse_exprs_args,
-        is_distinct: false,
-        trim_kind,
+        feature: Some(FunctionFeature::Trim(trim_kind)),
     })
 }
 
@@ -1083,8 +1081,7 @@ enum ParseExpression {
     Function {
         name: String,
         args: Vec<ParseExpression>,
-        is_distinct: bool,
-        trim_kind: Option<TrimKind>,
+        feature: Option<FunctionFeature>,
     },
     Row {
         children: Vec<ParseExpression>,
@@ -1301,17 +1298,17 @@ impl ParseExpression {
             ParseExpression::Function {
                 name,
                 args,
-                is_distinct,
-                trim_kind,
+                feature,
             } => {
+                let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
                 let mut plan_arg_ids = Vec::new();
                 for arg in args {
                     let arg_plan_id = arg.populate_plan(plan, worker)?;
                     plan_arg_ids.push(arg_plan_id);
                 }
                 if let Some(kind) = AggregateKind::new(name) {
-                    plan.add_aggregate_function(name, kind, plan_arg_ids, *is_distinct)?
-                } else if *is_distinct {
+                    plan.add_aggregate_function(name, kind, plan_arg_ids, is_distinct)?
+                } else if is_distinct {
                     return Err(SbroadError::Invalid(
                         Entity::Query,
                         Some("DISTINCT modifier is allowed only for aggregate functions".into()),
@@ -1319,7 +1316,7 @@ impl ParseExpression {
                 } else {
                     let func = worker.metadata.function(name)?;
                     if func.is_stable() {
-                        plan.add_stable_function(func, plan_arg_ids, trim_kind.clone())?
+                        plan.add_stable_function(func, plan_arg_ids, feature.clone())?
                     } else {
                         // At the moment we don't support any non-stable functions.
                         // Later this code block should handle other function behaviors.
@@ -1451,7 +1448,7 @@ where
                                 // Handle function invocation case.
                                 let function_name = String::from(first_identifier);
                                 let mut args_pairs = continuation.into_inner();
-                                let mut is_distinct = false;
+                                let mut feature = None;
                                 let mut parse_exprs_args = Vec::new();
                                 let function_args = args_pairs.next();
                                 if let Some(function_args) = function_args {
@@ -1474,7 +1471,7 @@ where
                                             let mut arg_pairs_to_parse = Vec::new();
                                             let first_arg_pair = args_inner.next().expect("First arg expected under function");
                                             if let Rule::Distinct = first_arg_pair.as_rule() {
-                                                is_distinct = true;
+                                                feature = Some(FunctionFeature::Distinct);
                                             } else {
                                                 arg_pairs_to_parse.push(first_arg_pair);
                                             }
@@ -1508,8 +1505,7 @@ where
                                 return Ok(ParseExpression::Function {
                                     name: function_name,
                                     args: parse_exprs_args,
-                                    is_distinct,
-                                    trim_kind: None
+                                    feature,
                                 })
                             }
                             rule => unreachable!("Expr::parse expected identifier continuation, found {:?}", rule)

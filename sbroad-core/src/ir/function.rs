@@ -5,7 +5,7 @@ use crate::ir::relation::Type;
 use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 
-use super::expression::TrimKind;
+use super::expression::FunctionFeature;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Behavior {
@@ -55,7 +55,7 @@ impl Plan {
         &mut self,
         function: &Function,
         children: Vec<usize>,
-        trim_kind: Option<TrimKind>,
+        feature: Option<FunctionFeature>,
     ) -> Result<usize, SbroadError> {
         if !function.is_stable() {
             return Err(SbroadError::Invalid(
@@ -66,9 +66,8 @@ impl Plan {
         let func_expr = Expression::StableFunction {
             name: function.name.to_string(),
             children,
-            is_distinct: false,
+            feature,
             func_type: function.func_type.clone(),
-            trim_kind,
         };
         let func_id = self.nodes.push(Node::Expression(func_expr));
         Ok(func_id)
@@ -113,12 +112,16 @@ impl Plan {
                 }
             }
         }
+        let feature = if is_distinct {
+            Some(FunctionFeature::Distinct)
+        } else {
+            None
+        };
         let func_expr = Expression::StableFunction {
             name: function.to_lowercase(),
             children,
-            is_distinct,
+            feature,
             func_type: Type::from(kind),
-            trim_kind: None,
         };
         let id = self.nodes.push(Node::Expression(func_expr));
         Ok(id)

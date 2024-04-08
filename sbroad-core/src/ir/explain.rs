@@ -15,7 +15,7 @@ use crate::ir::transformation::redistribution::{
 };
 use crate::ir::{OptionKind, Plan};
 
-use super::expression::TrimKind;
+use super::expression::FunctionFeature;
 use super::operator::{Arithmetic, Bool, Unary};
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
@@ -30,7 +30,7 @@ enum ColExpr {
     Column(String, Type),
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
-    StableFunction(String, Vec<ColExpr>, bool, Option<TrimKind>, Type),
+    StableFunction(String, Vec<ColExpr>, Option<FunctionFeature>, Type),
     Row(Row),
     None,
 }
@@ -56,15 +56,16 @@ impl Display for ColExpr {
             ColExpr::Column(c, col_type) => format!("{c}::{col_type}"),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
-            ColExpr::StableFunction(name, args, is_distinct, trim_kind, func_type) => {
-                let formatted_args = if let Some(kind) = trim_kind {
+            ColExpr::StableFunction(name, args, feature, func_type) => {
+                let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
+                let formatted_args = if let Some(FunctionFeature::Trim(kind)) = feature {
                     format!("{} {}", kind.as_str(), args.iter().format(" "))
                 } else {
                     format!("({})", args.iter().format(", "))
                 };
                 format!(
                     "{name}({}{formatted_args})::{func_type}",
-                    if *is_distinct { "distinct " } else { "" }
+                    if is_distinct { "distinct " } else { "" }
                 )
             }
             ColExpr::Row(row) => row.to_string(),
@@ -155,9 +156,8 @@ impl ColExpr {
                 Expression::StableFunction {
                     name,
                     children,
-                    is_distinct,
+                    feature,
                     func_type,
-                    trim_kind,
                 } => {
                     let mut len = children.len();
                     let mut args: Vec<ColExpr> = Vec::with_capacity(len);
@@ -174,8 +174,7 @@ impl ColExpr {
                     let func_expr = ColExpr::StableFunction(
                         name.clone(),
                         args,
-                        *is_distinct,
-                        trim_kind.clone(),
+                        feature.clone(),
                         func_type.clone(),
                     );
                     stack.push((func_expr, id));
