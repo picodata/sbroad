@@ -101,8 +101,11 @@ impl RouterConfigurationMock {
     pub fn new() -> Self {
         let name_func = normalize_name_from_sql("func");
         let fn_func = Function::new_stable(name_func.clone(), Type::Integer);
+        let name_trim = normalize_name_from_sql("trim");
+        let trim_func = Function::new_stable(name_trim.clone(), Type::String);
         let mut functions = HashMap::new();
         functions.insert(name_func, fn_func);
+        functions.insert(name_trim, trim_func);
 
         let mut tables = HashMap::new();
 

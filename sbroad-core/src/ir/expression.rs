@@ -186,9 +186,9 @@ impl TrimKind {
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
-            TrimKind::Leading => "LEADING",
-            TrimKind::Trailing => "TRAILING",
-            TrimKind::Both => "BOTH",
+            TrimKind::Leading => "leading",
+            TrimKind::Trailing => "trailing",
+            TrimKind::Both => "both",
         }
     }
 }

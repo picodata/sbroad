@@ -3245,4 +3245,6 @@ mod params;
 #[cfg(test)]
 mod single;
 #[cfg(test)]
+mod trim;
+#[cfg(test)]
 mod update;

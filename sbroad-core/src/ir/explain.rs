@@ -59,7 +59,15 @@ impl Display for ColExpr {
             ColExpr::StableFunction(name, args, feature, func_type) => {
                 let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
                 let formatted_args = if let Some(FunctionFeature::Trim(kind)) = feature {
-                    format!("{} {}", kind.as_str(), args.iter().format(" "))
+                    let (string, removal_chars) = args
+                        .split_last()
+                        .expect("string is required by the grammar");
+                    format!(
+                        "{} {} from {}",
+                        kind.as_str(),
+                        removal_chars.iter().format(""),
+                        string
+                    )
                 } else {
                     format!("({})", args.iter().format(", "))
                 };
