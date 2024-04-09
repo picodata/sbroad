@@ -578,7 +578,7 @@ impl Plan {
 
         // Check that all children we need to add motions exist in the current relational node.
         let children_set: HashSet<usize> = children.iter().copied().collect();
-        if let false = strategy
+        if !strategy
             .children_policy
             .iter()
             .all(|(node, _)| children_set.get(node).is_some())

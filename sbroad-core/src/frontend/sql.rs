@@ -332,8 +332,8 @@ fn parse_drop_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, Sb
 #[allow(clippy::too_many_lines)]
 fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     assert_eq!(node.rule, Rule::CreateIndex);
-    let mut name = String::new();
-    let mut table_name = String::new();
+    let mut name = SmolStr::default();
+    let mut table_name = SmolStr::default();
     let mut columns = Vec::new();
     let mut unique = false;
     let mut index_type = IndexType::Tree;
@@ -467,7 +467,7 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
 
 fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
     assert_eq!(node.rule, Rule::DropIndex);
-    let mut name = String::new();
+    let mut name = SmolStr::default();
     let mut timeout = get_default_timeout();
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;

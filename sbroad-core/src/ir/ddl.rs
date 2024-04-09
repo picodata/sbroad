@@ -73,9 +73,9 @@ pub enum Ddl {
         timeout: Decimal,
     },
     CreateIndex {
-        name: String,
-        table_name: String,
-        columns: Vec<String>,
+        name: SmolStr,
+        table_name: SmolStr,
+        columns: Vec<SmolStr>,
         unique: bool,
         index_type: IndexType,
         bloom_fpr: Option<Decimal>,
@@ -89,7 +89,7 @@ pub enum Ddl {
         timeout: Decimal,
     },
     DropIndex {
-        name: String,
+        name: SmolStr,
         timeout: Decimal,
     },
 }
