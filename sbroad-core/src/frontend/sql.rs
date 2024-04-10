@@ -1670,7 +1670,13 @@ where
                         }
                     };
 
-                    let plan_left_id = referred_relation_ids.first().expect("Reference must refer to at least one relational node");
+                    let plan_left_id = referred_relation_ids
+                        .first()
+                        .ok_or(SbroadError::Invalid(
+                            Entity::Query,
+                            Some("Reference must point to some relational node".into())
+                        ))?;
+
                     worker.build_columns_map(plan, *plan_left_id)?;
 
                     let left_child_col_position = worker.columns_map_get_positions(*plan_left_id, &col_name, scan_name.as_deref());

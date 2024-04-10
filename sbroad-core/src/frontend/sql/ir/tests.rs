@@ -3234,6 +3234,20 @@ fn assert_explain_eq(query: &str, params: Vec<Value>, expected: &str) {
     assert_eq!(expected, actual);
 }
 
+#[test]
+fn non_existent_references_in_values_do_not_panic() {
+    // scenario: somebody mixed up " with '
+    let input = r#"insert into "test_space" values(1, "nonexistent_reference")"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
+    let err = plan.unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Reference must point to some relational node"));
+}
+
 #[cfg(test)]
 mod global;
 #[cfg(test)]
