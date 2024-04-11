@@ -553,3 +553,81 @@ g.test_datetime_motion = function ()
     })
 end
 
+g.test_to_char = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select to_char("dt", 'to_char: %Y-%m-%d-%H-%M-%S-%z') from "datetime_t"
+    ]]})
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "string"},
+        },
+        rows = {
+            {"to_char: 2021-08-21-00-00-00-+0300"},
+            {"to_char: 2021-08-20-00-00-00-+0300"},
+        },
+    })
+
+    -- second argument is optional
+    -- FIXME: https://git.picodata.io/picodata/picodata/sbroad/-/issues/645
+    r, err = api:call("sbroad.execute", { [[
+        select to_char(to_date(COLUMN_1, '%Y %d'), null)
+        from (values ('2020 20'))
+    ]]})
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "string"},
+        },
+        rows = {
+            {box.NULL},
+        },
+    })
+
+    -- check we can use expressions inside to_char
+    r, err = api:call("sbroad.execute", { [[
+        select to_char(to_date(COLUMN_1, '%Y %d'), '%Y-%m-%d' || '-%H-%M-%S-%z')
+        from (values ('2020 20'))
+    ]]})
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "string"},
+        },
+        rows = {
+            {"2020-01-20-00-00-00-+0000"},
+        },
+    })
+
+    -- invalid modifier used
+    r, err = api:call("sbroad.execute", { [[
+        select to_char(to_date(COLUMN_1, '%Y %d'), '%i-%m-%d')
+        from (values ('2020 20'))
+    ]]})
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "string"},
+        },
+        rows = {
+            {"i-01-20"},
+        },
+    })
+
+    -- invalid argument
+    -- FIXME: https://git.picodata.io/picodata/picodata/sbroad/-/issues/644
+    -- we need to check function's argument types when building a plan
+    local _, error = api:call("sbroad.execute", { [[
+        select to_char('%d', '%i-%m-%d')
+        from (values ('2020 20'))
+    ]]})
+
+    t.assert_str_contains(tostring(error), "bad argument #1 to 'format' (number expected, got string)")
+end
+

@@ -16,6 +16,16 @@ builtins.TO_DATE = function (s, fmt)
     return res
 end
 
+builtins.TO_CHAR = function (date, fmt)
+  local res
+  if fmt then
+    res = date:format(fmt)
+  else
+    res = nil
+  end
+  return res
+end
+
 local function init()
   -- cartridge
   local module = 'sbroad'
@@ -41,6 +51,18 @@ local function init()
       returns = 'datetime',
       body = body,
       param_list = {'string', 'string'},
+      exports = {'SQL'},
+      is_deterministic = true,
+      if_not_exists=true
+  })
+
+  body = string.format("function(...) return %s.builtins.TO_CHAR(...) end",
+  module)
+  box.schema.func.create("TO_CHAR", {
+      language = 'LUA',
+      returns = 'string',
+      body = body,
+      param_list = {'datetime', 'string'},
       exports = {'SQL'},
       is_deterministic = true,
       if_not_exists=true

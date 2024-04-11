@@ -75,7 +75,7 @@ pub fn get_builtin_functions() -> &'static [Function] {
         BUILTINS.get_or_init(|| {
             vec![
                 Function::new_stable("\"TO_DATE\"".into(), Type::Datetime),
-                Function::new_stable("\"TRIM\"".into(), Type::String),
+                Function::new_stable("\"TO_CHAR\"".into(), Type::String),
             ]
         })
     }

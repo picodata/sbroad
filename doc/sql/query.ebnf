@@ -33,6 +33,7 @@ expression  ::= (table '.')? column
                | 'NOT' expression
                | '(' expression ')'
                | 'TO_DATE' '(' expression',' format ')'
+               | 'TO_CHAR' '(' expression',' format ')'
                | 'TRIM' '(' ((('LEADING' | 'TRAILING' | 'BOTH')? expression) | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM' expression ')'
 aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' expression ')'
                | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
