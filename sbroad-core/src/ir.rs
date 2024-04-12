@@ -1024,6 +1024,20 @@ impl Plan {
                     return Ok(());
                 }
             }
+            Expression::Trim {
+                pattern, target, ..
+            } => {
+                if let Some(pattern_id) = pattern {
+                    if *pattern_id == old_id {
+                        *pattern_id = new_id;
+                        return Ok(());
+                    }
+                }
+                if *target == old_id {
+                    *target = new_id;
+                    return Ok(());
+                }
+            }
             Expression::Row { list: arr, .. } | StableFunction { children: arr, .. } => {
                 for child in arr.iter_mut() {
                     if *child == old_id {

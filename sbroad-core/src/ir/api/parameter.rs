@@ -240,6 +240,23 @@ impl Plan {
                             }
                         }
                     }
+                    Expression::Trim {
+                        ref pattern,
+                        ref target,
+                        ..
+                    } => {
+                        let params = match pattern {
+                            Some(p) => [Some(*p), Some(*target)],
+                            None => [None, Some(*target)],
+                        };
+                        for param_id in params.into_iter().flatten() {
+                            if param_node_ids.take(&param_id).is_some() {
+                                idx = idx.saturating_sub(1);
+                                let val_id = get_value(param_id, idx)?;
+                                row_ids.insert(param_id, self.nodes.add_row(vec![val_id], None));
+                            }
+                        }
+                    }
                     Expression::Row { ref list, .. }
                     | Expression::StableFunction {
                         children: ref list, ..
@@ -366,6 +383,23 @@ impl Plan {
                                 idx = idx.saturating_sub(1);
                                 let row_id = get_row(**param_id)?;
                                 **param_id = row_id;
+                            }
+                        }
+                    }
+                    Expression::Trim {
+                        ref mut pattern,
+                        ref mut target,
+                        ..
+                    } => {
+                        let params = match pattern {
+                            Some(p) => [Some(p), Some(target)],
+                            None => [None, Some(target)],
+                        };
+                        for param_id in params.into_iter().flatten() {
+                            if param_node_ids_cloned.take(param_id).is_some() {
+                                idx = idx.saturating_sub(1);
+                                let row_id = get_row(*param_id)?;
+                                *param_id = row_id;
                             }
                         }
                     }

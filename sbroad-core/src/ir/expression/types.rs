@@ -68,7 +68,7 @@ impl Expression {
                 }
             }
             Expression::Cast { to, .. } => Ok(to.as_relation_type()),
-            Expression::Concat { .. } => Ok(Type::String),
+            Expression::Trim { .. } | Expression::Concat { .. } => Ok(Type::String),
             Expression::Constant { value, .. } => Ok(value.get_type()),
             Expression::Reference { col_type, .. } => Ok(col_type.clone()),
             Expression::Row { list, .. } => {

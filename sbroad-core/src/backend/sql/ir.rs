@@ -296,6 +296,7 @@ impl ExecutionPlan {
                     SyntaxData::Trailing => sql.push_str("TRAILING"),
                     SyntaxData::Operator(s) => sql.push_str(s.as_str()),
                     SyntaxData::OpenParenthesis => sql.push('('),
+                    SyntaxData::Trim => sql.push_str("TRIM"),
                     SyntaxData::PlanId(id) => {
                         let node = ir_plan.get_node(*id)?;
                         match node {
@@ -370,6 +371,7 @@ impl ExecutionPlan {
                                     | Expression::Cast { .. }
                                     | Expression::Concat { .. }
                                     | Expression::Row { .. }
+                                    | Expression::Trim { .. }
                                     | Expression::Unary { .. } => {}
                                     Expression::Constant { value, .. } => {
                                         write!(sql, "{value}").map_err(|e| {

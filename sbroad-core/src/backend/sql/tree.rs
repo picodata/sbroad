@@ -42,6 +42,8 @@ pub enum SyntaxData {
     Both,
     /// "trailing"
     Trailing,
+    /// "trim"
+    Trim,
     /// "("
     OpenParenthesis,
     /// "=, >, <, and, or, ..."
@@ -174,6 +176,14 @@ impl SyntaxNode {
     fn new_trailing() -> Self {
         SyntaxNode {
             data: SyntaxData::Trailing,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_trim() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Trim,
             left: None,
             right: Vec::new(),
         }
@@ -1001,43 +1011,51 @@ impl<'p> SyntaxPlan<'p> {
                 } => {
                     let mut nodes: Vec<usize> =
                         vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    if let Some(FunctionFeature::Trim(kind)) = feature {
-                        // `trim` function has a special format. For instance, here how we can
-                        // call it: trim(leading 'a' from 'ab').
-                        match kind {
-                            TrimKind::Leading => {
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_leading()));
-                            }
-                            TrimKind::Trailing => {
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_trailing()));
-                            }
-                            TrimKind::Both => {
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_both()));
-                            }
+                    if let Some(FunctionFeature::Distinct) = feature {
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
+                    }
+                    if let Some((last, others)) = children.split_last() {
+                        for child in others {
+                            nodes.push(self.nodes.get_syntax_node_id(*child)?);
+                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
                         }
-
-                        if let Some((string, removal_chars)) = children.split_last() {
-                            for child in removal_chars {
-                                nodes.push(self.nodes.get_syntax_node_id(*child)?);
-                            }
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
-                            nodes.push(self.nodes.get_syntax_node_id(*string)?);
-                        }
-                    } else {
-                        if let Some(FunctionFeature::Distinct) = feature {
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
-                        }
-                        if let Some((last, others)) = children.split_last() {
-                            for child in others {
-                                nodes.push(self.nodes.get_syntax_node_id(*child)?);
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                            }
-                            nodes.push(self.nodes.get_syntax_node_id(*last)?);
-                        }
+                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
                     }
 
                     nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
                     let sn = SyntaxNode::new_pointer(id, None, nodes);
+                    Ok(self.nodes.push_syntax_node(sn))
+                }
+                Expression::Trim {
+                    kind,
+                    pattern,
+                    target,
+                } => {
+                    let syn_kind = match kind {
+                        Some(TrimKind::Leading) => Some(SyntaxNode::new_leading()),
+                        Some(TrimKind::Trailing) => Some(SyntaxNode::new_trailing()),
+                        Some(TrimKind::Both) => Some(SyntaxNode::new_both()),
+                        None => None,
+                    };
+                    let mut nodes = Vec::with_capacity(6);
+                    nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
+                    let mut need_from = false;
+                    if let Some(kind) = syn_kind {
+                        nodes.push(self.nodes.push_syntax_node(kind));
+                        need_from = true;
+                    }
+                    if let Some(pattern) = pattern {
+                        nodes.push(self.nodes.get_syntax_node_id(*pattern)?);
+                        need_from = true;
+                    }
+                    if need_from {
+                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
+                    }
+                    nodes.push(self.nodes.get_syntax_node_id(*target)?);
+                    nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
+
+                    let trim_id = self.nodes.push_syntax_node(SyntaxNode::new_trim());
+                    let sn = SyntaxNode::new_pointer(id, Some(trim_id), nodes);
                     Ok(self.nodes.push_syntax_node(sn))
                 }
             },

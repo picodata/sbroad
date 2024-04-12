@@ -430,6 +430,33 @@ impl Plan {
                                 && self.are_subtrees_equal(*child_left, *child_right)?);
                         }
                     }
+                    Expression::Trim {
+                        kind: kind_left,
+                        pattern: pattern_left,
+                        target: target_left,
+                    } => {
+                        if let Expression::Trim {
+                            kind: kind_right,
+                            pattern: pattern_right,
+                            target: target_right,
+                        } = right
+                        {
+                            match (pattern_left, pattern_right) {
+                                (Some(p_left), Some(p_right)) => {
+                                    return Ok(*kind_left == *kind_right
+                                        && self.are_subtrees_equal(*p_left, *p_right)?
+                                        && self
+                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                }
+                                (None, None) => {
+                                    return Ok(*kind_left == *kind_right
+                                        && self
+                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                }
+                                _ => return Ok(false),
+                            }
+                        }
+                    }
                     Expression::Concat {
                         left: left_left,
                         right: right_left,

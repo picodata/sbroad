@@ -153,6 +153,7 @@ impl Plan {
                     }
                 }
                 Expression::Cast { .. } => writeln!(buf, "Cast")?,
+                Expression::Trim { .. } => writeln!(buf, "Trim")?,
                 Expression::Concat { .. } => writeln!(buf, "Concat")?,
                 Expression::StableFunction { .. } => writeln!(buf, "StableFunction")?,
                 Expression::Unary { op, child } => {

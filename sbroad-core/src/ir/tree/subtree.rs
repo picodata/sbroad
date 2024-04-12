@@ -221,6 +221,28 @@ fn subtree_next<'plan>(
                     }
                     None
                 }
+                Expression::Trim {
+                    pattern, target, ..
+                } => {
+                    let child_step = *iter.get_child().borrow();
+                    match child_step {
+                        0 => {
+                            *iter.get_child().borrow_mut() += 1;
+                            match pattern {
+                                Some(_) => pattern.as_ref(),
+                                None => Some(target),
+                            }
+                        }
+                        1 => {
+                            *iter.get_child().borrow_mut() += 1;
+                            match pattern {
+                                Some(_) => Some(target),
+                                None => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }
                 Expression::Row { list, .. }
                 | Expression::StableFunction { children: list, .. } => {
                     let child_step = *iter.get_child().borrow();

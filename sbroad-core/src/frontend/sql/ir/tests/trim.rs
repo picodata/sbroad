@@ -7,7 +7,7 @@ fn trim() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("TRIM"(("test_space"."FIRST_NAME"::string))::string -> "COL_1")
+        r#"projection (TRIM("test_space"."FIRST_NAME"::string) -> "COL_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -24,7 +24,7 @@ fn trim_leading_from() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("TRIM"(leading  from "test_space"."FIRST_NAME"::string)::string -> "COL_1")
+        r#"projection (TRIM(leading from "test_space"."FIRST_NAME"::string) -> "COL_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
@@ -41,7 +41,7 @@ fn trim_both_space_from() {
     let plan = sql_to_optimized_ir(sql, vec![]);
 
     let expected_explain = String::from(
-        r#"projection ("TRIM"(both ' '::string from "test_space"."FIRST_NAME"::string)::string -> "COL_1")
+        r#"projection (TRIM(both ' '::string from "test_space"."FIRST_NAME"::string) -> "COL_1")
     scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000

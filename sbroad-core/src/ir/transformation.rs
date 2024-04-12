@@ -219,6 +219,18 @@ impl Plan {
                             *right = *new_id;
                         }
                     }
+                    Expression::Trim {
+                        pattern, target, ..
+                    } => {
+                        if let Some(pattern) = pattern {
+                            if let Some(new_id) = map.get(pattern) {
+                                *pattern = *new_id;
+                            }
+                        }
+                        if let Some(new_id) = map.get(target) {
+                            *target = *new_id;
+                        }
+                    }
                     Expression::Row { list, .. }
                     | Expression::StableFunction { children: list, .. } => {
                         for id in list {

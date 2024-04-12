@@ -150,6 +150,15 @@ pub enum Expression {
         /// Function return type.
         func_type: Type,
     },
+    /// Trim expression.
+    Trim {
+        /// Trim kind.
+        kind: Option<TrimKind>,
+        /// Trim string pattern to remove (it can be an expression).
+        pattern: Option<usize>,
+        /// Target expression to trim.
+        target: usize,
+    },
     /// Unary expression returning boolean result.
     Unary {
         /// Unary operator.
@@ -168,8 +177,6 @@ pub enum Expression {
 pub enum FunctionFeature {
     /// Current function is an aggregate function and is marked as DISTINCT.
     Distinct,
-    /// Current function is `trim` function.
-    Trim(TrimKind),
 }
 
 /// This is the kind of `trim` function that can be set
@@ -608,6 +615,33 @@ impl<'plan> Comparator<'plan> {
                                 && self.are_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
+                    Expression::Trim {
+                        kind: kind_left,
+                        pattern: pattern_left,
+                        target: target_left,
+                    } => {
+                        if let Expression::Trim {
+                            kind: kind_right,
+                            pattern: pattern_right,
+                            target: target_right,
+                        } = right
+                        {
+                            match (pattern_left, pattern_right) {
+                                (Some(p_left), Some(p_right)) => {
+                                    return Ok(*kind_left == *kind_right
+                                        && self.are_subtrees_equal(*p_left, *p_right)?
+                                        && self
+                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                }
+                                (None, None) => {
+                                    return Ok(*kind_left == *kind_right
+                                        && self
+                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                }
+                                _ => return Ok(false),
+                            }
+                        }
+                    }
                     Expression::Constant { value: value_left } => {
                         if let Expression::Constant { value: value_right } = right {
                             return Ok(*value_left == *value_right);
@@ -712,6 +746,17 @@ impl<'plan> Comparator<'plan> {
             Expression::Concat { left, right } => {
                 self.hash_for_expr(*left, state, depth - 1);
                 self.hash_for_expr(*right, state, depth - 1);
+            }
+            Expression::Trim {
+                kind,
+                pattern,
+                target,
+            } => {
+                kind.hash(state);
+                if let Some(pattern) = pattern {
+                    self.hash_for_expr(*pattern, state, depth - 1);
+                }
+                self.hash_for_expr(*target, state, depth - 1);
             }
             Expression::Constant { value } => {
                 value.hash(state);

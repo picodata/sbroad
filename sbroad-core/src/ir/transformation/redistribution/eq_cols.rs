@@ -82,6 +82,17 @@ impl ReferredMap {
                         .add(referred.get_or_none(*right));
                     referred.insert(node_id, res);
                 }
+                Expression::Trim {
+                    pattern, target, ..
+                } => {
+                    let res = match pattern {
+                        Some(pattern) => referred
+                            .get_or_none(*pattern)
+                            .add(referred.get_or_none(*target)),
+                        None => referred.get_or_none(*target).clone(),
+                    };
+                    referred.insert(node_id, res);
+                }
                 Expression::Constant { .. } | Expression::CountAsterisk => {
                     referred.insert(node_id, Referred::None);
                 }

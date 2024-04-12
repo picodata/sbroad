@@ -97,6 +97,7 @@ impl<'n> Iterator for AggregateIterator<'n> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn expression_next<'nodes>(
     iter: &mut impl ExpressionTreeIterator<'nodes>,
 ) -> Option<&'nodes usize> {
@@ -128,6 +129,28 @@ fn expression_next<'nodes>(
                 return Some(right);
             }
             None
+        }
+        Some(Node::Expression(Expression::Trim {
+            pattern, target, ..
+        })) => {
+            let child_step = *iter.get_child().borrow();
+            match child_step {
+                0 => {
+                    *iter.get_child().borrow_mut() += 1;
+                    match pattern {
+                        Some(_) => pattern.as_ref(),
+                        None => Some(target),
+                    }
+                }
+                1 => {
+                    *iter.get_child().borrow_mut() += 1;
+                    match pattern {
+                        Some(_) => Some(target),
+                        None => None,
+                    }
+                }
+                _ => None,
+            }
         }
         Some(Node::Expression(Expression::Row { list, .. })) => {
             let child_step = *iter.get_child().borrow();

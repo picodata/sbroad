@@ -333,6 +333,20 @@ impl Plan {
                         SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
                     })?;
                 }
+                Expression::Trim {
+                    ref mut pattern,
+                    ref mut target,
+                    ..
+                } => {
+                    if let Some(pattern) = pattern {
+                        *pattern = *map.get(pattern).ok_or_else(|| {
+                            SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
+                        })?;
+                    }
+                    *target = *map.get(target).ok_or_else(|| {
+                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
+                    })?;
+                }
                 Expression::Row {
                     list: ref mut children,
                     ..
@@ -435,6 +449,16 @@ impl SubtreeCloner {
             } => {
                 *left = self.get_new_id(*left)?;
                 *right = self.get_new_id(*right)?;
+            }
+            Expression::Trim {
+                ref mut pattern,
+                ref mut target,
+                ..
+            } => {
+                if let Some(pattern) = pattern {
+                    *pattern = self.get_new_id(*pattern)?;
+                }
+                *target = self.get_new_id(*target)?;
             }
             Expression::Row {
                 list: ref mut children,

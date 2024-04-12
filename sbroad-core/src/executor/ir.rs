@@ -595,6 +595,32 @@ impl ExecutionPlan {
                             )
                         })?;
                     }
+                    Expression::Trim {
+                        ref mut pattern,
+                        ref mut target,
+                        ..
+                    } => {
+                        if let Some(pattern) = pattern {
+                            *pattern = *translation.get(pattern).ok_or_else(|| {
+                                SbroadError::FailedTo(
+                                    Action::Build,
+                                    Some(Entity::SubTree),
+                                    format_smolstr!(
+                                        "could not find pattern node id {pattern} in the map"
+                                    ),
+                                )
+                            })?;
+                        }
+                        *target = *translation.get(target).ok_or_else(|| {
+                            SbroadError::FailedTo(
+                                Action::Build,
+                                Some(Entity::SubTree),
+                                format_smolstr!(
+                                    "could not find target node id {target} in the map"
+                                ),
+                            )
+                        })?;
+                    }
                     Expression::Reference { ref mut parent, .. } => {
                         // The new parent node id MUST be set while processing the relational nodes.
                         *parent = None;

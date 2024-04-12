@@ -884,72 +884,63 @@ fn parse_grant_revoke(
     Ok((grant_revoke_type, grantee_name, timeout))
 }
 
-fn parse_trim_function_args<M: Metadata>(
-    function_name: String,
-    function_args: Pair<'_, Rule>,
+fn parse_trim<M: Metadata>(
+    pair: Pair<Rule>,
     referred_relation_ids: &[usize],
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
 ) -> Result<ParseExpression, SbroadError> {
-    let normalized_name = function_name.to_lowercase();
-    if "trim" != normalized_name.as_str() {
-        return Err(SbroadError::Invalid(
-            Entity::Query,
-            Some(format_smolstr!(
-                "Trim function artuments format is allowed only inside \"trim\" function. Got: {normalized_name}",
-            ))
-        ));
-    }
-    let mut parse_exprs_args = Vec::new();
+    assert_eq!(pair.as_rule(), Rule::Trim);
     let mut kind = None;
-    let mut removal_chars = None;
-    let mut string = None;
+    let mut pattern = None;
+    let mut target = None;
 
-    let args_inner = function_args.into_inner();
-    for arg_pair in args_inner {
-        match arg_pair.as_rule() {
+    let inner_pairs = pair.into_inner();
+    for child_pair in &mut inner_pairs.into_iter() {
+        match child_pair.as_rule() {
             Rule::TrimKind => {
-                for kind_pair in arg_pair.into_inner() {
-                    match kind_pair.as_rule() {
-                        Rule::TrimKindBoth => kind = Some(TrimKind::Both),
-                        Rule::TrimKindLeading => kind = Some(TrimKind::Leading),
-                        Rule::TrimKindTrailing => kind = Some(TrimKind::Trailing),
-                        rule => unreachable!("Expected TrimKind variant. Got: {rule:?}"),
+                let kind_pair = child_pair
+                    .into_inner()
+                    .next()
+                    .expect("Expected child of TrimKind");
+                match kind_pair.as_rule() {
+                    Rule::TrimKindBoth => kind = Some(TrimKind::Both),
+                    Rule::TrimKindLeading => kind = Some(TrimKind::Leading),
+                    Rule::TrimKindTrailing => kind = Some(TrimKind::Trailing),
+                    _ => {
+                        panic!("Unexpected node: {kind_pair:?}");
                     }
                 }
             }
-            Rule::TrimChars => {
-                removal_chars = Some(parse_expr_pratt(
-                    arg_pair.into_inner(),
+            Rule::TrimPattern => {
+                let inner_pattern = child_pair.into_inner();
+                pattern = Some(Box::new(parse_expr_pratt(
+                    inner_pattern,
                     referred_relation_ids,
                     worker,
                     plan,
-                )?);
+                )?));
             }
-            Rule::TrimString => {
-                string = Some(parse_expr_pratt(
-                    arg_pair.into_inner(),
+            Rule::TrimTarget => {
+                let inner_target = child_pair.into_inner();
+                target = Some(Box::new(parse_expr_pratt(
+                    inner_target,
                     referred_relation_ids,
                     worker,
                     plan,
-                )?);
+                )?));
             }
-            rule => unreachable!("Unexpected rule under TrimFunctionArgs: {rule:?}"),
+            _ => {
+                panic!("Unexpected node: {child_pair:?}");
+            }
         }
     }
-    let string = string.expect("string is required by grammar");
-
-    if let Some(removal_chars) = removal_chars {
-        parse_exprs_args.push(removal_chars);
-    }
-    parse_exprs_args.push(string);
-    let trim_kind = kind.unwrap_or_default();
-
-    Ok(ParseExpression::Function {
-        name: function_name,
-        args: parse_exprs_args,
-        feature: Some(FunctionFeature::Trim(trim_kind)),
-    })
+    let trim = ParseExpression::Trim {
+        kind,
+        pattern,
+        target: target.expect("Trim target must be specified"),
+    };
+    Ok(trim)
 }
 
 /// Common logic for `SqlVdbeMaxSteps` and `VTableMaxRows` parsing.
@@ -1260,6 +1251,11 @@ enum ParseExpression {
         cast_type: CastType,
         child: Box<ParseExpression>,
     },
+    Trim {
+        kind: Option<TrimKind>,
+        pattern: Option<Box<ParseExpression>>,
+        target: Box<ParseExpression>,
+    },
     Between {
         is_not: bool,
         left: Box<ParseExpression>,
@@ -1288,6 +1284,7 @@ impl Plan {
             | Expression::Reference { .. }
             | Expression::Row { .. }
             | Expression::StableFunction { .. }
+            | Expression::Trim { .. }
             | Expression::Unary { .. }
             | Expression::CountAsterisk => Err(SbroadError::Invalid(
                 Entity::Expression,
@@ -1362,6 +1359,22 @@ impl ParseExpression {
             ParseExpression::Cast { cast_type, child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
                 plan.add_cast(child_plan_id, cast_type.clone())?
+            }
+            ParseExpression::Trim {
+                kind,
+                pattern,
+                target,
+            } => {
+                let pattern = match pattern {
+                    Some(p) => Some(p.populate_plan(plan, worker)?),
+                    None => None,
+                };
+                let trim_expr = Expression::Trim {
+                    kind: kind.clone(),
+                    pattern,
+                    target: target.populate_plan(plan, worker)?,
+                };
+                plan.nodes.push(Node::Expression(trim_expr))
             }
             ParseExpression::Between {
                 is_not,
@@ -1648,15 +1661,6 @@ where
                                                 parse_exprs_args.push(arg_expr);
                                             }
                                         }
-                                        Rule::TrimFunctionArgs => {
-                                            return parse_trim_function_args(
-                                                function_name,
-                                                function_args,
-                                                referred_relation_ids,
-                                                worker,
-                                                plan
-                                            );
-                                        }
                                         rule => unreachable!("{}", format!("Unexpected rule under FunctionInvocation: {rule:?}"))
                                     }
                                 }
@@ -1795,6 +1799,7 @@ where
                     )?;
                     ParseExpression::Exists { is_not: first_is_not, child: Box::new(child_parse_expr)}
                 }
+                Rule::Trim => parse_trim(primary, referred_relation_ids, worker, plan)?,
                 Rule::Cast => {
                     let mut inner_pairs = primary.into_inner();
                     let expr_pair = inner_pairs.next().expect("Cast has no expr child.");

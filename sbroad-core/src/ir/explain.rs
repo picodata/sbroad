@@ -8,7 +8,7 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, TrimKind};
 use crate::ir::operator::{ConflictStrategy, JoinKind, Relational};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
@@ -32,6 +32,7 @@ enum ColExpr {
     Cast(Box<ColExpr>, CastType),
     Concat(Box<ColExpr>, Box<ColExpr>),
     StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type),
+    Trim(Option<TrimKind>, Option<Box<ColExpr>>, Box<ColExpr>),
     Row(Row),
     None,
 }
@@ -59,24 +60,18 @@ impl Display for ColExpr {
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
             ColExpr::StableFunction(name, args, feature, func_type) => {
                 let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
-                let formatted_args = if let Some(FunctionFeature::Trim(kind)) = feature {
-                    let (string, removal_chars) = args
-                        .split_last()
-                        .expect("string is required by the grammar");
-                    format!(
-                        "{} {} from {}",
-                        kind.as_str(),
-                        removal_chars.iter().format(""),
-                        string
-                    )
-                } else {
-                    format!("({})", args.iter().format(", "))
-                };
+                let formatted_args = format!("({})", args.iter().format(", "));
                 format!(
                     "{name}({}{formatted_args})::{func_type}",
                     if is_distinct { "distinct " } else { "" }
                 )
             }
+            ColExpr::Trim(kind, pattern, target) => match (kind, pattern) {
+                (Some(k), Some(p)) => format!("TRIM({} {p} from {target})", k.as_str()),
+                (Some(k), None) => format!("TRIM({} from {target})", k.as_str()),
+                (None, Some(p)) => format!("TRIM({p} from {target})"),
+                (None, None) => format!("TRIM({target})"),
+            },
             ColExpr::Row(row) => row.to_string(),
             ColExpr::None => String::new(),
         };
@@ -161,6 +156,14 @@ impl ColExpr {
                     let expr =
                         ColExpr::Column(value.to_string(), current_node.calculate_type(plan)?);
                     stack.push((expr, id));
+                }
+                Expression::Trim { kind, .. } => {
+                    let (target, _) = stack
+                        .pop()
+                        .expect("stack is empty while processing TRIM expression");
+                    let pattern = stack.pop().map(|(pattern, _)| Box::new(pattern));
+                    let trim_expr = ColExpr::Trim(kind.clone(), pattern, Box::new(target));
+                    stack.push((trim_expr, id));
                 }
                 Expression::StableFunction {
                     name,
