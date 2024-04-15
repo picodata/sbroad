@@ -516,6 +516,10 @@ impl ExecutionPlan {
                         }
                     }
                     SyntaxData::VTable(motion_id) => {
+                        // Note that in case Motion is a top of the plan it won't be transformed
+                        // into local SQL. Rather `VirtualTable::to_output` method would be called
+                        // in order to transform it into result, directly returned to user.
+                        // See `Query::dispatch` method for usage.
                         let name = table_name(plan_id, *motion_id);
                         let build_names = |columns: &[Column]| -> String {
                             let cp: usize = columns.iter().map(|c| c.name.len() + 3).sum();
@@ -575,5 +579,6 @@ impl ExecutionPlan {
         Ok(top.is_dml())
     }
 }
+
 #[cfg(test)]
 mod tests;

@@ -12,7 +12,8 @@ mod prod_imports {
     pub use crate::error;
     pub use crate::errors::{Action, Entity, SbroadError};
     pub use crate::executor::engine::helpers::{pk_name, table_name};
-    pub use crate::executor::ir::ExecutionPlan;
+    pub use crate::executor::ir::{ExecutionPlan, Column};
+    pub use crate::ir::value::{EncodedValue, Value};
     use crate::executor::protocol::VTablesMeta;
     pub use crate::ir::node::NodeId;
     pub use crate::ir::relation::SpaceEngine;

@@ -284,6 +284,7 @@ where
         if ir_plan.get_relation_node(top_id)?.is_motion() {
             let err =
                 |s: &str| -> SbroadError { SbroadError::Invalid(Entity::Plan, Some(s.into())) };
+            let motion_aliases = ir_plan.get_relational_aliases(top_id)?;
             let Some(vtables) = self.exec_plan.get_mut_vtables() else {
                 return Err(err("no vtables in plan with motion top"));
             };
@@ -293,7 +294,7 @@ where
             let Some(v) = Rc::get_mut(&mut vtable) else {
                 return Err(err("there are other refs to vtable"));
             };
-            return v.to_output();
+            return v.to_output(&motion_aliases);
         }
         let buckets = self.bucket_discovery(top_id)?;
         self.coordinator.dispatch(

@@ -1,11 +1,10 @@
 use pretty_assertions::assert_eq;
-use smol_str::SmolStr;
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::tests::vcolumn_integer_user_non_null;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{LuaValue, Value};
@@ -34,7 +33,7 @@ fn not_in1_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_tuple(vec![Value::from(3_u64)]);
     query
         .coordinator
@@ -55,7 +54,7 @@ fn not_in1_test() {
             format!(
                 "{} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE not ("t"."identification_number") in (SELECT "id" FROM "TMP_test_0136")"#,
+                r#"WHERE not ("t"."identification_number") in (SELECT "COL_1" FROM "TMP_test_0136")"#,
             ),
             vec![],
         ))),

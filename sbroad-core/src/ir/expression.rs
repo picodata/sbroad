@@ -1272,19 +1272,16 @@ impl Plan {
     ///
     /// # Errors
     /// - reference is invalid
-    pub fn get_relational_from_reference_node(
-        &self,
-        ref_id: NodeId,
-    ) -> Result<&NodeId, SbroadError> {
+    ///
+    /// # Panics
+    /// - Plan is in inconsistent state.
+    pub fn get_relational_from_reference_node(&self, ref_id: NodeId) -> Result<&usize, SbroadError> {
         if let Node::Expression(Expression::Reference(Reference {
-            targets, parent, ..
-        })) = self.get_node(ref_id)?
+                                                          targets, parent, ..
+                                                      })) = self.get_node(ref_id)?
         {
             let Some(referred_rel_id) = parent else {
-                return Err(SbroadError::NotFound(
-                    Entity::Node,
-                    format_smolstr!("that is Reference ({ref_id}) parent"),
-                ));
+                panic!("Reference ({ref_id}) parent node not found.");
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
             if let Relational::Insert { .. } = rel {

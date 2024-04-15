@@ -57,10 +57,9 @@ fn aggregate() {
         r#"limit 1
     projection (min(("min_096"::unsigned))::scalar -> "col_1", min(distinct ("column_864"::unsigned))::scalar -> "col_2")
         motion [policy: full]
-            scan
-                projection ("t"."b"::unsigned -> "column_864", min(("t"."b"::unsigned))::scalar -> "min_096")
-                    group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
-                        scan "t"
+            projection ("t"."b"::unsigned -> "column_864", min(("t"."b"::unsigned))::scalar -> "min_096")
+                group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                    scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -83,10 +82,9 @@ fn group_by() {
             projection (sum(("count_096"::integer))::decimal -> "col_1", "column_764"::unsigned -> "b")
                 group by ("column_764"::unsigned) output: ("column_764"::unsigned -> "column_764", "count_096"::integer -> "count_096")
                     motion [policy: segment([ref("column_764")])]
-                        scan
-                            projection ("t"."b"::unsigned -> "column_764", count((*::integer))::integer -> "count_096")
-                                group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
-                                    scan "t"
+                        projection ("t"."b"::unsigned -> "column_764", count((*::integer))::integer -> "count_096")
+                            group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
+                                scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

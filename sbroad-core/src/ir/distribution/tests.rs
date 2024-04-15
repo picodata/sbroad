@@ -66,9 +66,8 @@ fn projection_any_dist_for_expr() {
     let expected_explain = SmolStr::from(
         r#"projection (sum(("count_096"::integer))::decimal -> "col_1")
     motion [policy: full]
-        scan
-            projection (count(("test_space"."id"::unsigned))::integer -> "count_096")
-                scan "test_space"
+        projection (count(("test_space"."id"::unsigned))::integer -> "count_096")
+            scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

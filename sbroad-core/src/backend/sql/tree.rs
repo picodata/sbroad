@@ -805,9 +805,9 @@ impl<'p> SyntaxPlan<'p> {
         let Relational::Motion(Motion {
             policy,
             children,
-            is_child_subquery,
             program,
             output,
+            need_parentheses,
             ..
         }) = motion
         else {
@@ -869,7 +869,7 @@ impl<'p> SyntaxPlan<'p> {
             .expect("motion virtual table");
 
         let vtable_alias = vtable.get_alias().cloned();
-        let is_child_subquery = *is_child_subquery;
+        let need_parentheses = *need_parentheses;
 
         // Remove motion's child from the stack (if any).
         if let Some(child_id) = first_child {
@@ -878,10 +878,7 @@ impl<'p> SyntaxPlan<'p> {
 
         let arena = &mut self.nodes;
 
-        // There are some cases when motion child is not a `SubQuery` and when
-        // it has an alias. E.g. in case of a `INSERT ... SELECT ...` its child
-        // may be a `Projection`.
-        let sn_children = if is_child_subquery || vtable_alias.is_some() {
+        let sn_children = if need_parentheses || vtable_alias.is_some() {
             let mut children: Vec<usize> = vec![
                 arena.push_sn_non_plan(SyntaxNode::new_open()),
                 arena.push_sn_non_plan(SyntaxNode::new_vtable(id)),

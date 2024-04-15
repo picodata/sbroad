@@ -1778,9 +1778,11 @@ impl Plan {
 
         let (local_proj_id, grouping_positions, local_aliases_map) =
             self.add_local_projection(upper, &mut aggr_infos, &grouping_exprs)?;
-        let sq_id = self.add_sub_query(local_proj_id, None)?;
-        self.set_distribution(self.get_relational_output(sq_id)?)?;
-        let finals_child_id = self.add_final_groupby(sq_id, &grouping_exprs, &local_aliases_map)?;
+
+        self.set_distribution(self.get_relational_output(local_proj_id)?)?;
+        let finals_child_id =
+            self.add_final_groupby(local_proj_id, &grouping_exprs, &local_aliases_map)?;
+
         self.patch_finals(
             &finals,
             finals_child_id,

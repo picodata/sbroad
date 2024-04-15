@@ -5,7 +5,8 @@ use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::operator::Relational;
+use crate::ir::tests::vcolumn_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use smol_str::SmolStr;
 
@@ -170,33 +171,27 @@ fn linker_test() {
     expected.rows.extend(vec![
         vec![
             LuaValue::String(format!("Execute query on a bucket [{bucket3}]")),
-            LuaValue::String(
-                String::from(
-                    PatternWithParams::new(
-                        format!(
-                        "{} {} {}",
-                        r#"SELECT "test_space"."FIRST_NAME""#,
-                        r#"FROM "test_space""#,
-                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
-                        ), vec![],
-                    )
-                )
-            ),
+            LuaValue::String(String::from(PatternWithParams::new(
+                format!(
+                    "{} {} {}",
+                    r#"SELECT "test_space"."FIRST_NAME""#,
+                    r#"FROM "test_space""#,
+                    r#"WHERE ("test_space"."id") in (SELECT "COL_1" FROM "TMP_test_0136")"#,
+                ),
+                vec![],
+            ))),
         ],
         vec![
             LuaValue::String(format!("Execute query on a bucket [{bucket2}]")),
-            LuaValue::String(
-                String::from(
-                    PatternWithParams::new(
-                        format!(
-                        "{} {} {}",
-                        r#"SELECT "test_space"."FIRST_NAME""#,
-                        r#"FROM "test_space""#,
-                        r#"WHERE ("test_space"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
-                        ), vec![],
-                    )
-                )
-            ),
+            LuaValue::String(String::from(PatternWithParams::new(
+                format!(
+                    "{} {} {}",
+                    r#"SELECT "test_space"."FIRST_NAME""#,
+                    r#"FROM "test_space""#,
+                    r#"WHERE ("test_space"."id") in (SELECT "COL_1" FROM "TMP_test_0136")"#,
+                ),
+                vec![],
+            ))),
         ],
     ]);
 
@@ -267,7 +262,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
+                    r#"WHERE ("t1"."id") in (SELECT "COL_1" FROM "TMP_test_0136")"#,
                 ),
                 vec![Value::from(0_u64), Value::from(0_u64)],
             ))),
@@ -287,7 +282,7 @@ fn union_linker_test() {
                     r#"FROM "test_space_hist""#,
                     r#"WHERE ("test_space_hist"."sys_op") > (?)"#,
                     r#") as "t1""#,
-                    r#"WHERE ("t1"."id") in (SELECT "identification_number" FROM "TMP_test_0136")"#,
+                    r#"WHERE ("t1"."id") in (SELECT "COL_1" FROM "TMP_test_0136")"#,
                 ),
                 vec![Value::from(0_u64), Value::from(0_u64)],
             ))),
@@ -369,7 +364,7 @@ WHERE "t3"."id" = 2 AND "t8"."identification_number" = 2"#;
                 r#"WHERE ("test_space_hist"."sysFrom") <= (?)"#,
                 r#") as "t3""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "identification_number" FROM "TMP_test_0136""#,
+                r#"(SELECT "COL_1" FROM "TMP_test_0136""#,
                 r#") as "t8""#,
                 r#"ON ("t3"."id") = ("t8"."identification_number")"#,
                 r#"WHERE ("t3"."id") = (?) and ("t8"."identification_number") = (?)"#
@@ -406,11 +401,11 @@ fn join_linker2_test() {
         .unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id1")));
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id2")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
-    virtual_table.set_alias("t2").unwrap();
+    virtual_table.set_alias("t2");
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -440,7 +435,7 @@ fn join_linker2_test() {
                 r#""t1"."id", "t1"."sysFrom", "t1"."FIRST_NAME", "t1"."sys_op""#,
                 r#"FROM "test_space" as "t1") as "t1""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "id1","id2" FROM "TMP_test_0136")"#,
+                r#"(SELECT "COL_1","COL_2" FROM "TMP_test_0136")"#,
                 r#"as "t2" ON ("t1"."id") = (?)"#
             ),
             vec![Value::from(1_u64)],
@@ -470,11 +465,11 @@ fn join_linker3_test() {
         .unwrap();
 
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id1")));
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("FIRST_NAME")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_tuple(vec![Value::from(1_u64), Value::from(1_u64)]);
     virtual_table.add_tuple(vec![Value::from(2_u64), Value::from(2_u64)]);
-    virtual_table.set_alias("t2").unwrap();
+    virtual_table.set_alias("t2");
     if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
@@ -503,7 +498,7 @@ fn join_linker3_test() {
                 r#"SELECT "t2"."id1" FROM"#,
                 r#"(SELECT "test_space"."id" FROM "test_space") as "t1""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "id1","FIRST_NAME" FROM "TMP_test_0136") as "t2""#,
+                r#"(SELECT "COL_1","COL_2" FROM "TMP_test_0136") as "t2""#,
                 r#"ON ("t2"."id1") = (?)"#,
             ),
             vec![Value::from(1_u64)],
@@ -533,10 +528,10 @@ fn join_linker4_test() {
         .position(0)
         .unwrap();
     let mut virtual_t2 = VirtualTable::new();
-    virtual_t2.add_column(column_integer_user_non_null(SmolStr::from("r_id")));
+    virtual_t2.add_column(vcolumn_integer_user_non_null());
     virtual_t2.add_tuple(vec![Value::from(1_u64)]);
     virtual_t2.add_tuple(vec![Value::from(2_u64)]);
-    virtual_t2.set_alias("T2").unwrap();
+    virtual_t2.set_alias("T2");
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
@@ -555,7 +550,7 @@ fn join_linker4_test() {
         .position(1)
         .unwrap();
     let mut virtual_sq = VirtualTable::new();
-    virtual_sq.add_column(column_integer_user_non_null(SmolStr::from("fn")));
+    virtual_sq.add_column(vcolumn_integer_user_non_null());
     virtual_sq.add_tuple(vec![Value::from(2_u64)]);
     virtual_sq.add_tuple(vec![Value::from(3_u64)]);
     if let MotionPolicy::Segment(key) =
@@ -591,9 +586,9 @@ fn join_linker4_test() {
                     r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
                     r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT "r_id" FROM "TMP_test_0136") as "T2""#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_0136") as "T2""#,
                     r#"ON ("T1"."id") = ("T2"."r_id")"#,
-                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_1136")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT "COL_1" FROM "TMP_test_1136")"#,
                 ),
                 vec![],
             ))),
@@ -607,9 +602,9 @@ fn join_linker4_test() {
                     r#""T1"."id", "T1"."sysFrom", "T1"."FIRST_NAME", "T1"."sys_op""#,
                     r#"FROM "test_space" as "T1") as "T1""#,
                     r#"INNER JOIN"#,
-                    r#"(SELECT "r_id" FROM "TMP_test_0136") as "T2""#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_0136") as "T2""#,
                     r#"ON ("T1"."id") = ("T2"."r_id")"#,
-                    r#"and ("T1"."FIRST_NAME") = (SELECT "fn" FROM "TMP_test_1136")"#,
+                    r#"and ("T1"."FIRST_NAME") = (SELECT "COL_1" FROM "TMP_test_1136")"#,
                 ),
                 vec![],
             ))),
@@ -638,8 +633,8 @@ on q."f" = "t1"."a""#;
         .position(0)
         .unwrap();
     let mut virtual_t2 = VirtualTable::new();
-    virtual_t2.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    virtual_t2.set_alias("t3").unwrap();
+    virtual_t2.add_column(vcolumn_integer_user_non_null());
+    virtual_t2.set_alias("t3");
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_t2_id)
     {
@@ -658,9 +653,9 @@ on q."f" = "t1"."a""#;
         .position(0)
         .unwrap();
     let mut virtual_sq = VirtualTable::new();
-    virtual_sq.add_column(column_integer_user_non_null(SmolStr::from("f")));
-    virtual_sq.add_column(column_integer_user_non_null(SmolStr::from("B")));
-    virtual_sq.set_alias("q").unwrap();
+    virtual_sq.add_column(vcolumn_integer_user_non_null());
+    virtual_sq.add_column(vcolumn_integer_user_non_null());
+    virtual_sq.set_alias("q");
     if let MotionPolicy::Segment(key) =
         get_motion_policy(query.exec_plan.get_ir_plan(), motion_sq_id)
     {
@@ -685,7 +680,7 @@ on q."f" = "t1"."a""#;
                 "{} {} {} {}",
                 r#"SELECT "t1"."a", "t1"."b", "q"."f", "q"."b" FROM"#,
                 r#"(SELECT "t1"."a", "t1"."b" FROM "t1") as "t1""#,
-                r#"INNER JOIN (SELECT "f","B" FROM "TMP_test_1136")"#,
+                r#"INNER JOIN (SELECT "COL_1","COL_2" FROM "TMP_test_1136")"#,
                 r#"as "q" ON ("q"."f") = ("t1"."a")"#,
             ),
             vec![],
@@ -711,7 +706,7 @@ fn dispatch_order_by() {
         .position(0)
         .unwrap();
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     query
         .coordinator
         .add_virtual_table(order_by_motion_id, virtual_table);
@@ -727,7 +722,7 @@ fn dispatch_order_by() {
     expected.rows.extend(vec![vec![
         LuaValue::String("Execute query locally".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
-            r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_0136") ORDER BY "id""#.to_string(),
+            r#"SELECT "id" FROM (SELECT "COL_1" FROM "TMP_test_0136") ORDER BY "id""#.to_string(),
             vec![],
         ))),
     ]]);
@@ -801,9 +796,9 @@ fn anonymous_col_index_test() {
                     r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_1136")"#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_0136")"#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_0136")"#,
                 ),
                 vec![],
             ))),
@@ -820,9 +815,9 @@ fn anonymous_col_index_test() {
                     r#""test_space"."sys_op""#,
                     r#"FROM "test_space""#,
                     r#"WHERE ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_1136")"#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_1136")"#,
                     r#"or ("test_space"."id") in"#,
-                    r#"(SELECT "identification_number" FROM "TMP_test_0136")"#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_0136")"#,
                 ),
                 vec![],
             ))),
@@ -898,15 +893,13 @@ fn sharding_column2_test() {
 fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from(
-        "identification_number",
-    )));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
 
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
     virtual_table.add_tuple(vec![Value::from(3_u64)]);
 
     if let Some(alias) = alias {
-        virtual_table.set_alias(alias).unwrap();
+        virtual_table.set_alias(alias);
     }
 
     virtual_table
@@ -965,7 +958,7 @@ fn groupby_linker_test() {
         "Expected Buckets::All for local groupby"
     );
     let mut virtual_t1 = VirtualTable::new();
-    virtual_t1.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    virtual_t1.add_column(vcolumn_integer_user_non_null());
 
     let mut buckets: Vec<u64> = vec![];
     let tuples: Vec<Vec<Value>> = vec![vec![Value::from(1_u64)], vec![Value::from(2_u64)]];
@@ -996,7 +989,7 @@ fn groupby_linker_test() {
                 format!(
                     "{} {} {}",
                     r#"SELECT "column_764" as "ii" FROM"#,
-                    r#"(SELECT "id" FROM "TMP_test_0136")"#,
+                    r#"(SELECT "COL_1" FROM "TMP_test_0136")"#,
                     r#"GROUP BY "column_764""#,
                 ),
                 vec![],

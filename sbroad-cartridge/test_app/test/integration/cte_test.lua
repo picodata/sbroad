@@ -120,7 +120,6 @@ g.test_cte = function ()
         SELECT b FROM cte
     ]], })
     t.assert_equals(err, nil)
-    -- FIXME: metadata type from tarantool is not correct
     t.assert_items_equals(r["metadata"], { {name = "b", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1}, {2}, {3} })
 

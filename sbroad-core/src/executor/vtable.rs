@@ -15,7 +15,7 @@ use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::node::NodeId;
-use crate::ir::relation::Column;
+use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue, Value};
 use crate::utils::{ByteCounter, SliceWriter};
@@ -80,6 +80,7 @@ pub struct VirtualTableMeta {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VirtualTable {
     /// List of the columns.
+    /// TODO: Make it `VTableColumn` (not containing `name` field) instead of a `Column`.
     columns: Vec<Column>,
     /// "Raw" tuples (list of values)
     tuples: Vec<VTableTuple>,
@@ -91,6 +92,16 @@ pub struct VirtualTable {
     /// the key is a bucket id, the value is a list of positions
     /// in the `tuples` list corresponding to the bucket.
     bucket_index: VTableIndex,
+}
+
+/// Facade for `Column` class.
+/// Idea is to restrict caller's ability to add a custom name to s column
+/// (as soon as it's generated automatically).
+#[derive(PartialEq, Debug, Eq, Clone)]
+pub struct VTableColumn {
+    pub r#type: Type,
+    pub role: ColumnRole,
+    pub is_nullable: bool,
 }
 
 impl Default for VirtualTable {
@@ -110,6 +121,12 @@ impl Display for VirtualTable {
         }
         writeln!(f)
     }
+}
+
+#[must_use]
+#[allow(clippy::module_name_repetitions)]
+pub fn vtable_indexed_column_name(index: usize) -> SmolStr {
+    format_smolstr!("COL_{index}")
 }
 
 impl VirtualTable {
@@ -134,7 +151,13 @@ impl VirtualTable {
     }
 
     /// Add column to virtual table
-    pub fn add_column(&mut self, col: Column) {
+    pub fn add_column(&mut self, vtable_col: VTableColumn) {
+        let col = Column {
+            name: vtable_indexed_column_name(self.columns.len() + 1),
+            r#type: vtable_col.r#type,
+            role: vtable_col.role,
+            is_nullable: vtable_col.is_nullable,
+        };
         self.columns.push(col);
     }
 
@@ -213,9 +236,8 @@ impl VirtualTable {
     ///
     /// # Errors
     /// - Try to set an empty alias name to the virtual table.
-    pub fn set_alias(&mut self, name: &str) -> Result<(), SbroadError> {
+    pub fn set_alias(&mut self, name: &str) {
         self.name = Some(SmolStr::from(name));
-        Ok(())
     }
 
     /// Get vtable alias name
@@ -562,10 +584,19 @@ impl VirtualTable {
     ///
     /// # Errors
     /// - Failed to create tuple
-    pub fn to_output(&mut self) -> Result<Box<dyn Any>, SbroadError> {
+    pub fn to_output(&mut self, motion_aliases: &[SmolStr]) -> Result<Box<dyn Any>, SbroadError> {
+        // In case we form `ProducerResult` by hand (in case Motion is a top node of the plan)
+        // we have alias names with redundant quotes.
+        let fix_double_quotes = |s: &SmolStr| {
+            if let (Some('"'), Some('"')) = (s.chars().next(), s.chars().last()) {
+                String::from(&s.clone()[1..s.len() - 1])
+            } else {
+                format_smolstr!("\"{}\"", s).to_string()
+            }
+        };
         let mut metadata = Vec::with_capacity(self.columns.len());
-        for col in &self.columns {
-            let meta_column = MetadataColumn::new(col.name.to_string(), col.r#type.to_string());
+        for (col, alias) in self.columns.iter().zip(motion_aliases.iter()) {
+            let meta_column = MetadataColumn::new(fix_double_quotes(alias), col.r#type.to_string());
             metadata.push(meta_column);
         }
 

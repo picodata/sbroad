@@ -656,7 +656,7 @@ impl SubtreeCloner {
                 policy: _,
                 program,
                 output: _,
-                is_child_subquery: _,
+                need_parentheses: _,
             }) => {
                 for op in &mut program.0 {
                     match op {

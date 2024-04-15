@@ -1,11 +1,10 @@
 use pretty_assertions::assert_eq;
-use smol_str::SmolStr;
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::tests::vcolumn_integer_user_non_null;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{LuaValue, Value};
 
@@ -69,14 +68,14 @@ fn empty_motion1_test() {
                 r#"(SELECT "t"."a", "t"."b" FROM"#,
                 r#"(SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t") as "t""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "g","h" FROM "TMP_test_0136") as "t2""#,
+                r#"(SELECT "COL_1","COL_2" FROM "TMP_test_0136") as "t2""#,
                 r#"ON ("t"."a") = ("t2"."g") and ("t"."b") = ("t2"."h")"#,
                 r#"WHERE ("t"."a") = (?)"#,
                 r#"EXCEPT"#,
                 r#"SELECT "t"."a", "t"."b" FROM"#,
                 r#"(SELECT "t"."a", "t"."b", "t"."c", "t"."d" FROM "t") as "t""#,
                 r#"INNER JOIN"#,
-                r#"(SELECT "g","h" FROM "TMP_test_1136") as "t2""#,
+                r#"(SELECT "COL_1","COL_2" FROM "TMP_test_1136") as "t2""#,
                 r#"ON ("t"."a") = ("t2"."g") and ("t"."b") = ("t2"."h")"#,
                 r#"WHERE ("t"."a") = (?)) as "Q""#,
             ),
@@ -90,11 +89,11 @@ fn empty_motion1_test() {
 fn t2_empty() -> VirtualTable {
     let mut virtual_table = VirtualTable::new();
 
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("g")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
 
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("h")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
 
-    virtual_table.set_alias("t2").unwrap();
+    virtual_table.set_alias("t2");
 
     virtual_table
 }

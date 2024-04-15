@@ -910,12 +910,15 @@ impl Plan {
         child_id: NodeId,
         policy: &MotionPolicy,
         program: Program,
+        need_parentheses: bool,
     ) -> Result<NodeId, SbroadError> {
-        let rel_node = self.get_node(child_id)?;
-        let alias = if let Node::Relational(_) = rel_node {
-            self.scan_name(child_id, 0)?.map(SmolStr::from)
-        } else {
-            return Err(SbroadError::Invalid(Entity::Relational, None));
+        let child_rel_node = self.get_relation_node(child_id)?;
+        let alias = match child_rel_node {
+            Relational::ScanSubQuery { alias, .. } | Relational::ScanRelation { alias, .. } => {
+                alias.clone()
+            }
+            Relational::ScanCte { alias, .. } => Some(alias.clone()),
+            _ => None,
         };
 
         let output = self.add_row_for_output(child_id, &[], true)?;
@@ -943,16 +946,13 @@ impl Plan {
             }
         }
 
-        let child = self.get_relation_node(child_id)?;
-        let is_child_subquery = matches!(child, Relational::ScanSubQuery(_));
-
         let motion = Motion {
             alias,
             children: vec![child_id],
             policy: policy.clone(),
             program,
             output,
-            is_child_subquery,
+            need_parentheses,
         };
         let motion_id = self.add_relational(motion.into())?;
         self.replace_parent_in_subtree(output, None, Some(motion_id))?;
@@ -1424,7 +1424,7 @@ impl Plan {
         }
     }
 
-    /// Gets list of aliases in output tuple of `rel_id`
+    /// Gets list of aliases in output tuple of `rel_id`.
     ///
     /// # Errors
     /// - node is not relational
@@ -1515,7 +1515,7 @@ impl Plan {
     }
 
     /// Finds the parent of the given relational node.
-    /// # Panics
+    ///
     /// # Errors
     /// - node is not relational
     /// - Plan has no top

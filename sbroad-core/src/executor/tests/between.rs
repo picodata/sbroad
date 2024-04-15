@@ -1,11 +1,10 @@
 use pretty_assertions::assert_eq;
-use smol_str::SmolStr;
 
 use crate::backend::sql::ir::PatternWithParams;
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::tests::vcolumn_integer_user_non_null;
 use crate::ir::transformation::redistribution::tests::get_motion_id;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::{LuaValue, Value};
@@ -33,7 +32,7 @@ fn between1_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
     query
         .coordinator
@@ -55,7 +54,7 @@ fn between1_test() {
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
                 r#"WHERE ("t"."identification_number") >= (?)"#,
-                r#"and ("t"."identification_number") <= (SELECT "id" FROM "TMP_test_0136")"#,
+                r#"and ("t"."identification_number") <= (SELECT "COL_1" FROM "TMP_test_0136")"#,
             ),
             vec![Value::from(1_u64)],
         ))),
@@ -85,7 +84,7 @@ fn between2_test() {
 
     // Mock a virtual table.
     let mut virtual_table = VirtualTable::new();
-    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    virtual_table.add_column(vcolumn_integer_user_non_null());
     virtual_table.add_tuple(vec![Value::from(2_u64)]);
 
     // Bind the virtual table to both motions.
@@ -108,8 +107,8 @@ fn between2_test() {
             format!(
                 "{} {} {}",
                 r#"SELECT "t"."identification_number" FROM "hash_testing" as "t""#,
-                r#"WHERE (SELECT "id" FROM "TMP_test_0136") >= (?)"#,
-                r#"and (SELECT "id" FROM "TMP_test_0136") <= (?)"#,
+                r#"WHERE (SELECT "COL_1" FROM "TMP_test_0136") >= (?)"#,
+                r#"and (SELECT "COL_1" FROM "TMP_test_0136") <= (?)"#,
             ),
             vec![Value::from(1_u64), Value::from(3_u64)],
         ))),

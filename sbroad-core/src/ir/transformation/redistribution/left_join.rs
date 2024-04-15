@@ -46,9 +46,9 @@ impl Plan {
             ));
         };
         let projection_id = create_projection(self, join_id)?;
-        let sq_id = self.add_sub_query(projection_id, None)?;
-        self.set_distribution(self.get_relational_output(sq_id)?)?;
-        self.change_child(parent_id, join_id, sq_id)?;
+
+        self.set_distribution(self.get_relational_output(projection_id)?)?;
+        self.change_child(parent_id, join_id, projection_id)?;
 
         let outer_id = self.get_relational_child(join_id, 0)?;
 
@@ -70,7 +70,7 @@ impl Plan {
 
             if motion_child_id.is_none() {
                 let motion_id =
-                    self.add_motion(outer_id, &MotionPolicy::Full, Program::default())?;
+                    self.add_motion(outer_id, &MotionPolicy::Full, Program::default(), true)?;
                 self.change_child(join_id, outer_id, motion_id)?;
                 motion_child_id = Some(motion_id);
             }
@@ -83,7 +83,8 @@ impl Plan {
             motion_id: outer_child_motion_id,
         };
         let mut strategy = Strategy::new(parent_id);
-        strategy.add_child(sq_id, MotionPolicy::Full, Program(vec![motion_op]));
+
+        strategy.add_child(projection_id, MotionPolicy::Full, Program(vec![motion_op]));
 
         Ok(Some(strategy))
     }

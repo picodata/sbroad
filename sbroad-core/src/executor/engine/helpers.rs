@@ -1069,6 +1069,7 @@ pub(crate) fn materialize_values(
 /// - Internal errors during the execution.
 ///
 /// # Panics
+/// - Plan is in inconsistent state.
 /// - query is dml
 pub fn materialize_motion(
     runtime: &impl Router,
@@ -1085,9 +1086,13 @@ pub fn materialize_motion(
         );
     }
 
-    let column_names = plan.get_ir_plan().get_relational_aliases(top_id)?;
     // We should get a motion alias name before we take the subtree in `dispatch` method.
-    let alias = plan.get_motion_alias(motion_node_id)?;
+    let motion_node = plan.get_ir_plan().get_relation_node(motion_node_id)?;
+    let alias = if let Relational::Motion { alias, .. } = motion_node {
+        alias.clone()
+    } else {
+        panic!("Expected motion node, got {motion_node:?}");
+    };
     // We also need to find out, if the motion subtree contains values node
     // (as a result we can retrieve incorrect types from the result metadata).
     let possibly_incorrect_types = plan.get_ir_plan().subtree_contains_values(motion_node_id)?;
@@ -1101,7 +1106,7 @@ pub fn materialize_motion(
     let mut vtable = result.as_virtual_table(column_names, possibly_incorrect_types)?;
 
     if let Some(name) = alias {
-        vtable.set_alias(name.as_str())?;
+        vtable.set_alias(name.as_str());
     }
 
     Ok(vtable)
@@ -1575,9 +1580,6 @@ fn materialize_vtable_locally<R: Vshard + QueryCache>(
 where
     R::Cache: StorageCache,
 {
-    let subplan_top_id = optional.exec_plan.get_motion_subtree_root(child_id)?;
-    let plan = optional.exec_plan.get_ir_plan();
-    let column_names = plan.get_relational_aliases(subplan_top_id)?;
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
     let mut info = QueryInfo::new(optional, required);
     let mut locked_cache = runtime.cache().lock();
@@ -1603,7 +1605,7 @@ where
         .ok_or_else(|| SbroadError::NotFound(Entity::ProducerResult, "from the tuple".into()))?
         // It is a DML query, so we don't need to care about the column types
         // in response. So, simply use scalar type for all the columns.
-        .as_virtual_table(column_names, true)?;
+        .as_virtual_table(true)?;
     optional
         .exec_plan
         .set_motion_vtable(&child_id, vtable, runtime)?;

@@ -333,8 +333,14 @@ impl Plan {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Data")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *data)?;
                 }
-                Relational::Motion(Motion { policy, .. }) => {
-                    writeln!(buf, "Motion [policy = {policy:?}]")?;
+                Relational::Motion(Motion { policy, alias, .. }) => {
+                    write!(buf, "Motion [policy = {policy:?}, alias = ")?;
+                    if let Some(alias) = alias {
+                        write!(buf, "{alias}")?;
+                    } else {
+                        write!(buf, "None")?;
+                    }
+                    writeln!(buf, "]")?;
                 }
                 Relational::Union { .. } => writeln!(buf, "Union")?,
                 Relational::UnionAll { .. } => writeln!(buf, "UnionAll")?,

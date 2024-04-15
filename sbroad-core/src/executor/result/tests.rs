@@ -74,27 +74,23 @@ fn convert_to_vtable() {
 
     let mut excepted = VirtualTable::new();
 
-    excepted.add_column(Column {
-        name: col_names[0].into(),
+    excepted.add_column(VTableColumn {
         r#type: Type::Integer,
         role: ColumnRole::User,
         is_nullable: true,
     });
-    excepted.add_column(Column {
-        name: col_names[1].into(),
+    excepted.add_column(VTableColumn {
         r#type: Type::String,
         role: ColumnRole::User,
         is_nullable: true,
     });
-    excepted.add_column(Column {
-        name: col_names[2].into(),
+    excepted.add_column(VTableColumn {
         r#type: Type::Unsigned,
         role: ColumnRole::User,
         is_nullable: true,
     });
 
-    excepted.add_column(Column {
-        name: col_names[3].into(),
+    excepted.add_column(VTableColumn {
         r#type: Type::Decimal,
         role: ColumnRole::User,
         is_nullable: true,
@@ -114,15 +110,5 @@ fn convert_to_vtable() {
         Value::from(decimal!(2.0)),
     ]);
 
-    assert_eq!(
-        excepted,
-        r.as_virtual_table(
-            col_names
-                .into_iter()
-                .map(smol_str::ToSmolStr::to_smolstr)
-                .collect(),
-            false
-        )
-        .unwrap()
-    );
+    assert_eq!(excepted, r.as_virtual_table(false).unwrap());
 }

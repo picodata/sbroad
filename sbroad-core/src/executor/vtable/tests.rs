@@ -1,6 +1,6 @@
 use super::*;
 use crate::executor::engine::mock::RouterRuntimeMock;
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::tests::{column_integer_user_non_null, vcolumn_integer_user_non_null};
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
@@ -10,14 +10,14 @@ use std::collections::HashMap;
 fn virtual_table_1() {
     let mut vtable = VirtualTable::new();
 
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("name")));
+    vtable.add_column(vcolumn_integer_user_non_null());
 
     vtable.add_tuple(vec![Value::from(1_u64)]);
 
-    vtable.set_alias("test").unwrap();
+    vtable.set_alias("test");
 
     let expected = VirtualTable {
-        columns: vec![column_integer_user_non_null(SmolStr::from("name"))],
+        columns: vec![column_integer_user_non_null(SmolStr::from("COL_1"))],
         tuples: vec![vec![Value::from(1_u64)]],
         name: Some(SmolStr::from("test")),
         primary_key: None,
@@ -31,13 +31,13 @@ fn virtual_table_1() {
 #[test]
 fn virtual_table_2() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
     vtable.add_tuple(tuple2.clone());
-    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t");
 
     let engine = RouterRuntimeMock::new();
     let key = MotionKey {
@@ -47,8 +47,8 @@ fn virtual_table_2() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![tuple1, tuple2],
         name: Some(SmolStr::from("t")),
@@ -65,13 +65,13 @@ fn virtual_table_2() {
 #[test]
 fn virtual_table_3() {
     let mut vtable = VirtualTable::new();
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
     let tuple1 = vec![Value::from(1_u64), Value::from(2_u64)];
     let tuple2 = vec![Value::from(3_u64), Value::from(4_u64)];
     vtable.add_tuple(tuple1.clone());
     vtable.add_tuple(tuple2.clone());
-    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t");
     vtable.set_primary_key(&[1]).unwrap();
 
     let engine = RouterRuntimeMock::new();
@@ -82,8 +82,8 @@ fn virtual_table_3() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![tuple1, tuple2],
         name: Some(SmolStr::from("t")),
@@ -109,9 +109,9 @@ fn vtable_rearrange_for_update() {
         new_sh_key_value.clone(),
         old_sh_key_value.clone(),
     ];
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
     vtable.add_tuple(tuple);
 
     vtable.set_primary_key(&[0]).unwrap();
@@ -132,8 +132,8 @@ fn vtable_rearrange_for_update() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![vec![pk_value.clone(), new_sh_key_value], vec![pk_value]],
         name: Some(SmolStr::from("t")),
@@ -149,9 +149,9 @@ fn vtable_add_missing_from1() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(4_u64)]);
     vtable.add_tuple(vec![Value::from(2_u64), Value::from(5_u64)]);
@@ -159,8 +159,8 @@ fn vtable_add_missing_from1() {
     vtable.set_primary_key(&[0]).unwrap();
 
     let mut from_vtable = VirtualTable::new();
-    from_vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    from_vtable.set_alias("s").unwrap();
+    from_vtable.add_column(vcolumn_integer_user_non_null());
+    from_vtable.set_alias("s");
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(3_u64)]);
@@ -171,8 +171,8 @@ fn vtable_add_missing_from1() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![
             vec![Value::from(1_u64), Value::from(3_u64)],
@@ -193,18 +193,17 @@ fn vtable_add_missing_from2() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(3_u64)]);
     vtable.add_tuple(vec![Value::from(2_u64), Value::from(4_u64)]);
 
     vtable.set_primary_key(&[0]).unwrap();
 
     let mut from_vtable = VirtualTable::new();
-    from_vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    from_vtable.set_alias("s").unwrap();
+    from_vtable.add_column(vcolumn_integer_user_non_null());
+    from_vtable.set_alias("s");
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(2_u64)]);
     from_vtable.add_tuple(vec![Value::from(3_u64)]);
@@ -217,8 +216,8 @@ fn vtable_add_missing_from2() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![
             vec![Value::from(1_u64), Value::from(3_u64)],
@@ -240,10 +239,9 @@ fn vtable_remove_duplicates1() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
 
@@ -255,8 +253,8 @@ fn vtable_remove_duplicates1() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![vec![Value::from(1_u64), Value::from(2_u64)]],
         name: Some(SmolStr::from("t")),
@@ -272,10 +270,9 @@ fn vtable_remove_duplicates2() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
 
     vtable.set_primary_key(&[0]).unwrap();
 
@@ -285,8 +282,8 @@ fn vtable_remove_duplicates2() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![],
         name: Some(SmolStr::from("t")),
@@ -302,10 +299,9 @@ fn vtable_remove_duplicates3() {
     let mut vtable = VirtualTable::new();
 
     // t: a (pk)
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
-    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
-    vtable.set_alias("t").unwrap();
-    vtable.set_alias("t").unwrap();
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.add_column(vcolumn_integer_user_non_null());
+    vtable.set_alias("t");
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
     vtable.add_tuple(vec![Value::from(1_u64), Value::Null]);
     vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
@@ -318,8 +314,8 @@ fn vtable_remove_duplicates3() {
 
     let expected = VirtualTable {
         columns: vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
+            column_integer_user_non_null(SmolStr::from("COL_1")),
+            column_integer_user_non_null(SmolStr::from("COL_2")),
         ],
         tuples: vec![
             vec![Value::from(1_u64), Value::Null],

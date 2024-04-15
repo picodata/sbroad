@@ -358,9 +358,8 @@ subquery $0:
 projection ("FIRST_NAME"::string -> "FIRST_NAME")
             order by (1)
                 motion [policy: full]
-                    scan
-                        projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
-                            scan "test_space"
+                    projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                        scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -433,17 +432,16 @@ fn cte_with_left_join() {
     let expected_explain = String::from(
         r#"projection ("E"::unsigned -> "E")
     motion [policy: full]
-        scan
-            projection ("cte"."E"::unsigned -> "E", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
-                join on true::boolean
-                    scan cte cte($0)
-                    scan "t2"
-                        projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
-                            scan "t2"
+        projection ("cte"."E"::unsigned -> "E", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+            join on true::boolean
+                scan cte cte($0)
+                scan "t2"
+                    projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                        scan "t2"
 subquery $0:
 motion [policy: full]
-                            projection ("t2"."e"::unsigned -> "E")
-                                scan "t2"
+                        projection ("t2"."e"::unsigned -> "E")
+                            scan "t2"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

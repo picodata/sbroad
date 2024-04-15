@@ -797,7 +797,11 @@ g1.test_projection_selection_join = function()
 
     local r, err = api:call("sbroad.execute",
     { [[
-    SELECT "t3"."id", "t3"."a", "t8"."b", "t3"."id" + "t3"."a" + "t8"."b" as "sum"
+    SELECT
+        "t3"."id",
+        "t3"."a",
+        "t8"."b",
+        "t3"."id" + "t3"."a" + "t8"."b" as "sum"
     FROM
         (SELECT "id", "a"
             FROM "arithmetic_space"
@@ -825,7 +829,6 @@ g1.test_projection_selection_join = function()
             {name = "a", type = "integer"},
             {name = "b", type = "integer"},
             {name = "sum", type = "integer"},
-
         }
     )
     for i=1,table.getn(r.rows) do

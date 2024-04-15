@@ -314,7 +314,7 @@ nodes:
           policy: Full
           program: [ReshardIfNeeded]
           output: 49
-          is_child_subquery: true
+          need_parentheses: true
     - Expression:
         Reference:
           targets:
@@ -346,7 +346,7 @@ nodes:
                     0
           program: [ReshardIfNeeded]
           output: 53
-          is_child_subquery: true
+          need_parentheses: true
 relations:
   tables:
     t1:

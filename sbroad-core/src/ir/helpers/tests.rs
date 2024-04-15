@@ -117,7 +117,7 @@ fn simple_join() {
 				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
 ---------------------------------------------
 ---------------------------------------------
-[id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
+[id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = t2]
 	Children:
 		Child_id = 2564
 	Output_id: 4064
@@ -223,7 +223,7 @@ fn simple_join_subtree() {
 				[id: 1332] expression: Alias [name = identification_number, child = Reference(Reference { parent: Some(NodeId { offset: 25, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: Integer })]
 ---------------------------------------------
 ---------------------------------------------
-[id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
+[id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = t2]
 	Children:
 		Child_id = 2564
 	Output_id: 4064
@@ -283,22 +283,13 @@ fn simple_aggregation_with_group_by() {
 				[id: 1132] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 14, arena_type: Arena64 }), targets: Some([0]), position: 1, col_type: String })]
 ---------------------------------------------
 ---------------------------------------------
-[id: 2264] relation: ScanSubQuery
+[id: 41] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] }), alias = None]
 	Children:
-		Child_id = 1964
-	Output_id: 2164
-		[id: 2164] expression: Row [distribution = Some(Any)]
+		Child_id = 31
+	Output_id: 40
+		[id: 40] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
 			List:
-				[id: 1232] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 22, arena_type: Arena64 }), targets: Some([0]), position: 0, col_type: String })]
----------------------------------------------
----------------------------------------------
-[id: 0136] relation: Motion [policy = Segment(MotionKey { targets: [Reference(0)] })]
-	Children:
-		Child_id = 2264
-	Output_id: 2964
-		[id: 2964] expression: Row [distribution = Some(Segment { keys: KeySet({Key { positions: [0] }}) })]
-			List:
-				[id: 1432] expression: Alias [name = column_764, child = Reference(Reference { parent: Some(NodeId { offset: 0, arena_type: Arena136 }), targets: Some([0]), position: 0, col_type: String })]
+				[id: 39] expression: Alias [name = column_12, child = Reference { parent: Some(41), targets: Some([0]), position: 0, col_type: String }]
 ---------------------------------------------
 ---------------------------------------------
 [id: 2664] relation: GroupBy [is_final = true]

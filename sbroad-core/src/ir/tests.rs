@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::vtable::VTableColumn;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use pretty_assertions::assert_eq;
 use smol_str::SmolStr;
@@ -20,6 +21,17 @@ pub fn column_integer_user_non_null(name: SmolStr) -> Column {
     }
 }
 
+/// Copy of `column_integer_user_non_null` but without `name`.
+#[must_use]
+#[cfg(test)]
+pub fn vcolumn_integer_user_non_null() -> VTableColumn {
+    VTableColumn {
+        r#type: Type::Integer,
+        role: ColumnRole::User,
+        is_nullable: false,
+    }
+}
+
 /// Helper function to create `Column` object with given name, type and default
 /// * `is_nullable` = false
 /// * `role` = User
@@ -29,6 +41,17 @@ pub fn column_integer_user_non_null(name: SmolStr) -> Column {
 pub fn column_user_non_null(name: SmolStr, r#type: Type) -> Column {
     Column {
         name,
+        r#type,
+        role: ColumnRole::User,
+        is_nullable: false,
+    }
+}
+
+/// Copy of `column_integer_user_non_null` but without `name`.
+#[must_use]
+#[cfg(test)]
+pub fn vcolumn_user_non_null(r#type: Type) -> VTableColumn {
+    VTableColumn {
         r#type,
         role: ColumnRole::User,
         is_nullable: false,

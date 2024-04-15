@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use ahash::{AHashMap, AHashSet};
 use serde::{Deserialize, Serialize};
-use smol_str::{format_smolstr, SmolStr, ToSmolStr};
+use smol_str::{format_smolstr, ToSmolStr};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
@@ -290,20 +290,6 @@ impl ExecutionPlan {
         ))
     }
 
-    /// Get motion alias name
-    ///
-    /// # Errors
-    /// - node is not valid
-    pub fn get_motion_alias(&self, node_id: NodeId) -> Result<Option<SmolStr>, SbroadError> {
-        let child_id = &self.get_motion_child(node_id)?;
-        let child_rel = self.get_ir_plan().get_relation_node(*child_id)?;
-        match child_rel {
-            Relational::ScanSubQuery(ScanSubQuery { alias, .. }) => Ok(alias.clone()),
-            Relational::ScanCte(ScanCte { alias, .. }) => Ok(Some(alias.clone())),
-            _ => Ok(None),
-        }
-    }
-
     /// Get root from motion sub tree
     ///
     /// # Errors
@@ -401,6 +387,7 @@ impl ExecutionPlan {
     pub fn take_subtree(&mut self, top_id: NodeId) -> Result<Self, SbroadError> {
         // Get the subtree nodes indexes.
         let plan = self.get_ir_plan();
+        let top = plan.get_top()?;
         let mut subtree =
             PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), plan.nodes.len());
         subtree.populate_nodes(top_id);
@@ -466,6 +453,14 @@ impl ExecutionPlan {
             HashMap::with_capacity(vtables_capacity);
 
         let mut new_plan = Plan::new();
+        new_plan.nodes.reserve(nodes.len());
+
+        // In case we have a Motion among rel node children (maybe not direct), we
+        // need to rename rel output aliases, because Motion
+        // may have changed them according to its vtable column names.
+        // This map tracks outputs of rel nodes that have changed their aliases.
+        let mut rel_renamed_output_lists: HashMap<usize, Vec<usize>> = HashMap::new();
+
         for LevelNode(_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
             // and CTEs can be referred twice).
@@ -525,14 +520,46 @@ impl ExecutionPlan {
                                 .clone();
                             new_plan.add_rel(table);
                         }
-                        RelOwned::Motion(Motion {
-                            children, policy, ..
+                        Relational::Motion {
+                            children,
+                            policy,
+                            output,
+                            ..
                         }) => {
                             if let Some(vtable) =
                                 self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
                             {
                                 let next_id = new_plan.nodes.next_id(ArenaType::Arena136);
                                 new_vtables.insert(next_id, Rc::clone(vtable));
+
+                                // We need to fix motion aliases based on materialized
+                                // vtable. Motion's aliases will copy "COL_i" naming of
+                                // vtable.
+                                let output_list: Vec<usize> =
+                                    new_plan.get_row_list(subtree_map.get_id(*output))?.to_vec();
+
+                                if node_id != top {
+                                    // We should rename Motion aliases only in case it's not a
+                                    // top node. Otherwise, it has no effect as soon as `to_sql`
+                                    // will use column names of vtable and ignore motion aliases.
+                                    vtable
+                                        .get_columns().iter()
+                                        .zip(output_list.iter())
+                                        .map(|(vtable_column, alias_id)| {
+                                            let alias = new_plan.get_mut_expression_node(
+                                                *alias_id
+                                            )?;
+                                            let Expression::Alias { ref mut name, .. } = alias else {
+                                                return Err(SbroadError::Invalid(
+                                                    Entity::Expression,
+                                                    Some(format_smolstr!("Expected Alias under Motion output, got {alias:?}"))
+                                                ))
+                                            };
+                                            *name = vtable_column.name.clone();
+                                            Ok(())
+                                        })
+                                        .collect::<Result<Vec<()>, SbroadError>>()?;
+                                }
                             }
                             // We should not remove the child of a local motion node.
                             // The subtree is needed to complie the SQL on the storage.
@@ -600,11 +627,79 @@ impl ExecutionPlan {
 
                     for child_id in rel.mut_children() {
                         *child_id = subtree_map.get_id(*child_id);
+
+                        let child_rel_node = new_plan.get_relation_node(*child_id)?;
+                        if let Relational::Motion { output, .. } = child_rel_node {
+                            let motion_output_list: Vec<usize> =
+                                new_plan.get_row_list(*output)?.to_vec();
+                            rel_renamed_output_lists.insert(*child_id, motion_output_list);
+                        }
                     }
 
                     let output = rel.mut_output();
                     *rel.mut_output() = subtree_map.get_id(*output);
                     relational_output_id = Some(*rel.mut_output());
+
+                    if !rel_renamed_output_lists.is_empty()
+                        && !matches!(rel, Relational::Projection { .. })
+                    {
+                        let rel_output_list: Vec<usize> =
+                            new_plan.get_row_list(rel.output())?.to_vec();
+
+                        for output_id in &rel_output_list {
+                            let ref_under_alias = new_plan.get_child_under_alias(*output_id)?;
+                            let ref_expr = new_plan.get_expression_node(ref_under_alias)?;
+                            let Expression::Reference {
+                                position, targets, ..
+                            } = ref_expr
+                            else {
+                                panic!("Expected reference, got {ref_expr:?}");
+                            };
+                            let mut ref_rel_node = None;
+
+                            let target = if let Some(targets) = targets {
+                                *targets
+                                    .first()
+                                    .expect("Reference must have at least one target.")
+                            } else {
+                                break;
+                            };
+                            for (index, child) in rel.children().iter().enumerate() {
+                                if index != target {
+                                    continue;
+                                }
+                                ref_rel_node = Some(*child);
+                            }
+                            let Some(ref_rel_node) = ref_rel_node else {
+                                continue;
+                            };
+
+                            if let Some(child_output_list) =
+                                rel_renamed_output_lists.get(&ref_rel_node)
+                            {
+                                let child_output_alias_id =
+                                    child_output_list.get(*position).unwrap_or_else(|| {
+                                        panic!(
+                                            "Unable to get motion output at requested position."
+                                        );
+                                    });
+                                let child_alias =
+                                    new_plan.get_expression_node(*child_output_alias_id)?;
+                                let child_alias_name = child_alias.get_alias_name()?.to_smolstr();
+
+                                let rel_alias = new_plan.get_mut_expression_node(*output_id)?;
+                                if let Expression::Alias { ref mut name, .. } = rel_alias {
+                                    *name = child_alias_name;
+                                } else {
+                                    panic!("Expected alias under Row output list");
+                                }
+                            }
+                        }
+
+                        rel_renamed_output_lists.insert(next_id, rel_output_list);
+                    }
+
+                    new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
                 }
                 NodeOwned::Expression(ref mut expr) => match expr {
                     ExprOwned::Alias(Alias { ref mut child, .. })
