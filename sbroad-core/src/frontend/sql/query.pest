@@ -56,7 +56,7 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeWrite = { ^"write" }
 
 DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
-         | CreateProc | DropProc | RenameProc | SetParam | SetTransaction }
+         | CreateProc | DropProc | RenameProc | SetParam | SetTransaction | AlterSystem }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
@@ -148,6 +148,13 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
                 ReadOnly   = { ^"read" ~ ^"only" }
                 Deferrable = { NotFlag? ~ ^"deferrable" }
             TransactionSnapshot = { ^"snapshot" ~ SingleQuotedString }
+
+    AlterSystem = { ^"alter" ~ ^"system" ~ (AlterSystemSet | AlterSystemReset) ~ AlterSystemTier? }
+        		AlterSystemReset = {^"reset" ~ (^"all" | Identifier) }
+        		AlterSystemSet = {^"set" ~ Identifier ~ ("=" | ^"to") ~ (^"default" | Expr) }
+        		AlterSystemTier = { ^"for" ~ (AlterSystemTiersAll | AlterSystemTierSingle) }
+        		    AlterSystemTiersAll = { ^"all" ~ ^"tiers" }
+        		    AlterSystemTierSingle = { ^"tier" ~ Identifier }
 
 Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }

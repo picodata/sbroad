@@ -108,8 +108,15 @@ grant       ::= 'GRANT' (
                 )
                 'TO' (role | user)
 ddl         ::= (alter_procedure | create_index | create_procedure | create_table
-                | drop_index | drop_procedure | drop_table)
+                | drop_index | drop_procedure | drop_table | alter_system)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
+alter_system ::= ('ALTER' 'SYSTEM'
+                  (
+                   'RESET' ('ALL' | param_name) |
+                   'SET' param_name ('=' | 'TO') ('DEFAULT' | param_value)
+                  )
+                  ('FOR' ('ALL' 'TIERS' | 'TIER' tier))?
+                 )
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
                      'RENAME' 'TO' procedure
 create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table

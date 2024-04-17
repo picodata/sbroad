@@ -1,3 +1,4 @@
+use crate::ir::value::Value;
 use crate::{
     errors::{Entity, SbroadError},
     ir::{relation::Type as RelationType, Node, Plan},
@@ -62,6 +63,18 @@ impl SetParamValue {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum AlterSystemType {
+    AlterSystemSet {
+        param_name: SmolStr,
+        param_value: Value,
+    },
+    AlterSystemReset {
+        /// In case of None, all params are supposed to be reset.
+        param_name: Option<SmolStr>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Ddl {
     CreateTable {
         name: SmolStr,
@@ -81,6 +94,13 @@ pub enum Ddl {
     },
     DropTable {
         name: SmolStr,
+        timeout: Decimal,
+    },
+    AlterSystem {
+        ty: AlterSystemType,
+        /// In case of None, ALTER is supposed
+        /// to be executed on all tiers.
+        tier_name: Option<SmolStr>,
         timeout: Decimal,
     },
     CreateProc {
@@ -143,6 +163,7 @@ impl Ddl {
             | Ddl::DropTable { ref timeout, .. }
             | Ddl::CreateIndex { ref timeout, .. }
             | Ddl::DropIndex { ref timeout, .. }
+            | Ddl::AlterSystem { ref timeout, .. }
             | Ddl::SetParam { ref timeout, .. }
             | Ddl::SetTransaction { ref timeout, .. }
             | Ddl::CreateProc { ref timeout, .. }

@@ -26,7 +26,7 @@ use crate::frontend::sql::ast::{
 };
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
-use crate::ir::ddl::{ColumnDef, Ddl, SetParamScopeType, SetParamValue};
+use crate::ir::ddl::{AlterSystemType, ColumnDef, Ddl, SetParamScopeType, SetParamValue};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
@@ -299,6 +299,95 @@ fn parse_create_proc(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, 
         timeout,
     };
     Ok(create_proc)
+}
+
+fn parse_alter_system<M: Metadata>(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+    pairs_map: &mut ParsingPairsMap,
+    worker: &mut ExpressionsWorker<M>,
+    plan: &mut Plan,
+) -> Result<Ddl, SbroadError> {
+    let alter_system_type_node_id = node
+        .children
+        .first()
+        .expect("Alter system type node expected.");
+    let alter_system_type_node = ast.nodes.get_node(*alter_system_type_node_id)?;
+
+    let ty = match alter_system_type_node.rule {
+        Rule::AlterSystemReset => {
+            let param_name =
+                if let Some(identifier_node_id) = alter_system_type_node.children.first() {
+                    Some(parse_identifier(ast, *identifier_node_id)?)
+                } else {
+                    None
+                };
+            AlterSystemType::AlterSystemReset { param_name }
+        }
+        Rule::AlterSystemSet => {
+            let param_name_node_id = alter_system_type_node
+                .children
+                .first()
+                .expect("Param name node expected under Alter system.");
+            let param_name = parse_identifier(ast, *param_name_node_id)?;
+
+            if let Some(param_value_node_id) = alter_system_type_node.children.get(1) {
+                let expr_pair = pairs_map.remove_pair(*param_value_node_id);
+                let expr_plan_node_id = parse_expr(Pairs::single(expr_pair), &[], worker, plan)?;
+                let value_node = plan.get_node(expr_plan_node_id)?;
+                if let Node::Expression(Expression::Constant { value }) = value_node {
+                    AlterSystemType::AlterSystemSet {
+                        param_name,
+                        param_value: value.clone(),
+                    }
+                } else {
+                    // TODO: Should be fixed as
+                    //       https://git.picodata.io/picodata/picodata/sbroad/-/issues/763
+                    return Err(SbroadError::Invalid(
+                        Entity::Expression,
+                        Some(SmolStr::from(
+                            "ALTER SYSTEM currently supports only literals as values.",
+                        )),
+                    ));
+                }
+            } else {
+                // In case of `set <PARAM_NAME> to default` we send `Reset` opcode
+                // instead of `Set`.
+                AlterSystemType::AlterSystemReset {
+                    param_name: Some(param_name),
+                }
+            }
+        }
+        _ => unreachable!("Unexpected rule: {:?}", alter_system_type_node.rule),
+    };
+
+    let tier_name = if let Some(tier_node_id) = node.children.get(1) {
+        let tier_node = ast.nodes.get_node(*tier_node_id)?;
+        let tier_node_child_id = tier_node
+            .children
+            .first()
+            .expect("Expected mandatory child node under AlterSystemTier.");
+        let tier_node_child = ast.nodes.get_node(*tier_node_child_id)?;
+        match tier_node_child.rule {
+            Rule::AlterSystemTiersAll => None,
+            Rule::AlterSystemTierSingle => {
+                let node_child_id = tier_node_child
+                    .children
+                    .first()
+                    .expect("Child node expected under AlterSystemTierSingle.");
+                Some(parse_identifier(ast, *node_child_id)?)
+            }
+            _ => panic!("Unexpected rule met under AlterSystemTier."),
+        }
+    } else {
+        None
+    };
+
+    Ok(Ddl::AlterSystem {
+        ty,
+        tier_name,
+        timeout: get_default_timeout(),
+    })
 }
 
 fn parse_proc_with_optional_params(
@@ -2597,8 +2686,8 @@ impl AbstractSyntaxTree {
                     // * `Expr`s are parsed using Pratt parser with a separate `parse_expr`
                     //   function call on the stage of `resolve_metadata`.
                     // * `Row`s are added to support parsing Row expressions under `Values` nodes.
-                    // * `Literal`s are added to support procedure calls which should not contain
-                    //   all possible `Expr`s.
+                    // * `Literal`s are added to support procedure calls and
+                    //   ALTER SYSTEM which should not contain all possible `Expr`s.
                     pairs_map.insert(arena_node_id, stack_node.pair.clone());
                 }
                 Rule::Projection | Rule::OrderBy => {
@@ -3408,6 +3497,12 @@ impl AbstractSyntaxTree {
                 Rule::CreateIndex => {
                     let create_index = parse_create_index(self, node)?;
                     let plan_id = plan.nodes.push(Node::Ddl(create_index));
+                    map.add(id, plan_id);
+                }
+                Rule::AlterSystem => {
+                    let alter_system =
+                        parse_alter_system(self, node, pairs_map, &mut worker, &mut plan)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(alter_system));
                     map.add(id, plan_id);
                 }
                 Rule::CreateProc => {
