@@ -696,6 +696,49 @@ on q."f" = "t1"."a""#;
 }
 
 #[test]
+fn dispatch_order_by() {
+    let sql = r#"select "id" from (select "id" from "test_space") order by "id""#;
+
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+
+    let order_by_motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_table = VirtualTable::new();
+    virtual_table.add_column(column_integer_user_non_null(SmolStr::from("id")));
+    query
+        .coordinator
+        .add_virtual_table(order_by_motion_id, virtual_table);
+
+    let result = *query
+        .dispatch()
+        .unwrap()
+        .downcast::<ProducerResult>()
+        .unwrap();
+
+    let mut expected = ProducerResult::new();
+
+    expected.rows.extend(vec![vec![
+        LuaValue::String("Execute query locally".to_string()),
+        LuaValue::String(String::from(PatternWithParams::new(
+            format!(
+                "{}",
+                r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_40") ORDER BY "id""#,
+            ),
+            vec![],
+        ))),
+    ]]);
+    assert_eq!(expected, result);
+}
+
+#[test]
 fn anonymous_col_index_test() {
     let sql = r#"SELECT * FROM "test_space"
     WHERE "id" in (SELECT "identification_number" FROM "hash_testing" WHERE "product_units" < 3)

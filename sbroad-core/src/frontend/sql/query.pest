@@ -137,7 +137,8 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         Join* ~ WhereClause? ~
         (^"group" ~ ^"by" ~ GroupBy)? ~
-        (^"having" ~ Having)?
+        (^"having" ~ Having)? ~
+        (^"order" ~ ^"by" ~ OrderBy)?
     }
         Projection = { Distinct? ~ ProjectionElement ~ ("," ~ ProjectionElement)* }
             ProjectionElement = _{ Asterisk | Column }
@@ -152,6 +153,11 @@ Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~
                 LeftJoinKind = { ^"left" ~ (^"outer")? }
         GroupBy = { Expr ~ ("," ~ Expr)* }
         Having = { Expr }
+        OrderBy = { OrderByElement ~ ("," ~ OrderByElement)* }
+            OrderByElement = { Expr ~ OrderFlag? }
+            OrderFlag = _{ Asc | Desc }
+                Asc = { ^"asc" }
+                Desc = { ^"desc" }
     SubQuery = { "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
     Insert = { ^"insert" ~ ^"into" ~ Table ~ ("(" ~ TargetColumns ~ ")")? ~ (Values | Select) ~ OnConflict? }
         TargetColumns = { Identifier ~ ("," ~ Identifier)* }
@@ -190,15 +196,15 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
             // Note: In case two keywords with the same prefix are met, shorter ones must go after longest.
             //       E.g. ^"in" must go after ^"insert" because keywords traversal stops on the first match.
             //       Please, try to keep the list in alphabetical order.
-            Keyword = {  ^"all" | ^"and" | ^"any" | ^"array" | ^"as"
+            Keyword = {  ^"all" | ^"and" | ^"any" | ^"array" | ^"asc" | ^"as"
                         | ^"begin" | ^"between" | ^"boolean" | ^"bool"| ^"by"
                         | ^"cast" | ^"char"
-                        | ^"decimal" | ^"distinct" | ^"double"
+                        | ^"decimal" | ^"desc" | ^"distinct" | ^"double"
                         | ^"end" | ^"except" | ^"exists"
                         | ^"false" | ^"from" | ^"group"
                         | ^"having" | ^"inner" | ^"integer" | ^"into" | ^"int" | ^"in" | ^"is"
                         | ^"join" | ^"left" | ^"not" | ^"null" | ^"number"
-                        | ^"on" | ^"option" | ^"or" | ^"outer" | ^"primary"
+                        | ^"on" | ^"option" | ^"order" | ^"or" | ^"outer" | ^"primary"
                         | ^"scalar" | ^"select" | ^"set" | ^"string"
                         | ^"table" | ^"text" | ^"to" | ^"true"
                         | ^"union" | ^"unsigned" | ^"using" | ^"uuid"
@@ -209,7 +215,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
     ExprInfixOp = _{ Between | ArithInfixOp | CmpInfixOp | ConcatInfixOp | And | Or }
         Between       = { NotFlag? ~ ^"between" }
         And           = { ^"and" }
-        Or            = { ^"or" }
+        Or            = @{ ^"or" ~ SP }
         ConcatInfixOp = { "||" }
         ArithInfixOp  = _{ Add | Subtract | Multiply | Divide }
             Add      = { "+" }
@@ -282,3 +288,5 @@ Distinct = { ^"distinct" }
 NotFlag = { ^"not" }
 EOF = { EOI | ";" }
 WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }
+// Shortened rule to include mandatory space predicate between tokens.
+SP = _{ &WHITESPACE }

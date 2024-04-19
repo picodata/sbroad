@@ -9,7 +9,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ast::Rule;
 use crate::ir::expression::Expression;
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
@@ -603,6 +603,26 @@ impl SubtreeCloner {
                 is_final: _,
             } => {
                 *gr_cols = self.copy_list(gr_cols)?;
+            }
+            Relational::OrderBy {
+                child: _,
+                order_by_elements,
+                output: _,
+            } => {
+                let mut new_order_by_elements = Vec::with_capacity(order_by_elements.len());
+                for element in &mut *order_by_elements {
+                    let new_entity = match element.entity {
+                        OrderByEntity::Expression { expr_id } => OrderByEntity::Expression {
+                            expr_id: self.get_new_id(expr_id)?,
+                        },
+                        OrderByEntity::Index { value } => OrderByEntity::Index { value },
+                    };
+                    new_order_by_elements.push(OrderByElement {
+                        entity: new_entity,
+                        order_type: element.order_type.clone(),
+                    });
+                }
+                *order_by_elements = new_order_by_elements;
             }
             Relational::ValuesRow {
                 output: _,

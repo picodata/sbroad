@@ -536,6 +536,169 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_order_by_with_simple_select() {
+    let input = r#"select * from "test_space" order by "id""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("id"::unsigned -> "id", "sysFrom"::unsigned -> "sysFrom", "FIRST_NAME"::string -> "FIRST_NAME", "sys_op"::unsigned -> "sys_op")
+    order by ("id"::unsigned)
+        motion [policy: full]
+            scan
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op")
+                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_order_by_with_param() {
+    let input = r#"select * from "test_space" order by ?"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string().contains(
+            "Using parameter as a standalone ORDER BY expression doesn't influence sorting"
+        )
+    );
+}
+
+#[test]
+fn front_order_by_without_position_and_reference() {
+    let input = r#"select * from "test_space" order by 1 + 8 asc, true and 'value'"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("ORDER BY element that is not position and doesn't contain reference doesn't influence ordering")
+    );
+}
+
+#[test]
+fn front_order_by_with_order_type_specification() {
+    let input = r#"select * from "test_space" order by "id" desc, "sysFrom" asc"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("id"::unsigned -> "id", "sysFrom"::unsigned -> "sysFrom", "FIRST_NAME"::string -> "FIRST_NAME", "sys_op"::unsigned -> "sys_op")
+    order by ("id"::unsigned desc, "sysFrom"::unsigned asc)
+        motion [policy: full]
+            scan
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op")
+                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_order_by_with_indices() {
+    let input = r#"select * from "test_space" order by 2, 1 desc"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("id"::unsigned -> "id", "sysFrom"::unsigned -> "sysFrom", "FIRST_NAME"::string -> "FIRST_NAME", "sys_op"::unsigned -> "sys_op")
+    order by (2, 1 desc)
+        motion [policy: full]
+            scan
+                projection ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op")
+                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_order_by_ordering_by_expressions_from_projection() {
+    let input =
+        r#"select "id" as "my_col", "id" from "test_space" order by "my_col", "id", 1 desc, 2 asc"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("my_col"::unsigned -> "my_col", "id"::unsigned -> "id")
+    order by ("my_col"::unsigned, "id"::unsigned, 1 desc, 2 asc)
+        motion [policy: full]
+            scan
+                projection ("test_space"."id"::unsigned -> "my_col", "test_space"."id"::unsigned -> "id")
+                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_order_by_with_indices_bigger_than_projection_output_length() {
+    let input = r#"select "id" from "test_space" order by 1 asc, 2 desc, 3"#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("Ordering index (2) is bigger than child projection output length (1).")
+    );
+}
+
+#[test]
+fn front_order_by_over_single_distribution_must_not_add_motion() {
+    let input = r#"select "id_count" from
+                        (select count("id") as "id_count" from "test_space")
+                        order by "id_count""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("id_count"::integer -> "id_count")
+    order by ("id_count"::integer)
+        scan
+            projection ("id_count"::integer -> "id_count")
+                scan
+                    projection (sum(("count_13"::integer))::decimal -> "id_count")
+                        motion [policy: full]
+                            scan
+                                projection (count(("test_space"."id"::unsigned))::integer -> "count_13")
+                                    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_subquery_column_duplicates() {
     let input = r#"SELECT "id" FROM "test_space" WHERE ("id", "id")
         IN (SELECT "id", "id" from "test_space")"#;

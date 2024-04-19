@@ -488,14 +488,16 @@ impl AbstractSyntaxTree {
         // 4. Selection: optional
         // 5. GroupBy: optional
         // 6. Having: optional
+        // 7. OrderBy: optional
         //
         // We need to reorder this sequence to the following:
-        // 1. Projection: required
-        // 2. Having: optional
-        // 3. GroupBy: optional
-        // 4. Selection: optional
-        // 5. Join: optional (can be repeated multiple times)
-        // 6. Scan: required
+        // 1. OrderBy: optional
+        // 2. Projection: required
+        // 3. Having: optional
+        // 4. GroupBy: optional
+        // 5. Selection: optional
+        // 6. Join: optional (can be repeated multiple times)
+        // 7. Scan: required
         let mut proj_id: Option<usize> = None;
         let mut scan_id: Option<usize> = None;
         let mut join_ids = if children.len() > 2 {
@@ -506,6 +508,7 @@ impl AbstractSyntaxTree {
         let mut filter_id: Option<usize> = None;
         let mut group_id: Option<usize> = None;
         let mut having_id: Option<usize> = None;
+        let mut order_by_id: Option<usize> = None;
 
         for child_id in children {
             let child = self.nodes.get_node(*child_id)?;
@@ -516,6 +519,7 @@ impl AbstractSyntaxTree {
                 Rule::Selection => filter_id = Some(*child_id),
                 Rule::GroupBy => group_id = Some(*child_id),
                 Rule::Having => having_id = Some(*child_id),
+                Rule::OrderBy => order_by_id = Some(*child_id),
                 _ => panic!("{} {:?}", "Unexpected rule in select children:", child.rule),
             }
         }
@@ -528,10 +532,16 @@ impl AbstractSyntaxTree {
 
         // The order of the nodes in the chain is partially reversed.
         // Original nodes from grammar:
-        // Projection -> Scan -> Join1 -> ... -> JoinK -> Selection -> GroupBy -> Having.
+        // Projection -> Scan -> Join1 -> ... -> JoinK -> Selection -> GroupBy -> Having -> OrderBy.
         // We need to change the order of the chain to:
-        // Projection -> Having -> GroupBy -> Selection -> JoinK -> ... -> Join1
+        // OrderBy -> Projection -> Having -> GroupBy -> Selection -> JoinK -> ... -> Join1
         let mut chain = Vec::with_capacity(children.len() - 1);
+
+        // Note that OrderBy must go above Projection because
+        // we need to operate with its (projection) output.
+        if let Some(order_by_id) = order_by_id {
+            chain.push(order_by_id);
+        }
         chain.push(proj_id);
         if let Some(having_id) = having_id {
             chain.push(having_id);

@@ -9,7 +9,9 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{Expression, TrimKind};
-use crate::ir::operator::{ConflictStrategy, JoinKind, Relational};
+use crate::ir::operator::{
+    ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType, Relational,
+};
 use crate::ir::relation::Type;
 use crate::ir::transformation::redistribution::{
     MotionKey as IrMotionKey, MotionPolicy as IrMotionPolicy, Target as IrTarget,
@@ -388,6 +390,82 @@ impl Display for GroupBy {
 }
 
 #[derive(Debug, Serialize)]
+enum OrderByExpr {
+    Expr { expr: ColExpr },
+    Index { value: usize },
+}
+
+impl Display for OrderByExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrderByExpr::Expr { expr } => write!(f, "{expr}"),
+            OrderByExpr::Index { value } => write!(f, "{value}"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OrderByPair {
+    expr: OrderByExpr,
+    order_type: Option<OrderByType>,
+}
+
+impl Display for OrderByPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(order_type) = &self.order_type {
+            write!(f, "{} {order_type}", self.expr)
+        } else {
+            write!(f, "{}", self.expr)
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OrderBy {
+    order_by_elements: Vec<OrderByPair>,
+}
+
+impl OrderBy {
+    #[allow(dead_code)]
+    fn new(
+        plan: &Plan,
+        order_by_elements: &Vec<OrderByElement>,
+        sq_ref_map: &SubQueryRefMap,
+    ) -> Result<Self, SbroadError> {
+        let mut result = OrderBy {
+            order_by_elements: vec![],
+        };
+
+        for order_by_element in order_by_elements {
+            let expr = match order_by_element.entity {
+                OrderByEntity::Expression { expr_id } => OrderByExpr::Expr {
+                    expr: ColExpr::new(plan, expr_id, sq_ref_map)?,
+                },
+                OrderByEntity::Index { value } => OrderByExpr::Index { value },
+            };
+            result.order_by_elements.push(OrderByPair {
+                expr,
+                order_type: order_by_element.order_type.clone(),
+            });
+        }
+        Ok(result)
+    }
+}
+
+impl Display for OrderBy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let order_by_elements = &self
+            .order_by_elements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        write!(f, "order by ({order_by_elements})")
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct Update {
     /// List of columns in sql query
     table: SmolStr,
@@ -743,6 +821,7 @@ enum ExplainNode {
     Except,
     Intersect,
     GroupBy(GroupBy),
+    OrderBy(OrderBy),
     InnerJoin(InnerJoin),
     ValueRow(ColExpr),
     Value,
@@ -770,6 +849,7 @@ impl Display for ExplainNode {
             }
             ExplainNode::Projection(e) => e.to_smolstr(),
             ExplainNode::GroupBy(p) => p.to_smolstr(),
+            ExplainNode::OrderBy(o_b) => o_b.to_smolstr(),
             ExplainNode::Scan(s) => s.to_smolstr(),
             ExplainNode::Selection(s) => format_smolstr!("selection {s}"),
             ExplainNode::Having(s) => format_smolstr!("having {s}"),
@@ -914,6 +994,18 @@ impl FullExplain {
                     current_node.children.push(child);
                     let p = GroupBy::new(ir, gr_cols, *output, &HashMap::new())?;
                     Some(ExplainNode::GroupBy(p))
+                }
+                Relational::OrderBy {
+                    order_by_elements, ..
+                } => {
+                    let child = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "OrderBy node must have at least one child".into(),
+                        )
+                    })?;
+                    current_node.children.push(child);
+                    let o_b = OrderBy::new(ir, order_by_elements, &HashMap::new())?;
+                    Some(ExplainNode::OrderBy(o_b))
                 }
                 Relational::Projection { output, .. } => {
                     // TODO: change this logic when we'll enable sub-queries in projection

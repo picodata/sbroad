@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use super::{PlanTreeIterator, Snapshot, TreeIterator};
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::{Node, Nodes, Plan};
 
 trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {
@@ -382,6 +382,37 @@ fn subtree_next<'plan>(
                         return gr_cols.get(col_idx);
                     }
                     if iter.need_output() && col_idx == gr_cols.len() {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(output);
+                    }
+                    None
+                }
+                Relational::OrderBy {
+                    child,
+                    output,
+                    order_by_elements,
+                } => {
+                    let step = *iter.get_child().borrow();
+                    if step == 0 {
+                        *iter.get_child().borrow_mut() += 1;
+                        return Some(child);
+                    }
+                    let mut col_idx = step - 1;
+                    while col_idx < order_by_elements.len() {
+                        let current_element = order_by_elements
+                            .get(col_idx)
+                            .expect("Wrong index passed for OrderBy element retrieval.");
+                        *iter.get_child().borrow_mut() += 1;
+                        if let OrderByElement {
+                            entity: OrderByEntity::Expression { expr_id },
+                            ..
+                        } = current_element
+                        {
+                            return Some(expr_id);
+                        }
+                        col_idx += 1;
+                    }
+                    if iter.need_output() && col_idx == order_by_elements.len() {
                         *iter.get_child().borrow_mut() += 1;
                         return Some(output);
                     }

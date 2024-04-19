@@ -87,6 +87,9 @@ impl TracingMetadata {
     }
 }
 
+/// Query data used for executing cachable queries.
+/// Note that it contains only meta-information about SQL query (
+/// e.g. cached plan id and params).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RequiredData {
     // Unique ID for concrete plan represented in a view of BLAKE3 hash.
@@ -209,6 +212,8 @@ impl TryFrom<EncodedRequiredData> for RequiredData {
     }
 }
 
+/// Query data used for executing non-cachable queries.
+/// Note that it contains a full plan with all needed vtables.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct OptionalData {
     pub exec_plan: ExecutionPlan,

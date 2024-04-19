@@ -490,6 +490,7 @@ impl Plan {
         }
 
         let Some(parent_id) = parent_node else {
+            // We haven't met any Reference in the output.
             self.set_dist(row_id, Distribution::Any)?;
             return Ok(());
         };
@@ -502,6 +503,7 @@ impl Plan {
 
             match ref_info.referred_children {
                 ReferredNodes::None => {
+                    // Row contains reference that doesn't point to any relational node.
                     return Err(SbroadError::Invalid(
                         Entity::Expression,
                         Some("the row contains no references".to_smolstr()),
@@ -532,6 +534,8 @@ impl Plan {
                     )?;
                 }
                 ReferredNodes::Multiple(_) => {
+                    // Reference points to more than two relational children nodes,
+                    // that is impossible.
                     return Err(SbroadError::DuplicatedValue(
                         "Row contains multiple references to the same node (and in is not VALUES)"
                             .to_smolstr(),

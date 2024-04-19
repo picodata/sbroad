@@ -5,7 +5,7 @@ use smol_str::{SmolStr, ToSmolStr};
 use crate::backend::sql::tree::{SyntaxData, SyntaxPlan};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{OrderByEntity, Relational};
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::{Node, Plan};
 use std::collections::hash_map::DefaultHasher;
@@ -247,6 +247,29 @@ impl Plan {
                         }
                     }
                 }
+                Relational::OrderBy {
+                    order_by_elements, ..
+                } => {
+                    writeln!(buf, "OrderBy")?;
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Order_by_elements:")?;
+                    for element in order_by_elements {
+                        formatted_tabulate(buf, tabulation_number + 2)?;
+                        let order_by_entity_str = match element.entity {
+                            OrderByEntity::Expression { expr_id } => {
+                                let order_by_expr = self.get_expression_node(expr_id);
+                                if let Ok(order_by_expr) = order_by_expr {
+                                    format!("{order_by_expr:?}")
+                                } else {
+                                    "?".to_string()
+                                }
+                            }
+                            OrderByEntity::Index { value } => format!("{value}"),
+                        };
+                        let order_by_type = element.order_type.clone();
+                        writeln!(buf, "Order_by_element: {order_by_entity_str} [order_type = {order_by_type:?}]")?;
+                    }
+                }
                 Relational::Values { .. } => writeln!(buf, "Values")?,
                 Relational::ValuesRow { .. } => writeln!(buf, "ValuesRow")?,
                 Relational::Motion { policy, .. } => {
@@ -298,6 +321,12 @@ impl Plan {
                         writeln!(buf, "Child_id = {child}")?;
                     }
                 }
+                Relational::OrderBy { child, .. } => {
+                    formatted_tabulate(buf, tabulation_number + 1)?;
+                    writeln!(buf, "Children:")?;
+                    formatted_tabulate(buf, tabulation_number + 2)?;
+                    writeln!(buf, "Child_id = {child}")?;
+                }
                 Relational::ScanRelation { .. } => {
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "[No children]")?;
@@ -314,6 +343,7 @@ impl Plan {
                 | Relational::Projection { output, .. }
                 | Relational::ScanSubQuery { output, .. }
                 | Relational::GroupBy { output, .. }
+                | Relational::OrderBy { output, .. }
                 | Relational::Selection { output, .. }
                 | Relational::Having { output, .. }
                 | Relational::Values { output, .. }

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 pub const EXPR_CAPACITY: usize = 64;
 pub const REL_CAPACITY: usize = 32;
 
-/// Pair of (`node_id`, it's tree level).
+/// Pair of (Level of the node in traversal algorithm, `node_id`).
 pub type LevelNode = (usize, usize);
 
 pub struct PostOrder<F, I>

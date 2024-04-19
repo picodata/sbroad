@@ -95,6 +95,14 @@ fn relational_next<'nodes>(
             }
             None
         }
+        Some(Node::Relational(Relational::OrderBy { child, .. })) => {
+            let step = *iter.get_child().borrow();
+            if step == 0 {
+                *iter.get_child().borrow_mut() += 1;
+                return Some(child);
+            }
+            None
+        }
         Some(
             Node::Relational(Relational::ScanRelation { .. })
             | Node::Expression(_)

@@ -9,7 +9,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
@@ -281,6 +281,7 @@ impl ExecutionPlan {
             Relational::ScanSubQuery { .. } => self.get_subquery_child(*top_id),
             Relational::Except { .. }
             | Relational::GroupBy { .. }
+            | Relational::OrderBy { .. }
             | Relational::Intersect { .. }
             | Relational::Join { .. }
             | Relational::Projection { .. }
@@ -400,12 +401,16 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - the original execution plan is invalid
+    ///
+    /// # Panics
+    /// - Plan is in invalid state
     #[allow(clippy::too_many_lines)]
     pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, SbroadError> {
         let nodes_capacity = self.get_ir_plan().nodes.len();
         // Translates the original plan's node id to the new sub-plan one.
         let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes_capacity);
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
+        // Map of { plan node_id -> virtual table }.
         let mut new_vtables: HashMap<usize, Rc<VirtualTable>> =
             HashMap::with_capacity(vtables_capacity);
         let mut new_plan = Plan::new();
@@ -422,6 +427,7 @@ impl ExecutionPlan {
                 continue;
             }
 
+            // Node from original plan that we'll take and replace with mock parameter node.
             let dst_node = self.get_mut_ir_plan().get_mut_node(node_id)?;
             let next_id = new_plan.nodes.next_id();
 
@@ -431,135 +437,140 @@ impl ExecutionPlan {
             let ir_plan = self.get_ir_plan();
             match node {
                 Node::Relational(ref mut rel) => {
-                    if let Relational::ValuesRow { data, .. } = rel {
-                        *data = *translation.get(data).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!("could not find data node id {data} in the map"),
-                            )
-                        })?;
-                    }
+                    match rel {
+                        Relational::Selection {
+                            filter: ref mut expr_id,
+                            ..
+                        }
+                        | Relational::Having {
+                            filter: ref mut expr_id,
+                            ..
+                        }
+                        | Relational::Join {
+                            condition: ref mut expr_id,
+                            ..
+                        } => {
+                            // We transform selection's, having's filter and join's condition to DNF for a better bucket calculation.
+                            // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
+                            // parser can fail to parse such SQL).
 
-                    if let Relational::Motion {
-                        children, policy, ..
-                    } = rel
-                    {
-                        if let Some(vtable) =
-                            self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
-                        {
-                            new_vtables.insert(next_id, Rc::clone(vtable));
+                            // XXX: UNDO operation can cause problems if we introduce more complicated transformations
+                            // for filter/condition (but then the UNDO logic should be changed as well).
+                            let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
+                            *expr_id = *translation.get(undo_expr_id).unwrap_or_else(|| panic!("Could not find filter/condition node id {undo_expr_id} in the map."));
+                            new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
                         }
-                        // We should not remove the child of a local motion node.
-                        // The subtree is needed to complie the SQL on the storage.
-                        if !policy.is_local() {
-                            *children = Vec::new();
+                        Relational::ScanRelation { relation, .. }
+                        | Relational::Insert { relation, .. }
+                        | Relational::Delete { relation, .. }
+                        | Relational::Update { relation, .. } => {
+                            let table = ir_plan
+                                .relations
+                                .get(relation)
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "could not find relation {relation} in the original plan"
+                                    )
+                                })
+                                .clone();
+                            new_plan.add_rel(table);
                         }
+                        Relational::Motion {
+                            children, policy, ..
+                        } => {
+                            if let Some(vtable) =
+                                self.get_vtables().map_or_else(|| None, |v| v.get(&node_id))
+                            {
+                                new_vtables.insert(next_id, Rc::clone(vtable));
+                            }
+                            // We should not remove the child of a local motion node.
+                            // The subtree is needed to complie the SQL on the storage.
+                            if !policy.is_local() {
+                                *children = Vec::new();
+                            }
+                        }
+                        Relational::GroupBy { gr_cols, .. } => {
+                            let mut new_cols: Vec<usize> = Vec::with_capacity(gr_cols.len());
+                            for col_id in gr_cols.iter() {
+                                let new_col_id = *translation.get(col_id).unwrap_or_else(|| {
+                                    panic!("Grouping column {col_id} in translation map.")
+                                });
+                                new_plan.replace_parent_in_subtree(
+                                    new_col_id,
+                                    None,
+                                    Some(next_id),
+                                )?;
+                                new_cols.push(new_col_id);
+                            }
+                            *gr_cols = new_cols;
+                        }
+                        Relational::OrderBy {
+                            order_by_elements, ..
+                        } => {
+                            let mut new_elements: Vec<OrderByElement> =
+                                Vec::with_capacity(order_by_elements.len());
+                            for element in order_by_elements.iter() {
+                                let new_entity = match element.entity {
+                                    OrderByEntity::Expression { expr_id } => {
+                                        let new_element_id =
+                                            *translation.get(&expr_id).unwrap_or_else(|| {
+                                                panic!("ORDER BY element {element:?} not found in translation map.")
+                                            });
+                                        new_plan.replace_parent_in_subtree(
+                                            new_element_id,
+                                            None,
+                                            Some(next_id),
+                                        )?;
+                                        OrderByEntity::Expression {
+                                            expr_id: new_element_id,
+                                        }
+                                    }
+                                    OrderByEntity::Index { value } => {
+                                        OrderByEntity::Index { value }
+                                    }
+                                };
+                                new_elements.push(OrderByElement {
+                                    entity: new_entity,
+                                    order_type: element.order_type.clone(),
+                                });
+                            }
+                            *order_by_elements = new_elements;
+                        }
+                        Relational::ValuesRow { data, .. } => {
+                            *data = *translation.get(data).unwrap_or_else(|| {
+                                panic!("Could not find data node id {data} in the map.")
+                            });
+                        }
+                        Relational::Except { .. }
+                        | Relational::Intersect { .. }
+                        | Relational::Projection { .. }
+                        | Relational::ScanSubQuery { .. }
+                        | Relational::UnionAll { .. }
+                        | Relational::Values { .. } => {}
                     }
 
                     if let Some(children) = rel.mut_children() {
                         for child_id in children {
-                            *child_id = *translation.get(child_id).ok_or_else(|| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    Some(Entity::SubTree),
-                                    format_smolstr!(
-                                        "could not find child node id {child_id} in the map"
-                                    ),
-                                )
-                            })?;
+                            *child_id = *translation.get(child_id).unwrap_or_else(|| {
+                                panic!("Could not find child node id {child_id} in the map.")
+                            });
                         }
-                    }
-
-                    if let Relational::GroupBy { gr_cols, .. } = rel {
-                        let mut new_cols: Vec<usize> = Vec::with_capacity(gr_cols.len());
-                        for col_id in gr_cols.iter() {
-                            let new_col_id = *translation.get(col_id).ok_or_else(|| {
-                                SbroadError::NotFound(
-                                    Entity::Node,
-                                    format_smolstr!("grouping column {col_id} in translation map"),
-                                )
-                            })?;
-                            new_plan.replace_parent_in_subtree(new_col_id, None, Some(next_id))?;
-                            new_cols.push(new_col_id);
-                        }
-                        *gr_cols = new_cols;
                     }
 
                     let output = rel.output();
-                    *rel.mut_output() = *translation.get(&output).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            format_smolstr!("as output node {output} in relational node {rel:?}"),
-                        )
-                    })?;
+                    *rel.mut_output() = *translation.get(&output).unwrap_or_else(|| {
+                        panic!("Node not found as output node {output} in relational node {rel:?}.")
+                    });
                     new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
-
-                    if let Relational::Selection {
-                        filter: ref mut expr_id,
-                        ..
-                    }
-                    | Relational::Having {
-                        filter: ref mut expr_id,
-                        ..
-                    }
-                    | Relational::Join {
-                        condition: ref mut expr_id,
-                        ..
-                    } = rel
-                    {
-                        // We transform selection's, having's filter and join's condition to DNF for a better bucket calculation.
-                        // But as a result we can produce an extremely verbose SQL query from such a plan (tarantool's
-                        // parser can fail to parse such SQL).
-
-                        // FIXME: UNDO operation can cause problems if we introduce more complicated transformations
-                        // for filter/condition (but then the UNDO logic should be changed as well).
-                        let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
-                        *expr_id = *translation.get(undo_expr_id).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!(
-                                    "could not find filter/condition node id {undo_expr_id} in the map"
-                                ),
-                            )
-                        })?;
-                        new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
-                    }
-
-                    if let Relational::ScanRelation { relation, .. }
-                    | Relational::Insert { relation, .. }
-                    | Relational::Delete { relation, .. }
-                    | Relational::Update { relation, .. } = rel
-                    {
-                        let table = ir_plan
-                            .relations
-                            .get(relation)
-                            .ok_or_else(|| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    Some(Entity::SubTree),
-                                    format_smolstr!(
-                                        "could not find relation {relation} in the original plan"
-                                    ),
-                                )
-                            })?
-                            .clone();
-                        new_plan.add_rel(table);
-                    }
                 }
                 Node::Expression(ref mut expr) => match expr {
                     Expression::Alias { ref mut child, .. }
                     | Expression::ExprInParentheses { ref mut child }
                     | Expression::Cast { ref mut child, .. }
                     | Expression::Unary { ref mut child, .. } => {
-                        *child = *translation.get(child).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!("could not find child node id {child} in the map"),
-                            )
-                        })?;
+                        *child = *translation.get(child).unwrap_or_else(|| {
+                            panic!("Could not find child node id {child} in the map.")
+                        });
                     }
                     Expression::Bool {
                         ref mut left,
@@ -576,24 +587,12 @@ impl ExecutionPlan {
                         ref mut right,
                         ..
                     } => {
-                        *left = *translation.get(left).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!(
-                                    "could not find left child node id {left} in the map"
-                                ),
-                            )
-                        })?;
-                        *right = *translation.get(right).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!(
-                                    "could not find right child node id {right} in the map"
-                                ),
-                            )
-                        })?;
+                        *left = *translation.get(left).unwrap_or_else(|| {
+                            panic!("Could not find left child node id {left} in the map.")
+                        });
+                        *right = *translation.get(right).unwrap_or_else(|| {
+                            panic!("Could not find right child node id {right} in the map.")
+                        });
                     }
                     Expression::Trim {
                         ref mut pattern,
@@ -601,25 +600,13 @@ impl ExecutionPlan {
                         ..
                     } => {
                         if let Some(pattern) = pattern {
-                            *pattern = *translation.get(pattern).ok_or_else(|| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    Some(Entity::SubTree),
-                                    format_smolstr!(
-                                        "could not find pattern node id {pattern} in the map"
-                                    ),
-                                )
-                            })?;
+                            *pattern = *translation.get(pattern).unwrap_or_else(|| {
+                                panic!("Could not find pattern node id {pattern} in the map.")
+                            });
                         }
-                        *target = *translation.get(target).ok_or_else(|| {
-                            SbroadError::FailedTo(
-                                Action::Build,
-                                Some(Entity::SubTree),
-                                format_smolstr!(
-                                    "could not find target node id {target} in the map"
-                                ),
-                            )
-                        })?;
+                        *target = *translation.get(target).unwrap_or_else(|| {
+                            panic!("Could not find target node id {target} in the map.")
+                        });
                     }
                     Expression::Reference { ref mut parent, .. } => {
                         // The new parent node id MUST be set while processing the relational nodes.
@@ -633,32 +620,17 @@ impl ExecutionPlan {
                         ref mut children, ..
                     } => {
                         for child in children {
-                            *child = *translation.get(child).ok_or_else(|| {
-                                SbroadError::FailedTo(
-                                    Action::Build,
-                                    Some(Entity::SubTree),
-                                    format_smolstr!(
-                                        "could not find child node id {child} in the map"
-                                    ),
-                                )
-                            })?;
+                            *child = *translation.get(child).unwrap_or_else(|| {
+                                panic!("Could not find child node id {child} in the map.")
+                            });
                         }
                     }
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
                 },
                 Node::Parameter { .. } => {}
-                Node::Ddl { .. } => Err(SbroadError::Invalid(
-                    Entity::SubTree,
-                    Some("DDL node".to_smolstr()),
-                ))?,
-                Node::Acl { .. } => Err(SbroadError::Invalid(
-                    Entity::SubTree,
-                    Some("ACL node".to_smolstr()),
-                ))?,
-                Node::Block { .. } => Err(SbroadError::Invalid(
-                    Entity::SubTree,
-                    Some("code block node".to_smolstr()),
-                ))?,
+                Node::Ddl { .. } | Node::Acl { .. } | Node::Block { .. } => {
+                    panic!("Unexpected node in `take_subtree`: {node:?}")
+                }
             }
             new_plan.nodes.push(node);
             translation.insert(node_id, next_id);

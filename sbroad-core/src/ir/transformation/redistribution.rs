@@ -1142,6 +1142,7 @@ impl Plan {
             Relational::Except { .. }
             | Relational::Projection { .. }
             | Relational::GroupBy { .. }
+            | Relational::OrderBy { .. }
             | Relational::Having { .. }
             | Relational::Join { .. }
             | Relational::ScanRelation { .. }
@@ -2160,6 +2161,22 @@ impl Plan {
                 | Relational::Having { output, .. }
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
+                }
+                Relational::OrderBy { output, .. } => {
+                    let rel_child_id = self.get_relational_child(id, 0)?;
+
+                    let child_dist =
+                        self.get_distribution(self.get_relational_output(rel_child_id)?)?;
+                    if !matches!(child_dist, Distribution::Single | Distribution::Global) {
+                        // We must execute OrderBy on a single node containing all the rows
+                        // that child relational node outputs.
+                        // In case child node has distribution `Single` or `Global` we already have
+                        // all the needed rows on one of the instances.
+                        let mut strategy = Strategy::new(id);
+                        strategy.add_child(rel_child_id, MotionPolicy::Full, Program::default());
+                        self.create_motion_nodes(strategy)?;
+                    }
+                    self.set_dist(output, Distribution::Single)?;
                 }
                 Relational::Values { output, .. } => {
                     self.set_dist(output, Distribution::Global)?;

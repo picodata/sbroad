@@ -282,6 +282,33 @@ pub enum UpdateStrategy {
     LocalUpdate,
 }
 
+#[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
+pub enum OrderByEntity {
+    Expression { expr_id: usize },
+    Index { value: usize },
+}
+
+#[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
+pub enum OrderByType {
+    Asc,
+    Desc,
+}
+
+impl Display for OrderByType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrderByType::Asc => write!(f, "asc"),
+            OrderByType::Desc => write!(f, "desc"),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
+pub struct OrderByElement {
+    pub entity: OrderByEntity,
+    pub order_type: Option<OrderByType>,
+}
+
 /// Relational algebra operator returning a new tuple.
 ///
 /// Transforms input tuple(s) into the output one using the
@@ -424,6 +451,11 @@ pub enum Relational {
         output: usize,
         filter: usize,
     },
+    OrderBy {
+        child: usize,
+        output: usize,
+        order_by_elements: Vec<OrderByElement>,
+    },
     UnionAll {
         /// Contains exactly two elements: left and right node indexes
         /// from the plan node arena.
@@ -459,6 +491,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
+            | Relational::OrderBy { output, .. }
             | Relational::Having { output, .. }
             | Relational::Update { output, .. }
             | Relational::Join { output, .. }
@@ -482,6 +515,7 @@ impl Relational {
         match self {
             Relational::Except { output, .. }
             | Relational::GroupBy { output, .. }
+            | Relational::OrderBy { output, .. }
             | Relational::Update { output, .. }
             | Relational::Having { output, .. }
             | Relational::Join { output, .. }
@@ -503,6 +537,10 @@ impl Relational {
     #[must_use]
     pub fn children(&self) -> Option<&[usize]> {
         match self {
+            Relational::OrderBy { child, .. } => {
+                let children = std::slice::from_ref(child);
+                Some(children)
+            }
             Relational::Except { children, .. }
             | Relational::GroupBy { children, .. }
             | Relational::Update { children, .. }
@@ -526,6 +564,10 @@ impl Relational {
     #[must_use]
     pub fn mut_children(&mut self) -> Option<&mut [usize]> {
         match self {
+            Relational::OrderBy { ref mut child, .. } => {
+                let children = std::slice::from_mut(child);
+                Some(children)
+            }
             Relational::Except {
                 ref mut children, ..
             }
@@ -676,6 +718,13 @@ impl Relational {
                 *old = children;
                 Ok(())
             }
+            Relational::OrderBy { ref mut child, .. } => {
+                if children.len() != 1 {
+                    unreachable!("ORDER BY may have only a single relational child");
+                }
+                *child = children[0];
+                Ok(())
+            }
             Relational::ScanRelation { .. } => Err(SbroadError::Invalid(
                 Entity::Relational,
                 Some("Scan is a leaf node".into()),
@@ -702,6 +751,7 @@ impl Relational {
             } => Ok(alias.as_deref().or(Some(relation.as_str()))),
             Relational::Projection { .. }
             | Relational::GroupBy { .. }
+            | Relational::OrderBy { .. }
             | Relational::Intersect { .. }
             | Relational::Having { .. }
             | Relational::Selection { .. }
@@ -768,6 +818,7 @@ impl Relational {
             Relational::ScanSubQuery { .. } => "Subquery",
             Relational::Selection { .. } => "Selection",
             Relational::GroupBy { .. } => "GroupBy",
+            Relational::OrderBy { .. } => "OrderBy",
             Relational::Having { .. } => "Having",
             Relational::UnionAll { .. } => "UnionAll",
             Relational::Values { .. } => "Values",
@@ -1538,6 +1589,41 @@ impl Plan {
         self.replace_parent_in_subtree(filter, None, Some(having_id))?;
         self.replace_parent_in_subtree(output, None, Some(having_id))?;
         Ok(having_id)
+    }
+
+    /// Add `OrderBy` node into the plan.
+    ///
+    /// # Errors
+    /// - Unable to add output row from child.
+    /// - Unable to replace parent in subtree.
+    ///
+    /// # Panics
+    /// - Relational node child not found.
+    pub fn add_order_by(
+        &mut self,
+        child: usize,
+        order_by_elements: Vec<OrderByElement>,
+    ) -> Result<usize, SbroadError> {
+        let output = self.add_row_for_output(child, &[], true)?;
+        let order_by = Relational::OrderBy {
+            child,
+            output,
+            order_by_elements: order_by_elements.clone(),
+        };
+
+        let plan_order_by_id = self.nodes.push(Node::Relational(order_by));
+        for order_by_element in order_by_elements {
+            if let OrderByElement {
+                entity: OrderByEntity::Expression { expr_id },
+                ..
+            } = order_by_element
+            {
+                self.replace_parent_in_subtree(expr_id, None, Some(plan_order_by_id))?;
+            }
+        }
+        self.replace_parent_in_subtree(output, None, Some(plan_order_by_id))?;
+        let top_proj_id = self.add_proj(plan_order_by_id, &[], false, true)?;
+        Ok(top_proj_id)
     }
 
     /// Adds sub query scan node.

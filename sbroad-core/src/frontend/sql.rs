@@ -29,9 +29,12 @@ use crate::ir::expression::{
     ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId,
     FunctionFeature, Position, TrimKind,
 };
-use crate::ir::operator::{Arithmetic, Bool, ConflictStrategy, JoinKind, Relational, Unary};
+use crate::ir::operator::{
+    Arithmetic, Bool, ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType,
+    Relational, Unary,
+};
 use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
-use crate::ir::tree::traversal::PostOrder;
+use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, NodeId, OptionKind, OptionParamValue, OptionSpec, Plan};
 use crate::otm::child_span;
@@ -1739,11 +1742,9 @@ where
                         (ref_id, true)
                     } else {
                         // Referencing single node.
-                        let Ok(col_position) = left_child_col_position else {
-                            return Err(SbroadError::NotFound(
-                                Entity::Column,
-                                format_smolstr!("with name {col_name}"),
-                            ));
+                        let col_position = match left_child_col_position {
+                            Ok(col_position) => col_position,
+                            Err(e) => return Err(e)
                         };
                         let child = plan.get_relation_node(*plan_left_id)?;
                         let child_alias_ids = plan.get_expression_node(
@@ -2066,6 +2067,115 @@ impl AbstractSyntaxTree {
         Ok(())
     }
 
+    fn parse_order_by<M: Metadata>(
+        &self,
+        plan: &mut Plan,
+        node_id: usize,
+        map: &mut Translation,
+        pairs_map: &mut ParsingPairsMap,
+        worker: &mut ExpressionsWorker<M>,
+    ) -> Result<(), SbroadError> {
+        let node = self.nodes.get_node(node_id)?;
+        let projection_ast_id = node.children.first().expect("OrderBy has no children.");
+        let projection_plan_id = map.get(*projection_ast_id)?;
+        let sq_plan_id = plan.add_sub_query(projection_plan_id, None)?;
+
+        let sq_output_id = plan.get_relational_output(sq_plan_id)?;
+        let sq_output_len = plan.get_row_list(sq_output_id)?.len();
+
+        let mut order_by_elements: Vec<OrderByElement> = Vec::with_capacity(node.children.len());
+        for node_child_index in node.children.iter().skip(1) {
+            let order_by_element_node = self.nodes.get_node(*node_child_index)?;
+            let order_by_element_expr_id = order_by_element_node
+                .children
+                .first()
+                .expect("OrderByElement must have at least one child");
+            let expr_pair = pairs_map.remove_pair(*order_by_element_expr_id);
+            let expr_plan_node_id = parse_expr(
+                Pairs::single(expr_pair),
+                &[projection_plan_id],
+                worker,
+                plan,
+            )?;
+
+            // In case index is specified as ordering element, we have to check that
+            // the index (starting from 1) is not bigger than the number of columns in
+            // the projection output.
+            let expr = plan.get_node(expr_plan_node_id)?;
+
+            let entity = match expr {
+                Node::Expression(expr) => {
+                    if let Expression::Constant {value: Value::Unsigned(index)} = expr {
+                        let index_usize = usize::try_from(*index).map_err(|_| {
+                            SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(format_smolstr!(
+                            "Unable to convert OrderBy index ({index}) to usize"
+                        )),
+                            )
+                        })?;
+                        if index_usize > sq_output_len {
+                            return Err(SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(format_smolstr!("Ordering index ({index}) is bigger than child projection output length ({sq_output_len})."))
+                            ));
+                        }
+                        OrderByEntity::Index { value: index_usize }
+                    } else {
+                        // Check that at least one reference is met in expression tree.
+                        // Otherwise, ordering expression has no sense.
+                        let mut expr_tree =
+                            PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
+                        let mut reference_met = false;
+                        for (_, node_id) in expr_tree.iter(expr_plan_node_id) {
+                            if let Expression::Reference { .. } = plan.get_expression_node(node_id)? {
+                                reference_met = true;
+                                break;
+                            }
+                        }
+
+                        if !reference_met {
+                            return Err(SbroadError::Invalid(
+                                Entity::Expression,
+                                Some(SmolStr::from("ORDER BY element that is not position and doesn't contain reference doesn't influence ordering."))
+                            ))
+                        }
+
+                        OrderByEntity::Expression {
+                            expr_id: expr_plan_node_id,
+                        }
+                    }
+                }
+                Node::Parameter => return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(SmolStr::from("Using parameter as a standalone ORDER BY expression doesn't influence sorting."))
+                )),
+                _ => unreachable!("Unacceptable node as an ORDER BY element.")
+            };
+
+            let order_type =
+                if let Some(order_type_child_node_id) = order_by_element_node.children.get(1) {
+                    let order_type_node = self.nodes.get_node(*order_type_child_node_id)?;
+                    let order_type = match order_type_node.rule {
+                        Rule::Asc => OrderByType::Asc,
+                        Rule::Desc => OrderByType::Desc,
+                        rule => unreachable!(
+                            "{}",
+                            format!("Unexpected rule met under OrderByElement: {rule:?}")
+                        ),
+                    };
+                    Some(order_type)
+                } else {
+                    None
+                };
+
+            order_by_elements.push(OrderByElement { entity, order_type });
+        }
+        let plan_node_id = plan.add_order_by(sq_plan_id, order_by_elements)?;
+        map.add(node_id, plan_node_id);
+        Ok(())
+    }
+
     /// Function that transforms `AbstractSyntaxTree` into `Plan`.
     /// Build a plan from the AST with parameters as placeholders for the values.
     #[allow(dead_code)]
@@ -2270,6 +2380,9 @@ impl AbstractSyntaxTree {
                         _ => return Err(SbroadError::Invalid(Entity::AST, None)), // never happens
                     };
                     map.add(id, plan_node_id);
+                }
+                Rule::OrderBy => {
+                    self.parse_order_by(&mut plan, id, &mut map, pairs_map, &mut worker)?;
                 }
                 Rule::SelectWithOptionalContinuation => {
                     let first_select_id = node.children.first().expect(

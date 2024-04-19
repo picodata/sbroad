@@ -1153,6 +1153,62 @@ fn global_except() {
     assert_eq!(expected, res,)
 }
 
+#[test]
+fn exec_plan_order_by() {
+    let sql = r#"SELECT "identification_number"
+                      FROM (select "identification_number" from "hash_testing")
+                      ORDER BY "identification_number""#;
+    let coordinator = RouterRuntimeMock::new();
+
+    let mut query = Query::new(&coordinator, sql, vec![]).unwrap();
+    let motion_id = *query
+        .exec_plan
+        .get_ir_plan()
+        .clone_slices()
+        .slice(0)
+        .unwrap()
+        .position(0)
+        .unwrap();
+    let mut virtual_table = virtual_table_23(None);
+    if let MotionPolicy::Segment(key) = get_motion_policy(query.exec_plan.get_ir_plan(), motion_id)
+    {
+        virtual_table.reshard(key, &query.coordinator).unwrap();
+    }
+    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    vtables.insert(motion_id, Rc::new(virtual_table));
+
+    let exec_plan = query.get_mut_exec_plan();
+    exec_plan.set_vtables(vtables);
+    let top_id = exec_plan.get_ir_plan().get_top().unwrap();
+    let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
+
+    // Check sub-query
+    let sql = get_sql_from_execution_plan(
+        exec_plan,
+        motion_child_id,
+        Snapshot::Oldest,
+        &Buckets::All,
+        "test",
+    );
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT "identification_number" FROM (SELECT "hash_testing"."identification_number" FROM "hash_testing")"#.to_string(),
+            vec![]
+        )
+    );
+
+    // Check main query
+    let sql =
+        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    assert_eq!(
+        sql,
+        PatternWithParams::new(
+            r#"SELECT "identification_number" FROM (SELECT "identification_number" FROM "TMP_test_6") ORDER BY "identification_number""#.to_string(),
+            vec![]
+        ));
+}
+
 fn check_subtree_hashes_are_equal(
     sql1: &str,
     values1: Vec<Value>,

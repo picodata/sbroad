@@ -1005,6 +1005,27 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+#[test]
+fn front_order_by_from_global_node_must_not_add_motion() {
+    let input = r#"select "b", "a" as "my_col" from "global_t" order by "my_col""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("b"::integer -> "b", "my_col"::integer -> "my_col")
+    order by ("my_col"::integer)
+        scan
+            projection ("global_t"."b"::integer -> "b", "global_t"."a"::integer -> "my_col")
+                scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
 fn check_union_dist(plan: &Plan, expected_distributions: &[DistMock]) {
     let filter = |id: usize| -> bool {
         matches!(

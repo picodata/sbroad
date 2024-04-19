@@ -13,7 +13,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
-use crate::ir::operator::Relational;
+use crate::ir::operator::{OrderByType, Relational};
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
 use crate::otm::{child_span, current_id, deserialize_context, inject_context, query_id};
@@ -289,6 +289,11 @@ impl ExecutionPlan {
                     SyntaxData::Comma => sql.push(','),
                     SyntaxData::Condition => sql.push_str("ON"),
                     SyntaxData::Distinct => sql.push_str("DISTINCT"),
+                    SyntaxData::OrderByPosition(index) => sql.push_str(format!("{index}").as_str()),
+                    SyntaxData::OrderByType(order_type) => match order_type {
+                        OrderByType::Asc => sql.push_str("ASC"),
+                        OrderByType::Desc => sql.push_str("DESC"),
+                    },
                     SyntaxData::Inline(content) => sql.push_str(content),
                     SyntaxData::From => sql.push_str("FROM"),
                     SyntaxData::Leading => sql.push_str("LEADING"),
@@ -334,6 +339,7 @@ impl ExecutionPlan {
                                 Relational::GroupBy { .. } => sql.push_str("GROUP BY"),
                                 Relational::Intersect { .. } => sql.push_str("INTERSECT"),
                                 Relational::Having { .. } => sql.push_str("HAVING"),
+                                Relational::OrderBy { .. } => sql.push_str("ORDER BY"),
                                 Relational::Delete { .. } => {
                                     return Err(SbroadError::Unsupported(
                                         Entity::Node,

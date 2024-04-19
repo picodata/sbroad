@@ -1140,100 +1140,67 @@ impl Plan {
     /// - node doesn't exist in the plan
     /// - node is not `Reference`
     /// - invalid references between nodes
+    ///
+    /// # Panics
+    /// - Plan is in invalid state
     pub fn get_alias_from_reference_node(&self, node: &Expression) -> Result<&str, SbroadError> {
-        if let Expression::Reference {
+        let Expression::Reference {
             targets,
             position,
             parent,
             ..
         } = node
-        {
-            let ref_node = if let Some(parent) = parent {
-                self.get_relation_node(*parent)?
-            } else {
-                return Err(SbroadError::UnexpectedNumberOfValues(
-                    "Reference node has no parent".into(),
-                ));
-            };
+        else {
+            unreachable!("get_alias_from_reference_node: Node is not of a reference type");
+        };
 
-            // In a case of insert we don't inspect children output tuple
-            // but rather use target relation columns.
-            if let Relational::Insert { ref relation, .. } = ref_node {
-                let rel = self
-                    .relations
-                    .get(relation)
-                    .ok_or_else(|| SbroadError::NotFound(Entity::Table, relation.to_smolstr()))?;
-                let col_name = rel
-                    .columns
-                    .get(*position)
-                    .ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Table,
-                            "{relation}'s column {position}".into(),
-                        )
-                    })?
-                    .name
-                    .as_str();
-                return Ok(col_name);
-            }
+        let ref_node = if let Some(parent) = parent {
+            self.get_relation_node(*parent)?
+        } else {
+            unreachable!("get_alias_from_reference_node: Reference node has no parent");
+        };
 
-            if let Some(list_of_column_nodes) = ref_node.children() {
-                let child_ids = targets.as_ref().ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Target,
-                        Some("node refs to scan node, not alias".into()),
-                    )
-                })?;
-                let column_index_in_list = child_ids.first().ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues("Target has no children".into())
-                })?;
-                let col_idx_in_rel =
-                    list_of_column_nodes
-                        .get(*column_index_in_list)
-                        .ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Node,
-                                format_smolstr!("type Column with index {column_index_in_list}"),
-                            )
-                        })?;
-
-                let column_rel_node = self.get_relation_node(*col_idx_in_rel)?;
-                let column_expr_node = self.get_expression_node(column_rel_node.output())?;
-
-                let col_alias_idx =
-                    column_expr_node
-                        .get_row_list()?
-                        .get(*position)
-                        .ok_or_else(|| {
-                            SbroadError::NotFound(
-                                Entity::Column,
-                                format_smolstr!("at position {position} in row list"),
-                            )
-                        })?;
-
-                let col_alias_node = self.get_expression_node(*col_alias_idx)?;
-                match col_alias_node {
-                    Expression::Alias { name, .. } => return Ok(name),
-                    _ => {
-                        return Err(SbroadError::Invalid(
-                            Entity::Expression,
-                            Some("expected alias node".into()),
-                        ))
-                    }
-                }
-            }
-
-            return Err(SbroadError::FailedTo(
-                Action::Get,
-                None,
-                "a referred relational node".into(),
-            ));
+        // In a case of insert we don't inspect children output tuple
+        // but rather use target relation columns.
+        if let Relational::Insert { ref relation, .. } = ref_node {
+            let rel = self
+                .relations
+                .get(relation)
+                .unwrap_or_else(|| panic!("Relation {relation} is not found."));
+            let col_name = rel
+                .columns
+                .get(*position)
+                .unwrap_or_else(|| {
+                    panic!("Not found column at position {position} at relation {rel:?}.")
+                })
+                .name
+                .as_str();
+            return Ok(col_name);
         }
 
-        Err(SbroadError::Invalid(
-            Entity::Node,
-            Some("node is not of a reference type".into()),
-        ))
+        let Some(ref_node_children) = ref_node.children() else {
+            unreachable!("get_alias_from_reference_node: Failed to get a referred relational node");
+        };
+
+        let Some(targets) = targets else {
+            unreachable!("get_alias_from_reference_node: No targets in reference");
+        };
+        let first_target = targets.first().expect("Reference targets list is empty");
+        let ref_node_target_child =
+            ref_node_children
+                .get(*first_target)
+                .unwrap_or_else(|| panic!("Failed to get target index {first_target} for reference {node:?} and ref_node [id = {parent:?}] {ref_node:?}"));
+
+        let column_rel_node = self.get_relation_node(*ref_node_target_child)?;
+        let column_expr_node = self.get_expression_node(column_rel_node.output())?;
+
+        let col_alias_id = column_expr_node
+            .get_row_list()?
+            .get(*position)
+            .unwrap_or_else(|| panic!("Column not found at position {position} in row list"));
+
+        let col_alias_node = self.get_expression_node(*col_alias_id)?;
+        col_alias_node.get_alias_name()
     }
 
     /// Set slices of the plan.

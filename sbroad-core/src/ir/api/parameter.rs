@@ -177,6 +177,9 @@ impl Plan {
         for (_, id) in &nodes {
             let node = self.get_node(*id)?;
             match node {
+                // Note: Parameter may not be met at the top of relational operators' expression
+                //       trees such as OrderBy and GroupBy, because it won't influence ordering and
+                //       grouping correspondingly. These cases are handled during parsing stage.
                 Node::Relational(rel) => match rel {
                     Relational::Having {
                         filter: ref param_id,

@@ -415,6 +415,7 @@ where
                 Relational::Projection { output, .. }
                 | Relational::GroupBy { output, .. }
                 | Relational::Having { output, .. }
+                | Relational::OrderBy { output, .. }
                 | Relational::ScanSubQuery { output, .. } => {
                     let child_id = ir_plan.get_relational_child(node_id, 0)?;
                     let child_rel = ir_plan.get_relation_node(child_id)?;

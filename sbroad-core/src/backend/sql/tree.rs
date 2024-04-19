@@ -7,7 +7,7 @@ use std::mem::take;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::{Expression, FunctionFeature, TrimKind};
-use crate::ir::operator::{Bool, Relational, Unary};
+use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Relational, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::tree::Snapshot;
@@ -32,6 +32,17 @@ pub enum SyntaxData {
     Condition,
     /// "distinct"
     Distinct,
+    /// ORDER BY `position`.
+    /// The reason it's represented as a standalone node (and not `Expression::Constant`)
+    /// is that we don't want it to be replaced as parameter in pattern later
+    /// Order by index is semantically different from usual constants and the following
+    /// local SQL queries are not equal:
+    /// `select * from t order by 1`
+    /// !=
+    /// `select * from t order by ?` with {1} params (1 is perceived as expression and not position).
+    OrderByPosition(usize),
+    /// "asc" or "desc"
+    OrderByType(OrderByType),
     /// Inline sql string
     Inline(SmolStr),
     /// "from"
@@ -136,6 +147,22 @@ impl SyntaxNode {
     fn new_distinct() -> Self {
         SyntaxNode {
             data: SyntaxData::Distinct,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_order_index(index: usize) -> Self {
+        SyntaxNode {
+            data: SyntaxData::OrderByPosition(index),
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_order_type(order_type: &OrderByType) -> Self {
+        SyntaxNode {
+            data: SyntaxData::OrderByType(order_type.clone()),
             left: None,
             right: Vec::new(),
         }
@@ -512,6 +539,9 @@ impl<'p> SyntaxPlan<'p> {
     ///
     /// # Errors
     /// - Failed to translate an IR plan node to a syntax node.
+    ///
+    /// # Panics
+    /// - Failed to find a node in the plan.
     #[allow(clippy::too_many_lines)]
     #[allow(unused_variables)]
     pub fn add_plan_node(&mut self, id: usize) -> Result<usize, SbroadError> {
@@ -610,6 +640,55 @@ impl<'p> SyntaxPlan<'p> {
                         }
                     }
                     Err(SbroadError::Invalid(Entity::Node, None))
+                }
+                Relational::OrderBy {
+                    order_by_elements,
+                    child,
+                    ..
+                } => {
+                    let mut right: Vec<usize> = Vec::with_capacity(order_by_elements.len());
+
+                    let mut get_order_by_elements =
+                        |element: &OrderByElement,
+                         need_comma: bool|
+                         -> Result<Vec<usize>, SbroadError> {
+                            let mut nodes = Vec::with_capacity(3);
+                            let OrderByElement { entity, order_type } = element;
+                            match entity {
+                                OrderByEntity::Expression { expr_id } => {
+                                    nodes.push(self.nodes.get_syntax_node_id(*expr_id)?);
+                                }
+                                OrderByEntity::Index { value } => {
+                                    nodes.push(
+                                        self.nodes
+                                            .push_syntax_node(SyntaxNode::new_order_index(*value)),
+                                    );
+                                }
+                            }
+                            if let Some(order_type) = &element.order_type {
+                                nodes.push(
+                                    self.nodes
+                                        .push_syntax_node(SyntaxNode::new_order_type(order_type)),
+                                );
+                            }
+                            if need_comma {
+                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
+                            }
+                            Ok(nodes)
+                        };
+
+                    if let Some((last, other)) = order_by_elements.split_last() {
+                        for order_by_element in other {
+                            right.extend(get_order_by_elements(order_by_element, true)?);
+                        }
+                        right.extend(get_order_by_elements(last, false)?);
+                    }
+                    let sn = SyntaxNode::new_pointer(
+                        id,
+                        Some(self.nodes.get_syntax_node_id(*child)?),
+                        right,
+                    );
+                    Ok(self.nodes.push_syntax_node(sn))
                 }
                 Relational::ScanSubQuery { .. } => self.nodes.add_sq(rel, id),
                 Relational::GroupBy {

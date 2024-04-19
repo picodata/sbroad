@@ -212,6 +212,7 @@ pub fn exec_ir_on_some_buckets(
 
     // todo(ars): group should be a runtime function not global,
     // this way we could implement it for mock runtime for better testing
+    // Vec of { replicaset_uuid, corresponding bucket ids }.
     let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
     if rs_bucket_vec.is_empty() {
         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
