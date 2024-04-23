@@ -129,5 +129,35 @@ g.test_cte = function ()
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "number"} })
     t.assert_items_equals(r["rows"], { {5}, {4} })
+
+    -- randomly distributed cte, used multiple times
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte (b) AS (SELECT "a" FROM "t" WHERE "id" > 3)
+        SELECT t.c FROM (SELECT count(*) as c FROM cte c1 JOIN cte c2 ON true) t
+        JOIN cte ON true
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["rows"], { {4}, {4} })
+
+    -- cte with segment distributed, used multiple times
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte (b) AS (SELECT "id" FROM "t" WHERE "id" = 1)
+        SELECT t.c FROM (SELECT count(*) as c FROM cte c1 JOIN cte c2 ON true) t
+        JOIN cte ON true
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["rows"], { {1} })
+
+    -- globally distributed cte, used multiple times
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte (b) AS (VALUES (1))
+        SELECT t.c FROM (SELECT count(*) as c FROM cte c1 JOIN cte c2 ON true) t
+        JOIN cte ON true
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["rows"], { {1} })
 end
 
