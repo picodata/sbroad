@@ -369,21 +369,22 @@ impl ExecutionPlan {
     /// - Plan is in invalid state
     #[allow(clippy::too_many_lines)]
     pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, SbroadError> {
-        let nodes_capacity = self.get_ir_plan().nodes.len();
+        // Get the subtree nodes indexes.
+        let plan = self.get_ir_plan();
+        let mut subtree =
+            PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), plan.next_id());
+        subtree.populate_nodes(top_id);
+        let nodes = subtree.take_nodes();
+
         // Translates the original plan's node id to the new sub-plan one.
-        let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes_capacity);
+        let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes.len());
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
         // Map of { plan node_id -> virtual table }.
         let mut new_vtables: HashMap<usize, Rc<VirtualTable>> =
             HashMap::with_capacity(vtables_capacity);
+
         let mut new_plan = Plan::new();
-        new_plan.nodes.reserve(nodes_capacity);
-        let mut subtree = PostOrder::with_capacity(
-            |node| self.get_ir_plan().exec_plan_subtree_iter(node),
-            self.get_ir_plan().next_id(),
-        );
-        subtree.populate_nodes(top_id);
-        let nodes = subtree.take_nodes();
+        new_plan.nodes.reserve(nodes.len());
         for (_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
             // and CTEs can be referred twice).
@@ -604,7 +605,6 @@ impl ExecutionPlan {
         }
 
         new_plan.stash_constants()?;
-        new_plan.nodes.shrink_to_fit();
         new_plan.options = self.get_ir_plan().options.clone();
 
         let vtables = if new_vtables.is_empty() {
