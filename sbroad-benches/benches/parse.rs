@@ -336,6 +336,25 @@ fn bench_full_parsing(c: &mut Criterion) {
     }
 }
 
+fn bench_take_subtree(c: &mut Criterion) {
+    let mut engine = RouterRuntimeMock::new();
+    let param: u64 = 42;
+    let params = vec![Value::from(param)];
+
+    let target_query = get_query_with_many_references();
+    let mut query = Query::new(&mut engine, target_query, params).unwrap();
+
+    let plan = query.get_exec_plan().get_ir_plan();
+    let top_id = plan.get_top().unwrap();
+
+    let bench_name = format!("getting_subtree");
+    c.bench_function(bench_name.as_str(), |b| {
+        b.iter(|| {
+            let _subtree = query.get_mut_exec_plan().take_subtree(top_id).unwrap();
+        })
+    });
+}
+
 fn bench_serde_clone(c: &mut Criterion) {
     let mut engine = RouterRuntimeMock::new();
     let param: u64 = 42;
@@ -402,6 +421,7 @@ criterion_group!(
     benches,
     bench_pure_pest_parsing,
     bench_full_parsing,
-    bench_serde_clone
+    bench_serde_clone,
+    bench_take_subtree,
 );
 criterion_main!(benches);
