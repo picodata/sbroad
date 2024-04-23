@@ -311,7 +311,7 @@ pub enum SbroadError {
     Unsupported(Entity, Option<SmolStr>),
     OutdatedStorageSchema,
     UseOfBothParamsStyles,
-    UnsupportedOpForGlobalTables(SmolStr),
+    GlobalDml(SmolStr),
 }
 
 impl fmt::Display for SbroadError {
@@ -323,6 +323,7 @@ impl fmt::Display for SbroadError {
                 Some(entity) => format_smolstr!("failed to {a} {entity}: {s}"),
                 None => format_smolstr!("failed to {a} {s}"),
             },
+            SbroadError::GlobalDml(s) => format_smolstr!("dml operation on global tbl: {s}"),
             SbroadError::Invalid(e, s) => match s {
                 Some(msg) => format_smolstr!("invalid {e}: {msg}"),
                 None => format_smolstr!("invalid {e}"),
@@ -343,9 +344,6 @@ impl fmt::Display for SbroadError {
             }
             SbroadError::OutdatedStorageSchema => {
                 "storage schema version different from router".into()
-            }
-            SbroadError::UnsupportedOpForGlobalTables(op) => {
-                format_smolstr!("{op} is not supported for global tables")
             }
         };
 

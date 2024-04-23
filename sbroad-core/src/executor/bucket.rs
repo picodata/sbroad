@@ -405,10 +405,13 @@ where
                         .clone();
                     // By default Motion(Full) produces
                     // Buckets::Any, but insert, update and
-                    // delete require to be executed on all nodes.
+                    // delete require to be executed on all nodes
+                    // unless global table is modified
                     let mut my_buckets = child_buckets;
-                    if let Buckets::Any = my_buckets {
-                        my_buckets = Buckets::All;
+                    if !ir_plan.dml_node_table(node_id)?.is_global() {
+                        if let Buckets::Any = my_buckets {
+                            my_buckets = Buckets::All;
+                        }
                     }
                     self.bucket_map.insert(*output, my_buckets);
                 }

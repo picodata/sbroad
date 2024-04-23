@@ -37,7 +37,7 @@ use crate::frontend::Ast;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
-use crate::ir::Plan;
+use crate::ir::{Plan, Slices};
 use crate::otm::{child_span, query_id};
 use crate::utils::MutexLike;
 use sbroad_proc::otm_child_span;
@@ -179,23 +179,8 @@ where
         self.coordinator
     }
 
-    /// Dispatch a distributed query from coordinator to the segments.
-    ///
-    /// # Errors
-    /// - Failed to get a motion subtree.
-    /// - Failed to discover buckets.
-    /// - Failed to materialize motion result and build a virtual table.
-    /// - Failed to get plan top.
-    #[otm_child_span("query.dispatch")]
-    pub fn dispatch(&mut self) -> Result<Box<dyn Any>, SbroadError> {
-        if self.is_explain() {
-            return self.coordinator.explain_format(self.to_explain()?);
-        }
-        self.get_mut_exec_plan()
-            .get_mut_ir_plan()
-            .restore_constants()?;
-
-        let slices = self.exec_plan.get_ir_plan().clone_slices();
+    #[otm_child_span("query.materialize_subtree")]
+    pub fn materialize_subtree(&mut self, slices: Slices) -> Result<(), SbroadError> {
         for slice in slices.slices() {
             // TODO: make it work in parallel
             for motion_id in slice.positions() {
@@ -248,6 +233,36 @@ where
                     .set_motion_vtable(*motion_id, virtual_table, &self.coordinator)?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Builds explain from current query
+    ///
+    /// # Errors
+    /// - Failed to build explain
+    pub fn produce_explain(&self) -> Result<Box<dyn Any>, SbroadError> {
+        self.coordinator.explain_format(self.to_explain()?)
+    }
+
+    /// Dispatch a distributed query from coordinator to the segments.
+    ///
+    /// # Errors
+    /// - Failed to get a motion subtree.
+    /// - Failed to discover buckets.
+    /// - Failed to materialize motion result and build a virtual table.
+    /// - Failed to get plan top.
+    #[otm_child_span("query.dispatch")]
+    pub fn dispatch(&mut self) -> Result<Box<dyn Any>, SbroadError> {
+        if self.is_explain() {
+            return self.produce_explain();
+        }
+        self.get_mut_exec_plan()
+            .get_mut_ir_plan()
+            .restore_constants()?;
+
+        let slices = self.exec_plan.get_ir_plan().clone_slices();
+        self.materialize_subtree(slices)?;
         let ir_plan = self.exec_plan.get_ir_plan();
         let top_id = ir_plan.get_top()?;
         if ir_plan.get_relation_node(top_id)?.is_motion() {
@@ -278,7 +293,7 @@ where
     }
 
     /// Checks that query is explain and have not to be executed
-    fn is_explain(&self) -> bool {
+    pub fn is_explain(&self) -> bool {
         self.is_explain
     }
 

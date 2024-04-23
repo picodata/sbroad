@@ -1,4 +1,3 @@
-use crate::errors::SbroadError;
 use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
@@ -9,49 +8,6 @@ use crate::ir::tree::traversal::{FilterFn, PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
-
-#[test]
-fn front_sql_check_global_tbl_support() {
-    macro_rules! global_tbl_err {
-        ($e:expr) => {
-            concat!($e, " is not supported for global tables")
-        };
-    }
-
-    let metadata = &RouterConfigurationMock::new();
-
-    check_error(
-        r#"insert into "global_t" values (1, 1)"#,
-        metadata,
-        "expected sharded table",
-    );
-    check_error(
-        r#"insert into "global_t" values (1, 1)"#,
-        metadata,
-        "expected sharded table",
-    );
-    check_error(
-        r#"delete from "global_t""#,
-        metadata,
-        global_tbl_err!("Delete"),
-    );
-    check_error(
-        r#"update "global_t" set "b" = 1"#,
-        metadata,
-        "expected sharded table",
-    );
-
-    fn check_error(input: &str, metadata: &RouterConfigurationMock, expected_err: &str) {
-        let res = build(input, metadata);
-        let err = res.unwrap_err();
-
-        assert_eq!(true, err.to_string().contains(expected_err));
-
-        fn build(input: &str, metadata: &RouterConfigurationMock) -> Result<(), SbroadError> {
-            AbstractSyntaxTree::transform_into_plan(input, metadata)?.optimize()
-        }
-    }
-}
 
 #[derive(PartialEq, Eq, Debug)]
 enum DistMock {

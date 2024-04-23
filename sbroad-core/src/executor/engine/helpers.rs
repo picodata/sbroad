@@ -8,6 +8,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     rc::Rc,
+    sync::OnceLock,
 };
 use tarantool::error::{Error, TarantoolErrorCode};
 use tarantool::space::Space;
@@ -311,7 +312,12 @@ pub enum TupleBuilderCommand {
 /// it (on specified position) and putting it into the resulting tuple.
 pub type TupleBuilderPattern = Vec<TupleBuilderCommand>;
 
-fn init_local_update_tuple_builder(
+/// Create commands to build the tuple for local update
+///
+/// # Errors
+/// - Invalid update columns map
+/// - Invalid primary key positions
+pub fn init_local_update_tuple_builder(
     plan: &Plan,
     vtable: &VirtualTable,
     update_id: usize,
@@ -402,8 +408,11 @@ fn init_local_update_tuple_builder(
     ))
 }
 
-/// Create commands to build the tuple for insertion
-fn init_delete_tuple_builder(
+/// Create commands to build the tuple for deletion
+///
+/// # Errors
+/// - plan top is not Delete
+pub fn init_delete_tuple_builder(
     plan: &Plan,
     delete_id: usize,
 ) -> Result<TupleBuilderPattern, SbroadError> {
@@ -419,7 +428,7 @@ fn init_delete_tuple_builder(
 ///
 /// # Errors
 /// - Invalid insert node or plan
-fn init_insert_tuple_builder(
+pub fn init_insert_tuple_builder(
     plan: &Plan,
     vtable: &VirtualTable,
     insert_id: usize,
@@ -466,6 +475,69 @@ fn init_insert_tuple_builder(
         }
     }
     Ok(commands)
+}
+
+/// Convert vtable tuple to tuple
+/// to be inserted.
+///
+/// # Errors
+/// - Invalid commands to build the insert tuple
+///
+/// # Panics
+/// - Bucket id not provided when inserting into sharded
+/// table
+pub fn build_insert_args<'t>(
+    vt_tuple: &'t VTableTuple,
+    builder: &'t TupleBuilderPattern,
+    bucket_id: Option<&'t u64>,
+) -> Result<Vec<EncodedValue<'t>>, SbroadError> {
+    let mut insert_tuple = Vec::with_capacity(builder.len());
+    for command in builder {
+        // We don't produce any additional allocations as `MsgPackValue` keeps
+        // a reference to the original value. The only allocation is for message
+        // pack serialization, but it is unavoidable.
+        match command {
+            TupleBuilderCommand::TakePosition(tuple_pos) => {
+                let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {tuple_pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                insert_tuple.push(EncodedValue::Ref(value.into()));
+            }
+            TupleBuilderCommand::TakeAndCastPosition(tuple_pos, table_type) => {
+                let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {tuple_pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                insert_tuple.push(value.cast(table_type)?);
+            }
+            TupleBuilderCommand::SetValue(value) => {
+                insert_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
+            }
+            TupleBuilderCommand::CalculateBucketId(_) => {
+                insert_tuple.push(EncodedValue::Ref(MsgPackValue::Unsigned(
+                    bucket_id.unwrap(),
+                )));
+            }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::Tuple,
+                    Some(format_smolstr!(
+                        "unexpected tuple builder command for insert: {command:?}"
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(insert_tuple)
 }
 
 /// Create commands to build the tuple for sharded `Update`,
@@ -1366,6 +1438,97 @@ fn execute_sharded_update(
     Ok(())
 }
 
+pub struct UpdateArgs<'vtable_tuple> {
+    pub key_tuple: Vec<EncodedValue<'vtable_tuple>>,
+    pub ops: Vec<[EncodedValue<'vtable_tuple>; 3]>,
+}
+
+pub fn eq_op() -> &'static Value {
+    // Once lock is used because of concurrent access in tests.
+    static mut EQ: OnceLock<Value> = OnceLock::new();
+
+    unsafe { EQ.get_or_init(|| Value::String("=".into())) }
+}
+
+/// Convert vtable tuple to tuple
+/// to update args.
+///
+/// # Errors
+/// - Invalid commands to build the insert tuple
+pub fn build_update_args<'t>(
+    vt_tuple: &'t VTableTuple,
+    builder: &TupleBuilderPattern,
+) -> Result<UpdateArgs<'t>, SbroadError> {
+    let mut ops = Vec::with_capacity(builder.len());
+    let mut key_tuple = Vec::with_capacity(builder.len());
+    for command in builder {
+        match command {
+            TupleBuilderCommand::UpdateColToPos(table_col, pos) => {
+                let value = vt_tuple.get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                let op = [
+                    EncodedValue::Ref(MsgPackValue::from(eq_op())),
+                    EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
+                    EncodedValue::Ref(MsgPackValue::from(value)),
+                ];
+                ops.push(op);
+            }
+            TupleBuilderCommand::TakePosition(pos) => {
+                let value = vt_tuple.get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                key_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
+            }
+            TupleBuilderCommand::TakeAndCastPosition(pos, table_type) => {
+                let value = vt_tuple.get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                key_tuple.push(value.cast(table_type)?);
+            }
+            TupleBuilderCommand::UpdateColToCastedPos(table_col, pos, table_type) => {
+                let value = vt_tuple.get(*pos).ok_or_else(|| {
+                    SbroadError::Invalid(
+                        Entity::Tuple,
+                        Some(format_smolstr!(
+                            "column at position {pos} not found in virtual table"
+                        )),
+                    )
+                })?;
+                let op = [
+                    EncodedValue::Ref(MsgPackValue::from(eq_op())),
+                    EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
+                    value.cast(table_type)?,
+                ];
+                ops.push(op);
+            }
+            _ => {
+                return Err(SbroadError::Invalid(
+                    Entity::TupleBuilderCommand,
+                    Some(format_smolstr!("got command {command:?} for update")),
+                ));
+            }
+        }
+    }
+
+    Ok(UpdateArgs { key_tuple, ops })
+}
+
 /// A working horse for `execute_update_on_storage` in case we're dealing with
 /// nonsharded update.
 fn execute_local_update(
@@ -1374,81 +1537,48 @@ fn execute_local_update(
     vtable: &VirtualTable,
     space: &Space,
 ) -> Result<(), SbroadError> {
-    let eq_value = Value::String("=".into());
     for vt_tuple in vtable.get_tuples() {
-        let mut update_tuple = Vec::with_capacity(builder.len());
-        let mut key_tuple = Vec::with_capacity(builder.len());
-        for command in builder {
-            match command {
-                TupleBuilderCommand::UpdateColToPos(table_col, pos) => {
-                    let value = vt_tuple.get(*pos).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format_smolstr!(
-                                "column at position {pos} not found in virtual table"
-                            )),
-                        )
-                    })?;
-                    let op = [
-                        EncodedValue::Ref(MsgPackValue::from(&eq_value)),
-                        EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
-                        EncodedValue::Ref(MsgPackValue::from(value)),
-                    ];
-                    update_tuple.push(op);
-                }
-                TupleBuilderCommand::TakePosition(pos) => {
-                    let value = vt_tuple.get(*pos).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format_smolstr!(
-                                "column at position {pos} not found in virtual table"
-                            )),
-                        )
-                    })?;
-                    key_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
-                }
-                TupleBuilderCommand::TakeAndCastPosition(pos, table_type) => {
-                    let value = vt_tuple.get(*pos).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format_smolstr!(
-                                "column at position {pos} not found in virtual table"
-                            )),
-                        )
-                    })?;
-                    key_tuple.push(value.cast(table_type)?);
-                }
-                TupleBuilderCommand::UpdateColToCastedPos(table_col, pos, table_type) => {
-                    let value = vt_tuple.get(*pos).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format_smolstr!(
-                                "column at position {pos} not found in virtual table"
-                            )),
-                        )
-                    })?;
-                    let op = [
-                        EncodedValue::Ref(MsgPackValue::from(&eq_value)),
-                        EncodedValue::Owned(LuaValue::Unsigned(*table_col as u64)),
-                        value.cast(table_type)?,
-                    ];
-                    update_tuple.push(op);
-                }
-                _ => {
-                    return Err(SbroadError::Invalid(
-                        Entity::TupleBuilderCommand,
-                        Some(format_smolstr!("got command {command:?} for update")),
-                    ));
-                }
-            }
-        }
-        let update_res = space.update(&key_tuple, &update_tuple);
+        let args = build_update_args(vt_tuple, builder)?;
+        let update_res = space.update(&args.key_tuple, &args.ops);
         update_res.map_err(|e| {
             SbroadError::FailedTo(Action::Update, Some(Entity::Space), format_smolstr!("{e}"))
         })?;
         result.row_count += 1;
     }
     Ok(())
+}
+
+/// Convert vtable tuple to tuple
+/// for deletion.
+///
+/// # Errors
+/// - Invalid commands to build the insert tuple
+pub fn build_delete_args<'t>(
+    vt_tuple: &'t VTableTuple,
+    builder: &'t TupleBuilderPattern,
+) -> Result<Vec<EncodedValue<'t>>, SbroadError> {
+    let mut delete_tuple = Vec::with_capacity(builder.len());
+    for cmd in builder {
+        if let TupleBuilderCommand::TakePosition(pos) = cmd {
+            let value = vt_tuple.get(*pos).ok_or_else(|| {
+                SbroadError::Invalid(
+                    Entity::Tuple,
+                    Some(format_smolstr!(
+                        "column at position {pos} not found in the delete virtual table"
+                    )),
+                )
+            })?;
+            delete_tuple.push(EncodedValue::Ref(value.into()));
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Tuple,
+                Some(format_smolstr!(
+                    "unexpected tuple builder cmd for delete primary key: {cmd:?}"
+                )),
+            ));
+        }
+    }
+    Ok(delete_tuple)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1482,27 +1612,7 @@ where
     })?;
     transaction(|| -> Result<(), SbroadError> {
         for vt_tuple in vtable.get_tuples() {
-            let mut delete_tuple = Vec::with_capacity(builder.len());
-            for cmd in &builder {
-                if let TupleBuilderCommand::TakePosition(pos) = cmd {
-                    let value = vt_tuple.get(*pos).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Tuple,
-                            Some(format_smolstr!(
-                                "column at position {pos} not found in the delete virtual table"
-                            )),
-                        )
-                    })?;
-                    delete_tuple.push(EncodedValue::Ref(value.into()));
-                } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Tuple,
-                        Some(format_smolstr!(
-                            "unexpected tuple builder cmd for delete primary key: {cmd:?}"
-                        )),
-                    ));
-                }
-            }
+            let delete_tuple = build_delete_args(vt_tuple, &builder)?;
             if let Err(Error::Tarantool(tnt_err)) = space.delete(&delete_tuple) {
                 return Err(SbroadError::FailedTo(
                     Action::Delete,
@@ -1578,50 +1688,7 @@ where
                         )),
                     )
                 })?;
-                let mut insert_tuple = Vec::with_capacity(builder.len());
-                for command in &builder {
-                    // We don't produce any additional allocations as `MsgPackValue` keeps
-                    // a reference to the original value. The only allocation is for message
-                    // pack serialization, but it is unavoidable.
-                    match command {
-                        TupleBuilderCommand::TakePosition(tuple_pos) => {
-                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
-                                SbroadError::Invalid(
-                                    Entity::Tuple,
-                                    Some(format_smolstr!(
-                                        "column at position {pos} not found in virtual table"
-                                    )),
-                                )
-                            })?;
-                            insert_tuple.push(EncodedValue::Ref(value.into()));
-                        }
-                        TupleBuilderCommand::TakeAndCastPosition(tuple_pos, table_type) => {
-                            let value = vt_tuple.get(*tuple_pos).ok_or_else(|| {
-                                SbroadError::Invalid(
-                                    Entity::Tuple,
-                                    Some(format_smolstr!(
-                                        "column at position {pos} not found in virtual table"
-                                    )),
-                                )
-                            })?;
-                            insert_tuple.push(value.cast(table_type)?);
-                        }
-                        TupleBuilderCommand::SetValue(value) => {
-                            insert_tuple.push(EncodedValue::Ref(MsgPackValue::from(value)));
-                        }
-                        TupleBuilderCommand::CalculateBucketId(_) => {
-                            insert_tuple.push(EncodedValue::Ref(MsgPackValue::Unsigned(bucket_id)));
-                        }
-                        _ => {
-                            return Err(SbroadError::Invalid(
-                                Entity::Tuple,
-                                Some(format_smolstr!(
-                                    "unexpected tuple builder command for insert: {command:?}"
-                                )),
-                            ));
-                        }
-                    }
-                }
+                let insert_tuple = build_insert_args(vt_tuple, &builder, Some(bucket_id))?;
                 let insert_result = space.insert(&insert_tuple);
                 if let Err(Error::Tarantool(tnt_err)) = &insert_result {
                     if tnt_err.error_code() == TarantoolErrorCode::TupleFound as u32 {

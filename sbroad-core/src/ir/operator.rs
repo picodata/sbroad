@@ -1048,10 +1048,11 @@ impl Plan {
 
         let table = self.get_relation_or_error(relation)?;
         // is shard key column updated
-        let is_sharded_update = table
-            .get_sk()?
-            .iter()
-            .any(|col| update_defs.contains_key(col));
+        let is_sharded_update = !table.is_global()
+            && table
+                .get_sk()?
+                .iter()
+                .any(|col| update_defs.contains_key(col));
         // Columns of Projection that will be created
         let mut projection_cols: Vec<usize> = Vec::with_capacity(update_defs.len());
         // Positions of columns in Projection that constitute the primary key
@@ -1280,9 +1281,14 @@ impl Plan {
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
             refs.push(col_alias_id);
         }
-        let keys: HashSet<_, RepeatableState> = collection! { Key::new(rel.get_sk()?.to_vec()) };
-        let dist = Distribution::Segment {
-            keys: KeySet::from(keys),
+        let dist = if rel.is_global() {
+            Distribution::Global
+        } else {
+            let keys: HashSet<_, RepeatableState> =
+                collection! { Key::new(rel.get_sk()?.to_vec()) };
+            Distribution::Segment {
+                keys: KeySet::from(keys),
+            }
         };
         let output = self.nodes.add_row(refs, Some(dist));
         let insert = Node::Relational(Relational::Insert {

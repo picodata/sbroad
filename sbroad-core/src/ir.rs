@@ -890,6 +890,18 @@ impl Plan {
         Ok(matches!(self.get_node(top_id)?, Node::Block(..)))
     }
 
+    /// Checks that plan is a dml query on global table.
+    ///
+    /// # Errors
+    /// - top node doesn't exist in the plan or is invalid.
+    pub fn is_dml_on_global_table(&self) -> Result<bool, SbroadError> {
+        let top_id = self.get_top()?;
+        if !self.get_relation_node(top_id)?.is_dml() {
+            return Ok(false);
+        }
+        Ok(self.dml_node_table(top_id)?.is_global())
+    }
+
     /// Checks that plan is DDL query
     ///
     /// # Errors

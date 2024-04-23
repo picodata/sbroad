@@ -14,7 +14,6 @@ use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
-use crate::ir::relation::TableKind;
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
 use crate::ir::tree::traversal::{
     BreadthFirst, LevelNode, PostOrder, PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY,
@@ -1087,58 +1086,6 @@ impl Plan {
         }
     }
 
-    /// Check if using global tables is implemented for
-    /// given relational node.
-    ///
-    /// # Errors
-    /// - Relational operator is not supported.
-    pub(crate) fn check_global_tbl_support(&self, rel_id: usize) -> Result<(), SbroadError> {
-        let node = self.get_relation_node(rel_id)?;
-        match node {
-            Relational::Values { .. } => {
-                let child_dist = self.get_distribution(
-                    self.get_relational_output(self.get_relational_child(rel_id, 0)?)?,
-                )?;
-                if let Distribution::Global = child_dist {
-                    return Err(SbroadError::UnsupportedOpForGlobalTables(
-                        node.name().to_smolstr(),
-                    ));
-                }
-            }
-            Relational::Delete { relation, .. }
-            | Relational::Update { relation, .. }
-            | Relational::Insert { relation, .. } => {
-                // Reading from global table for dml is allowed,
-                // but updating/inserting/deleting from global table
-                // is not: it must be done via cas picodata api.
-                if matches!(
-                    self.get_relation_or_error(relation.as_str())?.kind,
-                    TableKind::GlobalSpace
-                ) {
-                    return Err(SbroadError::UnsupportedOpForGlobalTables(
-                        node.name().into(),
-                    ));
-                }
-            }
-            Relational::Except { .. }
-            | Relational::Projection { .. }
-            | Relational::GroupBy { .. }
-            | Relational::OrderBy { .. }
-            | Relational::Having { .. }
-            | Relational::Join { .. }
-            | Relational::ScanCte { .. }
-            | Relational::ScanRelation { .. }
-            | Relational::Selection { .. }
-            | Relational::ValuesRow { .. }
-            | Relational::Intersect { .. }
-            | Relational::ScanSubQuery { .. }
-            | Relational::Motion { .. }
-            | Relational::Union { .. }
-            | Relational::UnionAll { .. } => {}
-        }
-        Ok(())
-    }
-
     fn set_rows_distributions_in_expr(&mut self, expr_id: usize) -> Result<(), SbroadError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id);
         for (_, node) in &nodes {
@@ -1635,6 +1582,10 @@ impl Plan {
 
     #[allow(clippy::too_many_lines)]
     fn resolve_update_conflicts(&mut self, update_id: usize) -> Result<Strategy, SbroadError> {
+        if self.dml_node_table(update_id)?.is_global() {
+            return self.resolve_dml_node_conflict_for_global_table(update_id);
+        }
+
         if let Relational::Update { strategy: kind, .. } = self.get_relation_node(update_id)? {
             let mut map = Strategy::new(update_id);
             let table = self.dml_node_table(update_id)?;
@@ -1722,51 +1673,55 @@ impl Plan {
                     let pr_child = self.get_relational_child(child_id, 0)?;
                     let pr_child_output_id = self.get_relational_output(pr_child)?;
                     let pr_child_dist = self.get_distribution(pr_child_output_id)?;
-                    if let Distribution::Segment { keys, .. } = pr_child_dist {
-                        // Some nodes below projection (projection for Join) may
-                        // remove bucket_id position, and shard_key.positions
-                        // can't be used directly.
-                        let expected_positions = {
-                            let child_alias_map = ColumnPositionMap::new(self, pr_child)?;
-                            let mut expected_positions = Vec::with_capacity(table.get_sk()?.len());
-                            for pos in table.get_sk()? {
-                                let col_name = &table
-                                    .columns
-                                    .get(*pos)
-                                    .ok_or_else(|| {
-                                        SbroadError::Invalid(
-                                            Entity::Table,
-                                            Some(format_smolstr!(
-                                                "invalid shar key position: {pos}"
-                                            )),
-                                        )
-                                    })?
-                                    .name;
-                                let col_pos = child_alias_map.get(col_name.as_str())?;
-                                expected_positions.push(col_pos);
+
+                    match pr_child_dist {
+                        Distribution::Segment { keys, .. } => {
+                            // Some nodes below projection (projection for Join) may
+                            // remove bucket_id position, and shard_key.positions
+                            // can't be used directly.
+                            let expected_positions = {
+                                let child_alias_map = ColumnPositionMap::new(self, pr_child)?;
+                                let mut expected_positions =
+                                    Vec::with_capacity(table.get_sk()?.len());
+                                for pos in table.get_sk()? {
+                                    let col_name = &table
+                                        .columns
+                                        .get(*pos)
+                                        .ok_or_else(|| {
+                                            SbroadError::Invalid(
+                                                Entity::Table,
+                                                Some(format_smolstr!(
+                                                    "invalid shar key position: {pos}"
+                                                )),
+                                            )
+                                        })?
+                                        .name;
+                                    let col_pos = child_alias_map.get(col_name.as_str())?;
+                                    expected_positions.push(col_pos);
+                                }
+                                expected_positions
+                            };
+                            if !keys.iter().any(|key| key.positions == expected_positions) {
+                                return Err(SbroadError::Invalid(
+                                    Entity::Update,
+                                    Some(format_smolstr!(
+                                        "for local update expected children below \
+                                  Projection to have update table dist. Got: {pr_child_dist:?}"
+                                    )),
+                                ));
                             }
-                            expected_positions
-                        };
-                        if !keys.iter().any(|key| key.positions == expected_positions) {
+                            map.add_child(child_id, MotionPolicy::Local, Program::default());
+                        }
+                        _ => {
                             return Err(SbroadError::Invalid(
                                 Entity::Update,
                                 Some(format_smolstr!(
-                                    "for local update expected children below \
-                                  Projection to have update table dist. Got: {pr_child_dist:?}"
-                                )),
-                            ));
-                        }
-                    } else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Update,
-                            Some(format_smolstr!(
-                                "expected child below projection to have Segment dist,\
+                                    "expected child below projection to have Segment dist,\
                              got: {pr_child_dist:?}"
-                            )),
-                        ));
+                                )),
+                            ))
+                        }
                     }
-
-                    map.add_child(child_id, MotionPolicy::Local, Program::default());
                 }
             }
             Ok(map)
@@ -1779,14 +1734,18 @@ impl Plan {
     }
 
     fn resolve_delete_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+        if self.dml_node_table(rel_id)?.is_global() {
+            return self.resolve_dml_node_conflict_for_global_table(rel_id);
+        }
+
         let mut map = Strategy::new(rel_id);
         let child_id = self.dml_child_id(rel_id)?;
-        let space = self.dml_node_table(rel_id)?;
-        let pk_len = space.primary_key.positions.len();
+        let table = self.dml_node_table(rel_id)?;
+        let pk_len = table.primary_key.positions.len();
         if pk_len == 0 {
             return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                 "empty primary key for space {}",
-                space.name()
+                table.name()
             )));
         }
         // We expect that the columns in the child projection of the DELETE operator
@@ -1801,13 +1760,31 @@ impl Plan {
         // Delete node alway produce a local segment policy
         // (i.e. materialization without bucket calculation).
         map.add_child(child_id, MotionPolicy::Local, Program(program));
+
+        Ok(map)
+    }
+
+    fn resolve_dml_node_conflict_for_global_table(
+        &mut self,
+        rel_id: usize,
+    ) -> Result<Strategy, SbroadError> {
+        let mut map = Strategy::new(rel_id);
+        let child_id = self.dml_child_id(rel_id)?;
+        let child_node = self.get_relation_node(child_id)?;
+        if !matches!(child_node, Relational::Motion { .. }) {
+            map.add_child(child_id, MotionPolicy::Full, Program::default());
+        }
         Ok(map)
     }
 
     fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+        if self.dml_node_table(rel_id)?.is_global() {
+            return self.resolve_dml_node_conflict_for_global_table(rel_id);
+        }
         let mut map = Strategy::new(rel_id);
-        let motion_key = self.insert_motion_key(rel_id)?;
         let child_id = self.dml_child_id(rel_id)?;
+
+        let motion_key = self.insert_motion_key(rel_id)?;
         let child_output_id = self.get_relation_node(child_id)?.output();
         let child_dist = self.get_distribution(child_output_id)?;
 
@@ -2163,7 +2140,6 @@ impl Plan {
             if visited.contains(&id) {
                 continue;
             }
-            self.check_global_tbl_support(id)?;
 
             let node = self.get_relation_node(id)?.clone();
 
@@ -2334,9 +2310,19 @@ impl Plan {
             self.set_top(*old_new.values().next().unwrap())?;
         }
 
-        // Gather motions (revert levels in bft)
+        let top_id = self.get_top()?;
+        let slices = self.calculate_slices(top_id)?;
+        self.set_slices(slices);
+
+        Ok(())
+    }
+
+    /// Calculate slices for given subtree
+    ///
+    /// # Errors
+    /// - failed to traverse plan
+    pub fn calculate_slices(&self, top_id: usize) -> Result<Vec<Vec<usize>>, SbroadError> {
         let mut motions: Vec<Vec<usize>> = Vec::new();
-        let top = self.get_top()?;
         let mut bft_tree = BreadthFirst::with_capacity(
             |node| self.nodes.rel_iter(node),
             REL_CAPACITY,
@@ -2344,7 +2330,7 @@ impl Plan {
         );
         let mut map: HashMap<usize, usize> = HashMap::new();
         let mut max_level: usize = 0;
-        for (level, id) in bft_tree.iter(top) {
+        for (level, id) in bft_tree.iter(top_id) {
             if let Node::Relational(Relational::Motion { .. }) = self.get_node(id)? {
                 let key: usize = match map.entry(level) {
                     Entry::Occupied(o) => *o.into_mut(),
@@ -2361,11 +2347,8 @@ impl Plan {
                 }
             }
         }
-        if !motions.is_empty() {
-            self.set_slices(motions.into_iter().rev().collect());
-        }
-
-        Ok(())
+        motions.reverse();
+        Ok(motions)
     }
 }
 
