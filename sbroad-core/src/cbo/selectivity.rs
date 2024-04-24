@@ -11,6 +11,7 @@ use crate::ir::operator::Bool;
 use crate::ir::relation::{Column, Type};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
+use crate::utils::MutexLike;
 use smol_str::{format_smolstr, SmolStr};
 use std::any::Any;
 use std::fmt::Display;
@@ -243,7 +244,7 @@ pub fn calculate_filter_selectivity(
         return decimal_from_str(&DEFAULT_FILTER_EQ_SELECTIVITY);
     };
 
-    let table = statistics.metadata()?.table(table_name.as_str())?;
+    let table = statistics.metadata().lock().table(table_name.as_str())?;
     let column = table.columns.get(*colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,
@@ -364,7 +365,10 @@ pub fn calculate_condition_selectivity(
     else {
         return decimal_from_str(&DEFAULT_FILTER_EQ_SELECTIVITY);
     };
-    let left_table = statistics.metadata()?.table(left_table_name.as_str())?;
+    let left_table = statistics
+        .metadata()
+        .lock()
+        .table(left_table_name.as_str())?;
     let left_column = left_table.columns.get(*left_colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,
@@ -383,7 +387,10 @@ pub fn calculate_condition_selectivity(
     else {
         return decimal_from_str(&DEFAULT_FILTER_EQ_SELECTIVITY);
     };
-    let right_table = statistics.metadata()?.table(left_table_name.as_str())?;
+    let right_table = statistics
+        .metadata()
+        .lock()
+        .table(left_table_name.as_str())?;
     let right_column = right_table.columns.get(*right_colum_index).ok_or_else(|| {
         SbroadError::Invalid(
             Entity::Statistics,

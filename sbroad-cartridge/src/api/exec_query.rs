@@ -30,7 +30,7 @@ fn dispatch_query_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
     load_config(&COORDINATOR_ENGINE)?;
 
     COORDINATOR_ENGINE.with(|engine| {
-        let runtime = engine.try_borrow().context("borrow runtime")?;
+        let runtime = engine.lock();
         let mut query =
             Query::new(&*runtime, &lua_params.pattern, lua_params.params).context("build query")?;
         if let Ok(true) = query.is_ddl() {
@@ -71,7 +71,7 @@ fn execute_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
         .context("decode required data")?;
 
     SEGMENT_ENGINE.with(|engine| {
-        let runtime = engine.try_borrow_mut().context("borrow mut runtime")?;
+        let runtime = engine.lock();
         let result = runtime
             .execute_plan(&mut required, &mut raw_optional)
             .context("execute plan")?;

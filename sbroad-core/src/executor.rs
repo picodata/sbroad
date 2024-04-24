@@ -26,7 +26,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::SbroadError;
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::helpers::normalize_name_for_space_api;
 use crate::executor::engine::{helpers::materialize_values, Router, TableVersionMap, Vshard};
@@ -38,8 +38,9 @@ use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
 use crate::ir::Plan;
 use crate::otm::{child_span, query_id};
+use crate::utils::MutexLike;
 use sbroad_proc::otm_child_span;
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::SmolStr;
 
 pub mod bucket;
 pub mod engine;
@@ -117,22 +118,15 @@ where
         C::ParseTree: Ast,
     {
         let key = query_id(sql);
-        let ir_cache = coordinator.cache();
+        let mut cache = coordinator.cache().lock();
 
         let mut plan = Plan::new();
-        let mut cache = ir_cache.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Create,
-                Some(Entity::Query),
-                format_smolstr!("{e:?}"),
-            )
-        })?;
         if let Some(cached_plan) = cache.get(&key)? {
             plan = cached_plan.clone();
         }
         if plan.is_empty() {
-            let metadata = &*coordinator.metadata()?;
-            plan = C::ParseTree::transform_into_plan(sql, metadata)?;
+            let metadata = coordinator.metadata().lock();
+            plan = C::ParseTree::transform_into_plan(sql, &*metadata)?;
             if coordinator.provides_versions() {
                 let mut table_version_map =
                     TableVersionMap::with_capacity(plan.relations.tables.len());

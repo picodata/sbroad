@@ -56,5 +56,5 @@ vtable_max_rows = 5000
 #[should_panic]
 fn trim_trailing_without_from_should_fail() {
     let sql = r#"SELECT TRIM(TRAILING "FIRST_NAME") FROM "test_space""#;
-    let plan = sql_to_optimized_ir(sql, vec![]);
+    let _plan = sql_to_optimized_ir(sql, vec![]);
 }

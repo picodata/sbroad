@@ -1,6 +1,6 @@
 use crate::cartridge::bucket_count;
 use crate::cartridge::config::StorageConfiguration;
-use sbroad::errors::{Action, Entity, SbroadError};
+use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::helpers::storage::runtime::unprepare;
 use sbroad::executor::engine::helpers::storage::PreparedStmt;
@@ -12,20 +12,22 @@ use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
+use sbroad::utils::MutexLike;
 use sbroad::{debug, error, warn};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::any::Any;
-use std::cell::{Ref, RefCell};
+
 use std::fmt::Display;
+use tarantool::fiber::Mutex;
 use tarantool::tlua::LuaFunction;
 
 use super::ConfigurationProvider;
 
 #[allow(clippy::module_name_repetitions)]
 pub struct StorageRuntime {
-    metadata: RefCell<StorageConfiguration>,
+    metadata: Mutex<StorageConfiguration>,
     bucket_count: u64,
-    cache: RefCell<CartridgeCache>,
+    cache: Mutex<CartridgeCache>,
 }
 
 pub struct CartridgeCache(LRUCache<SmolStr, PreparedStmt>);
@@ -52,33 +54,16 @@ impl StorageCache for CartridgeCache {
 impl QueryCache for StorageRuntime {
     type Cache = CartridgeCache;
 
-    fn cache(&self) -> &RefCell<Self::Cache> {
+    fn cache(&self) -> &impl MutexLike<Self::Cache> {
         &self.cache
     }
 
     fn cache_capacity(&self) -> Result<usize, SbroadError> {
-        Ok(self
-            .cache()
-            .try_borrow()
-            .map_err(|e| {
-                SbroadError::FailedTo(
-                    Action::Borrow,
-                    Some(Entity::Cache),
-                    format_smolstr!("{e:?}"),
-                )
-            })?
-            .0
-            .capacity())
+        Ok(self.cache().lock().0.capacity())
     }
 
     fn clear_cache(&self) -> Result<(), SbroadError> {
-        self.cache
-            .try_borrow_mut()
-            .map_err(|e| {
-                SbroadError::FailedTo(Action::Clear, Some(Entity::Cache), format_smolstr!("{e:?}"))
-            })?
-            .clear()?;
-        Ok(())
+        self.cache.lock().clear()
     }
 
     fn provides_versions(&self) -> bool {
@@ -93,36 +78,18 @@ impl QueryCache for StorageRuntime {
 impl ConfigurationProvider for StorageRuntime {
     type Configuration = StorageConfiguration;
 
-    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError> {
-        self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Borrow,
-                Some(Entity::Metadata),
-                format_smolstr!("{e}"),
-            )
-        })
+    fn cached_config(&self) -> &impl MutexLike<Self::Configuration> {
+        &self.metadata
     }
 
     fn clear_config(&self) -> Result<(), SbroadError> {
-        let mut metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Borrow,
-                Some(Entity::Metadata),
-                format_smolstr!("{e}"),
-            )
-        })?;
+        let mut metadata = self.metadata.lock();
         *metadata = Self::Configuration::new();
         Ok(())
     }
 
     fn is_config_empty(&self) -> Result<bool, SbroadError> {
-        let metadata = self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Borrow,
-                Some(Entity::Metadata),
-                format_smolstr!("{e:?}"),
-            )
-        })?;
+        let metadata = self.metadata.lock();
         Ok(metadata.is_empty())
     }
 
@@ -170,13 +137,7 @@ impl ConfigurationProvider for StorageRuntime {
     }
 
     fn update_config(&self, metadata: Self::Configuration) -> Result<(), SbroadError> {
-        let mut cached_metadata = self.metadata.try_borrow_mut().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Borrow,
-                Some(Entity::Metadata),
-                format_smolstr!("{e:?}"),
-            )
-        })?;
+        let mut cached_metadata = self.metadata.lock();
         let storage_size_bytes = metadata.storage_size_bytes;
         *cached_metadata = metadata;
         update_box_param("sql_cache_size", storage_size_bytes);
@@ -239,9 +200,9 @@ impl StorageRuntime {
         let cache: LRUCache<SmolStr, PreparedStmt> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
-            metadata: RefCell::new(StorageConfiguration::new()),
+            metadata: Mutex::new(StorageConfiguration::new()),
             bucket_count: bucket_count()?,
-            cache: RefCell::new(CartridgeCache(cache)),
+            cache: Mutex::new(CartridgeCache(cache)),
         };
 
         Ok(result)

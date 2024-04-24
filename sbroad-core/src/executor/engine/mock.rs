@@ -1,10 +1,12 @@
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::any::Any;
-use std::cell::{Ref, RefCell};
+
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+
 use std::rc::Rc;
 use tarantool::decimal;
 use tarantool::decimal::Decimal;
@@ -16,7 +18,7 @@ use crate::cbo::histogram::{Histogram, Mcv, McvSet, Scalar};
 use crate::cbo::tests::construct_i64_buckets;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
 use crate::collection;
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
     helpers::{sharding_key_from_map, sharding_key_from_tuple, vshard::get_random_bucket},
@@ -36,6 +38,7 @@ use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Plan;
+use crate::utils::MutexLike;
 
 use super::helpers::vshard::{prepare_rs_to_ir_map, GroupedBuckets};
 use super::helpers::{dispatch_by_buckets, normalize_name_from_sql};
@@ -990,6 +993,8 @@ impl VshardMock {
 
 #[allow(clippy::module_name_repetitions)]
 pub struct RouterRuntimeMock {
+    // It's based on the RefCells instead of tarantool mutexes,
+    // so it could be used in unit tests - they won't compile otherwise due to missing tarantool symbols.
     metadata: RefCell<RouterConfigurationMock>,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
     ir_cache: RefCell<LRUCache<SmolStr, Plan>>,
@@ -1040,22 +1045,12 @@ impl QueryCache for RouterRuntimeMock {
         Ok(())
     }
 
-    fn cache(&self) -> &RefCell<Self::Cache> {
+    fn cache(&self) -> &impl MutexLike<Self::Cache> {
         &self.ir_cache
     }
 
     fn cache_capacity(&self) -> Result<usize, SbroadError> {
-        Ok(self
-            .cache()
-            .try_borrow()
-            .map_err(|e| {
-                SbroadError::FailedTo(
-                    Action::Borrow,
-                    Some(Entity::Cache),
-                    format_smolstr!("{e:?}"),
-                )
-            })?
-            .capacity())
+        Ok(self.cache().lock().capacity())
     }
 
     fn provides_versions(&self) -> bool {
@@ -1090,7 +1085,7 @@ impl Vshard for RouterRuntimeMock {
     }
 
     fn bucket_count(&self) -> u64 {
-        self.metadata.borrow().bucket_count
+        self.metadata().lock().bucket_count
     }
 
     fn get_random_bucket(&self) -> Buckets {
@@ -1126,7 +1121,7 @@ impl Vshard for &RouterRuntimeMock {
     }
 
     fn bucket_count(&self) -> u64 {
-        self.metadata.borrow().bucket_count
+        self.metadata().lock().bucket_count
     }
 
     fn get_random_bucket(&self) -> Buckets {
@@ -1500,14 +1495,8 @@ impl Router for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
     type MetadataProvider = RouterConfigurationMock;
 
-    fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError> {
-        self.metadata.try_borrow().map_err(|e| {
-            SbroadError::FailedTo(
-                Action::Borrow,
-                Some(Entity::Metadata),
-                format_smolstr!("{e:?}"),
-            )
-        })
+    fn metadata(&self) -> &impl MutexLike<Self::MetadataProvider> {
+        &self.metadata
     }
 
     fn materialize_motion(
@@ -1570,7 +1559,7 @@ impl Router for RouterRuntimeMock {
         space: SmolStr,
         args: &'rec HashMap<SmolStr, Value>,
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_key_from_map(&*self.metadata.borrow(), &space, args)
+        sharding_key_from_map(&*self.metadata().lock(), &space, args)
     }
 
     fn extract_sharding_key_from_tuple<'rec>(
@@ -1578,23 +1567,17 @@ impl Router for RouterRuntimeMock {
         space: SmolStr,
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
-        sharding_key_from_tuple(&*self.metadata.borrow(), &space, rec)
+        sharding_key_from_tuple(&*self.metadata().lock(), &space, rec)
     }
 }
 
 impl Statistics for RouterRuntimeMock {
     fn get_table_stats(&self, table_name: &str) -> Result<Option<Rc<TableStats>>, SbroadError> {
-        if let Ok(borrow_res) = self.table_statistics_cache.try_borrow() {
-            if let Some(value) = borrow_res.get(table_name) {
-                Ok(Some(value.clone()))
-            } else {
-                Ok(None)
-            }
+        let stats = self.table_statistics_cache.borrow_mut();
+        if let Some(value) = stats.get(table_name) {
+            Ok(Some(value.clone()))
         } else {
-            Err(SbroadError::Invalid(
-                Entity::Statistics,
-                Some(SmolStr::from("Couldn't borrow table statistics")),
-            ))
+            Ok(None)
         }
     }
 
@@ -1602,17 +1585,11 @@ impl Statistics for RouterRuntimeMock {
         &self,
         table_column_pair: &TableColumnPair,
     ) -> Result<Option<Rc<Box<dyn Any>>>, SbroadError> {
-        if let Ok(borrow_res) = self.initial_column_statistics_cache.try_borrow() {
-            if let Some(value) = borrow_res.get(table_column_pair) {
-                Ok(Some(value.clone()))
-            } else {
-                Ok(None)
-            }
+        let stats = self.initial_column_statistics_cache.borrow_mut();
+        if let Some(value) = stats.get(table_column_pair) {
+            Ok(Some(value.clone()))
         } else {
-            Err(SbroadError::Invalid(
-                Entity::Statistics,
-                Some(SmolStr::from("Couldn't borrow initial column statistics")),
-            ))
+            Ok(None)
         }
     }
 
@@ -1621,20 +1598,14 @@ impl Statistics for RouterRuntimeMock {
         table_name: SmolStr,
         table_stats: TableStats,
     ) -> Result<(), SbroadError> {
-        if let Ok(mut borrow_res) = self.table_statistics_cache.try_borrow_mut() {
-            let value = borrow_res.get_mut(table_name.as_str());
-            if let Some(value) = value {
-                *value = Rc::new(table_stats);
-            } else {
-                borrow_res.insert(table_name, Rc::new(table_stats));
-            }
-            Ok(())
+        let mut stats = self.table_statistics_cache.borrow_mut();
+        let value = stats.get_mut(table_name.as_str());
+        if let Some(value) = value {
+            *value = Rc::new(table_stats);
         } else {
-            Err(SbroadError::Invalid(
-                Entity::Statistics,
-                Some(SmolStr::from("Couldn't borrow table statistics")),
-            ))
+            stats.insert(table_name, Rc::new(table_stats));
         }
+        Ok(())
     }
 
     fn update_column_stats<T: Scalar>(
@@ -1642,21 +1613,15 @@ impl Statistics for RouterRuntimeMock {
         table_column_pair: TableColumnPair,
         column_stats: ColumnStats<T>,
     ) -> Result<(), SbroadError> {
-        if let Ok(mut borrow_res) = self.initial_column_statistics_cache.try_borrow_mut() {
-            let boxed = Box::new(column_stats);
-            let value = borrow_res.get_mut(&table_column_pair);
-            if let Some(value) = value {
-                *value = Rc::new(boxed);
-            } else {
-                borrow_res.insert(table_column_pair, Rc::new(boxed));
-            }
-            Ok(())
+        let mut stats = self.initial_column_statistics_cache.borrow_mut();
+        let boxed = Box::new(column_stats);
+        let value = stats.get_mut(&table_column_pair);
+        if let Some(value) = value {
+            *value = Rc::new(boxed);
         } else {
-            Err(SbroadError::Invalid(
-                Entity::Statistics,
-                Some(SmolStr::from("Couldn't borrow initial column statistics")),
-            ))
+            stats.insert(table_column_pair, Rc::new(boxed));
         }
+        Ok(())
     }
 }
 

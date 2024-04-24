@@ -1,6 +1,7 @@
+use tarantool::fiber::Mutex;
+
 use crate::cartridge::router::RouterRuntime;
 use crate::cartridge::storage::StorageRuntime;
-use std::cell::RefCell;
 
 #[derive(Default)]
 pub struct AsyncCommands {
@@ -8,9 +9,9 @@ pub struct AsyncCommands {
     pub invalidate_segment_cache: bool,
 }
 
-thread_local!(pub static COORDINATOR_ENGINE: RefCell<RouterRuntime> = RefCell::new(RouterRuntime::new().unwrap()));
-thread_local!(pub static SEGMENT_ENGINE: RefCell<StorageRuntime> = RefCell::new(StorageRuntime::new().unwrap()));
-thread_local!(pub static ASYNC_COMMANDS: RefCell<AsyncCommands> = RefCell::new(AsyncCommands::default()));
+thread_local!(pub static COORDINATOR_ENGINE: Mutex<RouterRuntime> = Mutex::new(RouterRuntime::new().unwrap()));
+thread_local!(pub static SEGMENT_ENGINE: Mutex<StorageRuntime> = Mutex::new(StorageRuntime::new().unwrap()));
+thread_local!(pub static ASYNC_COMMANDS: Mutex<AsyncCommands> = Mutex::new(AsyncCommands::default()));
 
 pub mod calculate_bucket_id;
 pub mod exec_query;

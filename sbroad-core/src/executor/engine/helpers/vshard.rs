@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use crate::utils::MutexLike;
 use crate::{
     executor::engine::Router,
     ir::{
@@ -226,12 +227,16 @@ pub fn exec_ir_on_some_buckets(
     }
     match &query_type {
         QueryType::DQL => dql_on_some(
-            &*runtime.metadata()?,
+            &*runtime.metadata().lock(),
             rs_message,
             conn_type.is_readonly(),
             vtable_max_rows,
         ),
-        QueryType::DML => dml_on_some(&*runtime.metadata()?, rs_message, conn_type.is_readonly()),
+        QueryType::DML => dml_on_some(
+            &*runtime.metadata().lock(),
+            rs_message,
+            conn_type.is_readonly(),
+        ),
     }
 }
 

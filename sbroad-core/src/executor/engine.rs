@@ -6,8 +6,9 @@ use smol_str::SmolStr;
 
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
+use crate::utils::MutexLike;
 use std::any::Any;
-use std::cell::{Ref, RefCell};
+
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -120,7 +121,7 @@ pub trait QueryCache {
     ///
     /// # Errors
     /// - Failed to get the cache.
-    fn cache(&self) -> &RefCell<Self::Cache>
+    fn cache(&self) -> &impl MutexLike<Self::Cache>
     where
         Self: Sized;
 
@@ -158,11 +159,7 @@ pub trait Router: QueryCache {
     type MetadataProvider: Metadata;
 
     /// Get the metadata provider (tables, functions, etc.).
-    ///
-    /// # Errors
-    /// - Internal error. Under normal conditions we should always return
-    ///   metadata successfully.
-    fn metadata(&self) -> Result<Ref<Self::MetadataProvider>, SbroadError>;
+    fn metadata(&self) -> &impl MutexLike<Self::MetadataProvider>;
 
     /// Setup output format of query explain
     ///

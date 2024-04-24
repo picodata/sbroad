@@ -8,7 +8,7 @@ use tarantool::tuple::{RawBytes, Tuple};
 use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use crate::utils::{wrap_proc_result, ProcResult};
-use anyhow::Context;
+
 use sbroad::executor::engine::{Router, Vshard};
 use sbroad::ir::value::{LuaValue, Value};
 
@@ -126,7 +126,7 @@ fn calculate_bucket_id_inner(args: &RawBytes) -> anyhow::Result<u64> {
     load_config(&COORDINATOR_ENGINE)?;
 
     COORDINATOR_ENGINE.with(|engine| {
-        let runtime = engine.try_borrow().context("borrow runtime")?;
+        let runtime = engine.lock();
         Ok(match args {
             Args::String(params) => {
                 let bucket_str = Value::from(params.rec);

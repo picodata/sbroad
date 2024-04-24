@@ -72,7 +72,7 @@ impl From<&Distribution> for DistMock {
     }
 }
 
-fn collect_relational<'filter>(plan: &Plan, predicate: FilterFn<'filter>) -> Vec<(usize, usize)> {
+fn collect_relational(plan: &Plan, predicate: FilterFn<'_>) -> Vec<(usize, usize)> {
     let mut rel_tree = PostOrderWithFilter::with_capacity(
         |node| plan.nodes.rel_iter(node),
         REL_CAPACITY,

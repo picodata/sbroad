@@ -728,10 +728,7 @@ fn dispatch_order_by() {
     expected.rows.extend(vec![vec![
         LuaValue::String("Execute query locally".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_40") ORDER BY "id""#,
-            ),
+            r#"SELECT "id" FROM (SELECT "id" FROM "TMP_test_40") ORDER BY "id""#.to_string(),
             vec![],
         ))),
     ]]);

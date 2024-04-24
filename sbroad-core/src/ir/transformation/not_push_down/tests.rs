@@ -12,7 +12,7 @@ fn push_down_not(plan: &mut Plan) {
 fn not_true() {
     let input = r#"SELECT * FROM (values (1)) where not true"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#,),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#.to_string(),
         vec![Value::Unsigned(1), Value::from(false)],
     );
     let actual = check_transformation(input, vec![], &push_down_not);
@@ -24,7 +24,7 @@ fn not_true() {
 fn not_double() {
     let input = r#"SELECT * FROM (values (1)) where not not true"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#,),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#.to_string(),
         vec![Value::Unsigned(1), Value::from(true)],
     );
     let actual = check_transformation(input, vec![], &push_down_not);
@@ -36,7 +36,7 @@ fn not_double() {
 fn not_null() {
     let input = r#"SELECT * FROM (values (1)) where not null"#;
     let expected = PatternWithParams::new(
-        format!("{}", r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#,),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE (?)"#.to_string(),
         vec![Value::Unsigned(1), Value::Null],
     );
     let actual = check_transformation(input, vec![], &push_down_not);
@@ -48,10 +48,7 @@ fn not_null() {
 fn not_and() {
     let input = r#"SELECT * FROM (values (1)) where not (true and false)"#;
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) or (?))"#,
-        ),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) or (?))"#.to_string(),
         vec![Value::Unsigned(1), Value::from(false), Value::from(true)],
     );
     let actual = check_transformation(input, vec![], &push_down_not);
@@ -63,10 +60,7 @@ fn not_and() {
 fn not_or() {
     let input = r#"SELECT * FROM (values (1)) where not (false or true)"#;
     let expected = PatternWithParams::new(
-        format!(
-            "{}",
-            r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) and (?))"#,
-        ),
+        r#"SELECT "COLUMN_1" FROM (VALUES (?)) WHERE ((?) and (?))"#.to_string(),
         vec![Value::Unsigned(1), Value::from(true), Value::from(false)],
     );
     let actual = check_transformation(input, vec![], &push_down_not);

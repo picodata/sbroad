@@ -4,10 +4,8 @@ pub mod config;
 pub mod router;
 pub mod storage;
 
-use std::cell::Ref;
-
-use sbroad::error;
 use sbroad::errors::SbroadError;
+use sbroad::{error, utils::MutexLike};
 use smol_str::{format_smolstr, ToSmolStr};
 use tarantool::tlua::LuaFunction;
 
@@ -16,10 +14,7 @@ pub trait ConfigurationProvider: Sized {
     type Configuration;
 
     /// Return a cached cluster configuration from the Rust memory.
-    ///
-    /// # Errors
-    /// - Failed to get a configuration from the router runtime.
-    fn cached_config(&self) -> Result<Ref<Self::Configuration>, SbroadError>;
+    fn cached_config(&self) -> &impl MutexLike<Self::Configuration>;
 
     /// Clear the cached cluster configuration in the Rust memory.
     ///

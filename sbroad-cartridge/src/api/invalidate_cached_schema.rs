@@ -14,7 +14,7 @@ fn invalidate_coordinator_cache() -> ProcResult<()> {
     wrap_proc_result(
         "invalidate_coordinator_cache".into(),
         COORDINATOR_ENGINE.with(|runtime| {
-            let runtime = runtime.try_borrow().context("borrow runtime")?;
+            let runtime = runtime.lock();
             runtime.clear_config().context("clear config")?;
             runtime.clear_cache().context("clear IR cache on router")
         }),
@@ -28,7 +28,7 @@ fn invalidate_segment_cache() -> ProcResult<()> {
     wrap_proc_result(
         "invalidate_segment_cache".into(),
         SEGMENT_ENGINE.with(|runtime| {
-            let runtime = runtime.try_borrow().context("borrow runtime")?;
+            let runtime = runtime.lock();
             runtime.clear_config().context("clear config")
         }),
     )

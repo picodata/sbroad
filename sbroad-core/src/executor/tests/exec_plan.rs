@@ -800,10 +800,7 @@ fn global_table_scan() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            format!(
-                "{}",
-                r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#,
-            ),
+            r#"SELECT "global_t"."a", "global_t"."b" FROM "global_t""#.to_string(),
             vec![]
         )
     );
@@ -1144,7 +1141,7 @@ fn global_except() {
         .unwrap();
     let mut expected = ProducerResult::new();
     expected.rows.extend(vec![vec![
-        LuaValue::String(format!("Execute query locally")),
+        LuaValue::String("Execute query locally".to_string()),
         LuaValue::String(String::from(PatternWithParams::new(
             r#"SELECT "global_t"."a" FROM "global_t" EXCEPT SELECT "e" FROM "TMP_test_47""#.into(),
             vec![],

@@ -20,8 +20,8 @@ use opentelemetry::trace::{SpanBuilder, SpanKind, TraceContextExt, Tracer};
 #[allow(unused_imports)]
 use opentelemetry::{Context, KeyValue};
 use smol_str::{SmolStr, ToSmolStr};
+use tarantool::fiber::Mutex;
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -40,15 +40,7 @@ use tracing_imports::*;
 pub const OTM_CHAR_LIMIT: usize = 512;
 
 thread_local!(
-    /// Thread-local storage for the trace information of the current fiber.
-    ///
-    /// Pay attention, that all mutable accesses to this variable should be
-    /// wrapped with Tarantool transaction. The reason is that statistics
-    /// tracer can create temporary tables on the instance. As a result,
-    /// Tarantool yields the fiber while the RefCell is still mutably borrowed.
-    /// An access to TRACE_MANAGER on a new fiber leads to panic. So we have to
-    /// be sure that transaction commit is called after the RefCell is released.
-    static TRACE_MANAGER: RefCell<TraceManager> = RefCell::new(TraceManager::new())
+    static TRACE_MANAGER: Mutex<TraceManager> = Mutex::new(TraceManager::new())
 );
 
 pub trait QueryTracer {
@@ -163,7 +155,7 @@ where
             return f();
         };
 
-        let Some(old_ti) = TRACE_MANAGER.with(|tm| tm.borrow_mut().remove(fid)) else {
+        let Some(old_ti) = TRACE_MANAGER.with(|tm| tm.lock().remove(fid)) else {
             error!(
                 Option::from("child span"),
                 &format!("fiber {}, child span {}: missing trace info", fid, name),
@@ -179,7 +171,7 @@ where
         );
         let ti = TraceInfo::new(old_ti.tracer(), ctx, id);
         TRACE_MANAGER.with(|tm| {
-            let mut mut_tm = tm.borrow_mut();
+            let mut mut_tm = tm.lock();
             debug!(
                 Option::from("child span"),
                 &format!(
@@ -191,7 +183,7 @@ where
         });
         let result = f();
         TRACE_MANAGER.with(|tm| {
-            let mut mut_tm = tm.borrow_mut();
+            let mut mut_tm = tm.lock();
             debug!(
                 Option::from("child span"),
                 &format!(
@@ -244,7 +236,7 @@ where
         let ti = TraceInfo::new(tracer, ctx, id.to_string());
 
         TRACE_MANAGER.with(|tm| {
-            let mut mut_tm = tm.borrow_mut();
+            let mut mut_tm = tm.lock();
             debug!(
                 Option::from("query span"),
                 &format!(
@@ -256,7 +248,7 @@ where
         });
         let result = f();
         TRACE_MANAGER.with(|tm| {
-            let mut mut_tm = tm.borrow_mut();
+            let mut mut_tm = tm.lock();
             debug!(
                 Option::from("query span"),
                 &format!("fiber {}, query span {}: remove trace info", fid, name),
@@ -274,7 +266,7 @@ pub fn current_id() -> Option<String> {
     #[cfg(all(feature = "tracing", not(feature = "mock")))]
     {
         let fid = fiber_id();
-        return TRACE_MANAGER.with(|tm| tm.borrow().get(fid).map(|ti| ti.id().to_string()));
+        return TRACE_MANAGER.with(|tm| tm.lock().get(fid).map(|ti| ti.id().to_string()));
     }
     None
 }
@@ -291,7 +283,7 @@ pub fn inject_context(carrier: &mut dyn Injector) {
     {
         let fid = fiber_id();
         TRACE_MANAGER.with(|tm| {
-            tm.borrow().get(fid).map_or_else(
+            tm.lock().get(fid).map_or_else(
                 || {
                     debug!(
                         Option::from("context injection"),
@@ -321,7 +313,7 @@ pub fn extract_context(carrier: &mut dyn Extractor) -> Context {
     {
         let fid = fiber_id();
         return TRACE_MANAGER.with(|tm| {
-            tm.borrow()
+            tm.lock()
                 .get(fid)
                 .map_or_else(|| f(&Context::new()), |ti| f(ti.context()))
         });

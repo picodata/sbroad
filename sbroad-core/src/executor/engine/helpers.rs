@@ -1,5 +1,6 @@
 use ahash::AHashMap;
 
+use crate::utils::MutexLike;
 use itertools::enumerate;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::{
@@ -992,14 +993,7 @@ where
     R::Cache: StorageCache,
 {
     // Look for the prepared statement in the cache.
-    if let Some(stmt) = runtime
-        .cache()
-        .try_borrow_mut()
-        .map_err(|e| {
-            SbroadError::FailedTo(Action::Borrow, Some(Entity::Cache), format_smolstr!("{e}"))
-        })?
-        .get(plan_id)?
-    {
+    if let Some(stmt) = runtime.cache().lock().get(plan_id)? {
         let stmt_id = stmt.id()?;
         // The statement was found in the cache, so we can execute it.
         debug!(
@@ -1079,14 +1073,7 @@ where
             );
             runtime
                 .cache()
-                .try_borrow_mut()
-                .map_err(|e| {
-                    SbroadError::FailedTo(
-                        Action::Put,
-                        None,
-                        format_smolstr!("prepared statement {stmt:?} into the cache: {e:?}"),
-                    )
-                })?
+                .lock()
                 .put(plan_id.clone(), stmt, schema_info)?;
             // The statement was found in the cache, so we can execute it.
             debug!(
