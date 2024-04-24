@@ -631,3 +631,41 @@ g.test_to_char = function ()
     t.assert_str_contains(tostring(error), "bad argument #1 to 'format' (number expected, got string)")
 end
 
+g.test_current_date = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select currEnt_dAte from "datetime_t"
+    ]]})
+
+    local current_date = datetime.now()
+    current_date:set({hour=0, min=0, sec=0, nsec=0, tzoffset=0})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "datetime"},
+        },
+        rows = {
+            {current_date},
+            {current_date},
+        },
+    })
+
+    r, err = api:call("sbroad.execute", { [[
+        select to_char(COL_1, '%Y') from (select to_date(COLUMN_2, '%Y.%m.%d') from (
+          values ('2077.1.1'), ('2000.10.10')
+        ))
+        where COL_1 > CURRENT_DATE
+    ]]})
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "COL_1", type = "string"},
+        },
+        rows = {
+            {'2077'},
+        },
+    })
+end
+
+

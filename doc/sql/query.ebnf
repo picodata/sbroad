@@ -33,6 +33,7 @@ expression  ::= (table '.')? column
                | ('(' (expression(',' expression)*) ')')
                | 'NOT' expression
                | '(' expression ')'
+               | 'CURRENT_DATE'
                | 'TO_DATE' '(' expression',' format ')'
                | 'TO_CHAR' '(' expression',' format ')'
                | 'TRIM' '(' ((('LEADING' | 'TRAILING' | 'BOTH')? expression) | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM' expression ')'

@@ -28,6 +28,7 @@ serde_yaml = "0.8"
 tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git" }
 uuid = { version = "1.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
 smol_str = { version = "0.2.1", features = ["serde"] }
+time = { version = ">=0.3.0, <0.3.18", features = ["formatting"] }
 
 [dev-dependencies]
 pretty_assertions = "1.3"

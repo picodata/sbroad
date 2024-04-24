@@ -13,7 +13,9 @@ use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
+use tarantool::datetime::Datetime;
 use tarantool::index::{IndexType, RtreeIndexDistanceType};
+use time::{OffsetDateTime, Time};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::{helpers::normalize_name_for_space_api, Metadata};
@@ -1179,6 +1181,9 @@ where
     /// As `ColumnPositionMap` is used for parsing references and as it may be shared for the same
     /// relational node we cache it so that we don't have to recreate it every time.
     column_positions_cache: HashMap<usize, ColumnPositionMap>,
+    /// Time at the start of the plan building stage without timezone.
+    /// It is used to replace CURRENT_DATE to actual value.
+    current_time: OffsetDateTime,
 }
 
 impl<'worker, M> ExpressionsWorker<'worker, M>
@@ -1194,6 +1199,7 @@ where
             met_tnt_param: false,
             met_pg_param: false,
             column_positions_cache: HashMap::with_capacity(COLUMN_POSITIONS_CACHE_CAPACITY),
+            current_time: OffsetDateTime::now_utc(),
         }
     }
 
@@ -1851,6 +1857,12 @@ where
                         CastType::try_from(&type_pairs.as_rule())
                     }?;
                     ParseExpression::Cast { cast_type, child: Box::new(child_parse_expr) }
+                }
+                Rule::CurrentDate => {
+                    let date = worker.current_time.replace_time(Time::MIDNIGHT);
+                    let val = Value::Datetime(Datetime::from_inner(date));
+                    let plan_id = plan.add_const(val);
+                    ParseExpression::PlanId { plan_id }
                 }
                 Rule::CountAsterisk => {
                     let plan_id = plan.nodes.push(Node::Expression(Expression::CountAsterisk));
