@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
@@ -376,6 +376,29 @@ impl ExecutionPlan {
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
 
+        // We can't replace CTE subtree as it can be reused in other slices of the plan.
+        // So, collect all CTE nodes and their subtree nodes (relational and expression)
+        // as a set to avoid their removal.
+        let cte_id_iter = nodes.iter().map(|(_, id)| *id).filter(|id| {
+            matches!(
+                plan.get_node(*id),
+                Ok(Node::Relational(Relational::ScanCte { .. }))
+            )
+        });
+        let mut cte_ids: AHashSet<usize> = AHashSet::new();
+        let mut is_reserved = false;
+        for cte_id in cte_id_iter {
+            if !is_reserved {
+                is_reserved = true;
+                cte_ids.reserve(nodes.len());
+            }
+            let mut cte_subtree =
+                PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), nodes.len());
+            for (_, id) in cte_subtree.iter(cte_id) {
+                cte_ids.insert(id);
+            }
+        }
+
         // Translates the original plan's node id to the new sub-plan one.
         let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes.len());
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
@@ -398,7 +421,11 @@ impl ExecutionPlan {
 
             // Replace the node with some invalid value.
             // TODO: introduce some new enum variant for this purpose.
-            let mut node: Node = std::mem::replace(dst_node, Node::Parameter);
+            let mut node: Node = if cte_ids.contains(&node_id) {
+                dst_node.clone()
+            } else {
+                std::mem::replace(dst_node, Node::Parameter)
+            };
             let ir_plan = self.get_ir_plan();
             match node {
                 Node::Relational(ref mut rel) => {

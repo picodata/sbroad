@@ -64,7 +64,7 @@ fn sql_order_selection() {
         .join("tree")
         .join("sql_order_selection_syntax_nodes.yaml");
     let s = fs::read_to_string(path).unwrap();
-    let expected_syntax_nodes = SyntaxNodes::from_yaml(&s).unwrap();
+    let expected_syntax_nodes: SyntaxNodes = serde_yaml::from_str(&s).unwrap();
     assert_eq!(expected_syntax_nodes, sp.nodes);
 
     let exec_plan = ExecutionPlan::from(plan);

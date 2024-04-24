@@ -281,59 +281,42 @@ g.test_insert_8 = function()
 
     local r, err = api:call("sbroad.execute", { [[VALUES (?, ?, ?), (?, ?, ?)]], { 8, 8, box.NULL, 9, 9, 'hello' } })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "COLUMN_4", type = "integer"},
-            {name = "COLUMN_5", type = "integer"},
-            {name = "COLUMN_6", type = "boolean"},
-        },
-        rows = {
-            { 8, 8, box.NULL },
-            { 9, 9, 'hello' }
-        },
+    t.assert_items_equals(r["metadata"], {
+        {name = "COLUMN_4", type = "integer"},
+        {name = "COLUMN_5", type = "integer"},
+        {name = "COLUMN_6", type = "text"},
     })
+    t.assert_items_equals(r["rows"], { { 8, 8, box.NULL }, { 9, 9, 'hello' } })
 
-    r, err = api:call("sbroad.execute", { [[VALUES (?, ?, ?), (?, ?, ?)]], { 9, 9, 'hello', 8, 8, box.NULL } })
+    r, err = api:call(
+        "sbroad.execute",
+        { [[VALUES (?, ?, ?), (?, ?, ?)]], { 9, 9, 'hello', 8, 8, box.NULL } }
+    )
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "COLUMN_4", type = "integer"},
-            {name = "COLUMN_5", type = "integer"},
-            {name = "COLUMN_6", type = "text"},
-        },
-        rows = {
-            { 9, 9, 'hello' },
-            { 8, 8, box.NULL }
-        },
+    t.assert_items_equals(r["metadata"], {
+        {name = "COLUMN_4", type = "integer"},
+        {name = "COLUMN_5", type = "integer"},
+        {name = "COLUMN_6", type = "boolean"},
     })
+    t.assert_items_equals(r["rows"], { { 9, 9, 'hello' }, { 8, 8, box.NULL } })
 
     r, err = api:call("sbroad.execute", { [[VALUES (8, 8, null), (9, 9, 'hello')]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "COLUMN_4", type = "integer"},
-            {name = "COLUMN_5", type = "integer"},
-            {name = "COLUMN_6", type = "boolean"},
-        },
-        rows = {
-            { 8, 8, box.NULL },
-            { 9, 9, 'hello' }
-        },
+    t.assert_items_equals(r["metadata"], {
+        {name = "COLUMN_4", type = "integer"},
+        {name = "COLUMN_5", type = "integer"},
+        {name = "COLUMN_6", type = "text"},
     })
+    t.assert_items_equals(r["rows"], { { 8, 8, box.NULL }, { 9, 9, 'hello' } })
 
     r, err = api:call("sbroad.execute", { [[VALUES (9, 9, 'hello'), (8, 8, null)]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "COLUMN_4", type = "integer"},
-            {name = "COLUMN_5", type = "integer"},
-            {name = "COLUMN_6", type = "text"},
-        },
-        rows = {
-            { 9, 9, 'hello' },
-            { 8, 8, box.NULL }
-        },
+    t.assert_items_equals(r["metadata"], {
+        {name = "COLUMN_4", type = "integer"},
+        {name = "COLUMN_5", type = "integer"},
+        {name = "COLUMN_6", type = "boolean"},
     })
+    t.assert_items_equals(r["rows"], { { 9, 9, 'hello' }, { 8, 8, box.NULL } })
 
     r, err = api:call("sbroad.execute", { [[INSERT INTO "space_simple_shard_key"
     ("sysOp", "id", "name") VALUES (?, ?, ?), (?, ?, ?)]], { 8, 8, box.NULL, 9, 9, 'hello' } })

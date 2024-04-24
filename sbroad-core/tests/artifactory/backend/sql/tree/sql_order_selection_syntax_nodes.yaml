@@ -28,11 +28,11 @@ arena:
     right:
       - 0
 #2
-  - data: OpenParenthesis
+  - data: CloseParenthesis
     left: ~
     right: []
 #3
-  - data: CloseParenthesis
+  - data: OpenParenthesis
     left: ~
     right: []
 #4
@@ -40,9 +40,9 @@ arena:
       PlanId: 15
     left: ~
     right:
-      - 2
-      - 1
       - 3
+      - 1
+      - 2
 #5
   - data:
       PlanId: 3
@@ -54,11 +54,11 @@ arena:
     left: ~
     right: []
 #7
-  - data: OpenParenthesis
+  - data: CloseParenthesis
     left: ~
     right: []
 #8
-  - data: CloseParenthesis
+  - data: OpenParenthesis
     left: ~
     right: []
 #9
@@ -66,20 +66,20 @@ arena:
       PlanId: 5
     left: ~
     right:
-      - 7
-      - 6
       - 8
+      - 6
+      - 7
 #10
   - data:
       Parameter: 6
     left: ~
     right: []
 #11
-  - data: OpenParenthesis
+  - data: CloseParenthesis
     left: ~
     right: []
 #12
-  - data: CloseParenthesis
+  - data: OpenParenthesis
     left: ~
     right: []
 #13
@@ -87,9 +87,9 @@ arena:
       PlanId: 7
     left: ~
     right:
-      - 11
-      - 10
       - 12
+      - 10
+      - 11
 #14
   - data:
       Operator: =
@@ -119,15 +119,5 @@ arena:
     right:
       - 1
       - 17
-map:
-  8: 15
-  16: 18
-  4: 6
-  3: 5
-  14: 1
-  13: 0
-  6: 10
-  5: 9
-  7: 13
-  12: 16
-  15: 4
+stack:
+  - 18

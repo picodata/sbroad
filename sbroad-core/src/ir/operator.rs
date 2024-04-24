@@ -858,10 +858,18 @@ impl Relational {
     ///
     /// # Errors
     /// - relational node is not a scan.
+    ///
+    /// # Panics
+    /// - CTE must have a name.
     pub fn set_scan_name(&mut self, name: Option<SmolStr>) -> Result<(), SbroadError> {
         match self {
             Relational::ScanRelation { ref mut alias, .. }
             | Relational::ScanSubQuery { ref mut alias, .. } => {
+                *alias = name;
+                Ok(())
+            }
+            Relational::ScanCte { ref mut alias, .. } => {
+                let name = name.expect("CTE must have a name");
                 *alias = name;
                 Ok(())
             }

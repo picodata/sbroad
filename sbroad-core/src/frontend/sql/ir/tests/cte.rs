@@ -80,7 +80,6 @@ fn reuse_cte() {
         SELECT * FROM cte
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"union all

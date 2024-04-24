@@ -30,13 +30,11 @@ pub struct PatternWithParams {
     // Name of the tracer to use
     pub tracer: Option<String>,
 }
-
 impl PartialEq for PatternWithParams {
     fn eq(&self, other: &Self) -> bool {
         self.pattern == other.pattern && self.params == other.params
     }
 }
-
 impl TryFrom<FunctionArgs> for PatternWithParams {
     type Error = SbroadError;
 

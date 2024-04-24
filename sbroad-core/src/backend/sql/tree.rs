@@ -1,10 +1,8 @@
-use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
-use std::collections::HashMap;
 use std::mem::take;
 
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::{Expression, FunctionFeature, TrimKind};
 use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Relational, Unary};
@@ -270,9 +268,10 @@ impl SyntaxNode {
 /// Storage for the syntax nodes.
 #[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SyntaxNodes {
+    /// Syntax node tree (positions in the vector act like identifiers).
     pub(crate) arena: Vec<SyntaxNode>,
-    /// Map of { node_id from `Plan` arena -> node_id from `SyntaxNodes`(Self) arena }.
-    map: HashMap<usize, usize, RandomState>,
+    /// A stack with syntax node identifiers (required on the tree building step).
+    stack: Vec<usize>,
 }
 
 #[derive(Debug)]
@@ -322,160 +321,36 @@ fn syntax_next<'nodes>(iter: &mut SyntaxIterator<'nodes>) -> Option<&'nodes usiz
 }
 
 impl SyntaxNodes {
-    /// Add sub-query syntax node
-    ///
-    /// # Errors
-    /// - sub-query in plan tree is invalid
-    fn add_sq(&mut self, rel: &Relational, id: usize) -> Result<usize, SbroadError> {
-        if let Relational::ScanSubQuery {
-            children, alias, ..
-        } = rel
-        {
-            let right_id = *children.first().ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues("Sub-query has no children.".into())
-            })?;
-            let mut children: Vec<usize> = vec![
-                self.push_syntax_node(SyntaxNode::new_open()),
-                self.get_syntax_node_id(right_id)?,
-                self.push_syntax_node(SyntaxNode::new_close()),
-            ];
-            if let Some(name) = alias {
-                children.push(self.push_syntax_node(SyntaxNode::new_alias(name.clone())));
-            }
-            let sn = SyntaxNode::new_pointer(id, None, children);
-            Ok(self.push_syntax_node(sn))
-        } else {
-            Err(SbroadError::Invalid(
-                Entity::SyntaxNode,
-                Some("current node is not a sub-query".into()),
-            ))
-        }
+    fn get_sn(&self, id: usize) -> &SyntaxNode {
+        self.arena
+            .get(id)
+            .unwrap_or_else(|| panic!("syntax node with id {id} must exist"))
     }
 
-    fn add_cte(&mut self, plan: &Plan, id: usize) -> Result<usize, SbroadError> {
-        let cte = plan.get_relation_node(id)?;
-        let Relational::ScanCte { alias, child, .. } = cte else {
-            panic!("expected CTE node");
-        };
-        let child_sp_id = self.get_syntax_node_id(*child)?;
-        let children: Vec<usize> = vec![
-            self.push_syntax_node(SyntaxNode::new_open()),
-            child_sp_id,
-            self.push_syntax_node(SyntaxNode::new_close()),
-            self.push_syntax_node(SyntaxNode::new_alias(alias.clone())),
-        ];
-        let sn = SyntaxNode::new_pointer(id, None, children);
-        Ok(self.push_syntax_node(sn))
+    fn get_mut_sn(&mut self, id: usize) -> &mut SyntaxNode {
+        self.arena
+            .get_mut(id)
+            .unwrap_or_else(|| panic!("syntax node with id {id} must exist"))
     }
 
-    fn add_order_by(&mut self, plan: &Plan, id: usize) -> Result<usize, SbroadError> {
-        let order_by = plan.get_relation_node(id)?;
-        let Relational::OrderBy {
-            order_by_elements,
-            child,
-            ..
-        } = order_by
-        else {
-            panic!("expect ORDER BY node");
-        };
-        let mut children: Vec<usize> = Vec::with_capacity(order_by_elements.len() * 3 - 1);
-        let mut wrapped_syntax_nodes =
-            |elem: &OrderByElement, need_comma: bool| -> Result<[Option<usize>; 3], SbroadError> {
-                let mut nodes = [None, None, None];
-                match elem.entity {
-                    OrderByEntity::Expression { expr_id } => {
-                        nodes[0] = Some(self.get_syntax_node_id(expr_id)?);
-                    }
-                    OrderByEntity::Index { value } => {
-                        let sn = SyntaxNode::new_order_index(value);
-                        nodes[0] = Some(self.push_syntax_node(sn));
-                    }
-                }
-                if let Some(order_type) = &elem.order_type {
-                    let sn = SyntaxNode::new_order_type(order_type);
-                    nodes[1] = Some(self.push_syntax_node(sn));
-                }
-                if need_comma {
-                    nodes[2] = Some(self.push_syntax_node(SyntaxNode::new_comma()));
-                }
-                Ok(nodes)
-            };
-        if let Some((last, other)) = order_by_elements.split_last() {
-            for elem in other {
-                for id in wrapped_syntax_nodes(elem, true)?.into_iter().flatten() {
-                    children.push(id);
-                }
-            }
-            for id in wrapped_syntax_nodes(last, false)?.into_iter().flatten() {
-                children.push(id);
-            }
-        }
-
-        let sn = SyntaxNode::new_pointer(id, Some(self.get_syntax_node_id(*child)?), children);
-        Ok(self.push_syntax_node(sn))
-    }
-
-    /// Construct syntax nodes from the YAML file.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the YAML nodes arena is invalid.
-    #[allow(dead_code)]
-    pub fn from_yaml(s: &str) -> Result<Self, SbroadError> {
-        let nodes: SyntaxNodes = match serde_yaml::from_str(s) {
-            Ok(p) => p,
-            Err(e) => {
-                return Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::SyntaxNodes),
-                    format_smolstr!("{e:?}"),
-                ))
-            }
-        };
-        Ok(nodes)
-    }
-
-    /// Get a syntax node from arena
-    ///
-    /// # Errors
-    /// - current node is invalid (doesn't exist in arena)
-    pub fn get_syntax_node(&self, id: usize) -> Result<&SyntaxNode, SbroadError> {
-        self.arena.get(id).ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format_smolstr!("from arena with index {id}"))
-        })
-    }
-
-    /// Get a mutable syntax node from arena
-    ///
-    /// # Errors
-    /// - current node is invalid (doesn't exist in arena)
-    pub fn get_mut_syntax_node(&mut self, id: usize) -> Result<&mut SyntaxNode, SbroadError> {
-        self.arena.get_mut(id).ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("(mutable) from arena with index {id}"),
-            )
-        })
-    }
-
-    /// Get syntax node id by the plan node's one
-    ///
-    /// # Errors
-    /// - nothing was found
-    fn get_syntax_node_id(&self, plan_id: usize) -> Result<usize, SbroadError> {
-        self.map.get(&plan_id).copied().ok_or_else(|| {
-            SbroadError::NotFound(Entity::Node, format_smolstr!("({plan_id}) in the map"))
-        })
-    }
-
-    /// Push a new syntax node to arena
-    pub fn push_syntax_node(&mut self, node: SyntaxNode) -> usize {
+    fn push_sn_plan(&mut self, node: SyntaxNode) -> usize {
         let id = self.next_id();
         match node.data {
-            SyntaxData::PlanId(plan_id) | SyntaxData::Parameter(plan_id) => {
-                self.map.insert(plan_id, id);
+            SyntaxData::PlanId(_) | SyntaxData::Parameter(_) => self.stack.push(id),
+            _ => {
+                unreachable!("Expected a plan node wrapper.");
             }
-            _ => {}
         }
+        self.arena.push(node);
+        id
+    }
+
+    fn push_sn_non_plan(&mut self, node: SyntaxNode) -> usize {
+        let id = self.next_id();
+        assert!(!matches!(
+            node.data,
+            SyntaxData::PlanId(_) | SyntaxData::Parameter(_)
+        ));
         self.arena.push(node);
         id
     }
@@ -489,9 +364,10 @@ impl SyntaxNodes {
     /// Constructor with pre-allocated memory
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
+        let depth = capacity.ilog2() as usize;
         SyntaxNodes {
             arena: Vec::with_capacity(capacity),
-            map: HashMap::with_capacity_and_hasher(capacity, RandomState::new()),
+            stack: Vec::with_capacity(depth),
         }
     }
 }
@@ -532,7 +408,7 @@ impl Select {
         branch: Option<Branch>,
         id: usize,
     ) -> Result<Option<Select>, SbroadError> {
-        let sn = sp.nodes.get_syntax_node(id)?;
+        let sn = sp.nodes.get_sn(id);
         if let Some(Node::Relational(Relational::Projection { .. })) = sp.get_plan_node(&sn.data)? {
             let mut select = Select {
                 parent,
@@ -543,10 +419,10 @@ impl Select {
 
             // Iterate over the left branch subtree of the projection node to find
             // the scan node (leaf node without children).
-            let mut node = sp.nodes.get_syntax_node(id)?;
+            let mut node = sp.nodes.get_sn(id);
             loop {
                 let left_id = node.left_id_or_err()?;
-                let sn_left = sp.nodes.get_syntax_node(left_id)?;
+                let sn_left = sp.nodes.get_sn(left_id);
                 let plan_node_left = sp.plan_node_or_err(&sn_left.data)?;
                 if let Node::Relational(
                     Relational::ScanRelation { .. }
@@ -599,7 +475,62 @@ pub struct SyntaxPlan<'p> {
 
 #[allow(dead_code)]
 impl<'p> SyntaxPlan<'p> {
-    /// Add an IR plan node to the syntax tree.
+    /// Checks that the syntax node wraps an expected plan node identifier.
+    ///
+    /// # Panics
+    /// - syntax node wraps non-plan node;
+    /// - plan node is not the one we expect;
+    fn check_plan_node(&self, sn_id: usize, plan_id: usize) {
+        let sn = self.nodes.get_sn(sn_id);
+        let SyntaxNode {
+            data: SyntaxData::PlanId(id) | SyntaxData::Parameter(id),
+            ..
+        } = sn
+        else {
+            panic!("Expected plan syntax node");
+        };
+        if *id != plan_id {
+            // If it is a motion and we need its child instead.
+            let plan = self.plan.get_ir_plan();
+            let node = plan.get_node(plan_id).expect("node in the plan must exist");
+            match node {
+                Node::Relational(Relational::Motion { children, .. }) => {
+                    let child_id = *children.first().expect("MOTION child must exist");
+                    if *id == child_id {
+                        return;
+                    }
+                }
+                Node::Expression(Expression::Row { .. }) => {
+                    let rel_ids = plan
+                        .get_relational_nodes_from_row(plan_id)
+                        .expect("row relational nodes");
+                    if rel_ids.contains(id) {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            panic!("Expected plan node {plan_id} but got {id}");
+        }
+    }
+
+    /// Push a syntax node identifier on the top of the stack.
+    fn push_on_stack(&mut self, sn_id: usize) {
+        self.nodes.stack.push(sn_id);
+    }
+
+    /// Pop syntax node identifier from the stack with a check, that the popped syntax
+    /// node wraps an expected plan node.
+    fn pop_from_stack(&mut self, plan_id: usize) -> usize {
+        let sn_id = self.nodes.stack.pop().expect("stack must be non-empty");
+        self.check_plan_node(sn_id, plan_id);
+        sn_id
+    }
+
+    /// Add an IR plan node to the syntax tree. Keep in mind, that this function expects
+    /// that the plan node's children are iterated with `subtree_iter()` on traversal.
+    /// As a result, the syntax node children on the stack should be popped in the reverse
+    /// order.
     ///
     /// # Errors
     /// - Failed to translate an IR plan node to a syntax node.
@@ -608,563 +539,833 @@ impl<'p> SyntaxPlan<'p> {
     /// - Failed to find a node in the plan.
     #[allow(clippy::too_many_lines)]
     #[allow(unused_variables)]
-    pub fn add_plan_node(&mut self, id: usize) -> Result<usize, SbroadError> {
+    pub fn add_plan_node(&mut self, id: usize) {
         let ir_plan = self.plan.get_ir_plan();
-        let node = ir_plan.get_node(id)?;
+        let node = ir_plan
+            .get_node(id)
+            .expect("node {id} must exist in the plan");
         match node {
-            Node::Ddl(..) => Err(SbroadError::Invalid(
-                Entity::SyntaxPlan,
-                Some(format_smolstr!(
-                    "DDL node {node:?} is not supported in the syntax plan"
-                )),
-            )),
-            Node::Acl(..) => Err(SbroadError::Invalid(
-                Entity::SyntaxPlan,
-                Some(format_smolstr!(
-                    "ACL node {node:?} is not supported in the syntax plan"
-                )),
-            )),
-            Node::Block(..) => Err(SbroadError::Invalid(
-                Entity::SyntaxPlan,
-                Some(format_smolstr!(
-                    "Block node {node:?} is not supported in the syntax plan"
-                )),
-            )),
+            Node::Ddl(..) => panic!("DDL node {node:?} is not supported in the syntax plan"),
+            Node::Acl(..) => panic!("ACL node {node:?} is not supported in the syntax plan"),
+            Node::Block(..) => panic!("Block node {node:?} is not supported in the syntax plan"),
             Node::Parameter => {
                 let sn = SyntaxNode::new_parameter(id);
-                Ok(self.nodes.push_syntax_node(sn))
+                self.nodes.push_sn_plan(sn);
             }
             Node::Relational(rel) => match rel {
                 Relational::Insert { .. }
                 | Relational::Delete { .. }
-                | Relational::Update { .. } => Err(SbroadError::Invalid(
-                    Entity::SyntaxPlan,
-                    Some(format_smolstr!(
-                        "DML node {node:?} is not supported in the syntax plan"
-                    )),
-                )),
-                Relational::Join {
-                    children,
-                    condition,
-                    ..
-                } => {
-                    let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Inner Join has no children.".into())
-                    })?;
-                    let right_id = *children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is Inner Join right child.".into(),
-                        )
-                    })?;
-                    let condition_id = match self.snapshot {
-                        Snapshot::Latest => *condition,
-                        Snapshot::Oldest => *ir_plan
-                            .undo
-                            .get_oldest(condition)
-                            .map_or_else(|| condition, |id| id),
-                    };
-
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(left_id)?),
-                        vec![
-                            self.nodes.get_syntax_node_id(right_id)?,
-                            self.nodes.push_syntax_node(SyntaxNode::new_condition()),
-                            self.nodes.get_syntax_node_id(condition_id)?,
-                        ],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
+                | Relational::Update { .. } => {
+                    panic!("DML node {node:?} is not supported in the syntax plan")
                 }
-                Relational::Projection {
-                    children, output, ..
-                } => {
-                    let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("Projection has no children.".into())
-                    })?;
-                    // We don't need the row node itself, only its children.
-                    // Otherwise we'll produce redundant parentheses between
-                    // `SELECT` and `FROM`.
-                    let expr = ir_plan.get_expression_node(*output)?;
-                    if let Expression::Row { list, .. } = expr {
-                        let mut nodes: Vec<usize> = Vec::with_capacity(list.len() * 2);
-                        if let Some((last, elements)) = list.split_last() {
-                            for elem in elements {
-                                nodes.push(self.nodes.get_syntax_node_id(*elem)?);
-                                nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                            }
-                            nodes.push(self.nodes.get_syntax_node_id(*last)?);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
-                            let sn = SyntaxNode::new_pointer(
-                                id,
-                                Some(self.nodes.get_syntax_node_id(left_id)?),
-                                nodes,
-                            );
-                            return Ok(self.nodes.push_syntax_node(sn));
-                        }
-                    }
-                    Err(SbroadError::Invalid(Entity::Node, None))
-                }
-                Relational::OrderBy { .. } => self.nodes.add_order_by(ir_plan, id),
-                Relational::ScanCte { .. } => self.nodes.add_cte(ir_plan, id),
-                Relational::ScanSubQuery { .. } => self.nodes.add_sq(rel, id),
-                Relational::GroupBy {
-                    children, gr_cols, ..
-                } => {
-                    let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues("GroupBy has no children.".into())
-                    })?;
-                    let mut right: Vec<usize> = Vec::with_capacity(gr_cols.len() * 2);
-                    if let Some((last, other)) = gr_cols.split_last() {
-                        for col_id in other {
-                            right.push(self.nodes.get_syntax_node_id(*col_id)?);
-                            right.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                        }
-                        right.push(self.nodes.get_syntax_node_id(*last)?);
-                    }
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(left_id)?),
-                        right,
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::Selection {
-                    children, filter, ..
-                }
-                | Relational::Having {
-                    children, filter, ..
-                } => {
-                    let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                            "{node:?} has no children."
-                        ))
-                    })?;
-                    let filter_id = match self.snapshot {
-                        Snapshot::Latest => *filter,
-                        Snapshot::Oldest => *ir_plan
-                            .undo
-                            .get_oldest(filter)
-                            .map_or_else(|| filter, |id| id),
-                    };
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(left_id)?),
-                        vec![self.nodes.get_syntax_node_id(filter_id)?],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::Except { left, right, .. }
-                | Relational::Intersect { left, right, .. }
-                | Relational::Union { left, right, .. }
-                | Relational::UnionAll { left, right, .. } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*left)?),
-                        vec![self.nodes.get_syntax_node_id(*right)?],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::ScanRelation { alias, .. } => {
-                    let children: Vec<usize> = if let Some(name) = alias {
-                        vec![self
-                            .nodes
-                            .push_syntax_node(SyntaxNode::new_alias(name.clone()))]
-                    } else {
-                        Vec::new()
-                    };
-                    let sn = SyntaxNode::new_pointer(id, None, children);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::Motion {
-                    policy,
-                    children,
-                    is_child_subquery,
-                    program,
-                    output,
-                    ..
-                } => {
-                    if let MotionPolicy::LocalSegment { .. } = policy {
-                        #[cfg(feature = "mock")]
-                        {
-                            // We should materialize the subquery on the storage.
-                            // Honestly, this SQL is not valid and should never be
-                            // generated in runtime, but let's leave it for testing.
-                            if let Some(child_id) = children.first() {
-                                let sn = SyntaxNode::new_pointer(
-                                    id,
-                                    Some(self.nodes.get_syntax_node_id(*child_id)?),
-                                    vec![],
-                                );
-                                return Ok(self.nodes.push_syntax_node(sn));
-                            }
-                        }
-                        #[cfg(not(feature = "mock"))]
-                        {
-                            return Err(SbroadError::Invalid(
-                                Entity::Node,
-                                Some(
-                                    "LocalSegment motion policy is not supported in the syntax plan."
-                                        .into(),
-                                ),
-                            ));
-                        }
-                    }
-                    if let Some(op) = program
-                        .0
-                        .iter()
-                        .find(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)))
-                    {
-                        let is_enabled = matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
-                        if is_enabled {
-                            let ir = self.plan.get_ir_plan();
-                            let output_cols = ir.get_row_list(*output)?;
-                            // We need to preserve types when doing `select null`,
-                            // otherwise tarantool will cast it to `scalar`.
-                            let mut select_columns = Vec::with_capacity(output_cols.len());
-                            for col in output_cols {
-                                let ref_id = ir
-                                    .get_child_under_alias(*col)
-                                    .expect("expected motion output to be a row of aliases!");
-                                let Expression::Reference { col_type, .. } =
-                                    ir.get_expression_node(ref_id)?
-                                else {
-                                    panic!("expected Reference under Alias in Motion output");
-                                };
-                                select_columns.push(format_smolstr!("cast(null as {col_type})"));
-                            }
-                            let empty_select =
-                                format_smolstr!("select {} where false", select_columns.join(","));
-                            let inline_id = self
-                                .nodes
-                                .push_syntax_node(SyntaxNode::new_inline(&empty_select));
-                            let pointer_id = self.nodes.push_syntax_node(SyntaxNode::new_pointer(
-                                id,
-                                None,
-                                vec![inline_id],
-                            ));
-                            return Ok(pointer_id);
-                        }
-                        let child_plan_id = self.plan.get_ir_plan().get_relational_child(id, 0)?;
-                        let child_sp_id = *self.nodes.map.get(&child_plan_id).ok_or_else(|| {
-                            SbroadError::Invalid(
-                                Entity::SyntaxPlan,
-                                Some(format_smolstr!(
-                                    "motion child {child_plan_id} is not found in map"
-                                )),
-                            )
-                        })?;
-                        self.nodes.map.insert(id, child_sp_id);
-                        return Ok(child_sp_id);
-                    }
-                    let vtable = self.plan.get_motion_vtable(id)?;
-                    let vtable_alias = vtable.get_alias();
-
-                    // There are some cases when motion child is not a `SubQuery` and when
-                    // it has an alias. E.g. in case of a `INSERT ... SELECT ...` its child
-                    // may be a `Projection.
-                    let children = if *is_child_subquery || vtable_alias.is_some() {
-                        let mut children: Vec<usize> = vec![
-                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                            self.nodes.push_syntax_node(SyntaxNode::new_vtable(id)),
-                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                        ];
-
-                        if let Some(name) = vtable_alias {
-                            if name.is_empty() {
-                                return Err(SbroadError::Invalid(
-                                    Entity::VirtualTable,
-                                    Some(format_smolstr!(
-                                        "Vtable {vtable:?} has an empty alias name"
-                                    )),
-                                ));
-                            }
-                            children.push(
-                                self.nodes
-                                    .push_syntax_node(SyntaxNode::new_alias(name.clone())),
-                            );
-                        }
-                        children
-                    } else {
-                        vec![self.nodes.push_syntax_node(SyntaxNode::new_vtable(id))]
-                    };
-
-                    let sn = SyntaxNode::new_pointer(id, None, children);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::ValuesRow { data, .. } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        None,
-                        vec![self.nodes.get_syntax_node_id(*data)?],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Relational::Values { children, .. } => {
-                    let mut sn_children: Vec<usize> = Vec::with_capacity(children.len() * 2);
-                    if let Some((last_id, other)) = children.split_last() {
-                        for child_id in other {
-                            sn_children.push(self.nodes.get_syntax_node_id(*child_id)?);
-                            sn_children.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                        }
-                        sn_children.push(self.nodes.get_syntax_node_id(*last_id)?);
-                    }
-
-                    let sn = SyntaxNode::new_pointer(id, None, sn_children);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
+                Relational::Join { .. } => self.add_join(id),
+                Relational::Projection { .. } => self.add_proj(id),
+                Relational::OrderBy { .. } => self.add_order_by(id),
+                Relational::ScanCte { .. } => self.add_cte(id),
+                Relational::ScanSubQuery { .. } => self.add_sq(id),
+                Relational::GroupBy { .. } => self.add_group_by(id),
+                Relational::Selection { .. } | Relational::Having { .. } => self.add_filter(id),
+                Relational::Except { .. }
+                | Relational::Union { .. }
+                | Relational::UnionAll { .. }
+                | Relational::Intersect { .. } => self.add_set(id),
+                Relational::ScanRelation { .. } => self.add_scan_relation(id),
+                Relational::Motion { .. } => self.add_motion(id),
+                Relational::ValuesRow { .. } => self.add_values_row(id),
+                Relational::Values { .. } => self.add_values(id),
             },
             Node::Expression(expr) => match expr {
-                Expression::ExprInParentheses { child } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.push_syntax_node(SyntaxNode::new_open())),
-                        vec![
-                            self.nodes.get_syntax_node_id(*child)?,
-                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                        ],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Cast { child, to } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.push_syntax_node(SyntaxNode::new_cast())),
-                        vec![
-                            self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                            self.nodes.get_syntax_node_id(*child)?,
-                            self.nodes
-                                .push_syntax_node(SyntaxNode::new_alias(SmolStr::from(to))),
-                            self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                        ],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Concat { left, right } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*left)?),
-                        vec![
-                            self.nodes.push_syntax_node(SyntaxNode::new_concat()),
-                            self.nodes.get_syntax_node_id(*right)?,
-                        ],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
+                Expression::ExprInParentheses { .. } => self.add_expr_in_parentheses(id),
+                Expression::Cast { .. } => self.add_cast(id),
+                Expression::Concat { .. } => self.add_concat(id),
                 Expression::Constant { .. } => {
                     let sn = SyntaxNode::new_parameter(id);
-                    Ok(self.nodes.push_syntax_node(sn))
+                    self.nodes.push_sn_plan(sn);
                 }
                 Expression::Reference { .. } | Expression::CountAsterisk => {
                     let sn = SyntaxNode::new_pointer(id, None, vec![]);
-                    Ok(self.nodes.push_syntax_node(sn))
+                    self.nodes.push_sn_plan(sn);
                 }
-                Expression::Alias { child, name, .. } => {
-                    // Do not generate an alias in SQL when a column has exactly the same name.
-                    let child_expr = ir_plan.get_expression_node(*child)?;
-                    if let Expression::Reference { .. } = child_expr {
-                        let alias = &ir_plan.get_alias_from_reference_node(child_expr)?;
-                        if alias == name {
-                            let sn = SyntaxNode::new_pointer(
-                                id,
-                                None,
-                                vec![self.nodes.get_syntax_node_id(*child)?],
-                            );
-                            return Ok(self.nodes.push_syntax_node(sn));
-                        }
-                    }
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*child)?),
-                        vec![self
-                            .nodes
-                            .push_syntax_node(SyntaxNode::new_alias(name.clone()))],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Row { list, .. } => {
-                    // In projections with a huge amount of columns it can be
-                    // very expensive to retrieve corresponding relational nodes.
-                    let rel_ids = ir_plan.get_relational_nodes_from_row(id)?;
-
-                    if let Some(motion_id) = ir_plan.get_motion_among_rel_nodes(&rel_ids)? {
-                        // Logic of replacing row child with vtable (corresponding to motion) is
-                        // applicable only in case the child is Reference appeared from transformed
-                        // SubQuery (Like in case `Exists` or `In` operator or in expression like
-                        // `select * from t where b = (select a from t)`).
-                        // There are other cases of row containing references to `Motion` nodes when
-                        // we shouldn't replace them with vtable (e.g. aggregates' stable functions
-                        // which arguments may point to `Motion` node).
-                        let first_child_id = *list.first().ok_or_else(|| {
-                            SbroadError::Invalid(
-                                Entity::Expression,
-                                Some(SmolStr::from("Row node should have child list node")),
-                            )
-                        })?;
-                        let first_child = ir_plan.get_expression_node(first_child_id)?;
-                        let first_child_is_ref =
-                            matches!(first_child, Expression::Reference { .. });
-
-                        // Replace motion node to virtual table node
-                        let vtable = self.plan.get_motion_vtable(motion_id)?;
-                        let needs_replacement = vtable.get_alias().is_none()
-                            && first_child_is_ref
-                            && ir_plan.is_additional_child(motion_id)?;
-                        if needs_replacement {
-                            let sn = SyntaxNode::new_pointer(
-                                id,
-                                None,
-                                vec![
-                                    self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                    self.nodes
-                                        .push_syntax_node(SyntaxNode::new_vtable(motion_id)),
-                                    self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                                ],
-                            );
-
-                            return Ok(self.nodes.push_syntax_node(sn));
-                        }
-                    }
-
-                    if let Some(sq_id) = ir_plan.get_sub_query_among_rel_nodes(&rel_ids)? {
-                        // Replace current row with the referred sub-query
-                        // (except the case when sub-query is located in the FROM clause).
-                        if ir_plan.is_additional_child(sq_id)? {
-                            let rel = ir_plan.get_relation_node(sq_id)?;
-                            return self.nodes.add_sq(rel, id);
-                        }
-                    }
-                    let mut nodes: Vec<usize> =
-                        vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    if let Some((last, elements)) = list.split_last() {
-                        nodes.reserve(list.len() * 2);
-                        for elem in elements {
-                            nodes.push(self.nodes.get_syntax_node_id(*elem)?);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                        }
-                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                        let sn = SyntaxNode::new_pointer(id, None, nodes);
-                        return Ok(self.nodes.push_syntax_node(sn));
-                    }
-                    Err(SbroadError::Invalid(Entity::Expression, None))
-                }
-                Expression::Bool {
-                    left, right, op, ..
-                } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*left)?),
-                        vec![
-                            self.nodes
-                                .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
-                            self.nodes.get_syntax_node_id(*right)?,
-                        ],
-                    );
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Arithmetic { left, right, op } => {
-                    let sn = SyntaxNode::new_pointer(
-                        id,
-                        Some(self.nodes.get_syntax_node_id(*left)?),
-                        vec![
-                            self.nodes
-                                .push_syntax_node(SyntaxNode::new_operator(&format!("{op}"))),
-                            self.nodes.get_syntax_node_id(*right)?,
-                        ],
-                    );
-
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Unary { child, op, .. } => {
-                    let operator_node_id = self
-                        .nodes
-                        .push_syntax_node(SyntaxNode::new_operator(&format!("{op}")));
-                    let child_node_id = self.nodes.get_syntax_node_id(*child)?;
-                    let child_node = ir_plan.get_expression_node(*child)?;
-                    // Bool::Or operator already covers itself with parentheses, that's why we
-                    // don't have to cover it here.
-                    let sn = if *op == Unary::Not
-                        && matches!(*child_node, Expression::Bool { op: Bool::And, .. })
-                    {
-                        SyntaxNode::new_pointer(
-                            id,
-                            Some(operator_node_id),
-                            vec![
-                                self.nodes.push_syntax_node(SyntaxNode::new_open()),
-                                child_node_id,
-                                self.nodes.push_syntax_node(SyntaxNode::new_close()),
-                            ],
-                        )
-                    } else {
-                        let (left, right) = match op {
-                            Unary::IsNull => (child_node_id, operator_node_id),
-                            Unary::Exists | Unary::Not => (operator_node_id, child_node_id),
-                        };
-                        SyntaxNode::new_pointer(id, Some(left), vec![right])
-                    };
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::StableFunction {
-                    children, feature, ..
-                } => {
-                    let mut nodes: Vec<usize> =
-                        vec![self.nodes.push_syntax_node(SyntaxNode::new_open())];
-                    if let Some(FunctionFeature::Distinct) = feature {
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_distinct()));
-                    }
-                    if let Some((last, others)) = children.split_last() {
-                        for child in others {
-                            nodes.push(self.nodes.get_syntax_node_id(*child)?);
-                            nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_comma()));
-                        }
-                        nodes.push(self.nodes.get_syntax_node_id(*last)?);
-                    }
-
-                    nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-                    let sn = SyntaxNode::new_pointer(id, None, nodes);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
-                Expression::Trim {
-                    kind,
-                    pattern,
-                    target,
-                } => {
-                    let syn_kind = match kind {
-                        Some(TrimKind::Leading) => Some(SyntaxNode::new_leading()),
-                        Some(TrimKind::Trailing) => Some(SyntaxNode::new_trailing()),
-                        Some(TrimKind::Both) => Some(SyntaxNode::new_both()),
-                        None => None,
-                    };
-                    let mut nodes = Vec::with_capacity(6);
-                    nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_open()));
-                    let mut need_from = false;
-                    if let Some(kind) = syn_kind {
-                        nodes.push(self.nodes.push_syntax_node(kind));
-                        need_from = true;
-                    }
-                    if let Some(pattern) = pattern {
-                        nodes.push(self.nodes.get_syntax_node_id(*pattern)?);
-                        need_from = true;
-                    }
-                    if need_from {
-                        nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_from()));
-                    }
-                    nodes.push(self.nodes.get_syntax_node_id(*target)?);
-                    nodes.push(self.nodes.push_syntax_node(SyntaxNode::new_close()));
-
-                    let trim_id = self.nodes.push_syntax_node(SyntaxNode::new_trim());
-                    let sn = SyntaxNode::new_pointer(id, Some(trim_id), nodes);
-                    Ok(self.nodes.push_syntax_node(sn))
-                }
+                Expression::Alias { .. } => self.add_alias(id),
+                Expression::Row { .. } => self.add_row(id),
+                Expression::Bool { .. } | Expression::Arithmetic { .. } => self.add_binary_op(id),
+                Expression::Unary { .. } => self.add_unary_op(id),
+                Expression::StableFunction { .. } => self.add_stable_func(id),
+                Expression::Trim { .. } => self.add_trim(id),
             },
         }
     }
 
-    /// Get the plan node from the syntax tree node.
+    fn prologue_rel(&self, id: usize) -> (&Plan, &Relational) {
+        let plan = self.plan.get_ir_plan();
+        let rel = plan
+            .get_relation_node(id)
+            .expect("node {id} must exist in the plan");
+        (plan, rel)
+    }
+
+    fn prologue_expr(&self, id: usize) -> (&Plan, &Expression) {
+        let plan = self.plan.get_ir_plan();
+        let expr = plan
+            .get_expression_node(id)
+            .expect("node {id} must exist in the plan");
+        (plan, expr)
+    }
+
+    // Relational nodes.
+
+    fn add_cte(&mut self, id: usize) {
+        let (_, cte) = self.prologue_rel(id);
+        let Relational::ScanCte { alias, child, .. } = cte else {
+            panic!("expected CTE node");
+        };
+        let (child, alias) = (*child, alias.clone());
+        let child_sn_id = self.pop_from_stack(child);
+        let arena = &mut self.nodes;
+        let children: Vec<usize> = vec![
+            arena.push_sn_non_plan(SyntaxNode::new_open()),
+            child_sn_id,
+            arena.push_sn_non_plan(SyntaxNode::new_close()),
+            arena.push_sn_non_plan(SyntaxNode::new_alias(alias)),
+        ];
+        let sn = SyntaxNode::new_pointer(id, None, children);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_filter(&mut self, id: usize) {
+        let (plan, rel) = self.prologue_rel(id);
+        let (Relational::Selection {
+            children, filter, ..
+        }
+        | Relational::Having {
+            children, filter, ..
+        }) = rel
+        else {
+            panic!("Expected FILTER node");
+        };
+        let filter_id = match self.snapshot {
+            Snapshot::Latest => *filter,
+            Snapshot::Oldest => *plan.undo.get_oldest(filter).map_or_else(|| filter, |id| id),
+        };
+        let child_plan_id = *children.first().expect("FILTER child");
+        let filter_sn_id = self.pop_from_stack(filter_id);
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), vec![filter_sn_id]);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_group_by(&mut self, id: usize) {
+        let (_, gb) = self.prologue_rel(id);
+        let Relational::GroupBy {
+            children, gr_cols, ..
+        } = gb
+        else {
+            panic!("Expected GROUP BY node");
+        };
+        let child_plan_id = *children.first().expect("GROUP BY child");
+        // The columns on the stack are in reverse order.
+        let mut sn_gr_cols = gr_cols.iter().rev().copied().collect::<Vec<_>>();
+        // Reuse the same vector to avoid extra allocations
+        // (replace plan node ids with syntax node ids).
+        for col_id in &mut sn_gr_cols {
+            *col_id = self.pop_from_stack(*col_id);
+        }
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let mut sn_children = Vec::with_capacity(sn_gr_cols.len() * 2 - 1);
+        // The columns are in reverse order, so we need to reverse them back.
+        if let Some((first, others)) = sn_gr_cols.split_first() {
+            for id in others.iter().rev() {
+                sn_children.push(*id);
+                sn_children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
+            }
+            sn_children.push(*first);
+        }
+        let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), sn_children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_join(&mut self, id: usize) {
+        let (plan, join) = self.prologue_rel(id);
+        let Relational::Join {
+            children,
+            condition,
+            ..
+        } = join
+        else {
+            panic!("Expected JOIN node");
+        };
+        let cond_plan_id = match self.snapshot {
+            Snapshot::Latest => *condition,
+            Snapshot::Oldest => *plan
+                .undo
+                .get_oldest(condition)
+                .map_or_else(|| condition, |id| id),
+        };
+        let inner_plan_id = *children.get(1).expect("JOIN inner child");
+        let outer_plan_id = *children.first().expect("JOIN outer child");
+        let cond_sn_id = self.pop_from_stack(cond_plan_id);
+        let inner_sn_id = self.pop_from_stack(inner_plan_id);
+        let outer_sn_id = self.pop_from_stack(outer_plan_id);
+        let arena = &mut self.nodes;
+        let sn = SyntaxNode::new_pointer(
+            id,
+            Some(outer_sn_id),
+            vec![
+                inner_sn_id,
+                arena.push_sn_non_plan(SyntaxNode::new_condition()),
+                cond_sn_id,
+            ],
+        );
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_motion(&mut self, id: usize) {
+        let (plan, motion) = self.prologue_rel(id);
+        let Relational::Motion {
+            policy,
+            children,
+            is_child_subquery,
+            program,
+            output,
+            ..
+        } = motion
+        else {
+            panic!("Expected MOTION node");
+        };
+
+        let first_child = children.first().copied();
+        if let MotionPolicy::LocalSegment { .. } = policy {
+            #[cfg(feature = "mock")]
+            {
+                // We should materialize the subquery on the storage. Honestly, this SQL
+                // is not valid and should never be generated in runtime, but let's leave
+                // it for testing.
+                let child_plan_id = first_child.expect("MOTION child");
+                let child_sn_id = self.pop_from_stack(child_plan_id);
+                let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), vec![]);
+                self.nodes.push_sn_plan(sn);
+                return;
+            }
+            #[cfg(not(feature = "mock"))]
+            {
+                panic!("Local segment notion policy is not supported in the syntax plan");
+            }
+        }
+
+        let empty_table_op = program
+            .0
+            .iter()
+            .find(|op| matches!(op, MotionOpcode::SerializeAsEmptyTable(_)));
+        if let Some(op) = empty_table_op {
+            let is_enabled = matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
+            if is_enabled {
+                let output_cols = plan.get_row_list(*output).expect("row aliases");
+                // We need to preserve types when doing `select null`,
+                // otherwise tarantool will cast it to `scalar`.
+                let mut select_columns = Vec::with_capacity(output_cols.len());
+                for col in output_cols {
+                    let ref_id = plan
+                        .get_child_under_alias(*col)
+                        .expect("motion output must be a row of aliases!");
+                    let ref_expr = plan.get_expression_node(ref_id).expect("reference node");
+                    let Expression::Reference { col_type, .. } = ref_expr else {
+                        panic!("expected Reference under Alias in Motion output");
+                    };
+                    select_columns.push(format_smolstr!("cast(null as {col_type})"));
+                }
+                let empty_select =
+                    format_smolstr!("select {} where false", select_columns.join(","));
+                let inline = SyntaxNode::new_inline(&empty_select);
+                let inline_sn_id = self.nodes.push_sn_non_plan(inline);
+                let sn = SyntaxNode::new_pointer(id, None, vec![inline_sn_id]);
+                self.nodes.push_sn_plan(sn);
+            }
+            return;
+        }
+        let vtable = self
+            .plan
+            .get_motion_vtable(id)
+            .expect("motion virtual table");
+
+        let vtable_alias = vtable.get_alias().cloned();
+        let is_child_subquery = *is_child_subquery;
+
+        // Remove motion's child from the stack (if any).
+        if let Some(child_id) = first_child {
+            let _ = self.pop_from_stack(child_id);
+        }
+
+        let arena = &mut self.nodes;
+
+        // There are some cases when motion child is not a `SubQuery` and when
+        // it has an alias. E.g. in case of a `INSERT ... SELECT ...` its child
+        // may be a `Projection`.
+        let sn_children = if is_child_subquery || vtable_alias.is_some() {
+            let mut children: Vec<usize> = vec![
+                arena.push_sn_non_plan(SyntaxNode::new_open()),
+                arena.push_sn_non_plan(SyntaxNode::new_vtable(id)),
+                arena.push_sn_non_plan(SyntaxNode::new_close()),
+            ];
+
+            if let Some(name) = vtable_alias {
+                assert!(
+                    !name.is_empty(),
+                    "Virtual table {vtable:?} has an empty alias name"
+                );
+                let alias = SyntaxNode::new_alias(name);
+                children.push(arena.push_sn_non_plan(alias));
+            }
+            children
+        } else {
+            vec![arena.push_sn_non_plan(SyntaxNode::new_vtable(id))]
+        };
+
+        let sn = SyntaxNode::new_pointer(id, None, sn_children);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_order_by(&mut self, id: usize) {
+        let (_, order_by) = self.prologue_rel(id);
+        let Relational::OrderBy {
+            order_by_elements,
+            child,
+            ..
+        } = order_by
+        else {
+            panic!("expect ORDER BY node");
+        };
+        let child_plan_id = *child;
+        let mut elems = order_by_elements.clone();
+
+        let mut children: Vec<usize> = Vec::with_capacity(elems.len() * 3 - 1);
+        let mut wrapped_syntax_nodes =
+            |elem: &OrderByElement, need_comma: bool| -> [Option<usize>; 3] {
+                let mut nodes = [None, None, None];
+                match elem.entity {
+                    OrderByEntity::Expression { expr_id } => {
+                        let expr_sn_id = self.pop_from_stack(expr_id);
+                        nodes[2] = Some(expr_sn_id);
+                    }
+                    OrderByEntity::Index { value } => {
+                        let sn = SyntaxNode::new_order_index(value);
+                        nodes[2] = Some(self.nodes.push_sn_non_plan(sn));
+                    }
+                }
+                if let Some(order_type) = &elem.order_type {
+                    let sn = SyntaxNode::new_order_type(order_type);
+                    nodes[1] = Some(self.nodes.push_sn_non_plan(sn));
+                }
+                if need_comma {
+                    nodes[0] = Some(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
+                }
+                nodes
+            };
+
+        // The elements on the stack are in the reverse order.
+        let first = elems.pop().expect("at least one column in ORDER BY");
+        for id in wrapped_syntax_nodes(&first, false).into_iter().flatten() {
+            children.push(id);
+        }
+        while let Some(elem) = elems.pop() {
+            for id in wrapped_syntax_nodes(&elem, true).into_iter().flatten() {
+                children.push(id);
+            }
+        }
+        // Reverse the order of the children back.
+        children.reverse();
+
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+
+        let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_proj(&mut self, id: usize) {
+        let (_, proj) = self.prologue_rel(id);
+        let Relational::Projection {
+            children, output, ..
+        } = proj
+        else {
+            panic!("Expected PROJECTION node");
+        };
+        let child_plan_id = *children.first().expect("PROJECTION child");
+        let output = *output;
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let row_sn_id = self.pop_from_stack(output);
+        // We don't need the row node itself, only its children. Otherwise we'll produce
+        // redundant parentheses between `SELECT` and `FROM`.
+        let sn_from_id = self.nodes.push_sn_non_plan(SyntaxNode::new_from());
+        let row_sn = self.nodes.get_mut_sn(row_sn_id);
+        let col_len = row_sn.right.len();
+        let mut children = Vec::with_capacity(col_len - 1);
+        // Remove the open and close parentheses.
+        for (pos, id) in row_sn.right.iter().enumerate() {
+            if pos == 0 {
+                continue;
+            }
+            if pos == col_len - 1 {
+                children.push(sn_from_id);
+                break;
+            }
+            children.push(*id);
+        }
+        let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_scan_relation(&mut self, id: usize) {
+        let (_, scan) = self.prologue_rel(id);
+        let Relational::ScanRelation { alias, .. } = scan else {
+            panic!("Expected SCAN node");
+        };
+        let scan_alias = alias.clone();
+        let arena = &mut self.nodes;
+        let children = if let Some(name) = scan_alias {
+            vec![arena.push_sn_non_plan(SyntaxNode::new_alias(name))]
+        } else {
+            Vec::new()
+        };
+        let sn = SyntaxNode::new_pointer(id, None, children);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_set(&mut self, id: usize) {
+        let (_, set) = self.prologue_rel(id);
+        let (Relational::Except { left, right, .. }
+        | Relational::Union { left, right, .. }
+        | Relational::UnionAll { left, right, .. }
+        | Relational::Intersect { left, right, .. }) = set
+        else {
+            panic!("Expected SET node");
+        };
+        let (left, right) = (*left, *right);
+        let right_sn_id = self.pop_from_stack(right);
+        let left_sn_id = self.pop_from_stack(left);
+        let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), vec![right_sn_id]);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_sq(&mut self, id: usize) {
+        let (_, sq) = self.prologue_rel(id);
+        let Relational::ScanSubQuery {
+            children, alias, ..
+        } = sq
+        else {
+            panic!("Expected SUBQUERY node");
+        };
+        let child_plan_id = *children.first().expect("SUBQUERY child");
+        let sq_alias = alias.clone();
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+
+        let arena = &mut self.nodes;
+        let mut children: Vec<usize> = vec![
+            arena.push_sn_non_plan(SyntaxNode::new_open()),
+            child_sn_id,
+            arena.push_sn_non_plan(SyntaxNode::new_close()),
+        ];
+        if let Some(name) = sq_alias {
+            children.push(arena.push_sn_non_plan(SyntaxNode::new_alias(name)));
+        }
+        let sn = SyntaxNode::new_pointer(id, None, children);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_values_row(&mut self, id: usize) {
+        let (_, row) = self.prologue_rel(id);
+        let Relational::ValuesRow { data, .. } = row else {
+            panic!("Expected VALUES ROW node");
+        };
+        let data_sn_id = self.pop_from_stack(*data);
+        let sn = SyntaxNode::new_pointer(id, None, vec![data_sn_id]);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_values(&mut self, id: usize) {
+        let (_, values) = self.prologue_rel(id);
+        let Relational::Values {
+            children, output, ..
+        } = values
+        else {
+            panic!("Expected VALUES node");
+        };
+        let output_plan_id = *output;
+        // The syntax nodes on the stack are in the reverse order.
+        let mut sn_children = children.iter().rev().copied().collect::<Vec<_>>();
+        // Reuse the same vector to avoid extra allocations (replace plan node ids with syntax node ids).
+        for child_id in &mut sn_children {
+            *child_id = self.pop_from_stack(*child_id);
+        }
+        let mut nodes = Vec::with_capacity(sn_children.len() * 2 - 1);
+        // Reverse the order of the children back.
+        let first = sn_children.pop().expect("at least one child in VALUES");
+
+        // Consume the output from the stack.
+        let _ = self.pop_from_stack(output_plan_id);
+
+        let arena = &mut self.nodes;
+        while let Some(child_id) = sn_children.pop() {
+            nodes.push(child_id);
+            nodes.push(arena.push_sn_non_plan(SyntaxNode::new_comma()));
+        }
+        nodes.push(first);
+        let sn = SyntaxNode::new_pointer(id, None, nodes);
+        arena.push_sn_plan(sn);
+    }
+
+    // Expression nodes.
+
+    fn add_alias(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Alias { child, name } = expr else {
+            panic!("Expected ALIAS node");
+        };
+        let (child, name) = (*child, name.clone());
+        let child_sn_id = self.pop_from_stack(child);
+        let plan = self.plan.get_ir_plan();
+        // Do not generate an alias in SQL when a column has exactly the same name.
+        let child_expr = plan
+            .get_expression_node(child)
+            .expect("alias child expression");
+        if let Expression::Reference { .. } = child_expr {
+            let alias = plan
+                .get_alias_from_reference_node(child_expr)
+                .expect("alias name");
+            if alias == name {
+                let sn = SyntaxNode::new_pointer(id, None, vec![child_sn_id]);
+                self.nodes.push_sn_plan(sn);
+                return;
+            }
+        }
+        let alias_sn_id = self.nodes.push_sn_non_plan(SyntaxNode::new_alias(name));
+        let sn = SyntaxNode::new_pointer(id, Some(child_sn_id), vec![alias_sn_id]);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_binary_op(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let (left_plan_id, right_plan_id, op_sn_id) = match expr {
+            Expression::Bool {
+                left, right, op, ..
+            } => {
+                let (op, left, right) = (op.clone(), *left, *right);
+                let op_sn_id = self
+                    .nodes
+                    .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
+                (left, right, op_sn_id)
+            }
+            Expression::Arithmetic {
+                left, right, op, ..
+            } => {
+                let (op, left, right) = (op.clone(), *left, *right);
+                let op_sn_id = self
+                    .nodes
+                    .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
+                (left, right, op_sn_id)
+            }
+            _ => panic!("Expected binary expression node"),
+        };
+        let right_sn_id = self.pop_from_stack(right_plan_id);
+        let left_sn_id = self.pop_from_stack(left_plan_id);
+        let children = vec![op_sn_id, right_sn_id];
+        let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_cast(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Cast { child, to } = expr else {
+            panic!("Expected CAST node");
+        };
+        let to_alias = SmolStr::from(to);
+        let child_plan_id = *child;
+        let child_sn_id = self.pop_from_stack(child_plan_id);
+        let arena = &mut self.nodes;
+        let children = vec![
+            arena.push_sn_non_plan(SyntaxNode::new_open()),
+            child_sn_id,
+            arena.push_sn_non_plan(SyntaxNode::new_alias(to_alias)),
+            arena.push_sn_non_plan(SyntaxNode::new_close()),
+        ];
+        let cast_sn_id = arena.push_sn_non_plan(SyntaxNode::new_cast());
+        let sn = SyntaxNode::new_pointer(id, Some(cast_sn_id), children);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_concat(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Concat { left, right } = expr else {
+            panic!("Expected CONCAT node");
+        };
+        let (left, right) = (*left, *right);
+        let right_sn_id = self.pop_from_stack(right);
+        let left_sn_id = self.pop_from_stack(left);
+        let children = vec![
+            self.nodes.push_sn_non_plan(SyntaxNode::new_concat()),
+            right_sn_id,
+        ];
+        let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_expr_in_parentheses(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::ExprInParentheses { child } = expr else {
+            panic!("Expected expression in parentheses node");
+        };
+        let child_sn_id = self.pop_from_stack(*child);
+        let arena = &mut self.nodes;
+        let children = vec![child_sn_id, arena.push_sn_non_plan(SyntaxNode::new_close())];
+        let sn = SyntaxNode::new_pointer(
+            id,
+            Some(arena.push_sn_non_plan(SyntaxNode::new_open())),
+            children,
+        );
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_row(&mut self, id: usize) {
+        let plan = self.plan.get_ir_plan();
+        let expr = plan
+            .get_expression_node(id)
+            .expect("node {id} must exist in the plan");
+        let Expression::Row { list, .. } = expr else {
+            panic!("Expected ROW node");
+        };
+
+        // In projections with a huge amount of columns it can be
+        // very expensive to retrieve corresponding relational nodes.
+        let rel_ids = plan
+            .get_relational_nodes_from_row(id)
+            .expect("row relational nodes");
+
+        if let Some(motion_id) = plan
+            .get_motion_among_rel_nodes(&rel_ids)
+            .expect("motion lookup")
+        {
+            // Logic of replacing row child with vtable (corresponding to motion) is
+            // applicable only in case the child is Reference appeared from transformed
+            // SubQuery (Like in case `Exists` or `In` operator or in expression like
+            // `select * from t where b = (select a from t)`).
+            // There are other cases of row containing references to `Motion` nodes when
+            // we shouldn't replace them with vtable (e.g. aggregates' stable functions
+            // which arguments may point to `Motion` node).
+            let first_child_id = *list.first().expect("row should have at least one child");
+            let first_child = plan
+                .get_expression_node(first_child_id)
+                .expect("row child is expression");
+            let first_child_is_ref = matches!(first_child, Expression::Reference { .. });
+
+            // Replace motion node to virtual table node.
+            let vtable = self
+                .plan
+                .get_motion_vtable(motion_id)
+                .expect("motion virtual table");
+            let needs_replacement = vtable.get_alias().is_none()
+                && first_child_is_ref
+                && plan
+                    .is_additional_child(motion_id)
+                    .expect("motion id is valid");
+            if needs_replacement {
+                // Remove columns from the stack.
+                for child_id in list.iter().rev() {
+                    let _ = self.pop_from_stack(*child_id);
+
+                    // Remove the referred motion from the stack (if any).
+                    let expr = plan
+                        .get_expression_node(*child_id)
+                        .expect("row child is expression");
+                    if matches!(expr, Expression::Reference { .. }) {
+                        let referred_id = *plan
+                            .get_relational_from_reference_node(*child_id)
+                            .expect("referred id");
+                        self.pop_from_stack(referred_id);
+                    }
+                }
+
+                // Add virtual table node to the stack.
+                let arena = &mut self.nodes;
+                let children = vec![
+                    arena.push_sn_non_plan(SyntaxNode::new_open()),
+                    arena.push_sn_non_plan(SyntaxNode::new_vtable(motion_id)),
+                    arena.push_sn_non_plan(SyntaxNode::new_close()),
+                ];
+                let sn = SyntaxNode::new_pointer(id, None, children);
+                arena.push_sn_plan(sn);
+                return;
+            }
+        }
+
+        if let Some(sq_id) = plan
+            .get_sub_query_among_rel_nodes(&rel_ids)
+            .expect("subquery id")
+        {
+            // Replace current row with the referred sub-query
+            // (except the case when sub-query is located in the FROM clause).
+            if plan
+                .is_additional_child(sq_id)
+                .expect("subquery id is valid")
+            {
+                let mut sq_sn_id = None;
+
+                // Remove columns from the stack.
+                for child_id in list.iter().rev() {
+                    let _ = self.pop_from_stack(*child_id);
+
+                    // Remove the referred sub-query from the stack (if any).
+                    let expr = plan
+                        .get_expression_node(*child_id)
+                        .expect("row child is expression");
+                    if matches!(expr, Expression::Reference { .. }) {
+                        let referred_id = *plan
+                            .get_relational_from_reference_node(*child_id)
+                            .expect("referred id");
+                        sq_sn_id = Some(self.pop_from_stack(referred_id));
+                    }
+                }
+
+                // Restore the sub-query node on the top of the stack.
+                self.push_on_stack(sq_sn_id.expect("sub-query id"));
+
+                return;
+            }
+        }
+
+        let mut children = Vec::with_capacity(list.len() * 2 + 3);
+        // The nodes on the stack are in the reverse order.
+        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
+        if let Some((first, others)) = list.split_first() {
+            for child_id in others.iter().rev() {
+                children.push(self.pop_from_stack(*child_id));
+                children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
+            }
+            children.push(self.pop_from_stack(*first));
+        }
+        children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
+        // Need to reverse the order of the children back.
+        children.reverse();
+        let sn = SyntaxNode::new_pointer(id, None, children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_stable_func(&mut self, id: usize) {
+        let plan = self.plan.get_ir_plan();
+        let expr = plan
+            .get_expression_node(id)
+            .expect("node {id} must exist in the plan");
+        let Expression::StableFunction {
+            children: args,
+            feature,
+            ..
+        } = expr
+        else {
+            panic!("Expected stable function node");
+        };
+        // The arguments on the stack are in the reverse order.
+        let mut nodes = Vec::with_capacity(args.len() * 2 + 2);
+        nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
+        if let Some((first, others)) = args.split_first() {
+            for child_id in others.iter().rev() {
+                nodes.push(self.pop_from_stack(*child_id));
+                nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
+            }
+            nodes.push(self.pop_from_stack(*first));
+        }
+        if let Some(FunctionFeature::Distinct) = feature {
+            nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_distinct()));
+        }
+        nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
+        // Need to reverse the order of the children back.
+        nodes.reverse();
+        let sn = SyntaxNode::new_pointer(id, None, nodes);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_trim(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Trim {
+            kind,
+            pattern,
+            target,
+        } = expr
+        else {
+            panic!("Expected TRIM node");
+        };
+        let (kind, pattern, target) = (kind.clone(), *pattern, *target);
+        let mut need_from = false;
+
+        // Syntax nodes on the stack are in the reverse order.
+        let target_sn_id = self.pop_from_stack(target);
+        let mut pattern_sn_id = None;
+        if let Some(pattern) = pattern {
+            pattern_sn_id = Some(self.pop_from_stack(pattern));
+            need_from = true;
+        }
+
+        // Populate trim children.
+        let sn_kind = match kind {
+            Some(TrimKind::Leading) => Some(SyntaxNode::new_leading()),
+            Some(TrimKind::Trailing) => Some(SyntaxNode::new_trailing()),
+            Some(TrimKind::Both) => Some(SyntaxNode::new_both()),
+            None => None,
+        };
+        let mut nodes = Vec::with_capacity(6);
+        nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_open()));
+        if let Some(kind) = sn_kind {
+            nodes.push(self.nodes.push_sn_non_plan(kind));
+            need_from = true;
+        }
+        if let Some(pattern) = pattern_sn_id {
+            nodes.push(pattern);
+        }
+        if need_from {
+            nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_from()));
+        }
+        nodes.push(target_sn_id);
+        nodes.push(self.nodes.push_sn_non_plan(SyntaxNode::new_close()));
+
+        let trim_id = self.nodes.push_sn_non_plan(SyntaxNode::new_trim());
+        let sn = SyntaxNode::new_pointer(id, Some(trim_id), nodes);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_unary_op(&mut self, id: usize) {
+        let (plan, expr) = self.prologue_expr(id);
+        let Expression::Unary { child, op } = expr else {
+            panic!("Expected unary expression node");
+        };
+        let (child, op) = (*child, op.clone());
+        let child_node = plan.get_expression_node(child).expect("child expression");
+        let is_and = matches!(child_node, Expression::Bool { op: Bool::And, .. });
+        let operator_node_id = self
+            .nodes
+            .push_sn_non_plan(SyntaxNode::new_operator(&format!("{op}")));
+        let child_sn_id = self.pop_from_stack(child);
+        // Bool::Or operator already covers itself with parentheses, that's why we
+        // don't have to cover it here.
+        let sn = if op == Unary::Not && is_and {
+            SyntaxNode::new_pointer(
+                id,
+                Some(operator_node_id),
+                vec![
+                    self.nodes.push_sn_non_plan(SyntaxNode::new_open()),
+                    child_sn_id,
+                    self.nodes.push_sn_non_plan(SyntaxNode::new_close()),
+                ],
+            )
+        } else {
+            let (left, right) = match op {
+                Unary::IsNull => (child_sn_id, operator_node_id),
+                Unary::Exists | Unary::Not => (operator_node_id, child_sn_id),
+            };
+            SyntaxNode::new_pointer(id, Some(left), vec![right])
+        };
+        self.nodes.push_sn_plan(sn);
+    }
+
+    /// Get the plan node if any.
     ///
     /// # Errors
-    /// - plan node is invalid
+    /// - syntax node wraps an invalid plan node
     pub fn get_plan_node(&self, data: &SyntaxData) -> Result<Option<&Node>, SbroadError> {
         if let SyntaxData::PlanId(id) = data {
             Ok(Some(self.plan.get_ir_plan().get_node(*id)?))
@@ -1192,7 +1393,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Errors
     /// - top is invalid node
     pub fn set_top(&mut self, top: usize) -> Result<(), SbroadError> {
-        self.nodes.get_syntax_node(top)?;
+        self.nodes.get_sn(top);
         self.top = Some(top);
         Ok(())
     }
@@ -1204,7 +1405,7 @@ impl<'p> SyntaxPlan<'p> {
     /// - top is not a valid node
     pub fn get_top(&self) -> Result<usize, SbroadError> {
         if let Some(top) = self.top {
-            self.nodes.get_syntax_node(top)?;
+            self.nodes.get_sn(top);
             Ok(top)
         } else {
             Err(SbroadError::Invalid(
@@ -1229,7 +1430,7 @@ impl<'p> SyntaxPlan<'p> {
         dfs.populate_nodes(top);
         let nodes = dfs.take_nodes();
         for (_, pos) in nodes {
-            let node = self.nodes.get_syntax_node(pos)?;
+            let node = self.nodes.get_sn(pos);
             if pos == top {
                 let select = Select::new(self, None, None, pos)?;
                 if let Some(s) = select {
@@ -1304,7 +1505,8 @@ impl<'p> SyntaxPlan<'p> {
                     PostOrder::with_capacity(|node| ir_plan.subtree_iter(node, false), capacity);
                 for (_, id) in dft_post.iter(top) {
                     // it works only for post-order traversal
-                    let sn_id = sp.add_plan_node(id)?;
+                    sp.add_plan_node(id);
+                    let sn_id = sp.nodes.next_id() - 1;
                     if id == top {
                         sp.set_top(sn_id)?;
                     }
@@ -1315,7 +1517,8 @@ impl<'p> SyntaxPlan<'p> {
                     PostOrder::with_capacity(|node| ir_plan.flashback_subtree_iter(node), capacity);
                 for (_, id) in dft_post.iter(top) {
                     // it works only for post-order traversal
-                    let sn_id = sp.add_plan_node(id)?;
+                    sp.add_plan_node(id);
+                    let sn_id = sp.nodes.next_id() - 1;
                     if id == top {
                         sp.set_top(sn_id)?;
                     }
@@ -1328,7 +1531,7 @@ impl<'p> SyntaxPlan<'p> {
 
     fn reorder(&mut self, select: &Select) -> Result<(), SbroadError> {
         // Move projection under scan.
-        let proj = self.nodes.get_mut_syntax_node(select.proj)?;
+        let proj = self.nodes.get_mut_sn(select.proj);
         let new_top = proj.left.ok_or_else(|| {
             SbroadError::Invalid(
                 Entity::SyntaxPlan,
@@ -1336,12 +1539,12 @@ impl<'p> SyntaxPlan<'p> {
             )
         })?;
         proj.left = None;
-        let scan = self.nodes.get_mut_syntax_node(select.scan)?;
+        let scan = self.nodes.get_mut_sn(select.scan);
         scan.left = Some(select.proj);
 
         // Try to move new top under parent.
         if let Some(id) = select.parent {
-            let parent = self.nodes.get_mut_syntax_node(id)?;
+            let parent = self.nodes.get_mut_sn(id);
             match select.branch {
                 Some(Branch::Left) => {
                     parent.left = Some(new_top);
@@ -1438,13 +1641,13 @@ impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
         // approach in Rust (`take()` and `pop()`).
         stack.push(sp.get_top()?);
         while let Some(id) = stack.last() {
-            let sn = sp.nodes.get_mut_syntax_node(*id)?;
+            let sn = sp.nodes.get_mut_sn(*id);
             // Note that in case `left` is a `Some(...)`, call of `take` will make it None.
             if let Some(left_id) = sn.left.take() {
                 stack.push(left_id);
             } else if let Some(id) = stack.pop() {
                 positions.push(id);
-                let sn_next = sp.nodes.get_mut_syntax_node(id)?;
+                let sn_next = sp.nodes.get_mut_sn(id);
                 while let Some(right_id) = sn_next.right.pop() {
                     stack.push(right_id);
                 }
