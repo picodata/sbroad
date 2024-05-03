@@ -830,6 +830,7 @@ enum ExplainNode {
     Scan(Scan),
     Selection(ColExpr),
     Having(ColExpr),
+    Union,
     UnionAll,
     Update(Update),
     SubQuery(SubQuery),
@@ -853,6 +854,7 @@ impl Display for ExplainNode {
             ExplainNode::Scan(s) => s.to_smolstr(),
             ExplainNode::Selection(s) => format_smolstr!("selection {s}"),
             ExplainNode::Having(s) => format_smolstr!("having {s}"),
+            ExplainNode::Union => "union".to_smolstr(),
             ExplainNode::UnionAll => "union all".to_smolstr(),
             ExplainNode::Intersect => "intersect".to_smolstr(),
             ExplainNode::Update(u) => u.to_smolstr(),
@@ -1065,7 +1067,7 @@ impl FullExplain {
                     };
                     Some(explain_node)
                 }
-                Relational::UnionAll { .. } => {
+                u @ (Relational::UnionAll { .. } | Relational::Union { .. }) => {
                     if let (Some(right), Some(left)) = (stack.pop(), stack.pop()) {
                         current_node.children.push(left);
                         current_node.children.push(right);
@@ -1074,7 +1076,11 @@ impl FullExplain {
                             "Union all node must have exactly two children".into(),
                         ));
                     }
-                    Some(ExplainNode::UnionAll)
+                    if matches!(u, Relational::Union { .. }) {
+                        Some(ExplainNode::Union)
+                    } else {
+                        Some(ExplainNode::UnionAll)
+                    }
                 }
                 Relational::ScanSubQuery { alias, .. } => {
                     let child = stack.pop().ok_or_else(|| {

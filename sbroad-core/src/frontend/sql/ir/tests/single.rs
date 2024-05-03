@@ -83,10 +83,8 @@ fn check_join_motions(
             matches!(rel, Relational::Join { .. })
         })
         .unwrap();
-    let (left_id, right_id, sq_nodes_ids) = {
-        let children = plan.get_relational_children(join_id).unwrap().unwrap();
-        (children[0], children[1], children.split_at(2).1)
-    };
+    let children = plan.get_relational_children(join_id).unwrap();
+    let (left_id, right_id, sq_nodes_ids) = (children[0], children[1], &children[2..]);
     let (left_actual, right_actual) = (plan.to_test_motion(left_id), plan.to_test_motion(right_id));
     assert_eq!(left_expected, left_actual);
     assert_eq!(right_expected, right_actual);

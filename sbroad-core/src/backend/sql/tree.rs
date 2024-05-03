@@ -737,24 +737,14 @@ impl<'p> SyntaxPlan<'p> {
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
-                Relational::Except { children, .. }
-                | Relational::UnionAll { children, .. }
-                | Relational::Intersect { children, .. } => {
-                    let left_id = *children.first().ok_or_else(|| {
-                        SbroadError::UnexpectedNumberOfValues(
-                            "Union/Except/Intersect has no children.".into(),
-                        )
-                    })?;
-                    let right_id = *children.get(1).ok_or_else(|| {
-                        SbroadError::NotFound(
-                            Entity::Node,
-                            "that is Union/Except/Intersect right child.".into(),
-                        )
-                    })?;
+                Relational::Except { left, right, .. }
+                | Relational::Intersect { left, right, .. }
+                | Relational::Union { left, right, .. }
+                | Relational::UnionAll { left, right, .. } => {
                     let sn = SyntaxNode::new_pointer(
                         id,
-                        Some(self.nodes.get_syntax_node_id(left_id)?),
-                        vec![self.nodes.get_syntax_node_id(right_id)?],
+                        Some(self.nodes.get_syntax_node_id(*left)?),
+                        vec![self.nodes.get_syntax_node_id(*right)?],
                     );
                     Ok(self.nodes.push_syntax_node(sn))
                 }
@@ -810,11 +800,24 @@ impl<'p> SyntaxPlan<'p> {
                     {
                         let is_enabled = matches!(op, MotionOpcode::SerializeAsEmptyTable(true));
                         if is_enabled {
-                            let output_len = self.plan.get_ir_plan().get_row_list(*output)?.len();
-                            let empty_select = format_smolstr!(
-                                "select {}null where false",
-                                "null, ".repeat(output_len - 1)
-                            );
+                            let ir = self.plan.get_ir_plan();
+                            let output_cols = ir.get_row_list(*output)?;
+                            // We need to preserve types when doing `select null`,
+                            // otherwise tarantool will cast it to `scalar`.
+                            let mut select_columns = Vec::with_capacity(output_cols.len());
+                            for col in output_cols {
+                                let ref_id = ir
+                                    .get_child_under_alias(*col)
+                                    .expect("expected motion output to be a row of aliases!");
+                                let Expression::Reference { col_type, .. } =
+                                    ir.get_expression_node(ref_id)?
+                                else {
+                                    panic!("expected Reference under Alias in Motion output");
+                                };
+                                select_columns.push(format_smolstr!("cast(null as {col_type})"));
+                            }
+                            let empty_select =
+                                format_smolstr!("select {} where false", select_columns.join(","));
                             let inline_id = self
                                 .nodes
                                 .push_syntax_node(SyntaxNode::new_inline(&empty_select));

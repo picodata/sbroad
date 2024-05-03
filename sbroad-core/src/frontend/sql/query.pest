@@ -130,9 +130,11 @@ ExplainQuery = _{ Explain }
     Explain = { ^"explain" ~ Query }
 
 Query = { (SelectWithOptionalContinuation | Values | Insert | Update | Delete) ~ DqlOption? }
-    SelectWithOptionalContinuation = { Select ~ (ExceptContinuation | UnionAllContinuation)? }
-        ExceptContinuation   = { ((^"except" ~ ^"distinct") | ^"except") ~ Select }
-        UnionAllContinuation = { ^"union" ~ ^"all" ~ Select }
+    SelectWithOptionalContinuation = { Select ~ (SelectOp ~ Select)* }
+        SelectOp = _{ UnionAllOp | ExceptOp | UnionOp }
+            UnionOp = { ^"union" }
+            ExceptOp = { (^"except" ~ ^"distinct") | ^"except" }
+            UnionAllOp = { ^"union" ~ ^"all" }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
         Join* ~ WhereClause? ~

@@ -1498,38 +1498,37 @@ impl Plan {
             let rel = self.get_relation_node(*referred_rel_id)?;
             if let Relational::Insert { .. } = rel {
                 return Ok(referred_rel_id);
-            } else if let Some(children) = rel.children() {
-                match targets {
-                    None => {
+            }
+            let children = rel.children();
+            match targets {
+                None => {
+                    return Err(SbroadError::UnexpectedNumberOfValues(
+                        "Reference node has no targets".into(),
+                    ))
+                }
+                Some(positions) => match (positions.first(), positions.get(1)) {
+                    (Some(first), None) => {
+                        if let Some(child_id) = children.get(*first) {
+                            return Ok(child_id);
+                        }
+                        // When we dispatch IR to the storage, we truncate the
+                        // subtree below the Motion node. So, the references in
+                        // the Motion's output row are broken. We treat them in
+                        // a special way: we return the Motion node itself. Be
+                        // aware of the circular references in the tree!
+                        if let Relational::Motion { .. } = rel {
+                            return Ok(referred_rel_id);
+                        }
+                        return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                            "Relational node {rel:?} has no children"
+                        )));
+                    }
+                    _ => {
                         return Err(SbroadError::UnexpectedNumberOfValues(
-                            "Reference node has no targets".into(),
+                            "Reference expected to point exactly a single relational node".into(),
                         ))
                     }
-                    Some(positions) => match (positions.first(), positions.get(1)) {
-                        (Some(first), None) => {
-                            if let Some(child_id) = children.get(*first) {
-                                return Ok(child_id);
-                            }
-                            // When we dispatch IR to the storage, we truncate the
-                            // subtree below the Motion node. So, the references in
-                            // the Motion's output row are broken. We treat them in
-                            // a special way: we return the Motion node itself. Be
-                            // aware of the circular references in the tree!
-                            if let Relational::Motion { .. } = rel {
-                                return Ok(referred_rel_id);
-                            }
-                            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                                "Relational node {rel:?} has no children"
-                            )));
-                        }
-                        _ => {
-                            return Err(SbroadError::UnexpectedNumberOfValues(
-                                "Reference expected to point exactly a single relational node"
-                                    .into(),
-                            ))
-                        }
-                    },
-                }
+                },
             }
         }
         Err(SbroadError::Invalid(Entity::Expression, None))
@@ -1583,12 +1582,11 @@ impl Plan {
                     )
                 })?;
                 let rel = self.get_relation_node(referred_rel_id)?;
-                if let Some(children) = rel.children() {
-                    if let Some(positions) = targets {
-                        for pos in positions {
-                            if let Some(child) = children.get(*pos) {
-                                rel_nodes.insert(*child);
-                            }
+                let children = rel.children();
+                if let Some(positions) = targets {
+                    for pos in positions {
+                        if let Some(child) = children.get(*pos) {
+                            rel_nodes.insert(*child);
                         }
                     }
                 }

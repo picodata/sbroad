@@ -275,6 +275,7 @@ impl Plan {
                 Relational::Motion { policy, .. } => {
                     writeln!(buf, "Motion [policy = {policy:?}]")?;
                 }
+                Relational::Union { .. } => writeln!(buf, "Union")?,
                 Relational::UnionAll { .. } => writeln!(buf, "UnionAll")?,
                 Relational::Update {
                     relation,
@@ -299,24 +300,25 @@ impl Plan {
             }
             // Print children.
             match relation {
-                Relational::Join { children, .. }
-                | Relational::Projection { children, .. }
-                | Relational::Except { children, .. }
-                | Relational::Delete { children, .. }
-                | Relational::Insert { children, .. }
-                | Relational::Intersect { children, .. }
-                | Relational::ScanSubQuery { children, .. }
-                | Relational::Selection { children, .. }
-                | Relational::Values { children, .. }
-                | Relational::Motion { children, .. }
-                | Relational::UnionAll { children, .. }
-                | Relational::Update { children, .. }
-                | Relational::Having { children, .. }
-                | Relational::GroupBy { children, .. }
-                | Relational::ValuesRow { children, .. } => {
+                node @ (Relational::Join { .. }
+                | Relational::Projection { .. }
+                | Relational::Except { .. }
+                | Relational::Delete { .. }
+                | Relational::Insert { .. }
+                | Relational::Intersect { .. }
+                | Relational::ScanSubQuery { .. }
+                | Relational::Selection { .. }
+                | Relational::Values { .. }
+                | Relational::Motion { .. }
+                | Relational::Union { .. }
+                | Relational::UnionAll { .. }
+                | Relational::Update { .. }
+                | Relational::Having { .. }
+                | Relational::GroupBy { .. }
+                | Relational::ValuesRow { .. }) => {
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "Children:")?;
-                    for child in children {
+                    for child in &node.children() {
                         formatted_tabulate(buf, tabulation_number + 2)?;
                         writeln!(buf, "Child_id = {child}")?;
                     }
@@ -348,6 +350,7 @@ impl Plan {
                 | Relational::Having { output, .. }
                 | Relational::Values { output, .. }
                 | Relational::Motion { output, .. }
+                | Relational::Union { output, .. }
                 | Relational::UnionAll { output, .. }
                 | Relational::Update { output, .. }
                 | Relational::ValuesRow { output, .. } => {

@@ -364,6 +364,7 @@ impl ExecutionPlan {
                                 | Relational::Motion { .. }
                                 | Relational::ValuesRow { .. } => {}
                                 Relational::Selection { .. } => sql.push_str("WHERE"),
+                                Relational::Union { .. } => sql.push_str("UNION"),
                                 Relational::UnionAll { .. } => sql.push_str("UNION ALL"),
                                 Relational::Update { .. } => sql.push_str("UPDATE"),
                                 Relational::Values { .. } => sql.push_str("VALUES"),

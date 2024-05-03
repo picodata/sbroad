@@ -93,9 +93,8 @@ nodes:
           distribution: ~
     - Relational:
         UnionAll:
-          children:
-            - 5
-            - 11
+          left: 5
+          right: 11
           output: 16
 relations:
   tables:

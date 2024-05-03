@@ -14,6 +14,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::errors::{Action, Entity, SbroadError};
 
+use super::api::children::{Children, MutChildren};
 use super::expression::{ColumnPositionMap, Expression};
 use super::transformation::redistribution::{MotionPolicy, Program};
 use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
@@ -316,9 +317,10 @@ pub struct OrderByElement {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Relational {
     Except {
-        /// Contains exactly two elements: left and right node indexes
-        /// from the plan node arena.
-        children: Vec<usize>,
+        /// Left child id
+        left: usize,
+        /// Right child id
+        right: usize,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
@@ -344,8 +346,8 @@ pub enum Relational {
         conflict_strategy: ConflictStrategy,
     },
     Intersect {
-        // contains exactly 2 children
-        children: Vec<usize>,
+        left: usize,
+        right: usize,
         // id of the output tuple
         output: usize,
     },
@@ -457,9 +459,18 @@ pub enum Relational {
         order_by_elements: Vec<OrderByElement>,
     },
     UnionAll {
-        /// Contains exactly two elements: left and right node indexes
-        /// from the plan node arena.
-        children: Vec<usize>,
+        /// Left child id
+        left: usize,
+        /// Right child id
+        right: usize,
+        /// Outputs tuple node index in the plan node arena.
+        output: usize,
+    },
+    Union {
+        /// Left child id
+        left: usize,
+        /// Right child id
+        right: usize,
         /// Outputs tuple node index in the plan node arena.
         output: usize,
     },
@@ -503,6 +514,7 @@ impl Relational {
             | Relational::ScanRelation { output, .. }
             | Relational::ScanSubQuery { output, .. }
             | Relational::Selection { output, .. }
+            | Relational::Union { output, .. }
             | Relational::UnionAll { output, .. }
             | Relational::Values { output, .. }
             | Relational::ValuesRow { output, .. } => *output,
@@ -527,6 +539,7 @@ impl Relational {
             | Relational::ScanRelation { output, .. }
             | Relational::ScanSubQuery { output, .. }
             | Relational::Selection { output, .. }
+            | Relational::Union { output, .. }
             | Relational::UnionAll { output, .. }
             | Relational::Values { output, .. }
             | Relational::ValuesRow { output, .. } => output,
@@ -535,43 +548,44 @@ impl Relational {
 
     // Gets an immutable reference to the children nodes.
     #[must_use]
-    pub fn children(&self) -> Option<&[usize]> {
+    pub fn children(&self) -> Children<'_> {
         match self {
-            Relational::OrderBy { child, .. } => {
-                let children = std::slice::from_ref(child);
-                Some(children)
-            }
-            Relational::Except { children, .. }
-            | Relational::GroupBy { children, .. }
+            Relational::OrderBy { child, .. } => Children::Single(child),
+            Relational::Except { left, right, .. }
+            | Relational::Intersect { left, right, .. }
+            | Relational::UnionAll { left, right, .. }
+            | Relational::Union { left, right, .. } => Children::Couple(left, right),
+            Relational::GroupBy { children, .. }
             | Relational::Update { children, .. }
             | Relational::Join { children, .. }
             | Relational::Having { children, .. }
             | Relational::Delete { children, .. }
             | Relational::Insert { children, .. }
-            | Relational::Intersect { children, .. }
             | Relational::Motion { children, .. }
             | Relational::Projection { children, .. }
             | Relational::ScanSubQuery { children, .. }
             | Relational::Selection { children, .. }
-            | Relational::UnionAll { children, .. }
             | Relational::ValuesRow { children, .. }
-            | Relational::Values { children, .. } => Some(children),
-            Relational::ScanRelation { .. } => None,
+            | Relational::Values { children, .. } => Children::Many(children),
+            Relational::ScanRelation { .. } => Children::None,
         }
     }
 
     // Gets a mutable reference to the children nodes.
     #[must_use]
-    pub fn mut_children(&mut self) -> Option<&mut [usize]> {
+    pub fn mut_children(&mut self) -> MutChildren<'_> {
+        // return MutChildren { node: self };
         match self {
             Relational::OrderBy { ref mut child, .. } => {
-                let children = std::slice::from_mut(child);
-                Some(children)
+                // let children = std::slice::from_mut(child);
+                // Some(children)
+                MutChildren::Single(child)
             }
-            Relational::Except {
-                ref mut children, ..
-            }
-            | Relational::GroupBy {
+            Relational::Except { left, right, .. }
+            | Relational::Intersect { left, right, .. }
+            | Relational::UnionAll { left, right, .. }
+            | Relational::Union { left, right, .. } => MutChildren::Couple(left, right),
+            Relational::GroupBy {
                 ref mut children, ..
             }
             | Relational::Update {
@@ -589,9 +603,6 @@ impl Relational {
             | Relational::Insert {
                 ref mut children, ..
             }
-            | Relational::Intersect {
-                ref mut children, ..
-            }
             | Relational::Motion {
                 ref mut children, ..
             }
@@ -604,16 +615,13 @@ impl Relational {
             | Relational::Selection {
                 ref mut children, ..
             }
-            | Relational::UnionAll {
-                ref mut children, ..
-            }
             | Relational::ValuesRow {
                 ref mut children, ..
             }
             | Relational::Values {
                 ref mut children, ..
-            } => Some(children),
-            Relational::ScanRelation { .. } => None,
+            } => MutChildren::Many(children),
+            Relational::ScanRelation { .. } => MutChildren::None,
         }
     }
 
@@ -651,15 +659,11 @@ impl Relational {
 
     /// Sets new children to relational node.
     ///
-    /// # Errors
-    /// - try to set children for the scan node (it is always a leaf node)
-    pub fn set_children(&mut self, children: Vec<usize>) -> Result<(), SbroadError> {
+    /// # Panics
+    /// - wrong number of children for the given node
+    pub fn set_children(&mut self, children: Vec<usize>) {
         match self {
-            Relational::Except {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Join {
+            Relational::Join {
                 children: ref mut old,
                 ..
             }
@@ -672,10 +676,6 @@ impl Relational {
                 ..
             }
             | Relational::Insert {
-                children: ref mut old,
-                ..
-            }
-            | Relational::Intersect {
                 children: ref mut old,
                 ..
             }
@@ -692,10 +692,6 @@ impl Relational {
                 ..
             }
             | Relational::Selection {
-                children: ref mut old,
-                ..
-            }
-            | Relational::UnionAll {
                 children: ref mut old,
                 ..
             }
@@ -716,19 +712,26 @@ impl Relational {
                 ..
             } => {
                 *old = children;
-                Ok(())
+            }
+            Relational::Except { left, right, .. }
+            | Relational::UnionAll { left, right, .. }
+            | Relational::Intersect { left, right, .. }
+            | Relational::Union { left, right, .. } => {
+                if children.len() != 2 {
+                    unreachable!("Node has only two children!");
+                }
+                *left = children[0];
+                *right = children[1];
             }
             Relational::OrderBy { ref mut child, .. } => {
                 if children.len() != 1 {
                     unreachable!("ORDER BY may have only a single relational child");
                 }
                 *child = children[0];
-                Ok(())
             }
-            Relational::ScanRelation { .. } => Err(SbroadError::Invalid(
-                Entity::Relational,
-                Some("Scan is a leaf node".into()),
-            )),
+            Relational::ScanRelation { .. } => {
+                assert!(children.is_empty(), "scan must have no children!");
+            }
         }
     }
 
@@ -797,6 +800,7 @@ impl Relational {
                 Ok(None)
             }
             Relational::Except { .. }
+            | Relational::Union { .. }
             | Relational::UnionAll { .. }
             | Relational::Values { .. }
             | Relational::ValuesRow { .. } => Ok(None),
@@ -820,6 +824,7 @@ impl Relational {
             Relational::GroupBy { .. } => "GroupBy",
             Relational::OrderBy { .. } => "OrderBy",
             Relational::Having { .. } => "Having",
+            Relational::Union { .. } => "Union",
             Relational::UnionAll { .. } => "UnionAll",
             Relational::Values { .. } => "Values",
             Relational::ValuesRow { .. } => "ValuesRow",
@@ -887,7 +892,8 @@ impl Plan {
 
         let output = self.add_row_for_union_except(left, right)?;
         let except = Relational::Except {
-            children: vec![left, right],
+            left,
+            right,
             output,
         };
 
@@ -1656,7 +1662,12 @@ impl Plan {
     /// - children nodes are not relational
     /// - children tuples are invalid
     /// - children tuples have mismatching structure
-    pub fn add_union_all(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
+    pub fn add_union(
+        &mut self,
+        left: usize,
+        right: usize,
+        remove_duplicates: bool,
+    ) -> Result<usize, SbroadError> {
         let child_row_len = |child: usize, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
             Ok(plan
@@ -1674,14 +1685,23 @@ impl Plan {
         }
 
         let output = self.add_row_for_union_except(left, right)?;
-        let union_all = Relational::UnionAll {
-            children: vec![left, right],
-            output,
+        let union_all = if remove_duplicates {
+            Relational::Union {
+                left,
+                right,
+                output,
+            }
+        } else {
+            Relational::UnionAll {
+                left,
+                right,
+                output,
+            }
         };
 
-        let union_all_id = self.nodes.push(Node::Relational(union_all));
-        self.replace_parent_in_subtree(output, None, Some(union_all_id))?;
-        Ok(union_all_id)
+        let union_id = self.nodes.push(Node::Relational(union_all));
+        self.replace_parent_in_subtree(output, None, Some(union_id))?;
+        Ok(union_id)
     }
 
     /// Adds a values row node.
@@ -1838,7 +1858,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_children(&self, rel_id: usize) -> Result<Option<&[usize]>, SbroadError> {
+    pub fn get_relational_children(&self, rel_id: usize) -> Result<Children<'_>, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.children())
         } else {
@@ -1860,25 +1880,14 @@ impl Plan {
         child_idx: usize,
     ) -> Result<usize, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
-            let children = rel.children();
-            return if let Some(children) = children {
-                let child_id = *children.get(child_idx).ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Relational,
-                        Some(format_smolstr!(
-                            "rel node {rel:?} has no child with idx ({child_idx})"
-                        )),
-                    )
-                })?;
-                Ok(child_id)
-            } else {
-                Err(SbroadError::Invalid(
+            return Ok(*rel.children().get(child_idx).ok_or_else(|| {
+                SbroadError::Invalid(
                     Entity::Relational,
                     Some(format_smolstr!(
-                        "rel node {rel:?} has no children. Id: ({rel_id})"
+                        "rel node {rel:?} has no child with idx ({child_idx})"
                     )),
-                ))
-            };
+                )
+            })?);
         }
         Err(SbroadError::NotFound(
             Entity::Relational,
@@ -1940,12 +1949,7 @@ impl Plan {
         new_child_id: usize,
     ) -> Result<(), SbroadError> {
         let node = self.get_mut_relation_node(parent_id)?;
-        let Some(children) = node.mut_children() else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!("node ({parent_id}) has no children")),
-            ));
-        };
+        let children = node.mut_children();
         for child_id in children {
             if *child_id == old_child_id {
                 *child_id = new_child_id;
@@ -2038,7 +2042,7 @@ impl Plan {
         children: Vec<usize>,
     ) -> Result<(), SbroadError> {
         if let Node::Relational(ref mut rel) = self.nodes.get_mut(rel_id)? {
-            rel.set_children(children)?;
+            rel.set_children(children);
             return Ok(());
         }
         Err(SbroadError::Invalid(Entity::Relational, None))
@@ -2084,15 +2088,13 @@ impl Plan {
         rel_id: usize,
         sq_id: usize,
     ) -> Result<bool, SbroadError> {
-        let Some(children) = self.get_relational_children(rel_id)? else {
-            return Ok(false);
-        };
+        let children = self.get_relational_children(rel_id)?;
         match self.get_relation_node(rel_id)? {
             Relational::Selection { .. }
             | Relational::Projection { .. }
-            | Relational::Having { .. } => Ok(children.first() != Some(&sq_id)),
+            | Relational::Having { .. } => Ok(children.get(0) != Some(&sq_id)),
             Relational::Join { .. } => {
-                Ok(children.first() != Some(&sq_id) && children.get(1) != Some(&sq_id))
+                Ok(children.get(0) != Some(&sq_id) && children.get(1) != Some(&sq_id))
             }
             _ => Ok(false),
         }

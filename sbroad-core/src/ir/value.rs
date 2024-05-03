@@ -20,7 +20,7 @@ use crate::executor::hash::ToHashString;
 use crate::ir::relation::Type;
 use crate::ir::value::double::Double;
 
-#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Tuple(pub(crate) Vec<Value>);
 
 impl Display for Tuple {
@@ -114,7 +114,7 @@ impl From<bool> for Trivalent {
 
 /// Values are used to keep constants in the IR tree
 /// or results in the virtual tables.
-#[derive(Hash, PartialEq, Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Hash, PartialEq, Debug, Default, Clone, Deserialize, Serialize, PartialOrd, Ord)]
 pub enum Value {
     /// Boolean type.
     Boolean(bool),

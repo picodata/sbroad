@@ -138,6 +138,9 @@ impl ExecutionPlan {
             let plan = self.get_ir_plan();
             let opcode = plan.get_motion_opcode(motion_id, op_idx)?;
             match opcode {
+                MotionOpcode::RemoveDuplicates => {
+                    vtable.remove_duplicates();
+                }
                 MotionOpcode::ReshardIfNeeded => {
                     // Resharding must be done before applying projection
                     // to the virtual table. Otherwise projection can
@@ -287,6 +290,7 @@ impl ExecutionPlan {
             | Relational::Projection { .. }
             | Relational::ScanRelation { .. }
             | Relational::Selection { .. }
+            | Relational::Union { .. }
             | Relational::UnionAll { .. }
             | Relational::Update { .. }
             | Relational::Values { .. }
@@ -315,12 +319,7 @@ impl ExecutionPlan {
             ));
         }
 
-        let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("that is Motion {node_id} child(ren)"),
-            )
-        })?;
+        let children = self.plan.get_relational_children(node_id)?;
 
         if children.len() != 1 {
             return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
@@ -330,9 +329,7 @@ impl ExecutionPlan {
             )));
         }
 
-        let child_id = children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("Motion has no children".to_smolstr())
-        })?;
+        let child_id = children.get(0).expect("Motion has no children");
 
         Ok(*child_id)
     }
@@ -351,12 +348,7 @@ impl ExecutionPlan {
             ));
         }
 
-        let children = self.plan.get_relational_children(node_id)?.ok_or_else(|| {
-            SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("that is Subquery {node_id} child(ren)"),
-            )
-        })?;
+        let children = self.plan.get_relational_children(node_id)?;
 
         if children.len() != 1 {
             return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
@@ -366,9 +358,7 @@ impl ExecutionPlan {
             )));
         }
 
-        let child_id = children.first().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("could not find subquery child".to_smolstr())
-        })?;
+        let child_id = children.get(0).expect("could not find subquery child");
 
         Ok(*child_id)
     }
@@ -545,16 +535,15 @@ impl ExecutionPlan {
                         | Relational::Intersect { .. }
                         | Relational::Projection { .. }
                         | Relational::ScanSubQuery { .. }
+                        | Relational::Union { .. }
                         | Relational::UnionAll { .. }
                         | Relational::Values { .. } => {}
                     }
 
-                    if let Some(children) = rel.mut_children() {
-                        for child_id in children {
-                            *child_id = *translation.get(child_id).unwrap_or_else(|| {
-                                panic!("Could not find child node id {child_id} in the map.")
-                            });
-                        }
+                    for child_id in rel.mut_children() {
+                        *child_id = *translation.get(child_id).unwrap_or_else(|| {
+                            panic!("Could not find child node id {child_id} in the map.")
+                        });
                     }
 
                     let output = rel.output();

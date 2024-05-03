@@ -704,12 +704,7 @@ impl Plan {
         let get_first_child = |rel_id: usize| -> Result<usize, SbroadError> {
             let c = *self
                 .get_relational_children(rel_id)?
-                .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                        "expected relation node ({rel_id}) to have children!"
-                    ))
-                })?
-                .first()
+                .get(0)
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                         "expected relation node ({rel_id}) to have children!"
@@ -1381,12 +1376,7 @@ impl Plan {
         for (rel_id, group) in map {
             let child_id = *self
                 .get_relational_children(rel_id)?
-                .ok_or_else(|| {
-                    SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                        "expected relation node ({rel_id}) to have children!"
-                    ))
-                })?
-                .first()
+                .get(0)
                 .ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                         "expected relation node ({rel_id}) to have children!"
@@ -1488,10 +1478,8 @@ impl Plan {
         // After we added a Map stage, we need to update output
         // of nodes in Reduce stage
         if let Some(last) = finals.last() {
-            if let Some(children) = self.get_mut_relation_node(*last)?.mut_children() {
-                if let Some(first) = children.get_mut(0) {
-                    *first = finals_child_id;
-                }
+            if let Some(first) = self.get_mut_relation_node(*last)?.mut_children().get_mut(0) {
+                *first = finals_child_id;
             }
         }
         for node_id in finals.iter().rev() {
@@ -1532,8 +1520,9 @@ impl Plan {
             }
         }
         for (parent, infos) in parent_to_infos {
-            let child_id = if let Some(children) = self.get_relation_node(parent)?.children() {
-                *children.first().ok_or_else(|| {
+            let child_id = {
+                let children = self.get_relation_node(parent)?.children();
+                *children.get(0).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Node,
                         Some(format_smolstr!(
@@ -1541,13 +1530,6 @@ impl Plan {
                         )),
                     )
                 })?
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Plan,
-                    Some(format_smolstr!(
-                        "patch aggregates: rel node on id: {parent} has no children!"
-                    )),
-                ));
             };
             let alias_to_pos_map = ColumnPositionMap::new(self, child_id)?;
             let mut position_kinds = Vec::with_capacity(infos.len());

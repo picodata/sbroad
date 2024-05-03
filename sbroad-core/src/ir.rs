@@ -1178,9 +1178,7 @@ impl Plan {
             return Ok(col_name);
         }
 
-        let Some(ref_node_children) = ref_node.children() else {
-            unreachable!("get_alias_from_reference_node: Failed to get a referred relational node");
-        };
+        let ref_node_children = ref_node.children();
 
         let Some(targets) = targets else {
             unreachable!("get_alias_from_reference_node: No targets in reference");
@@ -1268,7 +1266,8 @@ impl Plan {
                 _ => {}
             }
 
-            let Some(children) = node.children() else {
+            let children = node.children();
+            if children.is_empty() {
                 continue;
             };
 

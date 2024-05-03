@@ -25,8 +25,9 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::errors::SbroadError;
+use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::helpers::normalize_name_for_space_api;
 use crate::executor::engine::{helpers::materialize_values, Router, TableVersionMap, Vshard};
@@ -247,7 +248,22 @@ where
                     .set_motion_vtable(*motion_id, virtual_table, &self.coordinator)?;
             }
         }
-        let top_id = self.exec_plan.get_ir_plan().get_top()?;
+        let ir_plan = self.exec_plan.get_ir_plan();
+        let top_id = ir_plan.get_top()?;
+        if ir_plan.get_relation_node(top_id)?.is_motion() {
+            let err =
+                |s: &str| -> SbroadError { SbroadError::Invalid(Entity::Plan, Some(s.into())) };
+            let Some(vtables) = self.exec_plan.get_mut_vtables() else {
+                return Err(err("no vtables in plan with motion top"));
+            };
+            let Some(mut vtable) = vtables.remove(&top_id) else {
+                return Err(err(&format!("no motion on top_id: {top_id}")));
+            };
+            let Some(v) = Rc::get_mut(&mut vtable) else {
+                return Err(err("there are other refs to vtable"));
+            };
+            return v.to_output();
+        }
         let buckets = self.bucket_discovery(top_id)?;
         self.coordinator
             .dispatch(&mut self.exec_plan, top_id, &buckets)

@@ -351,7 +351,7 @@ fn union_all() {
     plan.add_rel(t2);
     let scan_t2_id = plan.add_scan("t2", None).unwrap();
 
-    plan.add_union_all(scan_t2_id, scan_t1_id).unwrap();
+    plan.add_union(scan_t2_id, scan_t1_id, false).unwrap();
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn union_all_col_amount_mismatch() {
             "children tuples have mismatching amount of columns in union all node: left 1, right 2"
                 .into()
         ),
-        plan.add_union_all(scan_t2_id, scan_t1_id).unwrap_err()
+        plan.add_union(scan_t2_id, scan_t1_id, false).unwrap_err()
     );
 }
 

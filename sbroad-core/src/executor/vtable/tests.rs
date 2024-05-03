@@ -234,3 +234,101 @@ fn vtable_add_missing_from2() {
 
     assert_eq!(expected, vtable);
 }
+
+#[test]
+fn vtable_remove_duplicates1() {
+    let mut vtable = VirtualTable::new();
+
+    // t: a (pk)
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
+    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t").unwrap();
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+
+    vtable.set_primary_key(&[0]).unwrap();
+
+    vtable.remove_duplicates();
+
+    let expected_index = VTableIndex::new();
+
+    let expected = VirtualTable {
+        columns: vec![
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
+        ],
+        tuples: vec![vec![Value::from(1_u64), Value::from(2_u64)]],
+        name: Some(SmolStr::from("t")),
+        primary_key: Some(vec![0]),
+        bucket_index: expected_index,
+    };
+
+    assert_eq!(expected, vtable);
+}
+
+#[test]
+fn vtable_remove_duplicates2() {
+    let mut vtable = VirtualTable::new();
+
+    // t: a (pk)
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
+    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t").unwrap();
+
+    vtable.set_primary_key(&[0]).unwrap();
+
+    vtable.remove_duplicates();
+
+    let expected_index = VTableIndex::new();
+
+    let expected = VirtualTable {
+        columns: vec![
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
+        ],
+        tuples: vec![],
+        name: Some(SmolStr::from("t")),
+        primary_key: Some(vec![0]),
+        bucket_index: expected_index,
+    };
+
+    assert_eq!(expected, vtable);
+}
+
+#[test]
+fn vtable_remove_duplicates3() {
+    let mut vtable = VirtualTable::new();
+
+    // t: a (pk)
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("a")));
+    vtable.add_column(column_integer_user_non_null(SmolStr::from("b")));
+    vtable.set_alias("t").unwrap();
+    vtable.set_alias("t").unwrap();
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+    vtable.add_tuple(vec![Value::from(1_u64), Value::Null]);
+    vtable.add_tuple(vec![Value::from(1_u64), Value::from(2_u64)]);
+
+    vtable.set_primary_key(&[0]).unwrap();
+
+    vtable.remove_duplicates();
+
+    let expected_index = VTableIndex::new();
+
+    let expected = VirtualTable {
+        columns: vec![
+            column_integer_user_non_null(SmolStr::from("a")),
+            column_integer_user_non_null(SmolStr::from("b")),
+        ],
+        tuples: vec![
+            vec![Value::from(1_u64), Value::Null],
+            vec![Value::from(1_u64), Value::from(2_u64)],
+        ],
+        name: Some(SmolStr::from("t")),
+        primary_key: Some(vec![0]),
+        bucket_index: expected_index,
+    };
+
+    assert_eq!(expected, vtable);
+}

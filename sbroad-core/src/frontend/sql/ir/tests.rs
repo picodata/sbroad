@@ -3468,4 +3468,6 @@ mod single;
 #[cfg(test)]
 mod trim;
 #[cfg(test)]
+mod union;
+#[cfg(test)]
 mod update;

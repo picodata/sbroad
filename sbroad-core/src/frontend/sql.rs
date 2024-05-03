@@ -1150,6 +1150,20 @@ lazy_static::lazy_static! {
     };
 }
 
+lazy_static::lazy_static! {
+    static ref SELECT_PRATT_PARSER: PrattParser<Rule> = {
+        use pest::pratt_parser::{Assoc::Left, Op};
+        use Rule::{UnionOp, UnionAllOp, ExceptOp};
+
+        PrattParser::new()
+            .op(
+                Op::infix(UnionOp, Left)
+            | Op::infix(UnionAllOp, Left)
+            | Op::infix(ExceptOp, Left)
+        )
+    };
+}
+
 /// Number of relational nodes we expect to retrieve column positions for.
 const COLUMN_POSITIONS_CACHE_CAPACITY: usize = 10;
 /// Total average number of Reference (`ReferenceContinuation`) rule nodes that we expect to get
@@ -1285,6 +1299,47 @@ enum ParseExpression {
         left: Box<ParseExpression>,
         right: Box<ParseExpression>,
     },
+}
+
+#[derive(Clone)]
+pub enum SelectOp {
+    Union,
+    UnionAll,
+    Except,
+}
+
+#[derive(Clone)]
+pub enum SelectExpr {
+    PlanId {
+        plan_id: usize,
+    },
+    Infix {
+        op: SelectOp,
+        left: Box<SelectExpr>,
+        right: Box<SelectExpr>,
+    },
+}
+
+impl SelectExpr {
+    fn populate_plan(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
+        match self {
+            SelectExpr::PlanId { plan_id } => Ok(*plan_id),
+            SelectExpr::Infix { op, left, right } => {
+                let left_id = left.populate_plan(plan)?;
+                let right_id = right.populate_plan(plan)?;
+                match op {
+                    u @ (SelectOp::Union | SelectOp::UnionAll) => {
+                        let remove_duplicates = matches!(u, SelectOp::Union);
+                        plan.add_union(left_id, right_id, remove_duplicates)
+                    }
+                    SelectOp::Except => {
+                        let r = plan.add_except(left_id, right_id).unwrap();
+                        Ok(r)
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Plan {
@@ -1934,6 +1989,57 @@ where
         .parse(expression_pairs)
 }
 
+// Mapping between pest's Pair and corresponding id
+// of the ast node. This map stores only ids for
+// possible select child (Projection, OrderBy)
+pub(crate) type SelectChildPairTranslation = HashMap<(usize, usize), usize>;
+
+fn parse_select_pratt(
+    select_pairs: Pairs<Rule>,
+    pos_to_plan_id: &SelectChildPairTranslation,
+    ast_to_plan: &Translation,
+) -> Result<SelectExpr, SbroadError> {
+    SELECT_PRATT_PARSER
+        .map_primary(|primary| {
+            let select_expr = match primary.as_rule() {
+                Rule::Select => {
+                    let mut pairs = primary.into_inner();
+                    let mut select_child_pair =
+                        pairs.next().expect("select must have at least one child");
+                    assert!(matches!(select_child_pair.as_rule(), Rule::Projection));
+                    for pair in pairs {
+                        if let Rule::OrderBy = pair.as_rule() {
+                            select_child_pair = pair;
+                            break;
+                        }
+                    }
+                    let ast_id = pos_to_plan_id.get(&select_child_pair.line_col()).unwrap();
+                    let id = ast_to_plan.get(*ast_id)?;
+                    SelectExpr::PlanId { plan_id: id }
+                }
+                Rule::SelectWithOptionalContinuation => {
+                    parse_select_pratt(primary.into_inner(), pos_to_plan_id, ast_to_plan)?
+                }
+                rule => unreachable!("Select::parse expected atomic rule, found {:?}", rule),
+            };
+            Ok(select_expr)
+        })
+        .map_infix(|lhs, op, rhs| {
+            let op = match op.as_rule() {
+                Rule::UnionOp => SelectOp::Union,
+                Rule::UnionAllOp => SelectOp::UnionAll,
+                Rule::ExceptOp => SelectOp::Except,
+                rule => unreachable!("Expr::parse expected infix operation, found {:?}", rule),
+            };
+            Ok(SelectExpr::Infix {
+                op,
+                left: Box::new(lhs?),
+                right: Box::new(rhs?),
+            })
+        })
+        .parse(select_pairs)
+}
+
 /// Parse expression pair and get plan id.
 /// * Retrieve expressions tree-like structure using `parse_expr_pratt`
 /// * Traverse tree to populate plan with new nodes
@@ -1949,6 +2055,16 @@ where
 {
     let parse_expr = parse_expr_pratt(expression_pairs, referred_relation_ids, worker, plan)?;
     parse_expr.populate_plan(plan, worker)
+}
+
+fn parse_select(
+    select_pairs: Pairs<Rule>,
+    pos_to_ast_id: &SelectChildPairTranslation,
+    ast_to_plan: &Translation,
+    plan: &mut Plan,
+) -> Result<usize, SbroadError> {
+    let select_expr = parse_select_pratt(select_pairs, pos_to_ast_id, ast_to_plan)?;
+    select_expr.populate_plan(plan)
 }
 
 /// Generate an alias for the unnamed projection expressions.
@@ -2005,6 +2121,7 @@ impl AbstractSyntaxTree {
         &mut self,
         query: &'query str,
         pairs_map: &mut ParsingPairsMap<'query>,
+        pos_to_ast_id: &mut SelectChildPairTranslation,
     ) -> Result<(), SbroadError> {
         let mut command_pair = match ParseTree::parse(Rule::Command, query) {
             Ok(p) => p,
@@ -2055,13 +2172,16 @@ impl AbstractSyntaxTree {
             }
 
             match stack_node.pair.as_rule() {
-                Rule::Expr | Rule::Row | Rule::Literal => {
+                Rule::Expr | Rule::Row | Rule::Literal | Rule::SelectWithOptionalContinuation => {
                     // * `Expr`s are parsed using Pratt parser with a separate `parse_expr`
                     //   function call on the stage of `resolve_metadata`.
                     // * `Row`s are added to support parsing Row expressions under `Values` nodes.
                     // * `Literal`s are added to support procedure calls which should not contain
                     //   all possible `Expr`s.
                     pairs_map.insert(arena_node_id, stack_node.pair.clone());
+                }
+                Rule::Projection | Rule::OrderBy => {
+                    pos_to_ast_id.insert(stack_node.pair.line_col(), arena_node_id);
                 }
                 _ => {}
             }
@@ -2198,6 +2318,7 @@ impl AbstractSyntaxTree {
         &self,
         metadata: &M,
         pairs_map: &mut ParsingPairsMap,
+        pos_to_ast_id: &mut SelectChildPairTranslation,
     ) -> Result<Plan, SbroadError>
     where
         M: Metadata,
@@ -2397,38 +2518,10 @@ impl AbstractSyntaxTree {
                     self.parse_order_by(&mut plan, id, &mut map, pairs_map, &mut worker)?;
                 }
                 Rule::SelectWithOptionalContinuation => {
-                    let first_select_id = node.children.first().expect(
-                        "SelectWithOptionalContinuation must always have Select as a first child.",
-                    );
-                    let first_select_plan_id = map.get(*first_select_id)?;
-
-                    let continuation_id = node.children.get(1);
-                    if let Some(continuation_id) = continuation_id {
-                        let continuation_node = self.nodes.get_node(*continuation_id)?;
-                        match continuation_node.rule {
-                            Rule::UnionAllContinuation => {
-                                let second_select_id = continuation_node
-                                    .children
-                                    .first()
-                                    .expect("UnionAllContinuation must contain Select as a first child.");
-                                let second_select_plan_id = map.get(*second_select_id)?;
-                                let plan_union_all_id = plan.add_union_all(first_select_plan_id, second_select_plan_id)?;
-                                map.add(id, plan_union_all_id);
-                            }
-                            Rule::ExceptContinuation => {
-                                let second_select_id = continuation_node
-                                    .children
-                                    .first()
-                                    .expect("ExceptContinuation must contain Select as a first child.");
-                                let second_select_plan_id = map.get(*second_select_id)?;
-                                let plan_except_id = plan.add_except(first_select_plan_id, second_select_plan_id)?;
-                                map.add(id, plan_except_id);
-                            }
-                            _ => unreachable!("SelectWithOptionalContinuation must contain UnionAllContinuation or ExceptContinuation as child")
-                        }
-                    } else {
-                        map.add(id, first_select_plan_id);
-                    }
+                    let select_pair = pairs_map.remove_pair(id);
+                    let select_plan_node_id =
+                        parse_select(Pairs::single(select_pair), pos_to_ast_id, &map, &mut plan)?;
+                    map.add(id, select_plan_node_id);
                 }
                 Rule::Projection => {
                     let (rel_child_id, other_children) = node
@@ -3163,9 +3256,10 @@ impl Ast for AbstractSyntaxTree {
         // * Add expressions `ParseNode`s into `arena`
         // * Save copy of them into map of { expr_arena_id -> corresponding pair copy }.
         let mut ast_id_to_pairs_map = ParsingPairsMap::new();
+        let mut pos_to_ast_id: SelectChildPairTranslation = HashMap::new();
         let mut ast = AbstractSyntaxTree::empty();
-        ast.fill(query, &mut ast_id_to_pairs_map)?;
-        ast.resolve_metadata(metadata, &mut ast_id_to_pairs_map)
+        ast.fill(query, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)?;
+        ast.resolve_metadata(metadata, &mut ast_id_to_pairs_map, &mut pos_to_ast_id)
     }
 }
 

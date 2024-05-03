@@ -824,7 +824,7 @@ fn global_union_all() {
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select null, null where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
+            pattern: r#" select cast(null as integer),cast(null as integer) where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },
@@ -898,13 +898,13 @@ fn global_union_all2() {
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select null, null where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
+            pattern: r#" select cast(null as integer),cast(null as integer) where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },
         ReplicasetDispatchInfo {
             rs_id: 1,
-            pattern: r#" select null, null where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
+            pattern: r#" select cast(null as integer),cast(null as integer) where false UNION ALL SELECT "t2"."e", "t2"."f" FROM "t2""#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },
@@ -1028,7 +1028,7 @@ fn global_union_all3() {
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select null where false UNION ALL SELECT "column_51" as "f" FROM (SELECT "column_51" FROM "TMP_test_35") GROUP BY "column_51""#.to_string(),
+            pattern: r#" select cast(null as integer) where false UNION ALL SELECT "column_51" as "f" FROM (SELECT "column_51" FROM "TMP_test_35") GROUP BY "column_51""#.to_string(),
             params: vec![],
             vtables_map: collection!(groupby_motion_id => Rc::new(groupby_vtable1)),
         },
@@ -1068,7 +1068,7 @@ fn global_union_all4() {
     let expected = vec![
         ReplicasetDispatchInfo {
             rs_id: 0,
-            pattern: r#" select null where false UNION ALL SELECT "a" FROM (select null where false UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
+            pattern: r#" select cast(null as integer) where false UNION ALL SELECT "a" FROM (select cast(null as integer) where false UNION ALL SELECT "t2"."f" FROM "t2")"#.to_string(),
             params: vec![],
             vtables_map: HashMap::new(),
         },

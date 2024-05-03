@@ -273,11 +273,12 @@ pub fn compile_optional(
 
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
     let nodes = optional.ordered.to_syntax_data()?;
-    optional.exec_plan.to_sql(
+    let (u, v) = optional.exec_plan.to_sql(
         &nodes,
         &buckets,
         &uuid::Uuid::new_v4().as_simple().to_string(),
-    )
+    )?;
+    Ok((u, v))
 }
 
 /// Command to build a tuple suitable to be passed into Tarantool API functions.

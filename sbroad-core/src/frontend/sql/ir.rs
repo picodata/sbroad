@@ -484,10 +484,9 @@ impl SubtreeCloner {
 
         // all relational nodes have output and children list,
         // which must be copied.
-        if let Some(children) = old_relational.children() {
-            let new_children = self.copy_list(children)?;
-            copied.set_children(new_children)?;
-        }
+        let children = old_relational.children().to_vec();
+        let new_children = self.copy_list(&children)?;
+        copied.set_children(new_children);
         let new_output_id = self.get_new_id(old_relational.output())?;
         *copied.mut_output() = new_output_id;
 
@@ -497,19 +496,7 @@ impl SubtreeCloner {
         // when a new field is added to a struct, this match must
         // be updated, or compilation will fail.
         match &mut copied {
-            Relational::Except {
-                children: _,
-                output: _,
-            }
-            | Relational::Intersect {
-                children: _,
-                output: _,
-            }
-            | Relational::UnionAll {
-                children: _,
-                output: _,
-            }
-            | Relational::Values {
+            Relational::Values {
                 output: _,
                 children: _,
             }
@@ -546,6 +533,26 @@ impl SubtreeCloner {
             | Relational::ScanSubQuery {
                 alias: _,
                 children: _,
+                output: _,
+            }
+            | Relational::Except {
+                left: _,
+                right: _,
+                output: _,
+            }
+            | Relational::Intersect {
+                left: _,
+                right: _,
+                output: _,
+            }
+            | Relational::Union {
+                left: _,
+                right: _,
+                output: _,
+            }
+            | Relational::UnionAll {
+                left: _,
+                right: _,
                 output: _,
             } => {}
             Relational::Having {
@@ -591,6 +598,7 @@ impl SubtreeCloner {
                             *motion_id = self.get_new_id(*motion_id)?;
                         }
                         MotionOpcode::PrimaryKey(_)
+                        | MotionOpcode::RemoveDuplicates
                         | MotionOpcode::ReshardIfNeeded
                         | MotionOpcode::SerializeAsEmptyTable(_) => {}
                     }

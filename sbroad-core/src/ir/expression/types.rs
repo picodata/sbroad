@@ -119,12 +119,7 @@ impl Expression {
             // - union all relies on the first child type;
             // - scan has no children (and the space column type can't change anyway);
             if let Some(Some(target)) = targets.as_ref().map(|targets| targets.first()) {
-                let target_children = parent_rel.children().ok_or_else(|| {
-                    SbroadError::Invalid(
-                        Entity::Expression,
-                        Some("reference expression has no target relation".to_smolstr()),
-                    )
-                })?;
+                let target_children = parent_rel.children();
                 let target_rel_id = *target_children.get(*target).ok_or_else(|| {
                     SbroadError::Invalid(
                         Entity::Expression,

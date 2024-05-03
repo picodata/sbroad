@@ -1156,6 +1156,121 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_sql_global_union() {
+    let input = r#"
+    select "a" from "global_t"
+    union
+    select "b" from "global_t"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"motion [policy: full]
+    union
+        projection ("global_t"."a"::integer -> "a")
+            scan "global_t"
+        projection ("global_t"."b"::integer -> "b")
+            scan "global_t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_union1() {
+    let input = r#"
+    select "a" from "global_t"
+    union
+    select "e" from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"motion [policy: full]
+    union
+        motion [policy: local]
+            projection ("global_t"."a"::integer -> "a")
+                scan "global_t"
+        projection ("t2"."e"::unsigned -> "e")
+            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_global_union2() {
+    let input = r#"
+    select "a" from "global_t"
+    union
+    select sum("e") from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+    let expected_explain = String::from(
+        r#"motion [policy: full]
+    union
+        projection ("global_t"."a"::integer -> "a")
+            scan "global_t"
+        motion [policy: segment([ref("COL_1")])]
+            projection (sum(("sum_23"::decimal))::decimal -> "COL_1")
+                motion [policy: full]
+                    scan
+                        projection (sum(("t2"."e"::unsigned))::decimal -> "sum_23")
+                            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_union() {
+    let input = r#"
+    select * from (
+        select "a" from "global_t"
+        union
+        select "e" from "t2"
+    ) union
+    select "f" from "t2"
+    "#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"motion [policy: full]
+    union
+        motion [policy: local]
+            projection ("a"::integer -> "a")
+                scan
+                    motion [policy: full]
+                        union
+                            motion [policy: local]
+                                projection ("global_t"."a"::integer -> "a")
+                                    scan "global_t"
+                            projection ("t2"."e"::unsigned -> "e")
+                                scan "t2"
+        projection ("t2"."f"::unsigned -> "f")
+            scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn check_plan_except_global_vs_segment() {
     let input = r#"
     select "a", "b" from "global_t"

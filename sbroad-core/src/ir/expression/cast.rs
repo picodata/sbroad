@@ -72,7 +72,7 @@ impl TryFrom<&RelationType> for Type {
             RelationType::Uuid => Ok(Type::Uuid),
             RelationType::Array => Err(SbroadError::Unsupported(
                 Entity::Type,
-                Some("array int the cast operation".to_smolstr()),
+                Some("array in the cast operation".to_smolstr()),
             )),
         }
     }

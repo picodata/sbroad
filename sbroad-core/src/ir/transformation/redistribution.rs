@@ -8,6 +8,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
+use crate::ir::api::children::Children;
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
@@ -151,6 +152,7 @@ pub enum MotionOpcode {
     /// Note: currently this opcode is only used for
     /// execution of union all having global child and sharded child.
     SerializeAsEmptyTable(bool),
+    RemoveDuplicates,
 }
 
 /// Helper struct that unwraps `Expression::Bool` fields.
@@ -565,16 +567,14 @@ impl Plan {
     /// Create Motions from the strategy map.
     fn create_motion_nodes(&mut self, mut strategy: Strategy) -> Result<(), SbroadError> {
         let parent_id = strategy.parent_id;
-        let children: Vec<usize> =
-            if let Some(children) = self.get_relational_children(parent_id)? {
-                children.to_vec()
-            } else {
-                return Err(SbroadError::FailedTo(
-                    Action::Add,
-                    Some(Entity::Motion),
-                    "trying to add motions under the leaf relational node".into(),
-                ));
-            };
+        let children = self.get_relational_children(parent_id)?;
+        if children.is_empty() {
+            return Err(SbroadError::FailedTo(
+                Action::Add,
+                Some(Entity::Motion),
+                "trying to add motions under the leaf relational node".into(),
+            ));
+        }
 
         // Check that all children we need to add motions exist in the current relational node.
         let children_set: HashSet<usize> = children.iter().copied().collect();
@@ -592,7 +592,8 @@ impl Plan {
 
         // Add motions.
         let mut children_with_motions: Vec<usize> = Vec::new();
-        for child in children {
+        let children_owned = children.to_vec();
+        for child in children_owned {
             if let Some((policy, ref mut program)) = strategy.children_policy.get_mut(&child) {
                 let program = std::mem::take(program);
                 if let MotionPolicy::None = policy {
@@ -793,7 +794,7 @@ impl Plan {
     /// # Errors
     /// - If the node is not a join node.
     /// - Join node has no children.
-    fn get_join_children(&self, join_id: usize) -> Result<&[usize], SbroadError> {
+    fn get_join_children(&self, join_id: usize) -> Result<Children<'_>, SbroadError> {
         let join = self.get_relation_node(join_id)?;
         if let Relational::Join { .. } = join {
         } else {
@@ -802,10 +803,7 @@ impl Plan {
                 Some("Join node is not an inner join.".into()),
             ));
         }
-        let children = join.children().ok_or_else(|| {
-            SbroadError::UnexpectedNumberOfValues("Join node has no children.".into())
-        })?;
-        Ok(children)
+        Ok(join.children())
     }
 
     /// Detect join child from the position map corresponding to the distribution key.
@@ -813,7 +811,7 @@ impl Plan {
         &self,
         key: &Key,
         row_map: &HashMap<usize, usize>,
-        join_children: &[usize],
+        join_children: &Children<'_>,
     ) -> Result<usize, SbroadError> {
         let mut children_set: HashSet<usize> = HashSet::new();
         for pos in &key.positions {
@@ -884,7 +882,7 @@ impl Plan {
         let mut inner_keys: Vec<Key> = Vec::new();
 
         let children = self.get_join_children(join_id)?;
-        let outer_child = *children.first().ok_or_else(|| {
+        let outer_child = *children.get(0).ok_or_else(|| {
             SbroadError::UnexpectedNumberOfValues("Join node has no children.".into())
         })?;
         let inner_child = *children.get(1).ok_or_else(|| {
@@ -892,7 +890,7 @@ impl Plan {
         })?;
 
         for key in keys {
-            let child = self.get_join_child_by_key(key, row_map, children)?;
+            let child = self.get_join_child_by_key(key, row_map, &children)?;
             if child == outer_child {
                 outer_keys.push(key.clone());
             } else if child == inner_child {
@@ -1151,6 +1149,7 @@ impl Plan {
             | Relational::Intersect { .. }
             | Relational::ScanSubQuery { .. }
             | Relational::Motion { .. }
+            | Relational::Union { .. }
             | Relational::UnionAll { .. } => {}
         }
         Ok(())
@@ -1201,21 +1200,15 @@ impl Plan {
         // Init the strategy (motion policy map) for all the join children except the outer child.
         let join_children = self.get_join_children(rel_id)?;
         let mut strategy = Strategy::new(rel_id);
-        if let Some((_, children)) = join_children.split_first() {
-            for child_id in children {
-                if !matches!(self.get_rel_distribution(*child_id)?, Distribution::Global) {
-                    strategy.add_child(*child_id, MotionPolicy::Full, Program::default());
-                }
+        for child_id in &join_children[1..] {
+            if !matches!(self.get_rel_distribution(*child_id)?, Distribution::Global) {
+                strategy.add_child(*child_id, MotionPolicy::Full, Program::default());
             }
-        } else {
-            return Err(SbroadError::UnexpectedNumberOfValues(
-                "Join node doesn't have any children.".into(),
-            ));
         }
 
         // Let's improve the full motion policy for the join children (sub-queries and the inner child).
         let (inner_child, outer_child) = {
-            let outer = *join_children.first().ok_or_else(|| {
+            let outer = *join_children.get(0).ok_or_else(|| {
                 SbroadError::NotFound(
                     Entity::Node,
                     "that is Join node inner child with index 0.".into(),
@@ -1570,9 +1563,10 @@ impl Plan {
         condition_id: usize,
         join_kind: &JoinKind,
     ) -> Result<Option<Strategy>, SbroadError> {
-        let (outer_id, inner_id) = if let Some(children) = self.get_relational_children(join_id)? {
+        let (outer_id, inner_id) = {
+            let children = self.get_relational_children(join_id)?;
             (
-                *children.first().ok_or_else(|| {
+                *children.get(0).ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                         "join {join_id} has no children!"
                     ))
@@ -1583,11 +1577,6 @@ impl Plan {
                     ))
                 })?,
             )
-        } else {
-            return Err(SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!("join {join_id} has no children!")),
-            ));
         };
         let outer_dist = self.get_distribution(self.get_relational_output(outer_id)?)?;
         let inner_dist = self.get_distribution(self.get_relational_output(inner_id)?)?;
@@ -1601,16 +1590,7 @@ impl Plan {
 
         let mut strategy = Strategy::new(join_id);
 
-        let subqueries = self
-            .get_relational_children(join_id)?
-            .ok_or_else(|| {
-                SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                    "join {join_id} has no children!"
-                ))
-            })?
-            .split_at(2)
-            .1;
-        for sq in subqueries {
+        for sq in &self.get_relational_children(join_id)?[2..] {
             // todo: improve subqueries motions
             strategy.add_child(*sq, MotionPolicy::Full, Program::default());
         }
@@ -2039,7 +2019,8 @@ impl Plan {
         let right_output_id = self.get_relational_output(right_id)?;
         let intersect_output_id = self.clone_expr_subtree(right_output_id)?;
         let intersect = Relational::Intersect {
-            children: vec![right_id, cloned_left_id],
+            left: right_id,
+            right: cloned_left_id,
             output: intersect_output_id,
         };
         let intersect_id = self.nodes.push(Node::Relational(intersect));
@@ -2054,10 +2035,13 @@ impl Plan {
     }
 
     fn resolve_union_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
-        if !matches!(self.get_relation_node(rel_id)?, Relational::UnionAll { .. }) {
+        if !matches!(
+            self.get_relation_node(rel_id)?,
+            Relational::UnionAll { .. } | Relational::Union { .. }
+        ) {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
-                Some("expected UnionAll node".into()),
+                Some("expected union node".into()),
             ));
         }
         let mut map = Strategy::new(rel_id);
@@ -2148,8 +2132,27 @@ impl Plan {
             PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
         post_tree.populate_nodes(top);
         let nodes = post_tree.take_nodes();
+
+        let mut old_new: HashMap<usize, usize> = HashMap::new();
         for (_, id) in nodes {
             self.check_global_tbl_support(id)?;
+
+            // Some transformations (Union) need to add new nodes above
+            // themselves, because we don't store parent references,
+            // we update child reference when DFS reaches parent node.
+            let mut retired = Vec::new();
+            for (old_id, new_id) in &old_new {
+                let node = self.get_relation_node(id)?;
+                // if child changed, update reference
+                if node.children().iter().any(|x| x == old_id) {
+                    self.change_child(id, *old_id, *new_id)?;
+                    retired.push(*old_id);
+                }
+            }
+            for node_id in retired {
+                old_new.remove(&node_id);
+            }
+
             match self.get_relation_node(id)?.clone() {
                 // At the moment our grammar and IR constructors
                 // don't allow projection and values row with
@@ -2249,12 +2252,31 @@ impl Plan {
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
+                Relational::Union { output, .. } => {
+                    let strategy = self.resolve_union_conflicts(id)?;
+                    self.create_motion_nodes(strategy)?;
+                    self.set_distribution(output)?;
+                    let new_top_id = self.add_motion(
+                        id,
+                        &MotionPolicy::Full,
+                        Program::new(vec![MotionOpcode::RemoveDuplicates]),
+                    )?;
+                    old_new.insert(id, new_top_id);
+                }
                 Relational::UnionAll { output, .. } => {
                     let strategy = self.resolve_union_conflicts(id)?;
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
             }
+        }
+
+        if !old_new.is_empty() {
+            assert!(
+                old_new.len() == 1,
+                "add_motions: old_new map has too many entries"
+            );
+            self.set_top(*old_new.values().next().unwrap())?;
         }
 
         // Gather motions (revert levels in bft)

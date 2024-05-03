@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -14,6 +15,11 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
 use crate::ir::value::Value;
+
+use super::result::{ExecutorTuple, MetadataColumn, ProducerResult};
+
+#[cfg(not(feature = "mock"))]
+use tarantool::tuple::Tuple;
 
 type ShardingKey = Vec<Value>;
 pub type VTableTuple = Vec<Value>;
@@ -503,6 +509,65 @@ impl VirtualTable {
         }
 
         Ok(())
+    }
+
+    /// Removes duplicates from virtual table, the order
+    /// of rows is changed.
+    pub fn remove_duplicates(&mut self) {
+        // O(1) extra space and O(n*log n) time implementation
+
+        self.tuples.sort_unstable();
+        let mut unique_cnt = 0;
+        let len = self.tuples.len();
+        for idx in 1..len {
+            if self.tuples[idx] != self.tuples[idx - 1] {
+                self.tuples.swap(unique_cnt, idx - 1);
+                unique_cnt += 1;
+            }
+        }
+        if len > 0 {
+            self.tuples.swap(unique_cnt, len - 1);
+            unique_cnt += 1;
+        }
+        self.tuples.truncate(unique_cnt);
+    }
+
+    /// Convert vtable to output tuple for returning
+    /// result from stored procedure.
+    ///
+    /// # Errors
+    /// - Failed to create tuple
+    pub fn to_output(&mut self) -> Result<Box<dyn Any>, SbroadError> {
+        let mut metadata = Vec::with_capacity(self.columns.len());
+        for col in &self.columns {
+            let meta_column = MetadataColumn::new(col.name.to_string(), col.r#type.to_string());
+            metadata.push(meta_column);
+        }
+
+        let tuples = std::mem::take(&mut self.tuples);
+        let mut rows: Vec<ExecutorTuple> = Vec::with_capacity(tuples.len());
+        for tuple in tuples {
+            let mut row = Vec::with_capacity(self.columns.len());
+            for value in tuple {
+                row.push(value.into());
+            }
+            rows.push(row);
+        }
+
+        let res = vec![ProducerResult { metadata, rows }];
+        #[cfg(feature = "mock")]
+        {
+            Ok(Box::new(res))
+        }
+        #[cfg(not(feature = "mock"))]
+        {
+            Ok(Box::new(Tuple::new(&res).map_err(|e| {
+                SbroadError::Invalid(
+                    Entity::VirtualTable,
+                    Some(format_smolstr!("failed to create tuple from vtable: {e}")),
+                )
+            })?))
+        }
     }
 }
 

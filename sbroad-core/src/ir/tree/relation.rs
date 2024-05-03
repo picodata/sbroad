@@ -65,22 +65,24 @@ fn relational_next<'nodes>(
 ) -> Option<&'nodes usize> {
     match iter.get_nodes().arena.get(iter.get_current()) {
         Some(Node::Relational(
-            Relational::Except { children, .. }
-            | Relational::Join { children, .. }
-            | Relational::Insert { children, .. }
-            | Relational::Intersect { children, .. }
-            | Relational::Delete { children, .. }
-            | Relational::Motion { children, .. }
-            | Relational::Projection { children, .. }
-            | Relational::ScanSubQuery { children, .. }
-            | Relational::Selection { children, .. }
-            | Relational::Having { children, .. }
-            | Relational::UnionAll { children, .. }
-            | Relational::Update { children, .. }
-            | Relational::Values { children, .. }
-            | Relational::ValuesRow { children, .. },
+            node @ (Relational::Except { .. }
+            | Relational::Join { .. }
+            | Relational::Insert { .. }
+            | Relational::Intersect { .. }
+            | Relational::Delete { .. }
+            | Relational::Motion { .. }
+            | Relational::Projection { .. }
+            | Relational::ScanSubQuery { .. }
+            | Relational::Selection { .. }
+            | Relational::Having { .. }
+            | Relational::Union { .. }
+            | Relational::UnionAll { .. }
+            | Relational::Update { .. }
+            | Relational::Values { .. }
+            | Relational::ValuesRow { .. }),
         )) => {
             let step = *iter.get_child().borrow();
+            let children = node.children();
             if step < children.len() {
                 *iter.get_child().borrow_mut() += 1;
                 return children.get(step);

@@ -336,25 +336,15 @@ fn subtree_next<'plan>(
                     }
                 }
 
-                Relational::Except {
-                    children, output, ..
-                }
-                | Relational::Insert {
-                    children, output, ..
-                }
-                | Relational::Intersect {
-                    children, output, ..
-                }
-                | Relational::Delete {
-                    children, output, ..
-                }
-                | Relational::ScanSubQuery {
-                    children, output, ..
-                }
-                | Relational::UnionAll {
-                    children, output, ..
-                } => {
+                node @ (Relational::Except { output, .. }
+                | Relational::Insert { output, .. }
+                | Relational::Intersect { output, .. }
+                | Relational::Delete { output, .. }
+                | Relational::ScanSubQuery { output, .. }
+                | Relational::Union { output, .. }
+                | Relational::UnionAll { output, .. }) => {
                     let step = *iter.get_child().borrow();
+                    let children = node.children();
                     if step < children.len() {
                         *iter.get_child().borrow_mut() += 1;
                         return children.get(step);

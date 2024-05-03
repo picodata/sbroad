@@ -669,3 +669,27 @@ g.test_current_date = function ()
 end
 
 
+g.test_union_operator_works = function ()
+    local api = cluster:server("api-1").net_box
+
+    local r, err = api:call("sbroad.execute", { [[
+        select "id" from "t"
+        union
+        select "id" from "t"
+        union
+        select "id" from "t"
+        union
+        select "id" from "t"
+        union
+        select "id" from "t"
+    ]] })
+
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+        },
+        rows = { {1}, {2} },
+    })
+end
+

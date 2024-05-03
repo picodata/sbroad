@@ -82,7 +82,7 @@ fn relational_post() {
     let eq = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
     let selection_id = plan.add_select(&[scan_t2_id], eq).unwrap();
 
-    let union_id = plan.add_union_all(scan_t1_id, selection_id).unwrap();
+    let union_id = plan.add_union(scan_t1_id, selection_id, false).unwrap();
     plan.set_top(union_id).unwrap();
     let top = plan.get_top().unwrap();
 

@@ -11,6 +11,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 
+use super::api::children::Children;
 use super::expression::Expression;
 use super::operator::Relational;
 use super::relation::{Column, ColumnPositions};
@@ -322,7 +323,11 @@ struct ReferenceInfo {
 }
 
 impl ReferenceInfo {
-    pub fn new(row_id: usize, ir: &Plan, parent_children: &[usize]) -> Result<Self, SbroadError> {
+    pub fn new(
+        row_id: usize,
+        ir: &Plan,
+        parent_children: &Children<'_>,
+    ) -> Result<Self, SbroadError> {
         let mut ref_nodes = ReferredNodes::new();
         let mut ref_map: AHashMap<ChildColumnReference, ParentColumnPosition> = AHashMap::new();
         for (parent_column_pos, id) in ir.get_row_list(row_id)?.iter().enumerate() {
@@ -452,15 +457,8 @@ impl Plan {
         // It may have Segment distribution, to check that we need a mapping
         // between referenced columns in child and column position in projection's
         // output.
-        let children = self.get_relational_children(proj_id)?.ok_or_else(|| {
-            SbroadError::Invalid(
-                Entity::Node,
-                Some(format_smolstr!(
-                    "projection node ({proj_id}) has no children"
-                )),
-            )
-        })?;
-        let ref_info = ReferenceInfo::new(output_id, self, children)?;
+        let children = self.get_relational_children(proj_id)?;
+        let ref_info = ReferenceInfo::new(output_id, self, &children)?;
         if let ReferredNodes::Single(child_id) = ref_info.referred_children {
             let child_dist =
                 self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
@@ -476,6 +474,9 @@ impl Plan {
     ///
     /// # Errors
     /// Returns `SbroadError` when current expression is not a `Row` or contains broken references.
+    ///
+    /// # Panics
+    /// - reference has invalid targets
     #[allow(clippy::too_many_lines)]
     pub fn set_distribution(&mut self, row_id: usize) -> Result<(), SbroadError> {
         let row_children = self.get_expression_node(row_id)?.get_row_list()?;
@@ -497,52 +498,8 @@ impl Plan {
         let parent = self.get_relation_node(parent_id)?;
 
         // References in the branch node.
-        if let Some(children) = parent.children() {
-            // Set of the referred relational nodes in the row.
-            let ref_info = ReferenceInfo::new(row_id, self, children)?;
-
-            match ref_info.referred_children {
-                ReferredNodes::None => {
-                    // Row contains reference that doesn't point to any relational node.
-                    return Err(SbroadError::Invalid(
-                        Entity::Expression,
-                        Some("the row contains no references".to_smolstr()),
-                    ));
-                }
-                ReferredNodes::Single(child_id) => {
-                    let suggested_dist =
-                        self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
-                    let output = self.get_mut_expression_node(row_id)?;
-                    if let Expression::Row {
-                        ref mut distribution,
-                        ..
-                    } = output
-                    {
-                        if distribution.is_none() {
-                            *distribution = Some(suggested_dist);
-                        }
-                    }
-                }
-                ReferredNodes::Pair(n1, n2) => {
-                    // Union, join
-                    self.set_two_children_node_dist(
-                        &ref_info.child_column_to_parent_col,
-                        n1,
-                        n2,
-                        parent_id,
-                        row_id,
-                    )?;
-                }
-                ReferredNodes::Multiple(_) => {
-                    // Reference points to more than two relational children nodes,
-                    // that is impossible.
-                    return Err(SbroadError::DuplicatedValue(
-                        "Row contains multiple references to the same node (and in is not VALUES)"
-                            .to_smolstr(),
-                    ));
-                }
-            }
-        } else {
+        let children = parent.children();
+        if children.is_empty() {
             // References in the leaf (relation scan) node.
             let tbl_name = self.get_scan_relation(parent_id)?;
             let tbl = self.get_relation_or_error(tbl_name)?;
@@ -585,6 +542,47 @@ impl Plan {
                 {
                     let keys: HashSet<Key, RepeatableState> = collection! { new_key };
                     *distribution = Some(Distribution::Segment { keys: keys.into() });
+                }
+            }
+        } else {
+            // Set of the referred relational nodes in the row.
+            let ref_info = ReferenceInfo::new(row_id, self, &children)?;
+
+            match ref_info.referred_children {
+                ReferredNodes::None => {
+                    // Row contains reference that doesn't point to any relational node.
+                    panic!("the row contains no references");
+                }
+                ReferredNodes::Single(child_id) => {
+                    let suggested_dist =
+                        self.dist_from_child(child_id, &ref_info.child_column_to_parent_col)?;
+                    let output = self.get_mut_expression_node(row_id)?;
+                    if let Expression::Row {
+                        ref mut distribution,
+                        ..
+                    } = output
+                    {
+                        if distribution.is_none() {
+                            *distribution = Some(suggested_dist);
+                        }
+                    }
+                }
+                ReferredNodes::Pair(n1, n2) => {
+                    // Union, join
+                    self.set_two_children_node_dist(
+                        &ref_info.child_column_to_parent_col,
+                        n1,
+                        n2,
+                        parent_id,
+                        row_id,
+                    )?;
+                }
+                ReferredNodes::Multiple(_) => {
+                    // Reference points to more than two relational children nodes,
+                    // that is impossible.
+                    panic!(
+                        "Row contains multiple references to the same node (and in is not VALUES)"
+                    );
                 }
             }
         }
@@ -631,7 +629,7 @@ impl Plan {
             }
         }
 
-        let children_len = node.children().map_or(0, <[usize]>::len);
+        let children_len = node.children().len();
         let mut suggested_dist = Some(Distribution::Global);
         for sq_idx in required_children_len..children_len {
             let sq_id = self.get_relational_child(node_id, sq_idx)?;
@@ -732,9 +730,7 @@ impl Plan {
             ..
         } = self.get_mut_expression_node(row_id)?
         {
-            if distribution.is_none() {
-                *distribution = Some(dist);
-            }
+            *distribution = Some(dist);
             return Ok(());
         }
         Err(SbroadError::Invalid(
@@ -757,7 +753,9 @@ impl Plan {
         let parent = self.get_relation_node(parent_id)?;
         let new_dist = match parent {
             Relational::Except { .. } => Distribution::except(&left_dist, &right_dist)?,
-            Relational::UnionAll { .. } => Distribution::union(&left_dist, &right_dist)?,
+            Relational::Union { .. } | Relational::UnionAll { .. } => {
+                Distribution::union(&left_dist, &right_dist)?
+            }
             Relational::Join { .. } => Distribution::join(&left_dist, &right_dist)?,
             _ => {
                 return Err(SbroadError::Invalid(
