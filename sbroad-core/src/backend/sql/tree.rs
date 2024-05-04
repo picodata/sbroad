@@ -20,6 +20,16 @@ pub enum SyntaxData {
     Alias(SmolStr),
     /// "cast"
     Cast,
+    // "case"
+    Case,
+    // "when"
+    When,
+    // "then"
+    Then,
+    // "else"
+    Else,
+    // "end"
+    End,
     /// ")"
     CloseParenthesis,
     /// "||"
@@ -105,6 +115,46 @@ impl SyntaxNode {
     fn new_cast() -> Self {
         SyntaxNode {
             data: SyntaxData::Cast,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_case() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Case,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_end() -> Self {
+        SyntaxNode {
+            data: SyntaxData::End,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_when() -> Self {
+        SyntaxNode {
+            data: SyntaxData::When,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_then() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Then,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_else() -> Self {
+        SyntaxNode {
+            data: SyntaxData::Else,
             left: None,
             right: Vec::new(),
         }
@@ -577,6 +627,7 @@ impl<'p> SyntaxPlan<'p> {
             Node::Expression(expr) => match expr {
                 Expression::ExprInParentheses { .. } => self.add_expr_in_parentheses(id),
                 Expression::Cast { .. } => self.add_cast(id),
+                Expression::Case { .. } => self.add_case(id),
                 Expression::Concat { .. } => self.add_concat(id),
                 Expression::Constant { .. } => {
                     let sn = SyntaxNode::new_parameter(id);
@@ -1068,6 +1119,44 @@ impl<'p> SyntaxPlan<'p> {
         let left_sn_id = self.pop_from_stack(left_plan_id);
         let children = vec![op_sn_id, right_sn_id];
         let sn = SyntaxNode::new_pointer(id, Some(left_sn_id), children);
+        self.nodes.push_sn_plan(sn);
+    }
+
+    fn add_case(&mut self, id: usize) {
+        let (_, expr) = self.prologue_expr(id);
+        let Expression::Case {
+            search_expr,
+            when_blocks,
+            else_expr,
+        } = expr
+        else {
+            panic!("Expected CASE node");
+        };
+        let search_expr = *search_expr;
+        let when_blocks: Vec<(usize, usize)> = when_blocks.clone();
+        let else_expr = *else_expr;
+
+        let mut right_vec = Vec::with_capacity(1 + when_blocks.len() * 4 + 1);
+        right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_end()));
+        if let Some(else_expr_id) = else_expr {
+            right_vec.push(self.pop_from_stack(else_expr_id));
+            right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_else()));
+        }
+        for (cond_expr_id, res_expr_id) in when_blocks.iter().rev() {
+            right_vec.push(self.pop_from_stack(*res_expr_id));
+            right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_then()));
+            right_vec.push(self.pop_from_stack(*cond_expr_id));
+            right_vec.push(self.nodes.push_sn_non_plan(SyntaxNode::new_when()));
+        }
+        if let Some(search_expr_id) = search_expr {
+            right_vec.push(self.pop_from_stack(search_expr_id));
+        }
+        right_vec.reverse();
+        let sn = SyntaxNode::new_pointer(
+            id,
+            Some(self.nodes.push_sn_non_plan(SyntaxNode::new_case())),
+            right_vec,
+        );
         self.nodes.push_sn_plan(sn);
     }
 

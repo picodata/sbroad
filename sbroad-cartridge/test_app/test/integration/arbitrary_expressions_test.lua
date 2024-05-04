@@ -190,4 +190,52 @@ arbitrary_projection.test_arbitrary_valid = function()
             {1}
         },
     })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT
+            CASE "id"
+                WHEN 1 THEN 'first'
+                WHEN 2 THEN 'second'
+                ELSE 42
+            END "case_result"
+        FROM "arithmetic_space"
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "case_result", type = "any"},
+        },
+        rows = {
+            {'first'}, {42}, {42}, {42}, {42}, {'second'}, {42}, {42}, {42}, {42}
+        },
+    })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT
+            "id",
+            CASE
+                WHEN "id" = 7 THEN 'first'
+                WHEN "id" / 2 < 4 THEN 'second'
+            END "case_result"
+        FROM "arithmetic_space"
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "case_result", type = "any"},
+        },
+        rows = {
+            {1, 'second'},
+            {5, 'second'},
+            {8, box.NULL},
+            {9, box.NULL},
+            {10, box.NULL},
+            {2, 'second'},
+            {3, 'second'},
+            {4, 'second'},
+            {6, 'second'},
+            {7, 'first'},
+        },
+    })
 end

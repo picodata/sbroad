@@ -140,6 +140,7 @@ impl Plan {
     ///
     /// # Errors
     ///  If expression subtree iterator returns a non-expression node.
+    #[allow(clippy::too_many_lines)]
     pub fn expr_tree_replace_bool(
         &mut self,
         top_id: usize,
@@ -158,6 +159,7 @@ impl Plan {
                 | Expression::Alias { .. }
                 | Expression::Row { .. }
                 | Expression::Cast { .. }
+                | Expression::Case { .. }
                 | Expression::StableFunction { .. }
                 | Expression::Unary { .. },
             )) = self.get_node(node_id)
@@ -208,6 +210,32 @@ impl Plan {
                     | Expression::Unary { child, .. } => {
                         if let Some(new_id) = map.get(child) {
                             *child = *new_id;
+                        }
+                    }
+                    Expression::Case {
+                        search_expr,
+                        when_blocks,
+                        else_expr,
+                    } => {
+                        if let Some(search_expr) = search_expr {
+                            if let Some(new_id) = map.get(search_expr) {
+                                *search_expr = *new_id;
+                            }
+                        }
+
+                        for (cond_expr, res_expr) in when_blocks {
+                            if let Some(new_id) = map.get(cond_expr) {
+                                *cond_expr = *new_id;
+                            }
+                            if let Some(new_id) = map.get(res_expr) {
+                                *res_expr = *new_id;
+                            }
+                        }
+
+                        if let Some(else_expr) = else_expr {
+                            if let Some(new_id) = map.get(else_expr) {
+                                *else_expr = *new_id;
+                            }
                         }
                     }
                     Expression::Bool { left, right, .. }

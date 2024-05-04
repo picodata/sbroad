@@ -171,6 +171,11 @@ pub enum Expression {
     ExprInParentheses {
         child: usize,
     },
+    Case {
+        search_expr: Option<usize>,
+        when_blocks: Vec<(usize, usize)>,
+        else_expr: Option<usize>,
+    },
 }
 
 #[derive(Clone, Debug, Hash, Deserialize, PartialEq, Eq, Serialize)]
@@ -573,6 +578,43 @@ impl<'plan> Comparator<'plan> {
                                 && self.are_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
+                    Expression::Case {
+                        search_expr: search_expr_left,
+                        when_blocks: when_blocks_left,
+                        else_expr: else_expr_left,
+                    } => {
+                        if let Expression::Case {
+                            search_expr: search_expr_right,
+                            when_blocks: when_blocks_right,
+                            else_expr: else_expr_right,
+                        } = right
+                        {
+                            let mut search_expr_equal = false;
+                            if let (Some(search_expr_left), Some(search_expr_right)) =
+                                (search_expr_left, search_expr_right)
+                            {
+                                search_expr_equal =
+                                    self.are_subtrees_equal(*search_expr_left, *search_expr_right)?;
+                            }
+
+                            let when_blocks_equal = when_blocks_left
+                                .iter()
+                                .zip(when_blocks_right.iter())
+                                .all(|((cond_l, res_l), (cond_r, res_r))| {
+                                    self.are_subtrees_equal(*cond_l, *cond_r).unwrap_or(false)
+                                        && self.are_subtrees_equal(*res_l, *res_r).unwrap_or(false)
+                                });
+
+                            let mut else_expr_equal = false;
+                            if let (Some(else_expr_left), Some(else_expr_right)) =
+                                (else_expr_left, else_expr_right)
+                            {
+                                else_expr_equal =
+                                    self.are_subtrees_equal(*else_expr_left, *else_expr_right)?;
+                            }
+                            return Ok(search_expr_equal && when_blocks_equal && else_expr_equal);
+                        }
+                    }
                     Expression::Arithmetic {
                         op: op_left,
                         left: l_left,
@@ -714,6 +756,7 @@ impl<'plan> Comparator<'plan> {
         Ok(false)
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn hash_for_expr<H: Hasher>(&self, top: usize, state: &mut H, depth: usize) {
         if depth == 0 {
             return;
@@ -728,6 +771,22 @@ impl<'plan> Comparator<'plan> {
             Expression::Alias { child, name } => {
                 name.hash(state);
                 self.hash_for_expr(*child, state, depth - 1);
+            }
+            Expression::Case {
+                search_expr,
+                when_blocks,
+                else_expr,
+            } => {
+                if let Some(search_expr) = search_expr {
+                    self.hash_for_expr(*search_expr, state, depth - 1);
+                }
+                for (cond_expr, res_expr) in when_blocks {
+                    self.hash_for_expr(*cond_expr, state, depth - 1);
+                    self.hash_for_expr(*res_expr, state, depth - 1);
+                }
+                if let Some(else_expr) = else_expr {
+                    self.hash_for_expr(*else_expr, state, depth - 1);
+                }
             }
             Expression::Bool { op, left, right } => {
                 op.hash(state);

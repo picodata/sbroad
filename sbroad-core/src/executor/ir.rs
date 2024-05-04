@@ -647,6 +647,32 @@ impl ExecutionPlan {
                         }
                     }
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
+                    Expression::Case {
+                        search_expr,
+                        when_blocks,
+                        else_expr,
+                    } => {
+                        if let Some(search_expr) = search_expr {
+                            *search_expr = *translation.get(search_expr).unwrap_or_else(|| {
+                                panic!("Could not find search expression {search_expr} in the map.")
+                            });
+                        }
+                        for (cond_expr, res_expr) in when_blocks {
+                            *cond_expr = *translation.get(cond_expr).unwrap_or_else(|| {
+                                panic!(
+                                    "Could not find cond WHEN expression {cond_expr} in the map."
+                                )
+                            });
+                            *res_expr = *translation.get(res_expr).unwrap_or_else(|| {
+                                panic!("Could not find res THEN expression {res_expr} in the map.")
+                            });
+                        }
+                        if let Some(else_expr) = else_expr {
+                            *else_expr = *translation.get(else_expr).unwrap_or_else(|| {
+                                panic!("Could not find else expression {else_expr} in the map.")
+                            });
+                        }
+                    }
                 },
                 Node::Parameter { .. } => {}
                 Node::Ddl { .. } | Node::Acl { .. } | Node::Block { .. } => {

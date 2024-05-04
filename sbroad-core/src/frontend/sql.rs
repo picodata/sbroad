@@ -1403,6 +1403,11 @@ enum ParseExpression {
         cast_type: CastType,
         child: Box<ParseExpression>,
     },
+    Case {
+        search_expr: Option<Box<ParseExpression>>,
+        when_blocks: Vec<(Box<ParseExpression>, Box<ParseExpression>)>,
+        else_expr: Option<Box<ParseExpression>>,
+    },
     Trim {
         kind: Option<TrimKind>,
         pattern: Option<Box<ParseExpression>>,
@@ -1472,6 +1477,7 @@ impl Plan {
             | Expression::ExprInParentheses { .. }
             | Expression::Arithmetic { .. }
             | Expression::Cast { .. }
+            | Expression::Case { .. }
             | Expression::Concat { .. }
             | Expression::Constant { .. }
             | Expression::Reference { .. }
@@ -1552,6 +1558,32 @@ impl ParseExpression {
             ParseExpression::Cast { cast_type, child } => {
                 let child_plan_id = child.populate_plan(plan, worker)?;
                 plan.add_cast(child_plan_id, cast_type.clone())?
+            }
+            ParseExpression::Case {
+                search_expr,
+                when_blocks,
+                else_expr,
+            } => {
+                let search_expr_id = if let Some(search_expr) = search_expr {
+                    Some(search_expr.populate_plan(plan, worker)?)
+                } else {
+                    None
+                };
+                let when_block_ids = when_blocks
+                    .iter()
+                    .map(|(cond, res)| {
+                        Ok((
+                            cond.populate_plan(plan, worker)?,
+                            (res.populate_plan(plan, worker)?),
+                        ))
+                    })
+                    .collect::<Result<Vec<(usize, usize)>, SbroadError>>()?;
+                let else_expr_id = if let Some(else_expr) = else_expr {
+                    Some(else_expr.populate_plan(plan, worker)?)
+                } else {
+                    None
+                };
+                plan.add_case(search_expr_id, when_block_ids, else_expr_id)
             }
             ParseExpression::Trim {
                 kind,
@@ -1766,6 +1798,8 @@ fn parse_expr_pratt<M>(
 where
     M: Metadata,
 {
+    type WhenBlocks = Vec<(Box<ParseExpression>, Box<ParseExpression>)>;
+
     PRATT_PARSER
         .map_primary(|primary| {
             let parse_expr = match primary.as_rule() {
@@ -2028,6 +2062,73 @@ where
                         CastType::try_from(&type_pairs.as_rule())
                     }?;
                     ParseExpression::Cast { cast_type, child: Box::new(child_parse_expr) }
+                }
+                Rule::Case => {
+                    let mut inner_pairs = primary.into_inner();
+
+                    let first_pair = inner_pairs.next().expect("Case must have at least one child");
+                    let mut when_block_pairs = Vec::new();
+                    let search_expr = if let Rule::Expr = first_pair.as_rule() {
+                        let expr = parse_expr_pratt(
+                            first_pair.into_inner(),
+                            referred_relation_ids,
+                            worker,
+                            plan,
+                        )?;
+                        Some(Box::new(expr))
+                    } else {
+                        when_block_pairs.push(first_pair);
+                        None
+                    };
+
+                    let mut else_expr = None;
+                    for pair in inner_pairs {
+                        if Rule::CaseElseBlock == pair.as_rule() {
+                            let expr = parse_expr_pratt(
+                                pair.into_inner(),
+                                referred_relation_ids,
+                                worker,
+                                plan,
+                            )?;
+                            else_expr = Some(Box::new(expr));
+                        } else {
+                            when_block_pairs.push(pair);
+                        }
+                    }
+
+                    let when_blocks: Result<WhenBlocks, SbroadError> = when_block_pairs
+                        .into_iter()
+                        .map(|when_block_pair| {
+                            let mut inner_pairs = when_block_pair.into_inner();
+                            let condition_expr_pair = inner_pairs.next().expect("When block must contain condition expression.");
+                            let condition_expr = parse_expr_pratt(
+                                condition_expr_pair.into_inner(),
+                                referred_relation_ids,
+                                worker,
+                                plan,
+                            )?;
+
+                            let result_expr_pair = inner_pairs.next().expect("When block must contain result expression.");
+                            let result_expr = parse_expr_pratt(
+                                result_expr_pair.into_inner(),
+                                referred_relation_ids,
+                                worker,
+                                plan,
+                            )?;
+
+                            Ok::<(Box<ParseExpression>, Box<ParseExpression>), SbroadError>((
+                                Box::new(condition_expr),
+                                Box::new(result_expr)
+                            ))
+
+                        })
+                        .collect();
+
+                    ParseExpression::Case {
+                        search_expr,
+                        when_blocks: when_blocks?,
+                        else_expr,
+                    }
                 }
                 Rule::CurrentDate => {
                     let date = worker.current_time.replace_time(Time::MIDNIGHT);

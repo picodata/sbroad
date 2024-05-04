@@ -805,6 +805,20 @@ impl Plan {
         self.nodes.add_unary_bool(op, child)
     }
 
+    /// Add CASE ... END operator to the plan.
+    pub fn add_case(
+        &mut self,
+        search_expr: Option<usize>,
+        when_blocks: Vec<(usize, usize)>,
+        else_expr: Option<usize>,
+    ) -> usize {
+        self.nodes.push(Node::Expression(Expression::Case {
+            search_expr,
+            else_expr,
+            when_blocks,
+        }))
+    }
+
     /// Add bool operator node to the plan.
     ///
     /// # Errors
@@ -1010,6 +1024,34 @@ impl Plan {
                 if *child == old_id {
                     *child = new_id;
                     return Ok(());
+                }
+            }
+            Expression::Case {
+                search_expr,
+                when_blocks,
+                else_expr,
+            } => {
+                if let Some(search_expr) = search_expr {
+                    if *search_expr == old_id {
+                        *search_expr = new_id;
+                        return Ok(());
+                    }
+                }
+                for (cond_expr, res_expr) in when_blocks {
+                    if *cond_expr == old_id {
+                        *cond_expr = new_id;
+                        return Ok(());
+                    }
+                    if *res_expr == old_id {
+                        *res_expr = new_id;
+                        return Ok(());
+                    }
+                }
+                if let Some(else_expr) = else_expr {
+                    if *else_expr == old_id {
+                        *else_expr = new_id;
+                        return Ok(());
+                    }
                 }
             }
             Expression::Bool { left, right, .. }

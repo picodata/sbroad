@@ -208,17 +208,17 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
             //       Please, try to keep the list in alphabetical order.
             Keyword = {  ^"all" | ^"and" | ^"any" | ^"array" | ^"asc" | ^"as"
                         | ^"begin" | ^"between" | ^"boolean" | ^"bool"| ^"by"
-                        | ^"cast" | ^"char"
+                        | ^"case" | ^"cast" | ^"char"
                         | ^"decimal" | ^"desc" | ^"distinct" | ^"double"
-                        | ^"end" | ^"except" | ^"exists"
+                        | ^"else" | ^"end" | ^"except" | ^"exists"
                         | ^"false" | ^"from" | ^"group"
                         | ^"having" | ^"inner" | ^"integer" | ^"into" | ^"int" | ^"in" | ^"is"
                         | ^"join" | ^"left" | ^"not" | ^"null" | ^"number"
                         | ^"on" | ^"option" | ^"order" | ^"or" | ^"outer" | ^"primary"
                         | ^"scalar" | ^"select" | ^"set" | ^"string"
-                        | ^"table" | ^"text" | ^"to" | ^"true"
+                        | ^"table" | ^"text" | ^"then" | ^"to" | ^"true"
                         | ^"union" | ^"unsigned" | ^"using" | ^"uuid"
-                        | ^"values" | ^"varchar" | ^"where" | ^"with"
+                        | ^"values" | ^"varchar" | ^"when" | ^"where" | ^"with"
                         }
 
 Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
@@ -243,7 +243,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
     ExprAtomValue = _{ UnaryNot* ~ AtomicExpr ~ IsNullPostfix? }
         UnaryNot   = @{ NotFlag }
         IsNullPostfix = { ^"is" ~ NotFlag? ~ ^"null" }
-        AtomicExpr = _{ Literal | Parameter | Cast | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | SubQuery | Row }
+        AtomicExpr = _{ Literal | Parameter | Cast | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | Case | SubQuery | Row }
             Literal = { True | False | Null | Double | Decimal | Unsigned | Integer | SingleQuotedString }
                 True     = { ^"true" }
                 False    = { ^"false" }
@@ -274,6 +274,15 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
                     TrimKindBoth = { ^"both" }
                 TrimPattern = { Expr }
                 TrimTarget = { Expr }
+            Case = {
+                ^"case" ~
+                Expr? ~
+                CaseWhenBlock* ~
+                CaseElseBlock? ~
+                ^"end"
+            }
+                CaseWhenBlock = { ^"when" ~ Expr ~ ^"then" ~ Expr }
+                CaseElseBlock = { ^"else" ~ Expr }
             Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
                 TypeCast = _{ TypeAny | ColumnDefType }
                 ColumnDefType = { TypeBool | TypeDatetime | TypeDecimal | TypeDouble | TypeInt | TypeNumber

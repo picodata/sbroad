@@ -115,6 +115,41 @@ fn expression_next<'nodes>(
             }
             None
         }
+        Some(Node::Expression(Expression::Case {
+            search_expr,
+            when_blocks,
+            else_expr,
+        })) => {
+            let mut child_step = *iter.get_child().borrow();
+            *iter.get_child().borrow_mut() += 1;
+            if let Some(search_expr) = search_expr {
+                if child_step == 0 {
+                    return Some(search_expr);
+                }
+                child_step -= 1;
+            }
+
+            let when_blocks_index = child_step / 2;
+            let index_reminder = child_step % 2;
+            return if when_blocks_index < when_blocks.len() {
+                let (cond_expr, res_expr) = when_blocks
+                    .get(when_blocks_index)
+                    .expect("When block must have been found.");
+                return match index_reminder {
+                    0 => Some(cond_expr),
+                    1 => Some(res_expr),
+                    _ => unreachable!("Impossible reminder"),
+                };
+            } else if when_blocks_index == when_blocks.len() && index_reminder == 0 {
+                if let Some(else_expr) = else_expr {
+                    Some(else_expr)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+        }
         Some(Node::Expression(
             Expression::Bool { left, right, .. }
             | Expression::Arithmetic { left, right, .. }

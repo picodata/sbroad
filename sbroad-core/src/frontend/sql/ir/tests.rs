@@ -700,6 +700,81 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn front_case_search() {
+    let input = r#"select
+                            case "id" when 1 then true end
+                        from
+                        "test_space""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (case "test_space"."id"::unsigned when 1::unsigned then true::boolean end -> "COL_1")
+    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_case_simple() {
+    let input = r#"select
+                            case
+                                when true = true then 'Moscow'
+                                when 1 != 2 and 4 < 5 then 42
+                                else false
+                            end as "case_result"
+                        from
+                        "test_space""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (case when ROW(true::boolean) = ROW(true::boolean) then 'Moscow'::string when ROW(1::unsigned) <> ROW(2::unsigned) and ROW(4::unsigned) < ROW(5::unsigned) then 42::unsigned else false::boolean end -> "case_result")
+    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_case_nested() {
+    let input = r#"select
+                            case "id"
+                                when 1 then
+                                    case "sysFrom"
+                                        when 69 then true
+                                        when 42 then false
+                                    end
+                                when 2 then 42
+                                else false
+                            end as "case_result"
+                        from
+                        "test_space""#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection (case "test_space"."id"::unsigned when 1::unsigned then case "test_space"."sysFrom"::unsigned when 69::unsigned then true::boolean when 42::unsigned then false::boolean end when 2::unsigned then 42::unsigned else false::boolean end -> "case_result")
+    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_sql_subquery_column_duplicates() {
     let input = r#"SELECT "id" FROM "test_space" WHERE ("id", "id")
         IN (SELECT "id", "id" from "test_space")"#;

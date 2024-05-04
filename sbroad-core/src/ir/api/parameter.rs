@@ -148,7 +148,7 @@ impl Plan {
         // Initially pointing to nowhere.
         let mut idx = value_ids.len();
 
-        let get_value = |param_id: usize, idx: usize| -> Result<usize, SbroadError> {
+        let get_value = |param_id: usize, idx: usize| -> usize {
             let value_idx = if tnt_params_style {
                 // in case non-pg params are used,
                 // idx is the correct position
@@ -156,22 +156,14 @@ impl Plan {
             } else {
                 value_ids.len()
                     - 1
-                    - *pg_params_map.get(&param_id).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(format_smolstr!(
-                                "value index not found for parameter with id: {param_id}",
-                            )),
-                        )
-                    })?
+                    - *pg_params_map.get(&param_id).unwrap_or_else(|| {
+                        panic!("Value index not found for parameter with id: {param_id}.")
+                    })
             };
-            let val_id = value_ids.get(value_idx).ok_or_else(|| {
-                SbroadError::NotFound(
-                    Entity::Node,
-                    format_smolstr!("(Parameter) in position {value_idx}"),
-                )
-            })?;
-            Ok(*val_id)
+            let val_id = value_ids
+                .get(value_idx)
+                .unwrap_or_else(|| panic!("Parameter not found in position {value_idx}."));
+            *val_id
         };
 
         for (_, id) in &nodes {
@@ -195,7 +187,7 @@ impl Plan {
                     } => {
                         if param_node_ids.take(param_id).is_some() {
                             idx = idx.saturating_sub(1);
-                            let val_id = get_value(*param_id, idx)?;
+                            let val_id = get_value(*param_id, idx);
                             row_ids.insert(*param_id, self.nodes.add_row(vec![val_id], None));
                         }
                     }
@@ -238,7 +230,7 @@ impl Plan {
                         for param_id in &[*left, *right] {
                             if param_node_ids.take(param_id).is_some() {
                                 idx = idx.saturating_sub(1);
-                                let val_id = get_value(*param_id, idx)?;
+                                let val_id = get_value(*param_id, idx);
                                 row_ids.insert(*param_id, self.nodes.add_row(vec![val_id], None));
                             }
                         }
@@ -255,7 +247,7 @@ impl Plan {
                         for param_id in params.into_iter().flatten() {
                             if param_node_ids.take(&param_id).is_some() {
                                 idx = idx.saturating_sub(1);
-                                let val_id = get_value(param_id, idx)?;
+                                let val_id = get_value(param_id, idx);
                                 row_ids.insert(param_id, self.nodes.add_row(vec![val_id], None));
                             }
                         }
@@ -268,6 +260,32 @@ impl Plan {
                             if param_node_ids.take(param_id).is_some() {
                                 // Parameter is already under row/function so that we don't
                                 // have to cover it with `add_row` call.
+                                idx = idx.saturating_sub(1);
+                            }
+                        }
+                    }
+                    Expression::Case {
+                        ref search_expr,
+                        ref when_blocks,
+                        ref else_expr,
+                    } => {
+                        if let Some(search_expr) = search_expr {
+                            if param_node_ids.take(search_expr).is_some() {
+                                idx = idx.saturating_sub(1);
+                            }
+                        }
+
+                        for (cond_expr, res_expr) in when_blocks {
+                            if param_node_ids.take(cond_expr).is_some() {
+                                idx = idx.saturating_sub(1);
+                            }
+                            if param_node_ids.take(res_expr).is_some() {
+                                idx = idx.saturating_sub(1);
+                            }
+                        }
+
+                        if let Some(else_expr) = else_expr {
+                            if param_node_ids.take(else_expr).is_some() {
                                 idx = idx.saturating_sub(1);
                             }
                         }
@@ -363,7 +381,7 @@ impl Plan {
                     } => {
                         if param_node_ids_cloned.take(param_id).is_some() {
                             idx = idx.saturating_sub(1);
-                            let val_id = get_value(*param_id, idx)?;
+                            let val_id = get_value(*param_id, idx);
                             *param_id = val_id;
                         }
                     }
@@ -414,9 +432,34 @@ impl Plan {
                         for param_id in list {
                             if param_node_ids_cloned.take(param_id).is_some() {
                                 idx = idx.saturating_sub(1);
-                                let val_id = get_value(*param_id, idx)?;
+                                let val_id = get_value(*param_id, idx);
                                 *param_id = val_id;
                             }
+                        }
+                    }
+                    Expression::Case {
+                        ref mut search_expr,
+                        ref mut when_blocks,
+                        ref mut else_expr,
+                    } => {
+                        let mut do_the_work = |param_id: &mut usize| {
+                            if param_node_ids_cloned.take(param_id).is_some() {
+                                idx = idx.saturating_sub(1);
+                                let val_id = get_value(*param_id, idx);
+                                *param_id = val_id;
+                            }
+                        };
+                        if let Some(search_expr) = search_expr {
+                            do_the_work(search_expr);
+                        }
+
+                        for (cond_expr, res_expr) in when_blocks {
+                            do_the_work(cond_expr);
+                            do_the_work(res_expr);
+                        }
+
+                        if let Some(else_expr) = else_expr {
+                            do_the_work(else_expr);
                         }
                     }
                     Expression::Reference { .. }
@@ -428,7 +471,7 @@ impl Plan {
                         for param_id in values {
                             if param_node_ids_cloned.take(param_id).is_some() {
                                 idx = idx.saturating_sub(1);
-                                let val_id = get_value(*param_id, idx)?;
+                                let val_id = get_value(*param_id, idx);
                                 *param_id = val_id;
                             }
                         }

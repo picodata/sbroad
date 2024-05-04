@@ -32,6 +32,11 @@ enum ColExpr {
     Unary(Unary, Box<ColExpr>),
     Column(String, Type),
     Cast(Box<ColExpr>, CastType),
+    Case(
+        Option<Box<ColExpr>>,
+        Vec<(Box<ColExpr>, Box<ColExpr>)>,
+        Option<Box<ColExpr>>,
+    ),
     Concat(Box<ColExpr>, Box<ColExpr>),
     StableFunction(SmolStr, Vec<ColExpr>, Option<FunctionFeature>, Type),
     Trim(Option<TrimKind>, Option<Box<ColExpr>>, Box<ColExpr>),
@@ -59,6 +64,21 @@ impl Display for ColExpr {
             },
             ColExpr::Column(c, col_type) => format!("{c}::{col_type}"),
             ColExpr::Cast(v, t) => format!("{v}::{t}"),
+            ColExpr::Case(search_expr, when_blocks, else_expr) => {
+                let mut res = String::from("case");
+                if let Some(search_expr) = search_expr {
+                    res = format!("{res} {search_expr}");
+                }
+
+                for (cond_expr, res_expr) in when_blocks {
+                    res = format!("{res} when {cond_expr} then {res_expr}");
+                }
+                if let Some(else_expr) = else_expr {
+                    res = format!("{res} else {else_expr}");
+                }
+                res = format!("{res} end");
+                res
+            }
             ColExpr::Concat(l, r) => format!("{l} || {r}"),
             ColExpr::StableFunction(name, args, feature, func_type) => {
                 let is_distinct = matches!(feature, Some(FunctionFeature::Distinct));
@@ -116,6 +136,47 @@ impl ColExpr {
                         )
                     })?;
                     let cast_expr = ColExpr::Cast(Box::new(expr), to.clone());
+                    stack.push((cast_expr, id));
+                }
+                Expression::Case {
+                    search_expr,
+                    when_blocks,
+                    else_expr,
+                } => {
+                    let else_expr_col = if else_expr.is_some() {
+                        let (expr, _) = stack
+                            .pop()
+                            .unwrap_or_else(|| panic!("Can't pop else expr from stack."));
+                        Some(Box::new(expr))
+                    } else {
+                        None
+                    };
+
+                    let mut match_expr_cols: Vec<(Box<ColExpr>, Box<ColExpr>)> = when_blocks
+                        .iter()
+                        .map(|_| {
+                            let (res_expr, _) = stack
+                                .pop()
+                                .unwrap_or_else(|| panic!("Can't pop res expr from stack."));
+
+                            let (cond_expr, _) = stack
+                                .pop()
+                                .unwrap_or_else(|| panic!("Can't pop cond expr from stack."));
+                            (Box::new(cond_expr), Box::new(res_expr))
+                        })
+                        .collect();
+                    match_expr_cols.reverse();
+
+                    let search_expr_col = if search_expr.is_some() {
+                        let (expr, _) = stack
+                            .pop()
+                            .unwrap_or_else(|| panic!("Can't pop search expr from stack."));
+                        Some(Box::new(expr))
+                    } else {
+                        None
+                    };
+
+                    let cast_expr = ColExpr::Case(search_expr_col, match_expr_cols, else_expr_col);
                     stack.push((cast_expr, id));
                 }
                 Expression::CountAsterisk => {

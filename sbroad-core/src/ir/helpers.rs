@@ -58,6 +58,7 @@ fn formatted_tabulate(buf: &mut String, n: i32) -> Result<(), std::fmt::Error> {
 /// Formatting helper debug functions
 impl Plan {
     /// Helper function for printing Expression node.
+    #[allow(clippy::too_many_lines)]
     fn write_expr(
         &self,
         buf: &mut String,
@@ -89,6 +90,31 @@ impl Plan {
                     formatted_tabulate(buf, tabulation_number + 1)?;
                     writeln!(buf, "Child")?;
                     self.formatted_arena_node(buf, tabulation_number + 1, *child)?;
+                }
+                Expression::Case {
+                    search_expr,
+                    when_blocks,
+                    else_expr,
+                } => {
+                    writeln!(buf, "Case")?;
+                    if let Some(search_expr) = search_expr {
+                        formatted_tabulate(buf, tabulation_number + 1)?;
+                        writeln!(buf, "Search expr")?;
+                        self.formatted_arena_node(buf, tabulation_number + 1, *search_expr)?;
+                    }
+                    for (cond_expr, res_expr) in when_blocks {
+                        formatted_tabulate(buf, tabulation_number + 1)?;
+                        writeln!(buf, "WHEN")?;
+                        self.formatted_arena_node(buf, tabulation_number + 1, *cond_expr)?;
+                        formatted_tabulate(buf, tabulation_number + 1)?;
+                        writeln!(buf, "THEN")?;
+                        self.formatted_arena_node(buf, tabulation_number + 1, *res_expr)?;
+                    }
+                    if let Some(else_expr) = else_expr {
+                        formatted_tabulate(buf, tabulation_number + 1)?;
+                        writeln!(buf, "Else expr")?;
+                        self.formatted_arena_node(buf, tabulation_number + 1, *else_expr)?;
+                    }
                 }
                 Expression::Bool { op, left, right } => {
                     writeln!(buf, "Bool [op: {op}]")?;

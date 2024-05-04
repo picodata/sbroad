@@ -282,6 +282,11 @@ impl ExecutionPlan {
                         sql.push_str(s);
                     }
                     SyntaxData::Cast => sql.push_str("CAST"),
+                    SyntaxData::Case => sql.push_str("CASE"),
+                    SyntaxData::When => sql.push_str("WHEN"),
+                    SyntaxData::Then => sql.push_str("THEN"),
+                    SyntaxData::Else => sql.push_str("ELSE"),
+                    SyntaxData::End => sql.push_str("END"),
                     SyntaxData::CloseParenthesis => sql.push(')'),
                     SyntaxData::Concat => sql.push_str("||"),
                     SyntaxData::Comma => sql.push(','),
@@ -375,6 +380,7 @@ impl ExecutionPlan {
                                     | Expression::Bool { .. }
                                     | Expression::Arithmetic { .. }
                                     | Expression::Cast { .. }
+                                    | Expression::Case { .. }
                                     | Expression::Concat { .. }
                                     | Expression::Row { .. }
                                     | Expression::Trim { .. }

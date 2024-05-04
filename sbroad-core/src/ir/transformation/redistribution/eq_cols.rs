@@ -73,57 +73,64 @@ impl ReferredMap {
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
         for (_, node_id) in expr_tree.iter(condition_id) {
             let expr = plan.get_expression_node(node_id)?;
-            match expr {
+            let res = match expr {
                 Expression::Bool { left, right, .. }
                 | Expression::Arithmetic { left, right, .. }
-                | Expression::Concat { left, right, .. } => {
-                    let res = referred
-                        .get_or_none(*left)
-                        .add(referred.get_or_none(*right));
-                    referred.insert(node_id, res);
+                | Expression::Concat { left, right, .. } => referred
+                    .get_or_none(*left)
+                    .add(referred.get_or_none(*right)),
+                Expression::Case {
+                    search_expr,
+                    when_blocks,
+                    else_expr,
+                } => {
+                    let mut res = Referred::None;
+                    if let Some(search_expr) = search_expr {
+                        res = res.add(referred.get_or_none(*search_expr));
+                    }
+                    for (cond_expr, res_expr) in when_blocks {
+                        res = res.add(referred.get_or_none(*cond_expr));
+                        res = res.add(referred.get_or_none(*res_expr));
+                    }
+                    if let Some(else_expr) = else_expr {
+                        res = res.add(referred.get_or_none(*else_expr));
+                    }
+                    res
                 }
                 Expression::Trim {
                     pattern, target, ..
-                } => {
-                    let res = match pattern {
-                        Some(pattern) => referred
-                            .get_or_none(*pattern)
-                            .add(referred.get_or_none(*target)),
-                        None => referred.get_or_none(*target).clone(),
-                    };
-                    referred.insert(node_id, res);
-                }
-                Expression::Constant { .. } | Expression::CountAsterisk => {
-                    referred.insert(node_id, Referred::None);
-                }
+                } => match pattern {
+                    Some(pattern) => referred
+                        .get_or_none(*pattern)
+                        .add(referred.get_or_none(*target)),
+                    None => referred.get_or_none(*target).clone(),
+                },
+                Expression::Constant { .. } | Expression::CountAsterisk => Referred::None,
                 Expression::Reference {
                     targets, parent, ..
                 } => {
                     if *parent == Some(join_id) && *targets == Some(vec![1]) {
-                        referred.insert(node_id, Referred::Inner);
+                        Referred::Inner
                     } else if *parent == Some(join_id) && *targets == Some(vec![0]) {
-                        referred.insert(node_id, Referred::Outer);
+                        Referred::Outer
                     } else {
-                        referred.insert(node_id, Referred::None);
+                        Referred::None
                     }
                 }
                 Expression::Row { list: children, .. }
                 | Expression::StableFunction { children, .. } => {
-                    let res = children.iter().fold(Referred::None, |acc, x| {
+                    children.iter().fold(Referred::None, |acc, x| {
                         acc.add(referred.get(*x).unwrap_or(&Referred::None))
-                    });
-                    referred.insert(node_id, res);
+                    })
                 }
                 Expression::Alias { child, .. }
                 | Expression::ExprInParentheses { child }
                 | Expression::Cast { child, .. }
                 | Expression::Unary { child, .. } => {
-                    referred.insert(
-                        node_id,
-                        referred.get(*child).unwrap_or(&Referred::None).clone(),
-                    );
+                    referred.get(*child).unwrap_or(&Referred::None).clone()
                 }
-            }
+            };
+            referred.insert(node_id, res);
         }
         Ok(referred)
     }

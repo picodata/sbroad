@@ -39,8 +39,46 @@ impl Expression {
     ///
     /// # Errors
     /// - the row list contains non-expression nodes;
+    ///
+    /// # Panics
+    /// - Plan is in inconsistent state
     pub fn calculate_type(&self, plan: &Plan) -> Result<Type, SbroadError> {
         match self {
+            Expression::Case {
+                when_blocks,
+                else_expr,
+                ..
+            } => {
+                let mut case_type = None;
+                for (_, ret_expr) in when_blocks {
+                    let ret_expr_type = plan.get_node_type(*ret_expr)?;
+                    if let Some(case_type) = &case_type {
+                        if case_type != &ret_expr_type {
+                            if matches!(ret_expr_type, Type::Array)
+                                || matches!(ret_expr_type, Type::Map)
+                            {
+                                return Ok(Type::Any);
+                            }
+                            return Ok(Type::Scalar);
+                        }
+                    } else {
+                        case_type = Some(ret_expr_type);
+                    }
+                }
+                let case_type_unwrapped = case_type.expect("Case WHEN type must be known");
+                if let Some(else_expr) = else_expr {
+                    let else_expr_type = plan.get_node_type(*else_expr)?;
+                    if case_type_unwrapped != else_expr_type {
+                        if matches!(else_expr_type, Type::Array)
+                            || matches!(else_expr_type, Type::Map)
+                        {
+                            return Ok(Type::Any);
+                        }
+                        return Ok(Type::Scalar);
+                    }
+                }
+                Ok(case_type_unwrapped)
+            }
             Expression::Alias { child, .. } | Expression::ExprInParentheses { child } => {
                 plan.get_node_type(*child)
             }

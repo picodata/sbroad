@@ -118,7 +118,11 @@ impl<'plan, 'args> PartialEq<Self> for AggregateSignature<'plan, 'args> {
                 .arguments
                 .iter()
                 .zip(other.arguments.iter())
-                .all(|(l, r)| self.plan.are_subtrees_equal(*l, *r).unwrap_or(false))
+                .all(|(l, r)| {
+                    self.plan
+                        .are_aggregate_subtrees_equal(*l, *r)
+                        .unwrap_or(false)
+                })
     }
 }
 
@@ -295,7 +299,7 @@ impl<'plan> ExpressionMapper<'plan> {
             .iter()
             .find(|gr_expr| {
                 self.plan
-                    .are_subtrees_equal(current, **gr_expr)
+                    .are_aggregate_subtrees_equal(current, **gr_expr)
                     .unwrap_or(false)
             })
             .copied()
@@ -369,7 +373,11 @@ impl Plan {
     ///
     /// # Errors
     /// - invalid [`Expression::Reference`]s in either of subtrees
-    pub fn are_subtrees_equal(&self, lhs: usize, rhs: usize) -> Result<bool, SbroadError> {
+    pub fn are_aggregate_subtrees_equal(
+        &self,
+        lhs: usize,
+        rhs: usize,
+    ) -> Result<bool, SbroadError> {
         let l = self.get_node(lhs)?;
         let r = self.get_node(rhs)?;
         if let Node::Expression(left) = l {
@@ -379,7 +387,7 @@ impl Plan {
                     Expression::ExprInParentheses { child: l_child } => {
                         // TODO: Should we compare expressions ignoring parentheses?
                         if let Expression::ExprInParentheses { child: r_child } = right {
-                            return self.are_subtrees_equal(*l_child, *r_child);
+                            return self.are_aggregate_subtrees_equal(*l_child, *r_child);
                         }
                     }
                     Expression::CountAsterisk => {
@@ -397,8 +405,53 @@ impl Plan {
                         } = right
                         {
                             return Ok(*op_left == *op_right
-                                && self.are_subtrees_equal(*left_left, *left_right)?
-                                && self.are_subtrees_equal(*right_left, *right_right)?);
+                                && self.are_aggregate_subtrees_equal(*left_left, *left_right)?
+                                && self
+                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
+                        }
+                    }
+                    Expression::Case {
+                        search_expr: search_expr_left,
+                        when_blocks: when_blocks_left,
+                        else_expr: else_expr_left,
+                    } => {
+                        if let Expression::Case {
+                            search_expr: search_expr_right,
+                            when_blocks: when_blocks_right,
+                            else_expr: else_expr_right,
+                        } = right
+                        {
+                            let mut search_expr_equal = false;
+                            if let (Some(search_expr_left), Some(search_expr_right)) =
+                                (search_expr_left, search_expr_right)
+                            {
+                                search_expr_equal = self.are_aggregate_subtrees_equal(
+                                    *search_expr_left,
+                                    *search_expr_right,
+                                )?;
+                            }
+
+                            let when_blocks_equal = when_blocks_left
+                                .iter()
+                                .zip(when_blocks_right.iter())
+                                .all(|((cond_l, res_l), (cond_r, res_r))| {
+                                    self.are_aggregate_subtrees_equal(*cond_l, *cond_r)
+                                        .unwrap_or(false)
+                                        && self
+                                            .are_aggregate_subtrees_equal(*res_l, *res_r)
+                                            .unwrap_or(false)
+                                });
+
+                            let mut else_expr_equal = false;
+                            if let (Some(else_expr_left), Some(else_expr_right)) =
+                                (else_expr_left, else_expr_right)
+                            {
+                                else_expr_equal = self.are_aggregate_subtrees_equal(
+                                    *else_expr_left,
+                                    *else_expr_right,
+                                )?;
+                            }
+                            return Ok(search_expr_equal && when_blocks_equal && else_expr_equal);
                         }
                     }
                     Expression::Arithmetic {
@@ -413,8 +466,8 @@ impl Plan {
                         } = right
                         {
                             return Ok(*op_left == *op_right
-                                && self.are_subtrees_equal(*l_left, *l_right)?
-                                && self.are_subtrees_equal(*r_left, *r_right)?);
+                                && self.are_aggregate_subtrees_equal(*l_left, *l_right)?
+                                && self.are_aggregate_subtrees_equal(*r_left, *r_right)?);
                         }
                     }
                     Expression::Cast {
@@ -427,7 +480,8 @@ impl Plan {
                         } = right
                         {
                             return Ok(*to_left == *to_right
-                                && self.are_subtrees_equal(*child_left, *child_right)?);
+                                && self
+                                    .are_aggregate_subtrees_equal(*child_left, *child_right)?);
                         }
                     }
                     Expression::Trim {
@@ -444,14 +498,19 @@ impl Plan {
                             match (pattern_left, pattern_right) {
                                 (Some(p_left), Some(p_right)) => {
                                     return Ok(*kind_left == *kind_right
-                                        && self.are_subtrees_equal(*p_left, *p_right)?
                                         && self
-                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                            .are_aggregate_subtrees_equal(*p_left, *p_right)?
+                                        && self.are_aggregate_subtrees_equal(
+                                            *target_left,
+                                            *target_right,
+                                        )?);
                                 }
                                 (None, None) => {
                                     return Ok(*kind_left == *kind_right
-                                        && self
-                                            .are_subtrees_equal(*target_left, *target_right)?);
+                                        && self.are_aggregate_subtrees_equal(
+                                            *target_left,
+                                            *target_right,
+                                        )?);
                                 }
                                 _ => return Ok(false),
                             }
@@ -466,8 +525,10 @@ impl Plan {
                             right: right_right,
                         } = right
                         {
-                            return Ok(self.are_subtrees_equal(*left_left, *left_right)?
-                                && self.are_subtrees_equal(*right_left, *right_right)?);
+                            return Ok(self
+                                .are_aggregate_subtrees_equal(*left_left, *left_right)?
+                                && self
+                                    .are_aggregate_subtrees_equal(*right_left, *right_right)?);
                         }
                     }
                     Expression::Constant { value: value_left } => {
@@ -489,10 +550,9 @@ impl Plan {
                             list: list_right, ..
                         } = right
                         {
-                            return Ok(list_left
-                                .iter()
-                                .zip(list_right.iter())
-                                .all(|(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false)));
+                            return Ok(list_left.iter().zip(list_right.iter()).all(|(l, r)| {
+                                self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
+                            }));
                         }
                     }
                     Expression::StableFunction {
@@ -512,7 +572,9 @@ impl Plan {
                                 && feature_left == feature_right
                                 && func_type_left == func_type_right
                                 && children_left.iter().zip(children_right.iter()).all(
-                                    |(l, r)| self.are_subtrees_equal(*l, *r).unwrap_or(false),
+                                    |(l, r)| {
+                                        self.are_aggregate_subtrees_equal(*l, *r).unwrap_or(false)
+                                    },
                                 ));
                         }
                     }
@@ -526,7 +588,8 @@ impl Plan {
                         } = right
                         {
                             return Ok(*op_left == *op_right
-                                && self.are_subtrees_equal(*child_left, *child_right)?);
+                                && self
+                                    .are_aggregate_subtrees_equal(*child_left, *child_right)?);
                         }
                     }
                 }

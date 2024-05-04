@@ -360,6 +360,30 @@ impl Plan {
                         })?;
                     }
                 }
+                Expression::Case {
+                    ref mut search_expr,
+                    ref mut when_blocks,
+                    ref mut else_expr,
+                } => {
+                    if let Some(search_expr) = search_expr {
+                        *search_expr = *map.get(search_expr).unwrap_or_else(|| {
+                            panic!("Search expr not found for subtree cloning.")
+                        });
+                    }
+                    for (cond_expr, res_expr) in when_blocks {
+                        *cond_expr = *map
+                            .get(cond_expr)
+                            .unwrap_or_else(|| panic!("Cond expr not found for subtree cloning."));
+                        *res_expr = *map
+                            .get(res_expr)
+                            .unwrap_or_else(|| panic!("Res expr not found for subtree cloning."));
+                    }
+                    if let Some(else_expr) = else_expr {
+                        *else_expr = *map
+                            .get(else_expr)
+                            .unwrap_or_else(|| panic!("Else expr not found for subtree cloning."));
+                    }
+                }
             }
             self.nodes.push(Node::Expression(expr));
             map.insert(id, next_id);
@@ -432,6 +456,22 @@ impl SubtreeCloner {
                 op: _,
             } => {
                 *child = self.get_new_id(*child)?;
+            }
+            Expression::Case {
+                ref mut search_expr,
+                ref mut when_blocks,
+                ref mut else_expr,
+            } => {
+                if let Some(search_expr) = search_expr {
+                    *search_expr = self.get_new_id(*search_expr)?;
+                }
+                for (cond_expr, res_expr) in when_blocks {
+                    *cond_expr = self.get_new_id(*cond_expr)?;
+                    *res_expr = self.get_new_id(*res_expr)?;
+                }
+                if let Some(else_expr) = else_expr {
+                    *else_expr = self.get_new_id(*else_expr)?;
+                }
             }
             Expression::Bool {
                 ref mut left,
