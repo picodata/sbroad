@@ -100,6 +100,43 @@ vtable_max_rows = 5000
 }
 
 #[test]
+fn reuse_cte_values() {
+    let sql = r#"
+        WITH cte (b) AS (VALUES(1))
+        SELECT t.c FROM (SELECT count(*) as c FROM cte c1 JOIN cte c2 ON true) t
+        JOIN cte ON true
+    "#;
+    let plan = sql_to_optimized_ir(sql, vec![]);
+    println!("{}", plan.as_explain().unwrap());
+
+    let expected_explain = String::from(
+        r#"projection ("T"."C"::integer -> "C")
+    join on true::boolean
+        scan "T"
+            projection (count((*::integer))::integer -> "C")
+                join on true::boolean
+                    scan cte "C1"($0)
+                    scan cte "C2"($0)
+        scan cte "CTE"($1)
+subquery $0:
+projection ("CTE"."COLUMN_1"::unsigned -> "B")
+                            scan "CTE"
+                                values
+                                    value row (data=ROW(1::unsigned))
+subquery $1:
+projection ("CTE"."COLUMN_1"::unsigned -> "B")
+                scan "CTE"
+                    values
+                        value row (data=ROW(1::unsigned))
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn join_cte() {
     let sql = r#"
         WITH cte (a) AS (SELECT first_name FROM "test_space")

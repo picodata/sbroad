@@ -2470,8 +2470,15 @@ impl AbstractSyntaxTree {
                     map.add(id, rel_child_id_plan);
                     if let Some(ast_alias_id) = node.children.get(1) {
                         let alias_name = parse_normalized_identifier(self, *ast_alias_id)?;
-                        let scan = plan.get_mut_relation_node(rel_child_id_plan)?;
-                        scan.set_scan_name(Some(alias_name.to_smolstr()))?;
+                        // CTE scans can have different aliases, so clone the CTE scan node,
+                        // preserving its subtree.
+                        if let Relational::ScanCte { child, .. } = rel_child_node {
+                            let scan_id = plan.add_cte(*child, alias_name, vec![])?;
+                            map.add(id, scan_id);
+                        } else {
+                            let scan = plan.get_mut_relation_node(rel_child_id_plan)?;
+                            scan.set_scan_name(Some(alias_name.to_smolstr()))?;
+                        }
                     }
                 }
                 Rule::ScanTable => {

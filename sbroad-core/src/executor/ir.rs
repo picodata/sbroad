@@ -379,21 +379,51 @@ impl ExecutionPlan {
         // We can't replace CTE subtree as it can be reused in other slices of the plan.
         // So, collect all CTE nodes and their subtree nodes (relational and expression)
         // as a set to avoid their removal.
-        let cte_id_iter = nodes.iter().map(|(_, id)| *id).filter(|id| {
-            matches!(
-                plan.get_node(*id),
-                Ok(Node::Relational(Relational::ScanCte { .. }))
-            )
-        });
+        let cte_scans = nodes
+            .iter()
+            .map(|(_, id)| *id)
+            .filter(|id| {
+                matches!(
+                    plan.get_node(*id),
+                    Ok(Node::Relational(Relational::ScanCte { .. }))
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Get the capacity of the CTE nodes. We expect that CTE subtree nodes are located
+        // in the beginning of the plan arena (while CTE scans can be located anywhere).
+        // So, we get the biggest child id of the CTE nodes and add 1 to get the capacity.
+        let mut all_cte_nodes_capacity = 0;
+        let mut cte_amount = 0;
+        for cte_id in &cte_scans {
+            let cte_node = plan.get_relation_node(*cte_id)?;
+            let Relational::ScanCte { child, .. } = cte_node else {
+                unreachable!("Expected CTE scan node.");
+            };
+            let child_id = *child;
+            if all_cte_nodes_capacity < child_id {
+                all_cte_nodes_capacity = child_id;
+            }
+            cte_amount += 1;
+        }
+        all_cte_nodes_capacity += 1;
+        let single_cte_capacity = if cte_amount <= 1 {
+            all_cte_nodes_capacity
+        } else {
+            all_cte_nodes_capacity / cte_amount * 2
+        };
+
         let mut cte_ids: AHashSet<usize> = AHashSet::new();
         let mut is_reserved = false;
-        for cte_id in cte_id_iter {
+        for cte_id in cte_scans {
             if !is_reserved {
                 is_reserved = true;
-                cte_ids.reserve(nodes.len());
+                cte_ids.reserve(all_cte_nodes_capacity);
             }
-            let mut cte_subtree =
-                PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), nodes.len());
+            let mut cte_subtree = PostOrder::with_capacity(
+                |node| plan.exec_plan_subtree_iter(node),
+                single_cte_capacity,
+            );
             for (_, id) in cte_subtree.iter(cte_id) {
                 cte_ids.insert(id);
             }

@@ -29,6 +29,8 @@ pub(crate) mod eq_cols;
 pub(crate) mod groupby;
 pub(crate) mod left_join;
 
+const CTE_CAPACITY: usize = 8;
+
 #[derive(Debug)]
 pub(crate) enum JoinChild {
     Inner,
@@ -2147,6 +2149,9 @@ impl Plan {
     /// - failed to set distribution
     #[otm_child_span("plan.transformation.add_motions")]
     pub fn add_motions(&mut self) -> Result<(), SbroadError> {
+        type CteChildId = usize;
+        type MotionId = usize;
+        let mut cte_motions: AHashMap<CteChildId, MotionId> = AHashMap::with_capacity(CTE_CAPACITY);
         let top = self.get_top()?;
         let mut post_tree =
             PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
@@ -2288,9 +2293,20 @@ impl Plan {
                     self.create_motion_nodes(strategy)?;
                     self.set_distribution(output)?;
                 }
-                Relational::ScanCte { output, .. } => {
-                    let strategy = self.resolve_cte_conflicts(id)?;
-                    self.create_motion_nodes(strategy)?;
+                Relational::ScanCte { output, child, .. } => {
+                    // Possible, current CTE subtree has already been resolved and we
+                    // can just copy the corresponding motion node.
+                    if let Some(motion_id) = cte_motions.get(&child) {
+                        self.set_relational_children(id, vec![*motion_id])?;
+                    } else {
+                        let strategy = self.resolve_cte_conflicts(id)?;
+                        self.create_motion_nodes(strategy)?;
+                        let new_child_id = self.get_relational_child(id, 0)?;
+                        let new_child_node = self.get_relation_node(new_child_id)?;
+                        if let Relational::Motion { .. } = new_child_node {
+                            cte_motions.insert(child, new_child_id);
+                        }
+                    }
                     // We don't materialize CTEs with global and single distribution.
                     // So, for global child let's preserve global distribution for CTE.
                     // Otherwise force a single distribution.
