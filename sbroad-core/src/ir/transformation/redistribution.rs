@@ -1852,14 +1852,22 @@ impl Plan {
         // We always gather CTE data on the router node.
         let mut map = Strategy::new(cte_id);
         let child_id = self.get_relational_child(cte_id, 0)?;
+
+        // We need to check whether CTE subtree contains VALUES nodes. If so, we have to
+        // materialize them on the router node, though they are globally distributed. The
+        // reason is that we wrap VALUES with projection and generate anonymous column names
+        // for them. And these names can be incorrect when we inline the CTE subtree into
+        // the plan (as Tarantool has a very weird behavior with anonymous column names).
+        let contains_values = self.subtree_contains_values(cte_id)?;
+
         let child_output_id = self.get_relation_node(child_id)?.output();
         let child_dist = self.get_distribution(child_output_id)?;
         match child_dist {
-            Distribution::Global | Distribution::Single => {
+            Distribution::Global | Distribution::Single if !contains_values => {
                 // The data is already on the router node, no need to build a virtual table.
                 map.add_child(child_id, MotionPolicy::None, Program::default());
             }
-            Distribution::Any | Distribution::Segment { .. } => {
+            _ => {
                 // Build a virtual table on the router node.
                 map.add_child(child_id, MotionPolicy::Full, Program::default());
             }

@@ -107,7 +107,6 @@ fn reuse_cte_values() {
         JOIN cte ON true
     "#;
     let plan = sql_to_optimized_ir(sql, vec![]);
-    println!("{}", plan.as_explain().unwrap());
 
     let expected_explain = String::from(
         r#"projection ("T"."C"::integer -> "C")
@@ -119,15 +118,17 @@ fn reuse_cte_values() {
                     scan cte "C2"($0)
         scan cte "CTE"($1)
 subquery $0:
-projection ("CTE"."COLUMN_1"::unsigned -> "B")
-                            scan "CTE"
-                                values
-                                    value row (data=ROW(1::unsigned))
+motion [policy: full]
+                            projection ("CTE"."COLUMN_1"::unsigned -> "B")
+                                scan "CTE"
+                                    values
+                                        value row (data=ROW(1::unsigned))
 subquery $1:
-projection ("CTE"."COLUMN_1"::unsigned -> "B")
-                scan "CTE"
-                    values
-                        value row (data=ROW(1::unsigned))
+motion [policy: full]
+                projection ("CTE"."COLUMN_1"::unsigned -> "B")
+                    scan "CTE"
+                        values
+                            value row (data=ROW(1::unsigned))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -228,10 +229,11 @@ fn values_in_cte() {
         r#"projection ("CTE"."A"::string -> "A")
     scan cte "CTE"($0)
 subquery $0:
-projection ("CTE"."COLUMN_1"::string -> "A")
-            scan "CTE"
-                values
-                    value row (data=ROW('a'::string))
+motion [policy: full]
+            projection ("CTE"."COLUMN_1"::string -> "A")
+                scan "CTE"
+                    values
+                        value row (data=ROW('a'::string))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -253,16 +255,19 @@ fn union_in_cte() {
         r#"projection ("CTE2"."A"::string -> "A")
     scan cte "CTE2"($1)
 subquery $0:
-projection ("CTE1"."COLUMN_1"::string -> "A")
-                        scan "CTE1"
-                            values
-                                value row (data=ROW('a'::string))
+motion [policy: full]
+                            motion [policy: full]
+                                projection ("CTE1"."COLUMN_1"::string -> "A")
+                                    scan "CTE1"
+                                        values
+                                            value row (data=ROW('a'::string))
 subquery $1:
-union all
-            projection ("CTE1"."A"::string -> "A")
-                scan cte "CTE1"($0)
-            projection ("CTE1"."A"::string -> "A")
-                scan cte "CTE1"($0)
+motion [policy: full]
+            union all
+                projection ("CTE1"."A"::string -> "A")
+                    scan cte "CTE1"($0)
+                projection ("CTE1"."A"::string -> "A")
+                    scan cte "CTE1"($0)
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

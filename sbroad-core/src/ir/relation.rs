@@ -356,6 +356,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
         let is_nullable = matches!(column_is_nullable.as_str(), "true");
 
         match column_type.as_str() {
+            "any" => Ok(Column::new(&column_name, Type::Any, role, is_nullable)),
             "boolean" => Ok(Column::new(&column_name, Type::Boolean, role, is_nullable)),
             "datetime" => Ok(Column::new(&column_name, Type::Datetime, role, is_nullable)),
             "decimal" => Ok(Column::new(&column_name, Type::Decimal, role, is_nullable)),
