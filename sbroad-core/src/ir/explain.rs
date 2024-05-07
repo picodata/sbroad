@@ -869,7 +869,7 @@ impl Display for ExplainNode {
 }
 
 /// Describe sql query (or subquery) as recursive type
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Serialize)]
 struct ExplainTreePart {
     /// Level hepls to detect count of idents
     #[serde(skip_serializing)]
@@ -878,6 +878,12 @@ struct ExplainTreePart {
     current: Option<ExplainNode>,
     /// Children nodes of current sql node
     children: Vec<ExplainTreePart>,
+}
+
+impl PartialEq for ExplainTreePart {
+    fn eq(&self, other: &Self) -> bool {
+        self.current == other.current && self.children == other.children
+    }
 }
 
 impl Display for ExplainTreePart {

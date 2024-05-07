@@ -116,19 +116,13 @@ fn reuse_cte_values() {
                 join on true::boolean
                     scan cte "C1"($0)
                     scan cte "C2"($0)
-        scan cte "CTE"($1)
+        scan cte "CTE"($0)
 subquery $0:
 motion [policy: full]
                             projection ("CTE"."COLUMN_1"::unsigned -> "B")
                                 scan "CTE"
                                     values
                                         value row (data=ROW(1::unsigned))
-subquery $1:
-motion [policy: full]
-                projection ("CTE"."COLUMN_1"::unsigned -> "B")
-                    scan "CTE"
-                        values
-                            value row (data=ROW(1::unsigned))
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
