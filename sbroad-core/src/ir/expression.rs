@@ -494,8 +494,9 @@ impl<'plan> PlanExpr<'plan> {
 
 impl<'plan> Hash for PlanExpr<'plan> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
-        comp.hash_for_expr(self.id, state, EXPR_HASH_DEPTH);
+        let mut comp = Comparator::new(ReferencePolicy::ByFields, self.plan);
+        comp.set_hasher(state);
+        comp.hash_for_expr(self.id, EXPR_HASH_DEPTH);
     }
 }
 
@@ -531,6 +532,7 @@ pub enum ReferencePolicy {
 pub struct Comparator<'plan> {
     policy: ReferencePolicy,
     plan: &'plan Plan,
+    state: Option<&'plan mut dyn Hasher>,
 }
 
 pub const EXPR_HASH_DEPTH: usize = 5;
@@ -538,7 +540,15 @@ pub const EXPR_HASH_DEPTH: usize = 5;
 impl<'plan> Comparator<'plan> {
     #[must_use]
     pub fn new(policy: ReferencePolicy, plan: &'plan Plan) -> Self {
-        Comparator { policy, plan }
+        Comparator {
+            policy,
+            plan,
+            state: None,
+        }
+    }
+
+    pub fn set_hasher<H: Hasher>(&mut self, state: &'plan mut H) {
+        self.state = Some(state);
     }
 
     /// Checks whether expression subtrees `lhs` and `rhs` are equal.
@@ -757,21 +767,33 @@ impl<'plan> Comparator<'plan> {
         Ok(false)
     }
 
+    pub fn hash_for_child_expr(&mut self, child: usize, depth: usize) {
+        self.hash_for_expr(child, depth - 1);
+    }
+
+    /// TODO: See strange [behaviour](https://users.rust-lang.org/t/unintuitive-behaviour-with-passing-a-reference-to-trait-object-to-function/35937)
+    ///       about `&mut dyn Hasher` and why we use `ref mut state`.
+    ///
+    /// # Panics
+    /// - Comparator hasher wasn't set.
     #[allow(clippy::too_many_lines)]
-    pub fn hash_for_expr<H: Hasher>(&self, top: usize, state: &mut H, depth: usize) {
+    pub fn hash_for_expr(&mut self, top: usize, depth: usize) {
         if depth == 0 {
             return;
         }
         let Ok(node) = self.plan.get_expression_node(top) else {
             return;
         };
+        let Some(ref mut state) = self.state else {
+            panic!("Hasher should have been set previously");
+        };
         match node {
             Expression::ExprInParentheses { child } => {
-                self.hash_for_expr(*child, state, depth - 1);
+                self.hash_for_child_expr(*child, depth);
             }
             Expression::Alias { child, name } => {
                 name.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
+                self.hash_for_child_expr(*child, depth);
             }
             Expression::Case {
                 search_expr,
@@ -779,33 +801,33 @@ impl<'plan> Comparator<'plan> {
                 else_expr,
             } => {
                 if let Some(search_expr) = search_expr {
-                    self.hash_for_expr(*search_expr, state, depth - 1);
+                    self.hash_for_child_expr(*search_expr, depth);
                 }
                 for (cond_expr, res_expr) in when_blocks {
-                    self.hash_for_expr(*cond_expr, state, depth - 1);
-                    self.hash_for_expr(*res_expr, state, depth - 1);
+                    self.hash_for_child_expr(*cond_expr, depth);
+                    self.hash_for_child_expr(*res_expr, depth);
                 }
                 if let Some(else_expr) = else_expr {
-                    self.hash_for_expr(*else_expr, state, depth - 1);
+                    self.hash_for_child_expr(*else_expr, depth);
                 }
             }
             Expression::Bool { op, left, right } => {
                 op.hash(state);
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
+                self.hash_for_child_expr(*left, depth);
+                self.hash_for_child_expr(*right, depth);
             }
             Expression::Arithmetic { op, left, right } => {
                 op.hash(state);
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
+                self.hash_for_child_expr(*left, depth);
+                self.hash_for_child_expr(*right, depth);
             }
             Expression::Cast { child, to } => {
                 to.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
+                self.hash_for_child_expr(*child, depth);
             }
             Expression::Concat { left, right } => {
-                self.hash_for_expr(*left, state, depth - 1);
-                self.hash_for_expr(*right, state, depth - 1);
+                self.hash_for_child_expr(*left, depth);
+                self.hash_for_child_expr(*right, depth);
             }
             Expression::Trim {
                 kind,
@@ -814,9 +836,9 @@ impl<'plan> Comparator<'plan> {
             } => {
                 kind.hash(state);
                 if let Some(pattern) = pattern {
-                    self.hash_for_expr(*pattern, state, depth - 1);
+                    self.hash_for_child_expr(*pattern, depth);
                 }
-                self.hash_for_expr(*target, state, depth - 1);
+                self.hash_for_child_expr(*target, depth);
             }
             Expression::Constant { value } => {
                 value.hash(state);
@@ -842,7 +864,7 @@ impl<'plan> Comparator<'plan> {
             },
             Expression::Row { list, .. } => {
                 for child in list {
-                    self.hash_for_expr(*child, state, depth - 1);
+                    self.hash_for_child_expr(*child, depth);
                 }
             }
             Expression::StableFunction {
@@ -855,12 +877,12 @@ impl<'plan> Comparator<'plan> {
                 func_type.hash(state);
                 name.hash(state);
                 for child in children {
-                    self.hash_for_expr(*child, state, depth - 1);
+                    self.hash_for_child_expr(*child, depth);
                 }
             }
             Expression::Unary { child, op } => {
                 op.hash(state);
-                self.hash_for_expr(*child, state, depth - 1);
+                self.hash_for_child_expr(*child, depth);
             }
             Expression::CountAsterisk => {
                 "CountAsterisk".hash(state);

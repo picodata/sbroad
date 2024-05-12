@@ -2115,44 +2115,6 @@ impl Plan {
         Ok(map)
     }
 
-    /// Synchronize values row output with the data tuple after parameter binding.
-    ///
-    /// # Errors
-    /// - Node is not values row
-    /// - Output and data tuples have different number of columns
-    /// - Output is not a row of aliases
-    pub fn update_values_row(&mut self, id: usize) -> Result<(), SbroadError> {
-        let values_row = self.get_node(id)?;
-        let (output_id, data_id) =
-            if let Node::Relational(Relational::ValuesRow { output, data, .. }) = values_row {
-                (*output, *data)
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(format_smolstr!("Expected a values row: {values_row:?}")),
-                ));
-            };
-        let data = self.get_expression_node(data_id)?;
-        let data_list = data.clone_row_list()?;
-        let output = self.get_expression_node(output_id)?;
-        let output_list = output.clone_row_list()?;
-        for (pos, alias_id) in output_list.iter().enumerate() {
-            let new_child_id = *data_list.get(pos).ok_or_else(|| {
-                SbroadError::NotFound(Entity::Node, format_smolstr!("at position {pos}"))
-            })?;
-            let alias = self.get_mut_expression_node(*alias_id)?;
-            if let Expression::Alias { ref mut child, .. } = alias {
-                *child = new_child_id;
-            } else {
-                return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(format_smolstr!("expected an alias: {alias:?}")),
-                ));
-            }
-        }
-        Ok(())
-    }
-
     /// Sets children for relational node
     ///
     /// # Errors

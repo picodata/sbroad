@@ -104,9 +104,10 @@ impl<'plan, 'args> AggregateSignature<'plan, 'args> {
 impl<'plan, 'args> Hash for AggregateSignature<'plan, 'args> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
-        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        let mut comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        comp.set_hasher(state);
         for arg in self.arguments {
-            comp.hash_for_expr(*arg, state, EXPR_HASH_DEPTH);
+            comp.hash_for_expr(*arg, EXPR_HASH_DEPTH);
         }
     }
 }
@@ -141,8 +142,9 @@ impl<'plan> GroupingExpression<'plan> {
 
 impl<'plan> Hash for GroupingExpression<'plan> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
-        comp.hash_for_expr(self.id, state, EXPR_HASH_DEPTH);
+        let mut comp = Comparator::new(ReferencePolicy::ByAliases, self.plan);
+        comp.set_hasher(state);
+        comp.hash_for_expr(self.id, EXPR_HASH_DEPTH);
     }
 }
 

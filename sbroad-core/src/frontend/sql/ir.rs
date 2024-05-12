@@ -14,7 +14,7 @@ use crate::ir::transformation::redistribution::MotionOpcode;
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
-use crate::ir::{Node, Plan};
+use crate::ir::{Node, NodeId, Plan};
 
 use super::Between;
 
@@ -127,6 +127,35 @@ impl SubQuery {
             operator,
             sq,
         }
+    }
+}
+
+struct CloneExprSubtreeMap {
+    // Map of { old_node_id -> new_node_id } for cloning nodes.
+    inner: AHashMap<NodeId, NodeId>,
+}
+
+impl CloneExprSubtreeMap {
+    fn with_capacity(capacity: usize) -> Self {
+        CloneExprSubtreeMap {
+            inner: AHashMap::with_capacity(capacity),
+        }
+    }
+
+    fn insert(&mut self, old_id: usize, new_id: usize) {
+        self.inner.insert(old_id, new_id);
+    }
+
+    fn replace(&self, id: &mut usize) {
+        let new_id = self.get(*id);
+        *id = new_id;
+    }
+
+    fn get(&self, id: usize) -> usize {
+        *self
+            .inner
+            .get(&id)
+            .unwrap_or_else(|| panic!("Node with id {id} not found in the cloning subtree map."))
     }
 }
 
@@ -291,11 +320,11 @@ impl Plan {
     }
 
     pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
-        let mut map = HashMap::new();
         let mut subtree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
+        let mut map = CloneExprSubtreeMap::with_capacity(nodes.len());
         for (_, id) in nodes {
             let next_id = self.nodes.next_id();
             let mut expr = self.get_expression_node(id)?.clone();
@@ -306,11 +335,7 @@ impl Plan {
                 Expression::Alias { ref mut child, .. }
                 | Expression::ExprInParentheses { ref mut child }
                 | Expression::Cast { ref mut child, .. }
-                | Expression::Unary { ref mut child, .. } => {
-                    *child = *map.get(child).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                    })?;
-                }
+                | Expression::Unary { ref mut child, .. } => map.replace(child),
                 Expression::Bool {
                     ref mut left,
                     ref mut right,
@@ -326,12 +351,8 @@ impl Plan {
                     ref mut right,
                     ..
                 } => {
-                    *left = *map.get(left).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                    })?;
-                    *right = *map.get(right).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                    })?;
+                    map.replace(left);
+                    map.replace(right);
                 }
                 Expression::Trim {
                     ref mut pattern,
@@ -339,13 +360,9 @@ impl Plan {
                     ..
                 } => {
                     if let Some(pattern) = pattern {
-                        *pattern = *map.get(pattern).ok_or_else(|| {
-                            SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                        })?;
+                        map.replace(pattern);
                     }
-                    *target = *map.get(target).ok_or_else(|| {
-                        SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                    })?;
+                    map.replace(target);
                 }
                 Expression::Row {
                     list: ref mut children,
@@ -355,9 +372,7 @@ impl Plan {
                     ref mut children, ..
                 } => {
                     for child in children {
-                        *child = *map.get(child).ok_or_else(|| {
-                            SbroadError::NotFound(Entity::SubTree, format_smolstr!("(id {id})"))
-                        })?;
+                        map.replace(child);
                     }
                 }
                 Expression::Case {
@@ -366,22 +381,14 @@ impl Plan {
                     ref mut else_expr,
                 } => {
                     if let Some(search_expr) = search_expr {
-                        *search_expr = *map.get(search_expr).unwrap_or_else(|| {
-                            panic!("Search expression not found for subtree cloning.")
-                        });
+                        map.replace(search_expr);
                     }
                     for (cond_expr, res_expr) in when_blocks {
-                        *cond_expr = *map.get(cond_expr).unwrap_or_else(|| {
-                            panic!("Condition expression not found for subtree cloning.")
-                        });
-                        *res_expr = *map.get(res_expr).unwrap_or_else(|| {
-                            panic!("Result expression not found for subtree cloning.")
-                        });
+                        map.replace(cond_expr);
+                        map.replace(res_expr);
                     }
                     if let Some(else_expr) = else_expr {
-                        *else_expr = *map.get(else_expr).unwrap_or_else(|| {
-                            panic!("Else expression not found for subtree cloning.")
-                        });
+                        map.replace(else_expr);
                     }
                 }
             }

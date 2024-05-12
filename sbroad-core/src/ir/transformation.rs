@@ -20,8 +20,40 @@ use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 
 pub type ExprId = usize;
-/// Helper type representing map of (`old_expr_id` -> `changed_expr_id`).
-pub type OldNewExpressionMap = HashMap<ExprId, ExprId>;
+/// Helper struct representing map of (`old_expr_id` -> `changed_expr_id`).
+struct OldNewExpressionMap {
+    inner: HashMap<ExprId, ExprId>,
+}
+
+impl OldNewExpressionMap {
+    fn new() -> Self {
+        OldNewExpressionMap {
+            inner: HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, old_id: usize, new_id: usize) {
+        self.inner.insert(old_id, new_id);
+    }
+
+    fn replace(&self, child: &mut usize) {
+        if let Some(new_id) = self.inner.get(child) {
+            *child = *new_id;
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    fn get(&self, key: usize) -> Option<&ExprId> {
+        self.inner.get(&key)
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
 
 /// Pair of (old tree id, transformed tree id).
 pub type OldNewTopIdPair = (ExprId, ExprId);
@@ -147,7 +179,7 @@ impl Plan {
         f: TransformFunction,
         ops: &[Bool],
     ) -> Result<OldNewTopIdPair, SbroadError> {
-        let mut map: OldNewExpressionMap = HashMap::new();
+        let mut map = OldNewExpressionMap::new();
         // Note, that filter accepts nodes:
         // * On which we'd like to apply transformation
         // * That will contain transformed nodes as children
@@ -190,7 +222,7 @@ impl Plan {
         let (old_top_id, new_top_id) = if map.is_empty() {
             (top_id, top_id)
         } else {
-            let old_top_id = if map.get(&top_id).is_some() && map.len() == 1 {
+            let old_top_id = if map.get(top_id).is_some() && map.len() == 1 {
                 top_id
             } else {
                 self.clone_expr_subtree(top_id)?
@@ -208,9 +240,7 @@ impl Plan {
                     | Expression::ExprInParentheses { child, .. }
                     | Expression::Cast { child, .. }
                     | Expression::Unary { child, .. } => {
-                        if let Some(new_id) = map.get(child) {
-                            *child = *new_id;
-                        }
+                        map.replace(child);
                     }
                     Expression::Case {
                         search_expr,
@@ -218,53 +248,33 @@ impl Plan {
                         else_expr,
                     } => {
                         if let Some(search_expr) = search_expr {
-                            if let Some(new_id) = map.get(search_expr) {
-                                *search_expr = *new_id;
-                            }
+                            map.replace(search_expr);
                         }
-
                         for (cond_expr, res_expr) in when_blocks {
-                            if let Some(new_id) = map.get(cond_expr) {
-                                *cond_expr = *new_id;
-                            }
-                            if let Some(new_id) = map.get(res_expr) {
-                                *res_expr = *new_id;
-                            }
+                            map.replace(cond_expr);
+                            map.replace(res_expr);
                         }
-
                         if let Some(else_expr) = else_expr {
-                            if let Some(new_id) = map.get(else_expr) {
-                                *else_expr = *new_id;
-                            }
+                            map.replace(else_expr);
                         }
                     }
                     Expression::Bool { left, right, .. }
                     | Expression::Arithmetic { left, right, .. } => {
-                        if let Some(new_id) = map.get(left) {
-                            *left = *new_id;
-                        }
-                        if let Some(new_id) = map.get(right) {
-                            *right = *new_id;
-                        }
+                        map.replace(left);
+                        map.replace(right);
                     }
                     Expression::Trim {
                         pattern, target, ..
                     } => {
                         if let Some(pattern) = pattern {
-                            if let Some(new_id) = map.get(pattern) {
-                                *pattern = *new_id;
-                            }
+                            map.replace(pattern);
                         }
-                        if let Some(new_id) = map.get(target) {
-                            *target = *new_id;
-                        }
+                        map.replace(target);
                     }
                     Expression::Row { list, .. }
                     | Expression::StableFunction { children: list, .. } => {
                         for id in list {
-                            if let Some(new_id) = map.get(id) {
-                                *id = *new_id;
-                            }
+                            map.replace(id);
                         }
                     }
                     Expression::Concat { .. }
@@ -274,7 +284,7 @@ impl Plan {
                 }
             }
             // Checks if the top node is a new node.
-            if let Some(new_id) = map.get(&top_id) {
+            if let Some(new_id) = map.get(top_id) {
                 new_top_id = *new_id;
             }
             (old_top_id, new_top_id)

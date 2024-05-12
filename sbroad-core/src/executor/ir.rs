@@ -61,6 +61,34 @@ impl From<Plan> for ExecutionPlan {
     }
 }
 
+/// Translates the original plan's node id to the new sub-plan one.
+struct SubtreeMap {
+    inner: AHashMap<usize, usize>,
+}
+
+impl SubtreeMap {
+    fn with_capacity(capacity: usize) -> Self {
+        SubtreeMap {
+            inner: AHashMap::with_capacity(capacity),
+        }
+    }
+
+    fn get_id(&self, expr_id: usize) -> usize {
+        *self
+            .inner
+            .get(&expr_id)
+            .unwrap_or_else(|| panic!("Could not find expr with id {expr_id} in subtree map"))
+    }
+
+    fn contains_key(&self, expr_id: usize) -> bool {
+        self.inner.contains_key(&expr_id)
+    }
+
+    fn insert(&mut self, old_id: usize, new_id: usize) {
+        self.inner.insert(old_id, new_id);
+    }
+}
+
 impl ExecutionPlan {
     #[must_use]
     pub fn get_ir_plan(&self) -> &Plan {
@@ -116,7 +144,7 @@ impl ExecutionPlan {
         ))
     }
 
-    /// Add materialize motion result to translation map of virtual tables
+    /// Add materialize motion result to map of virtual tables.
     ///
     /// # Errors
     /// - invalid motion node
@@ -423,8 +451,7 @@ impl ExecutionPlan {
             }
         }
 
-        // Translates the original plan's node id to the new sub-plan one.
-        let mut translation: AHashMap<usize, usize> = AHashMap::with_capacity(nodes.len());
+        let mut subtree_map = SubtreeMap::with_capacity(nodes.len());
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
         // Map of { plan node_id -> virtual table }.
         let mut new_vtables: HashMap<usize, Rc<VirtualTable>> =
@@ -435,7 +462,7 @@ impl ExecutionPlan {
         for (_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
             // and CTEs can be referred twice).
-            if translation.contains_key(&node_id) {
+            if subtree_map.contains_key(node_id) {
                 continue;
             }
 
@@ -473,7 +500,7 @@ impl ExecutionPlan {
                             // XXX: UNDO operation can cause problems if we introduce more complicated transformations
                             // for filter/condition (but then the UNDO logic should be changed as well).
                             let undo_expr_id = ir_plan.undo.get_oldest(expr_id).unwrap_or(expr_id);
-                            *expr_id = *translation.get(undo_expr_id).unwrap_or_else(|| panic!("Could not find filter/condition node id {undo_expr_id} in the map."));
+                            *expr_id = subtree_map.get_id(*undo_expr_id);
                             new_plan.replace_parent_in_subtree(*expr_id, None, Some(next_id))?;
                         }
                         Relational::ScanRelation { relation, .. }
@@ -508,9 +535,7 @@ impl ExecutionPlan {
                         Relational::GroupBy { gr_cols, .. } => {
                             let mut new_cols: Vec<usize> = Vec::with_capacity(gr_cols.len());
                             for col_id in gr_cols.iter() {
-                                let new_col_id = *translation.get(col_id).unwrap_or_else(|| {
-                                    panic!("Grouping column {col_id} in translation map.")
-                                });
+                                let new_col_id = subtree_map.get_id(*col_id);
                                 new_plan.replace_parent_in_subtree(
                                     new_col_id,
                                     None,
@@ -528,10 +553,7 @@ impl ExecutionPlan {
                             for element in order_by_elements.iter() {
                                 let new_entity = match element.entity {
                                     OrderByEntity::Expression { expr_id } => {
-                                        let new_element_id =
-                                            *translation.get(&expr_id).unwrap_or_else(|| {
-                                                panic!("ORDER BY element {element:?} not found in translation map.")
-                                            });
+                                        let new_element_id = subtree_map.get_id(expr_id);
                                         new_plan.replace_parent_in_subtree(
                                             new_element_id,
                                             None,
@@ -553,9 +575,7 @@ impl ExecutionPlan {
                             *order_by_elements = new_elements;
                         }
                         Relational::ValuesRow { data, .. } => {
-                            *data = *translation.get(data).unwrap_or_else(|| {
-                                panic!("Could not find data node id {data} in the map.")
-                            });
+                            *data = subtree_map.get_id(*data);
                         }
                         Relational::Except { .. }
                         | Relational::Intersect { .. }
@@ -568,15 +588,11 @@ impl ExecutionPlan {
                     }
 
                     for child_id in rel.mut_children() {
-                        *child_id = *translation.get(child_id).unwrap_or_else(|| {
-                            panic!("Could not find child node id {child_id} in the map.")
-                        });
+                        *child_id = subtree_map.get_id(*child_id);
                     }
 
                     let output = rel.output();
-                    *rel.mut_output() = *translation.get(&output).unwrap_or_else(|| {
-                        panic!("Node not found as output node {output} in relational node {rel:?}.")
-                    });
+                    *rel.mut_output() = subtree_map.get_id(output);
                     new_plan.replace_parent_in_subtree(rel.output(), None, Some(next_id))?;
                 }
                 Node::Expression(ref mut expr) => match expr {
@@ -584,9 +600,7 @@ impl ExecutionPlan {
                     | Expression::ExprInParentheses { ref mut child }
                     | Expression::Cast { ref mut child, .. }
                     | Expression::Unary { ref mut child, .. } => {
-                        *child = *translation.get(child).unwrap_or_else(|| {
-                            panic!("Could not find child node id {child} in the map.")
-                        });
+                        *child = subtree_map.get_id(*child);
                     }
                     Expression::Bool {
                         ref mut left,
@@ -603,12 +617,8 @@ impl ExecutionPlan {
                         ref mut right,
                         ..
                     } => {
-                        *left = *translation.get(left).unwrap_or_else(|| {
-                            panic!("Could not find left child node id {left} in the map.")
-                        });
-                        *right = *translation.get(right).unwrap_or_else(|| {
-                            panic!("Could not find right child node id {right} in the map.")
-                        });
+                        *left = subtree_map.get_id(*left);
+                        *right = subtree_map.get_id(*right);
                     }
                     Expression::Trim {
                         ref mut pattern,
@@ -616,13 +626,9 @@ impl ExecutionPlan {
                         ..
                     } => {
                         if let Some(pattern) = pattern {
-                            *pattern = *translation.get(pattern).unwrap_or_else(|| {
-                                panic!("Could not find pattern node id {pattern} in the map.")
-                            });
+                            *pattern = subtree_map.get_id(*pattern);
                         }
-                        *target = *translation.get(target).unwrap_or_else(|| {
-                            panic!("Could not find target node id {target} in the map.")
-                        });
+                        *target = subtree_map.get_id(*target);
                     }
                     Expression::Reference { ref mut parent, .. } => {
                         // The new parent node id MUST be set while processing the relational nodes.
@@ -636,9 +642,7 @@ impl ExecutionPlan {
                         ref mut children, ..
                     } => {
                         for child in children {
-                            *child = *translation.get(child).unwrap_or_else(|| {
-                                panic!("Could not find child node id {child} in the map.")
-                            });
+                            *child = subtree_map.get_id(*child);
                         }
                     }
                     Expression::Constant { .. } | Expression::CountAsterisk => {}
@@ -648,24 +652,14 @@ impl ExecutionPlan {
                         else_expr,
                     } => {
                         if let Some(search_expr) = search_expr {
-                            *search_expr = *translation.get(search_expr).unwrap_or_else(|| {
-                                panic!("Could not find search expression {search_expr} in the map.")
-                            });
+                            *search_expr = subtree_map.get_id(*search_expr);
                         }
                         for (cond_expr, res_expr) in when_blocks {
-                            *cond_expr = *translation.get(cond_expr).unwrap_or_else(|| {
-                                panic!(
-                                    "Could not find cond WHEN expression {cond_expr} in the map."
-                                )
-                            });
-                            *res_expr = *translation.get(res_expr).unwrap_or_else(|| {
-                                panic!("Could not find res THEN expression {res_expr} in the map.")
-                            });
+                            *cond_expr = subtree_map.get_id(*cond_expr);
+                            *res_expr = subtree_map.get_id(*res_expr);
                         }
                         if let Some(else_expr) = else_expr {
-                            *else_expr = *translation.get(else_expr).unwrap_or_else(|| {
-                                panic!("Could not find else expression {else_expr} in the map.")
-                            });
+                            *else_expr = subtree_map.get_id(*else_expr);
                         }
                     }
                 },
@@ -675,7 +669,7 @@ impl ExecutionPlan {
                 }
             }
             new_plan.nodes.push(node);
-            translation.insert(node_id, next_id);
+            subtree_map.insert(node_id, next_id);
             if top_id == node_id {
                 new_plan.set_top(next_id)?;
             }

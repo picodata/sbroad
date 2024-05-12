@@ -14,7 +14,6 @@ use crate::ir::{Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, SmolStr};
-use std::collections::HashMap;
 
 /// Enum representing status of Not push down traversal.
 /// It may be in two states:
@@ -53,7 +52,7 @@ fn call_expr_tree_not_push_down(
 ) -> Result<OldNewTopIdPair, SbroadError> {
     // Because of the borrow checker we can't change `Bool` and `Row` children during recursive
     // traversal and have to do it using this map after transformation.
-    let mut old_new_expression_map = HashMap::new();
+    let mut old_new_expression_map = OldNewExpressionMap::new();
     let new_top_id =
         plan.push_down_not_for_expression(top_id, NotState::Off, &mut old_new_expression_map)?;
 
@@ -83,23 +82,15 @@ fn call_expr_tree_not_push_down(
             let expr = plan.get_mut_expression_node(*id)?;
             match expr {
                 Expression::ExprInParentheses { child } => {
-                    if let Some(new_id) = old_new_expression_map.get(child) {
-                        *child = *new_id;
-                    }
+                    old_new_expression_map.replace(child);
                 }
                 Expression::Bool { left, right, .. } => {
-                    if let Some(new_id) = old_new_expression_map.get(left) {
-                        *left = *new_id;
-                    }
-                    if let Some(new_id) = old_new_expression_map.get(right) {
-                        *right = *new_id;
-                    }
+                    old_new_expression_map.replace(left);
+                    old_new_expression_map.replace(right);
                 }
                 Expression::Row { list, .. } => {
                     for id in list {
-                        if let Some(new_id) = old_new_expression_map.get(id) {
-                            *id = *new_id;
-                        }
+                        old_new_expression_map.replace(id);
                     }
                 }
                 _ => {}
