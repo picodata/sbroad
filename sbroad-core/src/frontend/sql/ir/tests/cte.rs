@@ -72,7 +72,7 @@ vtable_max_rows = 5000
 }
 
 #[test]
-fn reuse_cte() {
+fn reuse_cte_union_all() {
     let sql = r#"
         WITH cte (a) AS (SELECT first_name FROM "test_space")
         SELECT * FROM cte
@@ -91,6 +91,42 @@ subquery $0:
 motion [policy: full]
                 projection ("test_space"."FIRST_NAME"::string -> "A")
                     scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn reuse_union_in_cte() {
+    let sql = r#"
+        WITH cte (a) AS (
+            SELECT first_name FROM "test_space"
+            UNION
+            SELECT first_name FROM "test_space"
+        )
+        SELECT * FROM cte
+        UNION
+        SELECT * FROM cte
+    "#;
+    let plan = sql_to_optimized_ir(sql, vec![]);
+
+    let expected_explain = String::from(
+        r#"motion [policy: full]
+    union
+        projection ("CTE"."A"::string -> "A")
+            scan cte "CTE"($0)
+        projection ("CTE"."A"::string -> "A")
+            scan cte "CTE"($0)
+subquery $0:
+motion [policy: full]
+                    union
+                        projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                            scan "test_space"
+                        projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                            scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -237,7 +273,7 @@ vtable_max_rows = 5000
 }
 
 #[test]
-fn union_in_cte() {
+fn union_all_in_cte() {
     let sql = r#"
         WITH cte1 (a) AS (VALUES ('a')),
         cte2 as (SELECT * FROM cte1 UNION ALL SELECT * FROM cte1)
@@ -250,11 +286,10 @@ fn union_in_cte() {
     scan cte "CTE2"($1)
 subquery $0:
 motion [policy: full]
-                            motion [policy: full]
-                                projection ("CTE1"."COLUMN_1"::string -> "A")
-                                    scan "CTE1"
-                                        values
-                                            value row (data=ROW('a'::string))
+                            projection ("CTE1"."COLUMN_1"::string -> "A")
+                                scan "CTE1"
+                                    values
+                                        value row (data=ROW('a'::string))
 subquery $1:
 motion [policy: full]
             union all

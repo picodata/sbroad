@@ -2165,28 +2165,32 @@ impl Plan {
             PostOrder::with_capacity(|node| self.nodes.rel_iter(node), REL_CAPACITY);
         post_tree.populate_nodes(top);
         let nodes = post_tree.take_nodes();
+        let mut visited = AHashSet::with_capacity(nodes.len());
+        let mut old_new: AHashMap<usize, usize> = AHashMap::new();
 
-        let mut old_new: HashMap<usize, usize> = HashMap::new();
         for (_, id) in nodes {
+            if visited.contains(&id) {
+                continue;
+            }
             self.check_global_tbl_support(id)?;
+
+            let node = self.get_relation_node(id)?.clone();
 
             // Some transformations (Union) need to add new nodes above
             // themselves, because we don't store parent references,
             // we update child reference when DFS reaches parent node.
             let mut retired = Vec::new();
-            for (old_id, new_id) in &old_new {
-                let node = self.get_relation_node(id)?;
-                // if child changed, update reference
-                if node.children().iter().any(|x| x == old_id) {
-                    self.change_child(id, *old_id, *new_id)?;
-                    retired.push(*old_id);
+            for child_id in &node.children() {
+                if let Some(new_id) = old_new.get(child_id) {
+                    self.change_child(id, *child_id, *new_id)?;
+                    retired.push(*child_id);
                 }
             }
             for node_id in retired {
                 old_new.remove(&node_id);
             }
 
-            match self.get_relation_node(id)?.clone() {
+            match node {
                 // At the moment our grammar and IR constructors
                 // don't allow projection and values row with
                 // sub queries.
@@ -2328,6 +2332,7 @@ impl Plan {
                     }
                 }
             }
+            visited.insert(id);
         }
 
         if !old_new.is_empty() {
