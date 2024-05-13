@@ -381,12 +381,12 @@ fn parse_create_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             .expect("Expected to parse u32 value")
     };
     let bool_value = |node: &ParseNode| -> bool {
-        first_child(node)
-            .value
-            .as_ref()
-            .expect("Expected to see boolean value")
-            .parse()
-            .expect("Expected to parse boolean value")
+        let node = first_child(node);
+        match node.rule {
+            Rule::True => true,
+            Rule::False => false,
+            _ => panic!("expected True or False rule!"),
+        }
     };
 
     for child_id in &node.children {
