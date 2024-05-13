@@ -12,12 +12,12 @@
 use core::fmt::Debug;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::Deserialize;
-use smol_str::{format_smolstr, SmolStr, ToSmolStr};
+use smol_str::{SmolStr, ToSmolStr};
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::Encode;
 
 use crate::debug;
-use crate::errors::{Entity, SbroadError};
+use crate::errors::SbroadError;
 use crate::executor::vtable::VirtualTable;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
@@ -56,67 +56,8 @@ impl TryInto<Column> for &MetadataColumn {
     type Error = SbroadError;
 
     fn try_into(self) -> Result<Column, Self::Error> {
-        match self.r#type.as_str() {
-            "boolean" => Ok(Column::new(
-                &self.name,
-                Type::Boolean,
-                ColumnRole::User,
-                true,
-            )),
-            "datetime" => Ok(Column::new(
-                &self.name,
-                Type::Datetime,
-                ColumnRole::User,
-                true,
-            )),
-            "decimal" => Ok(Column::new(
-                &self.name,
-                Type::Decimal,
-                ColumnRole::User,
-                true,
-            )),
-            "double" => Ok(Column::new(
-                &self.name,
-                Type::Double,
-                ColumnRole::User,
-                true,
-            )),
-            "integer" => Ok(Column::new(
-                &self.name,
-                Type::Integer,
-                ColumnRole::User,
-                true,
-            )),
-            "number" | "numeric" => Ok(Column::new(
-                &self.name,
-                Type::Number,
-                ColumnRole::User,
-                true,
-            )),
-            "scalar" => Ok(Column::new(
-                &self.name,
-                Type::Scalar,
-                ColumnRole::User,
-                true,
-            )),
-            "string" | "text" | "varchar" => Ok(Column::new(
-                &self.name,
-                Type::String,
-                ColumnRole::User,
-                true,
-            )),
-            "uuid" => Ok(Column::new(&self.name, Type::Uuid, ColumnRole::User, true)),
-            "unsigned" => Ok(Column::new(
-                &self.name,
-                Type::Unsigned,
-                ColumnRole::User,
-                true,
-            )),
-            _ => Err(SbroadError::Unsupported(
-                Entity::Type,
-                Some(format_smolstr!("column type {}", self.r#type)),
-            )),
-        }
+        let col_type = Type::new(&self.r#type)?;
+        Ok(Column::new(&self.name, col_type, ColumnRole::User, true))
     }
 }
 
