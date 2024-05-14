@@ -110,6 +110,16 @@ g.test_cte = function ()
     t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "any"} })
     t.assert_items_equals(r["rows"], { {1}, {2}, {3} })
 
+    -- union in cte
+    r, err = api:call("sbroad.execute", { [[
+        WITH c1 (a) AS (VALUES (1), (2)),
+             c2 AS (SELECT * FROM c1 UNION SELECT * FROM c1)
+        SELECT a FROM c2
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "C2.A", type = "any"} })
+    t.assert_items_equals(r["rows"], { {1}, {2} })
+
     -- union all in cte
     r, err = api:call("sbroad.execute", { [[
         WITH cte1 (a) AS (SELECT "a" FROM "t" WHERE "id" = 1),

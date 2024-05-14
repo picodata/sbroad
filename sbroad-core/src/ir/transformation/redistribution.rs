@@ -1869,7 +1869,11 @@ impl Plan {
             }
             _ => {
                 // Build a virtual table on the router node.
-                map.add_child(child_id, MotionPolicy::Full, Program::default());
+                // If the child node is already some motion (UNION DISTINCT, etc.),
+                // no need to add another motion.
+                if !self.get_relation_node(child_id)?.is_motion() {
+                    map.add_child(child_id, MotionPolicy::Full, Program::default());
+                }
             }
         }
         Ok(map)
