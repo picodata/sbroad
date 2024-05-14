@@ -50,16 +50,24 @@ impl Expression {
                 ..
             } => {
                 let mut case_type = None;
+                let check_types_corresponds = |case_type: &Type, ret_expr_type: &Type| {
+                    if case_type != ret_expr_type {
+                        return if matches!(ret_expr_type, Type::Array)
+                            || matches!(ret_expr_type, Type::Map)
+                        {
+                            Some(Type::Any)
+                        } else {
+                            Some(Type::Scalar)
+                        };
+                    }
+                    None
+                };
+
                 for (_, ret_expr) in when_blocks {
                     let ret_expr_type = plan.get_node_type(*ret_expr)?;
                     if let Some(case_type) = &case_type {
-                        if case_type != &ret_expr_type {
-                            if matches!(ret_expr_type, Type::Array)
-                                || matches!(ret_expr_type, Type::Map)
-                            {
-                                return Ok(Type::Any);
-                            }
-                            return Ok(Type::Scalar);
+                        if let Some(ret_type) = check_types_corresponds(case_type, &ret_expr_type) {
+                            return Ok(ret_type);
                         }
                     } else {
                         case_type = Some(ret_expr_type);
@@ -68,13 +76,10 @@ impl Expression {
                 let case_type_unwrapped = case_type.expect("Case WHEN type must be known");
                 if let Some(else_expr) = else_expr {
                     let else_expr_type = plan.get_node_type(*else_expr)?;
-                    if case_type_unwrapped != else_expr_type {
-                        if matches!(else_expr_type, Type::Array)
-                            || matches!(else_expr_type, Type::Map)
-                        {
-                            return Ok(Type::Any);
-                        }
-                        return Ok(Type::Scalar);
+                    if let Some(ret_type) =
+                        check_types_corresponds(&case_type_unwrapped, &else_expr_type)
+                    {
+                        return Ok(ret_type);
                     }
                 }
                 Ok(case_type_unwrapped)

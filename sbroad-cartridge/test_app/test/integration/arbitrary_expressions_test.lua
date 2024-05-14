@@ -213,6 +213,50 @@ arbitrary_projection.test_arbitrary_valid = function()
     local r, err = api:call("sbroad.execute", { [[
         SELECT
             "id",
+            "val",
+            CASE "id"
+                WHEN 5 THEN 'five'
+                WHEN "val" THEN 'equal'
+            END "case_result"
+        FROM "arithmetic_space"
+        INNER JOIN
+        (SELECT "COLUMN_2" as "val" FROM (VALUES (1), (2))) AS "values"
+        ON true
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            { name = "arithmetic_space.id", type = "integer"},
+            { name = "values.val", type = "any"},
+            { name = "case_result", type = "any"},
+        },
+        rows = {
+            {1, 1, 'equal'},
+            {5, 1, 'five'},
+            {8, 1, box.NULL},
+            {9, 1, box.NULL},
+            {10, 1, box.NULL},
+            {1, 2, box.NULL},
+            {5, 2, 'five'},
+            {8, 2, box.NULL},
+            {9, 2, box.NULL},
+            {10, 2, box.NULL},
+            {2, 1, box.NULL},
+            {3, 1, box.NULL},
+            {4, 1, box.NULL},
+            {6, 1, box.NULL},
+            {7, 1, box.NULL},
+            {2, 2, 'equal'},
+            {3, 2, box.NULL},
+            {4, 2, box.NULL},
+            {6, 2, box.NULL},
+            {7, 2, box.NULL},
+        },
+    })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT
+            "id",
             CASE
                 WHEN "id" = 7 THEN 'first'
                 WHEN "id" / 2 < 4 THEN 'second'
@@ -236,6 +280,42 @@ arbitrary_projection.test_arbitrary_valid = function()
             {4, 'second'},
             {6, 'second'},
             {7, 'first'},
+        },
+    })
+
+    local r, err = api:call("sbroad.execute", { [[
+        SELECT
+            "id",
+            CASE
+                WHEN false THEN 'never'
+                WHEN "id" < 3 THEN 1
+                WHEN "id" > 3 AND "id" < 8 THEN 2
+                ELSE
+                    CASE
+                        WHEN "id" = 8 THEN 3
+                        WHEN "id" = 9 THEN 4
+                        ELSE 0.42
+                    END
+            END
+        FROM "arithmetic_space"
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {
+        metadata = {
+            {name = "id", type = "integer"},
+            {name = "COL_1", type = "any"},
+        },
+        rows = {
+            {1, 1},
+            {5, 2},
+            {8, 3},
+            {9, 4},
+            {10, 0.42},
+            {2, 1},
+            {3, 0.42},
+            {4, 2},
+            {6, 2},
+            {7, 2},
         },
     })
 end

@@ -367,21 +367,21 @@ impl Plan {
                 } => {
                     if let Some(search_expr) = search_expr {
                         *search_expr = *map.get(search_expr).unwrap_or_else(|| {
-                            panic!("Search expr not found for subtree cloning.")
+                            panic!("Search expression not found for subtree cloning.")
                         });
                     }
                     for (cond_expr, res_expr) in when_blocks {
-                        *cond_expr = *map
-                            .get(cond_expr)
-                            .unwrap_or_else(|| panic!("Cond expr not found for subtree cloning."));
-                        *res_expr = *map
-                            .get(res_expr)
-                            .unwrap_or_else(|| panic!("Res expr not found for subtree cloning."));
+                        *cond_expr = *map.get(cond_expr).unwrap_or_else(|| {
+                            panic!("Condition expression not found for subtree cloning.")
+                        });
+                        *res_expr = *map.get(res_expr).unwrap_or_else(|| {
+                            panic!("Result expression not found for subtree cloning.")
+                        });
                     }
                     if let Some(else_expr) = else_expr {
-                        *else_expr = *map
-                            .get(else_expr)
-                            .unwrap_or_else(|| panic!("Else expr not found for subtree cloning."));
+                        *else_expr = *map.get(else_expr).unwrap_or_else(|| {
+                            panic!("Else expression not found for subtree cloning.")
+                        });
                     }
                 }
             }
