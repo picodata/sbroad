@@ -55,7 +55,7 @@ g.test_cte = function ()
     t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "number"} })
     t.assert_items_equals(r["rows"], { {4}, {5}, {4}, {5} })
 
-    -- join table with cte
+    -- inner join table with cte
     r, err = api:call("sbroad.execute", { [[
         WITH cte (b) AS (SELECT "a" FROM "t" WHERE "id" = 1 OR "id" = 2)
         SELECT cte.b, "t"."a" FROM cte JOIN "t" ON cte.b = "t"."id"
@@ -66,6 +66,18 @@ g.test_cte = function ()
         { {name = "CTE.B", type = "number"}, {name = "t.a", type = "number"} }
     )
     t.assert_items_equals(r["rows"], { {1, 1}, {2, 2} })
+
+    -- left outer join table with cte
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte (b) AS (SELECT "a" FROM "t" WHERE "id" = 1 OR "id" = 2)
+        SELECT cte.b, "t"."a" FROM cte LEFT JOIN "t" ON cte.b = "t"."id"
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+        r["metadata"],
+        { {name = "B", type = "number"}, {name = "a", type = "number"} }
+    )
+    t.assert_items_equals( r["rows"], { {1, 1}, {2, 2} })
 
     -- cte in aggregate
     r, err = api:call("sbroad.execute", { [[

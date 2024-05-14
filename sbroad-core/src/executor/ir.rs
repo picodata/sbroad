@@ -263,14 +263,13 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not valid
     pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<SmolStr>, SbroadError> {
-        let sq_id = &self.get_motion_child(node_id)?;
-        if let Relational::ScanSubQuery { alias, .. } =
-            self.get_ir_plan().get_relation_node(*sq_id)?
-        {
-            return Ok(alias.clone());
+        let child_id = &self.get_motion_child(node_id)?;
+        let child_rel = self.get_ir_plan().get_relation_node(*child_id)?;
+        match child_rel {
+            Relational::ScanSubQuery { alias, .. } => Ok(alias.clone()),
+            Relational::ScanCte { alias, .. } => Ok(Some(alias.clone())),
+            _ => Ok(None),
         }
-
-        Ok(None)
     }
 
     /// Get root from motion sub tree
