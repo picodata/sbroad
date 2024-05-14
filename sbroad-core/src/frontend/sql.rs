@@ -1833,11 +1833,13 @@ where
                                         Rule::FunctionArgs => {
                                             let mut args_inner = function_args.into_inner();
                                             let mut arg_pairs_to_parse = Vec::new();
-                                            let first_arg_pair = args_inner.next().expect("First arg expected under function");
-                                            if let Rule::Distinct = first_arg_pair.as_rule() {
-                                                feature = Some(FunctionFeature::Distinct);
-                                            } else {
-                                                arg_pairs_to_parse.push(first_arg_pair);
+
+                                            if let Some(first_arg_pair) = args_inner.next() {
+                                                if let Rule::Distinct = first_arg_pair.as_rule() {
+                                                    feature = Some(FunctionFeature::Distinct);
+                                                } else {
+                                                    arg_pairs_to_parse.push(first_arg_pair);
+                                                }
                                             }
 
                                             for arg_pair in args_inner {

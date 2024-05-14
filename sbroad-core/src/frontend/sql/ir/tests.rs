@@ -3455,6 +3455,21 @@ fn non_existent_references_in_values_do_not_panic() {
         .contains("Reference must point to some relational node"));
 }
 
+#[test]
+fn front_count_no_params() {
+    let input = r#"select count() from "test_space""#;
+
+    let metadata = &RouterConfigurationMock::new();
+    let plan = AbstractSyntaxTree::transform_into_plan(input, metadata);
+    let err = plan.unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("invalid query: Expected one argument for aggregate: count")
+    );
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]
