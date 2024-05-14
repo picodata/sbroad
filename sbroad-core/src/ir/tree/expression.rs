@@ -101,148 +101,78 @@ impl<'n> Iterator for AggregateIterator<'n> {
 fn expression_next<'nodes>(
     iter: &mut impl ExpressionTreeIterator<'nodes>,
 ) -> Option<&'nodes usize> {
-    match iter.get_nodes().arena.get(iter.get_current()) {
-        Some(Node::Expression(
-            Expression::Alias { child, .. }
-            | Expression::ExprInParentheses { child, .. }
-            | Expression::Cast { child, .. }
-            | Expression::Unary { child, .. },
-        )) => {
-            let child_step = *iter.get_child().borrow();
-            if child_step == 0 {
-                *iter.get_child().borrow_mut() += 1;
-                return Some(child);
-            }
-            None
-        }
-        Some(Node::Expression(Expression::Case {
-            search_expr,
-            when_blocks,
-            else_expr,
-        })) => {
-            let mut child_step = *iter.get_child().borrow();
-            *iter.get_child().borrow_mut() += 1;
-            if let Some(search_expr) = search_expr {
-                if child_step == 0 {
-                    return Some(search_expr);
-                }
-                child_step -= 1;
-            }
+    let node = iter.get_nodes().arena.get(iter.get_current());
+    match node {
+        Some(node) => {
+            match node {
+                Node::Expression(expr) => {
+                    match expr {
+                        Expression::Alias { .. }
+                        | Expression::ExprInParentheses { .. }
+                        | Expression::Cast { .. }
+                        | Expression::Unary { .. } => iter.handle_single_child(expr),
+                        Expression::Bool { .. }
+                        | Expression::Arithmetic { .. }
+                        | Expression::Concat { .. } => iter.handle_left_right_children(expr),
+                        Expression::Row { list, .. } => {
+                            let child_step = *iter.get_child().borrow();
+                            let mut is_leaf = false;
 
-            let when_blocks_index = child_step / 2;
-            let index_reminder = child_step % 2;
-            return if when_blocks_index < when_blocks.len() {
-                let (cond_expr, res_expr) = when_blocks
-                    .get(when_blocks_index)
-                    .expect("When block must have been found.");
-                return match index_reminder {
-                    0 => Some(cond_expr),
-                    1 => Some(res_expr),
-                    _ => unreachable!("Impossible reminder"),
-                };
-            } else if when_blocks_index == when_blocks.len() && index_reminder == 0 {
-                if let Some(else_expr) = else_expr {
-                    Some(else_expr)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-        }
-        Some(Node::Expression(
-            Expression::Bool { left, right, .. }
-            | Expression::Arithmetic { left, right, .. }
-            | Expression::Concat { left, right },
-        )) => {
-            let child_step = *iter.get_child().borrow();
-            if child_step == 0 {
-                *iter.get_child().borrow_mut() += 1;
-                return Some(left);
-            } else if child_step == 1 {
-                *iter.get_child().borrow_mut() += 1;
-                return Some(right);
-            }
-            None
-        }
-        Some(Node::Expression(Expression::Trim {
-            pattern, target, ..
-        })) => {
-            let child_step = *iter.get_child().borrow();
-            match child_step {
-                0 => {
-                    *iter.get_child().borrow_mut() += 1;
-                    match pattern {
-                        Some(_) => pattern.as_ref(),
-                        None => Some(target),
+                            // Check on the first step, if the row contains only leaf nodes.
+                            if child_step == 0 {
+                                is_leaf = true;
+                                for col in list {
+                                    if !matches!(
+                                        iter.get_nodes().arena.get(*col),
+                                        Some(Node::Expression(
+                                            Expression::Reference { .. }
+                                                | Expression::Constant { .. }
+                                        ))
+                                    ) {
+                                        is_leaf = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // If the row contains only leaf nodes (or we don't want to go deeper
+                            // into the row tree for some reasons), skip traversal.
+                            if !is_leaf || !iter.get_make_row_leaf() {
+                                match list.get(child_step) {
+                                    None => return None,
+                                    Some(child) => {
+                                        *iter.get_child().borrow_mut() += 1;
+                                        return Some(child);
+                                    }
+                                }
+                            }
+
+                            None
+                        }
+                        Expression::StableFunction { children, .. } => {
+                            let child_step = *iter.get_child().borrow();
+                            match children.get(child_step) {
+                                None => None,
+                                Some(child) => {
+                                    *iter.get_child().borrow_mut() += 1;
+                                    Some(child)
+                                }
+                            }
+                        }
+                        Expression::Trim { .. } => iter.handle_trim(expr),
+                        Expression::Case { .. } => iter.handle_case_iter(expr),
+                        Expression::Constant { .. }
+                        | Expression::Reference { .. }
+                        | Expression::CountAsterisk => None,
                     }
                 }
-                1 => {
-                    *iter.get_child().borrow_mut() += 1;
-                    match pattern {
-                        Some(_) => Some(target),
-                        None => None,
-                    }
-                }
-                _ => None,
+                Node::Acl(_)
+                | Node::Block(_)
+                | Node::Ddl(_)
+                | Node::Relational(_)
+                | Node::Parameter => None,
             }
         }
-        Some(Node::Expression(Expression::Row { list, .. })) => {
-            let child_step = *iter.get_child().borrow();
-            let mut is_leaf = false;
-
-            // Check on the first step, if the row contains only leaf nodes.
-            if child_step == 0 {
-                is_leaf = true;
-                for col in list {
-                    if !matches!(
-                        iter.get_nodes().arena.get(*col),
-                        Some(Node::Expression(
-                            Expression::Reference { .. } | Expression::Constant { .. }
-                        ))
-                    ) {
-                        is_leaf = false;
-                        break;
-                    }
-                }
-            }
-
-            // If the row contains only leaf nodes (or we don't want to go deeper
-            // into the row tree for some reasons), skip traversal.
-            if !is_leaf || !iter.get_make_row_leaf() {
-                match list.get(child_step) {
-                    None => return None,
-                    Some(child) => {
-                        *iter.get_child().borrow_mut() += 1;
-                        return Some(child);
-                    }
-                }
-            }
-
-            None
-        }
-        Some(Node::Expression(Expression::StableFunction { children, .. })) => {
-            let child_step = *iter.get_child().borrow();
-            match children.get(child_step) {
-                None => None,
-                Some(child) => {
-                    *iter.get_child().borrow_mut() += 1;
-                    Some(child)
-                }
-            }
-        }
-        Some(
-            Node::Expression(
-                Expression::Constant { .. }
-                | Expression::Reference { .. }
-                | Expression::CountAsterisk,
-            )
-            | Node::Relational(_)
-            | Node::Parameter
-            | Node::Ddl(_)
-            | Node::Acl(_)
-            | Node::Block(_),
-        )
-        | None => None,
+        None => None,
     }
 }

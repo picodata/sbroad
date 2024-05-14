@@ -196,88 +196,16 @@ fn subtree_next<'plan>(
     if let Some(child) = iter.get_nodes().arena.get(iter.get_current()) {
         return match child {
             Node::Parameter | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => None,
-            Node::Expression(exp) => match exp {
-                Expression::Alias { child, .. }
-                | Expression::ExprInParentheses { child }
-                | Expression::Cast { child, .. }
-                | Expression::Unary { child, .. } => {
-                    let step = *iter.get_child().borrow();
-                    *iter.get_child().borrow_mut() += 1;
-                    if step == 0 {
-                        return Some(child);
-                    }
-                    None
-                }
-                Expression::Case {
-                    search_expr,
-                    when_blocks,
-                    else_expr,
-                } => {
-                    let mut child_step = *iter.get_child().borrow();
-                    *iter.get_child().borrow_mut() += 1;
-                    if let Some(search_expr) = search_expr {
-                        if child_step == 0 {
-                            return Some(search_expr);
-                        }
-                        child_step -= 1;
-                    }
-
-                    let when_blocks_index = child_step / 2;
-                    let index_reminder = child_step % 2;
-                    return if when_blocks_index < when_blocks.len() {
-                        let (cond_expr, res_expr) = when_blocks
-                            .get(when_blocks_index)
-                            .expect("When block must have been found.");
-                        return match index_reminder {
-                            0 => Some(cond_expr),
-                            1 => Some(res_expr),
-                            _ => unreachable!("Impossible reminder"),
-                        };
-                    } else if when_blocks_index == when_blocks.len() && index_reminder == 0 {
-                        if let Some(else_expr) = else_expr {
-                            Some(else_expr)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                }
-                Expression::Bool { left, right, .. }
-                | Expression::Arithmetic { left, right, .. }
-                | Expression::Concat { left, right } => {
-                    let child_step = *iter.get_child().borrow();
-                    if child_step == 0 {
-                        *iter.get_child().borrow_mut() += 1;
-                        return Some(left);
-                    } else if child_step == 1 {
-                        *iter.get_child().borrow_mut() += 1;
-                        return Some(right);
-                    }
-                    None
-                }
-                Expression::Trim {
-                    pattern, target, ..
-                } => {
-                    let child_step = *iter.get_child().borrow();
-                    match child_step {
-                        0 => {
-                            *iter.get_child().borrow_mut() += 1;
-                            match pattern {
-                                Some(_) => pattern.as_ref(),
-                                None => Some(target),
-                            }
-                        }
-                        1 => {
-                            *iter.get_child().borrow_mut() += 1;
-                            match pattern {
-                                Some(_) => Some(target),
-                                None => None,
-                            }
-                        }
-                        _ => None,
-                    }
-                }
+            Node::Expression(expr) => match expr {
+                Expression::Alias { .. }
+                | Expression::ExprInParentheses { .. }
+                | Expression::Cast { .. }
+                | Expression::Unary { .. } => iter.handle_single_child(expr),
+                Expression::Case { .. } => iter.handle_case_iter(expr),
+                Expression::Bool { .. }
+                | Expression::Arithmetic { .. }
+                | Expression::Concat { .. } => iter.handle_left_right_children(expr),
+                Expression::Trim { .. } => iter.handle_trim(expr),
                 Expression::Row { list, .. }
                 | Expression::StableFunction { children: list, .. } => {
                     let child_step = *iter.get_child().borrow();
@@ -299,7 +227,7 @@ fn subtree_next<'plan>(
                         // for selection filter or a join condition, we need to check whether
                         // the reference points to an **additional** sub-query and then traverse
                         // into it. Otherwise, stop traversal.
-                        let Ok(parent_id) = exp.get_parent() else {
+                        let Ok(parent_id) = expr.get_parent() else {
                             return None;
                         };
                         if let Ok(rel_id) = iter
