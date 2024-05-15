@@ -5,7 +5,7 @@ use smol_str::{format_smolstr, ToSmolStr};
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
 use crate::ir::ExecuteOptions;
-use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span, warn};
+use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span};
 
 use super::{PreparedStmt, Statement};
 
@@ -79,10 +79,6 @@ pub fn read_unprepared(
     max_rows: u64,
     options: ExecuteOptions,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    warn!(
-        Option::from("read_unprepared"),
-        &format!("SQL pattern: {}", stmt),
-    );
     let lua = tarantool::lua_state();
 
     let exec_sql: LuaFunction<_> = lua

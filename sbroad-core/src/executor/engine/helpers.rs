@@ -45,7 +45,6 @@ use crate::{
         value::Value,
         Node, Plan,
     },
-    warn,
 };
 use sbroad_proc::otm_child_span;
 use tarantool::msgpack::rmp::{self, decode::RmpRead};
@@ -1093,13 +1092,6 @@ where
             // Possibly the statement is correct, but doesn't fit into
             // Tarantool's prepared statements cache (`sql_cache_size`).
             // So we try to execute it bypassing the cache.
-            warn!(
-                Option::from("execute"),
-                &format!(
-                    "Failed to prepare the statement: {}, error: {}",
-                    pattern_with_params.pattern, e
-                ),
-            );
             read_unprepared(
                 &pattern_with_params.pattern,
                 &pattern_with_params.params,
