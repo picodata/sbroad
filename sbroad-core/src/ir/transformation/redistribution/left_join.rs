@@ -51,9 +51,32 @@ impl Plan {
         self.change_child(parent_id, join_id, sq_id)?;
 
         let outer_id = self.get_relational_child(join_id, 0)?;
-        let outer_child_motion_id =
-            self.add_motion(outer_id, &MotionPolicy::Full, Program::default())?;
-        self.change_child(join_id, outer_id, outer_child_motion_id)?;
+
+        // In case there are no motions under outer child,
+        // we need to add one, because we need to materialize
+        // the subtree from which missing rows will be added.
+        let outer_child_motion_id = {
+            let child = self.get_relation_node(outer_id)?;
+            let mut motion_child_id = None;
+
+            // Check if there is already motion under outer child
+            if child.is_subquery_or_cte() {
+                let sq_child = self.get_relational_child(outer_id, 0)?;
+                if self.get_relation_node(sq_child)?.is_motion() {
+                    motion_child_id = Some(sq_child);
+                }
+            } else if child.is_motion() {
+                motion_child_id = Some(outer_id);
+            }
+
+            if motion_child_id.is_none() {
+                let motion_id =
+                    self.add_motion(outer_id, &MotionPolicy::Full, Program::default())?;
+                self.change_child(join_id, outer_id, motion_id)?;
+                motion_child_id = Some(motion_id);
+            }
+            motion_child_id.unwrap()
+        };
 
         // Add motion which will do the reduce stage of joining:
         // adding missing rows.

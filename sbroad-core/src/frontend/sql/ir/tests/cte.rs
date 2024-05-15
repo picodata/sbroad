@@ -417,3 +417,35 @@ fn cte_column_mismatch() {
         ))
     );
 }
+
+#[test]
+fn cte_with_left_join() {
+    let sql = r#"
+        with cte as (select "e" as e from "t2")
+        select e from cte left join "t2"
+        on true
+    "#;
+
+    let plan = sql_to_optimized_ir(sql, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("E"::unsigned -> "E")
+    motion [policy: full]
+        scan
+            projection ("CTE"."E"::unsigned -> "E", "t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                join on true::boolean
+                    scan cte "CTE"($0)
+                    scan "t2"
+                        projection ("t2"."e"::unsigned -> "e", "t2"."f"::unsigned -> "f", "t2"."g"::unsigned -> "g", "t2"."h"::unsigned -> "h")
+                            scan "t2"
+subquery $0:
+motion [policy: full]
+                            projection ("t2"."e"::unsigned -> "E")
+                                scan "t2"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
