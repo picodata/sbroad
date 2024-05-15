@@ -79,6 +79,21 @@ g.test_cte = function ()
     )
     t.assert_items_equals( r["rows"], { {1, 1}, {2, 2} })
 
+    -- reference the same cte in left join and in other
+    -- part of the query
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte (b) AS (SELECT "a" FROM "t" WHERE "id" = 1 OR "id" = 2),
+        r (a) as (SELECT cte.b FROM cte LEFT JOIN "t" ON cte.b = "t"."id")
+        select b from cte where b in (select a from r)
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(
+        r["metadata"],
+        -- TODO: this should be simply B?
+        { {name = "CTE.B", type = "number"} }
+    )
+    t.assert_items_equals( r["rows"], { {1}, {2} })
+
     -- cte in aggregate
     r, err = api:call("sbroad.execute", { [[
         WITH cte (b) AS (SELECT "a" FROM "t" WHERE "id" > 3)

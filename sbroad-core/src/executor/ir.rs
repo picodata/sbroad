@@ -179,18 +179,11 @@ impl ExecutionPlan {
                             "expected at least one virtual table".into(),
                         ));
                     };
-                    let Some(from_vtable) = vtables.mut_map().remove(&motion_id) else {
+                    let Some(from_vtable) = vtables.map().get(&motion_id) else {
                         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                             "expected virtual table for motion {motion_id}"
                         )));
                     };
-                    let from_vtable = Rc::try_unwrap(from_vtable).map_err(|_| {
-                        SbroadError::FailedTo(
-                            Action::Borrow,
-                            Some(Entity::VirtualTable),
-                            SmolStr::default(),
-                        )
-                    })?;
                     vtable.add_missing_rows(from_vtable)?;
                 }
                 MotionOpcode::SerializeAsEmptyTable(_) => {}
@@ -322,13 +315,11 @@ impl ExecutionPlan {
 
         let children = self.plan.get_relational_children(node_id)?;
 
-        if children.len() != 1 {
-            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                "Motion node ({}) must have a single child only (actual {})",
-                node_id,
-                children.len()
-            )));
-        }
+        assert!(
+            children.len() == 1,
+            "Motion node ({node_id}:{node:?}) must have a single child only (actual {})",
+            children.len()
+        );
 
         let child_id = children.get(0).expect("Motion has no children");
 

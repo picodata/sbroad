@@ -463,7 +463,7 @@ impl VirtualTable {
     ///
     /// # Errors
     /// - invalid arguments
-    pub fn add_missing_rows(&mut self, from_vtable: VirtualTable) -> Result<(), SbroadError> {
+    pub fn add_missing_rows(&mut self, from_vtable: &Rc<VirtualTable>) -> Result<(), SbroadError> {
         if from_vtable.columns.len() >= self.columns.len() {
             return Err(SbroadError::UnexpectedNumberOfValues(
                 "from vtable must have less columns then self vtable!".into(),
@@ -482,12 +482,13 @@ impl VirtualTable {
         let mut missing_tuples: HashMap<VTableTuple, usize, RepeatableState> =
             HashMap::with_capacity_and_hasher(estimated_capacity, RepeatableState);
         let mut missing_tuples_cnt: usize = 0;
-        for tuple in from_vtable.tuples {
+        for tuple in &from_vtable.tuples {
             if !current_tuples.contains(&tuple[..]) {
-                missing_tuples
-                    .entry(tuple)
-                    .and_modify(|cnt| *cnt += 1)
-                    .or_insert(1);
+                if let Some(cnt) = missing_tuples.get_mut(tuple) {
+                    *cnt += 1;
+                } else {
+                    missing_tuples.insert(tuple.clone(), 1);
+                }
             }
             missing_tuples_cnt += 1;
         }

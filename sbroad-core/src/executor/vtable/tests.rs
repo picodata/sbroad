@@ -165,7 +165,7 @@ fn vtable_add_missing_from1() {
     from_vtable.add_tuple(vec![Value::from(1_u64)]);
     from_vtable.add_tuple(vec![Value::from(3_u64)]);
 
-    vtable.add_missing_rows(from_vtable).unwrap();
+    vtable.add_missing_rows(&Rc::new(from_vtable)).unwrap();
 
     let expected_index = VTableIndex::new();
 
@@ -211,7 +211,7 @@ fn vtable_add_missing_from2() {
     from_vtable.add_tuple(vec![Value::from(3_u64)]);
     from_vtable.add_tuple(vec![Value::from(3_u64)]);
 
-    vtable.add_missing_rows(from_vtable).unwrap();
+    vtable.add_missing_rows(&Rc::new(from_vtable)).unwrap();
 
     let expected_index = VTableIndex::new();
 
