@@ -17,6 +17,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::operator::{Bool, Relational};
 use crate::ir::relation::Type;
+use crate::ir::Positions as Targets;
 
 use super::distribution::Distribution;
 use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
@@ -1218,9 +1219,9 @@ impl Plan {
         let mut filtered_children_row_list: Vec<(usize, usize, Vec<usize>)> = Vec::new();
 
         // Helper lambda to retrieve column positions we need to exclude from child `rel_id`.
-        let column_positions_to_exclude = |rel_id| -> Result<Vec<Position>, SbroadError> {
+        let column_positions_to_exclude = |rel_id| -> Result<Targets, SbroadError> {
             let positions = if need_sharding_column {
-                vec![]
+                [None, None]
             } else {
                 let mut info = self.track_shard_column_pos(rel_id)?;
                 info.remove(&rel_id).unwrap_or_default()
@@ -1261,7 +1262,7 @@ impl Plan {
                 let col_id = *child_node_row_list
                     .get(index)
                     .expect("Column id not found under relational child output");
-                if exclude_positions.contains(&index) {
+                if exclude_positions[0] == Some(index) || exclude_positions[1] == Some(index) {
                     continue;
                 }
                 filtered_children_row_list.push((index, col_id, source.targets()));
@@ -1284,7 +1285,7 @@ impl Plan {
                     let exclude_positions = column_positions_to_exclude(child_node_id)?;
 
                     for (pos, expr_id) in child_row_list.iter().enumerate() {
-                        if exclude_positions.contains(&pos) {
+                        if exclude_positions[0] == Some(pos) || exclude_positions[1] == Some(pos) {
                             continue;
                         }
                         filtered_children_row_list.push((pos, *expr_id, new_targets.clone()));

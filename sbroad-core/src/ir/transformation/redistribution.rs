@@ -496,8 +496,8 @@ impl Plan {
                     )
                 })?;
                 let child_id = self.get_relational_child(rel_id, *child_idx)?;
-                if let Some(candidates) = shard_col_info.get(&child_id) {
-                    if !candidates.contains(ref_pos) {
+                if let Some(positions) = shard_col_info.get(&child_id) {
+                    if positions[0] != Some(*ref_pos) && positions[1] != Some(*ref_pos) {
                         continue;
                     }
                     if let Some(other_child_id) = memo.get(&pos_in_row) {
@@ -754,12 +754,31 @@ impl Plan {
         }
 
         let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
-        let shard_col_info = self.track_shard_column_pos(select_id)?;
         for (_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
+
+        // Check that we actually need to get sharding column positions (it is expensive).
+        let mut need_shard_col_info = false;
+        for (_, bool_node) in &bool_nodes {
+            let bool_op = BoolOp::from_expr(self, *bool_node)?;
+            if need_shard_col_info {
+                continue;
+            }
+            let left = self.get_additional_sq(select_id, bool_op.left)?;
+            let right = self.get_additional_sq(select_id, bool_op.right)?;
+            if left.is_some() || right.is_some() {
+                need_shard_col_info = true;
+            }
+        }
+
+        let shard_col_info = if need_shard_col_info {
+            self.track_shard_column_pos(select_id)?
+        } else {
+            ShardColInfo::new()
+        };
         for (_, bool_node) in &bool_nodes {
             let strategies =
                 self.get_sq_node_strategies_for_bool_op(select_id, *bool_node, &shard_col_info)?;

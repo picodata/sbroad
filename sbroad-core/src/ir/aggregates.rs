@@ -5,12 +5,12 @@ use crate::ir::expression::cast::Type;
 use crate::ir::expression::Expression;
 use crate::ir::operator::Arithmetic;
 use crate::ir::relation::Type as RelType;
-use crate::ir::{Node, Plan};
+use crate::ir::{Node, Plan, Position};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use super::expression::{ColumnPositionMap, FunctionFeature, Position};
+use super::expression::{ColumnPositionMap, FunctionFeature};
 
 /// The kind of aggregate function
 ///

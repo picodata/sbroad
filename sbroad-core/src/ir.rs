@@ -5,7 +5,7 @@
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
-use std::collections::hash_map::IntoIter;
+use std::collections::hash_map::{Entry, IntoIter};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
@@ -1271,8 +1271,11 @@ impl Plan {
     }
 }
 
+/// Target positions in the reference.
+pub type Positions = [Option<Position>; 2];
+
 /// Relational node id -> positions of columns in output that refer to sharding column.
-pub type ShardColInfo = ahash::AHashMap<NodeId, Vec<Position>>;
+pub type ShardColInfo = ahash::AHashMap<NodeId, Positions>;
 
 impl Plan {
     /// Helper function to track position of the sharding column
@@ -1280,6 +1283,9 @@ impl Plan {
     ///
     /// # Errors
     /// - invalid references in the plan subtree
+    ///
+    /// # Panics
+    /// - plan contains invalid references
     pub fn track_shard_column_pos(&self, top_id: usize) -> Result<ShardColInfo, SbroadError> {
         let mut memo = ShardColInfo::with_capacity(REL_CAPACITY);
         let mut dfs = PostOrder::with_capacity(|x| self.nodes.rel_iter(x), REL_CAPACITY);
@@ -1291,7 +1297,7 @@ impl Plan {
                 Relational::ScanRelation { relation, .. } => {
                     let table = self.get_relation_or_error(relation)?;
                     if let Ok(Some(pos)) = table.get_bucket_id_position() {
-                        memo.insert(node_id, vec![pos]);
+                        memo.insert(node_id, [Some(pos), None]);
                     }
                     continue;
                 }
@@ -1333,28 +1339,37 @@ impl Plan {
                 // we need that ALL targets would refer to the shard column.
                 let mut refers_to_shard_col = true;
                 for target in targets {
-                    let child_id = children.get(*target).ok_or_else(|| {
-                        SbroadError::Invalid(
-                            Entity::Plan,
-                            Some(format_smolstr!(
-                                "invalid target ({target}) in reference with id: {ref_id}"
-                            )),
-                        )
-                    })?;
-                    let Some(candidates) = memo.get(child_id) else {
+                    let child_id = children.get(*target).expect("invalid reference");
+                    let Some(positions) = memo.get(child_id) else {
                         refers_to_shard_col = false;
                         break;
                     };
-                    if !candidates.contains(position) {
+                    if positions[0] != Some(*position) && positions[1] != Some(*position) {
                         refers_to_shard_col = false;
                         break;
                     }
                 }
 
                 if refers_to_shard_col {
-                    memo.entry(node_id)
-                        .and_modify(|v| v.push(pos))
-                        .or_insert(vec![pos]);
+                    match memo.entry(node_id) {
+                        Entry::Occupied(mut entry) => {
+                            let positions = entry.get_mut();
+                            if positions[0].is_none() {
+                                positions[0] = Some(pos);
+                            } else if positions[0] == Some(pos) {
+                                // Do nothing, we already have this position.
+                            } else if positions[1].is_none() {
+                                positions[1] = Some(pos);
+                            } else if positions[1] == Some(pos) {
+                                // Do nothing, we already have this position.
+                            } else {
+                                unreachable!("more than 2 pointers in the reference");
+                            }
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert([Some(pos), None]);
+                        }
+                    }
                 }
             }
         }

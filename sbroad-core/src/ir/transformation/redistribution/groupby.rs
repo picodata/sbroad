@@ -1723,7 +1723,9 @@ impl Plan {
                 };
                 let child_id = self.get_relational_from_reference_node(*expr_id)?;
                 if let Some(shard_positions) = shard_col_info.get(child_id) {
-                    if shard_positions.contains(position) {
+                    if shard_positions[0] == Some(*position)
+                        || shard_positions[1] == Some(*position)
+                    {
                         return Ok(false);
                     }
                 }
