@@ -17,7 +17,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use super::api::children::{Children, MutChildren};
 use super::expression::{ColumnPositionMap, Expression};
 use super::transformation::redistribution::{MotionPolicy, Program};
-use super::tree::traversal::{BreadthFirst, EXPR_CAPACITY, REL_CAPACITY};
+use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY};
 use super::{Node, NodeId, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
@@ -1357,37 +1357,41 @@ impl Plan {
                 let mut needs_bucket_id_column = false;
 
                 // Update references to the sub-query's output in the condition.
-                let mut condition_tree = BreadthFirst::with_capacity(
-                    |node| self.nodes.expr_iter(node, false),
-                    EXPR_CAPACITY,
-                    EXPR_CAPACITY,
-                );
-                // we should update ONLY references that refer to current child (left, right)
+                let condition_nodes = {
+                    let filter = |id| -> bool {
+                        matches!(
+                            self.get_expression_node(id),
+                            Ok(Expression::Reference { .. })
+                        )
+                    };
+                    let mut condition_tree = PostOrderWithFilter::with_capacity(
+                        |node| self.nodes.expr_iter(node, false),
+                        EXPR_CAPACITY,
+                        Box::new(filter),
+                    );
+                    condition_tree.populate_nodes(condition);
+                    condition_tree.take_nodes()
+                };
+                // We should update ONLY references that refer to current child (left, right)
                 let current_target = match join_child {
                     JoinChild::Inner => Some(vec![1_usize]),
                     JoinChild::Outer => Some(vec![0_usize]),
                 };
-                let refs = condition_tree
-                    .iter(condition)
-                    .filter_map(|(_, id)| {
-                        let expr = self.get_expression_node(id).ok();
-                        if let Some(Expression::Reference {
-                            position, targets, ..
-                        }) = expr
-                        {
-                            if *targets == current_target {
-                                if Some(*position) == sharding_column_pos {
-                                    needs_bucket_id_column = true;
-                                }
-                                Some(id)
-                            } else {
-                                None
+                let mut refs = Vec::with_capacity(condition_nodes.len());
+                for (_, id) in condition_nodes {
+                    let expr = self.get_expression_node(id)?;
+                    if let Expression::Reference {
+                        position, targets, ..
+                    } = expr
+                    {
+                        if *targets == current_target {
+                            if Some(*position) == sharding_column_pos {
+                                needs_bucket_id_column = true;
                             }
-                        } else {
-                            None
+                            refs.push(id);
                         }
-                    })
-                    .collect::<Vec<_>>();
+                    }
+                }
 
                 // Wrap relation with sub-query scan.
                 let scan_name = if let Some(alias_name) = alias {
@@ -2156,10 +2160,18 @@ impl Plan {
     /// - Node returned by the relational iterator is not relational (bug)
     pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
         let top_id = self.get_top()?;
-        let mut rel_tree = BreadthFirst::with_capacity(
+        let filter = |id| -> bool {
+            matches!(
+                self.get_relation_node(id),
+                Ok(Relational::Selection { .. }
+                    | Relational::Having { .. }
+                    | Relational::Join { .. })
+            )
+        };
+        let mut rel_tree = PostOrderWithFilter::with_capacity(
             |node| self.nodes.rel_iter(node),
             REL_CAPACITY,
-            REL_CAPACITY,
+            Box::new(filter),
         );
         for (_, id) in rel_tree.iter(top_id) {
             let rel = self.get_relation_node(id)?;
