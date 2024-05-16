@@ -17,7 +17,7 @@ use crate::errors::{Action, Entity, SbroadError};
 use super::api::children::{Children, MutChildren};
 use super::expression::{ColumnPositionMap, Expression};
 use super::transformation::redistribution::{MotionPolicy, Program};
-use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY, REL_CAPACITY};
+use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use super::{Node, NodeId, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
@@ -2154,39 +2154,29 @@ impl Plan {
     }
 
     /// Checks if the node is an additional child of some relational node.
+    /// We can use a simple node scan instead of the tree traversal as we are interested
+    /// only in relational nodes that can't be unlinked from the tree by our transformations.
+    /// This is done for performance reasons.
     ///
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
     pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
-        let top_id = self.get_top()?;
-        let filter = |id| -> bool {
-            matches!(
-                self.get_relation_node(id),
-                Ok(Relational::Selection { .. }
-                    | Relational::Having { .. }
-                    | Relational::Join { .. })
-            )
-        };
-        let mut rel_tree = PostOrderWithFilter::with_capacity(
-            |node| self.nodes.rel_iter(node),
-            REL_CAPACITY,
-            Box::new(filter),
-        );
-        for (_, id) in rel_tree.iter(top_id) {
-            let rel = self.get_relation_node(id)?;
-            match rel {
-                Relational::Selection { children, .. } | Relational::Having { children, .. } => {
+        for node in &self.nodes {
+            match node {
+                Node::Relational(
+                    Relational::Selection { children, .. } | Relational::Having { children, .. },
+                ) => {
                     if children.iter().skip(1).any(|&c| c == node_id) {
                         return Ok(true);
                     }
                 }
-                Relational::Join { children, .. } => {
+                Node::Relational(Relational::Join { children, .. }) => {
                     if children.iter().skip(2).any(|&c| c == node_id) {
                         return Ok(true);
                     }
                 }
-                _ => continue,
+                _ => {}
             }
         }
         Ok(false)
