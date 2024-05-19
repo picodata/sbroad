@@ -16,7 +16,7 @@ use sbroad::executor::ir::{ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::protocol::{RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
-use sbroad::ir::NodeId;
+use sbroad::ir::expression::NodeId;
 use sbroad::utils::MutexLike;
 use sbroad::{debug, error, warn};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};

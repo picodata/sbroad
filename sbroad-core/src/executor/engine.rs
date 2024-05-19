@@ -7,6 +7,7 @@ use tarantool::tuple::Tuple;
 
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
+use crate::ir::expression::NodeId;
 use crate::utils::MutexLike;
 use std::any::Any;
 
@@ -23,7 +24,6 @@ use crate::ir::function::Function;
 use crate::ir::relation::Table;
 use crate::ir::relation::Type;
 use crate::ir::value::Value;
-use crate::ir::NodeId;
 
 use super::result::ProducerResult;
 
@@ -277,7 +277,7 @@ pub trait Router: QueryCache {
     fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
-        top_id: usize,
+        top_id: NodeId,
         buckets: &Buckets,
         return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError>;
@@ -289,7 +289,7 @@ pub trait Router: QueryCache {
     fn materialize_motion(
         &self,
         plan: &mut ExecutionPlan,
-        motion_node_id: usize,
+        motion_node_id: &NodeId,
         buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError>;
 

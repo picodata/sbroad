@@ -3,12 +3,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::expression::NodeId;
+
 /// Transformation log keep the history of the plan subtree modifications.
 /// When we modify the plan subtree, we add a new entry to the log, where
 /// the key is a new subtree top node and the value is the previous version.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransformationLog {
-    log: HashMap<usize, usize>,
+    log: HashMap<NodeId, NodeId>,
 }
 
 impl Default for TransformationLog {
@@ -25,7 +27,7 @@ impl TransformationLog {
         }
     }
 
-    pub fn add(&mut self, new_id: usize, old_id: usize) {
+    pub fn add(&mut self, new_id: NodeId, old_id: NodeId) {
         match self.log.get_key_value(&new_id) {
             None => {
                 self.log.insert(new_id, old_id);
@@ -38,12 +40,12 @@ impl TransformationLog {
     }
 
     #[must_use]
-    pub fn get(&self, new_id: &usize) -> Option<&usize> {
+    pub fn get(&self, new_id: &NodeId) -> Option<&NodeId> {
         self.log.get(new_id)
     }
 
     #[must_use]
-    pub fn get_oldest(&self, new_id: &usize) -> Option<&usize> {
+    pub fn get_oldest(&self, new_id: &NodeId) -> Option<&NodeId> {
         match self.log.get_key_value(new_id) {
             None => None,
             Some((id, _)) => {

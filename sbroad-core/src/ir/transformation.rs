@@ -12,6 +12,7 @@ pub mod split_columns;
 
 use smol_str::format_smolstr;
 
+use super::expression::NodeId;
 use super::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
 use crate::errors::{Entity, SbroadError};
 use crate::ir::expression::Expression;
@@ -19,7 +20,7 @@ use crate::ir::operator::{Bool, Relational};
 use crate::ir::{Node, Plan};
 use std::collections::HashMap;
 
-pub type ExprId = usize;
+pub type ExprId = NodeId;
 /// Helper struct representing map of (`old_expr_id` -> `changed_expr_id`).
 struct OldNewExpressionMap {
     inner: HashMap<ExprId, ExprId>,
@@ -32,11 +33,11 @@ impl OldNewExpressionMap {
         }
     }
 
-    fn insert(&mut self, old_id: usize, new_id: usize) {
+    fn insert(&mut self, old_id: ExprId, new_id: ExprId) {
         self.inner.insert(old_id, new_id);
     }
 
-    fn replace(&self, child: &mut usize) {
+    fn replace(&self, child: &mut ExprId) {
         if let Some(new_id) = self.inner.get(child) {
             *child = *new_id;
         }
@@ -46,7 +47,7 @@ impl OldNewExpressionMap {
         self.inner.is_empty()
     }
 
-    fn get(&self, key: usize) -> Option<&ExprId> {
+    fn get(&self, key: ExprId) -> Option<&ExprId> {
         self.inner.get(&key)
     }
 
@@ -70,9 +71,9 @@ impl Plan {
     /// - If the left or right child is not a trivalent.
     pub fn concat_and(
         &mut self,
-        left_expr_id: usize,
-        right_expr_id: usize,
-    ) -> Result<usize, SbroadError> {
+        left_expr_id: NodeId,
+        right_expr_id: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         if !self.is_trivalent(left_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
@@ -100,9 +101,9 @@ impl Plan {
     /// - If the left or right child is not a trivalent.
     pub fn concat_or(
         &mut self,
-        left_expr_id: usize,
-        right_expr_id: usize,
-    ) -> Result<usize, SbroadError> {
+        left_expr_id: NodeId,
+        right_expr_id: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         if !self.is_trivalent(left_expr_id)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
@@ -137,8 +138,9 @@ impl Plan {
         let mut ir_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), EXPR_CAPACITY);
         ir_tree.populate_nodes(top_id);
         let nodes = ir_tree.take_nodes();
-        for (_, id) in &nodes {
-            let rel = self.get_relation_node(*id)?;
+        for level_node in &nodes {
+            let id = level_node.1;
+            let rel = self.get_relation_node(id)?;
             let (old_tree_id, new_tree_id) = match rel {
                 Relational::Selection {
                     filter: tree_id, ..
@@ -151,7 +153,7 @@ impl Plan {
             if old_tree_id != new_tree_id {
                 self.undo.add(new_tree_id, old_tree_id);
             }
-            let rel = self.get_mut_relation_node(*id)?;
+            let rel = self.get_mut_relation_node(id)?;
             match rel {
                 Relational::Selection {
                     filter: tree_id, ..
@@ -175,7 +177,7 @@ impl Plan {
     #[allow(clippy::too_many_lines)]
     pub fn expr_tree_replace_bool(
         &mut self,
-        top_id: usize,
+        top_id: NodeId,
         f: TransformFunction,
         ops: &[Bool],
     ) -> Result<OldNewTopIdPair, SbroadError> {
@@ -183,7 +185,7 @@ impl Plan {
         // Note, that filter accepts nodes:
         // * On which we'd like to apply transformation
         // * That will contain transformed nodes as children
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(
                 Expression::Bool { .. }
                 | Expression::ExprInParentheses { .. }
@@ -208,13 +210,14 @@ impl Plan {
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
         drop(subtree);
-        for (_, id) in &nodes {
-            let expr = self.get_expression_node(*id)?;
+        for level_node in &nodes {
+            let id = level_node.1;
+            let expr = self.get_expression_node(id)?;
             if let Expression::Bool { op, .. } = expr {
                 if ops.contains(op) || ops.is_empty() {
-                    let (old_top_id, new_top_id) = f(self, *id)?;
+                    let (old_top_id, new_top_id) = f(self, id)?;
                     if old_top_id != new_top_id {
-                        map.insert(*id, new_top_id);
+                        map.insert(id, new_top_id);
                     }
                 }
             }
@@ -228,8 +231,9 @@ impl Plan {
                 self.clone_expr_subtree(top_id)?
             };
             let mut new_top_id = top_id;
-            for (_, id) in &nodes {
-                let expr = self.get_mut_expression_node(*id)?;
+            for level_node in &nodes {
+                let id = level_node.1;
+                let expr = self.get_mut_expression_node(id)?;
                 // For all expressions in the subtree tries to replace their children
                 // with the new nodes from the map.
                 //

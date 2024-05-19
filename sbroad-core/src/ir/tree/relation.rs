@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 
 use super::TreeIterator;
+use crate::ir::expression::NodeId;
 use crate::ir::operator::Relational;
-use crate::ir::{Node, Nodes};
+use crate::ir::{ArenaType, Node, Nodes};
 
 trait RelationalTreeIterator<'nodes>: TreeIterator<'nodes> {}
 
@@ -11,14 +12,14 @@ trait RelationalTreeIterator<'nodes>: TreeIterator<'nodes> {}
 /// The iterator returns the next relational node in the plan tree.
 #[derive(Debug)]
 pub struct RelationalIterator<'n> {
-    current: usize,
+    current: NodeId,
     child: RefCell<usize>,
     nodes: &'n Nodes,
 }
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn rel_iter(&'n self, current: usize) -> RelationalIterator<'n> {
+    pub fn rel_iter(&'n self, current: NodeId) -> RelationalIterator<'n> {
         RelationalIterator {
             current,
             child: RefCell::new(0),
@@ -29,15 +30,15 @@ impl<'n> Nodes {
     #[must_use]
     pub fn empty_rel_iter(&'n self) -> RelationalIterator<'n> {
         RelationalIterator {
-            current: self.next_id(),
-            child: RefCell::new(1000),
+            current: self.next_id(ArenaType::Default),
+            child: RefCell::new(0),
             nodes: self,
         }
     }
 }
 
 impl<'nodes> TreeIterator<'nodes> for RelationalIterator<'nodes> {
-    fn get_current(&self) -> usize {
+    fn get_current(&self) -> NodeId {
         self.current
     }
 
@@ -53,7 +54,7 @@ impl<'nodes> TreeIterator<'nodes> for RelationalIterator<'nodes> {
 impl<'nodes> RelationalTreeIterator<'nodes> for RelationalIterator<'nodes> {}
 
 impl<'n> Iterator for RelationalIterator<'n> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         relational_next(self).copied()
@@ -62,8 +63,8 @@ impl<'n> Iterator for RelationalIterator<'n> {
 
 fn relational_next<'nodes>(
     iter: &mut impl RelationalTreeIterator<'nodes>,
-) -> Option<&'nodes usize> {
-    match iter.get_nodes().arena.get(iter.get_current()) {
+) -> Option<&'nodes NodeId> {
+    match iter.get_nodes().get(iter.get_current()) {
         Some(Node::Relational(
             node @ (Relational::Except { .. }
             | Relational::Join { .. }

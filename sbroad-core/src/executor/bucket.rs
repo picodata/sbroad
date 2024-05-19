@@ -7,11 +7,11 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::{Router, Vshard};
 use crate::executor::Query;
 use crate::ir::distribution::Distribution;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{Bool, JoinKind, Relational};
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
+use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::Node;
 use crate::otm::child_span;
@@ -88,7 +88,7 @@ where
     /// In general it returns `Buckets::All`, but in some cases (e.g. `Eq` and `In` operators) it
     /// will return `Buckets::Filtered` (if such a result is met in SELECT or JOIN filter, it means
     /// that we can execute the query only on some of the replicasets).
-    fn get_buckets_from_expr(&self, expr_id: usize) -> Result<Option<Buckets>, SbroadError> {
+    fn get_buckets_from_expr(&self, expr_id: NodeId) -> Result<Option<Buckets>, SbroadError> {
         // The only possible case there will be several `Buckets` in the vec is when we have `Eq`.
         // See the logic of its handling below.
         let mut buckets: Vec<Buckets> = vec![];
@@ -206,8 +206,8 @@ where
     /// In case there is just one expression (not `ANDed`) `chains` will remain empty.
     fn get_expression_tree_buckets(
         &self,
-        expr_id: usize,
-        rel_children: &[usize],
+        expr_id: NodeId,
+        rel_children: &[NodeId],
     ) -> Result<Buckets, SbroadError> {
         let ir_plan = self.exec_plan.get_ir_plan();
         let chains = ir_plan.get_dnf_chains(expr_id)?;
@@ -273,7 +273,7 @@ where
     /// - Relational nodes contain invalid children.
     #[allow(clippy::too_many_lines)]
     #[otm_child_span("query.bucket.discovery")]
-    pub fn bucket_discovery(&mut self, top_id: usize) -> Result<Buckets, SbroadError> {
+    pub fn bucket_discovery(&mut self, top_id: NodeId) -> Result<Buckets, SbroadError> {
         // if top's output has Distribution::Single then the whole subtree must executed only on
         // a single node, no need to traverse the subtree
         let top_output_id = self.exec_plan.get_ir_plan().get_relational_output(top_id)?;
@@ -291,7 +291,7 @@ where
         }
 
         let ir_plan = self.exec_plan.get_ir_plan();
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Relational(_)) = ir_plan.get_node(node_id) {
                 return true;
             }
@@ -305,7 +305,7 @@ where
             Box::new(filter),
         );
 
-        for (_, node_id) in tree.iter(top_id) {
+        for LevelNode(_, node_id) in tree.iter(top_id) {
             if self.bucket_map.contains_key(&node_id) {
                 continue;
             }

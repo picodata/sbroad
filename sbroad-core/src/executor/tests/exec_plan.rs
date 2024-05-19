@@ -13,7 +13,7 @@ use crate::ir::relation::Type;
 use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::tree::Snapshot;
-use crate::ir::{Node, Slice};
+use crate::ir::{ArenaType, Node, Slice};
 
 use super::*;
 
@@ -30,7 +30,7 @@ fn f_sql(s: &str) -> String {
 /// Used for testing.
 fn get_sql_from_execution_plan(
     exec_plan: &mut ExecutionPlan,
-    top_id: usize,
+    top_id: NodeId,
     snapshot: Snapshot,
     name_base: &str,
 ) -> PatternWithParams {
@@ -63,7 +63,7 @@ fn exec_plan_subtree_test() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -116,7 +116,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -181,7 +181,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -198,12 +198,11 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            f_sql(
-                r#"SELECT "T1"."FIRST_NAME" as "column_12",
-"T1"."sysFrom" as "column_14",
-"T1"."sys_op" as "column_13"
-FROM "test_space" as "T1"
-GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#
+            format!(
+                "{} {} {}",
+                r#"SELECT "T1"."FIRST_NAME" as "column_12", "T1"."sys_op" as "column_13","#,
+                r#""T1"."sysFrom" as "column_14" FROM "test_space" as "T1""#,
+                r#"GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#,
             ),
             vec![]
         )
@@ -261,7 +260,7 @@ fn exec_plan_subtree_aggregates() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -278,16 +277,14 @@ fn exec_plan_subtree_aggregates() {
     assert_eq!(
         sql,
         PatternWithParams::new(
-            f_sql(
-                r#"SELECT "T1"."sys_op" as "column_12",
-("T1"."id") * ("T1"."sys_op") as "column_49",
-"T1"."id" as "column_46",
-group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58",
-count ("T1"."sysFrom") as "count_37", total ("T1"."id") as "total_64",
-min ("T1"."id") as "min_67", count ("T1"."id") as "count_61",
-max ("T1"."id") as "max_70", sum ("T1"."id") as "sum_42"
-FROM "test_space" as "T1"
-GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#
+            format!(
+                "{} {} {} {} {} {}",
+                r#"SELECT ("T1"."id") * ("T1"."sys_op") as "column_49", "T1"."sys_op" as "column_12","#,
+                r#""T1"."id" as "column_46", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58", count ("T1"."sysFrom") as "count_37","#,
+                r#"total ("T1"."id") as "total_64","#,
+                r#"min ("T1"."id") as "min_67", count ("T1"."id") as "count_61", max ("T1"."id") as "max_70","#,
+                r#"sum ("T1"."id") as "sum_42" FROM "test_space" as "T1""#,
+                r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
             ),
             vec![Value::from("o")]
         )
@@ -336,7 +333,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -392,7 +389,7 @@ fn exec_plan_subquery_under_motion_without_alias() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -433,7 +430,7 @@ fn exec_plan_subquery_under_motion_with_alias() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -468,7 +465,7 @@ fn exec_plan_motion_under_in_operator() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -507,7 +504,7 @@ fn exec_plan_motion_under_except() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -544,7 +541,7 @@ fn exec_plan_subtree_count_asterisk() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -607,7 +604,7 @@ fn exec_plan_subtree_having() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -631,7 +628,7 @@ fn exec_plan_subtree_having() {
         PatternWithParams::new(
             format!(
                 "{} {} {}",
-                r#"SELECT "T1"."sys_op" as "column_12", ("T1"."sys_op") * (?) as "column_64","#,
+                r#"SELECT ("T1"."sys_op") * (?) as "column_64", "T1"."sys_op" as "column_12","#,
                 r#"count (("T1"."sys_op") * (?)) as "count_60" FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."sys_op") * (?)"#,
             ),
@@ -689,7 +686,7 @@ fn exec_plan_subtree_having_without_groupby() {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
 
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();
@@ -837,7 +834,7 @@ fn global_union_all2() {
     virtual_table.add_tuple(vec![Value::Integer(1)]);
     let exec_plan = query.get_mut_exec_plan();
     exec_plan
-        .set_motion_vtable(motion_id, virtual_table.clone(), &coordinator)
+        .set_motion_vtable(&motion_id, virtual_table.clone(), &coordinator)
         .unwrap();
 
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
@@ -863,6 +860,10 @@ fn global_union_all2() {
         .unwrap();
 
     let actual_dispatch = coordinator.detailed_dispatch(sub_plan, &buckets);
+    let motion_id = NodeId {
+        offset: motion_id as u32,
+        arena_type: ArenaType::Default,
+    };
 
     let expected = vec![
         ReplicasetDispatchInfo {
@@ -918,7 +919,7 @@ fn global_union_all3() {
     sq_vtable.add_tuple(vec![Value::Integer(1)]);
     query
         .exec_plan
-        .set_motion_vtable(sq_motion_id, sq_vtable.clone(), &coordinator)
+        .set_motion_vtable(&sq_motion_id, sq_vtable.clone(), &coordinator)
         .unwrap();
 
     let groupby_motion_id = *slices.slice(1).unwrap().position(0).unwrap();
@@ -942,7 +943,7 @@ fn global_union_all3() {
     }
     query
         .exec_plan
-        .set_motion_vtable(groupby_motion_id, groupby_vtable.clone(), &coordinator)
+        .set_motion_vtable(&groupby_motion_id, groupby_vtable.clone(), &coordinator)
         .unwrap();
 
     let top_id = query.exec_plan.get_ir_plan().get_top().unwrap();
@@ -993,6 +994,16 @@ fn global_union_all3() {
         .unwrap();
 
     let actual_dispatch = coordinator.detailed_dispatch(sub_plan, &buckets);
+
+    let groupby_motion_id = NodeId {
+        offset: groupby_motion_id as u32,
+        arena_type: ArenaType::Default,
+    };
+
+    let sq_motion_id = NodeId {
+        offset: sq_motion_id as u32,
+        arena_type: ArenaType::Default,
+    };
 
     let expected = vec![
         ReplicasetDispatchInfo {
@@ -1096,7 +1107,7 @@ fn global_except() {
         virtual_table.add_tuple(vec![Value::Integer(1)]);
         query
             .get_mut_exec_plan()
-            .set_motion_vtable(intersect_motion_id, virtual_table.clone(), &coordinator)
+            .set_motion_vtable(&intersect_motion_id, virtual_table.clone(), &coordinator)
             .unwrap();
     }
 
@@ -1138,7 +1149,7 @@ fn exec_plan_order_by() {
     {
         virtual_table.reshard(key, &query.coordinator).unwrap();
     }
-    let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+    let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
     vtables.insert(motion_id, Rc::new(virtual_table));
 
     let exec_plan = query.get_mut_exec_plan();

@@ -7,14 +7,14 @@ use tarantool::decimal::Decimal;
 
 use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ast::Rule;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::transformation::redistribution::MotionOpcode;
-use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
+use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::double::Double;
 use crate::ir::value::Value;
-use crate::ir::{Node, NodeId, Plan};
+use crate::ir::{ArenaType, Node, Plan};
 
 use super::Between;
 
@@ -82,7 +82,7 @@ impl Value {
 #[derive(Debug)]
 /// Helper struct representing map of { `ParseNode` id -> `Node` id }
 pub(super) struct Translation {
-    map: HashMap<usize, usize>,
+    map: HashMap<usize, NodeId>,
 }
 
 impl Translation {
@@ -92,11 +92,11 @@ impl Translation {
         }
     }
 
-    pub(super) fn add(&mut self, parse_id: usize, plan_id: usize) {
+    pub(super) fn add(&mut self, parse_id: usize, plan_id: NodeId) {
         self.map.insert(parse_id, plan_id);
     }
 
-    pub(super) fn get(&self, old: usize) -> Result<usize, SbroadError> {
+    pub(super) fn get(&self, old: usize) -> Result<NodeId, SbroadError> {
         self.map.get(&old).copied().ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
@@ -111,17 +111,17 @@ impl Translation {
 struct SubQuery {
     /// Relational operator that is a parent of current SubQuery.
     /// E.g. Selection (in case SubQuery is met in WHERE expression).
-    relational: usize,
+    relational: NodeId,
     /// Expression operator in which this SubQuery is met.
     /// E.g. `Exists`.
-    operator: usize,
+    operator: NodeId,
     /// SubQuery id in plan.
-    sq: usize,
+    sq: NodeId,
 }
 impl Eq for SubQuery {}
 
 impl SubQuery {
-    fn new(relational: usize, operator: usize, sq: usize) -> SubQuery {
+    fn new(relational: NodeId, operator: NodeId, sq: NodeId) -> SubQuery {
         SubQuery {
             relational,
             operator,
@@ -142,20 +142,20 @@ impl CloneExprSubtreeMap {
         }
     }
 
-    fn insert(&mut self, old_id: usize, new_id: usize) {
+    fn insert(&mut self, old_id: NodeId, new_id: NodeId) {
         self.inner.insert(old_id, new_id);
     }
 
-    fn replace(&self, id: &mut usize) {
+    fn replace(&self, id: &mut NodeId) {
         let new_id = self.get(*id);
         *id = new_id;
     }
 
-    fn get(&self, id: usize) -> usize {
+    fn get(&self, id: NodeId) -> NodeId {
         *self
             .inner
             .get(&id)
-            .unwrap_or_else(|| panic!("Node with id {id} not found in the cloning subtree map."))
+            .unwrap_or_else(|| panic!("Node with id {id:?} not found in the cloning subtree map."))
     }
 }
 
@@ -164,7 +164,7 @@ impl Plan {
         let mut set: HashSet<SubQuery, RepeatableState> = HashSet::with_hasher(RepeatableState);
         // Traverse expression trees of the selection and join nodes.
         // Gather all sub-queries in the boolean expressions there.
-        for (relational_id, node) in self.nodes.iter().enumerate() {
+        for (offset, node) in self.nodes.iter().enumerate() {
             match node {
                 Node::Relational(
                     Relational::Selection { filter: tree, .. }
@@ -178,7 +178,12 @@ impl Plan {
                         |node| self.nodes.expr_iter(node, false),
                         capacity,
                     );
-                    for (_, op_id) in expr_post.iter(*tree) {
+                    let relational_id = NodeId {
+                        offset: u32::try_from(offset).unwrap(),
+                        arena_type: ArenaType::Default,
+                    };
+                    for level_node in expr_post.iter(*tree) {
+                        let op_id = level_node.1;
                         let expression_node = self.get_node(op_id)?;
                         if let Node::Expression(Expression::Bool { left, right, .. }) =
                             expression_node
@@ -211,9 +216,9 @@ impl Plan {
     /// Replace sub-queries with references to the sub-query.
     pub(super) fn replace_sq_with_references(
         &mut self,
-    ) -> Result<AHashMap<usize, usize>, SbroadError> {
+    ) -> Result<AHashMap<NodeId, NodeId>, SbroadError> {
         let set = self.gather_sq_for_replacement()?;
-        let mut replaces: AHashMap<usize, usize> = AHashMap::with_capacity(set.len());
+        let mut replaces: AHashMap<NodeId, NodeId> = AHashMap::with_capacity(set.len());
         for sq in set {
             // Append sub-query to relational node if it is not already there (can happen with BETWEEN).
             match self.get_mut_node(sq.relational)? {
@@ -298,10 +303,10 @@ impl Plan {
     pub(super) fn fix_betweens(
         &mut self,
         betweens: &[Between],
-        replaces: &AHashMap<usize, usize>,
+        replaces: &AHashMap<NodeId, NodeId>,
     ) -> Result<(), SbroadError> {
         for between in betweens {
-            let left_id: usize = if let Some(id) = replaces.get(&between.left_id) {
+            let left_id: NodeId = if let Some(id) = replaces.get(&between.left_id) {
                 self.clone_expr_subtree(*id)?
             } else {
                 self.clone_expr_subtree(between.left_id)?
@@ -319,14 +324,15 @@ impl Plan {
         Ok(())
     }
 
-    pub(crate) fn clone_expr_subtree(&mut self, top_id: usize) -> Result<usize, SbroadError> {
+    pub(crate) fn clone_expr_subtree(&mut self, top_id: NodeId) -> Result<NodeId, SbroadError> {
         let mut subtree =
             PostOrder::with_capacity(|node| self.nodes.expr_iter(node, false), EXPR_CAPACITY);
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
         let mut map = CloneExprSubtreeMap::with_capacity(nodes.len());
-        for (_, id) in nodes {
-            let next_id = self.nodes.next_id();
+        let mut expr_id = NodeId::default();
+        for LevelNode(_, id) in nodes {
+            let next_id = self.nodes.next_id(ArenaType::Default);
             let mut expr = self.get_expression_node(id)?.clone();
             match expr {
                 Expression::Constant { .. }
@@ -392,18 +398,18 @@ impl Plan {
                     }
                 }
             }
-            self.nodes.push(Node::Expression(expr));
+            expr_id = self.nodes.push(Node::Expression(expr));
             map.insert(id, next_id);
         }
-        Ok(self.nodes.next_id() - 1)
+        Ok(expr_id)
     }
 }
 
 /// Helper struct to clone plan's subtree.
 /// Assumes that all parameters are bound.
 pub struct SubtreeCloner {
-    old_new: AHashMap<usize, usize>,
-    nodes_with_backward_references: Vec<usize>,
+    old_new: AHashMap<NodeId, NodeId>,
+    nodes_with_backward_references: Vec<NodeId>,
 }
 
 impl SubtreeCloner {
@@ -414,19 +420,19 @@ impl SubtreeCloner {
         }
     }
 
-    fn get_new_id(&self, old_id: usize) -> Result<usize, SbroadError> {
+    fn get_new_id(&self, old_id: NodeId) -> Result<NodeId, SbroadError> {
         self.old_new
             .get(&old_id)
             .ok_or_else(|| {
                 SbroadError::Invalid(
                     Entity::Plan,
-                    Some(format_smolstr!("new node not found for old id: {old_id}")),
+                    Some(format_smolstr!("new node not found for old id: {old_id:?}")),
                 )
             })
             .copied()
     }
 
-    fn copy_list(&self, list: &[usize]) -> Result<Vec<usize>, SbroadError> {
+    fn copy_list(&self, list: &[NodeId]) -> Result<Vec<NodeId>, SbroadError> {
         let mut new_list = Vec::with_capacity(list.len());
         for id in list {
             new_list.push(self.get_new_id(*id)?);
@@ -525,7 +531,7 @@ impl SubtreeCloner {
     fn clone_relational(
         &mut self,
         old_relational: &Relational,
-        id: usize,
+        id: NodeId,
     ) -> Result<Relational, SbroadError> {
         let mut copied = old_relational.clone();
 
@@ -737,14 +743,15 @@ impl SubtreeCloner {
     fn clone(
         &mut self,
         plan: &mut Plan,
-        top_id: usize,
+        top_id: NodeId,
         capacity: usize,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let mut dfs = PostOrder::with_capacity(|x| plan.subtree_iter(x, true), capacity);
         dfs.populate_nodes(top_id);
         let nodes = dfs.take_nodes();
         drop(dfs);
-        for (_, id) in nodes {
+        for level_node in nodes {
+            let id = level_node.1;
             let node = plan.get_node(id)?;
             let new_node = match node {
                 Node::Relational(rel) => Node::Relational(self.clone_relational(rel, id)?),
@@ -753,7 +760,7 @@ impl SubtreeCloner {
                     return Err(SbroadError::Invalid(
                         Entity::Node,
                         Some(format_smolstr!(
-                            "clone: expected relational or expression on id: {id}"
+                            "clone: expected relational or expression on id: {id:?}"
                         )),
                     ))
                 }
@@ -764,7 +771,7 @@ impl SubtreeCloner {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some(format_smolstr!(
-                        "clone: node with id {id} was mapped twice: {old_new_id}, {new_id}"
+                        "clone: node with id {id:?} was mapped twice: {old_new_id:?}, {new_id:?}"
                     )),
                 ));
             }
@@ -779,7 +786,7 @@ impl SubtreeCloner {
                 SbroadError::Invalid(
                     Entity::Plan,
                     Some(format_smolstr!(
-                        "invalid subtree traversal with top: {top_id}"
+                        "invalid subtree traversal with top: {top_id:?}"
                     )),
                 )
             })
@@ -796,9 +803,9 @@ impl SubtreeCloner {
     /// - parameters/ddl/acl nodes are found in subtree
     pub fn clone_subtree(
         plan: &mut Plan,
-        top_id: usize,
+        top_id: NodeId,
         subtree_capacity: usize,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let mut helper = Self::new(subtree_capacity);
         helper.clone(plan, top_id, subtree_capacity)
     }

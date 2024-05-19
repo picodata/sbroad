@@ -8,12 +8,12 @@ use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::Vshard;
 use crate::executor::vtable::{VirtualTable, VirtualTableMap};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::relation::SpaceEngine;
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
-use crate::ir::tree::traversal::PostOrder;
-use crate::ir::{ExecuteOptions, Node, Plan};
+use crate::ir::tree::traversal::{LevelNode, PostOrder};
+use crate::ir::{ArenaType, ExecuteOptions, Node, Plan};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 
@@ -63,7 +63,7 @@ impl From<Plan> for ExecutionPlan {
 
 /// Translates the original plan's node id to the new sub-plan one.
 struct SubtreeMap {
-    inner: AHashMap<usize, usize>,
+    inner: AHashMap<NodeId, NodeId>,
 }
 
 impl SubtreeMap {
@@ -73,18 +73,18 @@ impl SubtreeMap {
         }
     }
 
-    fn get_id(&self, expr_id: usize) -> usize {
+    fn get_id(&self, expr_id: NodeId) -> NodeId {
         *self
             .inner
             .get(&expr_id)
-            .unwrap_or_else(|| panic!("Could not find expr with id {expr_id} in subtree map"))
+            .unwrap_or_else(|| panic!("Could not find expr with id {expr_id:?} in subtree map"))
     }
 
-    fn contains_key(&self, expr_id: usize) -> bool {
+    fn contains_key(&self, expr_id: NodeId) -> bool {
         self.inner.contains_key(&expr_id)
     }
 
-    fn insert(&mut self, old_id: usize, new_id: usize) {
+    fn insert(&mut self, old_id: NodeId, new_id: NodeId) {
         self.inner.insert(old_id, new_id);
     }
 }
@@ -111,15 +111,15 @@ impl ExecutionPlan {
     }
 
     #[must_use]
-    pub fn get_vtables(&self) -> Option<&HashMap<usize, Rc<VirtualTable>>> {
+    pub fn get_vtables(&self) -> Option<&HashMap<NodeId, Rc<VirtualTable>>> {
         self.vtables.as_ref().map(VirtualTableMap::map)
     }
 
-    pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<usize, Rc<VirtualTable>>> {
+    pub fn get_mut_vtables(&mut self) -> Option<&mut HashMap<NodeId, Rc<VirtualTable>>> {
         self.vtables.as_mut().map(VirtualTableMap::mut_map)
     }
 
-    pub fn set_vtables(&mut self, vtables: HashMap<usize, Rc<VirtualTable>>) {
+    pub fn set_vtables(&mut self, vtables: HashMap<NodeId, Rc<VirtualTable>>) {
         self.vtables = Some(VirtualTableMap::new(vtables));
     }
 
@@ -127,7 +127,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - Failed to find a virtual table for the motion node.
-    pub fn get_motion_vtable(&self, motion_id: usize) -> Result<Rc<VirtualTable>, SbroadError> {
+    pub fn get_motion_vtable(&self, motion_id: NodeId) -> Result<Rc<VirtualTable>, SbroadError> {
         if let Some(vtable) = self.get_vtables() {
             if let Some(result) = vtable.get(&motion_id) {
                 return Ok(Rc::clone(result));
@@ -138,7 +138,7 @@ impl ExecutionPlan {
         Err(SbroadError::NotFound(
             Entity::VirtualTable,
             format_smolstr!(
-                "for Motion node ({motion_id}): {motion_node:?}. Plan: {:?}",
+                "for Motion node ({motion_id:?}): {motion_node:?}. Plan: {:?}",
                 self
             ),
         ))
@@ -151,13 +151,13 @@ impl ExecutionPlan {
     #[otm_child_span("query.motion.add")]
     pub fn set_motion_vtable(
         &mut self,
-        motion_id: usize,
+        motion_id: &NodeId,
         vtable: VirtualTable,
         runtime: &impl Vshard,
     ) -> Result<(), SbroadError> {
         let mut vtable = vtable;
         let program_len = if let Relational::Motion { program, .. } =
-            self.get_ir_plan().get_relation_node(motion_id)?
+            self.get_ir_plan().get_relation_node(*motion_id)?
         {
             program.0.len()
         } else {
@@ -168,7 +168,7 @@ impl ExecutionPlan {
         };
         for op_idx in 0..program_len {
             let plan = self.get_ir_plan();
-            let opcode = plan.get_motion_opcode(motion_id, op_idx)?;
+            let opcode = plan.get_motion_opcode(*motion_id, op_idx)?;
             match opcode {
                 MotionOpcode::RemoveDuplicates => {
                     vtable.remove_duplicates();
@@ -177,7 +177,7 @@ impl ExecutionPlan {
                     // Resharding must be done before applying projection
                     // to the virtual table. Otherwise projection can
                     // remove sharding columns.
-                    match plan.get_motion_policy(motion_id)? {
+                    match plan.get_motion_policy(*motion_id)? {
                         MotionPolicy::Segment(shard_key)
                         | MotionPolicy::LocalSegment(shard_key) => {
                             vtable.reshard(shard_key, runtime)?;
@@ -213,7 +213,7 @@ impl ExecutionPlan {
                     };
                     let Some(from_vtable) = vtables.map().get(&motion_id) else {
                         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                            "expected virtual table for motion {motion_id}"
+                            "expected virtual table for motion {motion_id:?}"
                         )));
                     };
                     vtable.add_missing_rows(from_vtable)?;
@@ -228,7 +228,7 @@ impl ExecutionPlan {
         }
 
         if let Some(vtables) = self.get_mut_vtables() {
-            vtables.insert(motion_id, Rc::new(vtable));
+            vtables.insert(*motion_id, Rc::new(vtable));
         }
 
         Ok(())
@@ -272,7 +272,7 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node is not `Motion` type
-    pub fn get_motion_policy(&self, node_id: usize) -> Result<MotionPolicy, SbroadError> {
+    pub fn get_motion_policy(&self, node_id: NodeId) -> Result<MotionPolicy, SbroadError> {
         if let Relational::Motion { policy, .. } = &self.plan.get_relation_node(node_id)? {
             return Ok(policy.clone());
         }
@@ -287,7 +287,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - node is not valid
-    pub fn get_motion_alias(&self, node_id: usize) -> Result<Option<SmolStr>, SbroadError> {
+    pub fn get_motion_alias(&self, node_id: NodeId) -> Result<Option<SmolStr>, SbroadError> {
         let child_id = &self.get_motion_child(node_id)?;
         let child_rel = self.get_ir_plan().get_relation_node(*child_id)?;
         match child_rel {
@@ -301,7 +301,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - node is not valid
-    pub fn get_motion_subtree_root(&self, node_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_motion_subtree_root(&self, node_id: NodeId) -> Result<NodeId, SbroadError> {
         let top_id = &self.get_motion_child(node_id)?;
         let rel = self.get_ir_plan().get_relation_node(*top_id)?;
         match rel {
@@ -337,12 +337,12 @@ impl ExecutionPlan {
     /// # Errors
     /// - node is not `Relation` type
     /// - node does not contain children
-    pub(crate) fn get_motion_child(&self, node_id: usize) -> Result<usize, SbroadError> {
+    pub(crate) fn get_motion_child(&self, node_id: NodeId) -> Result<NodeId, SbroadError> {
         let node = self.get_ir_plan().get_relation_node(node_id)?;
         if !node.is_motion() {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
-                Some(format_smolstr!("current node ({node_id}) is not motion")),
+                Some(format_smolstr!("current node ({node_id:?}) is not motion")),
             ));
         }
 
@@ -350,7 +350,7 @@ impl ExecutionPlan {
 
         assert!(
             children.len() == 1,
-            "Motion node ({node_id}:{node:?}) must have a single child only (actual {})",
+            "Motion node ({node_id:?}:{node:?}) must have a single child only (actual {})",
             children.len()
         );
 
@@ -366,7 +366,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - not a motion node
-    pub fn unlink_motion_subtree(&mut self, motion_id: usize) -> Result<(), SbroadError> {
+    pub fn unlink_motion_subtree(&mut self, motion_id: NodeId) -> Result<(), SbroadError> {
         let motion = self.get_mut_ir_plan().get_mut_relation_node(motion_id)?;
         if let Relational::Motion {
             ref mut children, ..
@@ -376,7 +376,7 @@ impl ExecutionPlan {
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
-                Some(format_smolstr!("node ({motion_id}) is not motion")),
+                Some(format_smolstr!("node ({motion_id:?}) is not motion")),
             ));
         }
         Ok(())
@@ -391,11 +391,11 @@ impl ExecutionPlan {
     /// # Panics
     /// - Plan is in invalid state
     #[allow(clippy::too_many_lines)]
-    pub fn take_subtree(&mut self, top_id: usize) -> Result<Self, SbroadError> {
+    pub fn take_subtree(&mut self, top_id: NodeId) -> Result<Self, SbroadError> {
         // Get the subtree nodes indexes.
         let plan = self.get_ir_plan();
         let mut subtree =
-            PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), plan.next_id());
+            PostOrder::with_capacity(|node| plan.exec_plan_subtree_iter(node), plan.nodes.len());
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
 
@@ -404,7 +404,7 @@ impl ExecutionPlan {
         // as a set to avoid their removal.
         let cte_scans = nodes
             .iter()
-            .map(|(_, id)| *id)
+            .map(|LevelNode(_, id)| *id)
             .filter(|id| {
                 matches!(
                     plan.get_node(*id),
@@ -424,9 +424,11 @@ impl ExecutionPlan {
                 unreachable!("Expected CTE scan node.");
             };
             let child_id = *child;
-            if all_cte_nodes_capacity < child_id {
-                all_cte_nodes_capacity = child_id;
+            let offset = usize::try_from(child_id.offset).unwrap();
+            if all_cte_nodes_capacity < offset {
+                all_cte_nodes_capacity = offset;
             }
+
             cte_amount += 1;
         }
         all_cte_nodes_capacity += 1;
@@ -436,7 +438,7 @@ impl ExecutionPlan {
             all_cte_nodes_capacity / cte_amount * 2
         };
 
-        let mut cte_ids: AHashSet<usize> = AHashSet::new();
+        let mut cte_ids: AHashSet<NodeId> = AHashSet::new();
         let mut is_reserved = false;
         for cte_id in cte_scans {
             if !is_reserved {
@@ -447,7 +449,7 @@ impl ExecutionPlan {
                 |node| plan.exec_plan_subtree_iter(node),
                 single_cte_capacity,
             );
-            for (_, id) in cte_subtree.iter(cte_id) {
+            for LevelNode(_, id) in cte_subtree.iter(cte_id) {
                 cte_ids.insert(id);
             }
         }
@@ -455,12 +457,12 @@ impl ExecutionPlan {
         let mut subtree_map = SubtreeMap::with_capacity(nodes.len());
         let vtables_capacity = self.get_vtables().map_or_else(|| 1, HashMap::len);
         // Map of { plan node_id -> virtual table }.
-        let mut new_vtables: HashMap<usize, Rc<VirtualTable>> =
+        let mut new_vtables: HashMap<NodeId, Rc<VirtualTable>> =
             HashMap::with_capacity(vtables_capacity);
 
         let mut new_plan = Plan::new();
         new_plan.nodes.reserve(nodes.len());
-        for (_, node_id) in nodes {
+        for LevelNode(_, node_id) in nodes {
             // We have already processed this node (sub-queries in BETWEEN
             // and CTEs can be referred twice).
             if subtree_map.contains_key(node_id) {
@@ -469,7 +471,7 @@ impl ExecutionPlan {
 
             // Node from original plan that we'll take and replace with mock parameter node.
             let dst_node = self.get_mut_ir_plan().get_mut_node(node_id)?;
-            let next_id = new_plan.nodes.next_id();
+            let next_id = new_plan.nodes.next_id(ArenaType::Default);
 
             // Replace the node with some invalid value.
             // TODO: introduce some new enum variant for this purpose.
@@ -534,7 +536,7 @@ impl ExecutionPlan {
                             }
                         }
                         Relational::GroupBy { gr_cols, .. } => {
-                            let mut new_cols: Vec<usize> = Vec::with_capacity(gr_cols.len());
+                            let mut new_cols: Vec<NodeId> = Vec::with_capacity(gr_cols.len());
                             for col_id in gr_cols.iter() {
                                 let new_col_id = subtree_map.get_id(*col_id);
                                 new_plan.replace_parent_in_subtree(

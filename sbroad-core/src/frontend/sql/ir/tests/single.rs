@@ -1,5 +1,6 @@
 use smol_str::{SmolStr, ToSmolStr};
 
+use crate::ir::expression::NodeId;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
@@ -30,7 +31,7 @@ impl Policy {
 }
 
 impl Plan {
-    fn to_test_motion(&self, node_id: usize) -> Policy {
+    fn to_test_motion(&self, node_id: NodeId) -> Policy {
         let node = self.get_relation_node(node_id).unwrap();
 
         match node {
@@ -76,13 +77,14 @@ fn check_join_motions(
 ) {
     let plan = sql_to_optimized_ir(sql, vec![]);
     let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), REL_CAPACITY);
-    let (_, join_id) = dfs
+    let level_node = dfs
         .iter(plan.get_top().unwrap())
-        .find(|(_, n)| -> bool {
-            let rel = plan.get_relation_node(*n).unwrap();
+        .find(|level_node| -> bool {
+            let rel = plan.get_relation_node(level_node.1).unwrap();
             matches!(rel, Relational::Join { .. })
         })
         .unwrap();
+    let join_id = level_node.1;
     let children = plan.get_relational_children(join_id).unwrap();
     let (left_id, right_id, sq_nodes_ids) = (children[0], children[1], &children[2..]);
     let (left_actual, right_actual) = (plan.to_test_motion(left_id), plan.to_test_motion(right_id));

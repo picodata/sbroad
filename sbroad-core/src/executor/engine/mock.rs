@@ -30,6 +30,7 @@ use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Cache;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
+use crate::ir::expression::NodeId;
 use crate::ir::function::Function;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
@@ -826,7 +827,7 @@ pub struct RouterRuntimeMock {
     // It's based on the RefCells instead of tarantool mutexes,
     // so it could be used in unit tests - they won't compile otherwise due to missing tarantool symbols.
     metadata: RefCell<RouterConfigurationMock>,
-    virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
+    virtual_tables: RefCell<HashMap<NodeId, VirtualTable>>,
     ir_cache: Rc<RefCell<LRUCache<SmolStr, Plan>>>,
     table_statistics_cache: RefCell<HashMap<SmolStr, Rc<TableStats>>>,
     initial_column_statistics_cache: RefCell<HashMap<TableColumnPair, Rc<Box<dyn Any>>>>,
@@ -1299,7 +1300,7 @@ impl RouterRuntimeMock {
     }
 
     #[allow(dead_code)]
-    pub fn add_virtual_table(&self, id: usize, table: VirtualTable) {
+    pub fn add_virtual_table(&self, id: NodeId, table: VirtualTable) {
         self.virtual_tables.borrow_mut().insert(id, table);
     }
 }
@@ -1316,15 +1317,15 @@ impl Router for RouterRuntimeMock {
     fn materialize_motion(
         &self,
         _plan: &mut ExecutionPlan,
-        motion_node_id: usize,
+        motion_node_id: &NodeId,
         _buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
-        if let Some(virtual_table) = self.virtual_tables.borrow().get(&motion_node_id) {
+        if let Some(virtual_table) = self.virtual_tables.borrow().get(motion_node_id) {
             Ok(virtual_table.clone())
         } else {
             Err(SbroadError::NotFound(
                 Entity::VirtualTable,
-                format_smolstr!("for motion node {motion_node_id}"),
+                format_smolstr!("for motion node {motion_node_id:?}"),
             ))
         }
     }
@@ -1332,7 +1333,7 @@ impl Router for RouterRuntimeMock {
     fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
-        top_id: usize,
+        top_id: NodeId,
         buckets: &Buckets,
         _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
@@ -1488,7 +1489,7 @@ pub struct ReplicasetDispatchInfo {
     pub rs_id: usize,
     pub pattern: String,
     pub params: Vec<Value>,
-    pub vtables_map: HashMap<usize, Rc<VirtualTable>>,
+    pub vtables_map: HashMap<NodeId, Rc<VirtualTable>>,
 }
 
 impl ReplicasetDispatchInfo {
@@ -1502,7 +1503,7 @@ impl ReplicasetDispatchInfo {
         let (pattern_with_params, _) = exec_plan
             .to_sql(&syntax_data_nodes, TEMPLATE, None)
             .unwrap();
-        let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
+        let mut vtables: HashMap<NodeId, Rc<VirtualTable>> = HashMap::new();
         if let Some(vtables_map) = exec_plan.get_vtables() {
             vtables.clone_from(vtables_map);
         }

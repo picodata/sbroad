@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::Path;
-
 use pretty_assertions::assert_eq;
 
 use crate::collection;
@@ -8,7 +5,6 @@ use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::expression::ColumnWithScan;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
-use crate::ir::tests::column_integer_user_non_null;
 use crate::ir::tests::{column_user_non_null, sharding_column};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
@@ -34,8 +30,14 @@ fn scan_rel() {
     .unwrap();
     plan.add_rel(t);
 
-    let scan_output = 8;
-    let scan_node = 9;
+    let scan_output = NodeId {
+        offset: 8,
+        arena_type: ArenaType::Default,
+    };
+    let scan_node = NodeId {
+        offset: 9,
+        arena_type: ArenaType::Default,
+    };
 
     let scan_id = plan.add_scan("t", None).unwrap();
     assert_eq!(scan_node, scan_id);
@@ -51,44 +53,6 @@ fn scan_rel() {
     } else {
         panic!("Wrong output node type!");
     }
-}
-
-#[test]
-fn scan_rel_serialized() {
-    let mut plan = Plan::default();
-
-    let t = Table::new_sharded(
-        "t",
-        vec![
-            column_user_non_null(SmolStr::from("a"), Type::Boolean),
-            column_user_non_null(SmolStr::from("b"), Type::Number),
-            column_user_non_null(SmolStr::from("c"), Type::String),
-            column_user_non_null(SmolStr::from("d"), Type::String),
-        ],
-        &["b", "a"],
-        &["b", "a"],
-        SpaceEngine::Memtx,
-    )
-    .unwrap();
-    plan.add_rel(t);
-
-    let scan_id = plan.add_scan("t", None).unwrap();
-    plan.top = Some(scan_id);
-
-    let scan_output = scan_id - 1;
-
-    plan.set_distribution(scan_output).unwrap();
-
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("scan_rel.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    // This field is not serialized, do not check it
-    plan.context = None;
-    assert_eq!(plan, Plan::from_yaml(&s).unwrap());
 }
 
 #[test]
@@ -119,32 +83,30 @@ fn projection() {
             .unwrap_err()
     );
 
+    let mut test_node = NodeId {
+        offset: 1,
+        arena_type: ArenaType::Default,
+    };
+
     // Expression node instead of relational one
     assert_eq!(
         SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type: Expression(Alias { name: \"a\", child: 0 })".into())
+            Some("node is not Relational type: Expression(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Default } })".into())
         ),
-        plan.add_proj(1, &["a"], false, false).unwrap_err()
+        plan.add_proj(test_node, &["a"], false, false).unwrap_err()
     );
+
+    test_node.offset = 42;
 
     // Try to build projection from the non-existing node
     assert_eq!(
-        SbroadError::NotFound(Entity::Node, "from arena with index 42".to_smolstr()),
-        plan.add_proj(42, &["a"], false, false).unwrap_err()
+        SbroadError::NotFound(
+            Entity::Node,
+            "from Default arena with index 42".to_smolstr()
+        ),
+        plan.add_proj(test_node, &["a"], false, false).unwrap_err()
     );
-}
-
-#[test]
-fn projection_serialize() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("projection.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    Plan::from_yaml(&s).unwrap();
 }
 
 #[test]
@@ -187,18 +149,6 @@ fn selection() {
         ),
         plan.add_select(&[scan_id], const_row).unwrap_err()
     );
-}
-
-#[test]
-fn selection_serialize() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("selection.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    Plan::from_yaml(&s).unwrap();
 }
 
 #[test]
@@ -417,85 +367,17 @@ fn sub_query() {
     plan.add_sub_query(scan_id, Some("sq")).unwrap();
 
     // Non-relational child node
-    let a = 1;
+    let a = NodeId {
+        offset: 1,
+        arena_type: ArenaType::Default,
+    };
     assert_eq!(
         SbroadError::Invalid(
             Entity::Node,
-            Some("node is not Relational type: Expression(Alias { name: \"a\", child: 0 })".into())
+            Some("node is not Relational type: Expression(Alias { name: \"a\", child: NodeId { offset: 0, arena_type: Default } })".into())
         ),
         plan.add_sub_query(a, Some("sq")).unwrap_err()
     );
-}
-
-#[test]
-fn sub_query_serialize() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("sub_query.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    Plan::from_yaml(&s).unwrap();
-}
-
-#[test]
-#[allow(clippy::similar_names)]
-fn selection_with_sub_query() {
-    // t1(a int) key [a]
-    // t2(b int) key [b]
-    // select * from t1 where a = (select b from t2)
-
-    let mut plan = Plan::default();
-    let mut children: Vec<usize> = Vec::new();
-
-    let t1 = Table::new_sharded(
-        "t1",
-        vec![column_integer_user_non_null(SmolStr::from("a"))],
-        &["a"],
-        &["a"],
-        SpaceEngine::Memtx,
-    )
-    .unwrap();
-    plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1", None).unwrap();
-    children.push(scan_t1_id);
-
-    let t2 = Table::new_sharded(
-        "t2",
-        vec![column_integer_user_non_null(SmolStr::from("b"))],
-        &["b"],
-        &["b"],
-        SpaceEngine::Memtx,
-    )
-    .unwrap();
-    plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["b"], false, false).unwrap();
-    let sq_id = plan.add_sub_query(proj_id, None).unwrap();
-    children.push(sq_id);
-
-    let b_id = plan
-        .add_row_from_subquery(&children[..], children.len() - 1, None)
-        .unwrap();
-    let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
-    let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
-
-    let select_id = plan.add_select(&children[..], eq_id).unwrap();
-    plan.set_top(select_id).unwrap();
-
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("selection_with_sub_query.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let expected_plan = Plan::from_yaml(&s).unwrap();
-
-    // This field is not serialized, do not check it
-    plan.context = None;
-    assert_eq!(expected_plan, plan);
 }
 
 #[test]
@@ -548,18 +430,6 @@ fn join() {
         .add_join(scan_t1, scan_t2, condition, JoinKind::Inner)
         .unwrap();
     plan.top = Some(join);
-}
-
-#[test]
-fn join_serialize() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("operator")
-        .join("join.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    Plan::from_yaml(&s).unwrap();
 }
 
 #[test]

@@ -1,15 +1,17 @@
 use std::ops::{Index, Range, RangeFrom, RangeFull};
 
+use crate::ir::expression::NodeId;
+
 #[derive(Debug)]
 pub enum Children<'r> {
     None,
-    Single(&'r usize),
-    Couple(&'r usize, &'r usize),
-    Many(&'r [usize]),
+    Single(&'r NodeId),
+    Couple(&'r NodeId, &'r NodeId),
+    Many(&'r [NodeId]),
 }
 
 impl<'r> Index<usize> for Children<'r> {
-    type Output = usize;
+    type Output = NodeId;
 
     fn index(&self, idx: usize) -> &Self::Output {
         match self {
@@ -29,7 +31,7 @@ impl<'r> Index<usize> for Children<'r> {
 }
 
 impl<'r> Index<Range<usize>> for Children<'r> {
-    type Output = [usize];
+    type Output = [NodeId];
 
     fn index(&self, range: Range<usize>) -> &Self::Output {
         match self {
@@ -40,7 +42,7 @@ impl<'r> Index<Range<usize>> for Children<'r> {
 }
 
 impl<'r> Index<RangeFrom<usize>> for Children<'r> {
-    type Output = [usize];
+    type Output = [NodeId];
 
     fn index(&self, range: RangeFrom<usize>) -> &Self::Output {
         &self[range.start..self.len()]
@@ -48,7 +50,7 @@ impl<'r> Index<RangeFrom<usize>> for Children<'r> {
 }
 
 impl<'r> Index<RangeFull> for Children<'r> {
-    type Output = [usize];
+    type Output = [NodeId];
 
     fn index(&self, _: RangeFull) -> &Self::Output {
         &self[0..self.len()]
@@ -72,7 +74,7 @@ impl<'r> Children<'r> {
     }
 
     #[must_use]
-    pub fn to_vec(&self) -> Vec<usize> {
+    pub fn to_vec(&self) -> Vec<NodeId> {
         match self {
             Children::None => vec![],
             Children::Single(i) => vec![**i],
@@ -82,7 +84,7 @@ impl<'r> Children<'r> {
     }
 
     #[must_use]
-    pub fn get(&self, idx: usize) -> Option<&'r usize> {
+    pub fn get(&self, idx: usize) -> Option<&'r NodeId> {
         if idx >= self.len() {
             return None;
         }
@@ -109,7 +111,7 @@ pub struct ChildrenIter<'c> {
 }
 
 impl<'c> Iterator for ChildrenIter<'c> {
-    type Item = &'c usize;
+    type Item = &'c NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         let child = match self.inner {
@@ -148,7 +150,7 @@ impl<'r> Children<'r> {
 }
 
 impl<'r> IntoIterator for &'r Children<'r> {
-    type Item = &'r usize;
+    type Item = &'r NodeId;
 
     type IntoIter = ChildrenIter<'r>;
 
@@ -161,9 +163,9 @@ impl<'r> IntoIterator for &'r Children<'r> {
 #[allow(clippy::module_name_repetitions)]
 pub enum MutChildren<'r> {
     None,
-    Single(&'r mut usize),
-    Couple(&'r mut usize, &'r mut usize),
-    Many(&'r mut [usize]),
+    Single(&'r mut NodeId),
+    Couple(&'r mut NodeId, &'r mut NodeId),
+    Many(&'r mut [NodeId]),
 }
 
 impl<'r> MutChildren<'r> {
@@ -183,7 +185,7 @@ impl<'r> MutChildren<'r> {
     }
 
     #[must_use]
-    pub fn to_vec(&self) -> Vec<usize> {
+    pub fn to_vec(&self) -> Vec<NodeId> {
         match self {
             MutChildren::None => vec![],
             MutChildren::Single(i) => vec![**i],
@@ -196,7 +198,7 @@ impl<'r> MutChildren<'r> {
     // that instance lifetime '1 must be bigger than 'r and we
     // return '1
     #[must_use]
-    pub fn get_mut(self, idx: usize) -> Option<&'r mut usize> {
+    pub fn get_mut(self, idx: usize) -> Option<&'r mut NodeId> {
         if idx >= self.len() {
             return None;
         }
@@ -215,7 +217,7 @@ impl<'r> MutChildren<'r> {
     }
 
     #[must_use]
-    pub fn split_first(self) -> Option<(&'r mut usize, MutChildren<'r>)> {
+    pub fn split_first(self) -> Option<(&'r mut NodeId, MutChildren<'r>)> {
         let res = match self {
             MutChildren::None => return None,
             MutChildren::Single(i) => (i, MutChildren::None),
@@ -236,7 +238,7 @@ pub struct MutChildrenIter<'c> {
 }
 
 impl<'c> Iterator for MutChildrenIter<'c> {
-    type Item = &'c mut usize;
+    type Item = &'c mut NodeId;
 
     #[must_use]
     fn next(&mut self) -> Option<Self::Item> {
@@ -261,7 +263,7 @@ impl<'r> MutChildren<'r> {
 }
 
 impl<'r> IntoIterator for MutChildren<'r> {
-    type Item = &'r mut usize;
+    type Item = &'r mut NodeId;
 
     type IntoIter = MutChildrenIter<'r>;
 

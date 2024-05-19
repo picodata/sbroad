@@ -17,10 +17,10 @@ use std::fmt::{Display, Formatter};
 use crate::errors::{Action, Entity, SbroadError};
 
 use super::api::children::{Children, MutChildren};
-use super::expression::{ColumnPositionMap, Expression};
+use super::expression::{ColumnPositionMap, Expression, NodeId};
 use super::transformation::redistribution::{MotionPolicy, Program};
-use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
-use super::{Node, NodeId, Plan};
+use super::tree::traversal::{LevelNode, PostOrderWithFilter, EXPR_CAPACITY};
+use super::{ArenaType, Node, Plan};
 use crate::ir::distribution::{Distribution, Key, KeySet};
 use crate::ir::expression::{ExpressionId, PlanExpr};
 use crate::ir::helpers::RepeatableState;
@@ -287,7 +287,7 @@ pub enum UpdateStrategy {
 
 #[derive(Clone, Deserialize, Debug, PartialEq, Eq, Serialize)]
 pub enum OrderByEntity {
-    Expression { expr_id: usize },
+    Expression { expr_id: NodeId },
     Index { value: usize },
 }
 
@@ -322,25 +322,25 @@ pub enum Relational {
         /// CTE's name.
         alias: SmolStr,
         /// Contains exactly one single element (projection node index).
-        child: usize,
+        child: NodeId,
         /// An output tuple with aliases.
-        output: usize,
+        output: NodeId,
     },
     Except {
         /// Left child id
-        left: usize,
+        left: NodeId,
         /// Right child id
-        right: usize,
+        right: NodeId,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
     },
     Delete {
         /// Relation name.
         relation: SmolStr,
         /// Contains exactly one single element.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// The output tuple (reserved for `delete returning`).
-        output: usize,
+        output: NodeId,
     },
     Insert {
         /// Relation name.
@@ -349,23 +349,23 @@ pub enum Relational {
         /// the child's tuple.
         columns: Vec<usize>,
         /// Contains exactly one single element.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// The output tuple (reserved for `insert returning`).
-        output: usize,
+        output: NodeId,
         /// What to do in case there is a conflict during insert on storage
         conflict_strategy: ConflictStrategy,
     },
     Intersect {
-        left: usize,
-        right: usize,
+        left: NodeId,
+        right: NodeId,
         // id of the output tuple
-        output: usize,
+        output: NodeId,
     },
     Update {
         /// Relation name.
         relation: SmolStr,
         /// Children ids. Update has exactly one child.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Maps position of column being updated in table to corresponding position
         /// in `Projection` below `Update`.
         ///
@@ -378,18 +378,18 @@ pub enum Relational {
         /// below `Update`.
         pk_positions: Vec<ColumnPosition>,
         /// Output id.
-        output: usize,
+        output: NodeId,
     },
     Join {
         /// Contains at least two elements: left and right node indexes
         /// from the plan node arena. Every element other than those
         /// two should be treated as a `SubQuery` node.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Left and right tuple comparison condition.
         /// In fact it is an expression tree top index from the plan node arena.
-        condition: usize,
+        condition: NodeId,
         /// Outputs tuple node index from the plan node arena.
-        output: usize,
+        output: NodeId,
         /// inner or left
         kind: JoinKind,
     },
@@ -398,13 +398,13 @@ pub enum Relational {
         alias: Option<SmolStr>,
         /// Contains exactly one single element: child node index
         /// from the plan node arena.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Motion policy - the amount of data to be moved.
         policy: MotionPolicy,
         /// A sequence of opcodes that transform the data.
         program: Program,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
         /// A helper field indicating whether first element of
         /// `children` vec is a `Relational::SubQuery`.
         /// We need it on the stage of translating Plan to SQL, because
@@ -417,9 +417,9 @@ pub enum Relational {
         /// from the plan node arena. Every element other than the
         /// first one should be treated as a `SubQuery` node from
         /// the output tree.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
         /// Wheter the select was marked with `distinct` keyword
         is_distinct: bool,
     },
@@ -427,7 +427,7 @@ pub enum Relational {
         // Scan name.
         alias: Option<SmolStr>,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
         /// Relation name.
         relation: SmolStr,
     },
@@ -436,81 +436,81 @@ pub enum Relational {
         alias: Option<SmolStr>,
         /// Contains exactly one single element: child node index
         /// from the plan node arena.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
     },
     Selection {
         /// Contains at least one single element: child node index
         /// from the plan node arena. Every element other than the
         /// first one should be treated as a `SubQuery` node from
         /// the filter tree.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Filters expression node index in the plan node arena.
-        filter: usize,
+        filter: NodeId,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
     },
     GroupBy {
         /// The first child is a relational operator before group by
-        children: Vec<usize>,
-        gr_cols: Vec<usize>,
-        output: usize,
+        children: Vec<NodeId>,
+        gr_cols: Vec<NodeId>,
+        output: NodeId,
         is_final: bool,
     },
     Having {
-        children: Vec<usize>,
-        output: usize,
-        filter: usize,
+        children: Vec<NodeId>,
+        output: NodeId,
+        filter: NodeId,
     },
     OrderBy {
-        child: usize,
-        output: usize,
+        child: NodeId,
+        output: NodeId,
         order_by_elements: Vec<OrderByElement>,
     },
     UnionAll {
         /// Left child id
-        left: usize,
+        left: NodeId,
         /// Right child id
-        right: usize,
+        right: NodeId,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
     },
     Union {
         /// Left child id
-        left: usize,
+        left: NodeId,
         /// Right child id
-        right: usize,
+        right: NodeId,
         /// Outputs tuple node index in the plan node arena.
-        output: usize,
+        output: NodeId,
     },
     Values {
         /// Output tuple.
-        output: usize,
+        output: NodeId,
         /// Non-empty list of value rows.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
     },
     ValuesRow {
         /// Output tuple of aliases.
-        output: usize,
+        output: NodeId,
         /// The data tuple.
-        data: usize,
+        data: NodeId,
         /// A list of children is required for the rows containing
         /// sub-queries. For example, the row `(1, (select a from t))`
         /// requires `children` to keep projection node. If the row
         /// contains only constants (i.e. `(1, 2)`), then `children`
         /// should be empty.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
     },
     Limit {
         /// Output tuple.
-        output: usize,
+        output: NodeId,
         // The limit value constant that comes after LIMIT keyword.
         limit: u64,
         /// Select statement that is being limited.
         /// Note that it can be a complex statement, like SELECT .. UNION ALL SELECT .. LIMIT 100,
         /// in that case limit is applied to the result of union.
-        child: usize,
+        child: NodeId,
     },
 }
 
@@ -518,7 +518,7 @@ pub enum Relational {
 impl Relational {
     /// Gets an immutable id of the output tuple node of the plan's arena.
     #[must_use]
-    pub fn output(&self) -> usize {
+    pub fn output(&self) -> NodeId {
         match self {
             Relational::ScanCte { output, .. }
             | Relational::Except { output, .. }
@@ -545,7 +545,7 @@ impl Relational {
 
     /// Gets an immutable reference to the output tuple node id.
     #[must_use]
-    pub fn mut_output(&mut self) -> &mut usize {
+    pub fn mut_output(&mut self) -> &mut NodeId {
         match self {
             Relational::ScanCte { output, .. }
             | Relational::Except { output, .. }
@@ -688,7 +688,7 @@ impl Relational {
     ///
     /// # Panics
     /// - wrong number of children for the given node
-    pub fn set_children(&mut self, children: Vec<usize>) {
+    pub fn set_children(&mut self, children: Vec<NodeId>) {
         match self {
             Relational::Join {
                 children: ref mut old,
@@ -909,7 +909,7 @@ impl Plan {
     ///
     /// # Errors
     /// - failed to oupdate shard columns info due to invalid plan subtree
-    pub fn add_relational(&mut self, node: Relational) -> Result<usize, SbroadError> {
+    pub fn add_relational(&mut self, node: Relational) -> Result<NodeId, SbroadError> {
         let rel_id = self.nodes.push(Node::Relational(node));
         let mut context = self.context_mut();
         context.shard_col_info.update_node(rel_id, self)?;
@@ -920,7 +920,7 @@ impl Plan {
     ///
     /// # Errors
     /// - child id pointes to non-existing or non-relational node.
-    pub fn add_delete(&mut self, table: SmolStr, child_id: usize) -> Result<usize, SbroadError> {
+    pub fn add_delete(&mut self, table: SmolStr, child_id: NodeId) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child_id, &[], true)?;
         let delete = Relational::Delete {
             relation: table,
@@ -938,8 +938,8 @@ impl Plan {
     /// - children nodes are not relational
     /// - children tuples are invalid
     /// - children tuples have mismatching structure
-    pub fn add_except(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
-        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, SbroadError> {
+    pub fn add_except(&mut self, left: NodeId, right: NodeId) -> Result<NodeId, SbroadError> {
+        let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
             Ok(plan
                 .get_expression_node(child_output)?
@@ -1027,15 +1027,15 @@ impl Plan {
         &mut self,
         relation: &str,
         update_defs: &HashMap<ColumnPosition, ExpressionId, RepeatableState>,
-        rel_child_id: usize,
-    ) -> Result<usize, SbroadError> {
+        rel_child_id: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         // Create Reference node from given table column.
         fn create_ref_from_column(
             plan: &mut Plan,
             relation: &str,
             table_position_map: &HashMap<ColumnPosition, ColumnPosition>,
             col_pos: usize,
-        ) -> Result<usize, SbroadError> {
+        ) -> Result<NodeId, SbroadError> {
             let table = plan.get_relation_or_error(relation)?;
             let col: &Column = table.columns.get(col_pos).ok_or_else(|| {
                 SbroadError::Invalid(
@@ -1076,7 +1076,7 @@ impl Plan {
                 .iter()
                 .any(|col| update_defs.contains_key(col));
         // Columns of Projection that will be created
-        let mut projection_cols: Vec<usize> = Vec::with_capacity(update_defs.len());
+        let mut projection_cols: Vec<NodeId> = Vec::with_capacity(update_defs.len());
         // Positions of columns in Projection that constitute the primary key
         let mut primary_key_positions: Vec<usize> =
             Vec::with_capacity(table.primary_key.positions.len());
@@ -1158,7 +1158,7 @@ impl Plan {
                 .clone()
                 .iter()
                 .map(|pos| create_ref_from_column(self, relation, &child_map, *pos))
-                .collect::<Result<Vec<usize>, SbroadError>>()?;
+                .collect::<Result<Vec<NodeId>, SbroadError>>()?;
 
             let mut pos = 0;
             // Add update_expressions
@@ -1237,10 +1237,10 @@ impl Plan {
     pub fn add_insert(
         &mut self,
         relation: &str,
-        child: usize,
+        child: NodeId,
         columns: &[SmolStr],
         conflict_strategy: ConflictStrategy,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let rel = self.relations.get(relation).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Table,
@@ -1297,7 +1297,7 @@ impl Plan {
             )));
         }
 
-        let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
+        let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
         for (pos, col) in rel.columns.iter().enumerate() {
             let r_id = self.nodes.add_ref(None, None, pos, col.r#type.clone());
             let col_alias_id = self.nodes.add_alias(&col.name, r_id)?;
@@ -1329,11 +1329,11 @@ impl Plan {
     ///
     /// # Errors
     /// - relation is invalid
-    pub fn add_scan(&mut self, table: &str, alias: Option<&str>) -> Result<usize, SbroadError> {
+    pub fn add_scan(&mut self, table: &str, alias: Option<&str>) -> Result<NodeId, SbroadError> {
         let nodes = &mut self.nodes;
 
         if let Some(rel) = self.relations.get(table) {
-            let mut refs: Vec<usize> = Vec::with_capacity(rel.columns.len());
+            let mut refs: Vec<NodeId> = Vec::with_capacity(rel.columns.len());
             for (pos, col) in rel.columns.iter().enumerate() {
                 let r_id = nodes.add_ref(None, None, pos, col.r#type.clone());
                 let col_alias_id = nodes.add_alias(&col.name, r_id)?;
@@ -1365,11 +1365,11 @@ impl Plan {
     /// - children output tuples are invalid
     pub fn add_join(
         &mut self,
-        left: usize,
-        right: usize,
-        condition: usize,
+        left: NodeId,
+        right: NodeId,
+        condition: NodeId,
         kind: JoinKind,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         if !self.is_trivalent(condition)? {
             return Err(SbroadError::Invalid(
                 Entity::Expression,
@@ -1384,7 +1384,7 @@ impl Plan {
         // As a side effect, we also need to update the references
         // to the child's output in the condition expression as
         // we have filtered out the sharding column.
-        let mut children: Vec<usize> = Vec::with_capacity(2);
+        let mut children: Vec<NodeId> = Vec::with_capacity(2);
         for (child, join_child) in &[(left, JoinChild::Outer), (right, JoinChild::Inner)] {
             let child_node = self.get_relation_node(*child)?;
             if let Relational::ScanRelation {
@@ -1418,7 +1418,7 @@ impl Plan {
                     JoinChild::Outer => Some(vec![0_usize]),
                 };
                 let mut refs = Vec::with_capacity(condition_nodes.len());
-                for (_, id) in condition_nodes {
+                for LevelNode(_, id) in condition_nodes {
                     let expr = self.get_expression_node(id)?;
                     if let Expression::Reference {
                         position, targets, ..
@@ -1491,10 +1491,10 @@ impl Plan {
     /// - child output tuple is invalid
     pub fn add_motion(
         &mut self,
-        child_id: usize,
+        child_id: NodeId,
         policy: &MotionPolicy,
         program: Program,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let alias = if let Node::Relational(rel) = self.get_node(child_id)? {
             rel.scan_name(self, 0)?.map(SmolStr::from)
         } else {
@@ -1507,7 +1507,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Motion,
                     Some(format_smolstr!(
-                        "add_motion: got MotionPolicy::None for child_id: {child_id}"
+                        "add_motion: got MotionPolicy::None for child_id: {child_id:?}"
                     )),
                 ))
             }
@@ -1557,11 +1557,11 @@ impl Plan {
     /// - column name do not match the ones in the child output tuple
     pub fn add_proj(
         &mut self,
-        child: usize,
+        child: NodeId,
         col_names: &[&str],
         is_distinct: bool,
         needs_shard_col: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child, col_names, needs_shard_col)?;
         let proj = Relational::Projection {
             children: vec![child],
@@ -1582,10 +1582,10 @@ impl Plan {
     /// - columns are not aliases or have duplicate names
     pub fn add_proj_internal(
         &mut self,
-        child: usize,
-        columns: &[usize],
+        child: NodeId,
+        columns: &[NodeId],
         is_distinct: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let output = self.nodes.add_row(columns.to_vec(), None);
         let proj = Relational::Projection {
             children: vec![child],
@@ -1608,8 +1608,12 @@ impl Plan {
     ///
     /// # Panics
     /// - `children` is empty
-    pub fn add_select(&mut self, children: &[usize], filter: usize) -> Result<usize, SbroadError> {
-        let first_child: usize = *children
+    pub fn add_select(
+        &mut self,
+        children: &[NodeId],
+        filter: NodeId,
+    ) -> Result<NodeId, SbroadError> {
+        let first_child: NodeId = *children
             .first()
             .expect("No children passed to `add_select`");
 
@@ -1640,8 +1644,12 @@ impl Plan {
     /// - filter expression is not boolean
     /// - children nodes are not relational
     /// - first child output tuple is not valid
-    pub fn add_having(&mut self, children: &[usize], filter: usize) -> Result<usize, SbroadError> {
-        let first_child: usize = match children.len() {
+    pub fn add_having(
+        &mut self,
+        children: &[NodeId],
+        filter: NodeId,
+    ) -> Result<NodeId, SbroadError> {
+        let first_child: NodeId = match children.len() {
             0 => {
                 return Err(SbroadError::UnexpectedNumberOfValues(
                     "children list is empty".into(),
@@ -1687,9 +1695,9 @@ impl Plan {
     /// - Relational node child not found.
     pub fn add_order_by(
         &mut self,
-        child: usize,
+        child: NodeId,
         order_by_elements: Vec<OrderByElement>,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(child, &[], true)?;
         let order_by = Relational::OrderBy {
             child,
@@ -1719,9 +1727,9 @@ impl Plan {
     /// - child node output is not a correct tuple
     pub fn add_sub_query(
         &mut self,
-        child: usize,
+        child: NodeId,
         alias: Option<&str>,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let name: Option<SmolStr> = alias.map(SmolStr::from);
 
         let output = self.add_row_for_output(child, &[], true)?;
@@ -1815,11 +1823,11 @@ impl Plan {
     /// - children tuples have mismatching structure
     pub fn add_union(
         &mut self,
-        left: usize,
-        right: usize,
+        left: NodeId,
+        right: NodeId,
         remove_duplicates: bool,
-    ) -> Result<usize, SbroadError> {
-        let child_row_len = |child: usize, plan: &Plan| -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
+        let child_row_len = |child: NodeId, plan: &Plan| -> Result<usize, SbroadError> {
             let child_output = plan.get_relation_node(child)?.output();
             Ok(plan
                 .get_expression_node(child_output)?
@@ -1859,7 +1867,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Row node is not of a row type
-    pub fn add_limit(&mut self, select: usize, limit: u64) -> Result<usize, SbroadError> {
+    pub fn add_limit(&mut self, select: NodeId, limit: u64) -> Result<NodeId, SbroadError> {
         let output = self.add_row_for_output(select, &[], true)?;
         let limit = Relational::Limit {
             output,
@@ -1878,12 +1886,12 @@ impl Plan {
     /// - Row node is not of a row type
     pub fn add_values_row(
         &mut self,
-        row_id: usize,
+        row_id: NodeId,
         col_idx: &mut usize,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let row = self.get_expression_node(row_id)?;
         let columns = row.clone_row_list()?;
-        let mut aliases: Vec<usize> = Vec::with_capacity(columns.len());
+        let mut aliases: Vec<NodeId> = Vec::with_capacity(columns.len());
         for col_id in columns {
             // Generate a row of aliases for the incoming row.
             *col_idx += 1;
@@ -1909,7 +1917,7 @@ impl Plan {
     /// # Errors
     /// - No child nodes
     /// - Child node is not relational
-    pub fn add_values(&mut self, value_rows: Vec<usize>) -> Result<usize, SbroadError> {
+    pub fn add_values(&mut self, value_rows: Vec<NodeId>) -> Result<NodeId, SbroadError> {
         // In case we have several `ValuesRow` under `Values`
         // (e.g. VALUES (1, "test_1"), (2, "test_2")),
         // the list of alias column names for it will look like:
@@ -1954,7 +1962,7 @@ impl Plan {
         };
 
         // Generate a row of aliases referencing all the children.
-        let mut aliases: Vec<usize> = Vec::with_capacity(names.len());
+        let mut aliases: Vec<NodeId> = Vec::with_capacity(names.len());
         let columns = last_output.clone_row_list()?;
         for (pos, name) in names.iter().enumerate() {
             let col_id = *columns.get(pos).ok_or_else(|| {
@@ -1988,7 +1996,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_output(&self, rel_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_relational_output(&self, rel_id: NodeId) -> Result<NodeId, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.output())
         } else {
@@ -2002,7 +2010,7 @@ impl Plan {
     /// - node is not relational
     /// - output is not `Expression::Row`
     /// - any node in the output tuple is not `Expression::Alias`
-    pub fn get_relational_aliases(&self, rel_id: usize) -> Result<Vec<SmolStr>, SbroadError> {
+    pub fn get_relational_aliases(&self, rel_id: NodeId) -> Result<Vec<SmolStr>, SbroadError> {
         let output = self.get_relational_output(rel_id)?;
         if let Expression::Row { list, .. } = self.get_expression_node(output)? {
             return list
@@ -2017,7 +2025,7 @@ impl Plan {
         Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!(
-                "expected output of Relational node {rel_id} to be Row"
+                "expected output of Relational node {rel_id:?} to be Row"
             )),
         ))
     }
@@ -2026,7 +2034,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not relational
-    pub fn get_relational_children(&self, rel_id: usize) -> Result<Children<'_>, SbroadError> {
+    pub fn get_relational_children(&self, rel_id: NodeId) -> Result<Children<'_>, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             Ok(rel.children())
         } else {
@@ -2044,9 +2052,9 @@ impl Plan {
     /// - node does not have child with specified index
     pub fn get_relational_child(
         &self,
-        rel_id: usize,
+        rel_id: NodeId,
         child_idx: usize,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         if let Node::Relational(rel) = self.get_node(rel_id)? {
             return Ok(*rel.children().get(child_idx).ok_or_else(|| {
                 SbroadError::Invalid(
@@ -2059,7 +2067,7 @@ impl Plan {
         }
         Err(SbroadError::NotFound(
             Entity::Relational,
-            format_smolstr!("with id ({rel_id})"),
+            format_smolstr!("with id ({rel_id:?})"),
         ))
     }
 
@@ -2070,7 +2078,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not Join, Having, Selection
-    pub fn get_required_children_len(&self, node_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_required_children_len(&self, node_id: NodeId) -> Result<usize, SbroadError> {
         let len = match self.get_relation_node(node_id)? {
             Relational::Join { .. } => 2,
             Relational::Having { .. } | Relational::Selection { .. } => 1,
@@ -2078,7 +2086,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Node,
                     Some(format_smolstr!(
-                        "expected Join, Having or Selection on id ({node_id})"
+                        "expected Join, Having or Selection on id ({node_id:?})"
                     )),
                 ))
             }
@@ -2088,17 +2096,25 @@ impl Plan {
 
     /// Finds the parent of the given relational node.
     ///
+    /// # Panics
     /// # Errors
     /// - node is not relational
     /// - Plan has no top
-    pub fn find_parent_rel(&self, target_id: usize) -> Result<Option<usize>, SbroadError> {
+    pub fn find_parent_rel(&self, target_id: NodeId) -> Result<Option<NodeId>, SbroadError> {
         for (id, node) in self.nodes.iter().enumerate() {
             if !matches!(node, Node::Relational(_)) {
                 continue;
             }
-            for child_id in self.nodes.rel_iter(id) {
+
+            let rel_id = NodeId {
+                offset: u32::try_from(id).unwrap(),
+                arena_type: ArenaType::Default,
+            };
+
+            // It will work with one arena but fails with many. Needs to be refactored.
+            for child_id in self.nodes.rel_iter(rel_id) {
                 if child_id == target_id {
-                    return Ok(Some(id));
+                    return Ok(Some(rel_id));
                 }
             }
         }
@@ -2112,9 +2128,9 @@ impl Plan {
     /// - node does not have child with specified id
     pub fn change_child(
         &mut self,
-        parent_id: usize,
-        old_child_id: usize,
-        new_child_id: usize,
+        parent_id: NodeId,
+        old_child_id: NodeId,
+        new_child_id: NodeId,
     ) -> Result<(), SbroadError> {
         let node = self.get_mut_relation_node(parent_id)?;
         let children = node.mut_children();
@@ -2128,7 +2144,7 @@ impl Plan {
         Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!(
-                "node ({parent_id}) has no child with id ({old_child_id})"
+                "node ({parent_id:?}) has no child with id ({old_child_id:?})"
             )),
         ))
     }
@@ -2145,7 +2161,7 @@ impl Plan {
     pub fn table_position_map(
         &self,
         table_name: &str,
-        rel_id: usize,
+        rel_id: NodeId,
     ) -> Result<HashMap<ColumnPosition, ColumnPosition>, SbroadError> {
         let table = self.get_relation_or_error(table_name)?;
         let alias_to_pos = ColumnPositionMap::new(self, rel_id)?;
@@ -2168,10 +2184,10 @@ impl Plan {
     /// - node is scan (always a leaf node)
     pub fn set_relational_children(
         &mut self,
-        rel_id: usize,
-        children: Vec<usize>,
+        rel_id: NodeId,
+        children: Vec<NodeId>,
     ) -> Result<(), SbroadError> {
-        if let Node::Relational(ref mut rel) = self.nodes.get_mut(rel_id)? {
+        if let Some(Node::Relational(ref mut rel)) = self.nodes.get_mut(rel_id) {
             rel.set_children(children);
             return Ok(());
         }
@@ -2186,7 +2202,7 @@ impl Plan {
     /// # Errors
     /// - Failed to get plan top
     /// - Node returned by the relational iterator is not relational (bug)
-    pub fn is_additional_child(&self, node_id: usize) -> Result<bool, SbroadError> {
+    pub fn is_additional_child(&self, node_id: NodeId) -> Result<bool, SbroadError> {
         for node in &self.nodes {
             match node {
                 Node::Relational(
@@ -2213,8 +2229,8 @@ impl Plan {
     /// - If the node is not relational.
     pub fn is_additional_child_of_rel(
         &self,
-        rel_id: usize,
-        sq_id: usize,
+        rel_id: NodeId,
+        sq_id: NodeId,
     ) -> Result<bool, SbroadError> {
         let children = self.get_relational_children(rel_id)?;
         match self.get_relation_node(rel_id)? {
@@ -2232,7 +2248,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not motion
-    pub fn get_motion_policy(&self, motion_id: usize) -> Result<&MotionPolicy, SbroadError> {
+    pub fn get_motion_policy(&self, motion_id: NodeId) -> Result<&MotionPolicy, SbroadError> {
         let node = self.get_relation_node(motion_id)?;
         if let Relational::Motion { policy, .. } = node {
             return Ok(policy);

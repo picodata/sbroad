@@ -20,6 +20,7 @@ use tarantool::tuple::Encode;
 use crate::debug;
 use crate::errors::SbroadError;
 use crate::executor::vtable::{VTableTuple, VirtualTable};
+use crate::ir::expression::NodeId;
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
@@ -257,8 +258,8 @@ impl Plan {
     ///
     /// # Errors
     /// - If relational iterator fails to return a correct node.
-    pub fn subtree_contains_values(&self, top_id: usize) -> Result<bool, SbroadError> {
-        let filter = |node_id: usize| -> bool {
+    pub fn subtree_contains_values(&self, top_id: NodeId) -> Result<bool, SbroadError> {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Relational(Relational::Values { .. })) = self.get_node(node_id) {
                 return true;
             }

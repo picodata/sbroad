@@ -2,7 +2,7 @@ use crate::debug;
 use crate::executor::protocol::VTablesMeta;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::tree::traversal::PostOrderWithFilter;
+use crate::ir::tree::traversal::{LevelNode, PostOrderWithFilter};
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
 use smol_str::format_smolstr;
@@ -14,7 +14,7 @@ use tarantool::tuple::{FunctionArgs, Tuple};
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::engine::helpers::table_name;
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::{OrderByType, Relational};
 use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
@@ -161,8 +161,8 @@ impl ExecutionPlan {
     /// - IR plan is invalid
     pub fn to_params(&self) -> Result<Vec<Value>, SbroadError> {
         let plan = self.get_ir_plan();
-        let capacity = plan.next_id();
-        let filter = |id: usize| -> bool { matches!(plan.get_node(id), Ok(Node::Parameter(_))) };
+        let capacity = plan.nodes.len();
+        let filter = |id: NodeId| -> bool { matches!(plan.get_node(id), Ok(Node::Parameter(_))) };
         let mut tree = PostOrderWithFilter::with_capacity(
             |node| plan.flashback_subtree_iter(node),
             capacity,
@@ -172,7 +172,7 @@ impl ExecutionPlan {
         tree.populate_nodes(top_id);
         let nodes = tree.take_nodes();
         let mut params: Vec<Value> = Vec::with_capacity(nodes.len());
-        for (_, param_id) in nodes {
+        for LevelNode(_, param_id) in nodes {
             let Expression::Constant { value } = plan.get_expression_node(param_id)? else {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
@@ -428,7 +428,7 @@ impl ExecutionPlan {
                                         })?;
                                     }
                                     Expression::Reference { position, .. } => {
-                                        let rel_id: usize =
+                                        let rel_id =
                                             *ir_plan.get_relational_from_reference_node(*id)?;
                                         let rel_node = ir_plan.get_relation_node(rel_id)?;
 
@@ -553,7 +553,7 @@ impl ExecutionPlan {
     ///
     /// # Errors
     /// - If the subtree top is not a relational node.
-    pub fn subtree_modifies_data(&self, top_id: usize) -> Result<bool, SbroadError> {
+    pub fn subtree_modifies_data(&self, top_id: NodeId) -> Result<bool, SbroadError> {
         // Tarantool doesn't support `INSERT`, `UPDATE` and `DELETE` statements
         // with `RETURNING` clause. That is why it is enough to check if the top
         // node is a data modification statement or not.

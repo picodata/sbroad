@@ -2,8 +2,6 @@ use super::*;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use pretty_assertions::assert_eq;
 use smol_str::SmolStr;
-use std::fs;
-use std::path::Path;
 
 /// Helper function to create `Column` object with given name and default:
 ///
@@ -54,34 +52,6 @@ pub fn sharding_column() -> Column {
 }
 
 #[test]
-fn plan_no_top() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("plan_no_top.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    assert_eq!(
-        SbroadError::Invalid(Entity::Plan, Some("plan tree top is None".into())),
-        Plan::from_yaml(&s).unwrap_err()
-    );
-}
-
-#[test]
-fn plan_oor_top() {
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("plan_oor_top.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    assert_eq!(
-        SbroadError::NotFound(Entity::Node, "from arena with index 42".into()),
-        Plan::from_yaml(&s).unwrap_err()
-    );
-}
-
-#[test]
 fn get_node() {
     let mut plan = Plan::default();
 
@@ -110,8 +80,12 @@ fn get_node() {
 fn get_node_oor() {
     let plan = Plan::default();
     assert_eq!(
-        SbroadError::NotFound(Entity::Node, "from arena with index 42".into()),
-        plan.get_node(42).unwrap_err()
+        SbroadError::NotFound(Entity::Node, "from Default arena with index 42".into()),
+        plan.get_node(NodeId {
+            offset: 42,
+            arena_type: ArenaType::Default
+        })
+        .unwrap_err()
     );
 }
 

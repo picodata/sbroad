@@ -19,14 +19,15 @@ use crate::{
         result::ProducerResult,
     },
     ir::{
+        expression::NodeId,
         helpers::RepeatableState,
         operator::Relational,
         transformation::redistribution::{MotionOpcode, MotionPolicy},
         tree::{
             relation::RelationalIterator,
-            traversal::{PostOrderWithFilter, REL_CAPACITY},
+            traversal::{LevelNode, PostOrderWithFilter, REL_CAPACITY},
         },
-        Node, NodeId, Plan,
+        Node, Plan,
     },
     otm::child_span,
 };
@@ -748,7 +749,7 @@ struct SerializeAsEmptyInfo {
 impl Plan {
     // return true if given node is Motion containing seriliaze as empty
     // opcode. If `check_enabled` is true checks that the opcode is enabled.
-    fn is_serialize_as_empty_motion(&self, node_id: usize, check_enabled: bool) -> bool {
+    fn is_serialize_as_empty_motion(&self, node_id: NodeId, check_enabled: bool) -> bool {
         if let Ok(Node::Relational(Relational::Motion { program, .. })) = self.get_node(node_id) {
             if let Some(op) = program
                 .0
@@ -761,8 +762,8 @@ impl Plan {
         false
     }
 
-    fn collect_top_ids(&self) -> Result<Vec<usize>, SbroadError> {
-        let mut stop_nodes: HashSet<usize> = HashSet::new();
+    fn collect_top_ids(&self) -> Result<Vec<NodeId>, SbroadError> {
+        let mut stop_nodes: HashSet<NodeId> = HashSet::new();
         let iter_children = |node_id| -> RelationalIterator<'_> {
             if self.is_serialize_as_empty_motion(node_id, true) {
                 stop_nodes.insert(node_id);
@@ -773,17 +774,17 @@ impl Plan {
             }
             self.nodes.rel_iter(node_id)
         };
-        let filter = |node_id: usize| -> bool { self.is_serialize_as_empty_motion(node_id, true) };
+        let filter = |node_id: NodeId| -> bool { self.is_serialize_as_empty_motion(node_id, true) };
         let mut dfs = PostOrderWithFilter::with_capacity(iter_children, 4, Box::new(filter));
 
-        Ok(dfs.iter(self.get_top()?).map(|(_, id)| id).collect())
+        Ok(dfs.iter(self.get_top()?).map(|id| id.1).collect())
     }
 
     fn serialize_as_empty_info(&self) -> Result<Option<SerializeAsEmptyInfo>, SbroadError> {
         let top_ids = self.collect_top_ids()?;
 
         let mut motions_ref_count: AHashMap<NodeId, usize> = AHashMap::new();
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             matches!(
                 self.get_node(node_id),
                 Ok(Node::Relational(Relational::Motion { .. }))
@@ -791,7 +792,7 @@ impl Plan {
         };
         let mut dfs =
             PostOrderWithFilter::with_capacity(|x| self.nodes.rel_iter(x), 0, Box::new(filter));
-        for (_, motion_id) in dfs.iter(self.get_top()?) {
+        for LevelNode(_, motion_id) in dfs.iter(self.get_top()?) {
             motions_ref_count
                 .entry(motion_id)
                 .and_modify(|cnt| *cnt += 1)
@@ -805,7 +806,7 @@ impl Plan {
         // all motion nodes that are inside the subtrees
         // defined by `top_ids`
         let all_motion_nodes = {
-            let is_motion = |node_id: usize| -> bool {
+            let is_motion = |node_id: NodeId| -> bool {
                 matches!(
                     self.get_node(node_id),
                     Ok(Node::Relational(Relational::Motion { .. }))
@@ -818,7 +819,7 @@ impl Plan {
                     REL_CAPACITY,
                     Box::new(is_motion),
                 );
-                all_motions.extend(dfs.iter(*top_id).map(|(_, id)| id));
+                all_motions.extend(dfs.iter(*top_id).map(|id| id.1));
             }
             all_motions
         };
@@ -890,7 +891,7 @@ fn apply_serialize_as_empty_opcode(
         for motion_id in &unused_motions {
             let Some(use_count) = info.motions_ref_count.get_mut(motion_id) else {
                 return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                    "no ref count for motion={motion_id}"
+                    "no ref count for motion={motion_id:?}"
                 )));
             };
             if *use_count > 1 {
@@ -925,7 +926,7 @@ fn disable_serialize_as_empty_opcode(
         } else {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format_smolstr!("expected motion node on id {motion_id}")),
+                Some(format_smolstr!("expected motion node on id {motion_id:?}")),
             ));
         };
         for op in &mut program.0 {

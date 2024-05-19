@@ -19,7 +19,7 @@ use crate::ir::transformation::redistribution::{
 };
 use crate::ir::{OptionKind, Plan};
 
-use super::expression::FunctionFeature;
+use super::expression::{FunctionFeature, NodeId};
 use super::operator::{Arithmetic, Bool, Unary};
 use super::tree::traversal::{PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use super::value::Value;
@@ -123,14 +123,15 @@ impl ColExpr {
     #[allow(dead_code, clippy::too_many_lines)]
     fn new(
         plan: &Plan,
-        subtree_top: usize,
+        subtree_top: NodeId,
         sq_ref_map: &SubQueryRefMap,
     ) -> Result<Self, SbroadError> {
-        let mut stack: Vec<(ColExpr, usize)> = Vec::new();
+        let mut stack: Vec<(ColExpr, NodeId)> = Vec::new();
         let mut dft_post =
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
 
-        for (_, id) in dft_post.iter(subtree_top) {
+        for level_node in dft_post.iter(subtree_top) {
+            let id = level_node.1;
             let current_node = plan.get_expression_node(id)?;
 
             match &current_node {
@@ -192,7 +193,7 @@ impl ColExpr {
                 Expression::Reference { position, .. } => {
                     let mut col_name = String::new();
 
-                    let rel_id: usize = *plan.get_relational_from_reference_node(id)?;
+                    let rel_id = *plan.get_relational_from_reference_node(id)?;
                     let rel_node = plan.get_relation_node(rel_id)?;
 
                     if let Some(name) = rel_node.scan_name(plan, *position)? {
@@ -268,7 +269,7 @@ impl ColExpr {
                 }
                 Expression::Row { list, .. } => {
                     let mut len = list.len();
-                    let mut row: Vec<(ColExpr, usize)> = Vec::with_capacity(len);
+                    let mut row: Vec<(ColExpr, NodeId)> = Vec::with_capacity(len);
                     while len > 0 {
                         let expr = stack.pop().ok_or_else(|| {
                             SbroadError::UnexpectedNumberOfValues(
@@ -361,7 +362,7 @@ impl ColExpr {
 /// Alias for map of (`SubQuery` id -> it's offset).
 /// Offset = `SubQuery` index (e.g. in case there are several `SubQueries` in Selection WHERE condition
 /// index will indicate to which of them Reference is pointing).
-type SubQueryRefMap = HashMap<usize, usize>;
+type SubQueryRefMap = HashMap<NodeId, usize>;
 
 #[derive(Debug, PartialEq, Serialize)]
 struct Projection {
@@ -373,7 +374,7 @@ impl Projection {
     #[allow(dead_code)]
     fn new(
         plan: &Plan,
-        output_id: usize,
+        output_id: NodeId,
         sq_ref_map: &SubQueryRefMap,
     ) -> Result<Self, SbroadError> {
         let mut result = Projection { cols: vec![] };
@@ -416,8 +417,8 @@ impl GroupBy {
     #[allow(dead_code)]
     fn new(
         plan: &Plan,
-        gr_cols: &Vec<usize>,
-        output_id: usize,
+        gr_cols: &Vec<NodeId>,
+        output_id: NodeId,
         sq_ref_map: &SubQueryRefMap,
     ) -> Result<Self, SbroadError> {
         let mut result = GroupBy {
@@ -547,7 +548,7 @@ struct Update {
 
 impl Update {
     #[allow(dead_code)]
-    fn new(plan: &Plan, update_id: usize) -> Result<Self, SbroadError> {
+    fn new(plan: &Plan, update_id: NodeId) -> Result<Self, SbroadError> {
         if let Relational::Update {
             relation: ref rel,
             update_columns_map,
@@ -609,7 +610,7 @@ impl Update {
         Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!(
-                "explain: expected Update node on id: {update_id}"
+                "explain: expected Update node on id: {update_id:?}"
             )),
         ))
     }
@@ -714,7 +715,7 @@ impl Row {
 
     fn from_col_exprs_with_ids(
         plan: &Plan,
-        exprs_with_ids: &mut Vec<(ColExpr, usize)>,
+        exprs_with_ids: &mut Vec<(ColExpr, NodeId)>,
         sq_ref_map: &SubQueryRefMap,
     ) -> Result<Self, SbroadError> {
         let mut row = Row::new();
@@ -724,7 +725,7 @@ impl Row {
 
             match &current_node {
                 Expression::Reference { .. } => {
-                    let rel_id: usize = *plan.get_relational_from_reference_node(expr_id)?;
+                    let rel_id = *plan.get_relational_from_reference_node(expr_id)?;
 
                     let rel_node = plan.get_relation_node(rel_id)?;
                     if plan.is_additional_child(rel_id)? {
@@ -734,7 +735,7 @@ impl Row {
                             let sq_offset = sq_ref_map.get(&rel_id).ok_or_else(|| {
                                 SbroadError::NotFound(
                                     Entity::SubQuery,
-                                    format_smolstr!("with index {rel_id} in the map"),
+                                    format_smolstr!("with index {rel_id:?} in the map"),
                                 )
                             })?;
                             row.add_col(RowVal::SqRef(Ref::new(*sq_offset)));
@@ -742,7 +743,7 @@ impl Row {
                             return Err(SbroadError::Invalid(
                                 Entity::Plan,
                                 Some(format_smolstr!(
-                                    "additional child ({rel_id}) is not SQ or Motion: {rel_node:?}"
+                                    "additional child ({rel_id:?}) is not SQ or Motion: {rel_node:?}"
                                 )),
                             ));
                         }
@@ -1030,7 +1031,7 @@ impl Display for FullExplain {
 impl FullExplain {
     #[allow(dead_code)]
     #[allow(clippy::too_many_lines)]
-    pub fn new(ir: &Plan, top_id: usize) -> Result<Self, SbroadError> {
+    pub fn new(ir: &Plan, top_id: NodeId) -> Result<Self, SbroadError> {
         let mut stack: Vec<ExplainTreePart> = Vec::with_capacity(ir.nodes.relation_node_amount());
         let mut result = FullExplain::default();
         result
@@ -1042,7 +1043,9 @@ impl FullExplain {
         ));
 
         let mut dft_post = PostOrder::with_capacity(|node| ir.nodes.rel_iter(node), REL_CAPACITY);
-        for (level, id) in dft_post.iter(top_id) {
+        for level_node in dft_post.iter(top_id) {
+            let level = level_node.0;
+            let id = level_node.1;
             let mut current_node = ExplainTreePart::with_level(level);
             let node = ir.get_relation_node(id)?;
             current_node.current = match &node {

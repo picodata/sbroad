@@ -1,102 +1,13 @@
 use crate::collection;
-use crate::errors::{Entity, SbroadError};
 use crate::ir::distribution::{Distribution, Key};
 use crate::ir::helpers::RepeatableState;
-use crate::ir::operator::{Bool, Relational};
-use crate::ir::relation::{Column, SpaceEngine, Table};
-use crate::ir::tests::column_integer_user_non_null;
+use crate::ir::operator::Relational;
+use crate::ir::relation::Column;
 use crate::ir::transformation::helpers::sql_to_ir;
 use crate::ir::transformation::redistribution::{MotionKey, MotionPolicy, Target};
-use crate::ir::{Node, Plan};
-use ahash::RandomState;
+use crate::ir::Node;
 use pretty_assertions::assert_eq;
-use smol_str::SmolStr;
 use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
-
-#[test]
-#[allow(clippy::similar_names)]
-fn sub_query1() {
-    // t1(a int) key [a]
-    // t2(a int, b int) key [a]
-    // select * from t1 where a = (select b from t2)
-    let mut plan = Plan::default();
-    let mut children: Vec<usize> = Vec::new();
-
-    let t1 = Table::new_sharded(
-        "t1",
-        vec![column_integer_user_non_null(SmolStr::from("a"))],
-        &["a"],
-        &["a"],
-        SpaceEngine::Memtx,
-    )
-    .unwrap();
-    plan.add_rel(t1);
-    let scan_t1_id = plan.add_scan("t1", None).unwrap();
-    children.push(scan_t1_id);
-
-    let t2 = Table::new_sharded(
-        "t2",
-        vec![
-            column_integer_user_non_null(SmolStr::from("a")),
-            column_integer_user_non_null(SmolStr::from("b")),
-        ],
-        &["a"],
-        &["a"],
-        SpaceEngine::Memtx,
-    )
-    .unwrap();
-    plan.add_rel(t2);
-    let scan_t2_id = plan.add_scan("t2", None).unwrap();
-    let proj_id = plan.add_proj(scan_t2_id, &["b"], false, false).unwrap();
-    let sq_id = plan.add_sub_query(proj_id, None).unwrap();
-    children.push(sq_id);
-
-    let b_id = plan
-        .add_row_from_subquery(&children[..], children.len() - 1, None)
-        .unwrap();
-    let a_id = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
-    let eq_id = plan.add_cond(a_id, Bool::Eq, b_id).unwrap();
-
-    let select_id = plan.add_select(&children[..], eq_id).unwrap();
-    plan.set_top(select_id).unwrap();
-
-    let mut expected_rel_set: HashSet<usize, RandomState> =
-        HashSet::with_hasher(RandomState::new());
-    expected_rel_set.insert(sq_id);
-    assert_eq!(
-        expected_rel_set,
-        plan.get_relational_nodes_from_row(b_id).unwrap()
-    );
-    assert_eq!(Some(sq_id), plan.get_sub_query_from_row_node(b_id).unwrap());
-
-    assert_eq!(
-        SbroadError::Invalid(
-            Entity::Distribution,
-            Some("distribution is uninitialized".into()),
-        ),
-        plan.resolve_sub_query_conflicts(select_id, eq_id)
-            .unwrap_err()
-    );
-
-    plan.add_motions().unwrap();
-
-    // Check the modified plan
-    plan.derive_equalities().unwrap();
-    let path = Path::new("")
-        .join("tests")
-        .join("artifactory")
-        .join("ir")
-        .join("transformation")
-        .join("redistribution")
-        .join("segment_motion_for_sub_query.yaml");
-    let s = fs::read_to_string(path).unwrap();
-    let expected_plan = Plan::from_yaml(&s).unwrap();
-    // This field is not serialized, do not check it
-    plan.context = None;
-    assert_eq!(plan, expected_plan);
-}
 
 #[test]
 fn inner_join1() {

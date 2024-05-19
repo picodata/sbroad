@@ -18,7 +18,7 @@ fn equality_propagation1() {
             "{} {} {}",
             r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."c") = (?) and ("t"."a") = (?) and ("t"."b") = (?)"#,
-            r#"and ("t"."c") = ("t"."a") or ("t"."d") = (?)"#,
+            r#"and ("t"."a") = ("t"."c") or ("t"."d") = (?)"#,
         ),
         vec![
             Value::from(1_u64),
@@ -107,8 +107,8 @@ fn equality_propagation5() {
             r#"SELECT "t"."a" FROM "t""#,
             r#"WHERE ("t"."d") = (?) and ("t"."c") = (?)"#,
             r#"and ("t"."a") = (?) and ("t"."b") = (?)"#,
-            r#"and ("t"."c") = ("t"."a") and ("t"."a") = ("t"."d")"#,
-            r#"and ("t"."d") = ("t"."b")"#,
+            r#"and ("t"."a") = ("t"."b") and ("t"."b") = ("t"."c")"#,
+            r#"and ("t"."c") = ("t"."d")"#,
         ),
         vec![
             Value::from(1_u64),

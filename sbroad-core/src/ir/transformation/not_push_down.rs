@@ -5,7 +5,7 @@
 //! * To:   `select * from "t" where "a" = 1 and "b" = 2`
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::{Bool, Unary};
 use crate::ir::transformation::{OldNewExpressionMap, OldNewTopIdPair};
 use crate::ir::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
@@ -36,19 +36,19 @@ enum NotState {
     /// * cast -> On { parent_not_op: None } -> don't change self, because we don't know, what
     ///           value will cast return. As soon as parent_not_op is None, create one as a parent
     ///           node.
-    On { parent_not_op: Option<usize> },
+    On { parent_not_op: Option<NodeId> },
 }
 
 impl NotState {
     /// Create new `NotState::On`.
-    fn on(parent_not_op: Option<usize>) -> Self {
+    fn on(parent_not_op: Option<NodeId>) -> Self {
         NotState::On { parent_not_op }
     }
 }
 
 fn call_expr_tree_not_push_down(
     plan: &mut Plan,
-    top_id: usize,
+    top_id: NodeId,
 ) -> Result<OldNewTopIdPair, SbroadError> {
     // Because of the borrow checker we can't change `Bool` and `Row` children during recursive
     // traversal and have to do it using this map after transformation.
@@ -60,7 +60,7 @@ fn call_expr_tree_not_push_down(
         (top_id, top_id)
     } else {
         let old_top_id = plan.clone_expr_subtree(top_id)?;
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             matches!(
                 plan.get_node(node_id),
                 Ok(Node::Expression(
@@ -78,8 +78,9 @@ fn call_expr_tree_not_push_down(
         subtree.populate_nodes(top_id);
         let nodes = subtree.take_nodes();
         drop(subtree);
-        for (_, id) in &nodes {
-            let expr = plan.get_mut_expression_node(*id)?;
+        for level_node in &nodes {
+            let id = level_node.1;
+            let expr = plan.get_mut_expression_node(id)?;
             match expr {
                 Expression::ExprInParentheses { child } => {
                     old_new_expression_map.replace(child);
@@ -131,9 +132,9 @@ impl Plan {
     /// * `not_state` is on and parent `Not` operator is absent  -> create new not node.
     fn cover_with_not(
         &mut self,
-        expr_id: usize,
+        expr_id: NodeId,
         not_state: &NotState,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         if let NotState::On { parent_not_op } = not_state {
             if let Some(parent_not_op) = parent_not_op {
                 let parent_not_expr = self.get_mut_expression_node(*parent_not_op)?;
@@ -166,10 +167,10 @@ impl Plan {
     /// Recursive push down of `Not` operator.
     fn push_down_not_for_expression(
         &mut self,
-        expr_id: usize,
+        expr_id: NodeId,
         not_state: NotState,
         map: &mut OldNewExpressionMap,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         let new_expr_id = match expr {
             Expression::ExprInParentheses { child } => {

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 
 use super::{PlanTreeIterator, Snapshot, TreeIterator};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::{OrderByElement, OrderByEntity, Relational};
 use crate::ir::{Node, Nodes, Plan};
 
@@ -15,14 +15,14 @@ trait SubtreePlanIterator<'plan>: PlanTreeIterator<'plan> {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct SubtreeIterator<'plan> {
-    current: usize,
+    current: NodeId,
     child: RefCell<usize>,
     plan: &'plan Plan,
     need_output: bool,
 }
 
 impl<'nodes> TreeIterator<'nodes> for SubtreeIterator<'nodes> {
-    fn get_current(&self) -> usize {
+    fn get_current(&self) -> NodeId {
         self.current
     }
 
@@ -52,7 +52,7 @@ impl<'plan> SubtreePlanIterator<'plan> for SubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for SubtreeIterator<'plan> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         subtree_next(self, &Snapshot::Latest).copied()
@@ -61,7 +61,7 @@ impl<'plan> Iterator for SubtreeIterator<'plan> {
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn subtree_iter(&'plan self, current: usize, need_output: bool) -> SubtreeIterator<'plan> {
+    pub fn subtree_iter(&'plan self, current: NodeId, need_output: bool) -> SubtreeIterator<'plan> {
         SubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -77,13 +77,13 @@ impl<'plan> Plan {
 /// at the moment).
 #[derive(Debug)]
 pub struct FlashbackSubtreeIterator<'plan> {
-    current: usize,
+    current: NodeId,
     child: RefCell<usize>,
     plan: &'plan Plan,
 }
 
 impl<'nodes> TreeIterator<'nodes> for FlashbackSubtreeIterator<'nodes> {
-    fn get_current(&self) -> usize {
+    fn get_current(&self) -> NodeId {
         self.current
     }
 
@@ -113,7 +113,7 @@ impl<'plan> SubtreePlanIterator<'plan> for FlashbackSubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for FlashbackSubtreeIterator<'plan> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         subtree_next(self, &Snapshot::Oldest).copied()
@@ -122,7 +122,7 @@ impl<'plan> Iterator for FlashbackSubtreeIterator<'plan> {
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn flashback_subtree_iter(&'plan self, current: usize) -> FlashbackSubtreeIterator<'plan> {
+    pub fn flashback_subtree_iter(&'plan self, current: NodeId) -> FlashbackSubtreeIterator<'plan> {
         FlashbackSubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -134,13 +134,13 @@ impl<'plan> Plan {
 /// An iterator used while copying and execution plan subtree.
 #[derive(Debug)]
 pub struct ExecPlanSubtreeIterator<'plan> {
-    current: usize,
+    current: NodeId,
     child: RefCell<usize>,
     plan: &'plan Plan,
 }
 
 impl<'nodes> TreeIterator<'nodes> for ExecPlanSubtreeIterator<'nodes> {
-    fn get_current(&self) -> usize {
+    fn get_current(&self) -> NodeId {
         self.current
     }
 
@@ -170,7 +170,7 @@ impl<'plan> SubtreePlanIterator<'plan> for ExecPlanSubtreeIterator<'plan> {
 }
 
 impl<'plan> Iterator for ExecPlanSubtreeIterator<'plan> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         subtree_next(self, &Snapshot::Oldest).copied()
@@ -179,7 +179,7 @@ impl<'plan> Iterator for ExecPlanSubtreeIterator<'plan> {
 
 impl<'plan> Plan {
     #[must_use]
-    pub fn exec_plan_subtree_iter(&'plan self, current: usize) -> ExecPlanSubtreeIterator<'plan> {
+    pub fn exec_plan_subtree_iter(&'plan self, current: NodeId) -> ExecPlanSubtreeIterator<'plan> {
         ExecPlanSubtreeIterator {
             current,
             child: RefCell::new(0),
@@ -192,8 +192,8 @@ impl<'plan> Plan {
 fn subtree_next<'plan>(
     iter: &mut impl SubtreePlanIterator<'plan>,
     snapshot: &Snapshot,
-) -> Option<&'plan usize> {
-    if let Some(child) = iter.get_nodes().arena.get(iter.get_current()) {
+) -> Option<&'plan NodeId> {
+    if let Some(child) = iter.get_nodes().get(iter.get_current()) {
         return match child {
             Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) | Node::Block(..) => None,
             Node::Expression(expr) => match expr {

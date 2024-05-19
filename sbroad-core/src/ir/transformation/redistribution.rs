@@ -10,8 +10,8 @@ use crate::errors::{Action, Entity, SbroadError};
 use crate::frontend::sql::ir::SubtreeCloner;
 use crate::ir::api::children::Children;
 use crate::ir::distribution::{Distribution, Key, KeySet};
-use crate::ir::expression::ColumnPositionMap;
 use crate::ir::expression::Expression;
+use crate::ir::expression::{ColumnPositionMap, NodeId};
 use crate::ir::operator::{Bool, JoinKind, Relational, Unary, UpdateStrategy};
 
 use crate::ir::transformation::redistribution::eq_cols::EqualityCols;
@@ -131,12 +131,12 @@ pub enum MotionOpcode {
     /// Call `rearrange_for_update` method on vtable and then call `set_update_delete_tuple_len`
     /// on `Update` relational node.
     RearrangeForShardedUpdate {
-        update_id: usize,
+        update_id: NodeId,
         old_shard_columns_len: usize,
         new_shard_columns_positions: Vec<ColumnPosition>,
     },
     AddMissingRowsForLeftJoin {
-        motion_id: usize,
+        motion_id: NodeId,
     },
     /// When set to `true` this opcode serializes motion subtree to sql that produces
     /// empty table.
@@ -154,13 +154,13 @@ pub enum MotionOpcode {
 
 /// Helper struct that unwraps `Expression::Bool` fields.
 struct BoolOp {
-    left: usize,
+    left: NodeId,
     op: Bool,
-    right: usize,
+    right: NodeId,
 }
 
 impl BoolOp {
-    fn from_expr(plan: &Plan, expr_id: usize) -> Result<Self, SbroadError> {
+    fn from_expr(plan: &Plan, expr_id: NodeId) -> Result<Self, SbroadError> {
         if let Expression::Bool {
             left, op, right, ..
         } = plan.get_expression_node(expr_id)?
@@ -197,19 +197,19 @@ impl Program {
     }
 }
 
-type ChildId = usize;
+type ChildId = NodeId;
 type DataTransformation = (MotionPolicy, Program);
 
 /// Helper struct to store motion policy for every child of
 /// relational node with `parent_id`.
 #[derive(Debug)]
 struct Strategy {
-    parent_id: usize,
+    parent_id: NodeId,
     children_policy: HashMap<ChildId, DataTransformation>,
 }
 
 impl Strategy {
-    fn new(parent_id: usize) -> Self {
+    fn new(parent_id: NodeId) -> Self {
         Self {
             parent_id,
             children_policy: HashMap::new(),
@@ -218,7 +218,7 @@ impl Strategy {
 
     /// Add motion policy for child node.
     /// Update policy in case `child_id` key is already in the `children_policy` map.
-    fn add_child(&mut self, child_id: usize, policy: MotionPolicy, program: Program) {
+    fn add_child(&mut self, child_id: NodeId, policy: MotionPolicy, program: Program) {
         self.children_policy.insert(child_id, (policy, program));
     }
 }
@@ -273,8 +273,8 @@ fn join_policy_for_and(
 
 impl Plan {
     /// Get unary NOT expression nodes.
-    pub(crate) fn get_not_unary_nodes(&self, top: usize) -> Vec<LevelNode> {
-        let filter = |node_id: usize| -> bool {
+    pub(crate) fn get_not_unary_nodes(&self, top: NodeId) -> Vec<LevelNode<NodeId>> {
+        let filter = |node_id: NodeId| -> bool {
             matches!(
                 self.get_node(node_id),
                 Ok(Node::Expression(Expression::Unary { op: Unary::Not, .. }))
@@ -296,8 +296,8 @@ impl Plan {
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    pub(crate) fn get_bool_nodes_with_row_children(&self, top: usize) -> Vec<LevelNode> {
-        let filter = |node_id: usize| -> bool {
+    pub(crate) fn get_bool_nodes_with_row_children(&self, top: NodeId) -> Vec<LevelNode<NodeId>> {
+        let filter = |node_id: NodeId| -> bool {
             // Append only booleans with row children.
             if let Ok(Node::Expression(Expression::Bool { left, right, .. })) =
                 self.get_node(node_id)
@@ -332,8 +332,8 @@ impl Plan {
     ///
     /// # Errors
     /// - some of the expression nodes are invalid
-    pub(crate) fn get_unary_nodes_with_row_children(&self, top: usize) -> Vec<LevelNode> {
-        let filter = |node_id: usize| -> bool {
+    pub(crate) fn get_unary_nodes_with_row_children(&self, top: NodeId) -> Vec<LevelNode<NodeId>> {
+        let filter = |node_id: NodeId| -> bool {
             // Append only unaries with row children.
             if let Ok(Node::Expression(Expression::Unary { child, .. })) = self.get_node(node_id) {
                 let child_is_row = matches!(
@@ -360,7 +360,10 @@ impl Plan {
     /// # Errors
     /// - Row node is not of a row type
     /// There are more than one sub-queries in the row node.
-    pub fn get_sub_query_from_row_node(&self, row_id: usize) -> Result<Option<usize>, SbroadError> {
+    pub fn get_sub_query_from_row_node(
+        &self,
+        row_id: NodeId,
+    ) -> Result<Option<NodeId>, SbroadError> {
         let rel_ids = self.get_relational_nodes_from_row(row_id)?;
         self.get_sub_query_among_rel_nodes(&rel_ids)
     }
@@ -372,9 +375,9 @@ impl Plan {
     /// - There are more than one sub-query
     pub fn get_sub_query_among_rel_nodes(
         &self,
-        rel_nodes: &HashSet<usize, RandomState>,
-    ) -> Result<Option<usize>, SbroadError> {
-        let mut sq_set: HashSet<usize, RandomState> = HashSet::with_hasher(RandomState::new());
+        rel_nodes: &HashSet<NodeId, RandomState>,
+    ) -> Result<Option<NodeId>, SbroadError> {
+        let mut sq_set: HashSet<NodeId, RandomState> = HashSet::with_hasher(RandomState::new());
         for rel_id in rel_nodes {
             if let Node::Relational(Relational::ScanSubQuery { .. }) = self.get_node(*rel_id)? {
                 sq_set.insert(*rel_id);
@@ -398,7 +401,7 @@ impl Plan {
     /// # Errors
     /// - Row node is not of a row type
     /// - There are more than one motion nodes in the row node
-    pub fn get_motion_from_row(&self, node_id: usize) -> Result<Option<usize>, SbroadError> {
+    pub fn get_motion_from_row(&self, node_id: NodeId) -> Result<Option<NodeId>, SbroadError> {
         let rel_nodes = self.get_relational_nodes_from_row(node_id)?;
         self.get_motion_among_rel_nodes(&rel_nodes)
     }
@@ -409,9 +412,9 @@ impl Plan {
     /// - Some of the nodes are not relational
     pub fn get_motion_among_rel_nodes(
         &self,
-        rel_nodes: &HashSet<usize, RandomState>,
-    ) -> Result<Option<usize>, SbroadError> {
-        let mut motion_set: HashSet<usize> = HashSet::new();
+        rel_nodes: &HashSet<NodeId, RandomState>,
+    ) -> Result<Option<NodeId>, SbroadError> {
+        let mut motion_set: HashSet<NodeId> = HashSet::new();
 
         for child in rel_nodes {
             if self.get_relation_node(*child)?.is_motion() {
@@ -442,9 +445,9 @@ impl Plan {
     /// In such case join/selection can be done locally.
     fn has_eq_on_bucket_id(
         &self,
-        left_row_id: usize,
-        right_row_id: usize,
-        rel_id: usize,
+        left_row_id: NodeId,
+        right_row_id: NodeId,
+        rel_id: NodeId,
         op: &Bool,
     ) -> Result<bool, SbroadError> {
         if !(Bool::Eq == *op || Bool::In == *op) {
@@ -461,8 +464,8 @@ impl Plan {
         // Equality pair `a = b` allows us to do local join.
         //
         // position in row that refers to shard column -> child id
-        let mut memo: AHashMap<usize, usize> = AHashMap::new();
-        let mut search_row = |row_id: usize| -> Result<bool, SbroadError> {
+        let mut memo: AHashMap<usize, NodeId> = AHashMap::new();
+        let mut search_row = |row_id: NodeId| -> Result<bool, SbroadError> {
             let refs = self.get_row_list(row_id)?;
             for (pos_in_row, ref_id) in refs.iter().enumerate() {
                 let node @ Expression::Reference {
@@ -477,7 +480,7 @@ impl Plan {
                     SbroadError::Invalid(
                         Entity::Node,
                         Some(format_smolstr!(
-                            "ref ({ref_id}) in join condition with no targets: {node:?}"
+                            "ref ({ref_id:?}) in join condition with no targets: {node:?}"
                         )),
                     )
                 })?;
@@ -485,7 +488,7 @@ impl Plan {
                     SbroadError::Invalid(
                         Entity::Node,
                         Some(format_smolstr!(
-                            "ref ({ref_id}) in join condition with empty targets: {node:?}"
+                            "ref ({ref_id:?}) in join condition with empty targets: {node:?}"
                         )),
                     )
                 })?;
@@ -517,8 +520,8 @@ impl Plan {
     /// - uninitialized distribution for some row
     fn choose_strategy_for_bool_op_inner_sq(
         &self,
-        outer_id: usize,
-        inner_id: usize,
+        outer_id: NodeId,
+        inner_id: NodeId,
         op: &Bool,
     ) -> Result<MotionPolicy, SbroadError> {
         let outer_dist = self.get_distribution(outer_id)?;
@@ -574,7 +577,7 @@ impl Plan {
         }
 
         // Check that all children we need to add motions exist in the current relational node.
-        let children_set: HashSet<usize> = children.iter().copied().collect();
+        let children_set: HashSet<NodeId> = children.iter().copied().collect();
         if !strategy
             .children_policy
             .iter()
@@ -588,7 +591,7 @@ impl Plan {
         }
 
         // Add motions.
-        let mut children_with_motions: Vec<usize> = Vec::new();
+        let mut children_with_motions: Vec<NodeId> = Vec::new();
         let children_owned = children.to_vec();
         for child in children_owned {
             if let Some((policy, ref mut program)) = strategy.children_policy.get_mut(&child) {
@@ -610,9 +613,9 @@ impl Plan {
     /// Only returns `SubQuery` that is an additional child of passed `rel_id` node.
     fn get_additional_sq(
         &self,
-        rel_id: usize,
-        row_id: usize,
-    ) -> Result<Option<usize>, SbroadError> {
+        rel_id: NodeId,
+        row_id: NodeId,
+    ) -> Result<Option<NodeId>, SbroadError> {
         if self.get_expression_node(row_id)?.is_row() {
             if let Some(sq_id) = self.get_sub_query_from_row_node(row_id)? {
                 if self.is_additional_child_of_rel(rel_id, sq_id)? {
@@ -626,10 +629,10 @@ impl Plan {
     /// Get `SubQuery`s from passed boolean `op_id` node (e.g. `In`).
     fn get_sq_node_strategies_for_bool_op(
         &self,
-        rel_id: usize,
-        op_id: usize,
-    ) -> Result<Vec<(usize, MotionPolicy)>, SbroadError> {
-        let mut strategies: Vec<(usize, MotionPolicy)> = Vec::new();
+        rel_id: NodeId,
+        op_id: NodeId,
+    ) -> Result<Vec<(NodeId, MotionPolicy)>, SbroadError> {
+        let mut strategies: Vec<(NodeId, MotionPolicy)> = Vec::new();
         let bool_op = BoolOp::from_expr(self, op_id)?;
         let left = self.get_additional_sq(rel_id, bool_op.left)?;
         let right = self.get_additional_sq(rel_id, bool_op.right)?;
@@ -693,9 +696,9 @@ impl Plan {
     /// Get `SubQuery`s from passed unary `op_id` node (e.g. `Exists`).
     fn get_sq_node_strategy_for_unary_op(
         &self,
-        rel_id: usize,
-        op_id: usize,
-    ) -> Result<Option<(usize, MotionPolicy)>, SbroadError> {
+        rel_id: NodeId,
+        op_id: NodeId,
+    ) -> Result<Option<(NodeId, MotionPolicy)>, SbroadError> {
         let unary_op_expr = self.get_expression_node(op_id)?;
         let Expression::Unary { child, op } = unary_op_expr else {
             return Err(SbroadError::Invalid(
@@ -722,15 +725,16 @@ impl Plan {
     /// Resolve sub-query conflicts with motion policies.
     fn resolve_sub_query_conflicts(
         &mut self,
-        select_id: usize,
-        filter_id: usize,
+        select_id: NodeId,
+        filter_id: NodeId,
     ) -> Result<Strategy, SbroadError> {
         let mut strategy = Strategy::new(select_id);
 
         let not_nodes = self.get_not_unary_nodes(filter_id);
         let mut not_nodes_children = HashSet::with_capacity(not_nodes.len());
-        for (_, not_node_id) in &not_nodes {
-            let not_node = self.get_expression_node(*not_node_id)?;
+        for level_node in &not_nodes {
+            let not_node_id = level_node.1;
+            let not_node = self.get_expression_node(not_node_id)?;
             if let Expression::Unary { child, .. } = not_node {
                 not_nodes_children.insert(*child);
             } else {
@@ -742,13 +746,13 @@ impl Plan {
         }
 
         let bool_nodes = self.get_bool_nodes_with_row_children(filter_id);
-        for (_, bool_node) in &bool_nodes {
+        for LevelNode(_, bool_node) in &bool_nodes {
             let bool_op = BoolOp::from_expr(self, *bool_node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
 
-        for (_, bool_node) in &bool_nodes {
+        for LevelNode(_, bool_node) in &bool_nodes {
             let strategies = self.get_sq_node_strategies_for_bool_op(select_id, *bool_node)?;
             for (id, policy) in strategies {
                 // In case we faced with `not ... in ...`, we
@@ -762,8 +766,9 @@ impl Plan {
         }
 
         let unary_nodes = self.get_unary_nodes_with_row_children(filter_id);
-        for (_, unary_node) in &unary_nodes {
-            let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, *unary_node)?;
+        for level_node in &unary_nodes {
+            let unary_node = level_node.1;
+            let unary_strategy = self.get_sq_node_strategy_for_unary_op(select_id, unary_node)?;
             if let Some((id, policy)) = unary_strategy {
                 strategy.add_child(id, policy, Program::default());
             }
@@ -783,7 +788,7 @@ impl Plan {
     /// # Errors
     /// - If the node is not a join node.
     /// - Join node has no children.
-    fn get_join_children(&self, join_id: usize) -> Result<Children<'_>, SbroadError> {
+    fn get_join_children(&self, join_id: NodeId) -> Result<Children<'_>, SbroadError> {
         let join = self.get_relation_node(join_id)?;
         if let Relational::Join { .. } = join {
         } else {
@@ -799,10 +804,10 @@ impl Plan {
     fn get_join_child_by_key(
         &self,
         key: &Key,
-        row_map: &HashMap<usize, usize>,
+        row_map: &HashMap<usize, NodeId>,
         join_children: &Children<'_>,
-    ) -> Result<usize, SbroadError> {
-        let mut children_set: HashSet<usize> = HashSet::new();
+    ) -> Result<NodeId, SbroadError> {
+        let mut children_set: HashSet<NodeId> = HashSet::new();
         for pos in &key.positions {
             let column_id = *row_map.get(pos).ok_or_else(|| {
                 SbroadError::NotFound(
@@ -845,9 +850,9 @@ impl Plan {
     ///
     /// # Errors
     /// - If the node is not a row node.
-    fn build_row_map(&self, row_id: usize) -> Result<HashMap<usize, usize>, SbroadError> {
+    fn build_row_map(&self, row_id: NodeId) -> Result<HashMap<usize, NodeId>, SbroadError> {
         let columns = self.get_expression_node(row_id)?.get_row_list()?;
-        let mut map: HashMap<usize, usize> = HashMap::new();
+        let mut map: HashMap<usize, NodeId> = HashMap::new();
         for (pos, col) in columns.iter().enumerate() {
             map.insert(pos, *col);
         }
@@ -863,9 +868,9 @@ impl Plan {
     /// - Distribution keys do not refer to inner or outer children of the join.
     fn split_join_keys_to_inner_and_outer(
         &self,
-        join_id: usize,
+        join_id: NodeId,
         keys: &[Key],
-        row_map: &HashMap<usize, usize>,
+        row_map: &HashMap<usize, NodeId>,
     ) -> Result<(Vec<Key>, Vec<Key>), SbroadError> {
         let mut outer_keys: Vec<Key> = Vec::new();
         let mut inner_keys: Vec<Key> = Vec::new();
@@ -903,7 +908,7 @@ impl Plan {
     /// This function extracts only the positions of the references to the inner child.
     fn get_inner_positions_from_condition_row(
         &self,
-        row_map: &HashMap<usize, usize>,
+        row_map: &HashMap<usize, NodeId>,
     ) -> Result<AHashSet<usize>, SbroadError> {
         let mut inner_positions: AHashSet<usize> = AHashSet::with_capacity(row_map.len());
         for (pos, col) in row_map {
@@ -927,7 +932,7 @@ impl Plan {
     fn get_referred_inner_child_column_positions(
         &self,
         column_positions: &[usize],
-        condition_row_map: &HashMap<usize, usize>,
+        condition_row_map: &HashMap<usize, NodeId>,
     ) -> Result<Vec<usize>, SbroadError> {
         let mut referred_column_positions: Vec<usize> = Vec::with_capacity(column_positions.len());
         for pos in column_positions {
@@ -967,7 +972,7 @@ impl Plan {
     fn get_inner_policy_by_outer_segment(
         &self,
         outer_keys: &[Key],
-        inner_row_map: &HashMap<usize, usize>,
+        inner_row_map: &HashMap<usize, NodeId>,
     ) -> Result<MotionPolicy, SbroadError> {
         let inner_position_map = self.get_inner_positions_from_condition_row(inner_row_map)?;
         for outer_key in outer_keys {
@@ -1004,9 +1009,9 @@ impl Plan {
     /// - Failed to split distribution keys in the row to inner and outer keys.
     fn join_policy_for_eq(
         &self,
-        join_id: usize,
-        left_row_id: usize,
-        right_row_id: usize,
+        join_id: NodeId,
+        left_row_id: NodeId,
+        right_row_id: NodeId,
     ) -> Result<MotionPolicy, SbroadError> {
         if self.has_eq_on_bucket_id(left_row_id, right_row_id, join_id, &Bool::Eq)? {
             return Ok(MotionPolicy::None);
@@ -1086,10 +1091,11 @@ impl Plan {
         }
     }
 
-    fn set_rows_distributions_in_expr(&mut self, expr_id: usize) -> Result<(), SbroadError> {
+    fn set_rows_distributions_in_expr(&mut self, expr_id: NodeId) -> Result<(), SbroadError> {
         let nodes = self.get_bool_nodes_with_row_children(expr_id);
-        for (_, node) in &nodes {
-            let bool_op = BoolOp::from_expr(self, *node)?;
+        for level_node in &nodes {
+            let node = level_node.1;
+            let bool_op = BoolOp::from_expr(self, node)?;
             self.set_distribution(bool_op.left)?;
             self.set_distribution(bool_op.right)?;
         }
@@ -1103,8 +1109,8 @@ impl Plan {
     #[allow(clippy::too_many_lines)]
     fn resolve_join_conflicts(
         &mut self,
-        rel_id: usize,
-        cond_id: usize,
+        rel_id: NodeId,
+        cond_id: NodeId,
         join_kind: &JoinKind,
     ) -> Result<(), SbroadError> {
         // If one of the children has Distribution::Single, then we can't compute Distribution of
@@ -1154,9 +1160,9 @@ impl Plan {
             (inner, outer)
         };
 
-        let mut inner_map: HashMap<usize, MotionPolicy> = HashMap::new();
+        let mut inner_map: HashMap<NodeId, MotionPolicy> = HashMap::new();
         let mut new_inner_policy = MotionPolicy::Full;
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             matches!(
                 self.get_node(node_id),
                 Ok(Node::Expression(
@@ -1172,7 +1178,8 @@ impl Plan {
         expr_tree.populate_nodes(cond_id);
         let nodes = expr_tree.take_nodes();
         drop(expr_tree);
-        for (_, node_id) in nodes {
+        for level_node in nodes {
+            let node_id = level_node.1;
             let expr = self.get_expression_node(node_id)?;
 
             // Under `not ... in ...` we should change the policy to `Full`
@@ -1345,12 +1352,12 @@ impl Plan {
     /// for `Single` no motion is needed.
     fn fix_sq_strategy_for_global_tbl(
         &self,
-        rel_id: usize,
-        cond_id: usize,
+        rel_id: NodeId,
+        cond_id: NodeId,
         strategy: &mut Strategy,
     ) -> Result<(), SbroadError> {
         let chains = self.get_dnf_chains(cond_id)?;
-        let mut subqueries: Vec<usize> = vec![];
+        let mut subqueries: Vec<NodeId> = vec![];
         let mut chain_count: usize = 0;
         for mut chain in chains {
             let nodes = chain.get_mut_nodes();
@@ -1485,8 +1492,8 @@ impl Plan {
     #[allow(clippy::too_many_lines)]
     fn calculate_strategy_for_single_distribution(
         &mut self,
-        join_id: usize,
-        condition_id: usize,
+        join_id: NodeId,
+        condition_id: NodeId,
         join_kind: &JoinKind,
     ) -> Result<Option<Strategy>, SbroadError> {
         let (outer_id, inner_id) = {
@@ -1494,12 +1501,12 @@ impl Plan {
             (
                 *children.get(0).ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                        "join {join_id} has no children!"
+                        "join {join_id:?} has no children!"
                     ))
                 })?,
                 *children.get(1).ok_or_else(|| {
                     SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                        "join {join_id} has one child!"
+                        "join {join_id:?} has one child!"
                     ))
                 })?,
             )
@@ -1581,7 +1588,7 @@ impl Plan {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn resolve_update_conflicts(&mut self, update_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_update_conflicts(&mut self, update_id: NodeId) -> Result<Strategy, SbroadError> {
         if self.dml_node_table(update_id)?.is_global() {
             return self.resolve_dml_node_conflict_for_global_table(update_id);
         }
@@ -1597,7 +1604,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Update,
                     Some(format_smolstr!(
-                        "expected Projection under Update ({update_id})"
+                        "expected Projection under Update ({update_id:?})"
                     )),
                 ));
             }
@@ -1728,12 +1735,12 @@ impl Plan {
         } else {
             Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format_smolstr!("expected Update node on id {update_id}")),
+                Some(format_smolstr!("expected Update node on id {update_id:?}")),
             ))
         }
     }
 
-    fn resolve_delete_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_delete_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
         if self.dml_node_table(rel_id)?.is_global() {
             return self.resolve_dml_node_conflict_for_global_table(rel_id);
         }
@@ -1766,7 +1773,7 @@ impl Plan {
 
     fn resolve_dml_node_conflict_for_global_table(
         &mut self,
-        rel_id: usize,
+        rel_id: NodeId,
     ) -> Result<Strategy, SbroadError> {
         let mut map = Strategy::new(rel_id);
         let child_id = self.dml_child_id(rel_id)?;
@@ -1777,7 +1784,7 @@ impl Plan {
         Ok(map)
     }
 
-    fn resolve_insert_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_insert_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
         if self.dml_node_table(rel_id)?.is_global() {
             return self.resolve_dml_node_conflict_for_global_table(rel_id);
         }
@@ -1812,7 +1819,7 @@ impl Plan {
         Ok(map)
     }
 
-    fn resolve_cte_conflicts(&mut self, cte_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_cte_conflicts(&mut self, cte_id: NodeId) -> Result<Strategy, SbroadError> {
         // We always gather CTE data on the router node.
         let mut map = Strategy::new(cte_id);
         let child_id = self.get_relational_child(cte_id, 0)?;
@@ -1852,7 +1859,11 @@ impl Plan {
     // select "bucket_id" as a from t1
     // except
     // select "bucket_id" as b from t1
-    fn is_except_on_bucket_id(&self, left_id: usize, right_id: usize) -> Result<bool, SbroadError> {
+    fn is_except_on_bucket_id(
+        &self,
+        left_id: NodeId,
+        right_id: NodeId,
+    ) -> Result<bool, SbroadError> {
         let mut context = self.context_mut();
         let Some(left_shard_positions) =
             context.get_shard_columns_positions(left_id, self)?.copied()
@@ -1874,7 +1885,7 @@ impl Plan {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn resolve_except_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_except_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
         if !matches!(self.get_relation_node(rel_id)?, Relational::Except { .. }) {
             return Err(SbroadError::Invalid(
                 Entity::Relational,
@@ -1940,7 +1951,7 @@ impl Plan {
                     SbroadError::Invalid(
                         Entity::Distribution,
                         Some(format_smolstr!(
-                            "{} {} {right_id}",
+                            "{} {} {right_id:?}",
                             "Segment distribution with no keys.",
                             "Except right child:"
                         )),
@@ -1998,7 +2009,7 @@ impl Plan {
     ///             Projection a
     ///                 scan g
     /// ```
-    fn resolve_except_global_vs_sharded(&mut self, except_id: usize) -> Result<bool, SbroadError> {
+    fn resolve_except_global_vs_sharded(&mut self, except_id: NodeId) -> Result<bool, SbroadError> {
         let left_id = self.get_relational_child(except_id, 0)?;
         let right_id = self.get_relational_child(except_id, 1)?;
         let left_dist = self.get_rel_distribution(left_id)?;
@@ -2013,7 +2024,7 @@ impl Plan {
             return Ok(false);
         }
 
-        let cloned_left_id = SubtreeCloner::clone_subtree(self, left_id, left_id)?;
+        let cloned_left_id = SubtreeCloner::clone_subtree(self, left_id, left_id.offset as usize)?;
         let right_output_id = self.get_relational_output(right_id)?;
         let intersect_output_id = self.clone_expr_subtree(right_output_id)?;
         let intersect = Relational::Intersect {
@@ -2032,7 +2043,7 @@ impl Plan {
         Ok(true)
     }
 
-    fn resolve_union_conflicts(&mut self, rel_id: usize) -> Result<Strategy, SbroadError> {
+    fn resolve_union_conflicts(&mut self, rel_id: NodeId) -> Result<Strategy, SbroadError> {
         if !matches!(
             self.get_relation_node(rel_id)?,
             Relational::UnionAll { .. } | Relational::Union { .. }
@@ -2125,8 +2136,8 @@ impl Plan {
     /// - failed to set distribution
     #[otm_child_span("plan.transformation.add_motions")]
     pub fn add_motions(&mut self) -> Result<(), SbroadError> {
-        type CteChildId = usize;
-        type MotionId = usize;
+        type CteChildId = ChildId;
+        type MotionId = ChildId;
         let mut cte_motions: AHashMap<CteChildId, MotionId> = AHashMap::with_capacity(CTE_CAPACITY);
         let top = self.get_top()?;
         let mut post_tree =
@@ -2134,9 +2145,9 @@ impl Plan {
         post_tree.populate_nodes(top);
         let nodes = post_tree.take_nodes();
         let mut visited = AHashSet::with_capacity(nodes.len());
-        let mut old_new: AHashMap<usize, usize> = AHashMap::new();
+        let mut old_new: AHashMap<NodeId, NodeId> = AHashMap::new();
 
-        for (_, id) in nodes {
+        for LevelNode(_, id) in nodes {
             if visited.contains(&id) {
                 continue;
             }
@@ -2350,8 +2361,8 @@ impl Plan {
     ///
     /// # Errors
     /// - failed to traverse plan
-    pub fn calculate_slices(&self, top_id: usize) -> Result<Vec<Vec<usize>>, SbroadError> {
-        let mut motions: Vec<Vec<usize>> = Vec::new();
+    pub fn calculate_slices(&self, top_id: NodeId) -> Result<Vec<Vec<NodeId>>, SbroadError> {
+        let mut motions: Vec<Vec<NodeId>> = Vec::new();
         let mut bft_tree = BreadthFirst::with_capacity(
             |node| self.nodes.rel_iter(node),
             REL_CAPACITY,
@@ -2359,7 +2370,7 @@ impl Plan {
         );
         let mut map: HashMap<usize, usize> = HashMap::new();
         let mut max_level: usize = 0;
-        for (level, id) in bft_tree.iter(top_id) {
+        for LevelNode(level, id) in bft_tree.iter(top_id) {
             if let Node::Relational(Relational::Motion { .. }) = self.get_node(id)? {
                 let key: usize = match map.entry(level) {
                     Entry::Occupied(o) => *o.into_mut(),

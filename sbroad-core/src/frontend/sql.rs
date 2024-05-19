@@ -31,7 +31,7 @@ use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
     ColumnPositionMap, ColumnWithScan, ColumnsRetrievalSpec, Expression, ExpressionId,
-    FunctionFeature, Position, TrimKind,
+    FunctionFeature, NodeId, Position, TrimKind,
 };
 use crate::ir::operator::{
     Arithmetic, Bool, ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType,
@@ -40,7 +40,7 @@ use crate::ir::operator::{
 use crate::ir::relation::{Column, ColumnRole, TableKind, Type as RelationType};
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
-use crate::ir::{Node, NodeId, OptionKind, OptionParamValue, OptionSpec, Plan};
+use crate::ir::{Node, OptionKind, OptionParamValue, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
@@ -75,13 +75,13 @@ fn get_default_auth_method() -> SmolStr {
 /// `left >= center AND left <= right`.
 struct Between {
     /// Left node id.
-    left_id: usize,
+    left_id: NodeId,
     /// Less or equal node id (`left <= right`)
-    less_eq_id: usize,
+    less_eq_id: NodeId,
 }
 
 impl Between {
-    fn new(left_id: usize, less_eq_id: usize) -> Self {
+    fn new(left_id: NodeId, less_eq_id: NodeId) -> Self {
         Self {
             left_id,
             less_eq_id,
@@ -962,7 +962,7 @@ fn parse_select_statement(
     node_id: usize,
     map: &mut Translation,
     plan: &mut Plan,
-) -> Result<usize, SbroadError> {
+) -> Result<NodeId, SbroadError> {
     let node = ast.nodes.get_node(node_id)?;
     assert_eq!(node.rule, Rule::SelectStatement);
     let mut top_id = None;
@@ -1227,7 +1227,7 @@ fn parse_grant_revoke(
 
 fn parse_trim<M: Metadata>(
     pair: Pair<Rule>,
-    referred_relation_ids: &[usize],
+    referred_relation_ids: &[NodeId],
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
 ) -> Result<ParseExpression, SbroadError> {
@@ -1424,7 +1424,7 @@ fn parse_param<M: Metadata>(
     param: &ParameterSource,
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
-) -> Result<usize, SbroadError> {
+) -> Result<NodeId, SbroadError> {
     let param_index = param.get_param_index()?;
     let parameter = match param_index {
         None => {
@@ -1504,14 +1504,14 @@ struct ExpressionsWorker<'worker, M>
 where
     M: Metadata,
 {
-    subquery_ids_queue: VecDeque<usize>,
+    subquery_ids_queue: VecDeque<NodeId>,
     betweens: Vec<Between>,
     metadata: &'worker M,
     /// Map of { reference plan_id -> (it's column name, whether it's covered with row)}
     /// We have to save column name in order to use it later for alias creation.
     /// We use information about row coverage later when handling Row expression and need to know
     /// whether we should uncover our reference.
-    pub reference_to_name_map: HashMap<usize, (SmolStr, bool)>,
+    pub reference_to_name_map: HashMap<NodeId, (SmolStr, bool)>,
     /// Flag indicating whether parameter in Tarantool (? mark) style was met.
     met_tnt_param: bool,
     /// Flag indicating whether parameter in Postgres ($<index>) style was met.
@@ -1519,7 +1519,7 @@ where
     /// Map of (relational_node_id, columns_position_map).
     /// As `ColumnPositionMap` is used for parsing references and as it may be shared for the same
     /// relational node we cache it so that we don't have to recreate it every time.
-    column_positions_cache: HashMap<usize, ColumnPositionMap>,
+    column_positions_cache: HashMap<NodeId, ColumnPositionMap>,
     /// Time at the start of the plan building stage without timezone.
     /// It is used to replace CURRENT_DATE to actual value.
     current_time: OffsetDateTime,
@@ -1542,7 +1542,7 @@ where
         }
     }
 
-    fn build_columns_map(&mut self, plan: &Plan, rel_id: usize) -> Result<(), SbroadError> {
+    fn build_columns_map(&mut self, plan: &Plan, rel_id: NodeId) -> Result<(), SbroadError> {
         if self.column_positions_cache.get(&rel_id).is_none() {
             let new_map = ColumnPositionMap::new(plan, rel_id)?;
             self.column_positions_cache.insert(rel_id, new_map);
@@ -1552,7 +1552,7 @@ where
 
     fn columns_map_get_positions(
         &self,
-        rel_id: usize,
+        rel_id: NodeId,
         col_name: &str,
         scan_name: Option<&str>,
     ) -> Result<Position, SbroadError> {
@@ -1579,7 +1579,7 @@ enum ParseExpressionInfixOperator {
 #[derive(Clone, Debug)]
 enum ParseExpression {
     PlanId {
-        plan_id: usize,
+        plan_id: NodeId,
     },
     Parentheses {
         child: Box<ParseExpression>,
@@ -1660,7 +1660,7 @@ pub enum SelectOp {
 #[derive(Clone)]
 pub enum SelectExpr {
     PlanId {
-        plan_id: usize,
+        plan_id: NodeId,
     },
     Infix {
         op: SelectOp,
@@ -1670,7 +1670,7 @@ pub enum SelectExpr {
 }
 
 impl SelectExpr {
-    fn populate_plan(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
+    fn populate_plan(&self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
         match self {
             SelectExpr::PlanId { plan_id } => Ok(*plan_id),
             SelectExpr::Infix { op, left, right } => {
@@ -1697,7 +1697,7 @@ impl ParseExpression {
         &self,
         plan: &mut Plan,
         worker: &mut ExpressionsWorker<M>,
-    ) -> Result<usize, SbroadError>
+    ) -> Result<NodeId, SbroadError>
     where
         M: Metadata,
     {
@@ -1749,7 +1749,7 @@ impl ParseExpression {
                             (res.populate_plan(plan, worker)?),
                         ))
                     })
-                    .collect::<Result<Vec<(usize, usize)>, SbroadError>>()?;
+                    .collect::<Result<Vec<(NodeId, NodeId)>, SbroadError>>()?;
                 let else_expr_id = if let Some(else_expr) = else_expr {
                     Some(else_expr.populate_plan(plan, worker)?)
                 } else {
@@ -2074,7 +2074,7 @@ fn cast_type_from_pair(type_pair: Pair<Rule>) -> Result<CastType, SbroadError> {
 #[allow(clippy::too_many_lines)]
 fn parse_expr_pratt<M>(
     expression_pairs: Pairs<Rule>,
-    referred_relation_ids: &[usize],
+    referred_relation_ids: &[NodeId],
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
 ) -> Result<ParseExpression, SbroadError>
@@ -2556,10 +2556,10 @@ fn parse_select_pratt(
 /// * Return `plan_id` of root Expression node
 fn parse_expr<M>(
     expression_pairs: Pairs<Rule>,
-    referred_relation_ids: &[usize],
+    referred_relation_ids: &[NodeId],
     worker: &mut ExpressionsWorker<M>,
     plan: &mut Plan,
-) -> Result<usize, SbroadError>
+) -> Result<NodeId, SbroadError>
 where
     M: Metadata,
 {
@@ -2572,7 +2572,7 @@ fn parse_select(
     pos_to_ast_id: &SelectChildPairTranslation,
     ast_to_plan: &Translation,
     plan: &mut Plan,
-) -> Result<usize, SbroadError> {
+) -> Result<NodeId, SbroadError> {
     let select_expr = parse_select_pratt(select_pairs, pos_to_ast_id, ast_to_plan)?;
     select_expr.populate_plan(plan)
 }
@@ -2769,7 +2769,8 @@ impl AbstractSyntaxTree {
                         let mut expr_tree =
                             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
                         let mut reference_met = false;
-                        for (_, node_id) in expr_tree.iter(expr_plan_node_id) {
+                        for level_node in expr_tree.iter(expr_plan_node_id) {
+                            let node_id = level_node.1;
                             if let Expression::Reference { .. } = plan.get_expression_node(node_id)? {
                                 reference_met = true;
                                 break;
@@ -2848,7 +2849,8 @@ impl AbstractSyntaxTree {
         let mut worker = ExpressionsWorker::new(metadata);
         let mut ctes = CTEs::new();
 
-        for (_, id) in dft_post.iter(top) {
+        for level_node in dft_post.iter(top) {
+            let id = level_node.1;
             let node = self.nodes.get_node(id)?;
             match &node.rule {
                 Rule::Scan => {
@@ -2936,7 +2938,7 @@ impl AbstractSyntaxTree {
                 }
                 Rule::GroupBy => {
                     // Reminder: first GroupBy child in `node.children` is always a relational node.
-                    let mut children: Vec<usize> = Vec::with_capacity(node.children.len());
+                    let mut children: Vec<NodeId> = Vec::with_capacity(node.children.len());
                     let first_relational_child_ast_id =
                         node.children.first().expect("GroupBy has no children");
                     let first_relational_child_plan_id = map.get(*first_relational_child_ast_id)?;
@@ -3068,7 +3070,7 @@ impl AbstractSyntaxTree {
                     }
 
                     let plan_rel_child_id = map.get(*rel_child_id)?;
-                    let mut proj_columns: Vec<usize> = Vec::with_capacity(ast_columns_ids.len());
+                    let mut proj_columns: Vec<NodeId> = Vec::with_capacity(ast_columns_ids.len());
 
                     let mut unnamed_col_pos = 0;
                     for ast_column_id in ast_columns_ids {
@@ -3151,7 +3153,7 @@ impl AbstractSyntaxTree {
                     map.add(id, projection_id);
                 }
                 Rule::Values => {
-                    let mut plan_value_row_ids: Vec<usize> =
+                    let mut plan_value_row_ids: Vec<NodeId> =
                         Vec::with_capacity(node.children.len());
                     for ast_child_id in &node.children {
                         let row_pair = pairs_map.remove_pair(*ast_child_id);
@@ -3832,7 +3834,7 @@ impl Plan {
     /// Leave other nodes (e.g. rows) unchanged.
     ///
     /// Used for unification of expression nodes transformations (e.g. dnf).
-    fn row(&mut self, expr_id: usize) -> Result<usize, SbroadError> {
+    fn row(&mut self, expr_id: NodeId) -> Result<NodeId, SbroadError> {
         let row_id = if let Node::Expression(
             Expression::Reference { .. }
             | Expression::Constant { .. }

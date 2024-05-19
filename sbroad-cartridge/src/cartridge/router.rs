@@ -3,6 +3,7 @@
 use sbroad::cbo::{ColumnStats, TableColumnPair, TableStats};
 use sbroad::executor::engine::helpers::vshard::{get_random_bucket, impl_exec_ir_on_buckets};
 use sbroad::executor::engine::{DispatchReturnFormat, Metadata, QueryCache, Vshard};
+use sbroad::ir::expression::NodeId;
 use sbroad::utils::MutexLike;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::fiber::Mutex;
@@ -247,7 +248,7 @@ impl Router for RouterRuntime {
     fn dispatch(
         &self,
         plan: &mut ExecutionPlan,
-        top_id: usize,
+        top_id: NodeId,
         buckets: &Buckets,
         return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
@@ -263,10 +264,10 @@ impl Router for RouterRuntime {
     fn materialize_motion(
         &self,
         plan: &mut ExecutionPlan,
-        motion_node_id: usize,
+        motion_node_id: &NodeId,
         buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError> {
-        materialize_motion(self, plan, motion_node_id, buckets)
+        materialize_motion(self, plan, *motion_node_id, buckets)
     }
 
     fn extract_sharding_key_from_map<'rec>(

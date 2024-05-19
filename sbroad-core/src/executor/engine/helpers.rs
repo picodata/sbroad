@@ -1,6 +1,6 @@
 use ahash::AHashMap;
 
-use crate::{error, utils::MutexLike};
+use crate::{error, ir::expression::NodeId, utils::MutexLike};
 use itertools::enumerate;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::{
@@ -24,7 +24,6 @@ use crate::executor::engine::{QueryCache, StorageCache};
 use crate::executor::protocol::{EncodedTables, SchemaInfo};
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
-use crate::ir::NodeId;
 use crate::otm::child_span;
 use crate::utils::ByteCounter;
 use crate::{
@@ -436,7 +435,7 @@ pub type TupleBuilderPattern = Vec<TupleBuilderCommand>;
 pub fn init_local_update_tuple_builder(
     plan: &Plan,
     vtable: &VirtualTable,
-    update_id: usize,
+    update_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     if let Relational::Update {
         relation,
@@ -520,7 +519,7 @@ pub fn init_local_update_tuple_builder(
     }
     Err(SbroadError::Invalid(
         Entity::Node,
-        Some(format_smolstr!("expected Update on id ({update_id})")),
+        Some(format_smolstr!("expected Update on id ({update_id:?})")),
     ))
 }
 
@@ -530,7 +529,7 @@ pub fn init_local_update_tuple_builder(
 /// - plan top is not Delete
 pub fn init_delete_tuple_builder(
     plan: &Plan,
-    delete_id: usize,
+    delete_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     let table = plan.dml_node_table(delete_id)?;
     let mut commands = Vec::with_capacity(table.primary_key.positions.len());
@@ -547,7 +546,7 @@ pub fn init_delete_tuple_builder(
 pub fn init_insert_tuple_builder(
     plan: &Plan,
     vtable: &VirtualTable,
-    insert_id: usize,
+    insert_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     let columns = plan.insert_columns(insert_id)?;
     // Revert map of { pos_in_child_node -> pos_in_relation }
@@ -663,7 +662,7 @@ pub fn build_insert_args<'t>(
 fn init_sharded_update_tuple_builder(
     plan: &Plan,
     vtable: &VirtualTable,
-    update_id: usize,
+    update_id: NodeId,
 ) -> Result<TupleBuilderPattern, SbroadError> {
     let Relational::Update {
         update_columns_map, ..
@@ -672,7 +671,7 @@ fn init_sharded_update_tuple_builder(
         return Err(SbroadError::Invalid(
             Entity::Node,
             Some(format_smolstr!(
-                "update tuple builder: expected update node on id: {update_id}"
+                "update tuple builder: expected update node on id: {update_id:?}"
             )),
         ));
     };
@@ -825,7 +824,7 @@ fn has_zero_limit_clause(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
 pub fn dispatch_impl(
     coordinator: &impl Router,
     plan: &mut ExecutionPlan,
-    top_id: usize,
+    top_id: NodeId,
     buckets: &Buckets,
     return_format: DispatchReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
@@ -881,7 +880,7 @@ pub fn dispatch_by_buckets(
                     if !vtable.get_bucket_index().is_empty() {
                         return Err(SbroadError::Invalid(
                             Entity::Motion,
-                            Some(format_smolstr!("motion ({motion_id}) in subtree with distribution Single, but policy is not Full!")),
+                            Some(format_smolstr!("motion ({motion_id:?}) in subtree with distribution Single, but policy is not Full!")),
                         ));
                     }
                 }
@@ -897,7 +896,7 @@ pub fn dispatch_by_buckets(
 #[allow(clippy::too_many_lines)]
 pub(crate) fn materialize_values(
     plan: &mut ExecutionPlan,
-    motion_node_id: usize,
+    motion_node_id: NodeId,
 ) -> Result<Option<VirtualTable>, SbroadError> {
     // Check that the motion node has a local segment policy.
     let motion_node = plan.get_ir_plan().get_relation_node(motion_node_id)?;
@@ -1004,7 +1003,7 @@ pub(crate) fn materialize_values(
                 return Err(SbroadError::Invalid(
                     Entity::Node,
                     Some(format_smolstr!(
-                        "value node child ({child_id}) is not a values row node!"
+                        "value node child ({child_id:?}) is not a values row node!"
                     )),
                 ));
             }
@@ -1031,7 +1030,7 @@ pub(crate) fn materialize_values(
                 return Err(SbroadError::Invalid(
                     Entity::Node,
                     Some(format_smolstr!(
-                        "output column ({column_id}) is not an alias node!"
+                        "output column ({column_id:?}) is not an alias node!"
                     )),
                 ));
             }
@@ -1051,7 +1050,7 @@ pub(crate) fn materialize_values(
 pub fn materialize_motion(
     runtime: &impl Router,
     plan: &mut ExecutionPlan,
-    motion_node_id: usize,
+    motion_node_id: NodeId,
     buckets: &Buckets,
 ) -> Result<VirtualTable, SbroadError> {
     let top_id = plan.get_motion_subtree_root(motion_node_id)?;
@@ -1548,7 +1547,7 @@ fn materialize_vtable_locally<R: Vshard + QueryCache>(
     runtime: &R,
     optional: &mut OptionalData,
     required: &mut RequiredData,
-    child_id: usize,
+    child_id: NodeId,
 ) -> Result<(), SbroadError>
 where
     R::Cache: StorageCache,
@@ -1565,7 +1564,7 @@ where
         SbroadError::FailedTo(
             Action::Deserialize,
             Some(Entity::Tuple),
-            format_smolstr!("motion node {child_id}. {e:?}"),
+            format_smolstr!("motion node {child_id:?}. {e:?}"),
         )
     })?;
     let mut reader = bytes.as_ref().as_slice();
@@ -1573,7 +1572,7 @@ where
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::Tuple),
-            format_smolstr!("motion node {child_id}. {e}"),
+            format_smolstr!("motion node {child_id:?}. {e}"),
         )
     })?;
     let vtable = data
@@ -1584,7 +1583,7 @@ where
         .as_virtual_table(column_names, true)?;
     optional
         .exec_plan
-        .set_motion_vtable(child_id, vtable, runtime)?;
+        .set_motion_vtable(&child_id, vtable, runtime)?;
     Ok(())
 }
 

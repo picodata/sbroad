@@ -11,17 +11,18 @@ use crate::debug;
 use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::ir::{ExecutionPlan, QueryType};
 use crate::ir::value::Value;
+use crate::ir::Options;
 use crate::otm::{current_id, extract_context, inject_context};
 
 use crate::executor::engine::TableVersionMap;
-use crate::ir::{NodeId, Options};
+use crate::ir::expression::NodeId;
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
 
 use super::engine::helpers::vshard::CacheInfo;
 use super::vtable::VirtualTableMeta;
 
-pub type VTablesMeta = HashMap<usize, VirtualTableMeta>;
+pub type VTablesMeta = HashMap<NodeId, VirtualTableMeta>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Binary(Vec<u8>);

@@ -9,6 +9,7 @@ use std::cell::{RefCell, RefMut};
 use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
+use tree::traversal::LevelNode;
 
 use std::slice::Iter;
 use tarantool::tlua;
@@ -35,7 +36,7 @@ use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
 
-use self::expression::Position;
+use self::expression::{NodeId, Position};
 use self::parameters::Parameters;
 use self::relation::Relations;
 use self::transformation::redistribution::MotionPolicy;
@@ -87,6 +88,17 @@ pub enum Node {
     Parameter(Option<Type>),
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Hash, Copy)]
+pub enum ArenaType {
+    Default,
+}
+
+impl Display for ArenaType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
+}
+
 /// Plan nodes storage.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Nodes {
@@ -98,23 +110,17 @@ pub struct Nodes {
 }
 
 impl Nodes {
-    pub(crate) fn get(&self, id: usize) -> Result<&Node, SbroadError> {
-        match self.arena.get(id) {
-            None => Err(SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("from arena with index {id}"),
-            )),
-            Some(node) => Ok(node),
+    pub(crate) fn get(&self, id: NodeId) -> Option<&Node> {
+        let offset = usize::try_from(id.offset).unwrap();
+        match id.arena_type {
+            ArenaType::Default => self.arena.get(offset),
         }
     }
 
-    pub(crate) fn get_mut(&mut self, id: usize) -> Result<&mut Node, SbroadError> {
-        match self.arena.get_mut(id) {
-            None => Err(SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("from arena with index {id}"),
-            )),
-            Some(node) => Ok(node),
+    pub(crate) fn get_mut(&mut self, id: NodeId) -> Option<&mut Node> {
+        let offset = usize::try_from(id.offset).unwrap();
+        match id.arena_type {
+            ArenaType::Default => self.arena.get_mut(offset),
         }
     }
 
@@ -152,31 +158,47 @@ impl Nodes {
 
     /// Add new node to arena.
     ///
+    /// # Panics
     /// Inserts a new node to the arena and returns its position,
     /// that is treated as a pointer.
-    pub fn push(&mut self, node: Node) -> usize {
+    pub fn push(&mut self, node: Node) -> NodeId {
         let position = self.arena.len();
         self.arena.push(node);
-        position
+
+        NodeId {
+            offset: u32::try_from(position).unwrap(),
+            arena_type: ArenaType::Default,
+        }
     }
 
+    /// # Panics
     /// Returns the next node position
     #[must_use]
-    pub fn next_id(&self) -> usize {
-        self.arena.len()
+    pub fn next_id(&self, arena_type: ArenaType) -> NodeId {
+        match arena_type {
+            ArenaType::Default => NodeId {
+                offset: u32::try_from(self.arena.len()).unwrap(),
+                arena_type: ArenaType::Default,
+            },
+        }
     }
 
     /// Replace a node in arena with another one.
     ///
     /// # Errors
     /// - The node with the given position doesn't exist.
-    pub fn replace(&mut self, id: usize, node: Node) -> Result<Node, SbroadError> {
-        if id >= self.arena.len() {
-            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-                "can't replace node with id {id} as it is out of arena bounds"
-            )));
-        }
-        let old_node = std::mem::replace(&mut self.arena[id], node);
+    pub fn replace(&mut self, id: NodeId, node: Node) -> Result<Node, SbroadError> {
+        match id.arena_type {
+            ArenaType::Default => {
+                if id.offset as usize >= self.arena.len() {
+                    return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                        "can't replace node with id {id:?} as it is out of arena bounds"
+                    )));
+                }
+            }
+        };
+
+        let old_node = std::mem::replace(&mut self.arena[id.offset as usize], node);
         Ok(old_node)
     }
 
@@ -201,23 +223,23 @@ impl<'nodes> IntoIterator for &'nodes Nodes {
 /// Element of `slice` vec is a `motion_id` to execute.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Slice {
-    slice: Vec<usize>,
+    slice: Vec<NodeId>,
 }
 
-impl From<Vec<usize>> for Slice {
-    fn from(vec: Vec<usize>) -> Self {
+impl From<Vec<NodeId>> for Slice {
+    fn from(vec: Vec<NodeId>) -> Self {
         Self { slice: vec }
     }
 }
 
 impl Slice {
     #[must_use]
-    pub fn position(&self, index: usize) -> Option<&usize> {
+    pub fn position(&self, index: usize) -> Option<&NodeId> {
         self.slice.get(index)
     }
 
     #[must_use]
-    pub fn positions(&self) -> &[usize] {
+    pub fn positions(&self) -> &[NodeId] {
         &self.slice
     }
 }
@@ -235,8 +257,8 @@ impl From<Vec<Slice>> for Slices {
     }
 }
 
-impl From<Vec<Vec<usize>>> for Slices {
-    fn from(vec: Vec<Vec<usize>>) -> Self {
+impl From<Vec<Vec<NodeId>>> for Slices {
+    fn from(vec: Vec<Vec<NodeId>>) -> Self {
         Self {
             slices: vec.into_iter().map(Slice::from).collect(),
         }
@@ -263,7 +285,7 @@ impl Slices {
 #[derive(PartialEq, Eq, Debug, Clone, Deserialize, Serialize)]
 pub enum OptionParamValue {
     Value { val: Value },
-    Parameter { plan_id: usize },
+    Parameter { plan_id: NodeId },
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Deserialize, Serialize)]
@@ -409,7 +431,6 @@ impl Options {
     }
 }
 
-pub type NodeId = usize;
 pub type ValueIdx = usize;
 
 /// Logical plan tree structure.
@@ -430,7 +451,7 @@ pub struct Plan {
     /// The plan top is marked as optional for tree creation convenience.
     /// We build the plan tree in a bottom-up manner, so the top would
     /// be added last. The plan without a top should be treated as invalid.
-    top: Option<usize>,
+    top: Option<NodeId>,
     /// The flag is enabled if user wants to get a query plan only.
     /// In this case we don't need to execute query.
     is_explain: bool,
@@ -527,16 +548,22 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Plan,
                     Some("plan tree top is None".into()),
-                ))
+                ));
             }
-            Some(top) => {
-                let _ = self.nodes.get(top)?;
-            }
-        }
-
-        //TODO: additional consistency checks
+            Some(top) => match top.arena_type {
+                ArenaType::Default => {
+                    if self.nodes.get(top).is_none() {
+                        return Err(SbroadError::Invalid(
+                            Entity::Plan,
+                            Some("plan tree top index is out of bouns".into()),
+                        ));
+                    }
+                }
+            },
+        };
 
         Ok(())
+        //TODO: additional consistency checks
     }
 
     /// Constructor for an empty plan structure.
@@ -577,7 +604,8 @@ impl Plan {
                 BreadthFirst::with_capacity(|x| self.nodes.rel_iter(x), REL_CAPACITY, REL_CAPACITY);
             bfs.populate_nodes(self.get_top()?);
             let nodes = bfs.take_nodes();
-            for (_, id) in nodes {
+            for level_node in nodes {
+                let id = level_node.1;
                 if let Relational::Insert { .. } = self.get_relation_node(id)? {
                     let child_id = self.get_relational_child(id, 0)?;
                     if let Relational::Values { children, .. } = self.get_relation_node(child_id)? {
@@ -657,13 +685,15 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_node(&self, id: usize) -> Result<&Node, SbroadError> {
-        match self.nodes.arena.get(id) {
-            None => Err(SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("from arena with index {id}"),
-            )),
-            Some(node) => Ok(node),
+    pub fn get_node(&self, id: NodeId) -> Result<&Node, SbroadError> {
+        match id.arena_type {
+            ArenaType::Default => match self.nodes.arena.get(id.offset as usize) {
+                None => Err(SbroadError::NotFound(
+                    Entity::Node,
+                    format_smolstr!("from {:?} arena with index {}", id.arena_type, id.offset),
+                )),
+                Some(node) => Ok(node),
+            },
         }
     }
 
@@ -672,13 +702,19 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError` when the node with requested index
     /// doesn't exist.
-    pub fn get_mut_node(&mut self, id: usize) -> Result<&mut Node, SbroadError> {
-        match self.nodes.arena.get_mut(id) {
-            None => Err(SbroadError::NotFound(
-                Entity::Node,
-                format_smolstr!("(mutable) from arena with index {id}"),
-            )),
-            Some(node) => Ok(node),
+    pub fn get_mut_node(&mut self, id: NodeId) -> Result<&mut Node, SbroadError> {
+        match id.arena_type {
+            ArenaType::Default => match self.nodes.arena.get_mut(id.offset as usize) {
+                None => Err(SbroadError::NotFound(
+                    Entity::Node,
+                    format_smolstr!(
+                        "(mutable) from {:?} arena with index {}",
+                        id.arena_type,
+                        id.offset
+                    ),
+                )),
+                Some(node) => Ok(node),
+            },
         }
     }
 
@@ -686,7 +722,7 @@ impl Plan {
     ///
     /// # Errors
     /// - top node is None (i.e. invalid plan)
-    pub fn get_top(&self) -> Result<usize, SbroadError> {
+    pub fn get_top(&self) -> Result<NodeId, SbroadError> {
         self.top
             .ok_or_else(|| SbroadError::Invalid(Entity::Plan, Some("plan tree top is None".into())))
     }
@@ -714,7 +750,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Given node is not a scan
-    pub fn get_scan_relation(&self, scan_id: usize) -> Result<&str, SbroadError> {
+    pub fn get_scan_relation(&self, scan_id: NodeId) -> Result<&str, SbroadError> {
         let node = self.get_relation_node(scan_id)?;
         if let Relational::ScanRelation { relation, .. } = node {
             return Ok(relation.as_str());
@@ -757,10 +793,10 @@ impl Plan {
     /// - invalid expression tree
     pub fn contains_aggregates(
         &self,
-        expr_id: usize,
+        expr_id: NodeId,
         check_top: bool,
     ) -> Result<bool, SbroadError> {
-        let filter = |id: usize| -> bool {
+        let filter = |id: NodeId| -> bool {
             matches!(
                 self.get_node(id),
                 Ok(Node::Expression(Expression::StableFunction { .. }))
@@ -771,7 +807,8 @@ impl Plan {
             EXPR_CAPACITY,
             Box::new(filter),
         );
-        for (_, id) in dfs.iter(expr_id) {
+        for level_node in dfs.iter(expr_id) {
+            let id = level_node.1;
             if !check_top && id == expr_id {
                 continue;
             }
@@ -815,11 +852,11 @@ impl Plan {
     /// # Errors
     /// - node is not relational
     /// - node's output is not a row of aliases
-    pub fn get_row_from_rel_node(&mut self, node: usize) -> Result<usize, SbroadError> {
+    pub fn get_row_from_rel_node(&mut self, node: NodeId) -> Result<NodeId, SbroadError> {
         let n = self.get_node(node)?;
         if let Node::Relational(rel) = n {
             if let Node::Expression(Expression::Row { list, .. }) = self.get_node(rel.output())? {
-                let mut cols: Vec<usize> = Vec::with_capacity(list.len());
+                let mut cols: Vec<NodeId> = Vec::with_capacity(list.len());
                 for alias in list {
                     if let Node::Expression(Expression::Alias { child, .. }) =
                         self.get_node(*alias)?
@@ -842,8 +879,8 @@ impl Plan {
     }
 
     #[must_use]
-    pub fn next_id(&self) -> usize {
-        self.nodes.next_id()
+    pub fn next_id(&self, arena_type: ArenaType) -> NodeId {
+        self.nodes.next_id(arena_type)
     }
 
     /// Add condition node to the plan.
@@ -852,10 +889,10 @@ impl Plan {
     /// Returns `SbroadError` when the condition node can't append'.
     pub fn add_cond(
         &mut self,
-        left: usize,
+        left: NodeId,
         op: operator::Bool,
-        right: usize,
-    ) -> Result<usize, SbroadError> {
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         self.nodes.add_bool(left, op, right)
     }
 
@@ -863,7 +900,7 @@ impl Plan {
     ///
     /// # Errors
     /// Returns `SbroadError` when the condition node can't append'.
-    pub fn add_covered_with_parentheses(&mut self, child: usize) -> usize {
+    pub fn add_covered_with_parentheses(&mut self, child: NodeId) -> NodeId {
         self.nodes.add_covered_with_parentheses(child)
     }
 
@@ -873,10 +910,10 @@ impl Plan {
     /// Returns `SbroadError` when the condition node can't append'.
     pub fn add_arithmetic_to_plan(
         &mut self,
-        left: usize,
+        left: NodeId,
         op: Arithmetic,
-        right: usize,
-    ) -> Result<usize, SbroadError> {
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         self.nodes.add_arithmetic_node(left, op, right)
     }
 
@@ -884,17 +921,17 @@ impl Plan {
     ///
     /// # Errors
     /// - Child node is invalid
-    pub fn add_unary(&mut self, op: operator::Unary, child: usize) -> Result<usize, SbroadError> {
+    pub fn add_unary(&mut self, op: operator::Unary, child: NodeId) -> Result<NodeId, SbroadError> {
         self.nodes.add_unary_bool(op, child)
     }
 
     /// Add CASE ... END operator to the plan.
     pub fn add_case(
         &mut self,
-        search_expr: Option<usize>,
-        when_blocks: Vec<(usize, usize)>,
-        else_expr: Option<usize>,
-    ) -> usize {
+        search_expr: Option<NodeId>,
+        when_blocks: Vec<(NodeId, NodeId)>,
+        else_expr: Option<NodeId>,
+    ) -> NodeId {
         self.nodes.push(Node::Expression(Expression::Case {
             search_expr,
             else_expr,
@@ -906,7 +943,12 @@ impl Plan {
     ///
     /// # Errors
     /// - Children node are invalid
-    pub fn add_bool(&mut self, left: usize, op: Bool, right: usize) -> Result<usize, SbroadError> {
+    pub fn add_bool(
+        &mut self,
+        left: NodeId,
+        op: Bool,
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         self.nodes.add_bool(left, op, right)
     }
 
@@ -963,7 +1005,7 @@ impl Plan {
     /// Set top node of plan
     /// # Errors
     /// - top node doesn't exist in the plan.
-    pub fn set_top(&mut self, top: usize) -> Result<(), SbroadError> {
+    pub fn set_top(&mut self, top: NodeId) -> Result<(), SbroadError> {
         self.get_node(top)?;
         self.top = Some(top);
         Ok(())
@@ -974,7 +1016,7 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not a relational type
-    pub fn get_relation_node(&self, node_id: usize) -> Result<&Relational, SbroadError> {
+    pub fn get_relation_node(&self, node_id: NodeId) -> Result<&Relational, SbroadError> {
         let node = self.get_node(node_id)?;
         match node {
             Node::Relational(rel) => Ok(rel),
@@ -996,7 +1038,7 @@ impl Plan {
     /// - node is not a relational type
     pub fn get_mut_relation_node(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Result<&mut Relational, SbroadError> {
         match self.get_mut_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
@@ -1016,7 +1058,7 @@ impl Plan {
     /// # Errors
     /// - node doesn't exist in the plan
     /// - node is not expression type
-    pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, SbroadError> {
+    pub fn get_expression_node(&self, node_id: NodeId) -> Result<&Expression, SbroadError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
             Node::Parameter(..) => {
@@ -1043,7 +1085,7 @@ impl Plan {
     /// - node is not expression type
     pub fn get_mut_expression_node(
         &mut self,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Result<&mut Expression, SbroadError> {
         let node = self.get_mut_node(node_id)?;
         match node {
@@ -1055,7 +1097,7 @@ impl Plan {
             | Node::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(
-                    "node ({node_id}) is not expression type: {node:?}"
+                    "node ({node_id:?}) is not expression type: {node:?}"
                 )),
             )),
         }
@@ -1065,7 +1107,7 @@ impl Plan {
     ///
     /// # Errors
     /// - supplied id does not correspond to `Row` node
-    pub fn get_row_list(&self, row_id: usize) -> Result<&[usize], SbroadError> {
+    pub fn get_row_list(&self, row_id: NodeId) -> Result<&[NodeId], SbroadError> {
         self.get_expression_node(row_id)?.get_row_list()
     }
 
@@ -1074,7 +1116,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not an expression node
-    pub fn get_child_under_alias(&self, child_id: usize) -> Result<usize, SbroadError> {
+    pub fn get_child_under_alias(&self, child_id: NodeId) -> Result<NodeId, SbroadError> {
         match self.get_expression_node(child_id)? {
             Expression::Alias {
                 child: alias_child, ..
@@ -1087,7 +1129,7 @@ impl Plan {
     ///
     /// # Errors
     /// - supplied id does not correspond to `Row` node
-    pub fn get_mut_row_list(&mut self, row_id: usize) -> Result<&mut Vec<usize>, SbroadError> {
+    pub fn get_mut_row_list(&mut self, row_id: NodeId) -> Result<&mut Vec<NodeId>, SbroadError> {
         self.get_mut_expression_node(row_id)?.get_mut_row_list()
     }
 
@@ -1107,9 +1149,9 @@ impl Plan {
     /// children with the same id. So, if this happens, only one child will be replaced.
     pub fn replace_expression(
         &mut self,
-        parent_id: usize,
-        old_id: usize,
-        new_id: usize,
+        parent_id: NodeId,
+        old_id: NodeId,
+        new_id: NodeId,
     ) -> Result<(), SbroadError> {
         match self.get_mut_expression_node(parent_id)? {
             Expression::Unary { child, .. }
@@ -1190,7 +1232,7 @@ impl Plan {
         Err(SbroadError::FailedTo(
             Action::Replace,
             Some(Entity::Expression),
-            format_smolstr!("parent expression ({parent_id}) has no child with id {old_id}"),
+            format_smolstr!("parent expression ({parent_id:?}) has no child with id {old_id:?}"),
         ))
     }
 
@@ -1199,7 +1241,11 @@ impl Plan {
     /// # Errors
     /// - supplied index is out of range
     /// - node is not `GroupBy`
-    pub fn get_groupby_col(&self, groupby_id: usize, col_idx: usize) -> Result<usize, SbroadError> {
+    pub fn get_groupby_col(
+        &self,
+        groupby_id: NodeId,
+        col_idx: usize,
+    ) -> Result<NodeId, SbroadError> {
         let node = self.get_relation_node(groupby_id)?;
         if let Relational::GroupBy { gr_cols, .. } = node {
             let col_id = gr_cols.get(col_idx).ok_or_else(|| {
@@ -1220,7 +1266,7 @@ impl Plan {
     /// # Errors
     /// - supplied index is out of range
     /// - node is not `Projection`
-    pub fn get_proj_col(&self, proj_id: usize, col_idx: usize) -> Result<usize, SbroadError> {
+    pub fn get_proj_col(&self, proj_id: NodeId, col_idx: usize) -> Result<NodeId, SbroadError> {
         let node = self.get_relation_node(proj_id)?;
         if let Relational::Projection { output, .. } = node {
             let col_id = self.get_row_list(*output)?.get(col_idx).ok_or_else(|| {
@@ -1240,7 +1286,7 @@ impl Plan {
     ///
     /// # Errors
     /// - node is not `GroupBy`
-    pub fn get_grouping_cols(&self, groupby_id: usize) -> Result<&[usize], SbroadError> {
+    pub fn get_grouping_cols(&self, groupby_id: NodeId) -> Result<&[NodeId], SbroadError> {
         let node = self.get_relation_node(groupby_id)?;
         if let Relational::GroupBy { gr_cols, .. } = node {
             return Ok(gr_cols);
@@ -1257,8 +1303,8 @@ impl Plan {
     /// - node is not `GroupBy`
     pub fn set_grouping_cols(
         &mut self,
-        groupby_id: usize,
-        new_cols: Vec<usize>,
+        groupby_id: NodeId,
+        new_cols: Vec<NodeId>,
     ) -> Result<(), SbroadError> {
         let node = self.get_mut_relation_node(groupby_id)?;
         if let Relational::GroupBy { gr_cols, .. } = node {
@@ -1324,7 +1370,7 @@ impl Plan {
         let ref_node_target_child =
             ref_node_children
                 .get(*first_target)
-                .unwrap_or_else(|| panic!("Failed to get target index {first_target} for reference {node:?} and ref_node [id = {parent:?}] {ref_node:?}"));
+                .unwrap_or_else(|| panic!("Failed to get target index {first_target:?} for reference {node:?} and ref_node [id = {parent:?}] {ref_node:?}"));
 
         let column_rel_node = self.get_relation_node(*ref_node_target_child)?;
         let column_expr_node = self.get_expression_node(column_rel_node.output())?;
@@ -1339,19 +1385,19 @@ impl Plan {
     }
 
     /// Set slices of the plan.
-    pub fn set_slices(&mut self, slices: Vec<Vec<usize>>) {
+    pub fn set_slices(&mut self, slices: Vec<Vec<NodeId>>) {
         self.slices = slices.into();
     }
 
     /// # Errors
     /// - serialization error (to binary)
-    pub fn pattern_id(&self, top_id: usize) -> Result<SmolStr, SbroadError> {
-        let mut dfs =
-            PostOrder::with_capacity(|x| self.subtree_iter(x, false), self.nodes.next_id());
+    pub fn pattern_id(&self, top_id: NodeId) -> Result<SmolStr, SbroadError> {
+        let mut dfs = PostOrder::with_capacity(|x| self.subtree_iter(x, false), self.nodes.len());
         dfs.populate_nodes(top_id);
         let nodes = dfs.take_nodes();
         let mut plan_nodes: Vec<&Node> = Vec::with_capacity(nodes.len());
-        for (_, id) in nodes {
+        for level_node in nodes {
+            let id = level_node.1;
             plan_nodes.push(self.get_node(id)?);
         }
         let bytes: Vec<u8> = bincode::serialize(&plan_nodes).map_err(|e| {
@@ -1636,7 +1682,7 @@ impl ShardColumnsMap {
 
     fn update_subtree(&mut self, node_id: NodeId, plan: &Plan) -> Result<(), SbroadError> {
         let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), REL_CAPACITY);
-        for (_, id) in dfs.iter(node_id) {
+        for LevelNode(_, id) in dfs.iter(node_id) {
             self.update_node(id, plan)?;
             self.invalid_ids.remove(&id);
         }

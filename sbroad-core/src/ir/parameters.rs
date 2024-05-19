@@ -5,8 +5,10 @@ use std::collections::HashMap;
 
 use crate::ir::Node;
 
+use super::expression::NodeId;
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Parameters(HashMap<usize, Node>);
+pub struct Parameters(HashMap<NodeId, Node>);
 
 impl Default for Parameters {
     fn default() -> Self {
@@ -20,16 +22,16 @@ impl Parameters {
         Self(HashMap::new())
     }
 
-    pub fn insert(&mut self, index: usize, node: Node) {
+    pub fn insert(&mut self, index: NodeId, node: Node) {
         self.0.insert(index, node);
     }
 
     #[must_use]
-    pub fn get(&self, index: usize) -> Option<&Node> {
+    pub fn get(&self, index: NodeId) -> Option<&Node> {
         self.0.get(&index)
     }
 
-    pub fn drain(&mut self) -> HashMap<usize, Node> {
+    pub fn drain(&mut self) -> HashMap<NodeId, Node> {
         std::mem::take(&mut self.0)
     }
 }

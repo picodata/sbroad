@@ -1,15 +1,17 @@
 //! IR tree traversal module.
 
-use super::{Nodes, Plan};
-use crate::ir::expression::Expression;
+use super::{
+    expression::{Expression, NodeId},
+    Nodes, Plan,
+};
 use std::cell::RefCell;
 
 trait TreeIterator<'nodes> {
-    fn get_current(&self) -> usize;
+    fn get_current(&self) -> NodeId;
     fn get_child(&self) -> &RefCell<usize>;
     fn get_nodes(&self) -> &'nodes Nodes;
 
-    fn handle_trim(&mut self, expr: &'nodes Expression) -> Option<&'nodes usize> {
+    fn handle_trim(&mut self, expr: &'nodes Expression) -> Option<&'nodes NodeId> {
         let Expression::Trim {
             pattern, target, ..
         } = expr
@@ -36,7 +38,7 @@ trait TreeIterator<'nodes> {
         }
     }
 
-    fn handle_left_right_children(&mut self, expr: &'nodes Expression) -> Option<&'nodes usize> {
+    fn handle_left_right_children(&mut self, expr: &'nodes Expression) -> Option<&'nodes NodeId> {
         let (Expression::Bool { left, right, .. }
         | Expression::Arithmetic { left, right, .. }
         | Expression::Concat { left, right, .. }) = expr
@@ -54,7 +56,7 @@ trait TreeIterator<'nodes> {
         None
     }
 
-    fn handle_single_child(&mut self, expr: &'nodes Expression) -> Option<&'nodes usize> {
+    fn handle_single_child(&mut self, expr: &'nodes Expression) -> Option<&'nodes NodeId> {
         let (Expression::Alias { child, .. }
         | Expression::ExprInParentheses { child }
         | Expression::Cast { child, .. }
@@ -70,7 +72,7 @@ trait TreeIterator<'nodes> {
         None
     }
 
-    fn handle_case_iter(&mut self, expr: &'nodes Expression) -> Option<&'nodes usize> {
+    fn handle_case_iter(&mut self, expr: &'nodes Expression) -> Option<&'nodes NodeId> {
         let Expression::Case {
             search_expr,
             when_blocks,

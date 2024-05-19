@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use super::TreeIterator;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::{Node, Nodes};
 
 trait ExpressionTreeIterator<'nodes>: TreeIterator<'nodes> {
@@ -15,7 +15,7 @@ trait ExpressionTreeIterator<'nodes>: TreeIterator<'nodes> {
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct ExpressionIterator<'n> {
-    current: usize,
+    current: NodeId,
     child: RefCell<usize>,
     nodes: &'n Nodes,
     make_row_leaf: bool,
@@ -28,7 +28,7 @@ pub struct AggregateIterator<'p> {
 
 impl<'n> Nodes {
     #[must_use]
-    pub fn expr_iter(&'n self, current: usize, make_row_leaf: bool) -> ExpressionIterator<'n> {
+    pub fn expr_iter(&'n self, current: NodeId, make_row_leaf: bool) -> ExpressionIterator<'n> {
         ExpressionIterator {
             current,
             child: RefCell::new(0),
@@ -38,9 +38,9 @@ impl<'n> Nodes {
     }
 
     #[must_use]
-    pub fn aggregate_iter(&'n self, current: usize, make_row_leaf: bool) -> AggregateIterator<'n> {
+    pub fn aggregate_iter(&'n self, current: NodeId, make_row_leaf: bool) -> AggregateIterator<'n> {
         let must_stop = if let Some(Node::Expression(Expression::StableFunction { name, .. })) =
-            self.arena.get(current)
+            self.get(current)
         {
             Expression::is_aggregate_name(name)
         } else {
@@ -59,7 +59,7 @@ impl<'n> Nodes {
 }
 
 impl<'nodes> TreeIterator<'nodes> for ExpressionIterator<'nodes> {
-    fn get_current(&self) -> usize {
+    fn get_current(&self) -> NodeId {
         self.current
     }
 
@@ -79,7 +79,7 @@ impl<'nodes> ExpressionTreeIterator<'nodes> for ExpressionIterator<'nodes> {
 }
 
 impl<'n> Iterator for ExpressionIterator<'n> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         expression_next(self).copied()
@@ -87,7 +87,7 @@ impl<'n> Iterator for ExpressionIterator<'n> {
 }
 
 impl<'n> Iterator for AggregateIterator<'n> {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.must_stop {
@@ -100,8 +100,8 @@ impl<'n> Iterator for AggregateIterator<'n> {
 #[allow(clippy::too_many_lines)]
 fn expression_next<'nodes>(
     iter: &mut impl ExpressionTreeIterator<'nodes>,
-) -> Option<&'nodes usize> {
-    let node = iter.get_nodes().arena.get(iter.get_current());
+) -> Option<&'nodes NodeId> {
+    let node = iter.get_nodes().get(iter.get_current());
     match node {
         Some(node) => {
             match node {
@@ -123,7 +123,7 @@ fn expression_next<'nodes>(
                                 is_leaf = true;
                                 for col in list {
                                     if !matches!(
-                                        iter.get_nodes().arena.get(*col),
+                                        iter.get_nodes().get(*col),
                                         Some(Node::Expression(
                                             Expression::Reference { .. }
                                                 | Expression::Constant { .. }

@@ -11,7 +11,7 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::Plan;
@@ -22,18 +22,18 @@ use smol_str::format_smolstr;
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
 fn call_expr_tree_replace_in(
     plan: &mut Plan,
-    top_id: usize,
+    top_id: NodeId,
 ) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_replace_bool(top_id, &call_from_in, &[Bool::In])
 }
 
-fn call_from_in(plan: &mut Plan, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
+fn call_from_in(plan: &mut Plan, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
     plan.in_to_or(top_id)
 }
 
 impl Plan {
     /// Convert the IN operator to the chain of the OR-ed equalities.
-    fn in_to_or(&mut self, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
+    fn in_to_or(&mut self, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
         let top_expr = self.get_expression_node(top_id)?;
         let (left_id, right_id) = match top_expr {
             Expression::Bool {

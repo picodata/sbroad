@@ -17,7 +17,7 @@ use crate::executor::engine::helpers::proxy::sql_cache_proxy;
 use crate::executor::engine::helpers::table_name;
 use crate::executor::lru::DEFAULT_CAPACITY;
 use crate::ir::value::{EncodedValue, Value};
-use crate::ir::NodeId;
+use crate::ir::expression::NodeId;
 use crate::otm::child_span;
 use crate::utils::ByteCounter;
 

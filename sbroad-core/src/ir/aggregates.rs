@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use super::expression::{ColumnPositionMap, FunctionFeature};
+use super::expression::{ColumnPositionMap, FunctionFeature, NodeId};
 
 /// The kind of aggregate function
 ///
@@ -90,7 +90,7 @@ impl AggregateKind {
     ///
     /// # Panics
     /// - Invalid argument count for aggregate
-    pub fn check_args_types(&self, plan: &Plan, args: &[usize]) -> Result<(), SbroadError> {
+    pub fn check_args_types(&self, plan: &Plan, args: &[NodeId]) -> Result<(), SbroadError> {
         use crate::ir::relation::Type;
         let get_arg_type = |idx: usize| -> Result<Type, SbroadError> {
             let arg_id = *args.get(idx).expect("wrong agregate");
@@ -200,7 +200,7 @@ pub struct SimpleAggregate {
     /// map will contain: `avg` -> `l1`
     pub lagg_alias: HashMap<AggregateKind, Rc<String>>,
     /// id of aggregate function in IR
-    pub fun_id: usize,
+    pub fun_id: NodeId,
 }
 
 #[cfg(not(feature = "mock"))]
@@ -220,7 +220,7 @@ pub fn generate_local_alias_for_aggr(kind: &AggregateKind, suffix: &str) -> Stri
 
 impl SimpleAggregate {
     #[must_use]
-    pub fn new(name: &str, fun_id: usize) -> Option<SimpleAggregate> {
+    pub fn new(name: &str, fun_id: NodeId) -> Option<SimpleAggregate> {
         let kind = AggregateKind::new(name)?;
         let laggr_alias: HashMap<AggregateKind, Rc<String>> = HashMap::new();
         let aggr = SimpleAggregate {
@@ -297,14 +297,14 @@ impl SimpleAggregate {
     #[allow(clippy::too_many_lines)]
     pub(crate) fn create_final_aggregate_expr(
         &self,
-        parent: usize,
+        parent: NodeId,
         plan: &mut Plan,
         fun_type: &RelType,
         mut position_kinds: Vec<PositionKind>,
         is_distinct: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         // map local AggregateKind to finalised expression of that aggregate
-        let mut final_aggregates: HashMap<AggregateKind, usize> = HashMap::new();
+        let mut final_aggregates: HashMap<AggregateKind, NodeId> = HashMap::new();
         let mut create_final_aggr = |position: Position,
                                      local_kind: AggregateKind,
                                      final_func: AggregateKind|
@@ -338,7 +338,7 @@ impl SimpleAggregate {
                         return Err(SbroadError::Invalid(
                             Entity::Aggregate,
                             Some(format_smolstr!(
-                                "fun_id ({}) points to other expression node",
+                                "fun_id ({:?}) points to other expression node",
                                 self.fun_id
                             )),
                         ));

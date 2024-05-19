@@ -5,8 +5,10 @@ use crate::{
     ir::{expression::Expression, relation::Type, Node, Plan},
 };
 
+use super::NodeId;
+
 impl Plan {
-    fn get_node_type(&self, node_id: usize) -> Result<Type, SbroadError> {
+    fn get_node_type(&self, node_id: NodeId) -> Result<Type, SbroadError> {
         match self.get_node(node_id)? {
             Node::Expression(expr) => expr.calculate_type(self),
             Node::Relational(relational) => Err(SbroadError::Invalid(

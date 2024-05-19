@@ -11,6 +11,8 @@ use tarantool::{
     index::{IndexType, RtreeIndexDistanceType},
 };
 
+use super::expression::NodeId;
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
     pub name: SmolStr,
@@ -187,7 +189,7 @@ impl Plan {
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of DDL type
-    pub fn get_ddl_node(&self, node_id: usize) -> Result<&Ddl, SbroadError> {
+    pub fn get_ddl_node(&self, node_id: NodeId) -> Result<&Ddl, SbroadError> {
         let node = self.get_node(node_id)?;
         match node {
             Node::Ddl(ddl) => Ok(ddl),
@@ -203,7 +205,7 @@ impl Plan {
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of DDL type
-    pub fn get_mut_ddl_node(&mut self, node_id: usize) -> Result<&mut Ddl, SbroadError> {
+    pub fn get_mut_ddl_node(&mut self, node_id: NodeId) -> Result<&mut Ddl, SbroadError> {
         let node = self.get_mut_node(node_id)?;
         match node {
             Node::Ddl(ddl) => Ok(ddl),
@@ -218,7 +220,7 @@ impl Plan {
     ///
     /// # Errors
     /// - current node is not of DDL type
-    pub fn take_ddl_node(&mut self, node_id: usize) -> Result<Ddl, SbroadError> {
+    pub fn take_ddl_node(&mut self, node_id: NodeId) -> Result<Ddl, SbroadError> {
         // Check that node is DDL type (before making any distructive operations).
         let _ = self.get_ddl_node(node_id)?;
         // Replace DDL with parameter node.

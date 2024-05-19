@@ -1,8 +1,8 @@
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_ir;
-use crate::ir::transformation::redistribution::tests::get_motion_id;
+use crate::ir::transformation::redistribution::tests::{get_motion_id, NodeId};
 use crate::ir::transformation::redistribution::MotionPolicy;
-use crate::ir::{Slice, Slices};
+use crate::ir::{ArenaType, Slice, Slices};
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -28,7 +28,15 @@ fn not_in2() {
 
     let mut plan = sql_to_ir(query, vec![]);
     plan.add_motions().unwrap();
-    assert_eq!(Slices::from(vec![Slice { slice: vec![65] }]), plan.slices);
+    assert_eq!(
+        Slices::from(vec![Slice {
+            slice: vec![NodeId {
+                offset: 65,
+                arena_type: ArenaType::Default,
+            }]
+        }]),
+        plan.slices
+    );
 }
 
 #[test]

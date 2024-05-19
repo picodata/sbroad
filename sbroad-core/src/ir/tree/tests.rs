@@ -1,9 +1,9 @@
 use crate::ir::operator::Bool;
 use crate::ir::relation::{SpaceEngine, Table, Type};
 use crate::ir::tests::column_user_non_null;
-use crate::ir::tree::traversal::{BreadthFirst, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
+use crate::ir::tree::traversal::{BreadthFirst, LevelNode, PostOrder, EXPR_CAPACITY, REL_CAPACITY};
 use crate::ir::value::Value;
-use crate::ir::{Expression, Plan};
+use crate::ir::{ArenaType, Expression, Plan};
 use pretty_assertions::assert_eq;
 use smol_str::SmolStr;
 
@@ -33,17 +33,17 @@ fn expression_bft() {
         EXPR_CAPACITY,
     );
     let mut iter = bft_tree.iter(top);
-    assert_eq!(iter.next(), Some((0, top)));
-    assert_eq!(iter.next(), Some((1, c1c2_and_c2c3)));
-    assert_eq!(iter.next(), Some((1, c4_eq_c5)));
-    assert_eq!(iter.next(), Some((2, c1_eq_c2)));
-    assert_eq!(iter.next(), Some((2, c2_eq_c3)));
-    assert_eq!(iter.next(), Some((2, c4)));
-    assert_eq!(iter.next(), Some((2, c5)));
-    assert_eq!(iter.next(), Some((3, c1)));
-    assert_eq!(iter.next(), Some((3, c2)));
-    assert_eq!(iter.next(), Some((3, c2)));
-    assert_eq!(iter.next(), Some((3, c3)));
+    assert_eq!(iter.next(), Some(LevelNode(0, top)));
+    assert_eq!(iter.next(), Some(LevelNode(1, c1c2_and_c2c3)));
+    assert_eq!(iter.next(), Some(LevelNode(1, c4_eq_c5)));
+    assert_eq!(iter.next(), Some(LevelNode(2, c1_eq_c2)));
+    assert_eq!(iter.next(), Some(LevelNode(2, c2_eq_c3)));
+    assert_eq!(iter.next(), Some(LevelNode(2, c4)));
+    assert_eq!(iter.next(), Some(LevelNode(2, c5)));
+    assert_eq!(iter.next(), Some(LevelNode(3, c1)));
+    assert_eq!(iter.next(), Some(LevelNode(3, c2)));
+    assert_eq!(iter.next(), Some(LevelNode(3, c2)));
+    assert_eq!(iter.next(), Some(LevelNode(3, c3)));
     assert_eq!(iter.next(), None);
 }
 
@@ -89,10 +89,10 @@ fn relational_post() {
     // Traverse the tree
     let mut dft_post = PostOrder::with_capacity(|node| plan.nodes.rel_iter(node), REL_CAPACITY);
     let mut iter = dft_post.iter(top);
-    assert_eq!(iter.next(), Some((1, scan_t1_id)));
-    assert_eq!(iter.next(), Some((2, scan_t2_id)));
-    assert_eq!(iter.next(), Some((1, selection_id)));
-    assert_eq!(iter.next(), Some((0, union_id)));
+    assert_eq!(iter.next(), Some(LevelNode(1, scan_t1_id)));
+    assert_eq!(iter.next(), Some(LevelNode(2, scan_t2_id)));
+    assert_eq!(iter.next(), Some(LevelNode(1, selection_id)));
+    assert_eq!(iter.next(), Some(LevelNode(0, union_id)));
     assert_eq!(iter.next(), None);
 }
 
@@ -164,30 +164,30 @@ fn selection_subquery_dfs_post() {
     // Traverse relational nodes in the plan tree
     let mut dft_post = PostOrder::with_capacity(|node| plan.nodes.rel_iter(node), REL_CAPACITY);
     let mut iter = dft_post.iter(top);
-    assert_eq!(iter.next(), Some((1, scan_t1_id)));
-    assert_eq!(iter.next(), Some((4, scan_t2_id)));
-    assert_eq!(iter.next(), Some((3, selection_t2_id)));
-    assert_eq!(iter.next(), Some((2, proj_id)));
-    assert_eq!(iter.next(), Some((1, sq_id)));
-    assert_eq!(iter.next(), Some((0, selection_t1_id)));
+    assert_eq!(iter.next(), Some(LevelNode(1, scan_t1_id)));
+    assert_eq!(iter.next(), Some(LevelNode(4, scan_t2_id)));
+    assert_eq!(iter.next(), Some(LevelNode(3, selection_t2_id)));
+    assert_eq!(iter.next(), Some(LevelNode(2, proj_id)));
+    assert_eq!(iter.next(), Some(LevelNode(1, sq_id)));
+    assert_eq!(iter.next(), Some(LevelNode(0, selection_t1_id)));
     assert_eq!(iter.next(), None);
 
     // Traverse expression nodes in the selection t2 filter
     let mut dft_post =
         PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, true), EXPR_CAPACITY);
     let mut iter = dft_post.iter(eq_op);
-    assert_eq!(iter.next(), Some((1, b)));
-    assert_eq!(iter.next(), Some((1, const1)));
-    assert_eq!(iter.next(), Some((0, eq_op)));
+    assert_eq!(iter.next(), Some(LevelNode(1, b)));
+    assert_eq!(iter.next(), Some(LevelNode(1, const1)));
+    assert_eq!(iter.next(), Some(LevelNode(0, eq_op)));
     assert_eq!(iter.next(), None);
 
     // Traverse expression nodes in the selection t1 filter
     let mut dft_post =
         PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, true), EXPR_CAPACITY);
     let mut iter = dft_post.iter(in_op);
-    assert_eq!(iter.next(), Some((1, a)));
-    assert_eq!(iter.next(), Some((1, c)));
-    assert_eq!(iter.next(), Some((0, in_op)));
+    assert_eq!(iter.next(), Some(LevelNode(1, a)));
+    assert_eq!(iter.next(), Some(LevelNode(1, c)));
+    assert_eq!(iter.next(), Some(LevelNode(0, in_op)));
     assert_eq!(iter.next(), None);
 }
 
@@ -221,7 +221,7 @@ fn subtree_dfs_post() {
     .unwrap();
     plan.add_rel(t1);
     let scan_t1_id = plan.add_scan("t1", None).unwrap();
-    let a_ref = plan.nodes.next_id();
+    let a_ref = plan.nodes.next_id(ArenaType::Default);
     let a = plan.add_row_from_child(scan_t1_id, &["a"]).unwrap();
     let const1 = plan.add_const(Value::from(1_i64));
     let eq_op = plan.nodes.add_bool(a, Bool::Eq, const1).unwrap();
@@ -249,17 +249,17 @@ fn subtree_dfs_post() {
 
     // Traverse relational nodes in the plan tree
     let mut dft_post =
-        PostOrder::with_capacity(|node| plan.subtree_iter(node, false), plan.next_id());
+        PostOrder::with_capacity(|node| plan.subtree_iter(node, false), plan.nodes.len());
     let mut iter = dft_post.iter(top);
-    assert_eq!(iter.next(), Some((3, *c_ref_id)));
-    assert_eq!(iter.next(), Some((2, *alias_id)));
-    assert_eq!(iter.next(), Some((1, proj_row_id)));
-    assert_eq!(iter.next(), Some((2, scan_t1_id)));
-    assert_eq!(iter.next(), Some((4, a_ref)));
-    assert_eq!(iter.next(), Some((3, a)));
-    assert_eq!(iter.next(), Some((3, const1)));
-    assert_eq!(iter.next(), Some((2, eq_op)));
-    assert_eq!(iter.next(), Some((1, selection_t1_id)));
-    assert_eq!(iter.next(), Some((0, proj_id)));
+    assert_eq!(iter.next(), Some(LevelNode(3, *c_ref_id)));
+    assert_eq!(iter.next(), Some(LevelNode(2, *alias_id)));
+    assert_eq!(iter.next(), Some(LevelNode(1, proj_row_id)));
+    assert_eq!(iter.next(), Some(LevelNode(2, scan_t1_id)));
+    assert_eq!(iter.next(), Some(LevelNode(4, a_ref)));
+    assert_eq!(iter.next(), Some(LevelNode(3, a)));
+    assert_eq!(iter.next(), Some(LevelNode(3, const1)));
+    assert_eq!(iter.next(), Some(LevelNode(2, eq_op)));
+    assert_eq!(iter.next(), Some(LevelNode(1, selection_t1_id)));
+    assert_eq!(iter.next(), Some(LevelNode(0, proj_id)));
     assert_eq!(iter.next(), None);
 }

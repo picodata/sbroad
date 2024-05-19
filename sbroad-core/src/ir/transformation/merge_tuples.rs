@@ -11,7 +11,7 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
@@ -25,19 +25,19 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 fn call_expr_tree_merge_tuples(
     plan: &mut Plan,
-    top_id: usize,
+    top_id: NodeId,
 ) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
 fn call_build_and_chains(
     plan: &mut Plan,
-    nodes: &[usize],
-) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
+    nodes: &[NodeId],
+) -> Result<HashMap<NodeId, Chain, RepeatableState>, SbroadError> {
     plan.populate_and_chains(nodes)
 }
 
-fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, SbroadError> {
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<NodeId, SbroadError> {
     chain.as_plan(plan)
 }
 
@@ -46,9 +46,9 @@ fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, SbroadError> {
 pub struct Chain {
     // Left and right sides of the equality (and non-equality) expressions
     // grouped by the operator.
-    grouped: HashMap<Bool, (Vec<usize>, Vec<usize>)>,
+    grouped: HashMap<Bool, (Vec<NodeId>, Vec<NodeId>)>,
     // Other boolean expressions in the AND chain (true, false, null, Lt, GtEq, etc).
-    other: Vec<usize>,
+    other: Vec<NodeId>,
 }
 
 impl Chain {
@@ -67,7 +67,7 @@ impl Chain {
     /// - Failed if the node is not an expression.
     /// - Failed if expression is not an "AND" or "OR".
     /// - There is something wrong with our sub-queries.
-    pub fn insert(&mut self, plan: &mut Plan, expr_id: usize) -> Result<(), SbroadError> {
+    pub fn insert(&mut self, plan: &mut Plan, expr_id: NodeId) -> Result<(), SbroadError> {
         let bool_expr = plan.get_expression_node(expr_id)?;
         if let Expression::Bool { left, op, right } = bool_expr {
             if let Bool::And | Bool::Or = op {
@@ -143,7 +143,7 @@ impl Chain {
         Ok(())
     }
 
-    fn as_plan(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
+    fn as_plan(&self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
         let other_top_id = match self.other.split_first() {
             Some((first, other)) => {
                 let mut top_id = *first;
@@ -158,7 +158,7 @@ impl Chain {
         // Chain is grouped by the operators in the hash map.
         // To make serialization non-flaky, we extract operators
         // in a deterministic order.
-        let mut grouped_top_id: Option<usize> = None;
+        let mut grouped_top_id: Option<NodeId> = None;
         let ordered_ops = &[Bool::Eq, Bool::NotEq];
         for op in ordered_ops {
             if let Some((left, right)) = self.grouped.get(op) {
@@ -193,19 +193,19 @@ impl Chain {
 
     /// Return boolean expression nodes grouped by the operator.
     #[must_use]
-    pub fn get_grouped(&self) -> &HashMap<Bool, (Vec<usize>, Vec<usize>)> {
+    pub fn get_grouped(&self) -> &HashMap<Bool, (Vec<NodeId>, Vec<NodeId>)> {
         &self.grouped
     }
 
     /// Return "other" boolean expression nodes.
     #[must_use]
-    pub fn get_other(&self) -> &Vec<usize> {
+    pub fn get_other(&self) -> &Vec<NodeId> {
         &self.other
     }
 }
 
 impl Plan {
-    fn get_columns_or_self(&self, expr_id: usize) -> Result<Vec<usize>, SbroadError> {
+    fn get_columns_or_self(&self, expr_id: NodeId) -> Result<Vec<NodeId>, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Row { list, .. } => Ok(list.clone()),
@@ -220,10 +220,10 @@ impl Plan {
     /// - Failed to insert the node to the "And" chain.
     pub fn populate_and_chains(
         &mut self,
-        nodes: &[usize],
-    ) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
-        let mut visited: HashSet<usize> = HashSet::with_capacity(self.nodes.next_id());
-        let mut chains: HashMap<usize, Chain, RepeatableState> =
+        nodes: &[NodeId],
+    ) -> Result<HashMap<NodeId, Chain, RepeatableState>, SbroadError> {
+        let mut visited: HashSet<NodeId> = HashSet::with_capacity(self.nodes.len());
+        let mut chains: HashMap<NodeId, Chain, RepeatableState> =
             HashMap::with_capacity_and_hasher(nodes.len(), RepeatableState);
 
         for id in nodes {
@@ -237,8 +237,9 @@ impl Plan {
                 EXPR_CAPACITY,
                 EXPR_CAPACITY,
             );
-            let nodes_and: Vec<usize> = tree_and.iter(*id).map(|(_, id)| id).collect();
-            let mut nodes_for_chain: Vec<usize> = Vec::with_capacity(nodes_and.len());
+            let nodes_and: Vec<NodeId> =
+                tree_and.iter(*id).map(|level_node| level_node.1).collect();
+            let mut nodes_for_chain: Vec<NodeId> = Vec::with_capacity(nodes_and.len());
             for and_id in nodes_and {
                 let expr = self.get_expression_node(and_id)?;
                 if let Expression::Bool {
@@ -285,20 +286,20 @@ impl Plan {
     #[allow(clippy::type_complexity, clippy::too_many_lines)]
     pub fn expr_tree_modify_and_chains(
         &mut self,
-        expr_id: usize,
+        expr_id: NodeId,
         f_build_chains: &dyn Fn(
             &mut Plan,
-            &[usize],
+            &[NodeId],
         )
-            -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError>,
-        f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<usize, SbroadError>,
+            -> Result<HashMap<NodeId, Chain, RepeatableState>, SbroadError>,
+        f_to_plan: &dyn Fn(&Chain, &mut Plan) -> Result<NodeId, SbroadError>,
     ) -> Result<OldNewTopIdPair, SbroadError> {
         let mut tree = BreadthFirst::with_capacity(
             |node| self.nodes.expr_iter(node, false),
             EXPR_CAPACITY,
             EXPR_CAPACITY,
         );
-        let nodes: Vec<usize> = tree.iter(expr_id).map(|(_, id)| id).collect();
+        let nodes: Vec<NodeId> = tree.iter(expr_id).map(|level_node| level_node.1).collect();
         let chains = f_build_chains(self, &nodes)?;
 
         // Replace nodes' children with the merged tuples.

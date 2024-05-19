@@ -90,7 +90,7 @@
 //!    to the plan tree.
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::operator::Bool;
 use crate::ir::relation::Type;
@@ -109,7 +109,7 @@ use std::collections::{HashMap, HashSet};
 struct EqClassRef {
     targets: Option<Vec<usize>>,
     position: usize,
-    parent: Option<usize>,
+    parent: Option<NodeId>,
     col_type: Type,
 }
 
@@ -132,7 +132,7 @@ impl EqClassRef {
         Err(SbroadError::Invalid(Entity::Expression, None))
     }
 
-    fn to_single_col_row(&self, plan: &mut Plan) -> usize {
+    fn to_single_col_row(&self, plan: &mut Plan) -> NodeId {
         let id = plan.nodes.add_ref(
             self.parent,
             self.targets.clone(),
@@ -168,7 +168,7 @@ impl EqClassConst {
         ))
     }
 
-    fn to_const(&self, plan: &mut Plan) -> usize {
+    fn to_const(&self, plan: &mut Plan) -> NodeId {
         let const_id = plan.add_const(self.value.clone());
         plan.nodes.add_row(vec![const_id], None)
     }
@@ -182,7 +182,7 @@ enum EqClassExpr {
 }
 
 impl EqClassExpr {
-    fn to_plan(&self, plan: &mut Plan) -> usize {
+    fn to_plan(&self, plan: &mut Plan) -> NodeId {
         match self {
             EqClassExpr::EqClassConst(ec_const) => ec_const.to_const(plan),
             EqClassExpr::EqClassRef(ec_ref) => ec_ref.to_single_col_row(plan),
@@ -353,15 +353,15 @@ impl EqClassChain {
 /// Replace IN operator with the chain of the OR-ed equalities in the expression tree.
 fn call_expr_tree_derive_equalities(
     plan: &mut Plan,
-    top_id: usize,
+    top_id: NodeId,
 ) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_modify_and_chains(top_id, &call_build_and_chains, &call_as_plan)
 }
 
 fn call_build_and_chains(
     plan: &mut Plan,
-    nodes: &[usize],
-) -> Result<HashMap<usize, Chain, RepeatableState>, SbroadError> {
+    nodes: &[NodeId],
+) -> Result<HashMap<NodeId, Chain, RepeatableState>, SbroadError> {
     let mut chains = plan.populate_and_chains(nodes)?;
     for chain in chains.values_mut() {
         chain.extend_equality_operator(plan)?;
@@ -369,7 +369,7 @@ fn call_build_and_chains(
     Ok(chains)
 }
 
-fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<usize, SbroadError> {
+fn call_as_plan(chain: &Chain, plan: &mut Plan) -> Result<NodeId, SbroadError> {
     chain.as_plan_ecs(plan)
 }
 
@@ -409,7 +409,7 @@ impl Chain {
         Ok(())
     }
 
-    fn as_plan_ecs(&self, plan: &mut Plan) -> Result<usize, SbroadError> {
+    fn as_plan_ecs(&self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
         let other_top_id = match self.get_other().split_first() {
             Some((first, other)) => {
                 let mut top_id = *first;
@@ -424,7 +424,7 @@ impl Chain {
         // Chain is grouped by the operators in the hash map.
         // To make serialization non-flaky, we extract operators
         // in a deterministic order.
-        let mut grouped_top_id: Option<usize> = None;
+        let mut grouped_top_id: Option<NodeId> = None;
         // No need for "And" and "Or" operators.
         let ordered_ops = &[
             Bool::Eq,
@@ -441,7 +441,7 @@ impl Chain {
                     .iter()
                     .zip(right_vec.iter())
                     .map(|(l, r)| (*l, *r))
-                    .collect::<Vec<(usize, usize)>>()
+                    .collect::<Vec<(NodeId, NodeId)>>()
                     .split_first()
                 {
                     let left_row_id = plan.nodes.add_row(vec![first.0], None);
@@ -481,7 +481,7 @@ impl Chain {
 impl Plan {
     // DoSkip is a special case of an error - nothing bad had happened, the target node doesn't contain
     // anything interesting for us, skip it without any serious error.
-    fn try_to_eq_class_expr(&self, expr_id: usize) -> Result<EqClassExpr, SbroadError> {
+    fn try_to_eq_class_expr(&self, expr_id: NodeId) -> Result<EqClassExpr, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Constant { .. } => {

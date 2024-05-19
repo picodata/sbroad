@@ -8,6 +8,8 @@ use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
+use super::NodeId;
+
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum Type {
     Any,
@@ -130,7 +132,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Child node is not of the expression type.
-    pub fn add_cast(&mut self, expr_id: usize, to_type: Type) -> Result<usize, SbroadError> {
+    pub fn add_cast(&mut self, expr_id: NodeId, to_type: Type) -> Result<NodeId, SbroadError> {
         let cast_expr = Expression::Cast {
             child: expr_id,
             to: to_type,

@@ -7,6 +7,7 @@ use crate::{
     errors::{Entity, SbroadError},
     ir::{
         distribution::Distribution,
+        expression::NodeId,
         operator::{JoinKind, Relational},
         Plan,
     },
@@ -17,7 +18,7 @@ use super::{MotionOpcode, MotionPolicy, Program, Strategy};
 impl Plan {
     pub(super) fn calculate_strategy_for_left_join_with_global_tbl(
         &mut self,
-        join_id: usize,
+        join_id: NodeId,
         join_kind: &JoinKind,
     ) -> Result<Option<Strategy>, SbroadError> {
         let is_left_join = matches!(join_kind, JoinKind::LeftOuter);
@@ -41,7 +42,7 @@ impl Plan {
         let Some(parent_id) = self.find_parent_rel(join_id)? else {
             return Err(SbroadError::Invalid(
                 Entity::Plan,
-                Some(format_smolstr!("join ({join_id}) has no parent!")),
+                Some(format_smolstr!("join ({join_id:?}) has no parent!")),
             ));
         };
         let projection_id = create_projection(self, join_id)?;
@@ -89,7 +90,7 @@ impl Plan {
     }
 }
 
-fn create_projection(plan: &mut Plan, join_id: usize) -> Result<usize, SbroadError> {
+fn create_projection(plan: &mut Plan, join_id: NodeId) -> Result<NodeId, SbroadError> {
     let proj_id = plan.add_proj(join_id, &[], false, false)?;
     let output_id = plan.get_relational_output(proj_id)?;
     plan.replace_parent_in_subtree(output_id, Some(join_id), Some(proj_id))?;

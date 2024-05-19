@@ -1,5 +1,5 @@
 use crate::errors::SbroadError;
-use crate::ir::expression::{Expression, ExpressionId};
+use crate::ir::expression::{Expression, ExpressionId, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::redistribution::BoolOp;
 use crate::ir::tree::traversal::{PostOrder, PostOrderWithFilter, EXPR_CAPACITY};
@@ -65,13 +65,14 @@ impl ReferredMap {
 
     pub fn new_from_join_condition(
         plan: &Plan,
-        condition_id: usize,
-        join_id: usize,
+        condition_id: NodeId,
+        join_id: NodeId,
     ) -> Result<Self, SbroadError> {
         let mut referred = ReferredMap::with_capacity(EXPR_CAPACITY);
         let mut expr_tree =
             PostOrder::with_capacity(|node| plan.nodes.expr_iter(node, false), EXPR_CAPACITY);
-        for (_, node_id) in expr_tree.iter(condition_id) {
+        for level_node in expr_tree.iter(condition_id) {
+            let node_id = level_node.1;
             let expr = plan.get_expression_node(node_id)?;
             let res = match expr {
                 Expression::Bool { left, right, .. }
@@ -225,7 +226,7 @@ impl EqualityCols {
     /// by returned `EqualityCols`.
     fn eq_cols_for_bool(
         op: &BoolOp,
-        node_id: usize,
+        node_id: NodeId,
         refers_to: &ReferredMap,
         node_eq_cols: &mut EqualityColsMap,
     ) -> Option<EqualityCols> {
@@ -276,10 +277,10 @@ impl EqualityCols {
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
     /// by returned `EqualityCols`.
     fn eq_cols_for_eq(
-        list_left: &[usize],
-        list_right: &[usize],
-        node_id: usize,
-        inner_id: usize,
+        list_left: &[NodeId],
+        list_right: &[NodeId],
+        node_id: NodeId,
+        inner_id: NodeId,
         plan: &Plan,
         refers_to: &ReferredMap,
     ) -> Result<Option<EqualityCols>, SbroadError> {
@@ -350,9 +351,9 @@ impl EqualityCols {
     /// by returned `EqualityCols`.
     fn eq_cols_for_rows(
         op: &BoolOp,
-        node_id: usize,
+        node_id: NodeId,
         refers_to: &ReferredMap,
-        inner_id: usize,
+        inner_id: NodeId,
         plan: &Plan,
     ) -> Result<Option<EqualityCols>, SbroadError> {
         let left_expr = plan.get_expression_node(op.left)?;
@@ -413,8 +414,8 @@ impl EqualityCols {
     /// - non-empty `EqualityCols` in case the subtree is "good" and supports repartition join
     /// by returned `EqualityCols`.
     fn eq_cols_for_and(
-        left: usize,
-        right: usize,
+        left: NodeId,
+        right: NodeId,
         refers_to: &ReferredMap,
         map: &mut EqualityColsMap,
     ) -> Option<EqualityCols> {
@@ -481,13 +482,13 @@ impl EqualityCols {
     /// - Otherwise, returns non-empty `EqualityCols` wrapped in `Option`
     pub fn from_join_condition(
         plan: &Plan,
-        join_id: usize,
-        inner_id: usize,
-        condition_id: usize,
+        join_id: NodeId,
+        inner_id: NodeId,
+        condition_id: NodeId,
     ) -> Result<Option<EqualityCols>, SbroadError> {
         let mut node_eq_cols: EqualityColsMap = EqualityColsMap::new();
         let refers_to = ReferredMap::new_from_join_condition(plan, condition_id, join_id)?;
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(Expression::Bool { .. })) = plan.get_node(node_id) {
                 return true;
             }
@@ -498,7 +499,8 @@ impl EqualityCols {
             EXPR_CAPACITY,
             Box::new(filter),
         );
-        for (_, node_id) in expr_tree.iter(condition_id) {
+        for level_node in expr_tree.iter(condition_id) {
+            let node_id = level_node.1;
             let bool_op = BoolOp::from_expr(plan, node_id)?;
             let left_expr = plan.get_expression_node(bool_op.left)?;
             let right_expr = plan.get_expression_node(bool_op.right)?;

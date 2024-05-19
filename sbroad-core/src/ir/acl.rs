@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::decimal::Decimal;
 
-use super::ddl::ParamDef;
+use super::{ddl::ParamDef, expression::NodeId};
 
 ::tarantool::define_str_enum! {
     /// Revoked or granted privilege.
@@ -256,7 +256,7 @@ impl Plan {
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of ACL type
-    pub fn get_acl_node(&self, node_id: usize) -> Result<&Acl, SbroadError> {
+    pub fn get_acl_node(&self, node_id: NodeId) -> Result<&Acl, SbroadError> {
         let node = self.get_node(node_id)?;
         match node {
             Node::Acl(acl) => Ok(acl),
@@ -272,7 +272,7 @@ impl Plan {
     /// # Errors
     /// - the node index is absent in arena
     /// - current node is not of ACL type
-    pub fn get_mut_acl_node(&mut self, node_id: usize) -> Result<&mut Acl, SbroadError> {
+    pub fn get_mut_acl_node(&mut self, node_id: NodeId) -> Result<&mut Acl, SbroadError> {
         let node = self.get_mut_node(node_id)?;
         match node {
             Node::Acl(acl) => Ok(acl),
@@ -287,7 +287,7 @@ impl Plan {
     ///
     /// # Errors
     /// - current node is not of ACL type
-    pub fn take_acl_node(&mut self, node_id: usize) -> Result<Acl, SbroadError> {
+    pub fn take_acl_node(&mut self, node_id: NodeId) -> Result<Acl, SbroadError> {
         // Check that node is ACL type (before making any distructive operations).
         let _ = self.get_acl_node(node_id)?;
         // Replace ACL with parameter node.

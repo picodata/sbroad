@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 
-use crate::backend::sql::ir::PatternWithParams;
+use crate::{backend::sql::ir::PatternWithParams, ir::expression::NodeId};
 
 use crate::executor::engine::mock::RouterRuntimeMock;
 use crate::executor::result::ProducerResult;
@@ -914,7 +914,7 @@ fn virtual_table_23(alias: Option<&str>) -> VirtualTable {
     virtual_table
 }
 
-fn get_motion_policy(plan: &Plan, motion_id: usize) -> &MotionPolicy {
+fn get_motion_policy(plan: &Plan, motion_id: NodeId) -> &MotionPolicy {
     let motion = plan.get_relation_node(motion_id).unwrap();
     if let Relational::Motion { policy, .. } = motion {
         policy

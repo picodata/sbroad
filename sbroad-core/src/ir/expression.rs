@@ -10,6 +10,7 @@ use ahash::RandomState;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound::Included;
 
@@ -23,13 +24,34 @@ use crate::ir::Positions as Targets;
 use super::distribution::Distribution;
 use super::tree::traversal::{PostOrderWithFilter, EXPR_CAPACITY};
 use super::value::Value;
-use super::{operator, Node, Nodes, Plan};
+use super::{operator, ArenaType, Node, Nodes, Plan};
 
 pub mod cast;
 pub mod concat;
 pub mod types;
 
-pub(crate) type ExpressionId = usize;
+pub(crate) type ExpressionId = NodeId;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, Hash, Copy)]
+pub struct NodeId {
+    pub offset: u32,
+    pub arena_type: ArenaType,
+}
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.offset, self.arena_type)
+    }
+}
+
+impl Default for NodeId {
+    fn default() -> Self {
+        NodeId {
+            offset: 0,
+            arena_type: ArenaType::Default,
+        }
+    }
+}
 
 /// Tuple tree build blocks.
 ///
@@ -51,18 +73,18 @@ pub enum Expression {
         /// Alias name.
         name: SmolStr,
         /// Child expression node index in the plan node arena.
-        child: usize,
+        child: NodeId,
     },
     /// Binary expression returning boolean result.
     ///
     /// Example: `a > 42`, `b in (select c from ...)`.
     Bool {
         /// Left branch expression node index in the plan node arena.
-        left: usize,
+        left: NodeId,
         /// Boolean operator.
         op: operator::Bool,
         /// Right branch expression node index in the plan node arena.
-        right: usize,
+        right: NodeId,
     },
     /// Binary expression returning row result.
     ///
@@ -71,18 +93,18 @@ pub enum Expression {
     /// TODO: always cover children with parentheses (in to_sql).
     Arithmetic {
         /// Left branch expression node index in the plan node arena.
-        left: usize,
+        left: NodeId,
         /// Arithmetic operator.
         op: operator::Arithmetic,
         /// Right branch expression node index in the plan node arena.
-        right: usize,
+        right: NodeId,
     },
     /// Type cast expression.
     ///
     /// Example: `cast(a as text)`.
     Cast {
         /// Target expression that must be casted to another type.
-        child: usize,
+        child: NodeId,
         /// Cast type.
         to: cast::Type,
     },
@@ -91,9 +113,9 @@ pub enum Expression {
     /// Example: `a || 'hello'`.
     Concat {
         /// Left expression node id.
-        left: usize,
+        left: NodeId,
         /// Right expression node id.
-        right: usize,
+        right: NodeId,
     },
     /// Constant expressions.
     ///
@@ -109,7 +131,7 @@ pub enum Expression {
     /// - column position in the child(ren) output tuple
     Reference {
         /// Relational node ID that contains current reference.
-        parent: Option<usize>,
+        parent: Option<NodeId>,
         /// Targets in the relational node children list.
         /// - Leaf nodes (relation scans): None.
         /// - Union nodes: two elements (left and right).
@@ -130,7 +152,7 @@ pub enum Expression {
     ///  Example: (a, b, 1).
     Row {
         /// A list of the alias expression node indexes in the plan node arena.
-        list: Vec<usize>,
+        list: Vec<NodeId>,
         /// Resulting data distribution of the tuple. Should be filled as a part
         /// of the last "add Motion" transformation.
         distribution: Option<Distribution>,
@@ -146,7 +168,7 @@ pub enum Expression {
         /// Function name.
         name: SmolStr,
         /// Function arguments.
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         /// Optional function feature.
         feature: Option<FunctionFeature>,
         /// Function return type.
@@ -162,26 +184,26 @@ pub enum Expression {
         /// Trim kind.
         kind: Option<TrimKind>,
         /// Trim string pattern to remove (it can be an expression).
-        pattern: Option<usize>,
+        pattern: Option<NodeId>,
         /// Target expression to trim.
-        target: usize,
+        target: NodeId,
     },
     /// Unary expression returning boolean result.
     Unary {
         /// Unary operator.
         op: operator::Unary,
         /// Child expression node index in the plan node arena.
-        child: usize,
+        child: NodeId,
     },
     /// Argument of `count` aggregate in `count(*)` expression
     CountAsterisk,
     ExprInParentheses {
-        child: usize,
+        child: NodeId,
     },
     Case {
-        search_expr: Option<usize>,
-        when_blocks: Vec<(usize, usize)>,
-        else_expr: Option<usize>,
+        search_expr: Option<NodeId>,
+        when_blocks: Vec<(NodeId, NodeId)>,
+        else_expr: Option<NodeId>,
     },
 }
 
@@ -236,7 +258,7 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't `Row`
-    pub fn clone_row_list(&self) -> Result<Vec<usize>, SbroadError> {
+    pub fn clone_row_list(&self) -> Result<Vec<NodeId>, SbroadError> {
         match self {
             Expression::Row { list, .. } => Ok(list.clone()),
             _ => Err(SbroadError::Invalid(
@@ -264,7 +286,7 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't `Row`
-    pub fn get_row_list(&self) -> Result<&[usize], SbroadError> {
+    pub fn get_row_list(&self) -> Result<&[NodeId], SbroadError> {
         match self {
             Expression::Row { ref list, .. } => Ok(list),
             _ => Err(SbroadError::Invalid(
@@ -278,7 +300,7 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't `Row`
-    pub fn get_mut_row_list(&mut self) -> Result<&mut Vec<usize>, SbroadError> {
+    pub fn get_mut_row_list(&mut self) -> Result<&mut Vec<NodeId>, SbroadError> {
         match self {
             Expression::Row { ref mut list, .. } => Ok(list),
             _ => Err(SbroadError::Invalid(
@@ -292,7 +314,7 @@ impl Expression {
     ///
     /// # Errors
     /// - node isn't `Row`
-    pub fn get_row_list_mut(&mut self) -> Result<&mut Vec<usize>, SbroadError> {
+    pub fn get_row_list_mut(&mut self) -> Result<&mut Vec<NodeId>, SbroadError> {
         match self {
             Expression::Row { ref mut list, .. } => Ok(list),
             _ => Err(SbroadError::Invalid(
@@ -330,7 +352,7 @@ impl Expression {
     /// # Errors
     /// - node isn't reference type
     /// - reference doesn't have a parent
-    pub fn get_parent(&self) -> Result<usize, SbroadError> {
+    pub fn get_parent(&self) -> Result<NodeId, SbroadError> {
         if let Expression::Reference { parent, .. } = self {
             return parent.ok_or_else(|| {
                 SbroadError::Invalid(Entity::Expression, Some("Reference has no parent".into()))
@@ -353,7 +375,7 @@ impl Expression {
     }
 
     /// Replaces parent in the reference node with the new one.
-    pub fn replace_parent_in_reference(&mut self, from_id: Option<usize>, to_id: Option<usize>) {
+    pub fn replace_parent_in_reference(&mut self, from_id: Option<NodeId>, to_id: Option<NodeId>) {
         if let Expression::Reference { parent, .. } = self {
             if *parent == from_id {
                 *parent = to_id;
@@ -374,7 +396,7 @@ impl Nodes {
     ///
     /// # Errors
     /// - child node is invalid
-    pub(crate) fn add_covered_with_parentheses(&mut self, child: usize) -> usize {
+    pub(crate) fn add_covered_with_parentheses(&mut self, child: NodeId) -> NodeId {
         let covered_with_parentheses = Expression::ExprInParentheses { child };
         self.push(Node::Expression(covered_with_parentheses))
     }
@@ -384,7 +406,7 @@ impl Nodes {
     /// # Errors
     /// - child node is invalid
     /// - name is empty
-    pub fn add_alias(&mut self, name: &str, child: usize) -> Result<usize, SbroadError> {
+    pub fn add_alias(&mut self, name: &str, child: NodeId) -> Result<NodeId, SbroadError> {
         let alias = Expression::Alias {
             name: SmolStr::from(name),
             child,
@@ -398,17 +420,17 @@ impl Nodes {
     /// - when left or right nodes are invalid
     pub fn add_bool(
         &mut self,
-        left: usize,
+        left: NodeId,
         op: operator::Bool,
-        right: usize,
-    ) -> Result<usize, SbroadError> {
-        self.arena.get(left).ok_or_else(|| {
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
+        self.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
                 format_smolstr!("(left child of boolean node) from arena with index {left}"),
             )
         })?;
-        self.arena.get(right).ok_or_else(|| {
+        self.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
                 format_smolstr!("(right child of boolean node) from arena with index {right}"),
@@ -423,20 +445,20 @@ impl Nodes {
     /// - when left or right nodes are invalid
     pub fn add_arithmetic_node(
         &mut self,
-        left: usize,
+        left: NodeId,
         op: operator::Arithmetic,
-        right: usize,
-    ) -> Result<usize, SbroadError> {
-        self.arena.get(left).ok_or_else(|| {
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
+        self.get(left).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format_smolstr!("(left child of Arithmetic node) from arena with index {left}"),
+                format_smolstr!("(left child of Arithmetic node) from arena with index {left:?}"),
             )
         })?;
-        self.arena.get(right).ok_or_else(|| {
+        self.get(right).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
-                format_smolstr!("(right child of Arithmetic node) from arena with index {right}"),
+                format_smolstr!("(right child of Arithmetic node) from arena with index {right:?}"),
             )
         })?;
         Ok(self.push(Node::Expression(Expression::Arithmetic { left, op, right })))
@@ -445,11 +467,11 @@ impl Nodes {
     /// Adds reference node.
     pub fn add_ref(
         &mut self,
-        parent: Option<usize>,
+        parent: Option<NodeId>,
         targets: Option<Vec<usize>>,
         position: usize,
         col_type: Type,
-    ) -> usize {
+    ) -> NodeId {
         let r = Expression::Reference {
             parent,
             targets,
@@ -460,7 +482,7 @@ impl Nodes {
     }
 
     /// Adds row node.
-    pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
+    pub fn add_row(&mut self, list: Vec<NodeId>, distribution: Option<Distribution>) -> NodeId {
         self.push(Node::Expression(Expression::Row { list, distribution }))
     }
 
@@ -471,9 +493,9 @@ impl Nodes {
     pub fn add_unary_bool(
         &mut self,
         op: operator::Unary,
-        child: usize,
-    ) -> Result<usize, SbroadError> {
-        self.arena.get(child).ok_or_else(|| {
+        child: NodeId,
+    ) -> Result<NodeId, SbroadError> {
+        self.get(child).ok_or_else(|| {
             SbroadError::NotFound(
                 Entity::Node,
                 format_smolstr!("from arena with index {child}"),
@@ -487,13 +509,13 @@ impl Nodes {
 // plan for PlanExpression, try to put it into hasher? but what do
 // with equality?
 pub struct PlanExpr<'plan> {
-    pub id: usize,
+    pub id: NodeId,
     pub plan: &'plan Plan,
 }
 
 impl<'plan> PlanExpr<'plan> {
     #[must_use]
-    pub fn new(id: usize, plan: &'plan Plan) -> Self {
+    pub fn new(id: NodeId, plan: &'plan Plan) -> Self {
         PlanExpr { id, plan }
     }
 }
@@ -564,7 +586,7 @@ impl<'plan> Comparator<'plan> {
     /// - invalid [`Expression::Reference`]s in either of subtrees
     /// - invalid children in some expression
     #[allow(clippy::too_many_lines)]
-    pub fn are_subtrees_equal(&self, lhs: usize, rhs: usize) -> Result<bool, SbroadError> {
+    pub fn are_subtrees_equal(&self, lhs: NodeId, rhs: NodeId) -> Result<bool, SbroadError> {
         let l = self.plan.get_node(lhs)?;
         let r = self.plan.get_node(rhs)?;
         if let Node::Expression(left) = l {
@@ -776,7 +798,7 @@ impl<'plan> Comparator<'plan> {
         Ok(false)
     }
 
-    pub fn hash_for_child_expr(&mut self, child: usize, depth: usize) {
+    pub fn hash_for_child_expr(&mut self, child: NodeId, depth: usize) {
         self.hash_for_expr(child, depth - 1);
     }
 
@@ -786,7 +808,7 @@ impl<'plan> Comparator<'plan> {
     /// # Panics
     /// - Comparator hasher wasn't set.
     #[allow(clippy::too_many_lines)]
-    pub fn hash_for_expr(&mut self, top: usize, depth: usize) {
+    pub fn hash_for_expr(&mut self, top: NodeId, depth: usize) {
         if depth == 0 {
             return;
         }
@@ -948,7 +970,7 @@ pub(crate) struct ColumnPositionMap {
 }
 
 impl ColumnPositionMap {
-    pub(crate) fn new(plan: &Plan, rel_id: usize) -> Result<Self, SbroadError> {
+    pub(crate) fn new(plan: &Plan, rel_id: NodeId) -> Result<Self, SbroadError> {
         let rel_node = plan.get_relation_node(rel_id)?;
         let output = plan.get_expression_node(rel_node.output())?;
         let alias_ids = output.get_row_list()?;
@@ -1110,18 +1132,18 @@ pub enum JoinTargets<'targets> {
 #[derive(Debug)]
 pub enum NewColumnsSource<'targets> {
     Join {
-        outer_child: usize,
-        inner_child: usize,
+        outer_child: NodeId,
+        inner_child: NodeId,
         targets: JoinTargets<'targets>,
     },
     /// Enum variant used both for Except and UnionAll operators.
     ExceptUnion {
-        left_child: usize,
-        right_child: usize,
+        left_child: NodeId,
+        right_child: NodeId,
     },
     /// Other relational nodes.
     Other {
-        child: usize,
+        child: NodeId,
         columns_spec: Option<ColumnsRetrievalSpec<'targets>>,
     },
 }
@@ -1134,9 +1156,9 @@ pub struct NewColumnSourceIterator<'iter> {
 
 impl<'targets> Iterator for NewColumnSourceIterator<'targets> {
     // Pair of (relational node id, target id)
-    type Item = (usize, usize);
+    type Item = (NodeId, usize);
 
-    fn next(&mut self) -> Option<(usize, usize)> {
+    fn next(&mut self) -> Option<(NodeId, usize)> {
         let result = match &self.source {
             NewColumnsSource::Join {
                 outer_child,
@@ -1178,7 +1200,7 @@ impl<'targets> Iterator for NewColumnSourceIterator<'targets> {
 }
 
 impl<'iter, 'source: 'iter> IntoIterator for &'source NewColumnsSource<'iter> {
-    type Item = (usize, usize);
+    type Item = (NodeId, usize);
     type IntoIter = NewColumnSourceIterator<'iter>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -1226,7 +1248,7 @@ impl<'source> NewColumnsSource<'source> {
 
 impl Plan {
     /// Add `Row` to plan.
-    pub fn add_row(&mut self, list: Vec<usize>, distribution: Option<Distribution>) -> usize {
+    pub fn add_row(&mut self, list: Vec<NodeId>, distribution: Option<Distribution>) -> NodeId {
         self.nodes.add_row(list, distribution)
     }
 
@@ -1248,9 +1270,9 @@ impl Plan {
         source: &NewColumnsSource,
         need_aliases: bool,
         need_sharding_column: bool,
-    ) -> Result<Vec<usize>, SbroadError> {
+    ) -> Result<Vec<NodeId>, SbroadError> {
         // Vec of (column position in child output, column plan id, new_targets).
-        let mut filtered_children_row_list: Vec<(usize, usize, Vec<usize>)> = Vec::new();
+        let mut filtered_children_row_list: Vec<(usize, NodeId, Vec<usize>)> = Vec::new();
 
         // Helper lambda to retrieve column positions we need to exclude from child `rel_id`.
         let column_positions_to_exclude = |rel_id| -> Result<Targets, SbroadError> {
@@ -1332,7 +1354,7 @@ impl Plan {
         };
 
         // List of columns to be passed into `Expression::Row`.
-        let mut result_row_list: Vec<usize> = Vec::with_capacity(filtered_children_row_list.len());
+        let mut result_row_list: Vec<NodeId> = Vec::with_capacity(filtered_children_row_list.len());
         for (pos, alias_node_id, new_targets) in filtered_children_row_list {
             let alias_expr = self.get_expression_node(alias_node_id)?;
             let alias_name = SmolStr::from(alias_expr.get_alias_name()?);
@@ -1358,10 +1380,10 @@ impl Plan {
     /// - child is an inconsistent relational node
     pub fn add_row_by_indices(
         &mut self,
-        rel_node: usize,
+        rel_node: NodeId,
         indices: Vec<usize>,
         need_sharding_column: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Other {
                 child: rel_node,
@@ -1382,10 +1404,10 @@ impl Plan {
     /// - column names don't exist
     pub fn add_row_for_output(
         &mut self,
-        rel_node: usize,
+        rel_node: NodeId,
         col_names: &[&str],
         need_sharding_column: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let specific_columns = if col_names.is_empty() {
             None
         } else {
@@ -1414,9 +1436,9 @@ impl Plan {
     /// - children are inconsistent relational nodes
     pub fn add_row_for_union_except(
         &mut self,
-        left: usize,
-        right: usize,
-    ) -> Result<usize, SbroadError> {
+        left: NodeId,
+        right: NodeId,
+    ) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::ExceptUnion {
                 left_child: left,
@@ -1435,7 +1457,7 @@ impl Plan {
     /// # Errors
     /// Returns `SbroadError`:
     /// - children are inconsistent relational nodes
-    pub fn add_row_for_join(&mut self, left: usize, right: usize) -> Result<usize, SbroadError> {
+    pub fn add_row_for_join(&mut self, left: NodeId, right: NodeId) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Join {
                 outer_child: left,
@@ -1458,9 +1480,9 @@ impl Plan {
     /// - column names don't exist
     pub fn add_row_from_child(
         &mut self,
-        child: usize,
+        child: NodeId,
         col_names: &[&str],
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let specific_columns = if col_names.is_empty() {
             None
         } else {
@@ -1490,10 +1512,10 @@ impl Plan {
     /// - children nodes are inconsistent with the target position
     pub(crate) fn add_row_from_subquery(
         &mut self,
-        children: &[usize],
+        children: &[NodeId],
         target: usize,
-        parent: Option<usize>,
-    ) -> Result<usize, SbroadError> {
+        parent: Option<NodeId>,
+    ) -> Result<NodeId, SbroadError> {
         let sq_id = *children.get(target).ok_or_else(|| {
             SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                 "invalid target index: {target} (children: {children:?})",
@@ -1528,10 +1550,10 @@ impl Plan {
     /// - column names don't exist
     pub fn add_row_from_left_branch(
         &mut self,
-        left: usize,
-        right: usize,
+        left: NodeId,
+        right: NodeId,
         col_names: &[ColumnWithScan],
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Join {
                 outer_child: left,
@@ -1556,10 +1578,10 @@ impl Plan {
     /// - column names don't exist
     pub fn add_row_from_right_branch(
         &mut self,
-        left: usize,
-        right: usize,
+        left: NodeId,
+        right: NodeId,
         col_names: &[ColumnWithScan],
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         let list = self.new_columns(
             &NewColumnsSource::Join {
                 outer_child: left,
@@ -1581,7 +1603,10 @@ impl Plan {
     ///
     /// # Errors
     /// - reference is invalid
-    pub fn get_relational_from_reference_node(&self, ref_id: usize) -> Result<&usize, SbroadError> {
+    pub fn get_relational_from_reference_node(
+        &self,
+        ref_id: NodeId,
+    ) -> Result<&NodeId, SbroadError> {
         if let Node::Expression(Expression::Reference {
             targets, parent, ..
         }) = self.get_node(ref_id)?
@@ -1589,7 +1614,7 @@ impl Plan {
             let Some(referred_rel_id) = parent else {
                 return Err(SbroadError::NotFound(
                     Entity::Node,
-                    format_smolstr!("that is Reference ({ref_id}) parent"),
+                    format_smolstr!("that is Reference ({ref_id:?}) parent"),
                 ));
             };
             let rel = self.get_relation_node(*referred_rel_id)?;
@@ -1639,8 +1664,8 @@ impl Plan {
     /// - `relational_map` is not initialized
     pub fn get_relational_nodes_from_row(
         &self,
-        row_id: usize,
-    ) -> Result<HashSet<usize, RandomState>, SbroadError> {
+        row_id: NodeId,
+    ) -> Result<HashSet<NodeId, RandomState>, SbroadError> {
         let row = self.get_expression_node(row_id)?;
         let capacity = if let Expression::Row { list, .. } = row {
             list.len()
@@ -1650,7 +1675,7 @@ impl Plan {
                 Some("Node is not a row".into()),
             ));
         };
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
                 return true;
             }
@@ -1664,9 +1689,10 @@ impl Plan {
         post_tree.populate_nodes(row_id);
         let nodes = post_tree.take_nodes();
         // We don't expect much relational references in a row (5 is a reasonable number).
-        let mut rel_nodes: HashSet<usize, RandomState> =
+        let mut rel_nodes: HashSet<NodeId, RandomState> =
             HashSet::with_capacity_and_hasher(5, RandomState::new());
-        for (_, id) in nodes {
+        for level_node in nodes {
+            let id = level_node.1;
             let reference = self.get_expression_node(id)?;
             if let Expression::Reference {
                 targets, parent, ..
@@ -1675,7 +1701,7 @@ impl Plan {
                 let referred_rel_id = parent.ok_or_else(|| {
                     SbroadError::NotFound(
                         Entity::Node,
-                        format_smolstr!("that is Reference ({id}) parent"),
+                        format_smolstr!("that is Reference ({id:?}) parent"),
                     )
                 })?;
                 let rel = self.get_relation_node(referred_rel_id)?;
@@ -1694,7 +1720,7 @@ impl Plan {
 
     /// Check that the node is a boolean equality and its children are both rows.
     #[must_use]
-    pub fn is_bool_eq_with_rows(&self, node_id: usize) -> bool {
+    pub fn is_bool_eq_with_rows(&self, node_id: NodeId) -> bool {
         let Ok(node) = self.get_expression_node(node_id) else {
             return false;
         };
@@ -1723,7 +1749,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If node is not an expression.
-    pub fn is_trivalent(&self, expr_id: usize) -> Result<bool, SbroadError> {
+    pub fn is_trivalent(&self, expr_id: NodeId) -> Result<bool, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Bool { .. }
@@ -1748,7 +1774,7 @@ impl Plan {
     ///
     /// # Errors
     /// - If node is not an expression.
-    pub fn is_ref(&self, expr_id: usize) -> Result<bool, SbroadError> {
+    pub fn is_ref(&self, expr_id: NodeId) -> Result<bool, SbroadError> {
         let expr = self.get_expression_node(expr_id)?;
         match expr {
             Expression::Reference { .. } => return Ok(true),
@@ -1771,7 +1797,7 @@ impl Plan {
     #[allow(dead_code)]
     pub fn get_child_const_from_row(
         &self,
-        row_id: usize,
+        row_id: NodeId,
         child_num: usize,
     ) -> Result<Value, SbroadError> {
         let node = self.get_expression_node(row_id)?;
@@ -1797,11 +1823,11 @@ impl Plan {
     /// - node is not an expression
     pub fn replace_parent_in_subtree(
         &mut self,
-        node_id: usize,
-        from_id: Option<usize>,
-        to_id: Option<usize>,
+        node_id: NodeId,
+        from_id: Option<NodeId>,
+        to_id: Option<NodeId>,
     ) -> Result<(), SbroadError> {
-        let filter = |node_id: usize| -> bool {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
                 return true;
             }
@@ -1815,7 +1841,8 @@ impl Plan {
         subtree.populate_nodes(node_id);
         let references = subtree.take_nodes();
         drop(subtree);
-        for (_, id) in references {
+        for level_node in references {
+            let id = level_node.1;
             let node = self.get_mut_expression_node(id)?;
             node.replace_parent_in_reference(from_id, to_id);
         }
@@ -1827,8 +1854,8 @@ impl Plan {
     /// # Errors
     /// - node is invalid
     /// - node is not an expression
-    pub fn flush_parent_in_subtree(&mut self, node_id: usize) -> Result<(), SbroadError> {
-        let filter = |node_id: usize| -> bool {
+    pub fn flush_parent_in_subtree(&mut self, node_id: NodeId) -> Result<(), SbroadError> {
+        let filter = |node_id: NodeId| -> bool {
             if let Ok(Node::Expression(Expression::Reference { .. })) = self.get_node(node_id) {
                 return true;
             }
@@ -1842,7 +1869,8 @@ impl Plan {
         subtree.populate_nodes(node_id);
         let references = subtree.take_nodes();
         drop(subtree);
-        for (_, id) in references {
+        for level_node in references {
+            let id = level_node.1;
             let node = self.get_mut_expression_node(id)?;
             node.flush_parent_in_reference();
         }

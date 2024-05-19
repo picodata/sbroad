@@ -12,7 +12,7 @@ use crate::ir::helpers::RepeatableState;
 use crate::ir::transformation::redistribution::{MotionKey, Target};
 
 use super::api::children::Children;
-use super::expression::Expression;
+use super::expression::{Expression, NodeId};
 use super::operator::Relational;
 use super::relation::{Column, ColumnPositions};
 use super::{Node, Plan};
@@ -279,9 +279,9 @@ impl Distribution {
 
 enum ReferredNodes {
     None,
-    Single(usize),
-    Pair(usize, usize),
-    Multiple(Vec<usize>),
+    Single(NodeId),
+    Pair(NodeId, NodeId),
+    Multiple(Vec<NodeId>),
 }
 
 impl ReferredNodes {
@@ -289,7 +289,7 @@ impl ReferredNodes {
         ReferredNodes::None
     }
 
-    fn append(&mut self, node: usize) {
+    fn append(&mut self, node: NodeId) {
         match self {
             ReferredNodes::None => *self = ReferredNodes::Single(node),
             ReferredNodes::Single(n) => {
@@ -324,7 +324,7 @@ struct ReferenceInfo {
 
 impl ReferenceInfo {
     pub fn new(
-        row_id: usize,
+        row_id: NodeId,
         ir: &Plan,
         parent_children: &Children<'_>,
     ) -> Result<Self, SbroadError> {
@@ -365,7 +365,7 @@ impl ReferenceInfo {
 }
 
 impl Iterator for ReferredNodes {
-    type Item = usize;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -396,13 +396,13 @@ impl Iterator for ReferredNodes {
 #[derive(Debug, Eq, Hash, PartialEq)]
 struct ChildColumnReference {
     /// Child node id.
-    node_id: usize,
+    node_id: NodeId,
     /// Column position in the child node.
     column_position: usize,
 }
 
-impl From<(usize, usize)> for ChildColumnReference {
-    fn from((node_id, column_position): (usize, usize)) -> Self {
+impl From<(NodeId, usize)> for ChildColumnReference {
+    fn from((node_id, column_position): (NodeId, usize)) -> Self {
         ChildColumnReference {
             node_id,
             column_position,
@@ -419,14 +419,14 @@ impl Plan {
     /// - node is not projection
     /// - invalid projection node (e.g. no children)
     /// - failed to get child distribution
-    pub fn set_projection_distribution(&mut self, proj_id: usize) -> Result<(), SbroadError> {
+    pub fn set_projection_distribution(&mut self, proj_id: NodeId) -> Result<(), SbroadError> {
         if !matches!(
             self.get_relation_node(proj_id)?,
             Relational::Projection { .. }
         ) {
             return Err(SbroadError::Invalid(
                 Entity::Node,
-                Some(format_smolstr!("expected projection on id: {proj_id}")),
+                Some(format_smolstr!("expected projection on id: {proj_id:?}")),
             ));
         };
 
@@ -478,7 +478,7 @@ impl Plan {
     /// # Panics
     /// - reference has invalid targets
     #[allow(clippy::too_many_lines)]
-    pub fn set_distribution(&mut self, row_id: usize) -> Result<(), SbroadError> {
+    pub fn set_distribution(&mut self, row_id: NodeId) -> Result<(), SbroadError> {
         let row_children = self.get_expression_node(row_id)?.get_row_list()?;
 
         let mut parent_node = None;
@@ -608,7 +608,7 @@ impl Plan {
     /// - missing Motion(Full) for sq with Any distribution
     pub(crate) fn dist_from_subqueries(
         &self,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Result<Option<Distribution>, SbroadError> {
         let node = self.get_relation_node(node_id)?;
 
@@ -644,7 +644,7 @@ impl Plan {
                     return Err(SbroadError::Invalid(
                         Entity::Distribution,
                         Some(format_smolstr!(
-                            "expected Motion(Full) for subquery child ({sq_id})"
+                            "expected Motion(Full) for subquery child ({sq_id:?})"
                         )),
                     ));
                 }
@@ -659,7 +659,7 @@ impl Plan {
 
     fn dist_from_child(
         &self,
-        child_rel_node: usize,
+        child_rel_node: NodeId,
         child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
     ) -> Result<Distribution, SbroadError> {
         if let Node::Relational(relational_op) = self.get_node(child_rel_node)? {
@@ -724,7 +724,7 @@ impl Plan {
     ///
     /// # Errors
     /// - supplied node is `Row`
-    pub fn set_dist(&mut self, row_id: usize, dist: Distribution) -> Result<(), SbroadError> {
+    pub fn set_dist(&mut self, row_id: NodeId, dist: Distribution) -> Result<(), SbroadError> {
         if let Expression::Row {
             ref mut distribution,
             ..
@@ -742,10 +742,10 @@ impl Plan {
     fn set_two_children_node_dist(
         &mut self,
         child_pos_map: &AHashMap<ChildColumnReference, ParentColumnPosition>,
-        left_id: usize,
-        right_id: usize,
-        parent_id: usize,
-        row_id: usize,
+        left_id: NodeId,
+        right_id: NodeId,
+        parent_id: NodeId,
+        row_id: NodeId,
     ) -> Result<(), SbroadError> {
         let left_dist = self.dist_from_child(left_id, child_pos_map)?;
         let right_dist = self.dist_from_child(right_id, child_pos_map)?;
@@ -785,7 +785,7 @@ impl Plan {
     ///
     /// # Errors
     /// - Node is not of a row type.
-    pub fn get_distribution(&self, row_id: usize) -> Result<&Distribution, SbroadError> {
+    pub fn get_distribution(&self, row_id: NodeId) -> Result<&Distribution, SbroadError> {
         match self.get_node(row_id)? {
             Node::Expression(expr) => expr.distribution(),
             Node::Relational(_) => Err(SbroadError::Invalid(
@@ -819,7 +819,7 @@ impl Plan {
     /// # Errors
     /// - Node is not realtional
     /// - Node is not of a row type.
-    pub fn get_rel_distribution(&self, rel_id: usize) -> Result<&Distribution, SbroadError> {
+    pub fn get_rel_distribution(&self, rel_id: NodeId) -> Result<&Distribution, SbroadError> {
         self.get_distribution(self.get_relation_node(rel_id)?.output())
     }
 
@@ -831,7 +831,7 @@ impl Plan {
     /// - row contains broken references
     pub fn get_or_init_distribution(
         &mut self,
-        row_id: usize,
+        row_id: NodeId,
     ) -> Result<&Distribution, SbroadError> {
         if let Err(SbroadError::Invalid(Entity::Distribution, _)) = self.get_distribution(row_id) {
             self.set_distribution(row_id)?;

@@ -1,9 +1,9 @@
 use smol_str::format_smolstr;
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::value::Value;
-use crate::ir::{Node, Nodes, Plan};
+use crate::ir::{ArenaType, Node, Nodes, Plan};
 
 impl Expression {
     /// Gets value from const node
@@ -45,26 +45,30 @@ impl Expression {
 
 impl Nodes {
     /// Adds constant node.
-    pub fn add_const(&mut self, value: Value) -> usize {
+    pub fn add_const(&mut self, value: Value) -> NodeId {
         self.push(Node::Expression(Expression::Constant { value }))
     }
 }
 
 impl Plan {
     /// Add constant value to the plan.
-    pub fn add_const(&mut self, v: Value) -> usize {
+    pub fn add_const(&mut self, v: Value) -> NodeId {
         self.nodes.add_const(v)
     }
 
     #[must_use]
-    pub fn get_const_list(&self) -> Vec<usize> {
+    /// # Panics
+    pub fn get_const_list(&self) -> Vec<NodeId> {
         self.nodes
             .arena
             .iter()
             .enumerate()
             .filter_map(|(id, node)| {
                 if let Node::Expression(Expression::Constant { .. }) = node {
-                    Some(id)
+                    Some(NodeId {
+                        offset: u32::try_from(id).unwrap(),
+                        arena_type: ArenaType::Default,
+                    })
                 } else {
                     None
                 }
@@ -83,7 +87,7 @@ impl Plan {
                 return Err(SbroadError::Invalid(
                     Entity::Expression,
                     Some(format_smolstr!(
-                        "Restoring parameters filed: node {const_node:?} (id: {id}) is not of a constant type"
+                        "Restoring parameters filed: node {const_node:?} (id: {id:?}) is not of a constant type"
                     )),
                 ));
             }

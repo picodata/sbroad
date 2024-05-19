@@ -33,6 +33,7 @@ use crate::executor::engine::{helpers::materialize_values, Router, TableVersionM
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::Cache;
 use crate::frontend::Ast;
+use crate::ir::expression::NodeId;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::redistribution::MotionPolicy;
 use crate::ir::value::Value;
@@ -82,7 +83,7 @@ where
     coordinator: &'a C,
     /// Bucket map of view { plan output_id (Expression::Row) -> `Buckets` }.
     /// It's supposed to denote relational nodes' output buckets destination.
-    bucket_map: HashMap<usize, Buckets>,
+    bucket_map: HashMap<NodeId, Buckets>,
 }
 
 impl<'a, C> Query<'a, C>
@@ -93,7 +94,7 @@ where
         is_explain: bool,
         exec_plan: ExecutionPlan,
         coordinator: &'a C,
-        bucket_map: HashMap<usize, Buckets>,
+        bucket_map: HashMap<NodeId, Buckets>,
     ) -> Self {
         Self {
             is_explain,
@@ -201,7 +202,7 @@ where
                                 materialize_values(&mut self.exec_plan, *motion_id)?
                             {
                                 self.exec_plan.set_motion_vtable(
-                                    *motion_id,
+                                    motion_id,
                                     virtual_table,
                                     &vshard,
                                 )?;
@@ -227,11 +228,11 @@ where
                 let buckets = self.bucket_discovery(top_id)?;
                 let virtual_table = self.coordinator.materialize_motion(
                     &mut self.exec_plan,
-                    *motion_id,
+                    motion_id,
                     &buckets,
                 )?;
                 self.exec_plan
-                    .set_motion_vtable(*motion_id, virtual_table, &vshard)?;
+                    .set_motion_vtable(motion_id, virtual_table, &vshard)?;
             }
         }
 
@@ -273,7 +274,7 @@ where
                 return Err(err("no vtables in plan with motion top"));
             };
             let Some(mut vtable) = vtables.remove(&top_id) else {
-                return Err(err(&format!("no motion on top_id: {top_id}")));
+                return Err(err(&format!("no motion on top_id: {top_id:?}")));
             };
             let Some(v) = Rc::get_mut(&mut vtable) else {
                 return Err(err("there are other refs to vtable"));

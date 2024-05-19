@@ -1,4 +1,5 @@
 use crate::executor::ir::ExecutionPlan;
+use crate::ir::expression::NodeId;
 use crate::ir::relation::SpaceEngine;
 use crate::{errors::SbroadError, executor::protocol::VTablesMeta};
 
@@ -133,7 +134,7 @@ pub const ADMIN_ID: u32 = 1;
 pub fn create_table(
     exec_plan: &ExecutionPlan,
     plan_id: &str,
-    motion_id: usize,
+    motion_id: NodeId,
     engine: &SpaceEngine,
     #[allow(unused_variables)] vtables_meta: Option<&VTablesMeta>,
 ) -> Result<TableGuard, SbroadError> {

@@ -4,10 +4,10 @@ use std::mem::take;
 
 use crate::errors::{Entity, SbroadError};
 use crate::executor::ir::ExecutionPlan;
-use crate::ir::expression::{Expression, FunctionFeature, TrimKind};
+use crate::ir::expression::{Expression, FunctionFeature, NodeId, TrimKind};
 use crate::ir::operator::{Bool, OrderByElement, OrderByEntity, OrderByType, Relational, Unary};
 use crate::ir::transformation::redistribution::{MotionOpcode, MotionPolicy};
-use crate::ir::tree::traversal::PostOrder;
+use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::tree::Snapshot;
 use crate::ir::{Node, Plan};
 use crate::otm::child_span;
@@ -72,12 +72,12 @@ pub enum SyntaxData {
     /// "=, >, <, and, or, ..."
     Operator(SmolStr),
     /// plan node id
-    PlanId(usize),
+    PlanId(NodeId),
     /// parameter (a wrapper over a plan constants)
-    Parameter(usize),
+    Parameter(NodeId),
     /// virtual table (the key is a motion node id
     /// pointing to the execution plan's virtual table)
-    VTable(usize),
+    VTable(NodeId),
 }
 
 /// A syntax tree node.
@@ -300,7 +300,7 @@ impl SyntaxNode {
         }
     }
 
-    fn new_pointer(id: usize, left: Option<usize>, right: Vec<usize>) -> Self {
+    fn new_pointer(id: NodeId, left: Option<usize>, right: Vec<usize>) -> Self {
         SyntaxNode {
             data: SyntaxData::PlanId(id),
             left,
@@ -308,7 +308,7 @@ impl SyntaxNode {
         }
     }
 
-    fn new_parameter(id: usize) -> Self {
+    fn new_parameter(id: NodeId) -> Self {
         SyntaxNode {
             data: SyntaxData::Parameter(id),
             left: None,
@@ -326,7 +326,7 @@ impl SyntaxNode {
         }
     }
 
-    fn new_vtable(motion_id: usize) -> Self {
+    fn new_vtable(motion_id: NodeId) -> Self {
         SyntaxNode {
             data: SyntaxData::VTable(motion_id),
             left: None,
@@ -550,7 +550,7 @@ impl<'p> SyntaxPlan<'p> {
     /// # Panics
     /// - syntax node wraps non-plan node;
     /// - plan node is not the one we expect;
-    fn check_plan_node(&self, sn_id: usize, plan_id: usize) {
+    fn check_plan_node(&self, sn_id: usize, plan_id: NodeId) {
         let sn = self.nodes.get_sn(sn_id);
         let SyntaxNode {
             data: SyntaxData::PlanId(id) | SyntaxData::Parameter(id),
@@ -580,7 +580,7 @@ impl<'p> SyntaxPlan<'p> {
                 }
                 _ => {}
             }
-            panic!("Expected plan node {plan_id} but got {id}");
+            panic!("Expected plan node {plan_id:?} but got {id:?}");
         }
     }
 
@@ -591,7 +591,7 @@ impl<'p> SyntaxPlan<'p> {
 
     /// Pop syntax node identifier from the stack with a check, that the popped syntax
     /// node wraps an expected plan node.
-    fn pop_from_stack(&mut self, plan_id: usize) -> usize {
+    fn pop_from_stack(&mut self, plan_id: NodeId) -> usize {
         let sn_id = self.nodes.stack.pop().expect("stack must be non-empty");
         self.check_plan_node(sn_id, plan_id);
         sn_id
@@ -609,7 +609,7 @@ impl<'p> SyntaxPlan<'p> {
     /// - Failed to find a node in the plan.
     #[allow(clippy::too_many_lines)]
     #[allow(unused_variables)]
-    pub fn add_plan_node(&mut self, id: usize) {
+    pub fn add_plan_node(&mut self, id: NodeId) {
         let ir_plan = self.plan.get_ir_plan();
         let node = ir_plan
             .get_node(id)
@@ -668,7 +668,7 @@ impl<'p> SyntaxPlan<'p> {
         }
     }
 
-    fn prologue_rel(&self, id: usize) -> (&Plan, &Relational) {
+    fn prologue_rel(&self, id: NodeId) -> (&Plan, &Relational) {
         let plan = self.plan.get_ir_plan();
         let rel = plan
             .get_relation_node(id)
@@ -676,7 +676,7 @@ impl<'p> SyntaxPlan<'p> {
         (plan, rel)
     }
 
-    fn prologue_expr(&self, id: usize) -> (&Plan, &Expression) {
+    fn prologue_expr(&self, id: NodeId) -> (&Plan, &Expression) {
         let plan = self.plan.get_ir_plan();
         let expr = plan
             .get_expression_node(id)
@@ -686,7 +686,7 @@ impl<'p> SyntaxPlan<'p> {
 
     // Relational nodes.
 
-    fn add_cte(&mut self, id: usize) {
+    fn add_cte(&mut self, id: NodeId) {
         let (_, cte) = self.prologue_rel(id);
         let Relational::ScanCte { alias, child, .. } = cte else {
             panic!("expected CTE node");
@@ -704,7 +704,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_filter(&mut self, id: usize) {
+    fn add_filter(&mut self, id: NodeId) {
         let (plan, rel) = self.prologue_rel(id);
         let (Relational::Selection {
             children, filter, ..
@@ -726,7 +726,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_group_by(&mut self, id: usize) {
+    fn add_group_by(&mut self, id: NodeId) {
         let (_, gb) = self.prologue_rel(id);
         let Relational::GroupBy {
             children, gr_cols, ..
@@ -736,16 +736,17 @@ impl<'p> SyntaxPlan<'p> {
         };
         let child_plan_id = *children.first().expect("GROUP BY child");
         // The columns on the stack are in reverse order.
-        let mut sn_gr_cols = gr_cols.iter().rev().copied().collect::<Vec<_>>();
+        let plan_gr_cols = gr_cols.iter().rev().copied().collect::<Vec<_>>();
+        let mut syntax_gr_cols = Vec::with_capacity(plan_gr_cols.len());
         // Reuse the same vector to avoid extra allocations
         // (replace plan node ids with syntax node ids).
-        for col_id in &mut sn_gr_cols {
-            *col_id = self.pop_from_stack(*col_id);
+        for col_id in &plan_gr_cols {
+            syntax_gr_cols.push(self.pop_from_stack(*col_id));
         }
         let child_sn_id = self.pop_from_stack(child_plan_id);
-        let mut sn_children = Vec::with_capacity(sn_gr_cols.len() * 2 - 1);
+        let mut sn_children = Vec::with_capacity(syntax_gr_cols.len() * 2 - 1);
         // The columns are in reverse order, so we need to reverse them back.
-        if let Some((first, others)) = sn_gr_cols.split_first() {
+        if let Some((first, others)) = syntax_gr_cols.split_first() {
             for id in others.iter().rev() {
                 sn_children.push(*id);
                 sn_children.push(self.nodes.push_sn_non_plan(SyntaxNode::new_comma()));
@@ -756,7 +757,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_join(&mut self, id: usize) {
+    fn add_join(&mut self, id: NodeId) {
         let (plan, join) = self.prologue_rel(id);
         let Relational::Join {
             children,
@@ -791,7 +792,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_motion(&mut self, id: usize) {
+    fn add_motion(&mut self, id: NodeId) {
         let (plan, motion) = self.prologue_rel(id);
         let Relational::Motion {
             policy,
@@ -896,7 +897,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_order_by(&mut self, id: usize) {
+    fn add_order_by(&mut self, id: NodeId) {
         let (_, order_by) = self.prologue_rel(id);
         let Relational::OrderBy {
             order_by_elements,
@@ -952,7 +953,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_proj(&mut self, id: usize) {
+    fn add_proj(&mut self, id: NodeId) {
         let (_, proj) = self.prologue_rel(id);
         let Relational::Projection {
             children, output, ..
@@ -985,7 +986,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_scan_relation(&mut self, id: usize) {
+    fn add_scan_relation(&mut self, id: NodeId) {
         let (_, scan) = self.prologue_rel(id);
         let Relational::ScanRelation { alias, .. } = scan else {
             panic!("Expected SCAN node");
@@ -1001,7 +1002,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_set(&mut self, id: usize) {
+    fn add_set(&mut self, id: NodeId) {
         let (_, set) = self.prologue_rel(id);
         let (Relational::Except { left, right, .. }
         | Relational::Union { left, right, .. }
@@ -1017,7 +1018,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_sq(&mut self, id: usize) {
+    fn add_sq(&mut self, id: NodeId) {
         let (_, sq) = self.prologue_rel(id);
         let Relational::ScanSubQuery {
             children, alias, ..
@@ -1042,7 +1043,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_values_row(&mut self, id: usize) {
+    fn add_values_row(&mut self, id: NodeId) {
         let (_, row) = self.prologue_rel(id);
         let Relational::ValuesRow { data, .. } = row else {
             panic!("Expected VALUES ROW node");
@@ -1052,7 +1053,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_values(&mut self, id: usize) {
+    fn add_values(&mut self, id: NodeId) {
         let (_, values) = self.prologue_rel(id);
         let Relational::Values {
             children, output, ..
@@ -1062,24 +1063,25 @@ impl<'p> SyntaxPlan<'p> {
         };
         let output_plan_id = *output;
         // The syntax nodes on the stack are in the reverse order.
-        let mut sn_children = children.iter().rev().copied().collect::<Vec<_>>();
-        // Reuse the same vector to avoid extra allocations (replace plan node ids with syntax node ids).
-        for child_id in &mut sn_children {
-            *child_id = self.pop_from_stack(*child_id);
+        let plan_children = children.iter().rev().copied().collect::<Vec<_>>();
+        let mut syntax_children = Vec::with_capacity(plan_children.len());
+
+        for child_id in &plan_children {
+            syntax_children.push(self.pop_from_stack(*child_id));
         }
 
         // Consume the output from the stack.
         let _ = self.pop_from_stack(output_plan_id);
 
-        let mut nodes = Vec::with_capacity(sn_children.len() * 2 - 1);
+        let mut nodes = Vec::with_capacity(syntax_children.len() * 2 - 1);
         // Reverse the order of the children back.
         let arena = &mut self.nodes;
-        for child_id in sn_children.iter().skip(1).rev() {
+        for child_id in syntax_children.iter().skip(1).rev() {
             nodes.push(*child_id);
             nodes.push(arena.push_sn_non_plan(SyntaxNode::new_comma()));
         }
         nodes.push(
-            *sn_children
+            *syntax_children
                 .first()
                 .expect("values must have at least one child"),
         );
@@ -1087,7 +1089,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_limit(&mut self, id: usize) {
+    fn add_limit(&mut self, id: NodeId) {
         let (_, limit) = self.prologue_rel(id);
         let Relational::Limit { limit, child, .. } = limit else {
             panic!("expected LIMIT node");
@@ -1105,7 +1107,7 @@ impl<'p> SyntaxPlan<'p> {
 
     // Expression nodes.
 
-    fn add_alias(&mut self, id: usize) {
+    fn add_alias(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::Alias { child, name } = expr else {
             panic!("Expected ALIAS node");
@@ -1132,7 +1134,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_binary_op(&mut self, id: usize) {
+    fn add_binary_op(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let (left_plan_id, right_plan_id, op_sn_id) = match expr {
             Expression::Bool {
@@ -1162,7 +1164,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_case(&mut self, id: usize) {
+    fn add_case(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::Case {
             search_expr,
@@ -1173,7 +1175,7 @@ impl<'p> SyntaxPlan<'p> {
             panic!("Expected CASE node");
         };
         let search_expr = *search_expr;
-        let when_blocks: Vec<(usize, usize)> = when_blocks.clone();
+        let when_blocks: Vec<(NodeId, NodeId)> = when_blocks.clone();
         let else_expr = *else_expr;
 
         let mut right_vec = Vec::with_capacity(1 + when_blocks.len() * 4 + 1);
@@ -1200,7 +1202,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_cast(&mut self, id: usize) {
+    fn add_cast(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::Cast { child, to } = expr else {
             panic!("Expected CAST node");
@@ -1220,7 +1222,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_concat(&mut self, id: usize) {
+    fn add_concat(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::Concat { left, right } = expr else {
             panic!("Expected CONCAT node");
@@ -1236,7 +1238,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_expr_in_parentheses(&mut self, id: usize) {
+    fn add_expr_in_parentheses(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::ExprInParentheses { child } = expr else {
             panic!("Expected expression in parentheses node");
@@ -1252,7 +1254,7 @@ impl<'p> SyntaxPlan<'p> {
         arena.push_sn_plan(sn);
     }
 
-    fn add_row(&mut self, id: usize) {
+    fn add_row(&mut self, id: NodeId) {
         let plan = self.plan.get_ir_plan();
         let expr = plan
             .get_expression_node(id)
@@ -1376,7 +1378,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_stable_func(&mut self, id: usize) {
+    fn add_stable_func(&mut self, id: NodeId) {
         let plan = self.plan.get_ir_plan();
         let expr = plan
             .get_expression_node(id)
@@ -1409,7 +1411,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_trim(&mut self, id: usize) {
+    fn add_trim(&mut self, id: NodeId) {
         let (_, expr) = self.prologue_expr(id);
         let Expression::Trim {
             kind,
@@ -1457,7 +1459,7 @@ impl<'p> SyntaxPlan<'p> {
         self.nodes.push_sn_plan(sn);
     }
 
-    fn add_unary_op(&mut self, id: usize) {
+    fn add_unary_op(&mut self, id: NodeId) {
         let (plan, expr) = self.prologue_expr(id);
         let Expression::Unary { child, op } = expr else {
             panic!("Expected unary expression node");
@@ -1558,7 +1560,7 @@ impl<'p> SyntaxPlan<'p> {
         );
         dfs.populate_nodes(top);
         let nodes = dfs.take_nodes();
-        for (_, pos) in nodes {
+        for LevelNode(_, pos) in nodes {
             let node = self.nodes.get_sn(pos);
             if pos == top {
                 let select = Select::new(self, None, None, pos)?;
@@ -1603,7 +1605,7 @@ impl<'p> SyntaxPlan<'p> {
 
     pub(crate) fn empty(plan: &'p ExecutionPlan) -> Self {
         SyntaxPlan {
-            nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().next_id() * 2),
+            nodes: SyntaxNodes::with_capacity(plan.get_ir_plan().nodes.len() * 2),
             top: None,
             plan,
             snapshot: Snapshot::Latest,
@@ -1619,7 +1621,7 @@ impl<'p> SyntaxPlan<'p> {
     #[otm_child_span("syntax.new")]
     pub fn new(
         plan: &'p ExecutionPlan,
-        top: usize,
+        top: NodeId,
         snapshot: Snapshot,
     ) -> Result<Self, SbroadError> {
         let mut sp = SyntaxPlan::empty(plan);
@@ -1627,12 +1629,13 @@ impl<'p> SyntaxPlan<'p> {
         let ir_plan = plan.get_ir_plan();
 
         // Wrap plan's nodes and preserve their ids.
-        let capacity = ir_plan.next_id();
+        let capacity = ir_plan.nodes.len();
         match snapshot {
             Snapshot::Latest => {
                 let mut dft_post =
                     PostOrder::with_capacity(|node| ir_plan.subtree_iter(node, false), capacity);
-                for (_, id) in dft_post.iter(top) {
+                for level_node in dft_post.iter(top) {
+                    let id = level_node.1;
                     // it works only for post-order traversal
                     sp.add_plan_node(id);
                     let sn_id = sp.nodes.next_id() - 1;
@@ -1644,7 +1647,8 @@ impl<'p> SyntaxPlan<'p> {
             Snapshot::Oldest => {
                 let mut dft_post =
                     PostOrder::with_capacity(|node| ir_plan.flashback_subtree_iter(node), capacity);
-                for (_, id) in dft_post.iter(top) {
+                for level_node in dft_post.iter(top) {
+                    let id = level_node.1;
                     // it works only for post-order traversal
                     sp.add_plan_node(id);
                     let sn_id = sp.nodes.next_id() - 1;
@@ -1787,6 +1791,3 @@ impl TryFrom<SyntaxPlan<'_>> for OrderedSyntaxNodes {
         Ok(Self { arena, positions })
     }
 }
-
-#[cfg(test)]
-mod tests;

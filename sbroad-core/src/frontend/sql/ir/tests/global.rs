@@ -1,7 +1,8 @@
 use crate::ir::distribution::Distribution;
+use crate::ir::expression::NodeId;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
-use crate::ir::tree::traversal::{FilterFn, PostOrderWithFilter, REL_CAPACITY};
+use crate::ir::tree::traversal::{FilterFn, LevelNode, PostOrderWithFilter, REL_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, Plan};
 use pretty_assertions::assert_eq;
@@ -25,7 +26,7 @@ impl From<&Distribution> for DistMock {
     }
 }
 
-fn collect_relational(plan: &Plan, predicate: FilterFn<'_>) -> Vec<(usize, usize)> {
+fn collect_relational(plan: &Plan, predicate: FilterFn<'_, NodeId>) -> Vec<LevelNode<NodeId>> {
     let mut rel_tree = PostOrderWithFilter::with_capacity(
         |node| plan.nodes.rel_iter(node),
         REL_CAPACITY,
@@ -37,23 +38,29 @@ fn collect_relational(plan: &Plan, predicate: FilterFn<'_>) -> Vec<(usize, usize
     nodes
 }
 
-fn check_distributions(plan: &Plan, nodes: &[(usize, usize)], expected_distributions: &[DistMock]) {
+fn check_distributions(
+    plan: &Plan,
+    nodes: &[LevelNode<NodeId>],
+    expected_distributions: &[DistMock],
+) {
     assert_eq!(
         expected_distributions.len(),
         nodes.len(),
         "different number of nodes"
     );
-    for ((level, id), expected) in nodes.iter().zip(expected_distributions.iter()) {
-        let actual: DistMock = plan.get_rel_distribution(*id).unwrap().into();
+    for (level_node, expected) in nodes.iter().zip(expected_distributions.iter()) {
+        let level = level_node.0;
+        let id = level_node.1;
+        let actual: DistMock = plan.get_rel_distribution(id).unwrap().into();
         assert_eq!(
             expected, &actual,
-            "wrong distribution for node ({id}) at level {level}"
+            "wrong distribution for node ({id:?}) at level {level}"
         );
     }
 }
 
 fn check_selection_dist(plan: &Plan, expected_dist: DistMock) {
-    let filter = |id: usize| -> bool {
+    let filter = |id: NodeId| -> bool {
         matches!(
             plan.get_node(id),
             Ok(Node::Relational(Relational::Selection { .. }))
@@ -77,20 +84,20 @@ fn front_sql_global_tbl_sq1() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection ROW("global_t"."a"::integer) in ROW($1) or ROW("global_t"."a"::integer) in ROW($0)
+    selection ROW("global_t"."a"::integer) in ROW($0) or ROW("global_t"."a"::integer) in ROW($1)
         scan "global_t"
 subquery $0:
+motion [policy: full]
+            scan
+                projection ("t"."a"::unsigned -> "a1")
+                    scan "t"
+subquery $1:
 scan
             projection (sum(("sum_39"::decimal))::decimal -> "col_1")
                 motion [policy: full]
                     scan
                         projection (sum(("t"."a"::unsigned))::decimal -> "sum_39")
                             scan "t"
-subquery $1:
-motion [policy: full]
-            scan
-                projection ("t"."a"::unsigned -> "a1")
-                    scan "t"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -213,7 +220,7 @@ fn front_sql_global_tbl_sq3() {
     let plan = sql_to_optimized_ir(input, vec![]);
     let expected_explain = String::from(
         r#"projection ("global_t"."a"::integer -> "a", "global_t"."b"::integer -> "b")
-    selection not ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($1, $1) or ROW("global_t"."a"::integer, "global_t"."b"::integer) < ROW($0, $0)
+    selection not ROW("global_t"."a"::integer, "global_t"."b"::integer) in ROW($0, $0) or ROW("global_t"."a"::integer, "global_t"."b"::integer) < ROW($1, $1)
         scan "global_t"
 subquery $0:
 motion [policy: full]
@@ -384,7 +391,7 @@ vtable_max_rows = 5000
 }
 
 fn check_join_dist(plan: &Plan, expected_distributions: &[DistMock]) {
-    let filter = |id: usize| -> bool {
+    let filter = |id: NodeId| -> bool {
         matches!(
             plan.get_node(id),
             Ok(Node::Relational(Relational::Join { .. }))
@@ -981,7 +988,7 @@ vtable_max_rows = 5000
 }
 
 fn check_union_dist(plan: &Plan, expected_distributions: &[DistMock]) {
-    let filter = |id: usize| -> bool {
+    let filter = |id: NodeId| -> bool {
         matches!(
             plan.get_node(id),
             Ok(Node::Relational(Relational::UnionAll { .. }))

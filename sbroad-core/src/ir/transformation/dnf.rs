@@ -71,7 +71,7 @@
 //! ```
 
 use crate::errors::{Entity, SbroadError};
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::Bool;
 use crate::ir::transformation::OldNewTopIdPair;
 use crate::ir::{Node, Plan};
@@ -82,12 +82,12 @@ use std::collections::VecDeque;
 /// A chain of the trivalents (boolean or NULL expressions) concatenated by AND.
 #[derive(Clone, Debug)]
 pub struct Chain {
-    nodes: VecDeque<usize>,
+    nodes: VecDeque<NodeId>,
 }
 
 /// Helper function to identify whether we are dealing with AND/OR operator that
 /// may be covered with parentheses.
-fn optionally_covered_and_or(expr_id: usize, plan: &Plan) -> Result<Option<usize>, SbroadError> {
+fn optionally_covered_and_or(expr_id: NodeId, plan: &Plan) -> Result<Option<NodeId>, SbroadError> {
     let expr = plan.get_expression_node(expr_id)?;
     let and_or = match expr {
         Expression::Bool { op, .. } => {
@@ -120,7 +120,7 @@ impl Chain {
 
     /// Append a new node to the chain. Keep AND and OR nodes in the back,
     /// while other nodes in the front of the chain queue.
-    fn push(&mut self, expr_id: usize, plan: &Plan) -> Result<(), SbroadError> {
+    fn push(&mut self, expr_id: NodeId, plan: &Plan) -> Result<(), SbroadError> {
         let and_or = optionally_covered_and_or(expr_id, plan)?;
         if let Some(and_or_id) = and_or {
             self.nodes.push_back(and_or_id);
@@ -131,7 +131,7 @@ impl Chain {
     }
 
     /// Pop AND and OR nodes (we append them to the back).
-    fn pop_back(&mut self, plan: &Plan) -> Result<Option<usize>, SbroadError> {
+    fn pop_back(&mut self, plan: &Plan) -> Result<Option<NodeId>, SbroadError> {
         if let Some(expr_id) = self.nodes.back() {
             let expr = plan.get_expression_node(*expr_id)?;
             if let Expression::Bool {
@@ -146,13 +146,13 @@ impl Chain {
     }
 
     /// Pop trivalent nodes other than AND and OR (we keep then in the front).
-    fn pop_front(&mut self) -> Option<usize> {
+    fn pop_front(&mut self) -> Option<NodeId> {
         self.nodes.pop_front()
     }
 
     /// Convert a chain to a new expression tree (reuse trivalent expressions).
-    fn as_plan(&mut self, plan: &mut Plan) -> Result<usize, SbroadError> {
-        let mut top_id: Option<usize> = None;
+    fn as_plan(&mut self, plan: &mut Plan) -> Result<NodeId, SbroadError> {
+        let mut top_id: Option<NodeId> = None;
         while let Some(expr_id) = self.pop_front() {
             match top_id {
                 None => {
@@ -170,12 +170,12 @@ impl Chain {
     }
 
     /// Return a mutable reference to the chain nodes.
-    pub fn get_mut_nodes(&mut self) -> &mut VecDeque<usize> {
+    pub fn get_mut_nodes(&mut self) -> &mut VecDeque<NodeId> {
         &mut self.nodes
     }
 }
 
-fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
+fn call_expr_tree_to_dnf(plan: &mut Plan, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
     plan.expr_tree_to_dnf(top_id)
 }
 
@@ -185,7 +185,7 @@ impl Plan {
     /// # Errors
     /// - If the expression tree is not a trivalent expression.
     /// - Failed to append node to the AND chain.
-    pub fn get_dnf_chains(&self, top_id: usize) -> Result<VecDeque<Chain>, SbroadError> {
+    pub fn get_dnf_chains(&self, top_id: NodeId) -> Result<VecDeque<Chain>, SbroadError> {
         let capacity: usize = self.nodes.arena.iter().fold(0_usize, |acc, node| {
             acc + match node {
                 Node::Expression(Expression::Bool {
@@ -244,10 +244,10 @@ impl Plan {
     /// - Failed to retrieve DNF chains.
     /// - Failed to convert the AND chain to a new expression tree.
     /// - Failed to concatenate the AND expression trees to the OR tree.
-    pub fn expr_tree_to_dnf(&mut self, top_id: usize) -> Result<OldNewTopIdPair, SbroadError> {
+    pub fn expr_tree_to_dnf(&mut self, top_id: NodeId) -> Result<OldNewTopIdPair, SbroadError> {
         let mut result = self.get_dnf_chains(top_id)?;
 
-        let mut new_top_id: Option<usize> = None;
+        let mut new_top_id: Option<NodeId> = None;
         while let Some(mut chain) = result.pop_front() {
             let ir_chain_top = chain.as_plan(self)?;
             new_top_id = match new_top_id {

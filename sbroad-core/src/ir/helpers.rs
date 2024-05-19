@@ -12,6 +12,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
 use std::hash::BuildHasher;
 
+use super::expression::NodeId;
+
 /// Helper macros to build a hash map or set
 /// from the list of arguments.
 #[macro_export]
@@ -75,7 +77,7 @@ impl Plan {
         &self,
         buf: &mut String,
         tabulation_number: i32,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Result<(), std::fmt::Error> {
         let expr_try = self.get_expression_node(node_id);
         if let Ok(expr) = expr_try {
@@ -211,7 +213,7 @@ impl Plan {
         &self,
         buf: &mut String,
         tabulation_number: i32,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Result<(), std::fmt::Error> {
         if tabulation_number == 0 {
             writeln!(buf, "---------------------------------------------")?;
@@ -293,7 +295,7 @@ impl Plan {
                         let text = if let Ok(gl_col_expr) = gl_col_expr {
                             format!("Gr_col: {gl_col_expr:?}")
                         } else {
-                            format!("Gr_col: {gr_col}")
+                            format!("Gr_col: {gr_col:?}")
                         };
                         writeln_with_tabulation(buf, tabulation_number + 2, text.as_str())?;
                     }
@@ -428,14 +430,15 @@ impl Plan {
     ///
     /// # Errors
     /// Fail to format one of the relational node.
-    pub fn formatted_arena_subtree(&self, node_id: usize) -> Result<String, SbroadError> {
+    pub fn formatted_arena_subtree(&self, node_id: NodeId) -> Result<String, SbroadError> {
         let mut ir_tree = PostOrder::with_capacity(|node| self.nodes.rel_iter(node), EXPR_CAPACITY);
         ir_tree.populate_nodes(node_id);
         let nodes = ir_tree.take_nodes();
 
         let mut buf = String::new();
-        for (_, id) in &nodes {
-            if self.formatted_arena_node(&mut buf, 0, *id).is_err() {
+        for level_node in &nodes {
+            let id = level_node.1;
+            if self.formatted_arena_node(&mut buf, 0, id).is_err() {
                 return Err(SbroadError::FailedTo(
                     Action::Serialize,
                     Some(Entity::Plan),
@@ -497,7 +500,7 @@ impl SyntaxPlan<'_> {
             if let SyntaxData::PlanId(id) = data {
                 let node = plan.get_node(*id);
                 if let Ok(node) = node {
-                    writeln!(buf, "{node:?} [id={id}]")?;
+                    writeln!(buf, "{node:?} [id={id:?}]")?;
                 }
             } else {
                 writeln!(buf, "{data:?}")?;

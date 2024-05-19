@@ -1,10 +1,10 @@
 use crate::errors::SbroadError;
 use crate::ir::block::Block;
-use crate::ir::expression::Expression;
+use crate::ir::expression::{Expression, NodeId};
 use crate::ir::operator::Relational;
 use crate::ir::tree::traversal::{LevelNode, PostOrder};
 use crate::ir::value::Value;
-use crate::ir::{Node, NodeId, OptionParamValue, Plan, ValueIdx};
+use crate::ir::{ArenaType, Node, OptionParamValue, Plan, ValueIdx};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
 use smol_str::format_smolstr;
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 struct ParamsBinder<'binder> {
     plan: &'binder mut Plan,
     /// Plan nodes to traverse during binding.
-    nodes: Vec<LevelNode>,
+    nodes: Vec<LevelNode<NodeId>>,
     /// Number of parameters met in the OPTIONs.
     binded_options_counter: usize,
     /// Flag indicating whether we use Tarantool parameters notation.
@@ -34,16 +34,16 @@ struct ParamsBinder<'binder> {
     /// queries it is IR responsibility).
     ///
     /// Map of { param_id -> corresponding row }.
-    row_map: AHashMap<usize, usize, RandomState>,
+    row_map: AHashMap<NodeId, NodeId, RandomState>,
 }
 
 fn get_param_value(
     tnt_params_style: bool,
-    param_id: usize,
+    param_id: NodeId,
     param_index: usize,
-    value_ids: &[usize],
+    value_ids: &[NodeId],
     pg_params_map: &HashMap<NodeId, ValueIdx>,
-) -> usize {
+) -> NodeId {
     let value_index = if tnt_params_style {
         // In case non-pg params are used, index is the correct position
         param_index
@@ -51,7 +51,7 @@ fn get_param_value(
         value_ids.len()
             - 1
             - *pg_params_map.get(&param_id).unwrap_or_else(|| {
-                panic!("Value index not found for parameter with id: {param_id}.")
+                panic!("Value index not found for parameter with id: {param_id:?}.")
             })
     };
     let val_id = value_ids
@@ -62,7 +62,7 @@ fn get_param_value(
 
 impl<'binder> ParamsBinder<'binder> {
     fn new(plan: &'binder mut Plan, mut values: Vec<Value>) -> Result<Self, SbroadError> {
-        let capacity = plan.next_id();
+        let capacity = plan.nodes.len();
         let mut tree = PostOrder::with_capacity(|node| plan.subtree_iter(node, false), capacity);
         let top_id = plan.get_top()?;
         tree.populate_nodes(top_id);
@@ -100,20 +100,20 @@ impl<'binder> ParamsBinder<'binder> {
             // than once in order to get the same hash.
             // See https://git.picodata.io/picodata/picodata/sbroad/-/issues/583
             let mut used_values = vec![false; self.values.len()];
-            let invalid_idx = |param_id: usize, value_idx: usize| {
-                panic!("Out of bounds value index {value_idx} for pg parameter {param_id}.");
+            let invalid_idx = |param_id: NodeId, value_idx: usize| {
+                panic!("Out of bounds value index {value_idx} for pg parameter {param_id:?}.");
             };
 
             // NB: we can't use `param_node_ids`, we need to traverse
             // parameters in the same order they will be bound,
             // otherwise we may get different hashes for plans
             // with tnt and pg parameters. See `subtree_hash*` tests,
-            for (_, param_id) in &self.nodes {
+            for LevelNode(_, param_id) in &self.nodes {
                 if !matches!(self.plan.get_node(*param_id)?, Node::Parameter(..)) {
                     continue;
                 }
                 let value_idx = *self.pg_params_map.get(param_id).unwrap_or_else(|| {
-                    panic!("Value index not found for parameter with id: {param_id}.");
+                    panic!("Value index not found for parameter with id: {param_id:?}.");
                 });
                 if used_values.get(value_idx).copied().unwrap_or(true) {
                     let Some(value) = self.values.get(value_idx) else {
@@ -159,7 +159,7 @@ impl<'binder> ParamsBinder<'binder> {
     }
 
     /// Retrieve a corresponding value (plan constant node) for a parameter node.
-    fn get_param_value(&self, param_id: usize, param_index: usize) -> usize {
+    fn get_param_value(&self, param_id: NodeId, param_index: usize) -> NodeId {
         get_param_value(
             self.tnt_params_style,
             param_id,
@@ -173,10 +173,10 @@ impl<'binder> ParamsBinder<'binder> {
     /// 2.) In case `cover_with_row` is set to true, cover the param node with a row.
     fn cover_param_with_row(
         &self,
-        param_id: usize,
+        param_id: NodeId,
         cover_with_row: bool,
         param_index: &mut usize,
-        row_ids: &mut HashMap<usize, usize, RandomState>,
+        row_ids: &mut HashMap<NodeId, NodeId, RandomState>,
     ) {
         if self.param_node_ids.contains(&param_id) {
             if row_ids.contains_key(&param_id) {
@@ -198,7 +198,7 @@ impl<'binder> ParamsBinder<'binder> {
 
         let mut row_ids = HashMap::with_hasher(RandomState::new());
 
-        for (_, id) in &self.nodes {
+        for LevelNode(_, id) in &self.nodes {
             let node = self.plan.get_node(*id)?;
             match node {
                 // Note: Parameter may not be met at the top of relational operators' expression
@@ -353,7 +353,7 @@ impl<'binder> ParamsBinder<'binder> {
             }
         }
 
-        let fixed_row_ids: AHashMap<usize, usize, RandomState> = row_ids
+        let fixed_row_ids: AHashMap<NodeId, NodeId, RandomState> = row_ids
             .iter()
             .map(|(param_id, val_id)| {
                 let row_cover = self.plan.nodes.add_row(vec![*val_id], None);
@@ -368,9 +368,9 @@ impl<'binder> ParamsBinder<'binder> {
     /// Replace parameters in the plan.
     #[allow(clippy::too_many_lines)]
     fn bind_params(&mut self) -> Result<(), SbroadError> {
-        let mut exprs_to_set_ref_type: HashMap<usize, Type> = HashMap::new();
+        let mut exprs_to_set_ref_type: HashMap<NodeId, Type> = HashMap::new();
 
-        for (_, id) in &self.nodes {
+        for LevelNode(_, id) in &self.nodes {
             // Before binding, references that referred to
             // parameters had scalar type (by default),
             // but in fact they may refer to different stuff.
@@ -394,13 +394,13 @@ impl<'binder> ParamsBinder<'binder> {
         let value_ids = std::mem::take(&mut self.value_ids);
         let pg_params_map = std::mem::take(&mut self.pg_params_map);
 
-        let bind_param = |param_id: &mut usize, is_row: bool, param_index: &mut usize| {
+        let bind_param = |param_id: &mut NodeId, is_row: bool, param_index: &mut usize| {
             *param_id = if self.param_node_ids.contains(param_id) {
                 *param_index = param_index.saturating_sub(1);
                 let binding_node_id = if is_row {
                     *row_ids
                         .get(param_id)
-                        .unwrap_or_else(|| panic!("Row not found at position {param_id}"))
+                        .unwrap_or_else(|| panic!("Row not found at position {param_id:?}"))
                 } else {
                     get_param_value(
                         tnt_params_style,
@@ -416,7 +416,7 @@ impl<'binder> ParamsBinder<'binder> {
             }
         };
 
-        for (_, id) in &self.nodes {
+        for LevelNode(_, id) in &self.nodes {
             let node = self.plan.get_mut_node(*id)?;
             match node {
                 Node::Relational(rel) => match rel {
@@ -529,7 +529,7 @@ impl<'binder> ParamsBinder<'binder> {
     }
 
     fn update_value_rows(&mut self) -> Result<(), SbroadError> {
-        for (_, id) in &self.nodes {
+        for LevelNode(_, id) in &self.nodes {
             if let Ok(Node::Relational(Relational::ValuesRow { .. })) = self.plan.get_node(*id) {
                 self.plan.update_values_row(*id)?;
             }
@@ -539,7 +539,7 @@ impl<'binder> ParamsBinder<'binder> {
 }
 
 impl Plan {
-    pub fn add_param(&mut self) -> usize {
+    pub fn add_param(&mut self) -> NodeId {
         self.nodes.push(Node::Parameter(None))
     }
 
@@ -580,15 +580,19 @@ impl Plan {
 
     // Gather all parameter nodes from the tree to a hash set.
     #[must_use]
-    pub fn get_param_set(&self) -> AHashSet<usize> {
-        let param_set: AHashSet<usize> = self
+    /// # Panics
+    pub fn get_param_set(&self) -> AHashSet<NodeId> {
+        let param_set: AHashSet<NodeId> = self
             .nodes
             .arena
             .iter()
             .enumerate()
             .filter_map(|(id, node)| {
                 if let Node::Parameter(..) = node {
-                    Some(id)
+                    Some(NodeId {
+                        offset: u32::try_from(id).unwrap(),
+                        arena_type: ArenaType::Default,
+                    })
                 } else {
                     None
                 }
@@ -606,7 +610,7 @@ impl Plan {
     ///
     /// # Panics
     /// - Plan is inconsistent state
-    pub fn update_values_row(&mut self, id: usize) -> Result<(), SbroadError> {
+    pub fn update_values_row(&mut self, id: NodeId) -> Result<(), SbroadError> {
         let values_row = self.get_node(id)?;
         let (output_id, data_id) =
             if let Node::Relational(Relational::ValuesRow { output, data, .. }) = values_row {

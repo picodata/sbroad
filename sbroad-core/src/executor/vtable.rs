@@ -13,6 +13,7 @@ use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
 use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
+use crate::ir::expression::NodeId;
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
@@ -686,20 +687,20 @@ impl ExecutionPlan {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-pub struct VirtualTableMap(HashMap<usize, Rc<VirtualTable>>);
+pub struct VirtualTableMap(HashMap<NodeId, Rc<VirtualTable>>);
 
 impl VirtualTableMap {
     #[must_use]
-    pub fn new(map: HashMap<usize, Rc<VirtualTable>>) -> Self {
+    pub fn new(map: HashMap<NodeId, Rc<VirtualTable>>) -> Self {
         Self(map)
     }
 
     #[must_use]
-    pub fn map(&self) -> &HashMap<usize, Rc<VirtualTable>> {
+    pub fn map(&self) -> &HashMap<NodeId, Rc<VirtualTable>> {
         &self.0
     }
 
-    pub fn mut_map(&mut self) -> &mut HashMap<usize, Rc<VirtualTable>> {
+    pub fn mut_map(&mut self) -> &mut HashMap<NodeId, Rc<VirtualTable>> {
         &mut self.0
     }
 }

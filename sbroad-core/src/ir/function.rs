@@ -7,7 +7,7 @@ use crate::ir::{Node, Plan};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
-use super::expression::FunctionFeature;
+use super::expression::{FunctionFeature, NodeId};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Behavior {
@@ -61,9 +61,9 @@ impl Plan {
     pub fn add_stable_function(
         &mut self,
         function: &Function,
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         feature: Option<FunctionFeature>,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         if !function.is_stable() {
             return Err(SbroadError::Invalid(
                 Entity::SQLFunction,
@@ -92,9 +92,9 @@ impl Plan {
         &mut self,
         function: &str,
         kind: AggregateKind,
-        children: Vec<usize>,
+        children: Vec<NodeId>,
         is_distinct: bool,
-    ) -> Result<usize, SbroadError> {
+    ) -> Result<NodeId, SbroadError> {
         match kind {
             AggregateKind::GRCONCAT => {
                 if children.len() > 2 || children.is_empty() {
