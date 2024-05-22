@@ -2,6 +2,8 @@
 -- Function, described in this file are called from `vshard` Sbroad module.
 
 local vshard = require('vshard')
+local lerror = require('vshard.error')
+local vrs = require('vshard.replicaset')
 local helper = require('sbroad.helper')
 local fiber = require('fiber')
 local table = require('table')
@@ -11,11 +13,11 @@ local DQL_MIN_TIMEOUT = 10
 local function future_wait(cond, timeout)
     local f = function(cond, timeout)
         if timeout and timeout < 0 then
-            error("dql timeout exceeded")
+            return nil, lerror.make("dql timeout exceeded")
         end
         local res, err = cond:wait_result(timeout)
         if err then
-            error(err)
+            return nil, lerror.make(err)
         end
         return res
     end
@@ -23,7 +25,7 @@ local function future_wait(cond, timeout)
     if ok then
         return res
     end
-    return nil, res
+    return nil, lerror.make(res)
 end
 
 --
@@ -79,6 +81,10 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
     ref_id = rid + 1
     -- Nil checks are done explicitly here (== nil instead of 'not'), because
     -- netbox requests return box.NULL instead of nils.
+
+    -- Wait for all masters to connect.
+    vrs.wait_masters_connect(replicasets)
+    timeout = deadline - fiber.clock()
 
     --
     -- Ref stage: send.
@@ -252,6 +258,9 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
         if err ~= nil then
             helper.dql_error(err, err_uuid)
         end
+        if result == nil then
+            error("local execution returned nil")
+        end
     end
 
     return box.tuple.new{result}
@@ -271,6 +280,9 @@ _G.dql_on_all = function(required, optional, waiting_timeout, vtable_max_rows)
     local result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, vtable_max_rows, opts)
     if err ~= nil then
         helper.dql_error(err, err_uuid)
+    end
+    if result == nil then
+        error("local execution returned nil")
     end
 
     return box.tuple.new{result}
