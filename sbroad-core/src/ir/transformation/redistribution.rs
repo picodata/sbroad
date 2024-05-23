@@ -1695,7 +1695,18 @@ impl Plan {
             }
             match kind {
                 UpdateStrategy::ShardedUpdate { .. } => {
-                    let new_shard_cols_positions = table.get_sk()?.to_vec();
+                    let new_shard_cols_positions = {
+                        let mut positions = table.get_sk()?.to_vec();
+                        let bucket_id_pos = table
+                            .get_bucket_id_position()?
+                            .expect("wrong update strategy");
+                        for pos in &mut positions {
+                            if *pos > bucket_id_pos {
+                                *pos -= 1;
+                            }
+                        }
+                        positions
+                    };
                     let op = MotionOpcode::RearrangeForShardedUpdate {
                         update_id,
                         old_shard_columns_len: table.get_sk()?.len(),

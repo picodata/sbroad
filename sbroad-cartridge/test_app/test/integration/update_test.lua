@@ -84,6 +84,21 @@ update_queries.before_each(
             })
             t.assert_equals(err, nil)
             t.assert_equals(r, {row_count = 2})
+
+            r, err = api:call("sbroad.execute", {
+                [[INSERT INTO "testing_space_bucket_in_the_middle" ("id", "name", "product_units") VALUES
+                (?, ?, ?),
+                (?, ?, ?),
+                (?, ?, ?)
+                ]],
+                {
+                    1, "1", 1,
+                    2, "1", 1,
+                    3, "1", 1,
+                }
+            })
+            t.assert_equals(err, nil)
+            t.assert_equals(r, {row_count = 3})
         end
 )
 
@@ -93,12 +108,14 @@ update_queries.after_each(function()
     storage1:call("box.execute", { [[TRUNCATE TABLE "arithmetic_space"]] })
     storage1:call("box.execute", { [[TRUNCATE TABLE "arithmetic_space2"]] })
     storage1:call("box.execute", { [[TRUNCATE TABLE "double_t"]] })
+    storage1:call("box.execute", { [[TRUNCATE TABLE "testing_space_bucket_in_the_middle"]] })
 
     local storage2 = cluster:server("storage-2-1").net_box
     storage2:call("box.execute", { [[TRUNCATE TABLE "testing_space"]] })
     storage2:call("box.execute", { [[TRUNCATE TABLE "arithmetic_space"]] })
     storage2:call("box.execute", { [[TRUNCATE TABLE "arithmetic_space2"]] })
     storage2:call("box.execute", { [[TRUNCATE TABLE "double_t"]] })
+    storage2:call("box.execute", { [[TRUNCATE TABLE "testing_space_bucket_in_the_middle"]] })
 end)
 
 update_queries.after_all(function()
@@ -485,5 +502,55 @@ update_queries.test_type_conversion = function()
     t.assert_items_equals(r.rows, {
         { 1, 3.14, 2.7 },
         { 2, 3.14, 2.7 },
+    })
+end
+
+update_queries.test_bucket_id_in_the_middle = function()
+    local api = cluster:server("api-1").net_box
+
+    -- sharded update
+    local r, err = api:call("sbroad.execute", { [[
+    update "testing_space_bucket_in_the_middle"
+    set "name" = '2'
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 3})
+
+    -- check that table was updated
+    r, err = api:call("sbroad.execute", { [[
+        SELECT "name"
+        FROM "testing_space_bucket_in_the_middle"
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "name", type = "string" },
+    })
+    t.assert_items_equals(r.rows, {
+        { "2" },
+        { "2" },
+        { "2" },
+    })
+
+    -- local update
+    r, err = api:call("sbroad.execute", { [[
+    update "testing_space_bucket_in_the_middle"
+    set "product_units" = 42
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r, {row_count = 3})
+
+    -- check that table was updated
+    r, err = api:call("sbroad.execute", { [[
+        SELECT "product_units"
+        FROM "testing_space_bucket_in_the_middle"
+    ]], {} })
+    t.assert_equals(err, nil)
+    t.assert_equals(r.metadata, {
+        { name = "product_units", type = "integer" },
+    })
+    t.assert_items_equals(r.rows, {
+        { 42 },
+        { 42 },
+        { 42 },
     })
 end
