@@ -683,7 +683,7 @@ impl Plan {
             is_final,
         };
 
-        let groupby_id = self.nodes.push(Node::Relational(groupby));
+        let groupby_id = self.add_relational(groupby)?;
 
         self.replace_parent_in_subtree(final_output, None, Some(groupby_id))?;
         for expr in grouping_exprs {
@@ -1055,7 +1055,7 @@ impl Plan {
             children: vec![child_id],
             is_distinct: false,
         };
-        let proj_id = self.nodes.push(Node::Relational(proj));
+        let proj_id = self.add_relational(proj)?;
         for info in aggr_infos {
             // We take expressions inside aggregate functions from Final projection,
             // so we need to update parent
@@ -1397,7 +1397,7 @@ impl Plan {
             output,
         };
         self.replace_parent_in_subtree(output, None, Some(final_id))?;
-        self.nodes.push(Node::Relational(final_groupby));
+        self.add_relational(final_groupby)?;
 
         Ok(final_id)
     }
@@ -1718,14 +1718,17 @@ impl Plan {
         // Check for group by on bucket_id column
         // in that case groupby can be done locally.
         if !grouping_exprs.is_empty() {
-            let shard_col_info = self.track_shard_column_pos(final_proj_id)?;
+            // let shard_col_info = self.track_shard_column_pos(final_proj_id)?;
             for expr_id in &grouping_exprs {
                 let Expression::Reference { position, .. } = self.get_expression_node(*expr_id)?
                 else {
                     continue;
                 };
                 let child_id = self.get_relational_from_reference_node(*expr_id)?;
-                if let Some(shard_positions) = shard_col_info.get(child_id) {
+                let mut context = self.context_mut();
+                if let Some(shard_positions) =
+                    context.get_shard_columns_positions(*child_id, self)?
+                {
                     if shard_positions[0] == Some(*position)
                         || shard_positions[1] == Some(*position)
                     {

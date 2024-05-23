@@ -1223,8 +1223,11 @@ impl Plan {
             let positions = if need_sharding_column {
                 [None, None]
             } else {
-                let mut info = self.track_shard_column_pos(rel_id)?;
-                info.remove(&rel_id).unwrap_or_default()
+                let mut context = self.context_mut();
+                context
+                    .get_shard_columns_positions(rel_id, self)?
+                    .copied()
+                    .unwrap_or_default()
             };
             Ok(positions)
         };

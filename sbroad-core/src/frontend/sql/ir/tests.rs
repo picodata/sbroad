@@ -1,11 +1,12 @@
 use crate::errors::SbroadError;
-use crate::executor::engine::mock::RouterConfigurationMock;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
+use crate::ir::Plan;
+use crate::{executor::engine::mock::RouterConfigurationMock, ir::Positions};
 use pretty_assertions::assert_eq;
 use time::{format_description, OffsetDateTime, Time};
 
@@ -798,6 +799,16 @@ vtable_max_rows = 5000
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 }
 
+impl Plan {
+    fn get_positions(&self, node_id: usize) -> Option<Positions> {
+        let mut context = self.context_mut();
+        context
+            .get_shard_columns_positions(node_id, self)
+            .unwrap()
+            .copied()
+    }
+}
+
 #[test]
 fn track_shard_col_pos() {
     let input = r#"
@@ -807,16 +818,15 @@ fn track_shard_col_pos() {
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
     let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
     for (_, node_id) in dfs.iter(top) {
         let node = plan.get_relation_node(node_id).unwrap();
         match node {
             Relational::ScanRelation { .. } | Relational::Selection { .. } => {
-                assert_eq!([Some(4_usize), None], *map.get(&node_id).unwrap())
+                assert_eq!([Some(4_usize), None], plan.get_positions(node_id).unwrap())
             }
             Relational::Projection { .. } => {
-                assert_eq!([Some(1_usize), None], *map.get(&node_id).unwrap())
+                assert_eq!([Some(1_usize), None], plan.get_positions(node_id).unwrap())
             }
             _ => {}
         }
@@ -829,15 +839,20 @@ fn track_shard_col_pos() {
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
     let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
     for (_, node_id) in dfs.iter(top) {
         let node = plan.get_relation_node(node_id).unwrap();
         if let Relational::Join { .. } = node {
-            assert_eq!([Some(4_usize), Some(5_usize)], *map.get(&node_id).unwrap());
+            assert_eq!(
+                [Some(4_usize), Some(5_usize)],
+                plan.get_positions(node_id).unwrap()
+            );
         }
     }
-    assert_eq!([Some(0_usize), Some(1_usize)], *map.get(&top).unwrap());
+    assert_eq!(
+        [Some(0_usize), Some(1_usize)],
+        plan.get_positions(top).unwrap()
+    );
 
     let input = r#"select t_mv."bucket_id", "t2"."bucket_id" from "t2" join (
         select "bucket_id" from "test_space" where "id" = 1
@@ -846,15 +861,14 @@ fn track_shard_col_pos() {
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
     let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), 10);
     for (_, node_id) in dfs.iter(top) {
         let node = plan.get_relation_node(node_id).unwrap();
         if let Relational::Join { .. } = node {
-            assert_eq!([Some(4_usize), None], *map.get(&node_id).unwrap());
+            assert_eq!([Some(4_usize), None], plan.get_positions(node_id).unwrap());
         }
     }
-    assert_eq!([Some(1_usize), None], *map.get(&top).unwrap());
+    assert_eq!([Some(1_usize), None], plan.get_positions(top).unwrap());
 
     let input = r#"
     select "bucket_id", "e" from "t2"
@@ -863,8 +877,7 @@ fn track_shard_col_pos() {
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
-    assert_eq!(None, map.get(&top));
+    assert_eq!(None, plan.get_positions(top));
 
     let input = r#"
     select "bucket_id", "e" from "t2"
@@ -873,24 +886,21 @@ fn track_shard_col_pos() {
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
-    assert_eq!([Some(0_usize), None], *map.get(&top).unwrap());
+    assert_eq!([Some(0_usize), None], plan.get_positions(top).unwrap());
 
     let input = r#"
     select "e" from (select "bucket_id" as "e" from "t2")
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
-    assert_eq!([Some(0_usize), None], *map.get(&top).unwrap());
+    assert_eq!([Some(0_usize), None], plan.get_positions(top).unwrap());
 
     let input = r#"
     select "e" as "bucket_id" from "t2"
     "#;
     let plan = sql_to_optimized_ir(input, vec![]);
     let top = plan.get_top().unwrap();
-    let map = plan.track_shard_column_pos(top).unwrap();
-    assert_eq!(None, map.get(&top));
+    assert_eq!(None, plan.get_positions(top));
 }
 
 #[test]

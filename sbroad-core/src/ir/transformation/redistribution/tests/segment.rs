@@ -93,6 +93,8 @@ fn sub_query1() {
         .join("segment_motion_for_sub_query.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, expected_plan);
 }
 

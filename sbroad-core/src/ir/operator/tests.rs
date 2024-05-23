@@ -86,6 +86,8 @@ fn scan_rel_serialized() {
         .join("operator")
         .join("scan_rel.yaml");
     let s = fs::read_to_string(path).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, Plan::from_yaml(&s).unwrap());
 }
 
@@ -491,6 +493,8 @@ fn selection_with_sub_query() {
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
 
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(expected_plan, plan);
 }
 

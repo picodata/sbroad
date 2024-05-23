@@ -5,7 +5,8 @@
 use base64ct::{Base64, Encoding};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
-use std::collections::hash_map::{Entry, IntoIter};
+use std::cell::{RefCell, RefMut};
+use std::collections::hash_map::IntoIter;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
@@ -422,6 +423,36 @@ pub struct Plan {
     /// See `apply_options`.
     pub options: Options,
     pub version_map: TableVersionMap,
+    /// Exists only on the router during plan build.
+    /// RefCell is used because context can be mutated
+    /// independently of the plan. It is just stored
+    /// in the plan for convenience: otherwise we'd
+    /// have to explictly pass context to every method
+    /// of the pipeline.
+    #[serde(skip)]
+    pub context: Option<RefCell<BuildContext>>,
+}
+
+/// Helper structures used to build the plan
+/// on the router.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct BuildContext {
+    shard_col_info: ShardColumnsMap,
+}
+
+impl BuildContext {
+    /// Returns positions in node's output
+    /// referring to the shard column.
+    ///
+    /// # Errors
+    /// - Invalid plan
+    pub fn get_shard_columns_positions(
+        &mut self,
+        node_id: NodeId,
+        plan: &Plan,
+    ) -> Result<Option<&Positions>, SbroadError> {
+        self.shard_col_info.get(node_id, plan)
+    }
 }
 
 impl Default for Plan {
@@ -432,6 +463,17 @@ impl Default for Plan {
 
 #[allow(dead_code)]
 impl Plan {
+    /// Get mut reference to build context
+    ///
+    /// # Panics
+    /// - There are other mut refs
+    pub fn context_mut(&self) -> RefMut<'_, BuildContext> {
+        self.context
+            .as_ref()
+            .expect("context always exists during plan build")
+            .borrow_mut()
+    }
+
     /// Add relation to the plan.
     ///
     /// If relation already exists, do nothing.
@@ -476,6 +518,7 @@ impl Plan {
             options: Options::default(),
             version_map: TableVersionMap::new(),
             pg_params_map: HashMap::new(),
+            context: Some(RefCell::new(BuildContext::default())),
         }
     }
 
@@ -1277,104 +1320,176 @@ pub type Positions = [Option<Position>; 2];
 /// Relational node id -> positions of columns in output that refer to sharding column.
 pub type ShardColInfo = ahash::AHashMap<NodeId, Positions>;
 
-impl Plan {
-    /// Helper function to track position of the sharding column
-    /// for any relational node in the subtree defined by `top_id`.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ShardColumnsMap {
+    /// Maps node id to positions of bucket_id column in
+    /// the node output. Currently we track only two
+    /// bucket_id columns appearences for perf reasons.
+    pub memo: ahash::AHashMap<NodeId, Positions>,
+    /// ids of nodes which were inserted into the middle
+    /// of the plan and changed the bucket_id columns
+    /// positions and thus invalidated all the nodes
+    /// in the memo which are located above this node.
+    pub invalid_ids: ahash::AHashSet<NodeId>,
+}
+
+impl ShardColumnsMap {
+    /// Update information about node's sharding column positions
+    /// assuming that node's children positions were already computed.
     ///
     /// # Errors
-    /// - invalid references in the plan subtree
+    /// - invalid plan
     ///
     /// # Panics
-    /// - plan contains invalid references
-    pub fn track_shard_column_pos(&self, top_id: usize) -> Result<ShardColInfo, SbroadError> {
-        let mut memo = ShardColInfo::with_capacity(REL_CAPACITY);
-        let mut dfs = PostOrder::with_capacity(|x| self.nodes.rel_iter(x), REL_CAPACITY);
-
-        for (_, node_id) in dfs.iter(top_id) {
-            let node = self.get_relation_node(node_id)?;
-
-            match node {
-                Relational::ScanRelation { relation, .. } => {
-                    let table = self.get_relation_or_error(relation)?;
-                    if let Ok(Some(pos)) = table.get_bucket_id_position() {
-                        memo.insert(node_id, [Some(pos), None]);
-                    }
-                    continue;
+    /// - invalid plan
+    pub fn update_node(&mut self, node_id: NodeId, plan: &Plan) -> Result<(), SbroadError> {
+        let node = plan.get_relation_node(node_id)?;
+        match node {
+            Relational::ScanRelation { relation, .. } => {
+                let table = plan.get_relation_or_error(relation)?;
+                if let Ok(Some(pos)) = table.get_bucket_id_position() {
+                    self.memo.insert(node_id, [Some(pos), None]);
                 }
-                Relational::Motion { policy, .. } => {
-                    // Any motion node that moves data invalidates
-                    // bucket_id column selected from that space.
-                    // Even Segment policy is no help, because it only
-                    // creates index on virtual table but does not actually
-                    // add or update bucket_id column.
-                    if !matches!(policy, MotionPolicy::Local | MotionPolicy::LocalSegment(_)) {
-                        continue;
-                    }
-                }
-                _ => {}
+                return Ok(());
             }
+            Relational::Motion { policy, .. } => {
+                // Any motion node that moves data invalidates
+                // bucket_id column selected from that space.
+                // Even Segment policy is no help, because it only
+                // creates index on virtual table but does not actually
+                // add or update bucket_id column.
+                if !matches!(policy, MotionPolicy::Local | MotionPolicy::LocalSegment(_)) {
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
 
-            let children = node.children();
-            if children.is_empty() {
+        let children = node.children();
+        if children.is_empty() {
+            return Ok(());
+        };
+        let children_contain_shard_positions = children.iter().any(|c| self.memo.contains_key(c));
+        if !children_contain_shard_positions {
+            // The children do not contain any shard columns, no need to check
+            // the output.
+            return Ok(());
+        }
+
+        let output_id = node.output();
+        let output_len = plan.get_row_list(output_id)?.len();
+        let mut new_positions = [None, None];
+        for pos in 0..output_len {
+            let output = plan.get_row_list(output_id)?;
+            let alias_id = output.get(pos).expect("can't fail");
+            let ref_id = plan.get_child_under_alias(*alias_id)?;
+            // If there is a parameter under alias
+            // and we haven't bound parameters yet,
+            // we will get an error.
+            let Ok(Expression::Reference {
+                targets, position, ..
+            }) = plan.get_expression_node(ref_id)
+            else {
+                continue;
+            };
+            let Some(targets) = targets else {
                 continue;
             };
 
-            let output = self.get_row_list(node.output())?;
-            for (pos, alias_id) in output.iter().enumerate() {
-                let ref_id = self.get_child_under_alias(*alias_id)?;
-                // If there is a parameter under alias
-                // and we haven't bound parameters yet,
-                // we will get an error.
-                let Ok(Expression::Reference {
-                    targets, position, ..
-                }) = self.get_expression_node(ref_id)
-                else {
-                    continue;
+            let children = plan.get_relational_children(node_id)?;
+            // For node with multiple targets (Union, Except, Intersect)
+            // we need that ALL targets would refer to the shard column.
+            let mut refers_to_shard_col = true;
+            for target in targets {
+                let child_id = children.get(*target).expect("invalid reference");
+                let Some(positions) = self.memo.get(child_id) else {
+                    refers_to_shard_col = false;
+                    break;
                 };
-                let Some(targets) = targets else {
-                    continue;
-                };
-
-                // For node with multiple targets (Union, Except, Intersect)
-                // we need that ALL targets would refer to the shard column.
-                let mut refers_to_shard_col = true;
-                for target in targets {
-                    let child_id = children.get(*target).expect("invalid reference");
-                    let Some(positions) = memo.get(child_id) else {
-                        refers_to_shard_col = false;
-                        break;
-                    };
-                    if positions[0] != Some(*position) && positions[1] != Some(*position) {
-                        refers_to_shard_col = false;
-                        break;
-                    }
+                if positions[0] != Some(*position) && positions[1] != Some(*position) {
+                    refers_to_shard_col = false;
+                    break;
                 }
+            }
 
-                if refers_to_shard_col {
-                    match memo.entry(node_id) {
-                        Entry::Occupied(mut entry) => {
-                            let positions = entry.get_mut();
-                            if positions[0].is_none() {
-                                positions[0] = Some(pos);
-                            } else if positions[0] == Some(pos) {
-                                // Do nothing, we already have this position.
-                            } else if positions[1].is_none() {
-                                positions[1] = Some(pos);
-                            } else if positions[1] == Some(pos) {
-                                // Do nothing, we already have this position.
-                            } else {
-                                unreachable!("more than 2 pointers in the reference");
-                            }
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert([Some(pos), None]);
-                        }
-                    }
+            if refers_to_shard_col {
+                if new_positions[0].is_none() {
+                    new_positions[0] = Some(pos);
+                } else if new_positions[0] == Some(pos) {
+                    // Do nothing, we already have this position.
+                } else {
+                    new_positions[1] = Some(pos);
+
+                    // We already tracked two positions,
+                    // the node may have more, but we assume
+                    // that's really rare case and just don't
+                    // want to allocate more memory to track them.
+                    break;
                 }
             }
         }
+        if new_positions[0].is_some() {
+            self.memo.insert(node_id, new_positions);
+        }
+        Ok(())
+    }
 
-        Ok(memo)
+    /// Handle node insertion into the middle of the plan.
+    /// Node insertion may invalidate already computed positions
+    /// for all the nodes located above it (on the path from root to
+    /// the inserted node). Currently only node that invalidates already
+    /// computed positions is Motion (non-local).
+    ///
+    /// # Errors
+    /// - Invalid plan
+    ///
+    /// # Panics
+    /// - invalid plan
+    pub fn handle_node_insertion(
+        &mut self,
+        node_id: NodeId,
+        plan: &Plan,
+    ) -> Result<(), SbroadError> {
+        let node = plan.get_relation_node(node_id)?;
+        if let Relational::Motion {
+            policy, children, ..
+        } = node
+        {
+            if matches!(policy, MotionPolicy::Local | MotionPolicy::LocalSegment(_)) {
+                return Ok(());
+            }
+            let child_id = children.first().expect("invalid plan");
+            if let Some(positions) = self.memo.get(child_id) {
+                if positions[0].is_some() || positions[1].is_some() {
+                    self.invalid_ids.insert(node_id);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Get positions in the node's output which refer
+    /// to the sharding columns.
+    ///
+    /// # Errors
+    /// - Invalid plan
+    pub fn get(&mut self, id: NodeId, plan: &Plan) -> Result<Option<&Positions>, SbroadError> {
+        if !self.invalid_ids.is_empty() {
+            self.update_subtree(id, plan)?;
+        }
+        Ok(self.memo.get(&id))
+    }
+
+    fn update_subtree(&mut self, node_id: NodeId, plan: &Plan) -> Result<(), SbroadError> {
+        let mut dfs = PostOrder::with_capacity(|x| plan.nodes.rel_iter(x), REL_CAPACITY);
+        for (_, id) in dfs.iter(node_id) {
+            self.update_node(id, plan)?;
+            self.invalid_ids.remove(&id);
+        }
+        if plan.get_top()? != node_id {
+            self.invalid_ids.insert(node_id);
+        }
+        Ok(())
     }
 }
 

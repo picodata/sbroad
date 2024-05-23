@@ -69,6 +69,8 @@ fn full_motion_less_for_sub_query() {
         .join("full_motion_less_for_sub_query.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, expected_plan);
 }
 
@@ -132,6 +134,8 @@ fn full_motion_non_segment_outer_for_sub_query() {
         .join("full_motion_non_segment_outer_for_sub_query.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, expected_plan);
 }
 
@@ -192,6 +196,8 @@ fn local_sub_query() {
         .join("local_sub_query.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, expected_plan);
 }
 
@@ -273,6 +279,8 @@ fn multiple_sub_queries() {
         .join("multiple_sub_queries.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(plan, expected_plan);
 }
 

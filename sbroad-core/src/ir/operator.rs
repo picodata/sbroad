@@ -8,6 +8,7 @@ use ahash::RandomState;
 use crate::collection;
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
+use std::borrow::BorrowMut;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -882,6 +883,17 @@ impl Relational {
 }
 
 impl Plan {
+    /// Add relational node to plan arena and update shard columns info.
+    ///
+    /// # Errors
+    /// - failed to oupdate shard columns info due to invalid plan subtree
+    pub fn add_relational(&mut self, node: Relational) -> Result<usize, SbroadError> {
+        let rel_id = self.nodes.push(Node::Relational(node));
+        let mut context = self.context_mut();
+        context.shard_col_info.update_node(rel_id, self)?;
+        Ok(rel_id)
+    }
+
     /// Adds delete node.
     ///
     /// # Errors
@@ -893,7 +905,7 @@ impl Plan {
             children: vec![child_id],
             output,
         };
-        let delete_id = self.nodes.push(Node::Relational(delete));
+        let delete_id = self.add_relational(delete)?;
         self.replace_parent_in_subtree(output, None, Some(delete_id))?;
         Ok(delete_id)
     }
@@ -928,7 +940,7 @@ impl Plan {
             output,
         };
 
-        let except_id = self.nodes.push(Node::Relational(except));
+        let except_id = self.add_relational(except)?;
         self.replace_parent_in_subtree(output, None, Some(except_id))?;
         Ok(except_id)
     }
@@ -1178,7 +1190,7 @@ impl Plan {
             output: proj_output,
             is_distinct: false,
         };
-        let proj_id = self.nodes.push(Node::Relational(proj_node));
+        let proj_id = self.add_relational(proj_node)?;
         self.replace_parent_in_subtree(proj_output, None, Some(proj_id))?;
         let upd_output = self.add_row_for_output(proj_id, &[], false)?;
         let update_node = Relational::Update {
@@ -1189,7 +1201,7 @@ impl Plan {
             output: upd_output,
             strategy: update_kind,
         };
-        let update_id = self.nodes.push(Node::Relational(update_node));
+        let update_id = self.add_relational(update_node)?;
         self.replace_parent_in_subtree(upd_output, None, Some(update_id))?;
 
         Ok(update_id)
@@ -1307,7 +1319,7 @@ impl Plan {
                 alias: alias.map(SmolStr::from),
             };
 
-            let scan_id = nodes.push(Node::Relational(scan));
+            let scan_id = self.add_relational(scan)?;
             self.replace_parent_in_subtree(output_id, None, Some(scan_id))?;
             return Ok(scan_id);
         }
@@ -1433,7 +1445,7 @@ impl Plan {
                 kind,
             };
 
-            let join_id = self.nodes.push(Node::Relational(join));
+            let join_id = self.add_relational(join)?;
             self.replace_parent_in_subtree(condition, None, Some(join_id))?;
             self.replace_parent_in_subtree(output, None, Some(join_id))?;
             return Ok(join_id);
@@ -1497,8 +1509,13 @@ impl Plan {
             output,
             is_child_subquery,
         };
-        let motion_id = self.nodes.push(Node::Relational(motion));
+        let motion_id = self.add_relational(motion)?;
         self.replace_parent_in_subtree(output, None, Some(motion_id))?;
+        let mut context = self.context_mut();
+        context
+            .shard_col_info
+            .borrow_mut()
+            .handle_node_insertion(motion_id, self)?;
         Ok(motion_id)
     }
 
@@ -1524,7 +1541,7 @@ impl Plan {
             is_distinct,
         };
 
-        let proj_id = self.nodes.push(Node::Relational(proj));
+        let proj_id = self.add_relational(proj)?;
         self.replace_parent_in_subtree(output, None, Some(proj_id))?;
         Ok(proj_id)
     }
@@ -1548,7 +1565,7 @@ impl Plan {
             is_distinct,
         };
 
-        let proj_id = self.nodes.push(Node::Relational(proj));
+        let proj_id = self.add_relational(proj)?;
         self.replace_parent_in_subtree(output, None, Some(proj_id))?;
         Ok(proj_id)
     }
@@ -1582,7 +1599,7 @@ impl Plan {
             output,
         };
 
-        let select_id = self.nodes.push(Node::Relational(select));
+        let select_id = self.add_relational(select)?;
         self.replace_parent_in_subtree(filter, None, Some(select_id))?;
         self.replace_parent_in_subtree(output, None, Some(select_id))?;
         Ok(select_id)
@@ -1626,7 +1643,7 @@ impl Plan {
             output,
         };
 
-        let having_id = self.nodes.push(Node::Relational(having));
+        let having_id = self.add_relational(having)?;
         self.replace_parent_in_subtree(filter, None, Some(having_id))?;
         self.replace_parent_in_subtree(output, None, Some(having_id))?;
         Ok(having_id)
@@ -1652,7 +1669,7 @@ impl Plan {
             order_by_elements: order_by_elements.clone(),
         };
 
-        let plan_order_by_id = self.nodes.push(Node::Relational(order_by));
+        let plan_order_by_id = self.add_relational(order_by)?;
         for order_by_element in order_by_elements {
             if let OrderByElement {
                 entity: OrderByEntity::Expression { expr_id },
@@ -1686,7 +1703,7 @@ impl Plan {
             output,
         };
 
-        let sq_id = self.nodes.push(Node::Relational(sq));
+        let sq_id = self.add_relational(sq)?;
         self.replace_parent_in_subtree(output, None, Some(sq_id))?;
         Ok(sq_id)
     }
@@ -1757,7 +1774,7 @@ impl Plan {
             child: child_id,
             output,
         };
-        let cte_id = self.nodes.push(Node::Relational(cte));
+        let cte_id = self.add_relational(cte)?;
         Ok(cte_id)
     }
 
@@ -1804,7 +1821,7 @@ impl Plan {
             }
         };
 
-        let union_id = self.nodes.push(Node::Relational(union_all));
+        let union_id = self.add_relational(union_all)?;
         self.replace_parent_in_subtree(output, None, Some(union_id))?;
         Ok(union_id)
     }
@@ -1836,7 +1853,7 @@ impl Plan {
             data: row_id,
             children: vec![],
         };
-        let values_row_id = self.nodes.push(Node::Relational(values_row));
+        let values_row_id = self.add_relational(values_row)?;
         self.replace_parent_in_subtree(row_id, None, Some(values_row_id))?;
         Ok(values_row_id)
     }
@@ -1916,7 +1933,7 @@ impl Plan {
             output,
             children: value_rows,
         };
-        let values_id = self.nodes.push(Node::Relational(values));
+        let values_id = self.add_relational(values)?;
         self.replace_parent_in_subtree(output, None, Some(values_id))?;
         Ok(values_id)
     }

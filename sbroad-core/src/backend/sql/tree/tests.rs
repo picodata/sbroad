@@ -50,6 +50,8 @@ fn sql_order_selection() {
         .join("sql_order_selection.yaml");
     let s = fs::read_to_string(path).unwrap();
     let expected_plan = Plan::from_yaml(&s).unwrap();
+    // This field is not serialized, do not check it
+    plan.context = None;
     assert_eq!(expected_plan, plan);
     let exec_plan = ExecutionPlan::from(plan.clone());
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
@@ -140,6 +142,8 @@ fn sql_arbitrary_projection_plan() {
 
     let proj_id = plan.add_proj_internal(scan_id, &[alias_id], false).unwrap();
     plan.set_top(proj_id).unwrap();
+    // this field is not serialized, do not check it
+    plan.context = None;
 
     // check the plan
     let path = Path::new("")
