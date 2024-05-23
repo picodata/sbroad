@@ -18,7 +18,7 @@ use tarantool::tuple::Encode;
 
 use crate::debug;
 use crate::errors::SbroadError;
-use crate::executor::vtable::VirtualTable;
+use crate::executor::vtable::{VTableTuple, VirtualTable};
 use crate::ir::operator::Relational;
 use crate::ir::relation::{Column, ColumnRole, Type};
 use crate::ir::tree::traversal::{PostOrderWithFilter, REL_CAPACITY};
@@ -97,11 +97,7 @@ impl ProducerResult {
     ) -> Result<VirtualTable, SbroadError> {
         let mut vtable = VirtualTable::new();
 
-        for mut encoded_tuple in self.rows.drain(..) {
-            let tuple: Vec<Value> = encoded_tuple.drain(..).map(Value::from).collect();
-            vtable.add_tuple(tuple);
-        }
-
+        // Decode metadata
         for col in &self.metadata {
             let column: Column = if possibly_incorrect_types {
                 let column_type = Type::new_from_possibly_incorrect(&col.r#type)?;
@@ -133,6 +129,24 @@ impl ProducerResult {
         {
             vcol.name = name;
         }
+
+        // Decode data
+        let mut data: Vec<VTableTuple> = Vec::with_capacity(self.rows.len());
+        let columns = vtable.get_columns();
+        for mut encoded_tuple in self.rows.drain(..) {
+            let mut tuple = Vec::with_capacity(encoded_tuple.len());
+            for (i, value) in encoded_tuple.drain(..).enumerate() {
+                let column = &columns[i];
+                let value = Value::from(value);
+                if value.get_type() == column.r#type {
+                    tuple.push(value);
+                } else {
+                    tuple.push(Value::from(value.cast(&column.r#type)?));
+                }
+            }
+            data.push(tuple);
+        }
+        std::mem::swap(vtable.get_mut_tuples(), &mut data);
 
         Ok(vtable)
     }

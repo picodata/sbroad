@@ -7,14 +7,14 @@ use std::fmt::Debug;
 
 pub const DEFAULT_CAPACITY: usize = 50;
 
-pub type EvictFn<Value> = Box<dyn Fn(&mut Value) -> Result<(), SbroadError>>;
+pub type EvictFn<Key, Value> = Box<dyn Fn(&Key, &mut Value) -> Result<(), SbroadError>>;
 
 pub trait Cache<Key, Value> {
     /// Builds a new cache with the given capacity.
     ///
     /// # Errors
     /// - Capacity is not valid (zero).
-    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, SbroadError>
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Key, Value>>) -> Result<Self, SbroadError>
     where
         Self: Sized;
 
@@ -90,7 +90,7 @@ where
     /// `None` key is reserved for the LRU sentinel head.
     map: HashMap<Option<Key>, LRUNode<Key, Value>>,
     // A function applied to the value before evicting it from the cache.
-    evict_fn: Option<EvictFn<Value>>,
+    evict_fn: Option<EvictFn<Key, Value>>,
 }
 
 impl<Key, Value> LRUCache<Key, Value>
@@ -175,9 +175,9 @@ where
     fn remove_last(&mut self) -> Result<(), SbroadError> {
         let head_node = self.get_node(&None)?;
         let head_prev_id = head_node.prev.clone();
-        if head_prev_id.is_none() {
+        let Some(ref key) = head_prev_id else {
             return Ok(());
-        }
+        };
 
         let map = &mut self.map;
         if let Some(evict_fn) = &self.evict_fn {
@@ -187,7 +187,7 @@ where
                     format_smolstr!("(mutable LRU) with key {:?}", &head_prev_id),
                 )
             })?;
-            evict_fn(&mut head_prev.value)?;
+            evict_fn(key, &mut head_prev.value)?;
         }
 
         self.unlink_node(&head_prev_id)?;
@@ -214,8 +214,8 @@ where
         let mut first_error = Ok(());
         if let Some(evict) = &self.evict_fn {
             for (key, lru_node) in &mut self.map {
-                if key.is_some() {
-                    let res = evict(&mut lru_node.value);
+                if let Some(key) = key {
+                    let res = evict(key, &mut lru_node.value);
                     if res.is_err() {
                         if first_error.is_ok() {
                             first_error = res.clone();
@@ -237,7 +237,7 @@ where
     Value: Default + Debug,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
-    fn new(capacity: usize, evict_fn: Option<EvictFn<Value>>) -> Result<Self, SbroadError> {
+    fn new(capacity: usize, evict_fn: Option<EvictFn<Key, Value>>) -> Result<Self, SbroadError> {
         if capacity == 0 {
             return Err(SbroadError::Invalid(
                 Entity::Cache,

@@ -207,28 +207,16 @@ union_queries.test_multi_union = function()
     })
 end
 
--- TODO: should we throw error when union children
--- have diffrent types?
 union_queries.test_union_diff_types = function()
     local api = cluster:server("api-1").net_box
 
-    local r, err = api:call("sbroad.execute", { [[
+    local _, err = api:call("sbroad.execute", { [[
         select "a"
         from "arithmetic_space"
         union
         select "name" from "testing_space"
 ]], {} })
-    t.assert_equals(err, nil)
-    t.assert_equals(r.metadata, {
-        { name = "a", type = "integer" },
-    })
-    t.assert_items_equals(r.rows, {
-        { 1 },
-        { 2 },
-        { "1" },
-        { "2" },
-        { "123" },
-    })
+    t.assert_str_contains(tostring(err), "failed to serialize value")
 end
 
 union_queries.test_union_empty_children = function()

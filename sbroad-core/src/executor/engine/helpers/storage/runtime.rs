@@ -1,12 +1,14 @@
 use std::any::Any;
 
 use sbroad_proc::otm_child_span;
-use smol_str::{format_smolstr, ToSmolStr};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::session::with_su;
+use tarantool::space::Space;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
 use crate::backend::sql::space::ADMIN_ID;
-use crate::ir::ExecuteOptions;
+use crate::executor::engine::helpers::table_name;
+use crate::ir::{ExecuteOptions, NodeId};
 use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span};
 
 use super::{PreparedStmt, Statement};
@@ -35,20 +37,31 @@ pub fn prepare(pattern: &str) -> Result<PreparedStmt, SbroadError> {
 }
 
 #[otm_child_span("tarantool.statement.unprepare")]
-pub fn unprepare(stmt: &mut PreparedStmt) -> Result<(), SbroadError> {
+pub fn unprepare(
+    plan_id: &SmolStr,
+    stmt: &mut (PreparedStmt, Vec<NodeId>),
+) -> Result<(), SbroadError> {
     let lua = tarantool::lua_state();
 
     let unprepare_stmt: LuaFunction<_> = lua
         .get("unprepare")
         .ok_or_else(|| SbroadError::LuaError("Lua function `unprepare` not found".into()))?;
 
-    match unprepare_stmt.call_with_args::<(), _>(stmt.id()?) {
-        Ok(()) => Ok(()),
+    match unprepare_stmt.call_with_args::<(), _>(stmt.0.id()?) {
+        Ok(()) => {}
         Err(e) => {
             error!(Option::from("unprepare"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format_smolstr!("{e:?}")))
+            return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
         }
     }
+
+    // Remove temporary tables from the instance.
+    for node_id in &stmt.1 {
+        let table = table_name(plan_id.as_str(), *node_id);
+        Space::find(&table).map(|space| with_su(ADMIN_ID, || space.drop()));
+    }
+
+    Ok(())
 }
 
 #[otm_child_span("tarantool.statement.prepared.read")]

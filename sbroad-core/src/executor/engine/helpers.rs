@@ -17,16 +17,17 @@ use tarantool::{
 };
 use tarantool::{space::Space, tuple::TupleBuffer};
 
+use crate::backend::sql::space::{TableGuard, ADMIN_ID};
 use crate::executor::engine::helpers::storage::runtime::{prepare, read_prepared, read_unprepared};
 use crate::executor::engine::{QueryCache, StorageCache};
-use crate::executor::protocol::SchemaInfo;
+use crate::executor::protocol::{EncodedTables, SchemaInfo};
 use crate::ir::operator::ConflictStrategy;
 use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue};
-use crate::ir::ExecuteOptions;
+use crate::ir::{ExecuteOptions, NodeId};
 use crate::otm::child_span;
 use crate::{
     backend::sql::{
-        ir::{PatternWithParams, TmpSpaceMap},
+        ir::PatternWithParams,
         tree::{OrderedSyntaxNodes, SyntaxPlan},
     },
     debug,
@@ -53,6 +54,7 @@ use crate::{
 use sbroad_proc::otm_child_span;
 use serde::Serialize;
 use tarantool::msgpack::rmp::{self, decode::RmpRead};
+use tarantool::session::with_su;
 use tarantool::tuple::Tuple;
 
 use super::{Metadata, Router, Vshard};
@@ -88,6 +90,33 @@ pub fn to_user<T: std::fmt::Display>(from: T) -> SmolStr {
     format_smolstr!("\"{from}\"")
 }
 
+/// Generate a temporary table name for the specified motion node.
+#[must_use]
+pub fn table_name(plan_id: &str, node_id: NodeId) -> SmolStr {
+    let base = {
+        #[cfg(feature = "mock")]
+        {
+            format_smolstr!("TMP_{plan_id}")
+        }
+        #[cfg(not(feature = "mock"))]
+        {
+            use hash32::{Hasher, Murmur3Hasher};
+
+            let mut hasher = Murmur3Hasher::default();
+            hasher.write(plan_id.as_bytes());
+            let id = hasher.finish();
+            format_smolstr!("TMP_{id}")
+        }
+    };
+    format_smolstr!("{base}_{node_id}")
+}
+
+/// Generate a primary key name for the specified motion node.
+#[must_use]
+pub fn pk_name(plan_id: &str, node_id: NodeId) -> SmolStr {
+    format_smolstr!("PK_{plan_id}_{node_id}")
+}
+
 /// A helper function to encode the execution plan into a pair of binary data (see `Message`):
 /// * required data (plan id, parameters, etc.)
 /// * optional data (execution plan, etc.)
@@ -95,17 +124,11 @@ pub fn to_user<T: std::fmt::Display>(from: T) -> SmolStr {
 /// # Errors
 /// - Failed to encode the execution plan.
 pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), SbroadError> {
-    let can_be_cached = exec_plan.vtables_empty();
     let query_type = exec_plan.query_type()?;
     let (ordered, sub_plan_id) = match query_type {
         QueryType::DQL => {
             let top_id = exec_plan.get_ir_plan().get_top()?;
-            let sub_plan_id = if can_be_cached {
-                exec_plan.get_ir_plan().pattern_id(top_id)?
-            } else {
-                // plan id is used as cache key on storages, no need to calculate it.
-                SmolStr::default()
-            };
+            let sub_plan_id = exec_plan.get_ir_plan().pattern_id(top_id)?;
             let sp_top_id = exec_plan.get_ir_plan().get_top()?;
             let sp = SyntaxPlan::new(&exec_plan, sp_top_id, Snapshot::Oldest)?;
             let ordered = OrderedSyntaxNodes::try_from(sp)?;
@@ -174,16 +197,17 @@ pub fn encode_plan(mut exec_plan: ExecutionPlan) -> Result<(Binary, Binary), Sbr
     // when calculating the cache key.
     let nodes = ordered.to_syntax_data()?;
     // Virtual tables in the plan must be already filtered, so we can use all buckets here.
-    let params = exec_plan.to_params(&nodes, &Buckets::All)?;
+    let params = exec_plan.to_params(&nodes)?;
+    let tables = exec_plan.encode_vtables();
     let router_version_map = std::mem::take(&mut exec_plan.get_mut_ir_plan().version_map);
     let schema_info = SchemaInfo::new(router_version_map);
     let required_data = RequiredData::new(
         sub_plan_id,
         params,
         query_type,
-        can_be_cached,
         exec_plan.get_ir_plan().options.clone(),
         schema_info,
+        tables,
     );
     let encoded_required_data = EncodedRequiredData::try_from(required_data)?;
     let raw_required_data: Vec<u8> = encoded_required_data.into();
@@ -251,39 +275,16 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SbroadErro
     Ok((required, optional))
 }
 
-/// Decode dispatched optional data (execution plan, etc.) from msgpack
-/// and compile it into a pattern with parameters and temporary space map.
-///
-/// # Errors
-/// - Failed to decode or compile optional data.
-pub fn compile_encoded_optional(
-    raw_optional: &mut Vec<u8>,
-) -> Result<(PatternWithParams, TmpSpaceMap), SbroadError> {
-    let data = std::mem::take(raw_optional);
-    let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
-    compile_optional(&mut optional)
-}
-
 /// Compile already decoded optional data into a pattern with parameters
 /// and temporary space map
-///
-/// # Errors
-/// - Failed to compile optional data
-pub fn compile_optional(
+fn compile_optional(
     optional: &mut OptionalData,
-) -> Result<(PatternWithParams, TmpSpaceMap), SbroadError> {
-    // Use all buckets as we don't want to filter any data from the execution plan
-    // (this work has already been done on the coordinator).
-    let buckets = Buckets::All;
-
+    template: &str,
+) -> Result<(PatternWithParams, Vec<TableGuard>), SbroadError> {
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
     let nodes = optional.ordered.to_syntax_data()?;
-    let (u, v) = optional.exec_plan.to_sql(
-        &nodes,
-        &buckets,
-        &uuid::Uuid::new_v4().as_simple().to_string(),
-    )?;
-    Ok((u, v))
+    let (pwp, guard) = optional.exec_plan.to_sql(&nodes, template)?;
+    Ok((pwp, guard))
 }
 
 /// Command to build a tuple suitable to be passed into Tarantool API functions.
@@ -1069,6 +1070,58 @@ pub fn sharding_key_from_tuple<'tuple>(
     }
 }
 
+fn populate_table(
+    node_id: NodeId,
+    plan_id: &SmolStr,
+    tables: &mut EncodedTables,
+) -> Result<(), SbroadError> {
+    let data = tables.get_mut(&node_id).ok_or_else(|| {
+        SbroadError::NotFound(
+            Entity::Table,
+            format_smolstr!("encoded table with id {node_id}"),
+        )
+    })?;
+    with_su(ADMIN_ID, || -> Result<(), SbroadError> {
+        let name = table_name(plan_id, node_id);
+        let space = Space::find(&name).ok_or_else(|| {
+            SbroadError::NotFound(
+                Entity::Space,
+                format_smolstr!("temporary SQL table: {name}"),
+            )
+        })?;
+        for tuple in data.iter() {
+            match space.insert(&tuple) {
+                Ok(_) => {}
+                Err(e) => {
+                    // It is possible that the temporary table was recreated by admin
+                    // user with a different format. We should not panic in this case.
+                    return Err(SbroadError::FailedTo(
+                        Action::Insert,
+                        Some(Entity::Tuple),
+                        format_smolstr!("tuple {tuple:?} into {name}: {e}"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    })??;
+    Ok(())
+}
+
+fn truncate_tables(table_ids: &[NodeId], plan_id: &SmolStr) {
+    with_su(ADMIN_ID, || {
+        for node_id in table_ids {
+            let name = table_name(plan_id, *node_id);
+            if let Some(space) = Space::find(&name) {
+                space
+                    .truncate()
+                    .expect("failed to truncate temporary table");
+            }
+        }
+    })
+    .expect("failed to switch to admin user");
+}
+
 /// If the statement with given `plan_id` is found in the cache,
 /// execute it and return result. Otherwise, returns `None`.
 ///
@@ -1078,9 +1131,15 @@ pub fn sharding_key_from_tuple<'tuple>(
 /// # Errors
 /// - Failed to borrow the cache
 /// - Failed to execute given statement.
-pub fn exec_if_in_cache<R: QueryCache>(
-    runtime: &R,
+///
+/// # Panics
+/// - Temporary table could not be truncated.
+/// - Temporary table could not be inserted.
+#[otm_child_span("tarantool.cache.hit.read.prepared")]
+pub fn read_from_cache<R: QueryCache, M: MutexLike<R::Cache>, 'mutex>(
+    locked_cache: &mut M::Guard<'mutex>,
     params: &[Value],
+    tables: &mut EncodedTables,
     plan_id: &SmolStr,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
@@ -1089,21 +1148,23 @@ where
     R::Cache: StorageCache,
 {
     // Look for the prepared statement in the cache.
-    if let Some(stmt) = runtime.cache().lock().get(plan_id)? {
-        let stmt_id = stmt.id()?;
-        // The statement was found in the cache, so we can execute it.
-        debug!(
-            Option::from("execute plan"),
-            &format!("Execute prepared statement: {stmt:?}"),
-        );
-        let result = cache_hit_read_prepared(stmt_id, params, vtable_max_rows, opts);
+    if let Some((stmt, table_ids)) = locked_cache.get(plan_id)? {
+        // Transaction rollbacks are very expensive in Tarantool, so we're going to
+        // avoid transactions for DQL queries. We can achieve atomicity by truncating
+        // temporary tables. Isolation is guaranteed by keeping a lock on the cache.
+        let result = 'dql: {
+            for node_id in table_ids {
+                if let Err(e) = populate_table(*node_id, plan_id, tables) {
+                    break 'dql Err(e);
+                }
+            }
+            let stmt_id = stmt.id().expect("failed to get statement id");
+            read_prepared(stmt_id, "", params, vtable_max_rows, opts).map(Some)
+        };
+        truncate_tables(table_ids, plan_id);
 
-        // If prepared statement is invalid for some reason, fallback to the long pass
-        // and recompile the query.
-        if result.is_ok() {
-            return Ok(Some(result?));
-        }
-    }
+        return result;
+    };
     debug!(
         Option::from("execute plan"),
         &format!("Failed to find a plan (id {plan_id}) in the cache."),
@@ -1111,27 +1172,39 @@ where
     Ok(None)
 }
 
-/// Helper func to create span for cache hit read.
-#[otm_child_span("tarantool.cache.hit.read.prepared")]
-fn cache_hit_read_prepared(
-    stmt_id: u32,
-    params: &[Value],
-    vtable_max_rows: u64,
-    opts: ExecuteOptions,
-) -> Result<Box<dyn Any>, SbroadError> {
-    read_prepared(stmt_id, "", params, vtable_max_rows, opts)
-}
-
-/// Helper func to create span for cache miss read.
+/// Execute a read statement bypassing tarantool cache.
+/// Must be used only while the cache is locked.
+///
+/// # Errors
+/// - Failed to populate temporary tables.
+/// - Failed to execute the statement.
+/// - Temporary table could not be truncated.
 #[otm_child_span("tarantool.cache.miss.read.prepared")]
-fn cache_miss_read_prepared(
-    stmt_id: u32,
+fn read_bypassing_cache<R: QueryCache, M: MutexLike<R::Cache>>(
     pattern: &str,
     params: &[Value],
+    plan_id: &SmolStr,
+    tables: &mut EncodedTables,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
-) -> Result<Box<dyn Any>, SbroadError> {
-    read_prepared(stmt_id, pattern, params, vtable_max_rows, opts)
+) -> Result<Box<dyn Any>, SbroadError>
+where
+    R::Cache: StorageCache,
+{
+    // Transaction rollbacks are very expensive in Tarantool, so we're going to
+    // avoid transactions for DQL queries. We can achieve atomicity by truncating
+    // temporary tables. Isolation is guaranteed by keeping a lock on the cache.
+    let result = 'dql: {
+        let table_ids = tables.keys().copied().collect::<Vec<NodeId>>();
+        for node_id in table_ids {
+            if let Err(e) = populate_table(node_id, plan_id, tables) {
+                break 'dql Err(e);
+            }
+        }
+        read_unprepared(pattern, params, vtable_max_rows, opts)
+    };
+    // No need to truncate temporary tables as they would be truncated in the parent function.
+    result
 }
 
 /// Tries to prepare read statement and then execute it.
@@ -1145,13 +1218,14 @@ fn cache_miss_read_prepared(
 /// - Failed to borrow runtime's cache
 /// - Tarantool execution error
 #[allow(unused_variables)]
-pub fn prepare_and_read<R: Vshard + QueryCache>(
-    runtime: &R,
+pub fn prepare_and_read<R: Vshard + QueryCache, M: MutexLike<R::Cache>>(
+    locked_cache: &mut M::Guard<'_>,
     pattern_with_params: &PatternWithParams,
     plan_id: &SmolStr,
     vtable_max_rows: u64,
     opts: ExecuteOptions,
     schema_info: &SchemaInfo,
+    tables_with_data: &mut EncodedTables,
 ) -> Result<Box<dyn Any>, SbroadError>
 where
     R::Cache: StorageCache,
@@ -1167,30 +1241,43 @@ where
                     stmt.pattern()?
                 ),
             );
-            runtime
-                .cache()
-                .lock()
-                .put(plan_id.clone(), stmt, schema_info)?;
+            let mut stmt_tables: Vec<SmolStr> = Vec::with_capacity(tables_with_data.len());
+            for node_id in tables_with_data.keys() {
+                stmt_tables.push(table_name(plan_id.as_str(), *node_id));
+            }
+            let table_ids = tables_with_data.keys().copied().collect::<Vec<NodeId>>();
+            locked_cache.put(plan_id.clone(), stmt, schema_info, table_ids)?;
             // The statement was found in the cache, so we can execute it.
-            debug!(
-                Option::from("execute plan"),
-                &format!("Execute prepared statement: {stmt_id}"),
-            );
-            cache_miss_read_prepared(
-                stmt_id,
-                &pattern_with_params.pattern,
+            let Some(res) = read_from_cache::<R, M>(
+                locked_cache,
                 &pattern_with_params.params,
+                tables_with_data,
+                plan_id,
                 vtable_max_rows,
-                opts,
-            )
+                opts.clone(),
+            )?
+            else {
+                unreachable!(
+                    "The statement {stmt_id} was just prepared and put into the cache. SQL: {}",
+                    &pattern_with_params.pattern
+                );
+            };
+            Ok(res)
         }
+        // Possibly the statement is correct, but doesn't fit into
+        // Tarantool's prepared statements cache (`sql_cache_size`).
+        // So we try to execute it bypassing the cache.
         Err(e) => {
-            // Possibly the statement is correct, but doesn't fit into
-            // Tarantool's prepared statements cache (`sql_cache_size`).
-            // So we try to execute it bypassing the cache.
-            read_unprepared(
+            // We need to lock the cache though we are not going to use it. If we don't
+            // lock it, the prepared statement made from our pattern can be inserted into
+            // the cache by some other fiber because we have removed some big statements
+            // with LRU and tarantool cache has enough space to store this statement.
+            // And it can cause races in the temporary tables.
+            read_bypassing_cache::<R, R::Mutex>(
                 &pattern_with_params.pattern,
                 &pattern_with_params.params,
+                plan_id,
+                tables_with_data,
                 vtable_max_rows,
                 opts,
             )
@@ -1216,7 +1303,7 @@ where
 /// - Failed to compile the optional data
 /// - Failed to prepare the statement
 #[allow(unused_variables)]
-pub fn execute_cacheable_dql<R: Vshard + QueryCache>(
+pub fn execute_dql<R: Vshard + QueryCache>(
     runtime: &R,
     required: &mut RequiredData,
     optional: &mut OptionalData,
@@ -1225,23 +1312,35 @@ where
     R::Cache: StorageCache,
 {
     let opts = std::mem::take(&mut required.options.execute_options);
-    if let Some(res) = exec_if_in_cache(
-        runtime,
-        &required.parameters,
-        &required.plan_id,
-        required.options.vtable_max_rows,
-        opts.clone(),
-    )? {
-        return Ok(res);
+    let mut tables = std::mem::take(&mut required.tables);
+    let try_cache = !tables
+        .keys()
+        .any(|node_id| Space::find(&table_name(required.plan_id.as_str(), *node_id)).is_none());
+    let mut locked_cache = runtime.cache().lock();
+    if try_cache {
+        if let Some(res) = read_from_cache::<R, R::Mutex>(
+            &mut locked_cache,
+            &required.parameters,
+            &mut tables,
+            &required.plan_id,
+            required.options.vtable_max_rows,
+            opts.clone(),
+        )? {
+            return Ok(res);
+        }
     }
-    let (pattern_with_params, _tmp_spaces) = compile_optional(optional)?;
-    prepare_and_read(
-        runtime,
+    let (pattern_with_params, mut guards) = compile_optional(optional, &required.plan_id)?;
+    // There were no errors during the compilation, so we can skip truncating
+    // temporary tables in the table guards (prepare_and_read will do it).
+    guards.iter_mut().for_each(TableGuard::skip_truncate);
+    prepare_and_read::<R, R::Mutex>(
+        &mut locked_cache,
         &pattern_with_params,
         &required.plan_id,
         required.options.vtable_max_rows,
         opts,
         &required.schema_info,
+        &mut tables,
     )
 }
 
@@ -1291,12 +1390,7 @@ where
     let plan = optional.exec_plan.get_ir_plan();
     let column_names = plan.get_relational_aliases(subplan_top_id)?;
     optional.exec_plan.get_mut_ir_plan().restore_constants()?;
-    let result = if required.can_be_cached {
-        execute_cacheable_dql(runtime, required, optional)?
-    } else {
-        let opts = std::mem::take(&mut required.options.execute_options);
-        execute_non_cacheable_dql(optional, required.options.vtable_max_rows, opts)?
-    };
+    let result = execute_dql(runtime, required, optional)?;
     let tuple = result.downcast::<Tuple>().map_err(|e| {
         SbroadError::FailedTo(
             Action::Deserialize,
@@ -1804,46 +1898,8 @@ where
     Ok(Box::new(tuple) as Box<dyn Any>)
 }
 
-/// Execute non-cacheable read statement
-///
-/// # Errors
-/// - failed to compile optional data
-/// - Tarantool execution error
-pub fn execute_non_cacheable_dql(
-    optional: &mut OptionalData,
-    vtable_max_rows: u64,
-    opts: ExecuteOptions,
-) -> Result<Box<dyn Any>, SbroadError> {
-    let (pattern_with_params, _tmp_spaces) = compile_optional(optional)?;
-    read_unprepared(
-        &pattern_with_params.pattern,
-        &pattern_with_params.params,
-        vtable_max_rows,
-        opts,
-    )
-}
-
-/// Execute non-cacheable read statement
-///
-/// # Errors
-/// - failed to compile optional data
-/// - Tarantool execution error
-pub fn execute_non_cacheable_dql_with_raw_optional(
-    raw_optional: &mut Vec<u8>,
-    vtable_max_rows: u64,
-    opts: ExecuteOptions,
-) -> Result<Box<dyn Any>, SbroadError> {
-    let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
-    read_unprepared(
-        &pattern_with_params.pattern,
-        &pattern_with_params.params,
-        vtable_max_rows,
-        opts,
-    )
-}
-
-/// The same as `execute_cacheable_dql` but accepts raw optional data.
-/// See docs for `execute_cacheable_dql`
+/// The same as `execute_dql` but accepts raw optional data.
+/// See docs for `execute_dql`
 ///
 /// # Errors
 /// - Failed to borrow runtime's cache
@@ -1851,7 +1907,7 @@ pub fn execute_non_cacheable_dql_with_raw_optional(
 /// - Failed to compile the optional data
 /// - Failed to prepare the statement
 #[allow(unused_variables)]
-pub fn execute_cacheable_dql_with_raw_optional<R: Vshard + QueryCache>(
+pub fn execute_dql_with_raw_optional<R: Vshard + QueryCache>(
     runtime: &R,
     required: &mut RequiredData,
     raw_optional: &mut Vec<u8>,
@@ -1860,23 +1916,39 @@ where
     R::Cache: StorageCache,
 {
     let opts = std::mem::take(&mut required.options.execute_options);
-    if let Some(res) = exec_if_in_cache(
-        runtime,
-        &required.parameters,
-        &required.plan_id,
-        required.options.vtable_max_rows,
-        opts.clone(),
-    )? {
-        return Ok(res);
+    let mut tables = std::mem::take(&mut required.tables);
+    let try_cache = !tables
+        .keys()
+        .any(|node_id| Space::find(&table_name(&required.plan_id, *node_id)).is_none());
+    let mut locked_cache = runtime.cache().lock();
+    if try_cache {
+        if let Some(res) = read_from_cache::<R, R::Mutex>(
+            &mut locked_cache,
+            &required.parameters,
+            &mut tables,
+            &required.plan_id,
+            required.options.vtable_max_rows,
+            opts.clone(),
+        )? {
+            return Ok(res);
+        }
     }
-    let (pattern_with_params, _tmp_spaces) = compile_encoded_optional(raw_optional)?;
-    prepare_and_read(
-        runtime,
+    let (pattern_with_params, mut guards) = {
+        let data = std::mem::take(raw_optional);
+        let mut optional = OptionalData::try_from(EncodedOptionalData::from(data))?;
+        compile_optional(&mut optional, &required.plan_id)?
+    };
+    // There were no errors during the compilation, so we can skip truncating
+    // temporary tables in the table guards (prepare_and_read will do it).
+    guards.iter_mut().for_each(TableGuard::skip_truncate);
+    prepare_and_read::<R, R::Mutex>(
+        &mut locked_cache,
         &pattern_with_params,
         &required.plan_id,
         required.options.vtable_max_rows,
         opts,
         &required.schema_info,
+        &mut tables,
     )
 }
 

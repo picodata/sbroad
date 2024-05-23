@@ -30,7 +30,7 @@ fn check_sql_with_snapshot(
     let sp = SyntaxPlan::new(&ex_plan, top_id, snapshot).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = ex_plan.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    let (sql, _) = ex_plan.to_sql(&nodes, "test").unwrap();
 
     assert_eq!(expected, sql,);
 }

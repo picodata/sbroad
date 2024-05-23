@@ -246,6 +246,7 @@ pub enum Action {
     ReplaceOnConflict,
     Retrieve,
     Serialize,
+    Truncate,
     Update,
     Upsert,
 }
@@ -272,6 +273,7 @@ impl fmt::Display for Action {
             Action::ReplaceOnConflict => "replace on conflict".to_smolstr(),
             Action::Retrieve => "retrieve".to_smolstr(),
             Action::Serialize => "serialize".to_smolstr(),
+            Action::Truncate => "truncate".to_smolstr(),
             Action::Update => "update".to_smolstr(),
             Action::Upsert => "upsert".to_smolstr(),
         };

@@ -23,6 +23,7 @@ use crate::ir::function::Function;
 use crate::ir::relation::Table;
 use crate::ir::relation::Type;
 use crate::ir::value::Value;
+use crate::ir::NodeId;
 
 use super::ir::{ConnectionType, QueryType};
 use super::protocol::Binary;
@@ -95,16 +96,17 @@ pub trait StorageCache {
         plan_id: SmolStr,
         stmt: PreparedStmt,
         schema_info: &SchemaInfo,
+        table_ids: Vec<NodeId>,
     ) -> Result<(), SbroadError>;
 
-    /// Get the prepared statement from cache.
-    /// If the schema version for some table has
-    /// been changed, `None` is returned.
+    /// Get the prepared statement and a list of temporary tables from cache.
+    /// If the schema version for some table has been changed, `None` is returned.
     ///
     /// # Errors
     /// - failed to get schema version for some table
     #[allow(clippy::ptr_arg)]
-    fn get(&mut self, plan_id: &SmolStr) -> Result<Option<&PreparedStmt>, SbroadError>;
+    fn get(&mut self, plan_id: &SmolStr)
+        -> Result<Option<(&PreparedStmt, &[NodeId])>, SbroadError>;
 
     /// Clears the cache.
     ///
@@ -117,14 +119,13 @@ pub type TableVersionMap = HashMap<SmolStr, u64>;
 
 pub trait QueryCache {
     type Cache;
+    type Mutex: MutexLike<Self::Cache> + Sized;
 
     /// Get the cache.
     ///
     /// # Errors
     /// - Failed to get the cache.
-    fn cache(&self) -> &impl MutexLike<Self::Cache>
-    where
-        Self: Sized;
+    fn cache(&self) -> &Self::Mutex;
 
     /// Get the cache capacity.
     ///

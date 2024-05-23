@@ -1,16 +1,14 @@
 use crate::debug;
-use ahash::AHashMap;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
-use smol_str::{format_smolstr, SmolStr};
-use std::collections::hash_map::IntoIter;
+use smol_str::format_smolstr;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use tarantool::tlua::{self, Push};
 use tarantool::tuple::{FunctionArgs, Tuple};
 
 use crate::errors::{Action, Entity, SbroadError};
-use crate::executor::bucket::Buckets;
+use crate::executor::engine::helpers::table_name;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::expression::Expression;
 use crate::ir::operator::{OrderByType, Relational};
@@ -18,7 +16,7 @@ use crate::ir::value::{LuaValue, Value};
 use crate::ir::Node;
 use crate::otm::{child_span, current_id, deserialize_context, inject_context, query_id};
 
-use super::space::TmpSpace;
+use super::space::{create_table, TableGuard};
 use super::tree::SyntaxData;
 
 #[derive(Debug, Eq, Deserialize, Serialize, Push, Clone)]
@@ -146,78 +144,25 @@ impl From<PatternWithParams> for String {
     }
 }
 
-#[derive(Debug)]
-pub struct TmpSpaceMap {
-    inner: AHashMap<SmolStr, TmpSpace>,
-}
-
-impl IntoIterator for TmpSpaceMap {
-    type Item = (SmolStr, TmpSpace);
-    type IntoIter = IntoIter<SmolStr, TmpSpace>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.into_iter()
-    }
-}
-
-impl TmpSpaceMap {
-    fn with_capacity(capacity: usize) -> Self {
-        TmpSpaceMap {
-            inner: AHashMap::with_capacity(capacity),
-        }
-    }
-
-    fn get(&self, name: &str) -> Option<&TmpSpace> {
-        self.inner.get(name)
-    }
-
-    fn insert(&mut self, name: SmolStr, space: TmpSpace) -> Result<(), SbroadError> {
-        if self.inner.contains_key(&name) {
-            return Err(SbroadError::FailedTo(
-                Action::Insert,
-                Some(Entity::Space),
-                format_smolstr!("in the temporary space map ({name})"),
-            ));
-        }
-        self.inner.insert(name, space);
-        Ok(())
-    }
-}
-
 impl ExecutionPlan {
     /// # Errors
     /// - IR plan is invalid
-    pub fn to_params(
-        &self,
-        nodes: &[&SyntaxData],
-        buckets: &Buckets,
-    ) -> Result<Vec<Value>, SbroadError> {
+    pub fn to_params(&self, nodes: &[&SyntaxData]) -> Result<Vec<Value>, SbroadError> {
         let ir_plan = self.get_ir_plan();
         let mut params: Vec<Value> = Vec::new();
 
         for data in nodes {
-            match data {
-                SyntaxData::Parameter(id) => {
-                    let value = ir_plan.get_expression_node(*id)?;
-                    if let Expression::Constant { value, .. } = value {
-                        params.push(value.clone());
-                    } else {
-                        return Err(SbroadError::Invalid(
-                            Entity::Expression,
-                            Some(format_smolstr!("parameter {value:?} is not a constant")),
-                        ));
-                    }
-                }
-                SyntaxData::VTable(motion_id) => {
-                    let vtable = self.get_motion_vtable(*motion_id)?;
-                    let tuples = (*vtable).get_tuples_with_buckets(buckets);
-                    for t in tuples {
-                        for v in t {
-                            params.push(v.clone());
-                        }
-                    }
-                }
-                _ => {}
+            let SyntaxData::Parameter(id) = data else {
+                continue;
+            };
+            let value = ir_plan.get_expression_node(*id)?;
+            if let Expression::Constant { value, .. } = value {
+                params.push(value.clone());
+            } else {
+                return Err(SbroadError::Invalid(
+                    Entity::Expression,
+                    Some(format_smolstr!("parameter {value:?} is not a constant")),
+                ));
             }
         }
         Ok(params)
@@ -232,12 +177,10 @@ impl ExecutionPlan {
     pub fn to_sql(
         &self,
         nodes: &[&SyntaxData],
-        buckets: &Buckets,
-        name_base: &str,
-    ) -> Result<(PatternWithParams, TmpSpaceMap), SbroadError> {
+        plan_id: &str,
+    ) -> Result<(PatternWithParams, Vec<TableGuard>), SbroadError> {
         let vtable_engine = self.vtable_engine()?;
         let capacity = self.get_vtables().map_or(1, HashMap::len);
-        let mut tmp_spaces = TmpSpaceMap::with_capacity(capacity);
         // In our data structures, we store plan identifiers without
         // quotes in normalized form, but tarantool local sql has
         // different normalizing rules (to uppercase), so we need
@@ -247,6 +190,7 @@ impl ExecutionPlan {
             sql.push_str(identifier);
             sql.push('\"');
         };
+        let mut guard = Vec::with_capacity(capacity);
         let (sql, params) = child_span("\"syntax.ordered.sql\"", || {
             let mut params: Vec<Value> = Vec::new();
 
@@ -484,7 +428,7 @@ impl ExecutionPlan {
                         }
                     }
                     SyntaxData::VTable(motion_id) => {
-                        let name = TmpSpace::generate_space_name(name_base, *motion_id);
+                        let name = table_name(plan_id, *motion_id);
                         let vtable = self.get_motion_vtable(*motion_id)?;
 
                         // for each name we wrap it in quotes and add a comma (except last name): 2 + 1
@@ -506,24 +450,15 @@ impl ExecutionPlan {
                             )
                         })?;
                         // BETWEEN can refer to the same virtual table multiple times.
-                        if tmp_spaces.get(&name).is_none() {
-                            let space = TmpSpace::initialize(
-                                &name,
-                                self,
-                                name_base,
-                                *motion_id,
-                                buckets,
-                                &vtable_engine,
-                            )?;
-                            tmp_spaces.insert(name, space)?;
-                        }
+                        let table_guard = create_table(self, plan_id, *motion_id, &vtable_engine)?;
+                        guard.push(table_guard);
                     }
                 }
             }
             Ok((sql, params))
         })?;
         // MUST be constructed out of the `syntax.ordered.sql` context scope.
-        Ok((PatternWithParams::new(sql, params), tmp_spaces))
+        Ok((PatternWithParams::new(sql, params), guard))
     }
 
     /// Checks if the given query subtree modifies data or not.
@@ -538,6 +473,5 @@ impl ExecutionPlan {
         Ok(top.is_dml())
     }
 }
-
 #[cfg(test)]
 mod tests;

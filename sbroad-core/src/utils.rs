@@ -1,4 +1,5 @@
 use std::cell::{RefCell, RefMut};
+use std::io::{Error, Result, Write};
 use std::ops::DerefMut;
 
 use tarantool::fiber::mutex::MutexGuard as TMutexGuard;
@@ -31,5 +32,63 @@ impl<T> MutexLike<T> for RefCell<T> {
 
     fn lock(&self) -> Self::Guard<'_> {
         self.borrow_mut()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ByteCounter(usize);
+
+impl ByteCounter {
+    #[must_use]
+    pub fn bytes(&self) -> usize {
+        self.0
+    }
+}
+
+impl Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SliceWriter<'b> {
+    buf: &'b mut [u8],
+    pos: usize,
+}
+
+impl SliceWriter<'_> {
+    #[must_use]
+    pub fn new(buf: &mut [u8]) -> SliceWriter {
+        SliceWriter { buf, pos: 0 }
+    }
+}
+
+impl<'b> Write for SliceWriter<'b> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let len = buf.len();
+        if len > self.buf.len() - self.pos {
+            return Err(Error::new(
+                std::io::ErrorKind::WriteZero,
+                format!(
+                    "no space left in buffer (position = {}, length = {}, requested = {})",
+                    self.pos,
+                    self.buf.len(),
+                    len
+                ),
+            ));
+        }
+        self.buf[self.pos..self.pos + len].copy_from_slice(buf);
+        self.pos += len;
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
     }
 }

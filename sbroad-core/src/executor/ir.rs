@@ -716,11 +716,6 @@ impl ExecutionPlan {
     /// - execution plan is invalid
     /// - multiple engines are used in the plan
     pub fn vtable_engine(&self) -> Result<SpaceEngine, SbroadError> {
-        let query_type = self.query_type()?;
-        if query_type == QueryType::DQL {
-            return Ok(SpaceEngine::Memtx);
-        }
-
         let mut engine: Option<SpaceEngine> = None;
         for table in self.get_ir_plan().relations.tables.values() {
             let table_engine = table.engine();

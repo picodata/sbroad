@@ -1162,6 +1162,7 @@ dependencies = [
  "pest_derive",
  "pretty_assertions",
  "rand",
+ "rmp",
  "rmp-serde 1.1.0",
  "sbroad-proc",
  "serde",

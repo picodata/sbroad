@@ -6,7 +6,9 @@ use smol_str::SmolStr;
 
 use crate::backend::sql::tree::{OrderedSyntaxNodes, SyntaxPlan};
 use crate::collection;
-use crate::executor::engine::mock::{ReplicasetDispatchInfo, RouterRuntimeMock, VshardMock};
+use crate::executor::engine::mock::{
+    ReplicasetDispatchInfo, RouterRuntimeMock, VshardMock, TEMPLATE,
+};
 use crate::ir::relation::Type;
 use crate::ir::tests::{column_integer_user_non_null, column_user_non_null};
 use crate::ir::transformation::redistribution::MotionPolicy;
@@ -30,7 +32,6 @@ fn get_sql_from_execution_plan(
     exec_plan: &mut ExecutionPlan,
     top_id: usize,
     snapshot: Snapshot,
-    buckets: &Buckets,
     name_base: &str,
 ) -> PatternWithParams {
     let subplan = exec_plan.take_subtree(top_id).unwrap();
@@ -38,7 +39,7 @@ fn get_sql_from_execution_plan(
     let sp = SyntaxPlan::new(&subplan, subplan_top_id, snapshot).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan.to_sql(&nodes, buckets, name_base).unwrap();
+    let (sql, _) = subplan.to_sql(&nodes, name_base).unwrap();
     sql
 }
 
@@ -71,13 +72,7 @@ fn exec_plan_subtree_test() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check sub-query
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -86,8 +81,7 @@ fn exec_plan_subtree_test() {
         ));
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -135,13 +129,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     };
 
     // Check groupby local stage
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -152,8 +140,7 @@ fn exec_plan_subtree_two_stage_groupby_test() {
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -203,13 +190,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Segment for local aggregation stage");
@@ -229,8 +210,7 @@ GROUP BY "T1"."FIRST_NAME", "T1"."sys_op", "T1"."sysFrom""#
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -290,13 +270,7 @@ fn exec_plan_subtree_aggregates() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Segment for local aggregation stage");
@@ -320,8 +294,7 @@ GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -372,13 +345,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Full for local aggregation stage");
@@ -391,8 +358,7 @@ fn exec_plan_subtree_aggregates_no_groupby() {
         ));
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -433,8 +399,7 @@ fn exec_plan_subquery_under_motion_without_alias() {
     exec_plan.set_vtables(vtables);
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -475,8 +440,7 @@ fn exec_plan_subquery_under_motion_with_alias() {
     exec_plan.set_vtables(vtables);
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -511,8 +475,7 @@ fn exec_plan_motion_under_in_operator() {
     exec_plan.set_vtables(vtables);
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -551,8 +514,7 @@ fn exec_plan_motion_under_except() {
     exec_plan.set_vtables(vtables);
     let top_id = exec_plan.get_ir_plan().get_top().unwrap();
 
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -591,13 +553,7 @@ fn exec_plan_subtree_count_asterisk() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check groupby local stage
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Full for local aggregation stage");
@@ -612,8 +568,7 @@ fn exec_plan_subtree_count_asterisk() {
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -666,7 +621,7 @@ fn exec_plan_subtree_having() {
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE).unwrap();
     if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Segment for local aggregation stage");
@@ -690,7 +645,7 @@ fn exec_plan_subtree_having() {
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE).unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -748,7 +703,7 @@ fn exec_plan_subtree_having_without_groupby() {
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE).unwrap();
     if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Full after local stage");
@@ -773,7 +728,7 @@ fn exec_plan_subtree_having_without_groupby() {
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, &Buckets::All, "test").unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE).unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -806,7 +761,7 @@ fn global_table_scan() {
     let sp = SyntaxPlan::new(&subplan, subplan_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan.to_sql(&nodes, &buckets, "test").unwrap();
+    let (sql, _) = subplan.to_sql(&nodes, TEMPLATE).unwrap();
 
     assert_eq!(
         sql,
@@ -1121,13 +1076,11 @@ fn global_except() {
             .exec_plan
             .get_motion_subtree_root(intersect_motion_id)
             .unwrap();
-        let buckets = query.bucket_discovery(motion_child).unwrap();
         let sql = get_sql_from_execution_plan(
             &mut query.exec_plan,
             motion_child,
             Snapshot::Oldest,
-            &buckets,
-            "test",
+            TEMPLATE,
         );
         assert_eq!(
             sql,
@@ -1194,13 +1147,7 @@ fn exec_plan_order_by() {
     let motion_child_id = exec_plan.get_motion_subtree_root(motion_id).unwrap();
 
     // Check sub-query
-    let sql = get_sql_from_execution_plan(
-        exec_plan,
-        motion_child_id,
-        Snapshot::Oldest,
-        &Buckets::All,
-        "test",
-    );
+    let sql = get_sql_from_execution_plan(exec_plan, motion_child_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -1210,8 +1157,7 @@ fn exec_plan_order_by() {
     );
 
     // Check main query
-    let sql =
-        get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, &Buckets::All, "test");
+    let sql = get_sql_from_execution_plan(exec_plan, top_id, Snapshot::Oldest, TEMPLATE);
     assert_eq!(
         sql,
         PatternWithParams::new(

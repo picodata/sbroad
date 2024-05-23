@@ -24,7 +24,7 @@ fn lru2() {
 
 #[test]
 fn lru3() {
-    let evict_fn = Box::new(|value: &mut String| {
+    let evict_fn = Box::new(|_: &usize, value: &mut String| {
         let value_old = value.clone();
         value.push_str("_old");
         Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(

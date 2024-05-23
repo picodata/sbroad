@@ -4,7 +4,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use std::rc::Rc;
@@ -17,7 +17,6 @@ use crate::cbo::histogram::HistogramBuckets;
 use crate::cbo::histogram::{Histogram, Mcv, McvSet, Scalar};
 use crate::cbo::tests::construct_i64_buckets;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
-use crate::collection;
 use crate::errors::{Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::engine::{
@@ -33,7 +32,6 @@ use crate::executor::vtable::VirtualTable;
 use crate::executor::Cache;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::ir::function::Function;
-use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use crate::ir::tree::Snapshot;
 use crate::ir::value::{LuaValue, Value};
@@ -43,6 +41,8 @@ use crate::utils::MutexLike;
 use super::helpers::vshard::{prepare_rs_to_ir_map, GroupedBuckets};
 use super::helpers::{dispatch_by_buckets, normalize_name_from_sql};
 use super::{get_builtin_functions, Metadata, QueryCache};
+
+pub const TEMPLATE: &str = "test";
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
@@ -868,13 +868,14 @@ impl ProducerResult {
 
 impl QueryCache for RouterRuntimeMock {
     type Cache = LRUCache<SmolStr, Plan>;
+    type Mutex = RefCell<Self::Cache>;
 
     fn clear_cache(&self) -> Result<(), SbroadError> {
         *self.ir_cache.borrow_mut() = LRUCache::new(self.cache_capacity()?, None)?;
         Ok(())
     }
 
-    fn cache(&self) -> &impl MutexLike<Self::Cache> {
+    fn cache(&self) -> &Self::Mutex {
         &self.ir_cache
     }
 
@@ -1357,17 +1358,16 @@ impl Router for RouterRuntimeMock {
 
         match buckets {
             Buckets::All => {
-                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
+                let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
             Buckets::Any => {
-                let (sql, _) = plan.to_sql(&nodes, buckets, "test")?;
+                let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
                 result.extend(exec_locally(String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
-                    let bucket_set: HashSet<u64, RepeatableState> = collection! { *bucket };
-                    let (sql, _) = plan.to_sql(&nodes, &Buckets::Filtered(bucket_set), "test")?;
+                    let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
                     let temp_result = exec_on_some(*bucket, String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }
@@ -1503,9 +1503,7 @@ impl ReplicasetDispatchInfo {
         let sp = SyntaxPlan::new(exec_plan, top, Snapshot::Oldest).unwrap();
         let ordered_sn = OrderedSyntaxNodes::try_from(sp).unwrap();
         let syntax_data_nodes = ordered_sn.to_syntax_data().unwrap();
-        let (pattern_with_params, _) = exec_plan
-            .to_sql(&syntax_data_nodes, &Buckets::All, "test")
-            .unwrap();
+        let (pattern_with_params, _) = exec_plan.to_sql(&syntax_data_nodes, TEMPLATE).unwrap();
         let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
         if let Some(vtables_map) = exec_plan.get_vtables() {
             vtables = vtables_map.clone();

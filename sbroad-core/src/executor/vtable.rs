@@ -1,21 +1,25 @@
+use ahash::AHashSet;
+use rmp::encode::write_array_len;
+use rmp_serde::Serializer;
+use serde::{Deserialize, Serialize};
+use smol_str::{format_smolstr, SmolStr};
 use std::any::Any;
 use std::collections::{hash_map::Entry, HashMap};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::vec;
 
-use ahash::AHashSet;
-use serde::{Deserialize, Serialize};
-use smol_str::{format_smolstr, SmolStr};
-
 use crate::errors::{Entity, SbroadError};
 use crate::executor::engine::helpers::{TupleBuilderCommand, TupleBuilderPattern};
+use crate::executor::protocol::{Binary, EncodedRows, EncodedTables};
 use crate::executor::{bucket::Buckets, Vshard};
 use crate::ir::helpers::RepeatableState;
 use crate::ir::relation::Column;
 use crate::ir::transformation::redistribution::{ColumnPosition, MotionKey, Target};
-use crate::ir::value::Value;
+use crate::ir::value::{EncodedValue, LuaValue, MsgPackValue, Value};
+use crate::utils::{ByteCounter, SliceWriter};
 
+use super::ir::ExecutionPlan;
 use super::result::{ExecutorTuple, MetadataColumn, ProducerResult};
 
 #[cfg(not(feature = "mock"))]
@@ -569,6 +573,92 @@ impl VirtualTable {
                 )
             })?))
         }
+    }
+}
+
+struct TupleIterator<'t> {
+    vtable: &'t VirtualTable,
+    buf: Vec<EncodedValue<'t>>,
+    row_id: usize,
+}
+
+impl<'t> TupleIterator<'t> {
+    fn new(vtable: &'t VirtualTable) -> Self {
+        let buf = Vec::with_capacity(vtable.get_columns().len() + 1);
+        TupleIterator {
+            vtable,
+            buf,
+            row_id: 0,
+        }
+    }
+
+    fn next<'a>(&'a mut self) -> Option<&'a [EncodedValue<'t>]> {
+        let pk = self.row_id as u64;
+
+        let row_id = self.row_id;
+
+        let Some(vt_tuple) = self.vtable.get_tuples().get(row_id) else {
+            return None;
+        };
+
+        self.buf.clear();
+        for value in vt_tuple {
+            self.buf.push(MsgPackValue::from(value).into());
+        }
+        self.buf.push(LuaValue::Unsigned(pk).into());
+
+        self.row_id += 1;
+        Some(&self.buf)
+    }
+}
+
+fn write_vtable_as_msgpack(vtable: &VirtualTable, buf: &mut [u8]) {
+    let mut stream = SliceWriter::new(buf);
+    let array_len =
+        u32::try_from(vtable.get_tuples().len()).expect("expected u32 tuples in virtual table");
+    write_array_len(&mut stream, array_len).expect("failed to write array length");
+
+    let mut ser = Serializer::new(&mut stream);
+    let mut tuple_iter = TupleIterator::new(vtable);
+
+    while let Some(tuple) = tuple_iter.next() {
+        tuple
+            .serialize(&mut ser)
+            .expect("failed to serialize tuple");
+    }
+}
+
+fn vtable_marking(vtable: &VirtualTable) -> Vec<usize> {
+    let mut marking: Vec<usize> = Vec::with_capacity(vtable.get_tuples().len());
+    let mut tuple_iter = TupleIterator::new(vtable);
+    while let Some(tuple) = tuple_iter.next() {
+        let mut byte_counter = ByteCounter::default();
+        let mut ser = Serializer::new(&mut byte_counter);
+        tuple
+            .serialize(&mut ser)
+            .expect("temporary table serialization failed");
+        marking.push(byte_counter.bytes());
+    }
+    marking
+}
+
+impl ExecutionPlan {
+    pub fn encode_vtables(&self) -> EncodedTables {
+        let Some(vtables) = self.get_vtables() else {
+            return EncodedTables::default();
+        };
+        let mut encoded_tables = EncodedTables::with_capacity(vtables.len());
+
+        for (id, vtable) in vtables {
+            let marking = vtable_marking(vtable);
+            // Array length marker (1 byte) + array length (up to 4 bytes) + tuples.
+            let capacity = 5 + marking.iter().sum::<usize>();
+            let mut buf = vec![0; capacity];
+            write_vtable_as_msgpack(vtable, &mut buf);
+            let binary_table = Binary::from(buf);
+            encoded_tables.insert(*id, EncodedRows::new(marking, binary_table));
+        }
+        encoded_tables
     }
 }
 

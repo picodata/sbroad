@@ -1078,6 +1078,34 @@ impl<'v> From<&'v Value> for MsgPackValue<'v> {
     }
 }
 
+impl<'v> From<EncodedValue<'v>> for Value {
+    fn from(value: EncodedValue<'v>) -> Self {
+        match value {
+            EncodedValue::Ref(MsgPackValue::Boolean(v)) => Value::Boolean(*v),
+            EncodedValue::Ref(MsgPackValue::Datetime(v)) => Value::Datetime(*v),
+            EncodedValue::Ref(MsgPackValue::Decimal(v)) => Value::Decimal(*v),
+            EncodedValue::Ref(MsgPackValue::Double(v)) => Value::Double(Double::from(*v)),
+            EncodedValue::Ref(MsgPackValue::Integer(v)) => Value::Integer(*v),
+            EncodedValue::Ref(MsgPackValue::Unsigned(v)) => Value::Unsigned(*v),
+            EncodedValue::Ref(MsgPackValue::String(v)) => Value::String(v.clone()),
+            EncodedValue::Ref(MsgPackValue::Tuple(v)) => Value::Tuple(v.clone()),
+            EncodedValue::Ref(MsgPackValue::Uuid(v)) => Value::Uuid(*v),
+            EncodedValue::Owned(LuaValue::Boolean(v)) => Value::Boolean(v),
+            EncodedValue::Owned(LuaValue::Datetime(v)) => Value::Datetime(v),
+            EncodedValue::Owned(LuaValue::Decimal(v)) => Value::Decimal(v),
+            EncodedValue::Owned(LuaValue::Double(v)) => Value::Double(v.into()),
+            EncodedValue::Owned(LuaValue::Integer(v)) => Value::Integer(v),
+            EncodedValue::Owned(LuaValue::Unsigned(v)) => Value::Unsigned(v),
+            EncodedValue::Owned(LuaValue::String(v)) => Value::String(v),
+            EncodedValue::Owned(LuaValue::Tuple(v)) => Value::Tuple(v),
+            EncodedValue::Owned(LuaValue::Uuid(v)) => Value::Uuid(v),
+            EncodedValue::Ref(MsgPackValue::Null(())) | EncodedValue::Owned(LuaValue::Null(())) => {
+                Value::Null
+            }
+        }
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 #[derive(Clone, LuaRead, PartialEq, Debug, Deserialize, Serialize)]
 #[serde(untagged)]

@@ -12,6 +12,7 @@ use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
 use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
+use sbroad::ir::NodeId;
 use sbroad::utils::MutexLike;
 use sbroad::{debug, error, warn};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
@@ -30,7 +31,7 @@ pub struct StorageRuntime {
     cache: Mutex<CartridgeCache>,
 }
 
-pub struct CartridgeCache(LRUCache<SmolStr, PreparedStmt>);
+pub struct CartridgeCache(LRUCache<SmolStr, (PreparedStmt, Vec<NodeId>)>);
 
 impl StorageCache for CartridgeCache {
     fn put(
@@ -38,12 +39,19 @@ impl StorageCache for CartridgeCache {
         plan_id: SmolStr,
         stmt: PreparedStmt,
         _: &SchemaInfo,
+        table_ids: Vec<NodeId>,
     ) -> Result<(), SbroadError> {
-        self.0.put(plan_id, stmt)
+        self.0.put(plan_id, (stmt, table_ids))
     }
 
-    fn get(&mut self, plan_id: &SmolStr) -> Result<Option<&PreparedStmt>, SbroadError> {
-        self.0.get(plan_id)
+    fn get(
+        &mut self,
+        plan_id: &SmolStr,
+    ) -> Result<Option<(&PreparedStmt, &[NodeId])>, SbroadError> {
+        let Some((stmt, table_ids)) = self.0.get(plan_id)? else {
+            return Ok(None);
+        };
+        Ok(Some((stmt, table_ids.as_slice())))
     }
 
     fn clear(&mut self) -> Result<(), SbroadError> {
@@ -53,8 +61,9 @@ impl StorageCache for CartridgeCache {
 
 impl QueryCache for StorageRuntime {
     type Cache = CartridgeCache;
+    type Mutex = Mutex<Self::Cache>;
 
-    fn cache(&self) -> &impl MutexLike<Self::Cache> {
+    fn cache(&self) -> &Self::Mutex {
         &self.cache
     }
 
@@ -197,7 +206,7 @@ impl StorageRuntime {
     /// # Errors
     /// - Failed to initialize the LRU cache.
     pub fn new() -> Result<Self, SbroadError> {
-        let cache: LRUCache<SmolStr, PreparedStmt> =
+        let cache: LRUCache<SmolStr, (PreparedStmt, Vec<NodeId>)> =
             LRUCache::new(DEFAULT_CAPACITY, Some(Box::new(unprepare)))?;
         let result = StorageRuntime {
             metadata: Mutex::new(StorageConfiguration::new()),
@@ -220,17 +229,7 @@ impl StorageRuntime {
     ) -> Result<Box<dyn Any>, SbroadError> {
         match required.query_type {
             QueryType::DML => helpers::execute_dml(self, required, raw_optional),
-            QueryType::DQL => {
-                if required.can_be_cached {
-                    helpers::execute_cacheable_dql_with_raw_optional(self, required, raw_optional)
-                } else {
-                    helpers::execute_non_cacheable_dql_with_raw_optional(
-                        raw_optional,
-                        required.options.vtable_max_rows,
-                        std::mem::take(&mut required.options.execute_options),
-                    )
-                }
-            }
+            QueryType::DQL => helpers::execute_dql_with_raw_optional(self, required, raw_optional),
         }
     }
 }

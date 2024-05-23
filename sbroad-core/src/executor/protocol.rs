@@ -1,8 +1,10 @@
 use opentelemetry::Context;
+use rmp::decode::{read_array_len, Bytes, RmpRead};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
 use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
+use tarantool::tuple::{Tuple, TupleBuffer};
 
 use crate::backend::sql::tree::OrderedSyntaxNodes;
 use crate::debug;
@@ -12,11 +14,11 @@ use crate::ir::value::Value;
 use crate::otm::{current_id, extract_context, inject_context};
 
 use crate::executor::engine::TableVersionMap;
-use crate::ir::Options;
+use crate::ir::{NodeId, Options};
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Binary(Vec<u8>);
 
 impl From<Vec<u8>> for Binary {
@@ -64,10 +66,8 @@ pub struct SchemaInfo {
 
 impl SchemaInfo {
     #[must_use]
-    pub fn new(version_map: TableVersionMap) -> Self {
-        SchemaInfo {
-            router_version_map: version_map,
-        }
+    pub fn new(router_version_map: TableVersionMap) -> Self {
+        SchemaInfo { router_version_map }
     }
 }
 
@@ -87,21 +87,103 @@ impl TracingMetadata {
     }
 }
 
-/// Query data used for executing cachable queries.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct EncodedRows {
+    /// Lengths of encoded rows.
+    pub marking: Vec<usize>,
+    /// Encoded rows as msgpack array.
+    pub encoded: Binary,
+}
+
+impl EncodedRows {
+    #[must_use]
+    pub fn new(marking: Vec<usize>, encoded: Binary) -> Self {
+        EncodedRows { marking, encoded }
+    }
+
+    #[must_use]
+    pub fn iter(&self) -> EncodedRowsIter {
+        <&Self as IntoIterator>::into_iter(self)
+    }
+}
+
+impl<'e> IntoIterator for &'e EncodedRows {
+    type Item = Tuple;
+    type IntoIter = EncodedRowsIter<'e>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let capacity = *self.marking.iter().max().unwrap_or(&0);
+        EncodedRowsIter {
+            stream: Bytes::from(self.encoded.0.as_slice()),
+            marking: &self.marking,
+            position: 0,
+            // Allocate buffer for encoded row.
+            buf: Vec::with_capacity(capacity),
+        }
+    }
+}
+
+pub struct EncodedRowsIter<'e> {
+    /// Encoded tuples as msgpack array stream.
+    stream: Bytes<'e>,
+    /// Lengths of encoded rows.
+    marking: &'e [usize],
+    /// Current stream position.
+    position: usize,
+    /// Buffer for encoded tuple.
+    buf: Vec<u8>,
+}
+
+impl<'e> Iterator for EncodedRowsIter<'e> {
+    type Item = Tuple;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cur_pos = self.position;
+        self.position += 1;
+        if cur_pos == 0 {
+            let array_len = read_array_len(&mut self.stream).expect("encoded rows length");
+            assert_eq!(array_len as usize, self.marking.len());
+        }
+        let Some(row_len) = self.marking.get(cur_pos) else {
+            return None;
+        };
+        // We take a preallocated buffer, clear it (preserving allocated rust memory) and
+        // fill it with encoded tuple (copying from stream). Then we create a tuple from
+        // this buffer (i.e. allocate tarantool memory and copy from buffer) and return
+        // rust memory back to the buffer vector. As a result we make only one tarantool
+        // memory allocation per tuple and two copies of encoded tuple bytes.
+
+        // TODO: refactor this code when we switch to rust-allocated tuples.
+        self.buf.clear();
+        let mut tmp = Vec::new();
+        std::mem::swap(&mut self.buf, &mut tmp);
+        tmp.resize(*row_len, 0);
+        self.stream.read_exact_buf(&mut tmp).expect("encoded tuple");
+        let tbuf = TupleBuffer::try_from_vec(tmp).expect("tuple buffer");
+        let tuple = Tuple::from(&tbuf);
+        // Return back previously allocated buffer.
+        self.buf = Vec::from(tbuf);
+        Some(tuple)
+    }
+}
+
+/// Encoded virtual tables data.
+pub type EncodedTables = HashMap<NodeId, EncodedRows>;
+
+/// Query data used for executing of the cached statements.
 /// Note that it contains only meta-information about SQL query (
 /// e.g. cached plan id and params).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RequiredData {
-    // Unique ID for concrete plan represented in a view of BLAKE3 hash.
-    // Needed for plans execution results being cached
-    // (e.g. see `encode_plan` -> `QueryType::DQL` -> `pattern_id`).
+    /// A unique ID of the IR subtree that is used as a key for prepared statements
+    /// in tarantool SQL cache.
     pub plan_id: SmolStr,
     pub parameters: Vec<Value>,
     pub query_type: QueryType,
-    pub can_be_cached: bool,
     pub options: Options,
     pub schema_info: SchemaInfo,
     pub tracing_meta: Option<TracingMetadata>,
+    pub tables: EncodedTables,
 }
 
 impl Default for RequiredData {
@@ -110,10 +192,10 @@ impl Default for RequiredData {
             plan_id: SmolStr::default(),
             parameters: vec![],
             query_type: QueryType::DQL,
-            can_be_cached: true,
             options: Options::default(),
             schema_info: SchemaInfo::default(),
             tracing_meta: None,
+            tables: EncodedTables::default(),
         }
     }
 }
@@ -152,9 +234,9 @@ impl RequiredData {
         plan_id: SmolStr,
         parameters: Vec<Value>,
         query_type: QueryType,
-        can_be_cached: bool,
         options: Options,
         schema_info: SchemaInfo,
+        tables: EncodedTables,
     ) -> Self {
         let mut tracing_meta = None;
         if let Some(trace_id) = current_id() {
@@ -167,10 +249,10 @@ impl RequiredData {
             plan_id,
             parameters,
             query_type,
-            can_be_cached,
             options,
             schema_info,
             tracing_meta,
+            tables,
         }
     }
 

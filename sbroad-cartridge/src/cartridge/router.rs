@@ -148,8 +148,9 @@ impl ConfigurationProvider for RouterRuntime {
 
 impl QueryCache for RouterRuntime {
     type Cache = LRUCache<SmolStr, Plan>;
+    type Mutex = Mutex<Self::Cache>;
 
-    fn cache(&self) -> &impl MutexLike<Self::Cache>
+    fn cache(&self) -> &Self::Mutex
     where
         Self: Sized,
     {
