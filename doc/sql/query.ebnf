@@ -59,7 +59,7 @@ literal     ::= 'TRUE'
                 | decimal
                 | string
 
-dml         ::= (call | delete | insert | update) 
+dml         ::= (call | delete | insert | update)
                 ( 'OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
@@ -143,7 +143,7 @@ create_procedure ::= 'CREATE' 'PROCEDURE' procedure '(' type (',' type)* ')'
 create_role    ::= 'CREATE' 'ROLE' role
 create_table   ::= 'CREATE' 'TABLE' table
                    '('
-                       column type ('NOT'? 'NULL')? (',' column type ('NOT'? 'NULL')?)* ',' 
+                       column type ('NOT'? 'NULL')? (',' column type ('NOT'? 'NULL')?)* ','
                        'PRIMARY KEY' '(' column (',' column)* ')'
                    ')'
                    ('USING' ('MEMTX' | 'VINYL'))?

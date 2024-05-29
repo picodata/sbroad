@@ -97,7 +97,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropPr
 
     CreateIndex = {
         ^"create" ~ Unique? ~ ^"index" ~ Identifier ~ ^"on" ~ Table
-        ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ TimeoutOption? 
+        ~ IndexType? ~ "(" ~ Parts ~ ")" ~ IndexOptions? ~ TimeoutOption?
     }
     Unique = { ^"unique" }
     IndexType = { ^"using" ~ (Tree | Hash | RTree | BitSet) }
@@ -115,7 +115,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropPr
         RunCountPerLevel = { ^"run_count_per_level" ~  "=" ~Unsigned }
         RunSizeRatio = { ^"run_size_ratio" ~ "=" ~ Decimal }
         Dimension = { ^"dimension" ~ "=" ~ Unsigned }
-        Distance = { ^"distance" ~ "=" ~ (Euclid | Manhattan) } 
+        Distance = { ^"distance" ~ "=" ~ (Euclid | Manhattan) }
             Euclid = { ^"euclid" }
             Manhattan = { ^"manhattan" }
         Hint = { ^"hint" ~ "=" ~ (True | False) }
