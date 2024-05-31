@@ -49,6 +49,12 @@ pub enum Ddl {
         /// Vinyl is supported only for sharded tables.
         engine_type: SpaceEngineType,
         timeout: Decimal,
+        /// Shows which tier the sharded table belongs to.
+        /// Field has value, only if it was specified in [ON TIER] part of CREATE TABLE statement.
+        /// Field is None, if:
+        /// 1) Global table.
+        /// 2) Sharded table without [ON TIER] part. In this case picodata will use default tier.
+        tier: Option<SmolStr>,
     },
     DropTable {
         name: SmolStr,

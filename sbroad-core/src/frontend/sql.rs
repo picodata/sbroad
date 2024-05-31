@@ -5,6 +5,7 @@
 
 use ahash::AHashMap;
 use core::panic;
+use itertools::Itertools;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
@@ -36,7 +37,7 @@ use crate::ir::operator::{
     Arithmetic, Bool, ConflictStrategy, JoinKind, OrderByElement, OrderByEntity, OrderByType,
     Relational, Unary,
 };
-use crate::ir::relation::{Column, ColumnRole, Type as RelationType};
+use crate::ir::relation::{Column, ColumnRole, TableKind, Type as RelationType};
 use crate::ir::tree::traversal::{PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
 use crate::ir::{Node, NodeId, OptionKind, OptionParamValue, OptionSpec, Plan};
@@ -504,6 +505,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut shard_key: Vec<SmolStr> = Vec::new();
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
     let mut timeout = get_default_timeout();
+    let mut tier = None;
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -683,33 +685,63 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                     match distribution_type_node.rule {
                         Rule::Global => {}
                         Rule::Sharding => {
-                            let shard_node = ast.nodes.get_node(*distribution_type_id)?;
-                            for shard_col_id in &shard_node.children {
-                                let shard_col_name = parse_identifier(ast, *shard_col_id)?;
+                            let sharding_node = ast.nodes.get_node(*distribution_type_id)?;
+                            for sharding_node_child in &sharding_node.children {
+                                let shard_child = ast.nodes.get_node(*sharding_node_child)?;
+                                match shard_child.rule {
+                                    Rule::Tier => {
+                                        let Some(tier_node_id) = shard_child.children.first()
+                                        else {
+                                            return Err(SbroadError::Invalid(
+                                                Entity::Node,
+                                                Some(format_smolstr!(
+                                                    "AST table tier node {:?} contains unexpected children",
+                                                    distribution_type_node,
+                                                )),
+                                            ));
+                                        };
 
-                                let column_found =
-                                    columns.iter().find(|c| c.name == shard_col_name);
-                                if column_found.is_none() {
-                                    return Err(SbroadError::Invalid(
-                                        Entity::Column,
-                                        Some(format_smolstr!(
+                                        let tier_name = parse_identifier(ast, *tier_node_id)?;
+                                        tier = Some(tier_name);
+                                    }
+                                    Rule::Identifier => {
+                                        let shard_col_name =
+                                            parse_identifier(ast, *sharding_node_child)?;
+
+                                        let column_found =
+                                            columns.iter().find(|c| c.name == shard_col_name);
+                                        if column_found.is_none() {
+                                            return Err(SbroadError::Invalid(
+                                                Entity::Column,
+                                                Some(format_smolstr!(
                                             "Sharding key column {shard_col_name} not found."
                                         )),
-                                    ));
-                                }
+                                            ));
+                                        }
 
-                                if let Some(column) = column_found {
-                                    if !column.data_type.is_scalar() {
-                                        return Err(SbroadError::Invalid(
+                                        if let Some(column) = column_found {
+                                            if !column.data_type.is_scalar() {
+                                                return Err(SbroadError::Invalid(
                                             Entity::Column,
                                             Some(format_smolstr!(
                                                 "Sharding key column {shard_col_name} is not of scalar type."
                                             )),
                                         ));
+                                            }
+                                        }
+
+                                        shard_key.push(shard_col_name);
+                                    }
+                                    _ => {
+                                        return Err(SbroadError::Invalid(
+                                            Entity::Node,
+                                            Some(format_smolstr!(
+                                                "AST table sharding node {:?} contains unexpected children",
+                                                distribution_type_node,
+                                            )),
+                                        ));
                                     }
                                 }
-
-                                shard_key.push(shard_col_name);
                             }
                         }
                         _ => {
@@ -760,6 +792,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             sharding_key: None,
             engine_type,
             timeout,
+            tier,
         }
     } else {
         Ddl::CreateTable {
@@ -769,6 +802,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
             sharding_key: Some(shard_key),
             engine_type,
             timeout,
+            tier,
         }
     };
     Ok(create_sharded_table)
@@ -3470,6 +3504,22 @@ impl AbstractSyntaxTree {
                 SbroadError::Invalid(Entity::AST, Some("no top in AST".into()))
             })?)?;
         plan.set_top(plan_top_id)?;
+
+        // check that all tables from query from one tier. Ignore global tables.
+        if !plan
+            .relations
+            .tables
+            .iter()
+            .filter(|(_, table)| matches!(table.kind, TableKind::ShardedSpace { .. }))
+            .map(|(_, table)| table.tier.as_ref())
+            .all_equal()
+        {
+            return Err(SbroadError::Invalid(
+                Entity::Query,
+                Some("Query cannot use tables from different tiers".into()),
+            ));
+        }
+
         let replaces = plan.replace_sq_with_references()?;
         plan.fix_betweens(&worker.betweens, &replaces)?;
         Ok(plan)

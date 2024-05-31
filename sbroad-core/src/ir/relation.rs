@@ -565,12 +565,32 @@ pub struct Table {
     /// Unique table name.
     pub name: SmolStr,
     pub kind: TableKind,
+    pub tier: Option<SmolStr>,
 }
 
 impl Table {
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Constructor for sharded table in specified tier.
+    ///
+    /// # Errors
+    /// - column names are duplicated;
+    /// - primary key is not found among the columns;
+    /// - sharding key is not found among the columns;
+    pub fn new_sharded_in_tier(
+        name: &str,
+        columns: Vec<Column>,
+        sharding_key: &[&str],
+        primary_key: &[&str],
+        engine: SpaceEngine,
+        tier: Option<SmolStr>,
+    ) -> Result<Self, SbroadError> {
+        let mut table = Self::new_sharded(name, columns, sharding_key, primary_key, engine)?;
+        table.tier = tier;
+        Ok(table)
     }
 
     /// Sharded table constructor.
@@ -594,6 +614,7 @@ impl Table {
             columns,
             primary_key,
             kind,
+            tier: None,
         })
     }
 
@@ -614,6 +635,7 @@ impl Table {
             columns,
             primary_key,
             kind,
+            tier: None,
         })
     }
 
@@ -634,6 +656,7 @@ impl Table {
             columns,
             primary_key,
             kind,
+            tier: None,
         })
     }
 

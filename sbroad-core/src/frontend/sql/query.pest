@@ -74,7 +74,8 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropPr
             Vinyl = { ^"vinyl" }
         Distribution = { ^"distributed" ~ (Global | Sharding) }
         Global = { ^"globally" }
-        Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")"}
+        Sharding = { ^"by" ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")" ~ Tier? }
+        Tier = { ^"on" ~ ^"tier" ~ "(" ~ Identifier ~ ")" }
     DropTable = { ^"drop" ~ ^"table" ~ Table ~ TimeoutOption? }
 
     CreateProc = {
