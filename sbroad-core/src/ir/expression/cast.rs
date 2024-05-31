@@ -130,7 +130,6 @@ impl Plan {
     /// # Errors
     /// - Child node is not of the expression type.
     pub fn add_cast(&mut self, expr_id: usize, to_type: Type) -> Result<usize, SbroadError> {
-        self.get_expression_node(expr_id)?;
         let cast_expr = Expression::Cast {
             child: expr_id,
             to: to_type,

@@ -3,6 +3,23 @@ use crate::ir::value::Value;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn front_param_in_cast() {
+    let pattern = r#"SELECT CAST(? AS INTEGER) FROM "test_space""#;
+    let plan = sql_to_optimized_ir(pattern, vec![Value::from(1_i64)]);
+
+    let expected_explain = String::from(
+        r#"projection (1::integer::int -> "COL_1")
+    scan "test_space"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
 fn front_params1() {
     let pattern = r#"SELECT "id", "FIRST_NAME" FROM "test_space"
         WHERE "sys_op" = ? AND "sysFrom" > ?"#;
