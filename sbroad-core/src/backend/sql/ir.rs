@@ -488,6 +488,7 @@ impl ExecutionPlan {
                         // BETWEEN can refer to the same virtual table multiple times.
                         if tmp_spaces.get(&name).is_none() {
                             let space = TmpSpace::initialize(
+                                &name,
                                 self,
                                 name_base,
                                 *motion_id,

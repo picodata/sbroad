@@ -2,8 +2,10 @@ use std::any::Any;
 
 use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, ToSmolStr};
+use tarantool::session::with_su;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
+use crate::backend::sql::space::ADMIN_ID;
 use crate::ir::ExecuteOptions;
 use crate::{error, errors::SbroadError, ir::value::Value, otm::child_span};
 
@@ -63,7 +65,11 @@ pub fn read_prepared(
         .get("read")
         .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, max_rows, options)) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, max_rows, options))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_prepared"), &format!("{e:?}"));
@@ -85,7 +91,11 @@ pub fn read_unprepared(
         .get("read")
         .ok_or_else(|| SbroadError::LuaError("Lua function `read` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params, max_rows, options)) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((0, stmt, params, max_rows, options))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("read_unprepared"), &format!("{e:?}"));
@@ -107,7 +117,11 @@ pub fn write_prepared(
         .get("write")
         .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, options)) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((stmt_id, stmt, params, options))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_prepared"), &format!("{e:?}"));
@@ -128,7 +142,11 @@ pub fn write_unprepared(
         .get("write")
         .ok_or_else(|| SbroadError::LuaError("Lua function `write` not found".into()))?;
 
-    match exec_sql.call_with_args::<Tuple, _>((0, stmt, params, options)) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((0, stmt, params, options))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v) as Box<dyn Any>),
         Err(e) => {
             error!(Option::from("write_unprepared"), &format!("{e:?}"));
