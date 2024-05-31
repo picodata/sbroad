@@ -196,5 +196,30 @@ g.test_cte = function ()
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
     t.assert_items_equals(r["rows"], { {1} })
+
+    -- cte with "serialize as empty table" opcode in motion
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte1(a) as (VALUES(1)),
+        cte2(a) as (SELECT a1.a FROM cte1 a1 JOIN "t" ON true UNION SELECT * FROM cte1 a2)
+        SELECT * FROM cte2
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "CTE2.A", type = "any"} })
+    t.assert_items_equals(r["rows"], { {1} })
+
+    r, err = api:call("sbroad.execute", { [[
+        WITH cte1(a) as (VALUES(1)),
+        cte2(a) as (
+            SELECT a1.a FROM cte1 a1 JOIN "t" ON a1.a = "id"
+            UNION ALL
+            SELECT * FROM cte1 a2
+            UNION ALL
+            SELECT * FROM cte1 a3
+        )
+        SELECT * FROM cte2
+    ]], })
+    t.assert_equals(err, nil)
+    t.assert_items_equals(r["metadata"], { {name = "CTE2.A", type = "any"} })
+    t.assert_items_equals(r["rows"], { {1}, {1}, {1} })
 end
 

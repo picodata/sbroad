@@ -14,10 +14,11 @@ use crate::{
             relation::RelationalIterator,
             traversal::{PostOrderWithFilter, REL_CAPACITY},
         },
-        Node, Plan,
+        Node, NodeId, Plan,
     },
     otm::child_span,
 };
+use ahash::AHashMap;
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
 use smol_str::format_smolstr;
@@ -254,14 +255,15 @@ pub fn exec_ir_on_some_buckets(
 struct SerializeAsEmptyInfo {
     // ids of topmost motion nodes which have this opcode
     // with `true` value
-    top_motion_ids: Vec<usize>,
+    top_motion_ids: Vec<NodeId>,
     // ids of motions which have this opcode
-    target_motion_ids: Vec<usize>,
+    target_motion_ids: Vec<NodeId>,
+    unused_motions: Vec<NodeId>,
     // ids of motions that are located below
     // top_motion_id, vtables corresponding
     // to those motions must be deleted from
     // replicaset message.
-    unused_motions: Vec<usize>,
+    motions_ref_count: AHashMap<NodeId, usize>,
 }
 
 impl Plan {
@@ -300,6 +302,23 @@ impl Plan {
 
     fn serialize_as_empty_info(&self) -> Result<Option<SerializeAsEmptyInfo>, SbroadError> {
         let top_ids = self.collect_top_ids()?;
+
+        let mut motions_ref_count: AHashMap<NodeId, usize> = AHashMap::new();
+        let filter = |node_id: usize| -> bool {
+            matches!(
+                self.get_node(node_id),
+                Ok(Node::Relational(Relational::Motion { .. }))
+            )
+        };
+        let mut dfs =
+            PostOrderWithFilter::with_capacity(|x| self.nodes.rel_iter(x), 0, Box::new(filter));
+        for (_, motion_id) in dfs.iter(self.get_top()?) {
+            motions_ref_count
+                .entry(motion_id)
+                .and_modify(|cnt| *cnt += 1)
+                .or_insert(1);
+        }
+
         if top_ids.is_empty() {
             return Ok(None);
         }
@@ -338,6 +357,7 @@ impl Plan {
             top_motion_ids: top_ids,
             target_motion_ids: target_motions,
             unused_motions,
+            motions_ref_count,
         }))
     }
 }
@@ -354,14 +374,21 @@ pub fn prepare_rs_to_ir_map(
     let mut rs_ir: HashMap<String, ExecutionPlan> = HashMap::new();
     rs_ir.reserve(rs_bucket_vec.len());
     if let Some((last, other)) = rs_bucket_vec.split_last() {
-        let sae_info = sub_plan.get_ir_plan().serialize_as_empty_info()?;
-        for (rs, bucket_ids) in other {
-            let mut rs_plan = sub_plan.clone();
-            if let Some(ref info) = sae_info {
-                apply_serialize_as_empty_opcode(&mut rs_plan, info)?;
+        let mut sae_info = sub_plan.get_ir_plan().serialize_as_empty_info()?;
+        let mut other_plan = sub_plan.clone();
+
+        if let Some(info) = sae_info.as_mut() {
+            apply_serialize_as_empty_opcode(&mut other_plan, info)?;
+        }
+        if let Some((other_last, other_other)) = other.split_last() {
+            for (rs, bucket_ids) in other_other {
+                let mut rs_plan = other_plan.clone();
+                filter_vtable(&mut rs_plan, bucket_ids)?;
+                rs_ir.insert(rs.clone(), rs_plan);
             }
-            filter_vtable(&mut rs_plan, bucket_ids)?;
-            rs_ir.insert(rs.clone(), rs_plan);
+            let (rs, bucket_ids) = other_last;
+            filter_vtable(&mut other_plan, bucket_ids)?;
+            rs_ir.insert(rs.clone(), other_plan);
         }
 
         if let Some(ref info) = sae_info {
@@ -377,11 +404,21 @@ pub fn prepare_rs_to_ir_map(
 
 fn apply_serialize_as_empty_opcode(
     sub_plan: &mut ExecutionPlan,
-    info: &SerializeAsEmptyInfo,
+    info: &mut SerializeAsEmptyInfo,
 ) -> Result<(), SbroadError> {
     if let Some(vtables_map) = sub_plan.get_mut_vtables() {
-        for motion_id in &info.unused_motions {
-            vtables_map.remove(motion_id);
+        let unused_motions = std::mem::take(&mut info.unused_motions);
+        for motion_id in &unused_motions {
+            let Some(use_count) = info.motions_ref_count.get_mut(motion_id) else {
+                return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                    "no ref count for motion={motion_id}"
+                )));
+            };
+            if *use_count > 1 {
+                *use_count -= 1;
+            } else {
+                vtables_map.remove(motion_id);
+            }
         }
     }
 

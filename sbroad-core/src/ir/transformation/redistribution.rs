@@ -139,20 +139,16 @@ pub enum MotionOpcode {
     AddMissingRowsForLeftJoin {
         motion_id: usize,
     },
-    /// When set to `true` this opcode serializes
-    /// motion subtree to sql that produces
+    /// When set to `true` this opcode serializes motion subtree to sql that produces
     /// empty table.
     ///
-    /// Relevant only for Local motion policy.
-    /// Must be initialized to `true` by planner,
-    /// executor garuantees to mark only one replicaset
-    /// which will have `false` value in this opcode.
-    /// For all replicasets that will have `true` value,
-    /// executor will remove all virtual tables used in
-    /// below subtree and unlink the given motion node.
+    /// Relevant only for Local motion policy. Must be initialized to `true` by planner,
+    /// executor guarantees to mark only one replicaset which will have `false` value
+    /// in this opcode. For all replicasets that will have `true` value, executor unlinks
+    /// the sub-trees below the given motion nodes.
     ///
-    /// Note: currently this opcode is only used for
-    /// execution of union all having global child and sharded child.
+    /// Note: currently this opcode is only used for execution of union all having global
+    /// child and sharded child.
     SerializeAsEmptyTable(bool),
     RemoveDuplicates,
 }

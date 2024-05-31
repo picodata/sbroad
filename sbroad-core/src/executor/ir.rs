@@ -105,10 +105,14 @@ impl ExecutionPlan {
                 return Ok(Rc::clone(result));
             }
         }
+        let motion_node = self.get_ir_plan().get_relation_node(motion_id)?;
 
         Err(SbroadError::NotFound(
             Entity::VirtualTable,
-            format_smolstr!("for Motion node ({motion_id})"),
+            format_smolstr!(
+                "for Motion node ({motion_id}): {motion_node:?}. Plan: {:?}",
+                self
+            ),
         ))
     }
 
