@@ -143,8 +143,8 @@ create_procedure ::= 'CREATE' 'PROCEDURE' procedure '(' type (',' type)* ')'
 create_role    ::= 'CREATE' 'ROLE' role
 create_table   ::= 'CREATE' 'TABLE' table
                    '('
-                       column type ('NOT'? 'NULL')? (',' column type ('NOT'? 'NULL')?)* ','
-                       'PRIMARY KEY' '(' column (',' column)* ')'
+                       column type ('NOT'? 'NULL')? ('PRIMARY' 'KEY')? (',' column type ('NOT'? 'NULL')? ('PRIMARY' 'KEY')?)*
+                       (',' 'PRIMARY KEY' '(' column (',' column)* ')')?
                    ')'
                    ('USING' ('MEMTX' | 'VINYL'))?
                    ('DISTRIBUTED' (('BY' '(' column (',' column)*  ')' ('ON' 'TIER' '(' tier ')')?) | 'GLOBALLY'))

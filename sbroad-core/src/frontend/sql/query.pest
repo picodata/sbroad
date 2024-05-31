@@ -58,17 +58,15 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
 DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropProc | RenameProc }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
-        "(" ~ Columns ~ "," ~ PrimaryKey ~ ")" ~
+        "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
         Engine? ~ Distribution ~ TimeoutOption?
     }
         NewTable = @{Table}
         Columns = { ColumnDef ~ ("," ~ ColumnDef)* }
-            ColumnDef = { Identifier ~ ColumnDefType ~ ColumnDefIsNull? }
+            ColumnDef = { Identifier ~ ColumnDefType ~ ColumnDefIsNull? ~ PrimaryKeyMark? }
             ColumnDefIsNull = { NotFlag? ~ ^"null" }
-        PrimaryKey = {
-            ^"primary" ~ ^"key" ~
-            "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")"
-        }
+            PrimaryKeyMark = { ^"primary" ~ ^"key" }
+        PrimaryKey = { PrimaryKeyMark ~ "(" ~ Identifier ~ ("," ~ Identifier)* ~ ")" }
         Engine = { ^"using" ~ (Memtx | Vinyl) }
             Memtx = { ^"memtx" }
             Vinyl = { ^"vinyl" }

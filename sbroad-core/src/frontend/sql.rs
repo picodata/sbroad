@@ -493,12 +493,12 @@ fn parse_drop_index(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, S
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::uninlined_format_args)]
 fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
-    if node.rule != Rule::CreateTable {
-        return Err(SbroadError::Invalid(
-            Entity::Type,
-            Some("create table".into()),
-        ));
-    }
+    assert_eq!(
+        node.rule,
+        Rule::CreateTable,
+        "Expected rule CreateTable, got {:?}.",
+        node.rule
+    );
     let mut table_name = SmolStr::default();
     let mut columns: Vec<ColumnDef> = Vec::new();
     let mut pk_keys: Vec<SmolStr> = Vec::new();
@@ -506,6 +506,18 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
     let mut timeout = get_default_timeout();
     let mut tier = None;
+
+    let nullable_primary_key_column_error = Err(SbroadError::Invalid(
+        Entity::Column,
+        Some(SmolStr::from(
+            "Primary key mustn't contain nullable columns.",
+        )),
+    ));
+    let primary_key_already_declared_error = Err(SbroadError::Invalid(
+        Entity::Node,
+        Some(format_smolstr!("Primary key has been already declared.",)),
+    ));
+
     for child_id in &node.children {
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
@@ -561,18 +573,18 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         column_def.data_type = RelationType::Uuid;
                                     }
                                     _ => {
-                                        return Err(SbroadError::Invalid(
-                                            Entity::Node,
-                                            Some(format_smolstr!(
-                                                "AST column type node {:?} has unexpected type",
-                                                type_node,
-                                            )),
-                                        ));
+                                        panic!(
+                                            "Met unexpected rule under ColumnDef: {:?}.",
+                                            type_node.rule
+                                        );
                                     }
                                 }
                             }
                             Rule::ColumnDefIsNull => {
-                                match (def_child_node.children.first(), def_child_node.children.get(1)) {
+                                match (
+                                    def_child_node.children.first(),
+                                    def_child_node.children.get(1),
+                                ) {
                                     (None, None) => {
                                         column_def.is_nullable = true;
                                     }
@@ -581,52 +593,45 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                         if let Rule::NotFlag = not_flag_node.rule {
                                             column_def.is_nullable = false;
                                         } else {
-                                            return Err(SbroadError::Invalid(
-                                                Entity::Node,
-                                                Some(format_smolstr!(
-                                                    "Expected NotFlag node, got: {:?}",
-                                                    not_flag_node,
-                                                ))))
+                                            panic!(
+                                                "Expected NotFlag rule, got: {:?}.",
+                                                not_flag_node.rule
+                                            );
                                         }
                                     }
-                                    _ => return Err(SbroadError::Invalid(
-                                        Entity::Node,
-                                        Some(format_smolstr!(
-                                            "AST column null node {:?} contains unexpected children",
-                                            def_child_node,
-                                        )),
-                                    )),
+                                    _ => panic!("Unexpected rule met under ColumnDefIsNull."),
                                 }
                             }
-                            _ => {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Node,
-                                    Some(format_smolstr!(
-                                        "AST column def node {:?} contains unexpected children",
-                                        def_child_node,
-                                    )),
-                                ));
+                            Rule::PrimaryKeyMark => {
+                                if !pk_keys.is_empty() {
+                                    return primary_key_already_declared_error;
+                                }
+                                if column_def.is_nullable {
+                                    return nullable_primary_key_column_error;
+                                }
+                                pk_keys.push(column_def.name.clone());
                             }
+                            _ => panic!("Unexpected rules met under ColumnDef."),
                         }
                     }
                     columns.push(column_def);
                 }
             }
             Rule::PrimaryKey => {
+                if !pk_keys.is_empty() {
+                    return primary_key_already_declared_error;
+                }
                 let pk_node = ast.nodes.get_node(*child_id)?;
-                for pk_col_id in &pk_node.children {
+
+                // First child is a `PrimaryKeyMark` that we should skip.
+                for pk_col_id in pk_node.children.iter().skip(1) {
                     let pk_col_name = parse_identifier(ast, *pk_col_id)?;
                     let mut column_found = false;
                     for column in &columns {
                         if column.name == pk_col_name {
                             column_found = true;
                             if column.is_nullable {
-                                return Err(SbroadError::Invalid(
-                                    Entity::Column,
-                                    Some(SmolStr::from(
-                                        "Primary key mustn't contain nullable columns",
-                                    )),
-                                ));
+                                return nullable_primary_key_column_error;
                             }
                         }
                     }
@@ -651,28 +656,12 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                             engine_type = SpaceEngineType::Memtx;
                         }
                         Rule::Vinyl => {
-                            // todo: when global spaces will be supported
-                            // check that vinyl space is not global.
                             engine_type = SpaceEngineType::Vinyl;
                         }
-                        _ => {
-                            return Err(SbroadError::Invalid(
-                                Entity::Node,
-                                Some(format_smolstr!(
-                                    "AST table engine node {:?} contains unexpected children",
-                                    engine_type_node,
-                                )),
-                            ));
-                        }
+                        _ => panic!("Unexpected rule met under Engine."),
                     }
                 } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some(format_smolstr!(
-                            "AST table engine node {:?} contains unexpected children",
-                            child_node,
-                        )),
-                    ));
+                    panic!("Engine rule contains more than one child rule.")
                 }
             }
             Rule::Distribution => {
@@ -744,39 +733,23 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                 }
                             }
                         }
-                        _ => {
-                            return Err(SbroadError::Invalid(
-                                Entity::Node,
-                                Some(format_smolstr!(
-                                    "AST table distribution node {:?} contains unexpected children",
-                                    distribution_type_node,
-                                )),
-                            ));
-                        }
+                        _ => panic!("Unexpected rule met under Distribution."),
                     }
                 } else {
-                    return Err(SbroadError::Invalid(
-                        Entity::Node,
-                        Some(format_smolstr!(
-                            "AST table distribution node {:?} contains unexpected children",
-                            child_node,
-                        )),
-                    ));
+                    panic!("Distribution rule contains more than one child rule.")
                 }
             }
             Rule::Timeout => {
                 timeout = get_timeout(ast, *child_id)?;
             }
-            _ => {
-                return Err(SbroadError::Invalid(
-                    Entity::Node,
-                    Some(format_smolstr!(
-                        "AST create table node {:?} contains unexpected children",
-                        child_node,
-                    )),
-                ));
-            }
+            _ => panic!("Unexpected rule met under CreateTable."),
         }
+    }
+    if pk_keys.is_empty() {
+        return Err(SbroadError::Invalid(
+            Entity::PrimaryKey,
+            Some(format_smolstr!("Primary key must be declared.")),
+        ));
     }
     let create_sharded_table = if shard_key.is_empty() {
         if engine_type != SpaceEngineType::Memtx {
