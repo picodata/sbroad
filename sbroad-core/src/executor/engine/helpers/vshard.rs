@@ -19,8 +19,10 @@ use crate::{
 };
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
+use tarantool::session::with_su;
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
+use crate::backend::sql::space::ADMIN_ID;
 use crate::{
     debug, error,
     errors::{Entity, SbroadError},
@@ -55,12 +57,11 @@ fn dql_on_some(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_some` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((
-        rs_ir,
-        is_readonly,
-        waiting_timeout,
-        vtable_max_rows,
-    )) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout, vtable_max_rows))
+    })?;
+    match call_res {
         Ok(v) => {
             debug!(Option::from("dql_on_some"), &format!("Result: {:?}", &v));
             Ok(Box::new(v))
@@ -90,7 +91,11 @@ fn dml_on_some(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_some` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout)) {
+    // `with_su` is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             error!(Option::from("dml_on_some"), &format!("{e:?}"));
@@ -116,12 +121,11 @@ fn dql_on_all(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_all` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((
-        required,
-        optional,
-        waiting_timeout,
-        vtable_max_rows,
-    )) {
+    // `with_su` coverage is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((required, optional, waiting_timeout, vtable_max_rows))
+    })?;
+    match call_res {
         Ok(v) => {
             debug!(Option::from("dql_on_all"), &format!("Result: {:?}", &v));
             Ok(Box::new(v))
@@ -151,7 +155,11 @@ fn dml_on_all(
         .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_all` not found".into()))?;
 
     let waiting_timeout = metadata.waiting_timeout();
-    match exec_sql.call_with_args::<Tuple, _>((required, optional, is_readonly, waiting_timeout)) {
+    // `with_su` coverage is used to read from virtual tables previously created by admin.
+    let call_res = with_su(ADMIN_ID, || {
+        exec_sql.call_with_args::<Tuple, _>((required, optional, is_readonly, waiting_timeout))
+    })?;
+    match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
             error!(Option::from("dml_on_all"), &format!("{e:?}"));

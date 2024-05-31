@@ -10,6 +10,7 @@ mod prod_imports {
     pub use crate::ir::relation::Column;
     pub use crate::ir::value::{EncodedValue, Value};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
+    pub use tarantool::session::with_su;
     pub use tarantool::space::{Field, Space, SpaceCreateOptions, SpaceType};
     pub use tarantool::tuple::Tuple;
 }
@@ -23,6 +24,8 @@ pub struct TmpSpace {
     pub name: String,
 }
 
+pub const ADMIN_ID: u32 = 1;
+
 impl TmpSpace {
     /// Create a temporary space.
     ///
@@ -31,13 +34,13 @@ impl TmpSpace {
     #[allow(unused_variables)]
     #[allow(clippy::too_many_lines)]
     pub fn initialize(
+        table_name: &str,
         exec_plan: &ExecutionPlan,
         base: &str,
         motion_id: usize,
         buckets: &Buckets,
         engine: &SpaceEngine,
     ) -> Result<TmpSpace, SbroadError> {
-        let name = TmpSpace::generate_space_name(base, motion_id);
         #[cfg(not(feature = "mock"))]
         {
             let vtable = exec_plan.get_motion_vtable(motion_id)?;
@@ -71,26 +74,36 @@ impl TmpSpace {
                 ..Default::default()
             };
 
-            let space = Space::create(&name, &options).map_err(|e| {
-                SbroadError::FailedTo(Action::Create, Some(Entity::Space), format!("{name}: {e}"))
-            })?;
-            let cleanup = |space: Space| match space.drop() {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(
-                        Option::from("Temporary space"),
-                        &format!("Failed to drop {}: {e}", name)
-                    );
+            let space = with_su(ADMIN_ID, || -> Result<Space, SbroadError> {
+                Space::create(table_name, &options).map_err(|e| {
+                    SbroadError::FailedTo(
+                        Action::Create,
+                        Some(Entity::Space),
+                        format!("{table_name}: {e}"),
+                    )
+                })
+            })??;
+            let cleanup = |space: Space| {
+                let drop_space_res = with_su(ADMIN_ID, || space.drop());
+                match drop_space_res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(
+                            Option::from("Temporary space"),
+                            &format!("Failed to drop {}: {e}", table_name)
+                        );
+                    }
                 }
             };
-            match space.create_index(&pk_name, &pk) {
+            let create_index_res = with_su(ADMIN_ID, || space.create_index(&pk_name, &pk))?;
+            match create_index_res {
                 Ok(_) => {}
                 Err(e) => {
                     cleanup(space);
                     return Err(SbroadError::FailedTo(
                         Action::Create,
                         Some(Entity::Index),
-                        format!("{pk_name} for space {name}: {e}"),
+                        format!("{pk_name} for space {table_name}: {e}"),
                     ));
                 }
             }
@@ -112,20 +125,23 @@ impl TmpSpace {
                         ));
                     }
                 };
-                match space.insert(&tuple) {
+                let tuple_insert_res = with_su(ADMIN_ID, || space.insert(&tuple))?;
+                match tuple_insert_res {
                     Ok(_) => {}
                     Err(e) => {
                         cleanup(space);
                         return Err(SbroadError::FailedTo(
                             Action::Insert,
                             Some(Entity::Tuple),
-                            format!("tuple {tuple:?} into {name}: {e}"),
+                            format!("tuple {tuple:?} into {table_name}: {e}"),
                         ));
                     }
                 }
             }
         }
-        Ok(TmpSpace { name })
+        Ok(TmpSpace {
+            name: table_name.to_string(),
+        })
     }
 
     #[must_use]
@@ -143,8 +159,10 @@ impl Drop for TmpSpace {
     fn drop(&mut self) {
         #[cfg(not(feature = "mock"))]
         {
-            if let Some(space) = Space::find(&self.name) {
-                if let Err(e) = space.drop() {
+            let space_find_res = with_su(ADMIN_ID, || Space::find(&self.name));
+            if let Ok(Some(space)) = space_find_res {
+                let space_drop_res = with_su(ADMIN_ID, || space.drop());
+                if let Err(e) = space_drop_res {
                     error!(
                         Option::from("Temporary space"),
                         &format!("Failed to drop {} space: {e}", self.name)
