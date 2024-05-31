@@ -370,6 +370,7 @@ impl<'de> Visitor<'de> for ColumnVisitor {
             "unsigned" => Ok(Column::new(&column_name, Type::Unsigned, role, is_nullable)),
             "array" => Ok(Column::new(&column_name, Type::Array, role, is_nullable)),
             "uuid" => Ok(Column::new(&column_name, Type::Uuid, role, is_nullable)),
+            "map" => Ok(Column::new(&column_name, Type::Map, role, is_nullable)),
             s => Err(Error::custom(format!("unsupported column type: {s}"))),
         }
     }
