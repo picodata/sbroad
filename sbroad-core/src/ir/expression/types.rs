@@ -122,7 +122,24 @@ impl Expression {
                     Ok(Type::Array)
                 }
             }
-            Expression::StableFunction { func_type, .. } => Ok(func_type.clone()),
+            Expression::StableFunction {
+                name,
+                func_type,
+                children,
+                ..
+            } => {
+                // min/max functions have a scalar type, which means that their actual type can be
+                // inferred from the arguments.
+                if let "max" | "min" = name.as_str() {
+                    let expr_id = children
+                        .first()
+                        .expect("min/max functions must have an argument");
+                    let expr = plan.get_expression_node(*expr_id)?;
+                    expr.calculate_type(plan)
+                } else {
+                    Ok(func_type.clone())
+                }
+            }
             Expression::CountAsterisk => Ok(Type::Integer),
         }
     }
