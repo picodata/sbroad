@@ -859,7 +859,7 @@ fn front_sql_global_aggregate5() {
 
     let expected_explain = String::from(
         r#"projection ("column_44"::integer -> "COL_1", sum(("sum_70"::decimal))::decimal -> "COL_2")
-    having ROW(sum(("sum_53"::decimal::double))::decimal / sum(("count_53"::integer::double))::decimal) > ROW(3::unsigned)
+    having ROW(sum(("sum_53"::decimal::double))::decimal / sum(("count_53"::decimal::double))::decimal) > ROW(3::unsigned)
         group by ("column_44"::integer) output: ("column_44"::integer -> "column_44", "sum_53"::decimal -> "sum_53", "sum_70"::decimal -> "sum_70", "count_53"::integer -> "count_53")
             motion [policy: segment([ref("column_44")])]
                 scan

@@ -1603,9 +1603,12 @@ impl Plan {
                 );
             }
             for (info, pos_kinds) in infos.into_iter().zip(position_kinds) {
+                let fun_expr = self.get_expression_node(info.aggr.fun_id)?;
+                let fun_type = fun_expr.calculate_type(self)?;
                 let final_expr = info.aggr.create_final_aggregate_expr(
                     parent,
                     self,
+                    &fun_type,
                     pos_kinds,
                     info.is_distinct,
                 )?;

@@ -236,6 +236,7 @@ impl SimpleAggregate {
         &self,
         parent: usize,
         plan: &mut Plan,
+        fun_type: &RelType,
         mut position_kinds: Vec<PositionKind>,
         is_distinct: bool,
     ) -> Result<usize, SbroadError> {
@@ -250,7 +251,7 @@ impl SimpleAggregate {
                 // projection has only one child
                 targets: Some(vec![0]),
                 position,
-                col_type: RelType::from(local_kind),
+                col_type: fun_type.clone(),
             };
             let ref_id = plan.nodes.push(Node::Expression(ref_node));
             let children = match self.kind {

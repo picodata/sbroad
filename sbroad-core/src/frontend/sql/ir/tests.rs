@@ -1411,7 +1411,7 @@ fn front_sql_avg_aggregate() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal -> "COL_1", avg(distinct ("column_15"::decimal::double))::decimal -> "COL_2", ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal) * ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::integer::double))::decimal) -> "COL_3")
+        r#"projection (sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::decimal::double))::decimal -> "COL_1", avg(distinct ("column_15"::decimal::double))::decimal -> "COL_2", ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::decimal::double))::decimal) * ROW(sum(("sum_13"::decimal::double))::decimal / sum(("count_13"::decimal::double))::decimal) -> "COL_3")
     motion [policy: full]
         scan
             projection ("t"."b"::unsigned -> "column_15", sum(("t"."b"::unsigned))::decimal -> "sum_13", count(("t"."b"::unsigned))::integer -> "count_13")
@@ -1455,7 +1455,7 @@ fn front_sql_min_aggregate() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (min(("min_13"::scalar))::scalar -> "COL_1", min(distinct ("column_15"::scalar))::scalar -> "COL_2")
+        r#"projection (min(("min_13"::unsigned))::scalar -> "COL_1", min(distinct ("column_15"::unsigned))::scalar -> "COL_2")
     motion [policy: full]
         scan
             projection ("t"."b"::unsigned -> "column_15", min(("t"."b"::unsigned))::scalar -> "min_13")
@@ -1477,7 +1477,7 @@ fn front_sql_max_aggregate() {
     let plan = sql_to_optimized_ir(input, vec![]);
 
     let expected_explain = String::from(
-        r#"projection (max(("max_13"::scalar))::scalar -> "COL_1", max(distinct ("column_15"::scalar))::scalar -> "COL_2")
+        r#"projection (max(("max_13"::unsigned))::scalar -> "COL_1", max(distinct ("column_15"::unsigned))::scalar -> "COL_2")
     motion [policy: full]
         scan
             projection ("t"."b"::unsigned -> "column_15", max(("t"."b"::unsigned))::scalar -> "max_13")
