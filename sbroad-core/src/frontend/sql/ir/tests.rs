@@ -549,6 +549,16 @@ fn front_sql_between_invalid() {
 }
 
 #[test]
+fn front_sql_parse_inner_join() {
+    let input = r#"SELECT * FROM "hash_testing"
+        left join "hash_testing" on true inner join "hash_testing" on true"#;
+
+    // Check there are no panics
+    let _ = sql_to_optimized_ir(input, vec![]);
+    assert_eq!(true, true)
+}
+
+#[test]
 fn front_sql_check_arbitrary_utf_in_single_quote_strings() {
     let input = r#"SELECT "identification_number" FROM "hash_testing"
         WHERE "product_code" = '«123»§#*&%@/// / // \\ ƵǖḘỺʥ ͑ ͑  ͕ΆΨѮښ ۞ܤ'"#;

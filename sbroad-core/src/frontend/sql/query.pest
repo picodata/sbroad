@@ -303,7 +303,8 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             Lt    = { "<" }
             LtEq  = { "<=" }
             NotEq = { "<>" | "!=" }
-            In    = { NotFlag? ~ ^"in" }
+            In    = { NotFlag? ~ InAtom }
+                InAtom = @{ ^"in" ~ SP }
     ExprAtomValue = _{ UnaryNot* ~ AtomicExpr ~ CastPostfix* ~ IsNullPostfix? }
         UnaryNot   = @{ NotFlag }
         CastPostfix = { "::" ~ ColumnDefType }

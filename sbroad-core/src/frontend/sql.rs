@@ -2681,7 +2681,7 @@ where
                 Rule::GtEq => ParseExpressionInfixOperator::InfixBool(Bool::GtEq),
                 Rule::In => {
                     let mut op_inner = op.into_inner();
-                    is_not = op_inner.next().is_some();
+                    is_not = op_inner.next().is_some_and(|i| matches!(i.as_rule(), Rule::NotFlag));
                     ParseExpressionInfixOperator::InfixBool(Bool::In)
                 }
                 Rule::Subtract      => ParseExpressionInfixOperator::InfixArithmetic(Arithmetic::Subtract),
