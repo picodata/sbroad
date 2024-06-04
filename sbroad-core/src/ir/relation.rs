@@ -9,7 +9,6 @@
 
 use ahash::AHashMap;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Formatter};
 use tarantool::index::Metadata as IndexMetadata;
@@ -716,23 +715,24 @@ impl Table {
         if self.is_global() {
             return Ok(None);
         }
-        let positions: Vec<usize> = self
-            .columns
-            .iter()
-            .enumerate()
-            .filter(|(_, col)| col.role == ColumnRole::Sharding)
-            .map(|(pos, _)| pos)
-            .collect();
-        match positions.len().cmp(&1) {
-            Ordering::Equal => Ok(Some(positions[0])),
-            Ordering::Greater => Err(SbroadError::UnexpectedNumberOfValues(
-                "Table has more than one bucket_id column".into(),
-            )),
-            Ordering::Less => Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+        let mut bucket_id_pos = None;
+        for (pos, col) in self.columns.iter().enumerate() {
+            if col.role == ColumnRole::Sharding {
+                if bucket_id_pos.is_some() {
+                    return Err(SbroadError::UnexpectedNumberOfValues(
+                        "Table has more than one bucket_id column".into(),
+                    ));
+                }
+                bucket_id_pos = Some(pos);
+            }
+        }
+        if bucket_id_pos.is_none() {
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
                 "Table {} has no bucket_id columns",
                 self.name
-            ))),
+            )));
         }
+        Ok(bucket_id_pos)
     }
 
     #[must_use]
