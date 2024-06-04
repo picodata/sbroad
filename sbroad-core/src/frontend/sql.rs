@@ -1312,9 +1312,9 @@ lazy_static::lazy_static! {
         // Precedence is defined lowest to highest.
         PrattParser::new()
             .op(Op::infix(Or, Left))
-            .op(Op::infix(Between, Left))
             .op(Op::infix(And, Left))
             .op(Op::prefix(UnaryNot))
+            .op(Op::infix(Between, Left))
             .op(
                 Op::infix(Eq, Right) | Op::infix(NotEq, Right) | Op::infix(NotEq, Right)
                 | Op::infix(Gt, Right) | Op::infix(GtEq, Right) | Op::infix(Lt, Right)
@@ -1436,8 +1436,8 @@ enum ParseExpression {
         child: Box<ParseExpression>,
     },
     Infix {
-        op: ParseExpressionInfixOperator,
         is_not: bool,
+        op: ParseExpressionInfixOperator,
         left: Box<ParseExpression>,
         right: Box<ParseExpression>,
     },
@@ -1475,9 +1475,28 @@ enum ParseExpression {
         pattern: Option<Box<ParseExpression>>,
         target: Box<ParseExpression>,
     },
-    Between {
+    /// Workaround for the mixfix BETWEEN operator breaking the logic of
+    /// pratt parsing for infix operators.
+    /// For expression `expr_1 BETWEEN expr_2 AND expr_3` we would create ParseExpression tree of
+    /// And
+    ///   - left  = InterimBetween
+    ///               - left  = expr_1
+    ///               - right = expr_2
+    ///   - right = expr_3
+    /// because priority of BETWEEN is higher than of AND.
+    ///
+    /// When we face such a tree, we transform it into Expression::Between. So during parsing AND
+    /// operator we have to check whether we have to transform it into BETWEEN.
+    InterimBetween {
         is_not: bool,
         left: Box<ParseExpression>,
+        right: Box<ParseExpression>,
+    },
+    /// Fixed version of `InterimBetween`.
+    FinalBetween {
+        is_not: bool,
+        left: Box<ParseExpression>,
+        center: Box<ParseExpression>,
         right: Box<ParseExpression>,
     },
 }
@@ -1519,64 +1538,6 @@ impl SelectExpr {
                     }
                 }
             }
-        }
-    }
-}
-
-impl Plan {
-    /// Find a pair of:
-    /// * AND operator that must actually represent BETWEEN right part
-    ///   (presented as it's left and right children)
-    /// * This ^ operator optional AND parent which child we should replace with BETWEEN operator
-    fn find_leftmost_and(
-        &self,
-        current_node_plan_id: usize,
-        parent: Option<usize>,
-    ) -> Result<(usize, usize, Option<usize>), SbroadError> {
-        let root_expr = self.get_expression_node(current_node_plan_id)?;
-        match root_expr {
-            Expression::Alias { .. }
-            | Expression::ExprInParentheses { .. }
-            | Expression::Arithmetic { .. }
-            | Expression::Cast { .. }
-            | Expression::Case { .. }
-            | Expression::Concat { .. }
-            | Expression::Constant { .. }
-            | Expression::Reference { .. }
-            | Expression::Row { .. }
-            | Expression::StableFunction { .. }
-            | Expression::Trim { .. }
-            | Expression::Unary { .. }
-            | Expression::CountAsterisk => Err(SbroadError::Invalid(
-                Entity::Expression,
-                Some(SmolStr::from(
-                    "Expected to see bool node during leftmost AND search",
-                )),
-            )),
-            Expression::Bool { left, op, right } => match op {
-                Bool::And => {
-                    let left_child = self.get_expression_node(*left)?;
-                    if let Expression::Bool { op: Bool::And, .. } = left_child {
-                        self.find_leftmost_and(*left, Some(current_node_plan_id))
-                    } else {
-                        Ok((*left, *right, parent))
-                    }
-                }
-                Bool::Eq
-                | Bool::In
-                | Bool::Gt
-                | Bool::GtEq
-                | Bool::Lt
-                | Bool::LtEq
-                | Bool::NotEq
-                | Bool::Or
-                | Bool::Between => Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(SmolStr::from(
-                        "Expected to see AND bool node during leftmost AND search",
-                    )),
-                )),
-            },
         }
     }
 }
@@ -1663,20 +1624,20 @@ impl ParseExpression {
                 };
                 plan.nodes.push(Node::Expression(trim_expr))
             }
-            ParseExpression::Between {
+            ParseExpression::FinalBetween {
                 is_not,
                 left,
+                center,
                 right,
             } => {
                 let plan_left_id = left.populate_plan(plan, worker)?;
                 let left_covered_with_row = plan.row(plan_left_id)?;
 
-                let plan_right_id = right.populate_plan(plan, worker)?;
-                let (left_and_child, right_and_child, parent) =
-                    plan.find_leftmost_and(plan_right_id, None)?;
+                let plan_center_id = center.populate_plan(plan, worker)?;
+                let center_covered_with_row = plan.row(plan_center_id)?;
 
-                let center_covered_with_row = plan.row(left_and_child)?;
-                let right_covered_with_row = plan.row(right_and_child)?;
+                let plan_right_id = right.populate_plan(plan, worker)?;
+                let right_covered_with_row = plan.row(plan_right_id)?;
 
                 let greater_eq_id =
                     plan.add_cond(left_covered_with_row, Bool::GtEq, center_covered_with_row)?;
@@ -1693,16 +1654,7 @@ impl ParseExpression {
                     .betweens
                     .push(Between::new(left_covered_with_row, less_eq_id));
 
-                if let Some(leftmost_and_parent) = parent {
-                    let and_to_replace_child = plan.get_mut_expression_node(leftmost_and_parent)?;
-                    let Expression::Bool { ref mut left, .. } = and_to_replace_child else {
-                        unreachable!("Expected to see AND node as leftmost parent")
-                    };
-                    *left = between_id;
-                    plan_right_id
-                } else {
-                    between_id
-                }
+                between_id
             }
             ParseExpression::Infix {
                 op,
@@ -1729,6 +1681,55 @@ impl ParseExpression {
                 } else {
                     right.populate_plan(plan, worker)?
                 };
+
+                // In case:
+                // * `op` = AND (left = `left_plan_id`, right = `right_plan_id`)
+                // * `right_plan_id` = AND (left = expr_1, right = expr_2) (resulted from BETWEEN
+                //   transformation)
+                //                And
+                //  left_plan_id        And
+                //                expr_1    expr_2
+                //
+                // we'll end up in a situation when AND is a right child of another AND (We don't
+                // expect it later as soon as AND is a left-associative operator).
+                // We have to fix it the following way:
+                //                      And
+                //               And        expr_2
+                //  left_plan_id   expr_1
+                let right_plan_is_and = {
+                    let right_expr = plan.get_node(right_plan_id)?;
+                    matches!(
+                        right_expr,
+                        Node::Expression(Expression::Bool { op: Bool::And, .. })
+                    )
+                };
+                if matches!(op, ParseExpressionInfixOperator::InfixBool(Bool::And))
+                    && right_plan_is_and
+                {
+                    let right_expr = plan.get_expression_node(right_plan_id)?;
+                    let fixed_left_and_id = if let Expression::Bool {
+                        op: Bool::And,
+                        left,
+                        ..
+                    } = right_expr
+                    {
+                        plan.add_cond(left_row_id, Bool::And, *left)?
+                    } else {
+                        panic!("Expected to see AND operator as right child.");
+                    };
+
+                    let right_expr_mut = plan.get_mut_expression_node(right_plan_id)?;
+                    if let Expression::Bool {
+                        op: Bool::And,
+                        left,
+                        ..
+                    } = right_expr_mut
+                    {
+                        *left = fixed_left_and_id;
+                        return Ok(right_plan_id);
+                    }
+                }
+
                 let right_row_id = plan.row(right_plan_id)?;
 
                 let op_plan_id = match op {
@@ -1835,8 +1836,52 @@ impl ParseExpression {
                     op_id
                 }
             }
+            ParseExpression::InterimBetween { .. } => return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(SmolStr::from(
+                    "BETWEEN operator should have a view of `expr_1 BETWEEN expr_2 AND expr_3`.",
+                )),
+            )),
         };
         Ok(plan_id)
+    }
+}
+
+/// Workaround for the following expressions:
+///     * `expr_1 AND expr_2 BETWEEN expr_3 AND expr_4`
+///     * `NOT expr_1 BETWEEN expr_2 AND expr_3`
+/// which are parsed as:
+///     * `(expr_1 AND (expr_2 BETWEEN expr_3)) AND expr_4`
+///     * `(NOT (expr_1 BETWEEN expr_2)) AND expr_3`
+/// but we should transform them into:
+///     * `expr_1 AND (expr_2 BETWEEN expr_3 AND expr_4)`
+///     * `NOT (expr_1 BETWEEN expr_2 AND expr_3)`
+///
+/// Returns:
+/// * None in case `expr` doesn't have `InterimBetween` as a child
+/// * Expression whose right child is an `InterimBetween` (or `InterimBetween` itself)
+fn find_interim_between(mut expr: &mut ParseExpression) -> Option<(&mut ParseExpression, bool)> {
+    let mut is_exact_match = true;
+    loop {
+        match expr {
+            ParseExpression::Infix {
+                op: ParseExpressionInfixOperator::InfixBool(Bool::And),
+                right,
+                ..
+            } => {
+                expr = right;
+                is_exact_match = false;
+            }
+            ParseExpression::Prefix {
+                op: Unary::Not,
+                child,
+            } => {
+                expr = child;
+                is_exact_match = false;
+            }
+            ParseExpression::InterimBetween { .. } => break Some((expr, is_exact_match)),
+            _ => break None,
+        }
     }
 }
 
@@ -2207,6 +2252,8 @@ where
             Ok(parse_expr)
         })
         .map_infix(|lhs, op, rhs| {
+            let mut lhs = lhs?;
+            let rhs = rhs?;
             let mut is_not = false;
             let op = match op.as_rule() {
                 Rule::And => ParseExpressionInfixOperator::InfixBool(Bool::And),
@@ -2214,10 +2261,10 @@ where
                 Rule::Between => {
                     let mut op_inner = op.into_inner();
                     is_not = op_inner.next().is_some();
-                    return Ok(ParseExpression::Between {
+                    return Ok(ParseExpression::InterimBetween {
                         is_not,
-                        left: Box::new(lhs?),
-                        right: Box::new(rhs?),
+                        left: Box::new(lhs),
+                        right: Box::new(rhs),
                     })
                 },
                 Rule::Eq => ParseExpressionInfixOperator::InfixBool(Bool::Eq),
@@ -2238,11 +2285,34 @@ where
                 Rule::ConcatInfixOp => ParseExpressionInfixOperator::Concat,
                 rule           => unreachable!("Expr::parse expected infix operation, found {:?}", rule),
             };
+
+            // HACK: InterimBetween(e1, e2) AND e3 => FinalBetween(e1, e2, e3).
+            if matches!(op, ParseExpressionInfixOperator::InfixBool(Bool::And)) {
+                if let Some((expr, is_exact_match)) = find_interim_between(&mut lhs) {
+                    let ParseExpression::InterimBetween { is_not, left, right } = expr else {
+                        panic!("expected ParseExpression::InterimBetween");
+                    };
+
+                    let fb = ParseExpression::FinalBetween {
+                        is_not: *is_not,
+                        left: left.clone(),
+                        center: right.clone(),
+                        right: Box::new(rhs),
+                    };
+
+                    if is_exact_match {
+                        return Ok(fb);
+                    }
+                    *expr = fb;
+                    return Ok(lhs);
+                }
+            }
+
             Ok(ParseExpression::Infix {
                 op,
                 is_not,
-                left: Box::new(lhs?),
-                right: Box::new(rhs?),
+                left: Box::new(lhs),
+                right: Box::new(rhs),
             })
         })
         .map_prefix(|op, child| {
