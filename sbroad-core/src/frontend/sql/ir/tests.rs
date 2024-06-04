@@ -1504,7 +1504,7 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_group_concat_aggregate() {
-    let input = r#"SELECT group_concat("b"), group_concat(distinct "b") FROM "t""#;
+    let input = r#"SELECT group_concat("FIRST_NAME"), group_concat(distinct "FIRST_NAME") FROM "test_space""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
@@ -1512,9 +1512,9 @@ fn front_sql_group_concat_aggregate() {
         r#"projection (group_concat(("group_concat_13"::string))::string -> "COL_1", group_concat(distinct ("column_15"::string))::string -> "COL_2")
     motion [policy: full]
         scan
-            projection ("t"."b"::unsigned -> "column_15", group_concat(("t"."b"::unsigned))::string -> "group_concat_13")
-                group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
-                    scan "t"
+            projection ("test_space"."FIRST_NAME"::string -> "column_15", group_concat(("test_space"."FIRST_NAME"::string))::string -> "group_concat_13")
+                group by ("test_space"."FIRST_NAME"::string) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
+                    scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000
@@ -1526,17 +1526,18 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_group_concat_aggregate2() {
-    let input = r#"SELECT group_concat("b", ' '), group_concat(distinct "b") FROM "t""#;
+    let input = r#"SELECT group_concat("FIRST_NAME", ' '), group_concat(distinct "FIRST_NAME") FROM "test_space""#;
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
+    println!("{}", plan.as_explain().unwrap());
     let expected_explain = String::from(
         r#"projection (group_concat(("group_concat_14"::string, ' '::string))::string -> "COL_1", group_concat(distinct ("column_16"::string))::string -> "COL_2")
     motion [policy: full]
         scan
-            projection ("t"."b"::unsigned -> "column_16", group_concat(("t"."b"::unsigned, ' '::string))::string -> "group_concat_14")
-                group by ("t"."b"::unsigned) output: ("t"."a"::unsigned -> "a", "t"."b"::unsigned -> "b", "t"."c"::unsigned -> "c", "t"."d"::unsigned -> "d", "t"."bucket_id"::unsigned -> "bucket_id")
-                    scan "t"
+            projection ("test_space"."FIRST_NAME"::string -> "column_16", group_concat(("test_space"."FIRST_NAME"::string, ' '::string))::string -> "group_concat_14")
+                group by ("test_space"."FIRST_NAME"::string) output: ("test_space"."id"::unsigned -> "id", "test_space"."sysFrom"::unsigned -> "sysFrom", "test_space"."FIRST_NAME"::string -> "FIRST_NAME", "test_space"."sys_op"::unsigned -> "sys_op", "test_space"."bucket_id"::unsigned -> "bucket_id")
+                    scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

@@ -82,6 +82,69 @@ impl AggregateKind {
         }
     }
 
+    /// Check agruments types of aggregate function
+    ///
+    /// # Errors
+    /// - Invlid plan/aggregate
+    /// - Invalid argument type
+    ///
+    /// # Panics
+    /// - Invalid argument count for aggregate
+    pub fn check_args_types(&self, plan: &Plan, args: &[usize]) -> Result<(), SbroadError> {
+        use crate::ir::relation::Type;
+        let get_arg_type = |idx: usize| -> Result<Type, SbroadError> {
+            let arg_id = *args.get(idx).expect("wrong agregate");
+            let expr = plan.get_expression_node(arg_id)?;
+            expr.calculate_type(plan)
+        };
+        let err = |arg_type: &Type| -> Result<(), SbroadError> {
+            Err(SbroadError::Invalid(
+                Entity::Query,
+                Some(format_smolstr!(
+                    "can't compute {self} on argument with type {arg_type}. \
+                    Consider using explicit cast."
+                )),
+            ))
+        };
+        match self {
+            AggregateKind::SUM | AggregateKind::AVG | AggregateKind::TOTAL => {
+                let arg_type = get_arg_type(0)?;
+                if !matches!(
+                    arg_type,
+                    Type::Decimal | Type::Double | Type::Unsigned | Type::Integer
+                ) {
+                    err(&arg_type)?;
+                }
+            }
+            AggregateKind::MIN | AggregateKind::MAX => {
+                let arg_type = get_arg_type(0)?;
+                if !arg_type.is_scalar() {
+                    err(&arg_type)?;
+                }
+            }
+            AggregateKind::GRCONCAT => {
+                let first_type = get_arg_type(0)?;
+                if args.len() == 2 {
+                    let second_type = get_arg_type(1)?;
+                    if first_type != second_type {
+                        return Err(SbroadError::Invalid(
+                            Entity::Query,
+                            Some(
+                                "group concat requires both arguments to be of the same type!"
+                                    .into(),
+                            ),
+                        ));
+                    }
+                }
+                if !matches!(first_type, Type::String) {
+                    err(&first_type)?;
+                }
+            }
+            AggregateKind::COUNT => {}
+        }
+        Ok(())
+    }
+
     /// Get final aggregate corresponding to given local aggregate
     ///
     /// # Errors

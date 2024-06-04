@@ -240,7 +240,7 @@ fn exec_plan_subtree_two_stage_groupby_test_2() {
 fn exec_plan_subtree_aggregates() {
     let sql = r#"SELECT t1."sys_op" || t1."sys_op", t1."sys_op"*2 + count(t1."sysFrom"),
                       sum(t1."id"), sum(distinct t1."id"*t1."sys_op") / count(distinct "id"),
-                      group_concat(t1."id", 'o'), avg(t1."id"), total(t1."id"), min(t1."id"), max(t1."id")
+                      group_concat(t1."FIRST_NAME", 'o'), avg(t1."id"), total(t1."id"), min(t1."id"), max(t1."id")
                       FROM "test_space" as t1 group by t1."sys_op""#;
     let coordinator = RouterRuntimeMock::new();
 
@@ -298,9 +298,9 @@ fn exec_plan_subtree_aggregates() {
             format!(
                 "{} {} {} {} {} {}",
                 r#"SELECT "T1"."sys_op" as "column_12", ("T1"."id") * ("T1"."sys_op") as "column_49","#,
-                r#""T1"."id" as "column_46", total ("T1"."id") as "total_64","#,
-                r#"sum ("T1"."id") as "sum_42", count ("T1"."id") as "count_61", group_concat ("T1"."id", ?) as "group_concat_58","#,
-                r#"min ("T1"."id") as "min_67", max ("T1"."id") as "max_70", count ("T1"."sysFrom") as "count_37""#,
+                r#""T1"."id" as "column_46", count ("T1"."sysFrom") as "count_37","#,
+                r#"sum ("T1"."id") as "sum_42", count ("T1"."id") as "count_61", total ("T1"."id") as "total_64","#,
+                r#"min ("T1"."id") as "min_67", max ("T1"."id") as "max_70", group_concat ("T1"."FIRST_NAME", ?) as "group_concat_58""#,
                 r#"FROM "test_space" as "T1""#,
                 r#"GROUP BY "T1"."sys_op", ("T1"."id") * ("T1"."sys_op"), "T1"."id""#,
             ),

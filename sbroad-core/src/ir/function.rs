@@ -78,6 +78,9 @@ impl Plan {
     ///
     /// # Errors
     /// - Invalid arguments for given aggregate function
+    ///
+    /// # Panics
+    /// - never
     pub fn add_aggregate_function(
         &mut self,
         function: &str,
@@ -115,6 +118,7 @@ impl Plan {
                 }
             }
         }
+        kind.check_args_types(self, &children)?;
         let feature = if is_distinct {
             Some(FunctionFeature::Distinct)
         } else {

@@ -2525,3 +2525,29 @@ groupby_queries.test_having_inside_except1 = function()
         {2},
     })
 end
+
+groupby_queries.test_sum_on_decimal_col = function()
+    local api = cluster:server("api-1").net_box
+
+    local _, err = api:call("sbroad.execute", {
+        [[
+            select sum("number_col") as s from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_str_contains(tostring(err), "can't compute sum on argument with type number")
+
+    _, err = api:call("sbroad.execute", {
+        [[
+            select total("number_col") as s from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_str_contains(tostring(err), "can't compute total on argument with type number")
+
+    _, err = api:call("sbroad.execute", {
+        [[
+            select avg("number_col") as s from "arithmetic_space"
+        ]], {}
+    })
+    t.assert_str_contains(tostring(err), "can't compute avg on argument with type number")
+end
+
