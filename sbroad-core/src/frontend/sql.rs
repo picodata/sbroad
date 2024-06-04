@@ -26,7 +26,7 @@ use crate::frontend::sql::ast::{
 };
 use crate::frontend::sql::ir::Translation;
 use crate::frontend::Ast;
-use crate::ir::ddl::{ColumnDef, Ddl};
+use crate::ir::ddl::{ColumnDef, Ddl, SetParamScopeType, SetParamValue};
 use crate::ir::ddl::{Language, ParamDef};
 use crate::ir::expression::cast::Type as CastType;
 use crate::ir::expression::{
@@ -787,6 +787,53 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
         }
     };
     Ok(create_sharded_table)
+}
+
+fn parse_set_param(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl, SbroadError> {
+    let mut scope_type = SetParamScopeType::Session;
+    let mut param_value = None;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::SetScope => {
+                let set_scope_child_id = child_node
+                    .children
+                    .first()
+                    .expect("SetScope must have child.");
+                let set_scope_child = ast.nodes.get_node(*set_scope_child_id)?;
+                match set_scope_child.rule {
+                    Rule::ScopeSession => {}
+                    Rule::ScopeLocal => scope_type = SetParamScopeType::Local,
+                    _ => panic!("Unexpected rule met under SetScope."),
+                }
+            }
+            Rule::ConfParam => {
+                let conf_param_child_id = child_node
+                    .children
+                    .first()
+                    .expect("ConfParam must have child.");
+                let conf_param_child = ast.nodes.get_node(*conf_param_child_id)?;
+                match conf_param_child.rule {
+                    Rule::NamedParam => {
+                        let param_name_id = conf_param_child
+                            .children
+                            .first()
+                            .expect("Param name expected under NamedParam.");
+                        let param_name = parse_identifier(ast, *param_name_id)?;
+                        param_value = Some(SetParamValue::NamedParam { name: param_name });
+                    }
+                    Rule::TimeZoneParam => param_value = Some(SetParamValue::TimeZone),
+                    _ => panic!("Unexpected rule met under ConfParam."),
+                }
+            }
+            _ => panic!("Unexpected rule met under SetParam."),
+        }
+    }
+    Ok(Ddl::SetParam {
+        scope_type,
+        param_value: param_value.unwrap(),
+        timeout: get_default_timeout(),
+    })
 }
 
 fn parse_select_full(
@@ -3474,6 +3521,18 @@ impl AbstractSyntaxTree {
                         timeout,
                     };
                     let plan_id = plan.nodes.push(Node::Acl(create_role));
+                    map.add(id, plan_id);
+                }
+                Rule::SetParam => {
+                    let set_param_node = parse_set_param(self, node)?;
+                    let plan_id = plan.nodes.push(Node::Ddl(set_param_node));
+                    map.add(id, plan_id);
+                }
+                Rule::SetTransaction => {
+                    let set_transaction_node = Ddl::SetTransaction {
+                        timeout: get_default_timeout(),
+                    };
+                    let plan_id = plan.nodes.push(Node::Ddl(set_transaction_node));
                     map.add(id, plan_id);
                 }
                 _ => {}

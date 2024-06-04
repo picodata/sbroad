@@ -55,7 +55,8 @@ ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivil
             PrivilegeUsage = { ^"usage" }
             PrivilegeWrite = { ^"write" }
 
-DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropProc | RenameProc }
+DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
+         | CreateProc | DropProc | RenameProc | SetParam | SetTransaction }
     CreateTable = {
         ^"create" ~ ^"table" ~ NewTable ~
         "(" ~ Columns ~ ("," ~ PrimaryKey)? ~ ")" ~
@@ -120,6 +121,33 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex | CreateProc | DropPr
         Hint = { ^"hint" ~ "=" ~ (True | False) }
 
     DropIndex = { ^"drop" ~ ^"index" ~ Identifier ~ TimeoutOption? }
+
+    SetParam = { ^"set" ~ SetScope? ~ ConfParam  }
+        SetScope = { ScopeSession | ScopeLocal }
+            ScopeSession  = { ^"session" }
+            ScopeLocal    = { ^"local" }
+        ConfParam = { NamedParam | TimeZoneParam }
+            NamedParam    = { Identifier ~ (^"to" | "=") ~ NamedParamValue }
+                NamedParamValue = { ParamValueDefault | SingleQuotedString | Identifier | Double | Decimal | Integer }
+            TimeZoneParam = { ^"time" ~ ^"zone" ~ TimeZoneParamValue }
+                TimeZoneParamValue = { NamedParamValue | ParamValueLocal }
+        ParamValueLocal = { ^"local" }
+        ParamValueDefault = { ^"default" }
+
+    SetTransaction = { ^"set" ~ (SetTransactionSubRule | SetSessionCharacteristics) }
+        SetTransactionSubRule = { ^"transaction" ~ (TransactionMode | TransactionSnapshot) }
+        SetSessionCharacteristics = { ^"session" ~ ^"characteristics" ~ ^"as" ~ ^"transaction" ~ TransactionMode }
+            TransactionMode = { IsolationLevel | ReadWrite | ReadOnly | Deferrable }
+                IsolationLevel = { ^"isolation" ~ ^"level" ~ ConcreteIsolationLevel }
+                    ConcreteIsolationLevel = _{ Serializable | RepeatableRead | ReadCommited | ReadUncommited }
+                        Serializable = { ^"serializable" }
+                        RepeatableRead = { ^"repeatable" ~ ^"read" }
+                        ReadCommited = { ^"read" ~ ^"commited" }
+                        ReadUncommited = { ^"read" ~ ^"uncommited" }
+                ReadWrite  = { ^"read" ~ ^"write" }
+                ReadOnly   = { ^"read" ~ ^"only" }
+                Deferrable = { NotFlag? ~ ^"deferrable" }
+            TransactionSnapshot = { ^"snapshot" ~ SingleQuotedString }
 
 Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }

@@ -3556,6 +3556,38 @@ fn front_count_no_params() {
     );
 }
 
+#[test]
+fn front_mock_set_param_transaction() {
+    let queries_to_check = vec![
+        r#"set session default_param = default"#,
+        r#"set session stringparam = 'value'"#,
+        r#"set session identparam to ident"#,
+        r#"set local intparam to -3"#,
+        r#"set local doubleparam = -42.5"#,
+        r#"set doubleparam = -42.5"#,
+        r#"set local time zone local"#,
+        r#"set time zone -3"#,
+        r#"set time zone 'value'"#,
+        r#"set transaction snapshot 'snapshot-string'"#,
+        r#"set transaction read write"#,
+        r#"set transaction read only"#,
+        r#"set transaction deferrable"#,
+        r#"set transaction not deferrable"#,
+        r#"set transaction isolation level serializable"#,
+        r#"set transaction isolation level repeatable read"#,
+        r#"set transaction isolation level read commited"#,
+        r#"set transaction isolation level read uncommited"#,
+        r#"set session characteristics as transaction read only"#,
+        r#"set session characteristics as transaction isolation level read commited"#,
+    ];
+
+    let metadata = &RouterConfigurationMock::new();
+    for query in queries_to_check {
+        let plan = AbstractSyntaxTree::transform_into_plan(query, metadata);
+        assert!(plan.is_ok())
+    }
+}
+
 #[cfg(test)]
 mod cte;
 #[cfg(test)]

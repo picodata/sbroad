@@ -39,6 +39,29 @@ pub enum Language {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum SetParamScopeType {
+    Local,
+    Session,
+}
+
+// TODO: Fill with actual values.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub enum SetParamValue {
+    NamedParam { name: SmolStr },
+    TimeZone,
+}
+
+impl SetParamValue {
+    #[must_use]
+    pub fn param_name(&self) -> SmolStr {
+        match self {
+            SetParamValue::NamedParam { name } => name.clone(),
+            SetParamValue::TimeZone => SmolStr::from("TimeZone"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum Ddl {
     CreateTable {
         name: SmolStr,
@@ -98,6 +121,15 @@ pub enum Ddl {
         name: SmolStr,
         timeout: Decimal,
     },
+    SetParam {
+        scope_type: SetParamScopeType,
+        param_value: SetParamValue,
+        timeout: Decimal,
+    },
+    // TODO: Fill with actual values.
+    SetTransaction {
+        timeout: Decimal,
+    },
 }
 
 impl Ddl {
@@ -111,6 +143,8 @@ impl Ddl {
             | Ddl::DropTable { ref timeout, .. }
             | Ddl::CreateIndex { ref timeout, .. }
             | Ddl::DropIndex { ref timeout, .. }
+            | Ddl::SetParam { ref timeout, .. }
+            | Ddl::SetTransaction { ref timeout, .. }
             | Ddl::CreateProc { ref timeout, .. }
             | Ddl::DropProc { ref timeout, .. }
             | Ddl::RenameRoutine { ref timeout, .. } => timeout,
