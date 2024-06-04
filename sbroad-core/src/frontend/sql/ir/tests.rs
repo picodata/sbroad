@@ -2,7 +2,7 @@ use crate::errors::SbroadError;
 use crate::frontend::sql::ast::AbstractSyntaxTree;
 use crate::frontend::Ast;
 use crate::ir::operator::Relational;
-use crate::ir::transformation::helpers::sql_to_optimized_ir;
+use crate::ir::transformation::helpers::{sql_to_ir, sql_to_optimized_ir};
 use crate::ir::tree::traversal::PostOrder;
 use crate::ir::value::Value;
 use crate::ir::Plan;
@@ -405,6 +405,146 @@ vtable_max_rows = 5000
     );
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_with_additional_non_bool_value_from_left() {
+    let input = r#"SELECT * FROM "test_space" WHERE 42 and 1 between 2 and 3"#;
+    let mut plan = sql_to_ir(input, vec![]);
+    let err = plan.optimize().unwrap_err();
+
+    assert_eq!(
+        true,
+        err.to_string()
+            .contains("Left expression is not a boolean expression or NULL")
+    );
+}
+
+#[test]
+fn front_sql_between_with_additional_and_from_left() {
+    // Was previously misinterpreted as
+    //                  SELECT "id" FROM "test_space" as "t" WHERE ("t"."id" > 1 AND "t"."id") BETWEEN "t"."id" AND "t"."id" + 10
+    let input = r#"SELECT "id" FROM "test_space" as "t" WHERE "t"."id" > 1 AND "t"."id" BETWEEN "t"."id" AND "t"."id" + 10"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."id"::unsigned -> "id")
+    selection ROW("t"."id"::unsigned) > ROW(1::unsigned) and ROW("t"."id"::unsigned) >= ROW("t"."id"::unsigned) and ROW("t"."id"::unsigned) <= ROW("t"."id"::unsigned) + ROW(10::unsigned)
+        scan "test_space" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_with_additional_not_from_left() {
+    // Was previously misinterpreted as
+    //                  SELECT "id" FROM "test_space" as "t" WHERE (not "t"."id") BETWEEN "t"."id" AND "t"."id" + 10 and true
+    let input = r#"SELECT "id" FROM "test_space" as "t" WHERE not "t"."id" BETWEEN "t"."id" AND "t"."id" + 10 and true"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."id"::unsigned -> "id")
+    selection not (ROW("t"."id"::unsigned) >= ROW("t"."id"::unsigned) and ROW("t"."id"::unsigned) <= ROW("t"."id"::unsigned) + ROW(10::unsigned)) and ROW(true::boolean)
+        scan "test_space" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_with_additional_and_from_left_and_right() {
+    // Was previously misinterpreted as
+    //                  SELECT "id" FROM "test_space" as "t" WHERE ("t"."id" > 1 AND "t"."id") BETWEEN "t"."id" AND "t"."id" + 10 AND true
+    let input = r#"SELECT "id" FROM "test_space" as "t" WHERE "t"."id" > 1 AND "t"."id" BETWEEN "t"."id" AND "t"."id" + 10 AND true"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."id"::unsigned -> "id")
+    selection ROW("t"."id"::unsigned) > ROW(1::unsigned) and ROW("t"."id"::unsigned) >= ROW("t"."id"::unsigned) and ROW("t"."id"::unsigned) <= ROW("t"."id"::unsigned) + ROW(10::unsigned) and ROW(true::boolean)
+        scan "test_space" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_with_nested_not_from_the_left() {
+    // `not not false between false and true` should be interpreted as
+    // `not (not (false between false and true))`
+    let input =
+        r#"SELECT "id" FROM "test_space" as "t" WHERE not not false between false and true"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."id"::unsigned -> "id")
+    selection not not (ROW(false::boolean) >= ROW(false::boolean) and ROW(false::boolean) <= ROW(true::boolean))
+        scan "test_space" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_with_nested_and_from_the_left() {
+    // `false and true and false between false and true` should be interpreted as
+    // `(false and true) and (false between false and true)`
+    let input = r#"SELECT "id" FROM "test_space" as "t" WHERE false and true and false between false and true"#;
+
+    let plan = sql_to_optimized_ir(input, vec![]);
+
+    let expected_explain = String::from(
+        r#"projection ("t"."id"::unsigned -> "id")
+    selection ROW(false::boolean) and ROW(true::boolean) and ROW(false::boolean) >= ROW(false::boolean) and ROW(false::boolean) <= ROW(true::boolean)
+        scan "test_space" -> "t"
+execution options:
+sql_vdbe_max_steps = 45000
+vtable_max_rows = 5000
+"#,
+    );
+
+    assert_eq!(expected_explain, plan.as_explain().unwrap());
+}
+
+#[test]
+fn front_sql_between_invalid() {
+    let invalid_between_expressions = vec![
+        r#"SELECT * FROM "test_space" WHERE 1 BETWEEN 2"#,
+        r#"SELECT * FROM "test_space" WHERE 1 BETWEEN 2 OR 3"#,
+    ];
+
+    for invalid_expr in invalid_between_expressions {
+        let metadata = &RouterConfigurationMock::new();
+        let plan = AbstractSyntaxTree::transform_into_plan(invalid_expr, metadata);
+        let err = plan.unwrap_err();
+
+        assert_eq!(
+            true,
+            err.to_string().contains(
+                "BETWEEN operator should have a view of `expr_1 BETWEEN expr_2 AND expr_3`."
+            )
+        );
+    }
 }
 
 #[test]
