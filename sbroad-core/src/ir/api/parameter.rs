@@ -7,6 +7,7 @@ use crate::ir::value::Value;
 use crate::ir::{Node, NodeId, OptionParamValue, Plan, ValueIdx};
 use crate::otm::child_span;
 use sbroad_proc::otm_child_span;
+use smol_str::format_smolstr;
 
 use crate::ir::relation::Type;
 use ahash::{AHashMap, AHashSet, RandomState};
@@ -145,14 +146,16 @@ impl<'binder> ParamsBinder<'binder> {
     }
 
     /// Check that number of user passed params equal to the params nodes we have to bind.
-    fn check_params_count(&self) {
+    fn check_params_count(&self) -> Result<(), SbroadError> {
         let non_binded_params_len = self.param_node_ids.len() - self.binded_options_counter;
-        assert!(
-            !(self.tnt_params_style && non_binded_params_len > self.value_ids.len()),
-            "Expected at least {} values for parameters. Got {}.",
-            non_binded_params_len,
-            self.value_ids.len()
-        );
+        if self.tnt_params_style && non_binded_params_len > self.value_ids.len() {
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "Expected at least {} values for parameters. Got {}.",
+                non_binded_params_len,
+                self.value_ids.len()
+            )));
+        }
+        Ok(())
     }
 
     /// Retrieve a corresponding value (plan constant node) for a parameter node.
@@ -647,7 +650,7 @@ impl Plan {
         let mut binder = ParamsBinder::new(self, values)?;
         binder.handle_pg_parameters()?;
         binder.create_parameter_constants();
-        binder.check_params_count();
+        binder.check_params_count()?;
         binder.cover_params_with_rows()?;
         binder.bind_params()?;
         binder.update_value_rows()?;
