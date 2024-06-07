@@ -42,7 +42,7 @@ expression  ::= (table '.')? column
                | 'TO_CHAR' '(' expression',' format ')'
                | 'TRIM' '(' ((('LEADING' | 'TRAILING' | 'BOTH')? expression) | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM' expression ')'
                | 'CASE' expression? ('WHEN' expression 'THEN' expression)+ ('ELSE' expression)? 'END'
-aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' expression ')'
+aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ( 'DISTINCT'?  expression ) ')'
                | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
 cast        ::= 'CAST' '(' expression 'AS' type ')'
 values      ::= 'VALUES'
