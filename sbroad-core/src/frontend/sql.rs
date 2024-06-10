@@ -3,7 +3,7 @@
 //! Parses an SQL statement to the abstract syntax tree (AST)
 //! and builds the intermediate representation (IR).
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use core::panic;
 use itertools::Itertools;
 use pest::iterators::{Pair, Pairs};
@@ -504,6 +504,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
     let mut pk_keys: Vec<SmolStr> = Vec::new();
     let mut shard_key: Vec<SmolStr> = Vec::new();
     let mut engine_type: SpaceEngineType = SpaceEngineType::default();
+    let mut explicit_null_columns: AHashSet<SmolStr> = AHashSet::new();
     let mut timeout = get_default_timeout();
     let mut tier = None;
 
@@ -586,6 +587,7 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                     def_child_node.children.get(1),
                                 ) {
                                     (None, None) => {
+                                        explicit_null_columns.insert(column_def.name.clone());
                                         column_def.is_nullable = true;
                                     }
                                     (Some(child_id), None) => {
@@ -606,9 +608,13 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                                 if !pk_keys.is_empty() {
                                     return primary_key_already_declared_error;
                                 }
-                                if column_def.is_nullable {
+                                if column_def.is_nullable
+                                    && explicit_null_columns.contains(&column_def.name)
+                                {
                                     return nullable_primary_key_column_error;
                                 }
+                                // Infer not null on primary key column
+                                column_def.is_nullable = false;
                                 pk_keys.push(column_def.name.clone());
                             }
                             _ => panic!("Unexpected rules met under ColumnDef."),
@@ -627,12 +633,14 @@ fn parse_create_table(ast: &AbstractSyntaxTree, node: &ParseNode) -> Result<Ddl,
                 for pk_col_id in pk_node.children.iter().skip(1) {
                     let pk_col_name = parse_identifier(ast, *pk_col_id)?;
                     let mut column_found = false;
-                    for column in &columns {
+                    for column in &mut columns {
                         if column.name == pk_col_name {
                             column_found = true;
-                            if column.is_nullable {
+                            if column.is_nullable && explicit_null_columns.contains(&column.name) {
                                 return nullable_primary_key_column_error;
                             }
+                            // Infer not null on primary key column
+                            column.is_nullable = false;
                         }
                     }
                     if !column_found {

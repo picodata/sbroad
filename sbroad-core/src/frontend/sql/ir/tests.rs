@@ -1803,10 +1803,10 @@ vtable_max_rows = 1000
 
 #[test]
 fn front_sql_pg_style_params3() {
-    let input = r#"select "a" + $1 from "t" 
+    let input = r#"select "a" + $1 from "t"
         where "a" = $1
         group by "a" + $1
-        having count("b") > $1 
+        having count("b") > $1
         option(sql_vdbe_max_steps = $1, vtable_max_rows = $1)"#;
 
     let plan = sql_to_optimized_ir(input, vec![Value::Unsigned(42)]);
@@ -2070,7 +2070,7 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_except_single_right() {
-    let input = r#"SELECT "a", "b" from "t" 
+    let input = r#"SELECT "a", "b" from "t"
         EXCEPT
         SELECT sum("a"), count("b") from "t"
     "#;
@@ -2094,7 +2094,7 @@ vtable_max_rows = 5000
 
     assert_eq!(expected_explain, plan.as_explain().unwrap());
 
-    let input = r#"SELECT "b", "a" from "t" 
+    let input = r#"SELECT "b", "a" from "t"
         EXCEPT
         SELECT sum("a"), count("b") from "t"
     "#;
@@ -2122,7 +2122,7 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_except_single_left() {
-    let input = r#"SELECT sum("a"), count("b") from "t" 
+    let input = r#"SELECT sum("a"), count("b") from "t"
         EXCEPT
         SELECT "a", "b" from "t"
     "#;
@@ -2149,7 +2149,7 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_except_single_both() {
-    let input = r#"SELECT sum("a"), count("b") from "t" 
+    let input = r#"SELECT sum("a"), count("b") from "t"
         EXCEPT
         SELECT sum("a"), sum("b") from "t"
     "#;
@@ -2311,7 +2311,7 @@ vtable_max_rows = 5000
 
 #[test]
 fn front_sql_left_join() {
-    let input = r#"SELECT * from (select "a" as a from "t") as o 
+    let input = r#"SELECT * from (select "a" as a from "t") as o
         left outer join (select "b" as c, "d" as d from "t") as i
         on o.a = i.c
         "#;
@@ -3557,6 +3557,8 @@ fn front_count_no_params() {
 
 #[cfg(test)]
 mod cte;
+#[cfg(test)]
+mod ddl;
 #[cfg(test)]
 mod global;
 #[cfg(test)]

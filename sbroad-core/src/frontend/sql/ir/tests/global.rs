@@ -944,7 +944,7 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_global_left_join3() {
     let input = r#"
-    select "e", "b" from 
+    select "e", "b" from
     (select "b" * "b" as "b" from "global_t")
     left join "t2" on true
     "#;
@@ -975,9 +975,9 @@ vtable_max_rows = 5000
 #[test]
 fn front_sql_global_left_join4() {
     let input = r#"
-    select "e", "b" from 
+    select "e", "b" from
     (select "b" * "b" as "b" from "global_t")
-    left join 
+    left join
     (select "e" + 1 as "e" from "t2")
     on true
     "#;
