@@ -733,6 +733,7 @@ impl RouterConfigurationMock {
 /// buckets.
 /// Where: `p = bucket_cnt / rs_cnt, r = bucket_cnt % rs_cnt`
 #[allow(clippy::module_name_repetitions)]
+#[derive(Clone)]
 pub struct VshardMock {
     // Holds boundaries of replicaset buckets: [start, end)
     blocks: Vec<(u64, u64)>,
@@ -820,12 +821,13 @@ impl VshardMock {
 }
 
 #[allow(clippy::module_name_repetitions)]
+#[derive(Clone)]
 pub struct RouterRuntimeMock {
     // It's based on the RefCells instead of tarantool mutexes,
     // so it could be used in unit tests - they won't compile otherwise due to missing tarantool symbols.
     metadata: RefCell<RouterConfigurationMock>,
     virtual_tables: RefCell<HashMap<usize, VirtualTable>>,
-    ir_cache: RefCell<LRUCache<SmolStr, Plan>>,
+    ir_cache: Rc<RefCell<LRUCache<SmolStr, Plan>>>,
     table_statistics_cache: RefCell<HashMap<SmolStr, Rc<TableStats>>>,
     initial_column_statistics_cache: RefCell<HashMap<TableColumnPair, Rc<Box<dyn Any>>>>,
     pub vshard_mock: VshardMock,
@@ -1289,7 +1291,7 @@ impl RouterRuntimeMock {
         RouterRuntimeMock {
             metadata: RefCell::new(meta),
             virtual_tables: RefCell::new(HashMap::new()),
-            ir_cache: RefCell::new(cache),
+            ir_cache: Rc::new(RefCell::new(cache)),
             table_statistics_cache: RefCell::new(table_statistics_cache),
             initial_column_statistics_cache: RefCell::new(column_statistics_cache),
             vshard_mock: VshardMock::new(2, bucket_cnt),
@@ -1305,6 +1307,7 @@ impl RouterRuntimeMock {
 impl Router for RouterRuntimeMock {
     type ParseTree = AbstractSyntaxTree;
     type MetadataProvider = RouterConfigurationMock;
+    type VshardImplementor = Self;
 
     fn metadata(&self) -> &impl MutexLike<Self::MetadataProvider> {
         &self.metadata
@@ -1379,6 +1382,17 @@ impl Router for RouterRuntimeMock {
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_key_from_tuple(&*self.metadata().lock(), &space, rec)
+    }
+
+    fn get_current_tier_name(&self) -> Result<Option<SmolStr>, SbroadError> {
+        Ok(None)
+    }
+
+    fn get_vshard_object_by_tier(
+        &self,
+        _tier_name: Option<&SmolStr>,
+    ) -> Result<Self::VshardImplementor, SbroadError> {
+        Ok(self.clone())
     }
 }
 

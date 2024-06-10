@@ -823,7 +823,7 @@ fn has_zero_limit_clause(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
 /// # Errors
 /// - Internal errors during the execution.
 pub fn dispatch_impl(
-    runtime: &impl Vshard,
+    coordinator: &impl Router,
     plan: &mut ExecutionPlan,
     top_id: usize,
     buckets: &Buckets,
@@ -834,13 +834,22 @@ pub fn dispatch_impl(
         &format!("dispatching plan: {plan:?}")
     );
     let sub_plan = plan.take_subtree(top_id)?;
+
+    let tier = {
+        match sub_plan.get_ir_plan().tier.as_ref() {
+            None => coordinator.get_current_tier_name()?,
+            tier => tier.cloned(),
+        }
+    };
+    let tier_runtime = coordinator.get_vshard_object_by_tier(tier.as_ref())?;
+
     debug!(Option::from("dispatch"), &format!("sub plan: {sub_plan:?}"));
     if has_zero_limit_clause(&sub_plan)? {
         if let Some(result) = empty_query_result(&sub_plan, return_format.clone())? {
             return Ok(result);
         }
     }
-    dispatch_by_buckets(sub_plan, buckets, runtime, return_format)
+    dispatch_by_buckets(sub_plan, buckets, &tier_runtime, return_format)
 }
 
 /// Helper function that chooses one of the methods for execution

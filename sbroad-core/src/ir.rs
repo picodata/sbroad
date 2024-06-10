@@ -462,6 +462,11 @@ pub struct Plan {
     /// of the pipeline.
     #[serde(skip)]
     pub context: Option<RefCell<BuildContext>>,
+    /// Any sharded table must belongs to a single tier.
+    /// Option::None is for: global tables or when the concept of tiers
+    /// is not applicable - for example cartridge case(vshard.router.static used).
+    #[serde(skip)]
+    pub tier: Option<SmolStr>,
 }
 
 /// Helper structures used to build the plan
@@ -550,6 +555,7 @@ impl Plan {
             version_map: TableVersionMap::new(),
             pg_params_map: HashMap::new(),
             context: Some(RefCell::new(BuildContext::default())),
+            tier: None,
         }
     }
 

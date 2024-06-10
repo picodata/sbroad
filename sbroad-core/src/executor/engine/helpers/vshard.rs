@@ -12,12 +12,9 @@ use tarantool::{
     tlua::StringInLua,
 };
 
-use crate::utils::MutexLike;
 use crate::{
     executor::{
-        engine::{
-            helpers::build_optional_binary, ConvertToDispatchResult, DispatchReturnFormat, Router,
-        },
+        engine::{helpers::build_optional_binary, ConvertToDispatchResult, DispatchReturnFormat},
         protocol::{FullMessage, RequiredMessage},
         result::ProducerResult,
     },
@@ -36,7 +33,7 @@ use crate::{
 use ahash::AHashMap;
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
-use smol_str::format_smolstr;
+use smol_str::{format_smolstr, SmolStr};
 use tarantool::tlua::{CDataOnStack, LuaState, LuaTable, PushGuard, PushInto};
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
@@ -45,7 +42,7 @@ use crate::{
     errors::{Entity, SbroadError},
     executor::{
         bucket::Buckets,
-        engine::{helpers::empty_query_result, Metadata, Vshard},
+        engine::{helpers::empty_query_result, Vshard},
         ir::{ExecutionPlan, QueryType},
     },
 };
@@ -66,21 +63,22 @@ tarantool::define_str_enum! {
 }
 
 /// Function to execute DML (INSERT) query only on some replicasets (which uuid's are
-/// present in the `rs_ir` argument).
+/// present in the `rs_ir` argument) using vshard router choosed by `tier` argument.
 ///
 /// Rust binding to Lua `dml_on_some` function.
 fn lua_dispatch_dml(
-    metadata: &impl Metadata,
+    waiting_timeout: u64,
     rs_ir: DMLReplicasetMessage,
+    tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
+    let tier_name = tier_name.map(SmolStr::to_string);
 
     let Some(exec_sql): Option<LuaFunction<_>> = lua.get("dispatch_dml") else {
         return Err(SbroadError::Other("no function 'dispatch_dml'".into()));
     };
 
-    let waiting_timeout = metadata.waiting_timeout();
-    let call_res = exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout));
+    let call_res = exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout, tier_name));
     match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
@@ -104,6 +102,7 @@ fn lua_dql_single_plan<'lua, T>(
     row_count: u64,
     vtable_max_rows: u64,
     waiting_timeout: u64,
+    tier_name: Option<&SmolStr>,
 ) -> Result<Rc<LuaTable<LuaStackGuard<'lua>>>, SbroadError>
 where
     T: PushInto<LuaState>,
@@ -115,12 +114,15 @@ where
         ));
     };
 
+    let tier_name = tier_name.map(SmolStr::to_string);
+
     let call_res = exec_sql.into_call_with_args::<LuaTable<_>, _>((
         args,
         replicasets,
         waiting_timeout,
         row_count,
         vtable_max_rows,
+        tier_name,
     ));
     match call_res {
         Ok(v) => Ok(Rc::new(v)),
@@ -139,9 +141,10 @@ where
 /// # Panics
 /// - failed to get expected lua function
 fn lua_dml_single_plan(
-    metadata: &impl Metadata,
+    waiting_timeout: u64,
     message: FullMessage,
     replicasets: &[RSName],
+    tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
@@ -151,8 +154,10 @@ fn lua_dml_single_plan(
         ));
     };
 
-    let waiting_timeout = metadata.waiting_timeout();
-    let call_res = exec_sql.call_with_args::<Tuple, _>((message, replicasets, waiting_timeout));
+    let tier_name = tier_name.map(SmolStr::to_string);
+
+    let call_res =
+        exec_sql.call_with_args::<Tuple, _>((message, replicasets, waiting_timeout, tier_name));
     match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
@@ -245,12 +250,13 @@ macro_rules! unwrap_or_error {
 ///
 /// # Errors
 /// - Errors during query execution
-pub fn exec_cacheable_dql_with_custom_plans(
-    lua: &tarantool::tlua::LuaThread,
+pub fn exec_cacheable_dql_with_custom_plans<'a>(
+    lua: &'a tarantool::tlua::LuaThread,
     mut rs_to_plan: RSMap,
     vtable_max_rows: u64,
     waiting_timeout: u64,
-) -> Result<DqlResult<'_>, SbroadError> {
+    tier_name: Option<&SmolStr>,
+) -> Result<DqlResult<'a>, SbroadError> {
     let deadline = fiber::clock().saturating_add(Duration::from_secs(waiting_timeout));
     let rs_count = rs_to_plan.len();
     let mut cache_required_args = HashMap::with_capacity(rs_to_plan.len());
@@ -267,6 +273,7 @@ pub fn exec_cacheable_dql_with_custom_plans(
             row_count,
             vtable_max_rows,
             waiting_timeout,
+            tier_name,
         ),
     )?;
     let mut rs_to_res = convert_lua_table_to_rust(&first_round_lua_table.clone(), rs_count)?;
@@ -298,6 +305,7 @@ pub fn exec_cacheable_dql_with_custom_plans(
             row_count,
             vtable_max_rows,
             timeout,
+            tier_name,
         ),
     )?;
     let rs_to_missed_res = convert_lua_table_to_rust(&second_round_lua_table.clone(), rs_count)?;
@@ -487,13 +495,14 @@ type LuaStackGuard<'lua> = PushGuard<LuaFunction<PushGuard<&'lua tarantool::tlua
 /// # Panics
 /// - Failed to find lua function `dispatch_by_count`
 #[inline]
-fn lua_dispatch_dql<T>(
-    lua: &tarantool::tlua::LuaThread,
+fn lua_dispatch_dql<'a, T>(
+    lua: &'a tarantool::tlua::LuaThread,
     rs_to_plan: T,
     row_count: u64,
     vtable_max_rows: u64,
     waiting_timeout: u64,
-) -> Result<Rc<LuaTable<LuaStackGuard<'_>>>, SbroadError>
+    tier_name: Option<&SmolStr>,
+) -> Result<Rc<LuaTable<LuaStackGuard<'a>>>, SbroadError>
 where
     T: PushInto<LuaState>,
     T::Err: fmt::Debug,
@@ -502,6 +511,8 @@ where
         return Err(SbroadError::Other("no function 'dispatch_dql'".into()));
     };
 
+    let tier_name = tier_name.map(SmolStr::to_string);
+
     let check_bucket_count = false;
     let call_res = exec_sql.into_call_with_args::<LuaTable<_>, _>((
         rs_to_plan,
@@ -509,6 +520,7 @@ where
         row_count,
         vtable_max_rows,
         check_bucket_count,
+        tier_name,
     ));
     match call_res {
         Ok(v) => Ok(Rc::new(v)),
@@ -529,6 +541,7 @@ pub fn exec_cacheable_dql_with_single_plan<'lua>(
     replicasets: &[RSName],
     vtable_max_rows: u64,
     waiting_timeout: u64,
+    tier_name: Option<&SmolStr>,
 ) -> Result<DqlResult<'lua>, SbroadError> {
     let deadline = fiber::clock().saturating_add(Duration::from_secs(waiting_timeout));
     let required_message = {
@@ -545,6 +558,7 @@ pub fn exec_cacheable_dql_with_single_plan<'lua>(
             row_count,
             vtable_max_rows,
             waiting_timeout,
+            tier_name,
         ),
     )?;
     let mut rs_to_res = convert_lua_table_to_rust(&first_round_lua_table, replicasets.len())?;
@@ -576,6 +590,7 @@ pub fn exec_cacheable_dql_with_single_plan<'lua>(
             row_count,
             vtable_max_rows,
             timeout,
+            tier_name,
         ),
     )?;
     let rs_to_missed_res = convert_lua_table_to_rust(&second_round_lua_table, replicasets.len())?;
@@ -588,16 +603,15 @@ pub fn exec_cacheable_dql_with_single_plan<'lua>(
 }
 
 fn exec_with_single_plan(
-    runtime: &(impl Router + Vshard),
     mut exec_plan: ExecutionPlan,
     buckets: &Buckets,
     return_format: DispatchReturnFormat,
+    waiting_timeout: u64,
+    tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    let metadata = &*runtime.metadata().lock();
     let query_type = exec_plan.query_type()?;
     let vtable_max_rows = exec_plan.get_vtable_max_rows();
-    let waiting_timeout = metadata.waiting_timeout();
-    let replicasets = lua_get_replicasets_from_buckets(buckets)?;
+    let replicasets = lua_get_replicasets_from_buckets(buckets, tier_name)?;
     match &query_type {
         QueryType::DQL => {
             let lua = tarantool::lua_state();
@@ -607,6 +621,7 @@ fn exec_with_single_plan(
                 &replicasets,
                 vtable_max_rows,
                 waiting_timeout,
+                tier_name,
             )?;
             build_final_dql_result(rs_to_res, return_format)
         }
@@ -614,16 +629,18 @@ fn exec_with_single_plan(
             let required_binary = build_required_binary(&mut exec_plan)?;
             let optional_binary = build_optional_binary(exec_plan)?;
             let message = FullMessage::new(required_binary, optional_binary);
-            lua_dml_single_plan(metadata, message, &replicasets)
+            lua_dml_single_plan(waiting_timeout, message, &replicasets, tier_name)
         }
     }
 }
 
 fn exec_with_custom_plan(
-    runtime: &(impl Router + Vshard),
+    runtime: &impl Vshard,
     sub_plan: ExecutionPlan,
     buckets: &Buckets,
     return_format: DispatchReturnFormat,
+    waiting_timeout: u64,
+    tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let all_buckets: HashSet<u64, RepeatableState>;
 
@@ -639,7 +656,7 @@ fn exec_with_custom_plan(
     // todo(ars): group should be a runtime function not global,
     // this way we could implement it for mock runtime for better testing
     // Vec of { replicaset_uuid, corresponding bucket ids }.
-    let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets_set)?.drain().collect();
+    let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets_set, tier_name)?.drain().collect();
     if rs_bucket_vec.is_empty() {
         return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
             "no replica sets were found for the buckets {buckets:?} to execute the query on"
@@ -649,7 +666,6 @@ fn exec_with_custom_plan(
     let query_type = sub_plan.query_type()?;
     let vtable_max_rows = sub_plan.get_vtable_max_rows();
     let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
-    let waiting_timeout = runtime.metadata().lock().waiting_timeout();
     match &query_type {
         QueryType::DQL => {
             let lua = tarantool::lua_state();
@@ -658,6 +674,7 @@ fn exec_with_custom_plan(
                 rs_ir,
                 vtable_max_rows,
                 waiting_timeout,
+                tier_name,
             )?;
             build_final_dql_result(rs_to_res, return_format)
         }
@@ -668,19 +685,21 @@ fn exec_with_custom_plan(
                 let optional_binary = build_optional_binary(ir)?;
                 rs_message.insert(rs, FullMessage::new(required_binary, optional_binary));
             }
-            lua_dispatch_dml(&*runtime.metadata().lock(), rs_message)
+            lua_dispatch_dml(waiting_timeout, rs_message, tier_name)
         }
     }
 }
 
 /// Generic function over `dql_on_some` and `dml_on_some` functions.
-/// Used to execute IR on some replicasets (that are discovered from given `buckets`).
+/// Used to execute IR on some replicasets (that are discovered from given `buckets`) using vshard router choosed by `tier argument`.
 #[otm_child_span("query.dispatch.cartridge.some")]
 pub fn impl_exec_ir_on_buckets(
-    runtime: &(impl Router + Vshard),
+    runtime: &impl Vshard,
     sub_plan: ExecutionPlan,
     buckets: &Buckets,
     return_format: DispatchReturnFormat,
+    waiting_timeout: u64,
+    tier_name: Option<&SmolStr>,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let mut buckets = buckets;
     let random_bucket = runtime.get_random_bucket();
@@ -696,9 +715,16 @@ pub fn impl_exec_ir_on_buckets(
     }
 
     if !sub_plan.has_segmented_tables() && !sub_plan.has_customization_opcodes() {
-        exec_with_single_plan(runtime, sub_plan, buckets, return_format)
+        exec_with_single_plan(sub_plan, buckets, return_format, waiting_timeout, tier_name)
     } else {
-        exec_with_custom_plan(runtime, sub_plan, buckets, return_format)
+        exec_with_custom_plan(
+            runtime,
+            sub_plan,
+            buckets,
+            return_format,
+            waiting_timeout,
+            tier_name,
+        )
     }
 }
 
@@ -923,7 +949,10 @@ pub(crate) type GroupedBuckets = HashMap<String, Vec<u64>>;
 ///
 /// Rust binding to Lua `get_replicasets_from_buckets` function.
 #[otm_child_span("buckets.group")]
-fn lua_get_replicasets_from_buckets(buckets: &Buckets) -> Result<Vec<RSName>, SbroadError> {
+fn lua_get_replicasets_from_buckets(
+    buckets: &Buckets,
+    tier_name: Option<&SmolStr>,
+) -> Result<Vec<RSName>, SbroadError> {
     if let Buckets::All = buckets {
         return Ok(Vec::new());
     }
@@ -946,7 +975,9 @@ fn lua_get_replicasets_from_buckets(buckets: &Buckets) -> Result<Vec<RSName>, Sb
         ));
     };
 
-    let res: Vec<RSName> = match func.call_with_args(lua_buckets) {
+    let tier_name = tier_name.map(SmolStr::to_string);
+
+    let res: Vec<RSName> = match func.call_with_args((lua_buckets, tier_name)) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -965,8 +996,12 @@ fn lua_get_replicasets_from_buckets(buckets: &Buckets) -> Result<Vec<RSName>, Sb
 ///
 /// Rust binding to Lua `group_buckets_by_replicasets` function.
 #[otm_child_span("buckets.group")]
-fn group(buckets: &HashSet<u64, RepeatableState>) -> Result<GroupedBuckets, SbroadError> {
+fn group(
+    buckets: &HashSet<u64, RepeatableState>,
+    tier_name: Option<&SmolStr>,
+) -> Result<GroupedBuckets, SbroadError> {
     let lua_buckets: Vec<u64> = buckets.iter().copied().collect();
+    let tier_name = tier_name.map(SmolStr::to_string);
 
     let lua = tarantool::lua_state();
 
@@ -974,7 +1009,7 @@ fn group(buckets: &HashSet<u64, RepeatableState>) -> Result<GroupedBuckets, Sbro
         SbroadError::LuaError("Lua function `group_buckets_by_replicasets` not found".into())
     })?;
 
-    let res: GroupedBuckets = match fn_group.call_with_args(lua_buckets) {
+    let res: GroupedBuckets = match fn_group.call_with_args((lua_buckets, tier_name)) {
         Ok(v) => v,
         Err(e) => {
             error!(Option::from("buckets group"), &format!("{e:?}"));

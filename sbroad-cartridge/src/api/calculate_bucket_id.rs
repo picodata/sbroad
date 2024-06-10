@@ -9,7 +9,7 @@ use crate::api::helper::load_config;
 use crate::api::COORDINATOR_ENGINE;
 use crate::utils::{wrap_proc_result, ProcResult};
 
-use sbroad::executor::engine::{Router, Vshard};
+use sbroad::executor::engine::Router;
 use sbroad::ir::value::{LuaValue, Value};
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -130,14 +130,14 @@ fn calculate_bucket_id_inner(args: &RawBytes) -> anyhow::Result<u64> {
         Ok(match args {
             Args::String(params) => {
                 let bucket_str = Value::from(params.rec);
-                runtime.determine_bucket_id(&[&bucket_str])?
+                runtime.determine_bucket_id(&[&bucket_str])
             }
             Args::Tuple(params) => runtime
                 .extract_sharding_key_from_tuple(params.space, &params.rec)
-                .map(|tuple| runtime.determine_bucket_id(&tuple))??,
+                .map(|tuple| runtime.determine_bucket_id(&tuple))?,
             Args::Map(params) => runtime
                 .extract_sharding_key_from_map(params.space, &params.rec)
-                .map(|tuple| runtime.determine_bucket_id(&tuple))??,
+                .map(|tuple| runtime.determine_bucket_id(&tuple))?,
         })
     })
 }

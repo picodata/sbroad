@@ -72,8 +72,7 @@ impl Plan {
 #[derive(Debug)]
 pub struct Query<'a, C>
 where
-    C: Router + Vshard,
-    &'a C: Vshard,
+    C: Router,
 {
     /// Explain flag
     is_explain: bool,
@@ -88,8 +87,7 @@ where
 
 impl<'a, C> Query<'a, C>
 where
-    C: Router + Vshard,
-    &'a C: Vshard,
+    C: Router,
 {
     pub fn from_parts(
         is_explain: bool,
@@ -180,6 +178,10 @@ where
 
     #[otm_child_span("query.materialize_subtree")]
     pub fn materialize_subtree(&mut self, slices: Slices) -> Result<(), SbroadError> {
+        let tier = self.exec_plan.get_ir_plan().tier.as_ref();
+        // all tables from one tier, so we can use corresponding vshard object
+        let vshard = self.coordinator.get_vshard_object_by_tier(tier)?;
+
         for slice in slices.slices() {
             // TODO: make it work in parallel
             for motion_id in slice.positions() {
@@ -201,7 +203,7 @@ where
                                 self.exec_plan.set_motion_vtable(
                                     *motion_id,
                                     virtual_table,
-                                    &self.coordinator,
+                                    &vshard,
                                 )?;
                                 self.get_mut_exec_plan().unlink_motion_subtree(*motion_id)?;
                             }
@@ -229,7 +231,7 @@ where
                     &buckets,
                 )?;
                 self.exec_plan
-                    .set_motion_vtable(*motion_id, virtual_table, &self.coordinator)?;
+                    .set_motion_vtable(*motion_id, virtual_table, &vshard)?;
             }
         }
 

@@ -3754,6 +3754,8 @@ fn front_mock_set_param_transaction() {
     }
 }
 
+// TODO: add test for create table in tier syntax
+
 #[test]
 fn front_alter_system_check_parses_ok() {
     let queries_to_check_ok = vec![

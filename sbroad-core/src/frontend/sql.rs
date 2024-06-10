@@ -3783,20 +3783,22 @@ impl AbstractSyntaxTree {
             })?)?;
         plan.set_top(plan_top_id)?;
 
-        // check that all tables from query from one tier. Ignore global tables.
-        if !plan
+        let mut tiers = plan
             .relations
             .tables
             .iter()
             .filter(|(_, table)| matches!(table.kind, TableKind::ShardedSpace { .. }))
-            .map(|(_, table)| table.tier.as_ref())
-            .all_equal()
-        {
+            .map(|(_, table)| table.tier.as_ref());
+
+        // check that all tables from query from one vshard group. Ignore global tables.
+        if !tiers.clone().all_equal() {
             return Err(SbroadError::Invalid(
                 Entity::Query,
                 Some("Query cannot use tables from different tiers".into()),
             ));
         }
+
+        plan.tier = tiers.next().flatten().map(Clone::clone);
 
         let replaces = plan.replace_sq_with_references()?;
         plan.fix_betweens(&worker.betweens, &replaces)?;

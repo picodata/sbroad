@@ -238,6 +238,7 @@ impl ConvertToDispatchResult for Tuple {
 pub trait Router: QueryCache {
     type ParseTree;
     type MetadataProvider: Metadata;
+    type VshardImplementor: Vshard;
 
     /// Get the metadata provider (tables, functions, etc.).
     fn metadata(&self) -> &impl MutexLike<Self::MetadataProvider>;
@@ -291,6 +292,30 @@ pub trait Router: QueryCache {
         motion_node_id: usize,
         buckets: &Buckets,
     ) -> Result<VirtualTable, SbroadError>;
+
+    /// Get tier name to which the coordinator belongs
+    ///
+    /// # Errors
+    /// - internal executor errors
+    /// - storage errors
+    fn get_current_tier_name(&self) -> Result<Option<SmolStr>, SbroadError>;
+
+    /// Get vshard object which is responsible for tier with corresponding name
+    ///
+    /// # Errors
+    /// - internal executor errors
+    fn get_vshard_object_by_tier(
+        &self,
+        tier_name: Option<&SmolStr>,
+    ) -> Result<Self::VshardImplementor, SbroadError>;
+
+    /// Get vshard object name to which the coordinator belongs
+    ///
+    /// # Errors
+    /// - internal executor errors
+    fn get_current_vshard_object(&self) -> Result<Self::VshardImplementor, SbroadError> {
+        self.get_vshard_object_by_tier(self.get_current_tier_name()?.as_ref())
+    }
 }
 
 /// Struct representing table stats that we get directly from replicaset system table.

@@ -14,6 +14,8 @@ use sbroad::ir::function::Function;
 use sbroad::ir::relation::{Column, ColumnRole, SpaceEngine, Table, Type};
 use sbroad::{debug, warn};
 
+pub const DEFAULT_WAITING_TIMEOUT: u64 = 360;
+
 /// Cluster metadata information
 ///
 /// Information based on tarantool cartridge schema. Cache knows nothing about bucket distribution in the cluster,
@@ -52,7 +54,7 @@ impl RouterConfiguration {
         }
 
         RouterConfiguration {
-            waiting_timeout: 360,
+            waiting_timeout: DEFAULT_WAITING_TIMEOUT,
             cache_capacity: DEFAULT_CAPACITY,
             tables: HashMap::new(),
             sharding_column: SmolStr::default(),

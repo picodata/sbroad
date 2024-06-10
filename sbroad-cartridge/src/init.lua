@@ -1,12 +1,22 @@
 local checks = require('checks')
 local core = require('sbroad.core')
 local rust = require("sbroad.rust")
+local vshard = require("vshard")
+
+local function get_router_for_tier(tier_name) -- luacheck: no unused args
+    return vshard.router.static
+end
 
 local function init (is_master)
     if is_master then
         core.init()
     end
     rust.init()
+
+    if rawget(_G, 'sbroad') == nil then
+        rawset(_G, 'sbroad', {})
+    end
+    _G.sbroad.get_router_for_tier = get_router_for_tier
 end
 
 local function calculate_bucket_id(values, space_name) -- luacheck: no unused args

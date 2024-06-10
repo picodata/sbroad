@@ -2,7 +2,7 @@
 
 use sbroad::cbo::{ColumnStats, TableColumnPair, TableStats};
 use sbroad::executor::engine::helpers::vshard::{get_random_bucket, impl_exec_ir_on_buckets};
-use sbroad::executor::engine::{DispatchReturnFormat, QueryCache, Vshard};
+use sbroad::executor::engine::{DispatchReturnFormat, Metadata, QueryCache, Vshard};
 use sbroad::utils::MutexLike;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use tarantool::fiber::Mutex;
@@ -20,6 +20,7 @@ use tarantool::tlua::LuaFunction;
 use crate::cartridge::bucket_count;
 use crate::cartridge::config::RouterConfiguration;
 
+use super::ConfigurationProvider;
 use sbroad::error;
 use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
@@ -41,7 +42,64 @@ use sbroad::ir::Plan;
 use sbroad::otm::child_span;
 use sbroad_proc::otm_child_span;
 
-use super::ConfigurationProvider;
+pub struct SingleTier {
+    bucket_count: u64,
+    waiting_timeout: u64,
+}
+
+impl SingleTier {
+    fn new(waiting_timeout: u64) -> Result<Self, SbroadError> {
+        Ok(SingleTier {
+            bucket_count: bucket_count()?,
+            waiting_timeout,
+        })
+    }
+}
+
+impl Vshard for SingleTier {
+    fn exec_ir_on_any_node(
+        &self,
+        sub_plan: ExecutionPlan,
+        return_format: DispatchReturnFormat,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        impl_exec_ir_on_buckets(
+            self,
+            sub_plan,
+            &get_random_bucket(self),
+            return_format,
+            self.waiting_timeout,
+            None,
+        )
+    }
+
+    fn exec_ir_on_buckets(
+        &self,
+        sub_plan: ExecutionPlan,
+        buckets: &Buckets,
+        return_format: DispatchReturnFormat,
+    ) -> Result<Box<dyn Any>, SbroadError> {
+        impl_exec_ir_on_buckets(
+            self,
+            sub_plan,
+            buckets,
+            return_format,
+            self.waiting_timeout,
+            None,
+        )
+    }
+
+    fn bucket_count(&self) -> u64 {
+        self.bucket_count
+    }
+
+    fn get_random_bucket(&self) -> Buckets {
+        get_random_bucket(self)
+    }
+
+    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
+        Ok(bucket_id_by_tuple(s, self.bucket_count))
+    }
+}
 
 /// The runtime (cluster configuration, buckets, IR cache) of the dispatcher node.
 #[allow(clippy::module_name_repetitions)]
@@ -178,6 +236,7 @@ impl QueryCache for RouterRuntime {
 impl Router for RouterRuntime {
     type ParseTree = AbstractSyntaxTree;
     type MetadataProvider = RouterConfiguration;
+    type VshardImplementor = SingleTier;
 
     fn metadata(&self) -> &impl MutexLike<Self::MetadataProvider> {
         &self.metadata
@@ -224,6 +283,17 @@ impl Router for RouterRuntime {
         rec: &'rec [Value],
     ) -> Result<Vec<&'rec Value>, SbroadError> {
         sharding_key_from_tuple(&*self.cached_config().lock(), &space, rec)
+    }
+
+    fn get_current_tier_name(&self) -> Result<Option<SmolStr>, SbroadError> {
+        Ok(None)
+    }
+
+    fn get_vshard_object_by_tier(
+        &self,
+        _tier_name: Option<&SmolStr>,
+    ) -> Result<Self::VshardImplementor, SbroadError> {
+        SingleTier::new(self.metadata.lock().waiting_timeout())
     }
 }
 
@@ -279,66 +349,8 @@ impl RouterRuntime {
 
         Ok(result)
     }
-}
 
-impl Vshard for RouterRuntime {
-    fn exec_ir_on_any_node(
-        &self,
-        sub_plan: ExecutionPlan,
-        return_format: DispatchReturnFormat,
-    ) -> Result<Box<dyn Any>, SbroadError> {
-        impl_exec_ir_on_buckets(self, sub_plan, &get_random_bucket(self), return_format)
-    }
-
-    fn bucket_count(&self) -> u64 {
-        self.bucket_count
-    }
-
-    fn get_random_bucket(&self) -> Buckets {
-        get_random_bucket(self)
-    }
-
-    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
-        Ok(bucket_id_by_tuple(s, self.bucket_count()))
-    }
-
-    fn exec_ir_on_buckets(
-        &self,
-        sub_plan: ExecutionPlan,
-        buckets: &Buckets,
-        return_format: DispatchReturnFormat,
-    ) -> Result<Box<dyn Any>, SbroadError> {
-        impl_exec_ir_on_buckets(self, sub_plan, buckets, return_format)
-    }
-}
-
-impl Vshard for &RouterRuntime {
-    fn bucket_count(&self) -> u64 {
-        self.bucket_count
-    }
-
-    fn get_random_bucket(&self) -> Buckets {
-        get_random_bucket(self)
-    }
-
-    fn determine_bucket_id(&self, s: &[&Value]) -> Result<u64, SbroadError> {
-        Ok(bucket_id_by_tuple(s, self.bucket_count()))
-    }
-
-    fn exec_ir_on_buckets(
-        &self,
-        sub_plan: ExecutionPlan,
-        buckets: &Buckets,
-        return_format: DispatchReturnFormat,
-    ) -> Result<Box<dyn Any>, SbroadError> {
-        impl_exec_ir_on_buckets(*self, sub_plan, buckets, return_format)
-    }
-
-    fn exec_ir_on_any_node(
-        &self,
-        sub_plan: ExecutionPlan,
-        return_format: DispatchReturnFormat,
-    ) -> Result<Box<dyn Any>, SbroadError> {
-        impl_exec_ir_on_buckets(*self, sub_plan, &get_random_bucket(self), return_format)
+    pub fn determine_bucket_id(&self, s: &[&Value]) -> u64 {
+        bucket_id_by_tuple(s, self.bucket_count)
     }
 }

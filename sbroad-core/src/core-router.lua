@@ -1,7 +1,6 @@
 -- Intermediate layer of communication between Sbroad and vshard.
 -- Function, described in this file are called from `vshard` Sbroad module.
 
-local vshard = require('vshard')
 local lerror = require('vshard.error')
 local vrs = require('vshard.replicaset')
 local helper = require('sbroad.helper')
@@ -36,6 +35,31 @@ local function prepare_args(args, func_name)
     end
 
     return call_args
+end
+
+local function get_router_for_tier(tier_name)
+    local get_router, postfix
+    if helper.pico_compat() then
+        get_router = _G.pico.get_router_for_tier
+        postfix = "pico"
+    else
+        get_router = _G.sbroad.get_router_for_tier
+        postfix = "sbroad"
+    end
+    if get_router == nil then
+        local err_msg = string.format(
+            "can't get vshard router for tier %s. Please, define function\
+'get_router_for_tier' in global table '_G.%s'", tier_name, postfix)
+        error(err_msg)
+    end
+
+    return get_router(tier_name)
+end
+
+local function get_replicasets_from_tier(tier_name)
+    local router = get_router_for_tier(tier_name)
+    local replicasets = router:routeall()
+    return replicasets
 end
 
 local function future_wait(cond, timeout)
@@ -86,7 +110,7 @@ function ResultHandler:process_res(res, map_format)
     if map_format then
         len, data = msgpack.decode_array_header(res.rpos, res:size())
         if len ~= 2 then
-            return lerror.make("Unexpected map result len: "..len)
+            return lerror.make("Unexpected map result len: " .. len)
         end
         local ok
         ok, data = msgpack.decode_unchecked(data)
@@ -100,7 +124,7 @@ function ResultHandler:process_res(res, map_format)
         data = res.rpos
         len, data = msgpack.decode_array_header(data, res:size())
         if len ~= 1 then
-            return lerror.make("Unexpected non-map result len: "..len)
+            return lerror.make("Unexpected non-map result len: " .. len)
         end
     end
     len, data = msgpack.decode_array_header(data, res:size())
@@ -112,7 +136,7 @@ function ResultHandler:process_res(res, map_format)
         len, data = msgpack.decode_array_header(data, res:size())
     end
     if len ~= 3 then
-        return lerror.make("Unexpected dql tuple len: "..len)
+        return lerror.make("Unexpected dql tuple len: " .. len)
     end
     res.rpos = data
 
@@ -161,8 +185,9 @@ end
 --
 -- @return mapping between replicaset uuid and ibuf containing result
 --
-local function multi_storage_dql(uuid_to_args, func, handler, opts)
-    local replicasets = vshard.router.routeall()
+local function multi_storage_dql(uuid_to_args, func, handler, opts, tier_name)
+    local router = get_router_for_tier(tier_name)
+    local replicasets = router:routeall()
     local timeout, check_bucket_count
     local res_map = {}
     for uuid, _ in pairs(uuid_to_args) do
@@ -179,8 +204,8 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
     local err, err_uuid, res
     local futures = {}
     local bucket_count = 0
-    local opts_ref = {is_async = true}
-    local opts_map = {is_async = true, skip_header = true}
+    local opts_ref = { is_async = true }
+    local opts_map = { is_async = true, skip_header = true }
     local rs_count = 0
     local rid = ref_id
     local deadline = fiber.clock() + timeout
@@ -199,7 +224,7 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
     for uuid, _ in pairs(uuid_to_args) do
         local rs = replicasets[uuid]
         res, err = rs:callrw('vshard.storage._call',
-                {'storage_ref', rid, timeout}, opts_ref)
+            { 'storage_ref', rid, timeout }, opts_ref)
         if res == nil then
             err_uuid = uuid
             goto fail
@@ -233,9 +258,9 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
     -- 2) some buckets are simply lost or duplicated - could happen as a bug, or
     -- if the user does a maintenance of some kind by creating/deleting buckets.
     -- In both cases can't guarantee all the data would be covered by Map calls.
-    if check_bucket_count and bucket_count ~= vshard.router.bucket_count() then
+    if check_bucket_count and bucket_count ~= router:bucket_count() then
         err = string.format("Expected %d buckets in the cluster, got %d",
-                            vshard.router.bucket_count(), bucket_count)
+            router:bucket_count(), bucket_count)
         goto fail
     end
 
@@ -243,7 +268,7 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
     --
     for uuid, rs_args in pairs(uuid_to_args) do
         local rs = replicasets[uuid]
-        local args = {'storage_map', rid, helper.proc_call_fn_name(), prepare_args(rs_args, func)}
+        local args = { 'storage_map', rid, helper.proc_call_fn_name(), prepare_args(rs_args, func) }
         opts_map['buffer'] = res_map[uuid]
         res, err = rs:callrw('vshard.storage._call', args, opts_map)
         if res == nil then
@@ -276,7 +301,7 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
         -- Best effort to remove the created refs before exiting. Can help if
         -- the timeout was big and the error happened early.
         f = replicasets[uuid]:callrw('vshard.storage._call',
-                {'storage_unref', rid}, opts_ref)
+            { 'storage_unref', rid }, opts_ref)
         if f ~= nil then
             -- Don't care waiting for a result - no time for this. But it won't
             -- affect the request sending if the connection is still alive.
@@ -286,10 +311,11 @@ local function multi_storage_dql(uuid_to_args, func, handler, opts)
     return nil, err, err_uuid
 end
 
-_G.group_buckets_by_replicasets = function(buckets)
+_G.group_buckets_by_replicasets = function(buckets, tier_name)
     local map = {}
+    local router = get_router_for_tier(tier_name)
     for _, bucket_id in pairs(buckets) do
-        local rs, err = vshard.router.route(bucket_id)
+        local rs, err = router:route(bucket_id)
         if err ~= nil then
             return nil, err
         end
@@ -297,17 +323,18 @@ _G.group_buckets_by_replicasets = function(buckets)
         if map[uuid] then
             table.insert(map[uuid], bucket_id)
         else
-            map[uuid] = {bucket_id}
+            map[uuid] = { bucket_id }
         end
     end
 
     return map
 end
 
-_G.get_replicasets_from_buckets = function(buckets)
+_G.get_replicasets_from_buckets = function(buckets, tier_name)
     local map = {}
+    local router = get_router_for_tier(tier_name)
     for _, bucket_id in pairs(buckets) do
-        local rs, err = vshard.router.route(bucket_id)
+        local rs, err = router:route(bucket_id)
         if err ~= nil then
             return nil, err
         end
@@ -327,13 +354,15 @@ end
 -- @param waiting_timeout timeout in seconds for whole
 -- function.
 --
-_G.dispatch_dml = function(uuid_to_args, waiting_timeout)
+_G.dispatch_dml = function(uuid_to_args, waiting_timeout, tier_name)
     local result = nil
     local exec_fn = helper.proc_fn_name("proc_sql_execute")
     local futures = {}
+    local router = get_router_for_tier(tier_name)
 
     for rs_uuid, args in pairs(uuid_to_args) do
-        local replica = vshard.router.routeall()[rs_uuid]
+        local replicasets = router:routeall()
+        local replica = replicasets[rs_uuid]
         local required = args["required"]
         local optional = args["optional"]
         local future, err = replica:callrw(
@@ -364,7 +393,7 @@ _G.dispatch_dml = function(uuid_to_args, waiting_timeout)
         end
     end
 
-    return box.tuple.new{result}
+    return box.tuple.new { result }
 end
 
 -- Execute DML query on given replicasets
@@ -376,11 +405,11 @@ end
 -- @param waiting_timeout timeout in seconds for whole
 -- function.
 --
-_G.dispatch_dml_single_plan = function(args, uuids, waiting_timeout)
+_G.dispatch_dml_single_plan = function(args, uuids, waiting_timeout, tier_name)
     if not next(uuids) then
-        local uuid_to_rs = vshard.router.routeall()
+        local uuid_to_rs = get_replicasets_from_tier(tier_name)
         for uuid, _ in pairs(uuid_to_rs) do
-           table.insert(uuids, uuid)
+            table.insert(uuids, uuid)
         end
     end
     local uuid_to_args = {}
@@ -388,7 +417,7 @@ _G.dispatch_dml_single_plan = function(args, uuids, waiting_timeout)
         uuid_to_args[uuid] = args
     end
 
-    return _G.dispatch_dml(uuid_to_args, waiting_timeout)
+    return _G.dispatch_dml(uuid_to_args, waiting_timeout, tier_name)
 end
 
 -- Execute DQL query on given replicasets and handle results.
@@ -410,11 +439,12 @@ end
 -- @return mapping between replicaset uuid and ibuf containing
 -- result
 --
-_G.dispatch_dql = function(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count)
+_G.dispatch_dql = function(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count, tier_name)
     local result
 
-    local result_handler = ResultHandler:new{vtable_row_count = row_count, vtable_max_rows=vtable_max_rows}
+    local result_handler = ResultHandler:new { vtable_row_count = row_count, vtable_max_rows = vtable_max_rows }
     local exec_fn = helper.proc_fn_name("proc_sql_execute")
+    local router = get_router_for_tier(tier_name)
 
     if helper.table_size(uuid_to_args) == 1 then
         -- When read request is executed only on one
@@ -427,13 +457,13 @@ _G.dispatch_dql = function(uuid_to_args, waiting_timeout, row_count, vtable_max_
             buffer = result[rs_uuid],
             skip_header = true
         }
-        local replica = vshard.router.routeall()[rs_uuid]
+        local replica = router:routeall()[rs_uuid]
         local future, err, _
         local args = prepare_args(rs_args)
         future, err = replica:callbre(
-                exec_fn,
-                args,
-                call_opts
+            exec_fn,
+            args,
+            call_opts
         )
         if err ~= nil then
             error(err)
@@ -452,7 +482,7 @@ _G.dispatch_dql = function(uuid_to_args, waiting_timeout, row_count, vtable_max_
             timeout = waiting_timeout,
             check_bucket_count = check_bucket_count or false
         }
-        result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, result_handler, opts)
+        result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, result_handler, opts, tier_name)
         if err ~= nil then
             helper.dql_error(err, err_uuid)
         end
@@ -472,13 +502,13 @@ end
 -- @param row_count initial value for the number of rows
 -- @param vtable_max_rows maximum number of rows
 --
-_G.dispatch_dql_single_plan = function(args, uuids, waiting_timeout, row_count, vtable_max_rows)
+_G.dispatch_dql_single_plan = function(args, uuids, waiting_timeout, row_count, vtable_max_rows, tier_name)
     local check_bucket_count = false
     if not next(uuids) then
         -- empty list of uuids means execute on all replicasets
-        local uuid_to_rs = vshard.router.routeall()
+        local uuid_to_rs = get_replicasets_from_tier(tier_name)
         for uuid, _ in pairs(uuid_to_rs) do
-           table.insert(uuids, uuid)
+            table.insert(uuids, uuid)
         end
         check_bucket_count = true
     end
@@ -487,5 +517,5 @@ _G.dispatch_dql_single_plan = function(args, uuids, waiting_timeout, row_count, 
     for _, uuid in pairs(uuids) do
         uuid_to_args[uuid] = args
     end
-    return _G.dispatch_dql(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count)
+    return _G.dispatch_dql(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count, tier_name)
 end

@@ -81,8 +81,7 @@ impl Buckets {
 
 impl<'a, T> Query<'a, T>
 where
-    T: Router + Vshard,
-    &'a T: Vshard,
+    T: Router,
 {
     /// Inner logic of `get_expression_tree_buckets` for simple expressions (without OR and AND
     /// operators).
@@ -94,6 +93,7 @@ where
         // See the logic of its handling below.
         let mut buckets: Vec<Buckets> = vec![];
         let ir_plan = self.exec_plan.get_ir_plan();
+        let tier = self.exec_plan.get_ir_plan().tier.as_ref();
         let expr = ir_plan.get_expression_node(expr_id)?;
 
         // Try to collect buckets from expression of type `sharding_key = value`
@@ -169,7 +169,10 @@ where
                             }
                         }
                         if !values.is_empty() {
-                            let bucket = self.coordinator.determine_bucket_id(&values)?;
+                            let bucket = self
+                                .coordinator
+                                .get_vshard_object_by_tier(tier)?
+                                .determine_bucket_id(&values)?;
                             let bucket_set: HashSet<u64, RepeatableState> =
                                 vec![bucket].into_iter().collect();
                             buckets.push(Buckets::new_filtered(bucket_set));
