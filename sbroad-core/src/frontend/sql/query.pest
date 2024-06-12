@@ -226,7 +226,7 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
                             &IdentifierInapplicableSymbol }
         RegularIdentifierFirstApplicableSymbol = { !(IdentifierInapplicableSymbol | ASCII_DIGIT) ~ ANY }
         RegularIdentifierApplicableSymbol = { !IdentifierInapplicableSymbol ~ ANY }
-        IdentifierInapplicableSymbol = { WHITESPACE | "." | "," | "(" | EOF | ")" | "\""
+        IdentifierInapplicableSymbol = { WHITESPACE | "." | "," | "(" | EOF | ")" | "\"" | ":"
                                        | "'" | ArithInfixOp | ConcatInfixOp | NotEq | GtEq
                                        | Gt | LtEq | Lt | Eq }
         KeywordCoverage = { Keyword ~ IdentifierInapplicableSymbol }
@@ -267,10 +267,10 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             LtEq  = { "<=" }
             NotEq = { "<>" | "!=" }
             In    = { NotFlag? ~ ^"in" }
-    ExprAtomValue = _{ UnaryNot* ~ AtomicExpr ~ IsNullPostfix? }
+    ExprAtomValue = _{ CastExpr | (UnaryNot* ~ AtomicExpr ~ IsNullPostfix?) }
         UnaryNot   = @{ NotFlag }
         IsNullPostfix = { ^"is" ~ NotFlag? ~ ^"null" }
-        AtomicExpr = _{ Literal | Parameter | Cast | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | Case | SubQuery | Row }
+        AtomicExpr = _{ Literal | Parameter | CastOp | Trim | CurrentDate | IdentifierWithOptionalContinuation | ExpressionInParentheses | UnaryOperator | Case | SubQuery | Row }
             Literal = { True | False | Null | Double | Decimal | Unsigned | Integer | SingleQuotedString }
                 True     = { ^"true" }
                 False    = { ^"false" }
@@ -310,7 +310,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             }
                 CaseWhenBlock = { ^"when" ~ Expr ~ ^"then" ~ Expr }
                 CaseElseBlock = { ^"else" ~ Expr }
-            Cast = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
+            CastOp = { ^"cast" ~ "(" ~ Expr ~ ^"as" ~ TypeCast ~ ")" }
                 TypeCast = _{ TypeAny | ColumnDefType }
                 ColumnDefType = { TypeBool | TypeDatetime | TypeDecimal | TypeDouble | TypeInt | TypeNumber
                                    | TypeScalar | TypeString | TypeText | TypeUnsigned | TypeVarchar | TypeUuid }
@@ -330,6 +330,10 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             UnaryOperator = _{ Exists }
                 Exists = { NotFlag? ~ ^"exists" ~ SubQuery }
             Row = { "(" ~ Expr ~ ("," ~ Expr)* ~ ")" }
+        CastExpr = { AtomicExprWrapped ~ ("::" ~ ColumnDefType)+ }
+            // In CastOp rule, AtomicExpr is stored as a child of Expr, so we try to imitate
+            // this in order parse CastExpr and CastOp rules in the same way.
+            AtomicExprWrapped = { AtomicExpr }
 
 Distinct = { ^"distinct" }
 NotFlag = { ^"not" }

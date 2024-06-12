@@ -126,3 +126,75 @@ fn cast14_test() {
         vec![],
     );
 }
+
+#[test]
+fn pgcast1_test() {
+    broadcast_check(
+        r#"SELECT true::bool FROM "t1""#,
+        r#"SELECT CAST (? as bool) as "COL_1" FROM "t1""#,
+        vec![Value::from(true)],
+    );
+}
+
+#[test]
+fn pgcast2_test() {
+    broadcast_check(
+        r#"SELECT false::bool FROM "t1""#,
+        r#"SELECT CAST (? as bool) as "COL_1" FROM "t1""#,
+        vec![Value::from(false)],
+    );
+}
+
+#[test]
+fn pgcast3_test() {
+    broadcast_check(
+        r#"SELECT '1.0'::decimal FROM "t1""#,
+        r#"SELECT CAST (? as decimal) as "COL_1" FROM "t1""#,
+        vec![Value::from("1.0")],
+    );
+}
+
+#[test]
+fn pgcast4_test() {
+    broadcast_check(
+        r#"SELECT '1.0'::double FROM "t1""#,
+        r#"SELECT CAST (? as double) as "COL_1" FROM "t1""#,
+        vec![Value::from("1.0")],
+    );
+}
+
+#[test]
+fn pgcast5_test() {
+    broadcast_check(
+        r#"SELECT '1'::int FROM "t1""#,
+        r#"SELECT CAST (? as int) as "COL_1" FROM "t1""#,
+        vec![Value::from("1")],
+    );
+}
+
+#[test]
+fn pgcast6_test() {
+    broadcast_check(
+        r#"SELECT '1'::integer FROM "t1""#,
+        r#"SELECT CAST (? as int) as "COL_1" FROM "t1""#,
+        vec![Value::from("1")],
+    );
+}
+
+#[test]
+fn pgcast7_test() {
+    broadcast_check(
+        r#"SELECT 1::string FROM "t1""#,
+        r#"SELECT CAST (? as string) as "COL_1" FROM "t1""#,
+        vec![Value::from(1_u64)],
+    );
+}
+
+#[test]
+fn pgcast8_test() {
+    broadcast_check(
+        r#"SELECT 1::text FROM "t1""#,
+        r#"SELECT CAST (? as text) as "COL_1" FROM "t1""#,
+        vec![Value::from(1_u64)],
+    );
+}

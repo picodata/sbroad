@@ -1201,6 +1201,55 @@ fn parse_option<M: Metadata>(
     Ok(value)
 }
 
+fn parse_cast_expr<M: Metadata>(
+    pair: Pair<Rule>,
+    referred_relation_ids: &[usize],
+    worker: &mut ExpressionsWorker<M>,
+    plan: &mut Plan,
+) -> Result<ParseExpression, SbroadError> {
+    let mut inner_pairs = pair.into_inner();
+    let expr_pair = inner_pairs.next().expect("Cast has no expr child.");
+    let child_parse_expr =
+        parse_expr_pratt(expr_pair.into_inner(), referred_relation_ids, worker, plan)?;
+
+    let mut cast_types = Vec::with_capacity(inner_pairs.len());
+    for type_pairs in inner_pairs {
+        let cast_type = if type_pairs.as_rule() == Rule::ColumnDefType {
+            let mut column_def_type_pairs = type_pairs.into_inner();
+            let column_def_type = column_def_type_pairs
+                .next()
+                .expect("concrete type expected under ColumnDefType");
+            if column_def_type.as_rule() == Rule::TypeVarchar {
+                let mut type_pairs_inner = column_def_type.into_inner();
+                let varchar_length = type_pairs_inner
+                    .next()
+                    .expect("Length is missing under Varchar");
+                let len = varchar_length.as_str().parse::<usize>().map_err(|e| {
+                    SbroadError::ParsingError(
+                        Entity::Value,
+                        format_smolstr!("failed to parse varchar length: {e:?}"),
+                    )
+                })?;
+                Ok(CastType::Varchar(len))
+            } else {
+                CastType::try_from(&column_def_type.as_rule())
+            }
+        } else {
+            // TypeAny.
+            CastType::try_from(&type_pairs.as_rule())
+        }?;
+
+        cast_types.push(cast_type);
+    }
+
+    assert!(!cast_types.is_empty(), "cast expression has no cast types");
+
+    Ok(ParseExpression::Cast {
+        cast_types,
+        child: Box::new(child_parse_expr),
+    })
+}
+
 enum ParameterSource<'parameter> {
     AstNode {
         ast: &'parameter AbstractSyntaxTree,
@@ -1470,7 +1519,7 @@ enum ParseExpression {
         child: Box<ParseExpression>,
     },
     Cast {
-        cast_type: CastType,
+        cast_types: Vec<CastType>,
         child: Box<ParseExpression>,
     },
     Case {
@@ -1586,9 +1635,12 @@ impl ParseExpression {
                     plan.add_covered_with_parentheses(child_plan_id)
                 }
             }
-            ParseExpression::Cast { cast_type, child } => {
-                let child_plan_id = child.populate_plan(plan, worker)?;
-                plan.add_cast(child_plan_id, cast_type.clone())?
+            ParseExpression::Cast { cast_types, child } => {
+                let mut child_plan_id = child.populate_plan(plan, worker)?;
+                for cast_type in cast_types {
+                    child_plan_id = plan.add_cast(child_plan_id, cast_type.clone())?;
+                }
+                child_plan_id
             }
             ParseExpression::Case {
                 search_expr,
@@ -2142,41 +2194,8 @@ where
                     ParseExpression::Exists { is_not: first_is_not, child: Box::new(child_parse_expr)}
                 }
                 Rule::Trim => parse_trim(primary, referred_relation_ids, worker, plan)?,
-                Rule::Cast => {
-                    let mut inner_pairs = primary.into_inner();
-                    let expr_pair = inner_pairs.next().expect("Cast has no expr child.");
-                    let child_parse_expr = parse_expr_pratt(
-                        expr_pair.into_inner(),
-                        referred_relation_ids,
-                        worker,
-                        plan
-                    )?;
-                    let type_pairs = inner_pairs.next().expect("Cast has no type child");
-                    let cast_type = if type_pairs.as_rule() == Rule::ColumnDefType {
-                        let mut column_def_type_pairs = type_pairs.into_inner();
-                        let column_def_type = column_def_type_pairs.next()
-                            .expect("concrete type expected under ColumnDefType");
-                        if column_def_type.as_rule() == Rule::TypeVarchar {
-                            let mut type_pairs_inner = column_def_type.into_inner();
-                            let varchar_length = type_pairs_inner.next().expect("Length is missing under Varchar");
-                            let len = varchar_length
-                                .as_str()
-                                .parse::<usize>()
-                                .map_err(|e| {
-                                    SbroadError::ParsingError(
-                                        Entity::Value,
-                                        format_smolstr!("failed to parse varchar length: {e:?}"),
-                                    )
-                                })?;
-                            Ok(CastType::Varchar(len))
-                        } else {
-                            CastType::try_from(&column_def_type.as_rule())
-                        }
-                    } else {
-                        // TypeAny.
-                        CastType::try_from(&type_pairs.as_rule())
-                    }?;
-                    ParseExpression::Cast { cast_type, child: Box::new(child_parse_expr) }
+                Rule::CastOp | Rule::CastExpr => {
+                    parse_cast_expr(primary, referred_relation_ids, worker, plan)?
                 }
                 Rule::Case => {
                     let mut inner_pairs = primary.into_inner();

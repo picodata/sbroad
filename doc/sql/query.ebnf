@@ -47,7 +47,7 @@ aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ('DISTIN
 case        ::= 'CASE' expression?
                 ('WHEN' expression 'THEN' expression)+
                 ('ELSE' expression)? 'END'
-cast        ::= 'CAST' '(' expression 'AS' type ')'
+cast        ::= ('CAST' '(' expression 'AS' type ')') | (experssion "::" type)
 to_char     ::= 'TO_CHAR' '(' expression ',' format ')'
 to_date     ::= 'TO_DATE' '(' expression ',' format ')'
 trim        ::= 'TRIM' '('
