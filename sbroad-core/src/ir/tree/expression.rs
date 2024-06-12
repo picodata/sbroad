@@ -170,7 +170,7 @@ fn expression_next<'nodes>(
                 | Node::Block(_)
                 | Node::Ddl(_)
                 | Node::Relational(_)
-                | Node::Parameter => None,
+                | Node::Parameter(..) => None,
             }
         }
         None => None,

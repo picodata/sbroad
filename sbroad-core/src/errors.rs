@@ -1,3 +1,4 @@
+use crate::ir::relation::Type;
 use serde::Serialize;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 use std::fmt;
@@ -278,6 +279,33 @@ impl fmt::Display for Action {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub enum TypeError {
+    AmbiguousParameterType(usize, Type, Type),
+    CouldNotDetermineParameterType(usize),
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let p: SmolStr = match self {
+            TypeError::AmbiguousParameterType(param_idx, ty1, ty2) => {
+                let param_num = param_idx + 1;
+                format_smolstr!(
+                    "parameter ${param_num} is ambiguous, it can be either {ty1} or {ty2}"
+                )
+            }
+            TypeError::CouldNotDetermineParameterType(param_idx) => {
+                let param_num = param_idx + 1;
+                format_smolstr!("could not determine data type of parameter ${param_num}")
+            }
+        };
+
+        write!(f, "{p}")
+    }
+}
+
+impl std::error::Error for TypeError {}
+
 /// Types of error
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum SbroadError {
@@ -307,6 +335,7 @@ pub enum SbroadError {
     /// Unexpected number of values (list length etc.).
     /// Second param is information what was expected and what got.
     UnexpectedNumberOfValues(SmolStr),
+    TypeError(TypeError),
     /// Object is not supported.
     /// Second param represents description or name that let to identify object.
     /// and can be empty (None).
@@ -347,6 +376,9 @@ impl fmt::Display for SbroadError {
             SbroadError::OutdatedStorageSchema => {
                 "storage schema version different from router".into()
             }
+            SbroadError::TypeError(err) => {
+                format_smolstr!("{err}")
+            }
         };
 
         write!(f, "{p}")
@@ -372,5 +404,11 @@ impl From<Error> for SbroadError {
             Some(Entity::Tarantool),
             format_smolstr!("{error:?}"),
         )
+    }
+}
+
+impl From<TypeError> for SbroadError {
+    fn from(error: TypeError) -> Self {
+        SbroadError::TypeError(error)
     }
 }

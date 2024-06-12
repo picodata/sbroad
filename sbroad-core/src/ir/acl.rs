@@ -291,7 +291,7 @@ impl Plan {
         // Check that node is ACL type (before making any distructive operations).
         let _ = self.get_acl_node(node_id)?;
         // Replace ACL with parameter node.
-        let node = std::mem::replace(self.get_mut_node(node_id)?, Node::Parameter);
+        let node = std::mem::replace(self.get_mut_node(node_id)?, Node::Parameter(None));
         match node {
             Node::Acl(acl) => Ok(acl),
             _ => Err(SbroadError::Invalid(

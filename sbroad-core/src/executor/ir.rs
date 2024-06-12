@@ -475,7 +475,7 @@ impl ExecutionPlan {
             let mut node: Node = if cte_ids.contains(&node_id) {
                 dst_node.clone()
             } else {
-                std::mem::replace(dst_node, Node::Parameter)
+                std::mem::replace(dst_node, Node::Parameter(None))
             };
             let ir_plan = self.get_ir_plan();
             match node {

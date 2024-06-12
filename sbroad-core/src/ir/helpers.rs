@@ -85,7 +85,7 @@ impl Plan {
                     let child_node = self.get_node(*child).expect("Alias must have a child node");
                     let child = match child_node {
                         Node::Expression(child_expr) => format!("{child_expr:?}"),
-                        Node::Parameter => String::from("parameter"),
+                        Node::Parameter(..) => String::from("parameter"),
                         Node::Relational(rel) => format!("{rel:?}"),
                         // TODO: fix `fix_betweens` logic to cover SubQueries with References.
                         _ => unreachable!("unexpected Alias child node"),

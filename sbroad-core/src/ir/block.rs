@@ -38,7 +38,7 @@ impl Plan {
             | Node::Relational(_)
             | Node::Ddl(..)
             | Node::Acl(..)
-            | Node::Parameter => Err(SbroadError::Invalid(
+            | Node::Parameter(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(
                     "node {node:?} (id {node_id}) is not Block type"
@@ -59,7 +59,7 @@ impl Plan {
             | Node::Relational(_)
             | Node::Ddl(..)
             | Node::Acl(..)
-            | Node::Parameter => Err(SbroadError::Invalid(
+            | Node::Parameter(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(
                     "node {node:?} (id {node_id}) is not Block type"

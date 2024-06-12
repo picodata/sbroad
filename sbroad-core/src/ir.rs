@@ -18,10 +18,10 @@ use block::Block;
 use ddl::Ddl;
 use expression::Expression;
 use operator::{Arithmetic, Relational};
-use relation::Table;
+use relation::{Table, Type};
 
 use crate::errors::Entity::Query;
-use crate::errors::{Action, Entity, SbroadError};
+use crate::errors::{Action, Entity, SbroadError, TypeError};
 use crate::executor::engine::TableVersionMap;
 use crate::ir::expression::Expression::StableFunction;
 use crate::ir::helpers::RepeatableState;
@@ -79,7 +79,11 @@ pub enum Node {
     Ddl(Ddl),
     Expression(Expression),
     Relational(Relational),
-    Parameter,
+    // The parameter type is inferred from the context. A typical value is None, i. e. any type.
+    // However, there is a special case where we can be more specific. According to Postgres,
+    // the parameter type can be specified by casting the parameter to a particular type.
+    // Thus, when we cast a parameter, we also assign it a type.
+    Parameter(Option<Type>),
 }
 
 /// Plan nodes storage.
@@ -939,7 +943,7 @@ impl Plan {
         match node {
             Node::Relational(rel) => Ok(rel),
             Node::Expression(_)
-            | Node::Parameter
+            | Node::Parameter(..)
             | Node::Ddl(..)
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
@@ -961,7 +965,7 @@ impl Plan {
         match self.get_mut_node(node_id)? {
             Node::Relational(rel) => Ok(rel),
             Node::Expression(_)
-            | Node::Parameter
+            | Node::Parameter(..)
             | Node::Ddl(..)
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
@@ -979,7 +983,7 @@ impl Plan {
     pub fn get_expression_node(&self, node_id: usize) -> Result<&Expression, SbroadError> {
         match self.get_node(node_id)? {
             Node::Expression(exp) => Ok(exp),
-            Node::Parameter => {
+            Node::Parameter(..) => {
                 let node = self.constants.get(node_id);
                 if let Some(Node::Expression(exp)) = node {
                     Ok(exp)
@@ -1009,7 +1013,7 @@ impl Plan {
         match node {
             Node::Expression(exp) => Ok(exp),
             Node::Relational(_)
-            | Node::Parameter
+            | Node::Parameter(..)
             | Node::Ddl(..)
             | Node::Acl(..)
             | Node::Block(..) => Err(SbroadError::Invalid(
@@ -1323,6 +1327,108 @@ impl Plan {
         })?;
         let hash = Base64::encode_string(blake3::hash(&bytes).to_hex().as_bytes()).to_smolstr();
         Ok(hash)
+    }
+}
+
+impl Plan {
+    fn get_param_type(&self, param_id: NodeId) -> Result<Option<Type>, SbroadError> {
+        let node = self.get_node(param_id)?;
+        if let Node::Parameter(ty) = node {
+            return Ok(ty.clone());
+        }
+        Err(SbroadError::Invalid(
+            Entity::Node,
+            Some(format_smolstr!("node is not Parameter type: {node:?}")),
+        ))
+    }
+
+    fn set_param_type(&mut self, param_id: NodeId, ty: &Type) -> Result<(), SbroadError> {
+        let node = self.get_mut_node(param_id)?;
+        if let Node::Parameter(..) = node {
+            *node = Node::Parameter(Some(ty.clone()));
+            Ok(())
+        } else {
+            Err(SbroadError::Invalid(
+                Entity::Node,
+                Some(format_smolstr!("node is not Parameter type: {node:?}")),
+            ))
+        }
+    }
+
+    fn count_pg_parameters(&self) -> usize {
+        self.pg_params_map
+            .values()
+            .fold(0, |p1, p2| std::cmp::max(p1, *p2 + 1)) // idx 0 stands for $1
+    }
+
+    /// Infer parameter types specified via cast.
+    ///
+    /// # Errors
+    /// - Parameter type is ambiguous.
+    ///
+    /// # Panics
+    /// - `self.pg_params_map` missed some parameters.
+    pub fn infer_pg_parameters_types(
+        &mut self,
+        client_types: &[Option<Type>],
+    ) -> Result<Vec<Type>, SbroadError> {
+        let params_count = self.count_pg_parameters();
+        if params_count < client_types.len() {
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "client provided {} types for {} parameters",
+                client_types.len(),
+                params_count
+            )));
+        }
+        let mut inferred_types = vec![None; params_count];
+
+        for (node_id, param_idx) in &self.pg_params_map {
+            let param_type = self.get_param_type(*node_id)?;
+            let inferred_type = inferred_types.get(*param_idx).unwrap_or_else(|| {
+                panic!("param idx {param_idx} exceeds params count {params_count}")
+            });
+            let client_type = client_types.get(*param_idx).cloned().flatten();
+            match (param_type, inferred_type, client_type) {
+                (_, _, Some(client_type)) => {
+                    // Client provided an explicit type, no additional checks are required.
+                    inferred_types[*param_idx] = Some(client_type.clone());
+                }
+                (Some(param_type), Some(inferred_type), None) => {
+                    if &param_type != inferred_type {
+                        // We've inferred 2 different types for the same parameter.
+                        return Err(TypeError::AmbiguousParameterType(
+                            *param_idx,
+                            param_type,
+                            inferred_type.clone(),
+                        )
+                        .into());
+                    }
+                }
+                (Some(param_type), None, None) => {
+                    // We've inferred a more specific type from the context.
+                    inferred_types[*param_idx] = Some(param_type);
+                }
+                _ => {}
+            }
+        }
+
+        let types = inferred_types
+            .into_iter()
+            .enumerate()
+            .map(|(idx, ty)| ty.ok_or(TypeError::CouldNotDetermineParameterType(idx).into()))
+            .collect::<Result<Vec<_>, SbroadError>>()?;
+
+        // Specify inferred types in all parameters nodes, allowing to calculate the result type
+        // for queries like `SELECT $1::int + $1`. Without this correction there will be an error
+        // like int and scalar are not supported for arithmetic expression, despite of the fact
+        // that the type of parameter was specified.
+        //
+        // TODO: Avoid cloning of self.pg_params_map.
+        for (node_id, param_idx) in &self.pg_params_map.clone() {
+            self.set_param_type(*node_id, &types[*param_idx])?;
+        }
+
+        Ok(types)
     }
 }
 

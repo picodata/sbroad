@@ -1244,6 +1244,14 @@ fn parse_cast_expr<M: Metadata>(
 
     assert!(!cast_types.is_empty(), "cast expression has no cast types");
 
+    if let ParseExpression::PlanId { plan_id } = child_parse_expr {
+        let node = plan.get_mut_node(plan_id)?;
+        if let Node::Parameter(..) = node {
+            // Assign parameter type from the cast, just like Postgres.
+            *node = Node::Parameter(Some(cast_types[0].as_relation_type()));
+        }
+    }
+
     Ok(ParseExpression::Cast {
         cast_types,
         child: Box::new(child_parse_expr),
@@ -1477,14 +1485,14 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ParseExpressionInfixOperator {
     InfixBool(Bool),
     InfixArithmetic(Arithmetic),
     Concat,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ParseExpression {
     PlanId {
         plan_id: usize,
@@ -2654,7 +2662,7 @@ impl AbstractSyntaxTree {
                         }
                     }
                 }
-                Node::Parameter => return Err(SbroadError::Invalid(
+                Node::Parameter(..) => return Err(SbroadError::Invalid(
                     Entity::Expression,
                     Some(SmolStr::from("Using parameter as a standalone ORDER BY expression doesn't influence sorting."))
                 )),

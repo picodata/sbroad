@@ -1,6 +1,6 @@
 use crate::{
     errors::{Entity, SbroadError},
-    ir::{relation::Type, Node, Plan},
+    ir::{relation::Type as RelationType, Node, Plan},
 };
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
@@ -13,7 +13,7 @@ use tarantool::{
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ColumnDef {
     pub name: SmolStr,
-    pub data_type: Type,
+    pub data_type: RelationType,
     pub is_nullable: bool,
 }
 
@@ -21,7 +21,7 @@ impl Default for ColumnDef {
     fn default() -> Self {
         Self {
             name: SmolStr::default(),
-            data_type: Type::default(),
+            data_type: RelationType::default(),
             is_nullable: true,
         }
     }
@@ -29,7 +29,7 @@ impl Default for ColumnDef {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ParamDef {
-    pub data_type: Type,
+    pub data_type: RelationType,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -201,7 +201,7 @@ impl Plan {
         // Check that node is DDL type (before making any distructive operations).
         let _ = self.get_ddl_node(node_id)?;
         // Replace DDL with parameter node.
-        let node = std::mem::replace(self.get_mut_node(node_id)?, Node::Parameter);
+        let node = std::mem::replace(self.get_mut_node(node_id)?, Node::Parameter(None));
         match node {
             Node::Ddl(ddl) => Ok(ddl),
             _ => Err(SbroadError::Invalid(

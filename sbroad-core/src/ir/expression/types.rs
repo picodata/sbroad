@@ -17,7 +17,7 @@ impl Plan {
             )),
             // Parameter nodes must recalculate their type during
             // binding (see `bind_params` function).
-            Node::Parameter => Ok(Type::Scalar),
+            Node::Parameter(ty) => Ok(ty.clone().unwrap_or(Type::Scalar)),
             Node::Ddl(_) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("DDL node has no type".to_smolstr()),

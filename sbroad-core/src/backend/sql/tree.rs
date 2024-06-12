@@ -598,7 +598,7 @@ impl<'p> SyntaxPlan<'p> {
             Node::Ddl(..) => panic!("DDL node {node:?} is not supported in the syntax plan"),
             Node::Acl(..) => panic!("ACL node {node:?} is not supported in the syntax plan"),
             Node::Block(..) => panic!("Block node {node:?} is not supported in the syntax plan"),
-            Node::Parameter => {
+            Node::Parameter(..) => {
                 let sn = SyntaxNode::new_parameter(id);
                 self.nodes.push_sn_plan(sn);
             }

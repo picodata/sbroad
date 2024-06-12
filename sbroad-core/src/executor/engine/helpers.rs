@@ -788,7 +788,7 @@ pub(crate) fn materialize_values(
         return Ok(None);
     }
     let child_node_ref = plan.get_mut_ir_plan().get_mut_node(child_id)?;
-    let child_node = std::mem::replace(child_node_ref, Node::Parameter);
+    let child_node = std::mem::replace(child_node_ref, Node::Parameter(None));
     if let Node::Relational(Relational::Values {
         ref children,
         output,
@@ -849,7 +849,7 @@ pub(crate) fn materialize_values(
                                 )
                             })?;
                     let column_node_ref = plan.get_mut_ir_plan().get_mut_node(column_id)?;
-                    let column_node = std::mem::replace(column_node_ref, Node::Parameter);
+                    let column_node = std::mem::replace(column_node_ref, Node::Parameter(None));
                     if let Node::Expression(Expression::Constant { value, .. }) = column_node {
                         if let Value::Null = value {
                             nullable_column_indices.insert(idx);

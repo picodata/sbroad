@@ -795,7 +795,7 @@ impl Plan {
                         .to_smolstr(),
                 ),
             )),
-            Node::Parameter => Err(SbroadError::Invalid(
+            Node::Parameter(..) => Err(SbroadError::Invalid(
                 Entity::Distribution,
                 Some("Failed to get distribution for a parameter node.".to_smolstr()),
             )),

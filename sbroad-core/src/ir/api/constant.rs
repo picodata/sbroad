@@ -99,7 +99,7 @@ impl Plan {
     pub fn stash_constants(&mut self) -> Result<(), SbroadError> {
         let constants = self.get_const_list();
         for const_id in constants {
-            let const_node = self.nodes.replace(const_id, Node::Parameter)?;
+            let const_node = self.nodes.replace(const_id, Node::Parameter(None))?;
             self.constants.insert(const_id, const_node);
         }
         Ok(())

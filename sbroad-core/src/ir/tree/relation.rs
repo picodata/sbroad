@@ -110,7 +110,7 @@ fn relational_next<'nodes>(
         Some(
             Node::Relational(Relational::ScanRelation { .. })
             | Node::Expression(_)
-            | Node::Parameter
+            | Node::Parameter(_)
             | Node::Ddl(_)
             | Node::Acl(_)
             | Node::Block(_),

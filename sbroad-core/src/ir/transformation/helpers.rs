@@ -29,11 +29,15 @@ pub fn sql_to_optimized_ir(query: &str, params: Vec<Value>) -> Plan {
 ///   if query is not correct
 #[must_use]
 pub fn sql_to_ir(query: &str, params: Vec<Value>) -> Plan {
-    let metadata = &RouterConfigurationMock::new();
-    let mut plan = AbstractSyntaxTree::transform_into_plan(query, metadata).unwrap();
+    let mut plan = sql_to_ir_without_bind(query);
     plan.bind_params(params).unwrap();
     plan.apply_options().unwrap();
     plan
+}
+
+pub fn sql_to_ir_without_bind(query: &str) -> Plan {
+    let metadata = &RouterConfigurationMock::new();
+    AbstractSyntaxTree::transform_into_plan(query, metadata).unwrap()
 }
 
 /// Compiles and transforms an SQL query to a new parameterized SQL.

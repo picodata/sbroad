@@ -109,7 +109,7 @@ impl<'binder> ParamsBinder<'binder> {
             // otherwise we may get different hashes for plans
             // with tnt and pg parameters. See `subtree_hash*` tests,
             for (_, param_id) in &self.nodes {
-                if !matches!(self.plan.get_node(*param_id)?, Node::Parameter) {
+                if !matches!(self.plan.get_node(*param_id)?, Node::Parameter(..)) {
                     continue;
                 }
                 let value_idx = *self.pg_params_map.get(param_id).unwrap_or_else(|| {
@@ -349,7 +349,7 @@ impl<'binder> ParamsBinder<'binder> {
                         }
                     }
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 
@@ -521,7 +521,7 @@ impl<'binder> ParamsBinder<'binder> {
                         }
                     }
                 },
-                Node::Parameter | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
             }
         }
 
@@ -540,7 +540,7 @@ impl<'binder> ParamsBinder<'binder> {
 
 impl Plan {
     pub fn add_param(&mut self) -> usize {
-        self.nodes.push(Node::Parameter)
+        self.nodes.push(Node::Parameter(None))
     }
 
     /// Bind params related to `Option` clause.
@@ -587,7 +587,7 @@ impl Plan {
             .iter()
             .enumerate()
             .filter_map(|(id, node)| {
-                if let Node::Parameter = node {
+                if let Node::Parameter(..) = node {
                     Some(id)
                 } else {
                     None

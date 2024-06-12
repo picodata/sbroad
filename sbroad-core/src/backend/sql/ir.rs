@@ -329,7 +329,7 @@ impl ExecutionPlan {
                                     ),
                                 ));
                             }
-                            Node::Parameter => {
+                            Node::Parameter(..) => {
                                 return Err(SbroadError::Unsupported(
                                     Entity::Node,
                                     Some(
