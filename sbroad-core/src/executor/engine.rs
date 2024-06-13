@@ -15,7 +15,6 @@ use std::sync::OnceLock;
 
 use crate::errors::SbroadError;
 use crate::executor::bucket::Buckets;
-use crate::executor::engine::helpers::storage::PreparedStmt;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::protocol::SchemaInfo;
 use crate::executor::vtable::VirtualTable;
@@ -27,6 +26,8 @@ use crate::ir::NodeId;
 
 use super::ir::{ConnectionType, QueryType};
 use super::protocol::Binary;
+
+use tarantool::sql::Statement;
 
 pub mod helpers;
 #[cfg(feature = "mock")]
@@ -94,7 +95,7 @@ pub trait StorageCache {
     fn put(
         &mut self,
         plan_id: SmolStr,
-        stmt: PreparedStmt,
+        stmt: Statement,
         schema_info: &SchemaInfo,
         table_ids: Vec<NodeId>,
     ) -> Result<(), SbroadError>;
@@ -105,8 +106,7 @@ pub trait StorageCache {
     /// # Errors
     /// - failed to get schema version for some table
     #[allow(clippy::ptr_arg)]
-    fn get(&mut self, plan_id: &SmolStr)
-        -> Result<Option<(&PreparedStmt, &[NodeId])>, SbroadError>;
+    fn get(&mut self, plan_id: &SmolStr) -> Result<Option<(&Statement, &[NodeId])>, SbroadError>;
 
     /// Clears the cache.
     ///

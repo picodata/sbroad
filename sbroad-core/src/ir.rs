@@ -306,6 +306,32 @@ impl ExecuteOptions {
     pub fn insert(&mut self, kind: OptionKind, value: Value) -> Option<Value> {
         self.0.insert(kind, value)
     }
+
+    #[must_use]
+    pub fn vdbe_max_steps(&self) -> u64 {
+        self.0
+            .get(&OptionKind::SqlVdbeMaxSteps)
+            .map_or(DEFAULT_VDBE_MAX_STEPS, |v| {
+                if let Value::Unsigned(steps) = v {
+                    *steps
+                } else {
+                    DEFAULT_VDBE_MAX_STEPS
+                }
+            })
+    }
+
+    #[must_use]
+    pub fn vtable_max_rows(&self) -> u64 {
+        self.0
+            .get(&OptionKind::VTableMaxRows)
+            .map_or(DEFAULT_VTABLE_MAX_ROWS, |v| {
+                if let Value::Unsigned(rows) = v {
+                    *rows
+                } else {
+                    DEFAULT_VTABLE_MAX_ROWS
+                }
+            })
+    }
 }
 
 impl<L> tlua::PushInto<L> for ExecuteOptions

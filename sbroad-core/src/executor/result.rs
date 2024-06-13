@@ -10,9 +10,11 @@
 //! * `row_count` (u64): the number of tuples inserted (that may be equal to 0)
 
 use core::fmt::Debug;
+use serde::de::Error as DeError;
 use serde::ser::{Serialize, SerializeMap, Serializer};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use smol_str::{SmolStr, ToSmolStr};
+use std::collections::HashMap;
 use tarantool::tlua::{self, LuaRead};
 use tarantool::tuple::Encode;
 
@@ -27,7 +29,7 @@ use crate::ir::{Node, Plan};
 
 pub type ExecutorTuple = Vec<LuaValue>;
 
-#[derive(LuaRead, Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(LuaRead, Debug, PartialEq, Eq, Clone)]
 pub struct MetadataColumn {
     name: String,
     r#type: String,
@@ -49,6 +51,25 @@ impl Serialize for MetadataColumn {
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("type", &self.r#type)?;
         map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataColumn {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let map = HashMap::<String, String>::deserialize(deserializer)?;
+        let col_name = map
+            .get("name")
+            .ok_or_else(|| DeError::custom("missing name in DQL metadata"))?;
+        let col_type = map
+            .get("type")
+            .ok_or_else(|| DeError::custom("missing type in DQL metadata"))?;
+        Ok(MetadataColumn::new(
+            col_name.to_string(),
+            col_type.to_string(),
+        ))
     }
 }
 

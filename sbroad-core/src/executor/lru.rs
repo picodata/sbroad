@@ -42,7 +42,7 @@ pub trait Cache<Key, Value> {
 struct LRUNode<Key, Value>
 where
     Key: Clone,
-    Value: Default + Debug,
+    Value: Default,
 {
     /// The value of the node.
     value: Value,
@@ -55,7 +55,7 @@ where
 impl<Key, Value> LRUNode<Key, Value>
 where
     Key: Clone,
-    Value: Default + Debug,
+    Value: Default,
 {
     fn new(value: Value) -> Self {
         LRUNode {
@@ -81,7 +81,7 @@ where
 pub struct LRUCache<Key, Value>
 where
     Key: Clone,
-    Value: Default + Debug,
+    Value: Default,
 {
     /// The capacity of the cache.
     capacity: usize,
@@ -95,7 +95,7 @@ where
 
 impl<Key, Value> LRUCache<Key, Value>
 where
-    Value: Default + Debug,
+    Value: Default,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn get_node_or_none(&self, key: &Option<Key>) -> Option<&LRUNode<Key, Value>> {
@@ -234,7 +234,7 @@ where
 
 impl<Key, Value> Cache<Key, Value> for LRUCache<Key, Value>
 where
-    Value: Default + Debug,
+    Value: Default,
     Key: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
     fn new(capacity: usize, evict_fn: Option<EvictFn<Key, Value>>) -> Result<Self, SbroadError> {

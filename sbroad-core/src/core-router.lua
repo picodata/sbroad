@@ -164,6 +164,11 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
             local data = res[1]
             if result == nil then
                 result = data
+                if vtable_max_rows ~= 0 and vtable_max_rows < #result.rows then
+                    err = helper.vtable_limit_exceeded(vtable_max_rows, #result.rows)
+                    err_uuid = uuid
+                    goto fail
+                end
             else
                 local new_vt_rows = #data.rows + #result.rows
                 if vtable_max_rows ~= 0 and vtable_max_rows < new_vt_rows then
@@ -243,14 +248,21 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
             error(err)
         end
         future:wait_result(waiting_timeout)
-        -- vtable_max_rows limit was checked on
-        -- storage. No need to check it here.
         local res, err = future:result()
         if err ~= nil then
             error(err)
         end
-        -- TODO: explain where this `[1][1]` comes from
+
+        -- proc_sql_execute returns [{rows_count = ..}] tuple.
+        -- But this rust function is wrapped with proc macros that
+        -- add an additional layer of array (see ReturnMsgpack).
         result = helper.unwrap_execute_result(res[1][1])
+
+        -- Check the number of rows in the virtual table.
+        if vtable_max_rows ~= 0 and vtable_max_rows < #result.rows then
+            err = helper.vtable_limit_exceeded(vtable_max_rows, #result.rows)
+            error(err)
+        end
     else
         local err, err_uuid
         local opts = { timeout = waiting_timeout }
@@ -328,7 +340,9 @@ _G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
             error(err)
         end
 
-        -- TODO: explain where this `[1][1]` comes from
+        -- proc_sql_execute returns [{rows_count = ..}] tuple.
+        -- But this rust function is wrapped with proc macros that
+        -- add an additional layer of array (see ReturnMsgpack).
         local next_result = helper.unwrap_execute_result(res[1][1])
         if result == nil then
             result = next_result
@@ -379,7 +393,9 @@ _G.dml_on_all = function(required, optional, is_readonly, waiting_timeout)
             error(err)
         end
 
-        -- TODO: explain where this `[1][1]` comes from
+        -- proc_sql_execute returns [{rows_count = ..}] tuple.
+        -- But this rust function is wrapped with proc macros that
+        -- add an additional layer of array (see ReturnMsgpack).
         local next_result = helper.unwrap_execute_result(res[1][1])
         if result == nil then
             result = next_result

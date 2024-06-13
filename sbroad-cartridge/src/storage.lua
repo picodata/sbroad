@@ -1,5 +1,4 @@
 require('strict').on()
-require('sbroad.core-storage')
 
 local cartridge = require('cartridge')
 local rust = require("sbroad.rust")

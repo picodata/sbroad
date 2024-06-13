@@ -10,7 +10,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lazy_static = "1.4.0"
+lazy_static = "1.4"
 ahash = "0.7"
 base64ct = { version = "1.5", features = ["alloc"] }
 bincode = "1.3"
@@ -23,16 +23,26 @@ pest_derive = "2.0"
 rand = "0.8"
 rmp = "0.8"
 rmp-serde = "1.0"
+rmpv = "1.0"
 sbroad-proc = { path = "../sbroad-proc", version = "0.1" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.8"
-tarantool = { git = "https://git.picodata.io/picodata/picodata/tarantool-module.git" }
 uuid = { version = "1.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
-smol_str = { version = "0.2.1", features = ["serde"] }
+smol_str = { version = "0.2", features = ["serde"] }
 time = { version = ">=0.3.0, <0.3.18", features = ["formatting"] }
+
+[dependencies.tarantool]
+git = "https://git.picodata.io/picodata/picodata/tarantool-module.git"
+version = ">=4.0"
+features = ["picodata"]
 
 [dev-dependencies]
 pretty_assertions = "1.3"
+
+[dev-dependencies.tarantool]
+git = "https://git.picodata.io/picodata/picodata/tarantool-module.git"
+version = ">=4.0"
+features = ["picodata", "standalone_decimal"]
 
 [lib]
 name = "sbroad"

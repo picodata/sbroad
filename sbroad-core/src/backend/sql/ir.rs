@@ -28,6 +28,14 @@ pub struct PatternWithParams {
     // Name of the tracer to use
     pub tracer: Option<String>,
 }
+
+impl PatternWithParams {
+    #[must_use]
+    pub fn into_parts(self) -> (String, Vec<Value>) {
+        (self.pattern, self.params)
+    }
+}
+
 impl PartialEq for PatternWithParams {
     fn eq(&self, other: &Self) -> bool {
         self.pattern == other.pattern && self.params == other.params

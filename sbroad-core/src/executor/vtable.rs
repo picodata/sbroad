@@ -559,7 +559,7 @@ impl VirtualTable {
             rows.push(row);
         }
 
-        let res = vec![ProducerResult { metadata, rows }];
+        let res = [ProducerResult { metadata, rows }];
         #[cfg(feature = "mock")]
         {
             Ok(Box::new(res))
