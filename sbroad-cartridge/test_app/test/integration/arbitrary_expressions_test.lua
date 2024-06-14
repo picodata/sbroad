@@ -201,13 +201,11 @@ arbitrary_projection.test_arbitrary_valid = function()
         FROM "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "case_result", type = "scalar"},
-        },
-        rows = {
-            {'first'}, {42}, {42}, {42}, {42}, {'second'}, {42}, {42}, {42}, {42}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "case_result", type = "scalar"},
+    })
+    t.assert_items_equals(r.rows, {
+        {'first'}, {42}, {42}, {42}, {42}, {'second'}, {42}, {42}, {42}, {42}
     })
 
     local r, err = api:call("sbroad.execute", { [[
@@ -224,13 +222,12 @@ arbitrary_projection.test_arbitrary_valid = function()
         ON true
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
+    t.assert_equals(r.metadata, {
             { name = "id", type = "integer"},
             { name = "val", type = "unsigned"},
             { name = "case_result", type = "string"},
-        },
-        rows = {
+    })
+    t.assert_items_equals(r.rows, {
             {1, 1, 'equal'},
             {5, 1, 'five'},
             {8, 1, box.NULL},
@@ -251,7 +248,6 @@ arbitrary_projection.test_arbitrary_valid = function()
             {4, 2, box.NULL},
             {6, 2, box.NULL},
             {7, 2, box.NULL},
-        },
     })
 
     local r, err = api:call("sbroad.execute", { [[
@@ -264,12 +260,11 @@ arbitrary_projection.test_arbitrary_valid = function()
         FROM "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
+    t.assert_equals(r.metadata, {
             {name = "id", type = "integer"},
             {name = "case_result", type = "string"},
-        },
-        rows = {
+    })
+    t.assert_items_equals(r.rows, {
             {1, 'second'},
             {5, 'second'},
             {8, box.NULL},
@@ -280,7 +275,6 @@ arbitrary_projection.test_arbitrary_valid = function()
             {4, 'second'},
             {6, 'second'},
             {7, 'first'},
-        },
     })
 
     local r, err = api:call("sbroad.execute", { [[
@@ -300,22 +294,20 @@ arbitrary_projection.test_arbitrary_valid = function()
         FROM "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "col_1", type = "scalar"},
-        },
-        rows = {
-            {1, 1},
-            {5, 2},
-            {8, 3},
-            {9, 4},
-            {10, 0.42},
-            {2, 1},
-            {3, 0.42},
-            {4, 2},
-            {6, 2},
-            {7, 2},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "col_1", type = "scalar"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 1},
+        {5, 2},
+        {8, 3},
+        {9, 4},
+        {10, 0.42},
+        {2, 1},
+        {3, 0.42},
+        {4, 2},
+        {6, 2},
+        {7, 2},
     })
 end

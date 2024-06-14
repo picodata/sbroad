@@ -5,14 +5,42 @@ local vshard = require('vshard')
 local lerror = require('vshard.error')
 local vrs = require('vshard.replicaset')
 local helper = require('sbroad.helper')
-local fiber = require('fiber')
 local table = require('table')
+local fiber = require('fiber')
+local buffer = require('buffer')
+local msgpack = require('msgpack');
 local ref_id = 0
 local DQL_MIN_TIMEOUT = 10
 
+-- Helper function to convert table in form of
+-- key-value table to array table.
+--
+-- Functions from this module are called from rust,
+-- rust structs are transformed into lua key-value
+-- tables, while our stored procedure expects arguments
+-- as msgpack array.
+-- FIXME: this should be removed, we should pass tuple
+-- from rust without using lua tables at all.
+--
+local function prepare_args(args, func_name)
+    local call_args = {}
+    if func_name then
+        table.insert(call_args, func_name)
+    end
+    table.insert(call_args, args['required'])
+    if args['optional'] then
+        table.insert(call_args, args['optional'])
+    end
+    if args['cache_hint'] then
+        table.insert(call_args, args['cache_hint'])
+    end
+
+    return call_args
+end
+
 local function future_wait(cond, timeout)
     local f = function(cond, timeout)
-        if timeout and timeout < 0 then
+        if timeout and timeout <= 0 then
             return nil, lerror.make("dql timeout exceeded")
         end
         local res, err = cond:wait_result(timeout)
@@ -26,6 +54,75 @@ local function future_wait(cond, timeout)
         return res
     end
     return nil, lerror.make(res)
+end
+
+local ResultHandler = {
+    vtable_row_count = 0,
+    vtable_max_rows = 0,
+}
+
+function ResultHandler:new(o)
+    o = o or {}
+    setmetatable(o, self)
+    self.__index = self
+    return o
+end
+
+-- Process DQL query result returned from storage.
+-- It decodes row count, checks that vtable rows limit
+-- is not exceeded and sets Ibuf rpos to the start
+-- of tuple storing actual data
+--
+-- @param res Ibuf storing msgpack that came
+-- from storage
+-- @param map_format true if result came from
+-- multi_storage_dql map stage
+--
+-- @return error in case of error
+-- @return nil in case of success
+--
+function ResultHandler:process_res(res, map_format)
+    local len, data, rows_cnt, _
+    if map_format then
+        len, data = msgpack.decode_array_header(res.rpos, res:size())
+        if len ~= 2 then
+            return lerror.make("Unexpected map result len: "..len)
+        end
+        local ok
+        ok, data = msgpack.decode_unchecked(data)
+        if ok ~= true then
+            local err
+            err, _ = msgpack.decode_unchecked(data)
+            return lerror.make(err.message)
+        end
+    else
+        -- data is wrapped into additional tuple...
+        data = res.rpos
+        len, data = msgpack.decode_array_header(data, res:size())
+        if len ~= 1 then
+            return lerror.make("Unexpected non-map result len: "..len)
+        end
+    end
+    len, data = msgpack.decode_array_header(data, res:size())
+    -- When we use replicaset:callrw, result maybe wrapped in
+    -- additional tuple if multireturn is not supported by this
+    -- tarantool version. In particular, this happens in
+    -- cartridge integration tests
+    if not map_format and not helper.is_iproto_multireturn_supported() then
+        len, data = msgpack.decode_array_header(data, res:size())
+    end
+    if len ~= 3 then
+        return lerror.make("Unexpected dql tuple len: "..len)
+    end
+    res.rpos = data
+
+    rows_cnt, _ = msgpack.decode_unchecked(data)
+
+    self.vtable_row_count = self.vtable_row_count + rows_cnt
+    if self.vtable_max_rows ~= 0 and self.vtable_max_rows < self.vtable_row_count then
+        return lerror.make(helper.vtable_limit_exceeded(self.vtable_max_rows, self.vtable_row_count))
+    end
+    return nil
 end
 
 --
@@ -44,6 +141,10 @@ end
 -- reference is deleted. If the reference expires, the error will be returned
 -- to router.
 --
+-- NOTE: this function does not work correctly as it does not account for
+-- for outdated bucket to replicaset mapping. This will be fixed as soon as
+-- https://github.com/tarantool/vshard/pull/442 is merged.
+--
 -- @param uuid_to_args Mapping between replicaset uuid and function arguments
 -- for that replicaset.
 -- @param func Name of the function to call.
@@ -58,9 +159,15 @@ end
 --  does not know about). This option should be used only if you intend to execute
 --  the function on all replicasets and want to ensure that all buckets were covered.
 --
-local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
+-- @return mapping between replicaset uuid and ibuf containing result
+--
+local function multi_storage_dql(uuid_to_args, func, handler, opts)
     local replicasets = vshard.router.routeall()
     local timeout, check_bucket_count
+    local res_map = {}
+    for uuid, _ in pairs(uuid_to_args) do
+        res_map[uuid] = buffer.ibuf()
+    end
     if opts then
         timeout = opts.timeout or DQL_MIN_TIMEOUT
         check_bucket_count = opts.check_bucket_count or false
@@ -69,15 +176,14 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
         check_bucket_count = false
     end
 
-    local err, err_uuid, res, ok
+    local err, err_uuid, res
     local futures = {}
     local bucket_count = 0
     local opts_ref = {is_async = true}
-    local opts_map = {is_async = true}
+    local opts_map = {is_async = true, skip_header = true}
     local rs_count = 0
     local rid = ref_id
     local deadline = fiber.clock() + timeout
-    local result = nil
     ref_id = rid + 1
     -- Nil checks are done explicitly here (== nil instead of 'not'), because
     -- netbox requests return box.NULL instead of nils.
@@ -85,6 +191,7 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
     -- Wait for all masters to connect.
     vrs.wait_masters_connect(replicasets)
     timeout = deadline - fiber.clock()
+
 
     --
     -- Ref stage: send.
@@ -136,7 +243,8 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
     --
     for uuid, rs_args in pairs(uuid_to_args) do
         local rs = replicasets[uuid]
-        local args = {'storage_map', rid, helper.proc_call_fn_name(), {func, rs_args['required'], rs_args['optional']}}
+        local args = {'storage_map', rid, helper.proc_call_fn_name(), prepare_args(rs_args, func)}
+        opts_map['buffer'] = res_map[uuid]
         res, err = rs:callrw('vshard.storage._call', args, opts_map)
         if res == nil then
             err_uuid = uuid
@@ -153,37 +261,14 @@ local function multi_storage_dql(uuid_to_args, func, vtable_max_rows, opts)
             err_uuid = uuid
             goto fail
         end
-        -- Map returns true,res or nil,err.
-        ok, res = res[1], res[2]
-        if ok == nil then
-            err = res
+        err = handler:process_res(res_map[uuid], true)
+        if err ~= nil then
             err_uuid = uuid
             goto fail
         end
-        if res ~= nil then
-            local data = res[1]
-            if result == nil then
-                result = data
-                if vtable_max_rows ~= 0 and vtable_max_rows < #result.rows then
-                    err = helper.vtable_limit_exceeded(vtable_max_rows, #result.rows)
-                    err_uuid = uuid
-                    goto fail
-                end
-            else
-                local new_vt_rows = #data.rows + #result.rows
-                if vtable_max_rows ~= 0 and vtable_max_rows < new_vt_rows then
-                    err = helper.vtable_limit_exceeded(vtable_max_rows, new_vt_rows)
-                    err_uuid = uuid
-                    goto fail
-                end
-                for _, row in ipairs(data.rows) do
-                    table.insert(result.rows, row)
-                end
-            end
-        end
         timeout = deadline - fiber.clock()
     end
-    do return result end
+    do return res_map end
 
     ::fail::
     for uuid, f in pairs(futures) do
@@ -219,36 +304,51 @@ _G.group_buckets_by_replicasets = function(buckets)
     return map
 end
 
-_G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max_rows)
-    local result
-    local call_opts = { is_async = true }
-
-    local exec_fn = helper.proc_fn_name("proc_sql_execute")
-    if #uuid_to_args == 1 then
-        -- When read request is executed only on one
-        -- storage, we don't care about bucket rebalancing.
-        local rs_uuid, rs_args = pairs(uuid_to_args).next()
-        local replica = vshard.router.routeall()[rs_uuid]
-        local future, err
-        local args = { rs_args['required'], rs_args['optional'] }
-        if is_readonly then
-            future, err = replica:callbre(
-                    exec_fn,
-                    args,
-                    call_opts
-            )
-        else
-            future, err = replica:callrw(
-                    exec_fn,
-                    args,
-                    call_opts
-            )
+_G.get_replicasets_from_buckets = function(buckets)
+    local map = {}
+    for _, bucket_id in pairs(buckets) do
+        local rs, err = vshard.router.route(bucket_id)
+        if err ~= nil then
+            return nil, err
         end
+        local uuid = rs.uuid
+        if not map[uuid] then
+            table.insert(map, uuid)
+        end
+    end
+
+    return map
+end
+
+-- Execute dml query on replicasets masters.
+--
+-- @param uuid_to_args mapping between replicaset uuid and
+-- corresponding arguments for stored procedure
+-- @param waiting_timeout timeout in seconds for whole
+-- function.
+--
+_G.dispatch_dml = function(uuid_to_args, waiting_timeout)
+    local result = nil
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
+    local futures = {}
+
+    for rs_uuid, args in pairs(uuid_to_args) do
+        local replica = vshard.router.routeall()[rs_uuid]
+        local required = args["required"]
+        local optional = args["optional"]
+        local future, err = replica:callrw(
+            exec_fn,
+            { required, optional, 'cacheable-2' },
+            { is_async = true }
+        )
         if err ~= nil then
             error(err)
         end
-        future:wait_result(waiting_timeout)
-        local res, err = future:result()
+        table.insert(futures, future)
+    end
+
+    for _, future in ipairs(futures) do
+        local res, err = future:wait_result(waiting_timeout)
         if err ~= nil then
             error(err)
         end
@@ -256,153 +356,136 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
         -- proc_sql_execute returns [{rows_count = ..}] tuple.
         -- But this rust function is wrapped with proc macros that
         -- add an additional layer of array (see ReturnMsgpack).
-        result = helper.unwrap_execute_result(res[1][1])
+        local next_result = helper.unwrap_execute_result(res[1][1])
+        if result == nil then
+            result = next_result
+        else
+            result.row_count = result.row_count + next_result.row_count
+        end
+    end
 
-        -- Check the number of rows in the virtual table.
-        if vtable_max_rows ~= 0 and vtable_max_rows < #result.rows then
-            err = helper.vtable_limit_exceeded(vtable_max_rows, #result.rows)
+    return box.tuple.new{result}
+end
+
+-- Execute DML query on given replicasets
+-- using the same plan for each replicaset
+--
+-- @param args to pass to stored procedure that will be called
+-- on each replicaset
+-- @param uuids replicasets uuids on which to execute plan
+-- @param waiting_timeout timeout in seconds for whole
+-- function.
+--
+_G.dispatch_dml_single_plan = function(args, uuids, waiting_timeout)
+    if not next(uuids) then
+        local uuid_to_rs = vshard.router.routeall()
+        for uuid, _ in pairs(uuid_to_rs) do
+           table.insert(uuids, uuid)
+        end
+    end
+    local uuid_to_args = {}
+    for _, uuid in pairs(uuids) do
+        uuid_to_args[uuid] = args
+    end
+
+    return _G.dispatch_dml(uuid_to_args, waiting_timeout)
+end
+
+-- Execute DQL query on given replicasets and handle results.
+-- For each result we check that total number of rows does
+-- not exceed given limit.
+--
+-- If there is a single replicaset, this function just calls
+-- stored procedure on that replicaset. Otherwise we use 2 stage
+-- protocol to avoid bucket moves between replicasets, see
+-- multi_storage_dql
+--
+-- @param uuid_to_args mapping between replicaset uuid and
+-- corresponding arguments for stored procedure
+-- @param waiting_timeout timeout in seconds for whole
+-- function.
+-- @param row_count initial value for the number of rows
+-- @param vtable_max_rows maximum number of rows
+--
+-- @return mapping between replicaset uuid and ibuf containing
+-- result
+--
+_G.dispatch_dql = function(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count)
+    local result
+
+    local result_handler = ResultHandler:new{vtable_row_count = row_count, vtable_max_rows=vtable_max_rows}
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
+
+    if helper.table_size(uuid_to_args) == 1 then
+        -- When read request is executed only on one
+        -- storage, we don't care about bucket rebalancing.
+        local rs_uuid, rs_args = next(uuid_to_args)
+        result = {}
+        result[rs_uuid] = buffer.ibuf()
+        local call_opts = {
+            is_async = true,
+            buffer = result[rs_uuid],
+            skip_header = true
+        }
+        local replica = vshard.router.routeall()[rs_uuid]
+        local future, err, _
+        local args = prepare_args(rs_args)
+        future, err = replica:callbre(
+                exec_fn,
+                args,
+                call_opts
+        )
+        if err ~= nil then
+            error(err)
+        end
+        _, err = future:wait_result(waiting_timeout)
+        if err ~= nil then
+            error(err)
+        end
+        err = result_handler:process_res(result[rs_uuid], false)
+        if err ~= nil then
             error(err)
         end
     else
         local err, err_uuid
-        local opts = { timeout = waiting_timeout }
-        result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, vtable_max_rows, opts)
+        local opts = {
+            timeout = waiting_timeout,
+            check_bucket_count = check_bucket_count or false
+        }
+        result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, result_handler, opts)
         if err ~= nil then
             helper.dql_error(err, err_uuid)
         end
-        if result == nil then
-            error("local execution returned nil")
-        end
     end
 
-    return box.tuple.new{result}
+    return result
 end
 
-_G.dql_on_all = function(required, optional, waiting_timeout, vtable_max_rows)
-    local replicasets = vshard.router.routeall()
-    local exec_fn = helper.proc_fn_name("proc_sql_execute")
-    local uuid_to_args = {}
-    for uuid, _ in pairs(replicasets) do
-        uuid_to_args[uuid] = { required = required, optional = optional }
-    end
-    local opts = {
-        timeout = waiting_timeout,
+-- Execute DQL query on given replicasets
+-- using the same plan for each replicaset
+--
+-- @param args to pass to stored procedure that will be called
+-- on each replicaset
+-- @param uuids replicasets uuids on which to execute plan
+-- @param waiting_timeout timeout in seconds for whole
+-- function.
+-- @param row_count initial value for the number of rows
+-- @param vtable_max_rows maximum number of rows
+--
+_G.dispatch_dql_single_plan = function(args, uuids, waiting_timeout, row_count, vtable_max_rows)
+    local check_bucket_count = false
+    if not next(uuids) then
+        -- empty list of uuids means execute on all replicasets
+        local uuid_to_rs = vshard.router.routeall()
+        for uuid, _ in pairs(uuid_to_rs) do
+           table.insert(uuids, uuid)
+        end
         check_bucket_count = true
-    }
-    local result, err, err_uuid = multi_storage_dql(uuid_to_args, exec_fn, vtable_max_rows, opts)
-    if err ~= nil then
-        helper.dql_error(err, err_uuid)
-    end
-    if result == nil then
-        error("local execution returned nil")
     end
 
-    return box.tuple.new{result}
-end
-
-_G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
-    local result = nil
-    local exec_fn = helper.proc_fn_name("proc_sql_execute")
-    local futures = {}
-
-    for rs_uuid, map in pairs(tbl_rs_ir) do
-        local replica = vshard.router.routeall()[rs_uuid]
-        local required = map["required"]
-        local optional = map["optional"]
-        if is_readonly then
-            local future, err = replica:callbre(
-                exec_fn,
-                { required, optional },
-                { is_async = true }
-            )
-            if err ~= nil then
-                error(err)
-            end
-            table.insert(futures, future)
-        else
-            local future, err = replica:callrw(
-                exec_fn,
-                { required, optional },
-                { is_async = true }
-            )
-            if err ~= nil then
-                error(err)
-            end
-            table.insert(futures, future)
-        end
+    local uuid_to_args = {}
+    for _, uuid in pairs(uuids) do
+        uuid_to_args[uuid] = args
     end
-
-    for _, future in ipairs(futures) do
-        future:wait_result(waiting_timeout)
-        local res, err = future:result()
-
-        if err ~= nil then
-            error(err)
-        end
-
-        -- proc_sql_execute returns [{rows_count = ..}] tuple.
-        -- But this rust function is wrapped with proc macros that
-        -- add an additional layer of array (see ReturnMsgpack).
-        local next_result = helper.unwrap_execute_result(res[1][1])
-        if result == nil then
-            result = next_result
-        else
-            result.row_count = result.row_count + next_result.row_count
-        end
-    end
-
-    return box.tuple.new{result}
-end
-
-
-_G.dml_on_all = function(required, optional, is_readonly, waiting_timeout)
-    local replicas = vshard.router.routeall()
-    local result = nil
-    local futures = {}
-    local exec_fn = helper.proc_fn_name("proc_sql_execute")
-
-    for _, replica in pairs(replicas) do
-        if is_readonly then
-            local future, err = replica:callbre(
-                exec_fn,
-                { required, optional },
-                { is_async = true }
-            )
-            if err ~= nil then
-                error(err)
-            end
-            table.insert(futures, future)
-        else
-            local future, err = replica:callrw(
-                exec_fn,
-                { required, optional },
-                { is_async = true }
-            )
-            if err ~= nil then
-                error(err)
-            end
-            table.insert(futures, future)
-        end
-    end
-
-    for _, future in ipairs(futures) do
-        future:wait_result(waiting_timeout)
-        local res, err = future:result()
-
-        if err ~= nil then
-            error(err)
-        end
-
-        -- proc_sql_execute returns [{rows_count = ..}] tuple.
-        -- But this rust function is wrapped with proc macros that
-        -- add an additional layer of array (see ReturnMsgpack).
-        local next_result = helper.unwrap_execute_result(res[1][1])
-        if result == nil then
-            result = next_result
-        else
-            result.row_count = result.row_count + next_result.row_count
-        end
-    end
-
-    return box.tuple.new{result}
+    return _G.dispatch_dql(uuid_to_args, waiting_timeout, row_count, vtable_max_rows, check_bucket_count)
 end

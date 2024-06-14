@@ -193,22 +193,20 @@ g.test_insert_after_index = function()
         { [[SELECT * FROM "broken_hot" ]], {} }
     )
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-          { name = "id", type = "number" },
-          { name = "reqId", type = "number" },
-          { name = "name", type = "string"  },
-          { name = "department", type = "string" },
-          { name = "manager", type = "string" },
-          { name = "salary", type = "number" },
-          { name = "sysOp", type = "number" }
-        },
-        rows = {
-            { 1, 1, "123", "123", "123", 100, 0 },
-            { 2, 1, "123", "123", "123", 100, 0 },
-            { 3, 1, "123", "123", "123", 100, 0 },
-            { 4, 1, "123", "123", "123", 100, 0 }
-        },
+    t.assert_equals(r.metadata, {
+      { name = "id", type = "number" },
+      { name = "reqId", type = "number" },
+      { name = "name", type = "string"  },
+      { name = "department", type = "string" },
+      { name = "manager", type = "string" },
+      { name = "salary", type = "number" },
+      { name = "sysOp", type = "number" }
+    })
+    t.assert_items_equals(r.rows, {
+        { 1, 1, "123", "123", "123", 100, 0 },
+        { 2, 1, "123", "123", "123", 100, 0 },
+        { 3, 1, "123", "123", "123", 100, 0 },
+        { 4, 1, "123", "123", "123", 100, 0 }
     })
 end
 

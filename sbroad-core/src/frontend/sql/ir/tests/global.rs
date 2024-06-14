@@ -1,6 +1,3 @@
-use crate::executor::engine::mock::RouterConfigurationMock;
-use crate::frontend::sql::ast::AbstractSyntaxTree;
-use crate::frontend::Ast;
 use crate::ir::distribution::Distribution;
 use crate::ir::operator::Relational;
 use crate::ir::transformation::helpers::sql_to_optimized_ir;

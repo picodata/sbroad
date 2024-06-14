@@ -76,24 +76,20 @@ g.test_order_by_query = function()
         [[select * from "null_t"]], {}
     })
     t.assert_equals(err, nil)
-    t.assert_equals(r_init, {
-        metadata = {
-            {name = "na", type = "integer"},
-            {name = "nb", type = "integer"},
-            {name = "nc", type = "integer"},
-        },
-        rows = {
-            -- Rows on the first shard.
-            {1, 2, 1},
-            {5, 1, 5},
-            {8, box.NULL, -1},
-            -- Rows on the second shard.
-            {2, box.NULL, 3},
-            {3, 2, 3},
-            {4, 3, 1},
-            {6, -1, 3},
-            {7, 1, 1},
-        }
+    t.assert_equals(r_init.metadata, {
+        {name = "na", type = "integer"},
+        {name = "nb", type = "integer"},
+        {name = "nc", type = "integer"},
+    })
+    t.assert_items_equals(r_init.rows, {
+        {1, 2, 1},
+        {5, 1, 5},
+        {8, box.NULL, -1},
+        {2, box.NULL, 3},
+        {3, 2, 3},
+        {4, 3, 1},
+        {6, -1, 3},
+        {7, 1, 1},
     })
 
     local expected_ordered_by_1_sequence = {
@@ -154,8 +150,8 @@ g.test_order_by_query = function()
     )
 
     local expected_ordered_by_2_sequence = {
-        {8, box.NULL, -1},
         {2, box.NULL, 3},
+        {8, box.NULL, -1},
         {6, -1, 3},
         {5, 1, 5},
         {7, 1, 1},
@@ -166,20 +162,20 @@ g.test_order_by_query = function()
 
     -- Order by "nb" must keep id sorted ascending.
     local r_order_by_nb, err = api:call("sbroad.execute", {
-        [[select * from "null_t" order by "nb"]], {}
+        [[select * from "null_t" order by "nb", "na"]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(expected_ordered_by_2_sequence, r_order_by_nb.rows)
     -- Order by "nb" asc must return rows in the same order.
     local r_order_by_a_asc, err = api:call("sbroad.execute", {
-        [[select * from "null_t" order by "nb" asc]], {}
+        [[select * from "null_t" order by "nb" asc, "na"]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(expected_ordered_by_2_sequence, r_order_by_a_asc.rows)
 
     -- Order by 2 is equal to order by "nb".
     local r_order_by_2, err = api:call("sbroad.execute", {
-        [[select * from "null_t" order by 2]], {}
+        [[select * from "null_t" order by 2, 1]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(expected_ordered_by_2_sequence, r_order_by_2.rows)
@@ -207,19 +203,19 @@ g.test_order_by_query = function()
         {5, 1, 5},
         {7, 1, 1},
         {6, -1, 3},
-        {8, box.NULL, -1},
         {2, box.NULL, 3},
+        {8, box.NULL, -1},
     }
 
     local r_order_by_nb_desc, err = api:call("sbroad.execute", {
-        [[select * from "null_t" order by "nb" desc]], {}
+        [[select * from "null_t" order by "nb" desc, "na"]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(expected_ordered_by_2_desc_sequence, r_order_by_nb_desc.rows)
 
     -- Ordering by expression involving only "nb" column (not changing sign) should give the same order.
     local r_order_by_nb_expr_desc, err = api:call("sbroad.execute", {
-        [[select * from "null_t" order by "nb" * 2 + 42 * "nb" desc]], {}
+        [[select * from "null_t" order by "nb" * 2 + 42 * "nb" desc, "na"]], {}
     })
     t.assert_equals(err, nil)
     t.assert_equals(expected_ordered_by_2_desc_sequence, r_order_by_nb_expr_desc.rows)

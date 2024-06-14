@@ -1,11 +1,26 @@
+use core::fmt;
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    rc::Rc,
+    time::Duration,
+};
+
+use tarantool::{
+    ffi::sql::{ibuf_reinit, Ibuf},
+    fiber,
+    tlua::StringInLua,
 };
 
 use crate::utils::MutexLike;
 use crate::{
-    executor::engine::Router,
+    executor::{
+        engine::{
+            helpers::build_optional_binary, ConvertToDispatchResult, DispatchReturnFormat, Router,
+        },
+        protocol::{FullMessage, RequiredMessage},
+        result::ProducerResult,
+    },
     ir::{
         helpers::RepeatableState,
         operator::Relational,
@@ -22,59 +37,31 @@ use ahash::AHashMap;
 use rand::{thread_rng, Rng};
 use sbroad_proc::otm_child_span;
 use smol_str::format_smolstr;
-use tarantool::session::with_su;
+use tarantool::tlua::{CDataOnStack, LuaState, LuaTable, PushGuard, PushInto};
 use tarantool::{tlua::LuaFunction, tuple::Tuple};
 
-use crate::backend::sql::space::ADMIN_ID;
 use crate::{
-    debug, error,
+    error,
     errors::{Entity, SbroadError},
     executor::{
         bucket::Buckets,
         engine::{helpers::empty_query_result, Metadata, Vshard},
-        ir::{ConnectionType, ExecutionPlan, QueryType},
-        protocol::{Binary, Message},
+        ir::{ExecutionPlan, QueryType},
     },
 };
 
-use super::{encode_plan, filter_vtable};
+use super::{build_required_binary, filter_vtable};
 
 /// Map between replicaset uuid and plan subtree (with additional info), sending to it.
 /// (see `Message`documentation for more info).
-type ReplicasetMessage = HashMap<String, Message>;
+type DMLReplicasetMessage = HashMap<String, FullMessage>;
 
-/// Function to execute DQL (SELECT) query only on some replicasets (which uuid's are
-/// present in the `rs_ir` argument).
-///
-/// Rust binding to Lua `dql_on_some` function.
-fn dql_on_some(
-    metadata: &impl Metadata,
-    rs_ir: ReplicasetMessage,
-    is_readonly: bool,
-    vtable_max_rows: u64,
-) -> Result<Box<dyn Any>, SbroadError> {
-    let lua = tarantool::lua_state();
-
-    let exec_sql: LuaFunction<_> = lua
-        .get("dql_on_some")
-        .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_some` not found".into()))?;
-
-    let waiting_timeout = metadata.waiting_timeout();
-    // `with_su` is used to read from virtual tables previously created by admin.
-    let call_res = with_su(ADMIN_ID, || {
-        exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout, vtable_max_rows))
-    })?;
-    match call_res {
-        Ok(v) => {
-            debug!(Option::from("dql_on_some"), &format!("Result: {:?}", &v));
-            Ok(Box::new(v))
-        }
-        Err(e) => {
-            error!(Option::from("dql_on_some"), &format!("{e:?}"));
-            Err(SbroadError::LuaError(format_smolstr!(
-                "Lua error (IR dispatch): {e:?}"
-            )))
-        }
+tarantool::define_str_enum! {
+    #[derive(Default)]
+    pub enum CacheInfo {
+        #[default]
+        CacheableFirstRequest = "cacheable-1",
+        CacheableSecondRequest = "cacheable-2",
     }
 }
 
@@ -82,22 +69,18 @@ fn dql_on_some(
 /// present in the `rs_ir` argument).
 ///
 /// Rust binding to Lua `dml_on_some` function.
-fn dml_on_some(
+fn lua_dispatch_dml(
     metadata: &impl Metadata,
-    rs_ir: ReplicasetMessage,
-    is_readonly: bool,
+    rs_ir: DMLReplicasetMessage,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
-    let exec_sql: LuaFunction<_> = lua
-        .get("dml_on_some")
-        .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_some` not found".into()))?;
+    let Some(exec_sql): Option<LuaFunction<_>> = lua.get("dispatch_dml") else {
+        return Err(SbroadError::Other("no function 'dispatch_dml'".into()));
+    };
 
     let waiting_timeout = metadata.waiting_timeout();
-    // `with_su` is used to read from virtual tables previously created by admin.
-    let call_res = with_su(ADMIN_ID, || {
-        exec_sql.call_with_args::<Tuple, _>((rs_ir, is_readonly, waiting_timeout))
-    })?;
+    let call_res = exec_sql.call_with_args::<Tuple, _>((rs_ir, waiting_timeout));
     match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
@@ -109,32 +92,40 @@ fn dml_on_some(
     }
 }
 
-/// Function to execute DQL (SELECT) query on all replicasets.
+/// Function to execute DQL (SELECT) query on given replicasets
+/// using the same plan for all replicasets.
 ///
-/// Rust binding to Lua `dql_on_all` function.
-fn dql_on_all(
-    metadata: &impl Metadata,
-    required: Binary,
-    optional: Binary,
+/// # Panics
+/// - Failed to find lua function `dql_with_single_plan`
+fn lua_dql_single_plan<'lua, T>(
+    lua: &'lua tarantool::tlua::LuaThread,
+    args: T,
+    replicasets: &[RSName],
+    row_count: u64,
     vtable_max_rows: u64,
-) -> Result<Box<dyn Any>, SbroadError> {
-    let lua = tarantool::lua_state();
-    let exec_sql: LuaFunction<_> = lua
-        .get("dql_on_all")
-        .ok_or_else(|| SbroadError::LuaError("Lua function `dql_on_all` not found".into()))?;
+    waiting_timeout: u64,
+) -> Result<Rc<LuaTable<LuaStackGuard<'lua>>>, SbroadError>
+where
+    T: PushInto<LuaState>,
+    T::Err: fmt::Debug,
+{
+    let Some(exec_sql): Option<LuaFunction<_>> = lua.get("dispatch_dql_single_plan") else {
+        return Err(SbroadError::Other(
+            "no function 'dispatch_dql_single_plan'".into(),
+        ));
+    };
 
-    let waiting_timeout = metadata.waiting_timeout();
-    // `with_su` coverage is used to read from virtual tables previously created by admin.
-    let call_res = with_su(ADMIN_ID, || {
-        exec_sql.call_with_args::<Tuple, _>((required, optional, waiting_timeout, vtable_max_rows))
-    })?;
+    let call_res = exec_sql.into_call_with_args::<LuaTable<_>, _>((
+        args,
+        replicasets,
+        waiting_timeout,
+        row_count,
+        vtable_max_rows,
+    ));
     match call_res {
-        Ok(v) => {
-            debug!(Option::from("dql_on_all"), &format!("Result: {:?}", &v));
-            Ok(Box::new(v))
-        }
+        Ok(v) => Ok(Rc::new(v)),
         Err(e) => {
-            error!(Option::from("dql_on_all"), &format!("{e:?}"));
+            error!(Option::from("dql_with_single_plan"), &format!("{e:?}"));
             Err(SbroadError::LuaError(format_smolstr!(
                 "Lua error (dispatch IR): {e:?}"
             )))
@@ -142,26 +133,26 @@ fn dql_on_all(
     }
 }
 
-/// Function to execute DML (INSERT) query on all replicasets.
+/// Function to execute DML query on replicasets
+/// using the same plan for each replicaset.
 ///
-/// Rust binding to Lua `dml_on_all` function.
-fn dml_on_all(
+/// # Panics
+/// - failed to get expected lua function
+fn lua_dml_single_plan(
     metadata: &impl Metadata,
-    required: Binary,
-    optional: Binary,
-    is_readonly: bool,
+    message: FullMessage,
+    replicasets: &[RSName],
 ) -> Result<Box<dyn Any>, SbroadError> {
     let lua = tarantool::lua_state();
 
-    let exec_sql: LuaFunction<_> = lua
-        .get("dml_on_all")
-        .ok_or_else(|| SbroadError::LuaError("Lua function `dml_on_all` not found".into()))?;
+    let Some(exec_sql): Option<LuaFunction<_>> = lua.get("dispatch_dml_single_plan") else {
+        return Err(SbroadError::Other(
+            "no function 'dispatch_dml_single_plan'".into(),
+        ));
+    };
 
     let waiting_timeout = metadata.waiting_timeout();
-    // `with_su` coverage is used to read from virtual tables previously created by admin.
-    let call_res = with_su(ADMIN_ID, || {
-        exec_sql.call_with_args::<Tuple, _>((required, optional, is_readonly, waiting_timeout))
-    })?;
+    let call_res = exec_sql.call_with_args::<Tuple, _>((message, replicasets, waiting_timeout));
     match call_res {
         Ok(v) => Ok(Box::new(v)),
         Err(e) => {
@@ -173,79 +164,541 @@ fn dml_on_all(
     }
 }
 
-/// Generic function over `dql_on_all` and `dml_on_all` functions.
-/// Used to execute IR on all replicasets.
-#[otm_child_span("query.dispatch.all")]
-pub fn exec_ir_on_all_buckets(
-    metadata: &impl Metadata,
-    required: Binary,
-    optional: Binary,
-    query_type: QueryType,
-    conn_type: ConnectionType,
-    vtable_max_rows: u64,
+fn build_final_dql_result(
+    rs_to_res: RSResultMap<'_>,
+    return_format: DispatchReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
+    // HACK: if non-empty table was returned only from
+    // single Replicaset, then we can return result
+    // immediately without decoding and concatenation
+    if rs_to_res.len() == 1 && return_format == DispatchReturnFormat::Tuple {
+        // Fast path: when we executed on single replicaset
+        // this optimisation is always possible
+        let result = rs_to_res.into_values().next().unwrap();
+        let tuple: Tuple = result.try_into()?;
+        return Ok(Box::new(tuple));
+    }
+    if return_format == DispatchReturnFormat::Tuple {
+        // Slow path: we need to iterate over results
+        // to check if optimisation is possible
+        let mut was_non_empty_res = false;
+        let mut is_optimisation_possible = true;
+        for res in rs_to_res.values() {
+            if res.row_cnt > 0 && was_non_empty_res {
+                is_optimisation_possible = false;
+                break;
+            } else if res.row_cnt > 0 {
+                was_non_empty_res = true;
+            }
+        }
+        if is_optimisation_possible && was_non_empty_res {
+            // Only single replicaset returned non-empty
+            // result, let's find it and return it as is
+            let result = rs_to_res.into_values().find(|r| r.row_cnt > 0).unwrap();
+            let tuple: Tuple = result.try_into()?;
+            return Ok(Box::new(tuple));
+        }
+        if is_optimisation_possible && !rs_to_res.is_empty() {
+            // All replicasets returned empty result, we can
+            // return any result from map, let's take the first one
+            let result = rs_to_res.into_values().next().unwrap();
+            let tuple: Tuple = result.try_into()?;
+            return Ok(Box::new(tuple));
+        }
+    }
+
+    let producer_result = concat_results(rs_to_res)?;
+    producer_result.convert(return_format)
+}
+
+type RSName = String;
+type RSMap = HashMap<RSName, ExecutionPlan>;
+/// Mapping between replicaset ID and result returned from that replicaset
+type RSResultMap<'lua> = HashMap<String, OneRSResult<'lua>, RepeatableState>;
+type DqlResult<'lua> = RSResultMap<'lua>;
+
+#[allow(unused_variables)]
+fn transform_lua_res<T, E: fmt::Display>(
+    target: Option<&str>,
+    result: Result<T, E>,
+) -> Result<T, SbroadError> {
+    result.map_err(|err| {
+        let error = format!("lua error: {err:#}");
+        error!(target, &error.to_string());
+        SbroadError::DispatchError(error.into())
+    })
+}
+
+macro_rules! unwrap_or_error {
+    ($expr:expr) => {{
+        $expr.ok_or_else(|| {
+            SbroadError::Other(format_smolstr!(
+                "{}:{}: unexpected replicaset id",
+                file!(),
+                line!()
+            ))
+        })?
+    }};
+}
+
+/// Execute DQL with custom plan for each replicaset
+///
+/// # Errors
+/// - Errors during query execution
+pub fn exec_cacheable_dql_with_custom_plans(
+    lua: &tarantool::tlua::LuaThread,
+    mut rs_to_plan: RSMap,
+    vtable_max_rows: u64,
+    waiting_timeout: u64,
+) -> Result<DqlResult<'_>, SbroadError> {
+    let deadline = fiber::clock().saturating_add(Duration::from_secs(waiting_timeout));
+    let rs_count = rs_to_plan.len();
+    let mut cache_required_args = HashMap::with_capacity(rs_to_plan.len());
+    for (rs, exec_plan) in &mut rs_to_plan {
+        let required_binary = build_required_binary(exec_plan)?;
+        cache_required_args.insert(rs.clone(), RequiredMessage::from(required_binary));
+    }
+    let mut row_count: u64 = 0;
+    let first_round_lua_table = transform_lua_res(
+        "cacheable with custom plans. first round".into(),
+        lua_dispatch_dql(
+            lua,
+            &cache_required_args,
+            row_count,
+            vtable_max_rows,
+            waiting_timeout,
+        ),
+    )?;
+    let mut rs_to_res = convert_lua_table_to_rust(&first_round_lua_table.clone(), rs_count)?;
+
+    let missed_cache_cnt = rs_to_res.values().filter(|res| res.cache_miss).count();
+    let mut missed_cache_rs_to_full_args = HashMap::with_capacity(missed_cache_cnt);
+    for (rs, result) in &rs_to_res {
+        row_count += result.row_cnt;
+
+        if !result.cache_miss {
+            continue;
+        }
+        let required_binary = unwrap_or_error!(cache_required_args.remove(rs)).required;
+        let (rs_owned, exec_plan) = unwrap_or_error!(rs_to_plan.remove_entry(rs));
+        let optional_binary = build_optional_binary(exec_plan)?;
+        missed_cache_rs_to_full_args
+            .insert(rs_owned, FullMessage::new(required_binary, optional_binary));
+    }
+
+    if missed_cache_rs_to_full_args.is_empty() {
+        return Ok(rs_to_res);
+    }
+    let timeout = deadline.duration_since(fiber::clock()).as_secs();
+    let second_round_lua_table = transform_lua_res(
+        "cacheable with custom plans. second round".into(),
+        lua_dispatch_dql(
+            lua,
+            missed_cache_rs_to_full_args,
+            row_count,
+            vtable_max_rows,
+            timeout,
+        ),
+    )?;
+    let rs_to_missed_res = convert_lua_table_to_rust(&second_round_lua_table.clone(), rs_count)?;
+    for (rs, results) in rs_to_missed_res {
+        let mut_value = unwrap_or_error!(rs_to_res.get_mut(&rs));
+        *mut_value = results;
+    }
+
+    Ok(rs_to_res)
+}
+
+fn concat_results(rs_to_res: RSResultMap<'_>) -> Result<ProducerResult, SbroadError> {
+    let mut row_count = 0;
+    for res in rs_to_res.values() {
+        row_count += res.row_cnt;
+    }
+    let mut metadata = None;
+    let mut rows = Vec::new();
+    for (_, res) in rs_to_res {
+        let decoded: ProducerResult = res.try_into()?;
+        if metadata.is_none() {
+            metadata = Some(decoded.metadata);
+            rows = decoded.rows;
+            rows.reserve(usize::try_from(row_count - rows.len() as u64).expect("too much rows"));
+        } else {
+            rows.extend(decoded.rows.into_iter());
+        }
+    }
+
+    Ok(ProducerResult {
+        metadata: metadata.ok_or_else(|| SbroadError::Other("empty result map".into()))?,
+        rows,
+    })
+}
+
+/// Result from single replicaset.
+pub struct OneRSResult<'lua> {
+    // Buffer containing result returned from storage
+    ibuf_ptr: *mut Ibuf,
+    // Reference to lua table, where ibuf lives. This
+    // ensures ibuf_ptr is valid.
+    _source: Rc<LuaTable<LuaStackGuard<'lua>>>,
+    // Storage returns result as msgpack array of three elements:
+    // [row count, cache miss flag, [producer result]]
+    // This offset points to the start of producer result.
+    read_offset: usize,
+    // Number of rows returned
+    pub row_cnt: u64,
+    // True if the initial request contained
+    // only cache required data and we missed
+    // the cache on the storage.
+    pub cache_miss: bool,
+}
+
+impl<'lua> OneRSResult<'lua> {
+    fn to_start_and_size(&self) -> (*const u8, usize) {
+        unsafe {
+            // SAFETY: ibuf_ptr points to correctly intialized Ibuf
+            // object because:
+            // 1. Earlier it was initialized on lua stack by tarantool
+            // 2. Lua table containing that ibuf is still alive on that
+            // lua stack (we keep rc to that table).
+            // 3. Rust aliasing rules are ensured: the memory being
+            // referred is not mutated.
+            let ibuf = self.ibuf_ptr.as_ref().unwrap();
+            // SAFETY:
+            // 1. Both starting and resulting pointers point
+            // to same allocated object - true, pointers refer
+            // to contiguos memory region allocated by tarantool
+            // 2. The computed offset cannot overflow isize - true,
+            // our offset is always small: it is len of row count
+            // and chache miss msgpack combined.
+            let start = ibuf.rpos.add(self.read_offset);
+
+            // SAFETY:
+            // 1. Both
+            let offset = ibuf.wpos.offset_from(start);
+            (start, usize::try_from(offset).unwrap())
+        }
+    }
+}
+
+impl<'lua> TryFrom<OneRSResult<'lua>> for ProducerResult {
+    type Error = SbroadError;
+
+    fn try_from(res: OneRSResult) -> Result<Self, Self::Error> {
+        let (start, size) = res.to_start_and_size();
+        // SAFETY:
+        let mut reader = unsafe { std::slice::from_raw_parts(start, size) };
+        let wrapped: Vec<ProducerResult> = rmp_serde::from_read(&mut reader)
+            .map_err(|e| SbroadError::Other(format_smolstr!("failed to decode tuple: {e:?}")))?;
+        let value = wrapped
+            .into_iter()
+            .next()
+            .ok_or_else(|| SbroadError::Other("expected non-empty array".into()))?;
+        Ok(value)
+    }
+}
+
+impl<'lua> TryFrom<OneRSResult<'lua>> for Tuple {
+    type Error = SbroadError;
+
+    fn try_from(res: OneRSResult) -> Result<Self, Self::Error> {
+        let (start, size) = res.to_start_and_size();
+        // SAFETY:
+        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(start, size) };
+        let tuple = unsafe { Tuple::from_slice(bytes) };
+        Ok(tuple)
+    }
+}
+
+impl<'lua> Drop for OneRSResult<'lua> {
+    fn drop(&mut self) {
+        // Don't wait for lua garbage collector,
+        // free buffer memory as soon it is not needed.
+        // Calling ibuf_reinit multiple times is safe,
+        // as second and other calls do nothing.
+        //
+        // SAFETY: it is safe as lua table storing
+        // ibuf referred by ibuf_ptr is still alive
+        // as we keep a reference to it.
+        unsafe {
+            ibuf_reinit(self.ibuf_ptr);
+        }
+    }
+}
+
+fn convert_lua_table_to_rust<'lua>(
+    lua_table: &Rc<LuaTable<LuaStackGuard<'lua>>>,
+    rs_cnt: usize,
+) -> Result<RSResultMap<'lua>, SbroadError> {
+    let mut iter = lua_table.iter::<StringInLua<_>, CDataOnStack<_>>();
+    let mut rs_to_res: RSResultMap<'lua> =
+        HashMap::with_capacity_and_hasher(rs_cnt, RepeatableState);
+    for maybe_kv in iter.by_ref() {
+        let (key, value) = maybe_kv.map_err(|e| {
+            SbroadError::Other(format_smolstr!("failed to convert lua table entry: {e:?}"))
+        })?;
+        let result = {
+            let (mut s, ibuf): (&[u8], &Ibuf) = unsafe {
+                // SAFETY: lua functions must return table with values of Ibuf
+                // it is safe to read this, as long as LuaTable is alive.
+                let ibuf = value.as_ptr().cast::<Ibuf>().as_ref().unwrap();
+                // ptr.offset_from(ptr) requires two pointers to point to
+                // the same allocated object.
+                let offset = ibuf.wpos as isize - ibuf.rpos as isize;
+                if offset <= 0 {
+                    return Err(SbroadError::Other("invalid ibuf: negative size".into()));
+                }
+                let sz = usize::try_from(offset).unwrap();
+                // SAFETY: data is valid for reads as long as ibuf on lua
+                // stack is alive
+                let s = std::slice::from_raw_parts(ibuf.rpos, sz);
+                (s, ibuf)
+            };
+            let row_cnt: u64 = rmp_serde::decode::from_read(&mut s).map_err(|e| {
+                SbroadError::Other(format_smolstr!("failed to read row cnt from ibuf: {e:?}"))
+            })?;
+            let cache_miss: bool = rmp_serde::decode::from_read(&mut s).map_err(|e| {
+                SbroadError::Other(format_smolstr!(
+                    "failed to read cache hit flag from ibuf: {e:?}"
+                ))
+            })?;
+
+            // ptr.offset_from(ptr) requires two pointers to point to
+            // the same allocated object.
+            let read_offset = s.as_ptr() as isize - ibuf.rpos as isize;
+            if read_offset <= 0 {
+                return Err(SbroadError::Other("invalid rpos in ibuf".into()));
+            }
+            OneRSResult {
+                ibuf_ptr: value.as_ptr().cast_mut().cast::<Ibuf>(),
+                _source: lua_table.clone(),
+                read_offset: usize::try_from(read_offset).unwrap(),
+                row_cnt,
+                cache_miss,
+            }
+        };
+        rs_to_res.insert((*key).to_string(), result);
+    }
+    drop(iter);
+    Ok(rs_to_res)
+}
+
+type LuaStackGuard<'lua> = PushGuard<LuaFunction<PushGuard<&'lua tarantool::tlua::LuaThread>>>;
+
+/// # Panics
+/// - Failed to find lua function `dispatch_by_count`
+#[inline]
+fn lua_dispatch_dql<T>(
+    lua: &tarantool::tlua::LuaThread,
+    rs_to_plan: T,
+    row_count: u64,
+    vtable_max_rows: u64,
+    waiting_timeout: u64,
+) -> Result<Rc<LuaTable<LuaStackGuard<'_>>>, SbroadError>
+where
+    T: PushInto<LuaState>,
+    T::Err: fmt::Debug,
+{
+    let Some(exec_sql): Option<LuaFunction<_>> = lua.get("dispatch_dql") else {
+        return Err(SbroadError::Other("no function 'dispatch_dql'".into()));
+    };
+
+    let check_bucket_count = false;
+    let call_res = exec_sql.into_call_with_args::<LuaTable<_>, _>((
+        rs_to_plan,
+        waiting_timeout,
+        row_count,
+        vtable_max_rows,
+        check_bucket_count,
+    ));
+    match call_res {
+        Ok(v) => Ok(Rc::new(v)),
+        Err(e) => Err(SbroadError::LuaError(format_smolstr!(
+            "Lua error (dispatch_by_count): {e:?}"
+        ))),
+    }
+}
+
+/// Execute cacheable DQL with the same plan
+/// for all replicasets.
+///
+/// # Errors
+/// - errors during query execution
+pub fn exec_cacheable_dql_with_single_plan<'lua>(
+    lua: &'lua tarantool::tlua::LuaThread,
+    mut exec_plan: ExecutionPlan,
+    replicasets: &[RSName],
+    vtable_max_rows: u64,
+    waiting_timeout: u64,
+) -> Result<DqlResult<'lua>, SbroadError> {
+    let deadline = fiber::clock().saturating_add(Duration::from_secs(waiting_timeout));
+    let required_message = {
+        let required_binary = build_required_binary(&mut exec_plan)?;
+        RequiredMessage::from(required_binary)
+    };
+    let mut row_count: u64 = 0;
+    let first_round_lua_table = transform_lua_res(
+        "cacheable with single plan first round".into(),
+        lua_dql_single_plan(
+            lua,
+            &required_message,
+            replicasets,
+            row_count,
+            vtable_max_rows,
+            waiting_timeout,
+        ),
+    )?;
+    let mut rs_to_res = convert_lua_table_to_rust(&first_round_lua_table, replicasets.len())?;
+
+    let missed_cache_cnt = rs_to_res.values().filter(|res| res.cache_miss).count();
+    let mut missed_cache_replicasets = Vec::with_capacity(missed_cache_cnt);
+    for (rs, result) in &rs_to_res {
+        row_count += result.row_cnt;
+        if result.cache_miss {
+            missed_cache_replicasets.push(rs.clone());
+        }
+    }
+    if missed_cache_replicasets.is_empty() {
+        return Ok(rs_to_res);
+    }
+    let full_message = {
+        let required_binary = required_message.required;
+        let optional_binary = build_optional_binary(exec_plan)?;
+        FullMessage::new(required_binary, optional_binary)
+    };
+
+    let timeout = deadline.duration_since(fiber::clock()).as_secs();
+    let second_round_lua_table = transform_lua_res(
+        "cacheable dql with single second round".into(),
+        lua_dql_single_plan(
+            lua,
+            full_message,
+            replicasets,
+            row_count,
+            vtable_max_rows,
+            timeout,
+        ),
+    )?;
+    let rs_to_missed_res = convert_lua_table_to_rust(&second_round_lua_table, replicasets.len())?;
+    for (rs, results) in rs_to_missed_res {
+        let mut_value = unwrap_or_error!(rs_to_res.get_mut(&rs));
+        *mut_value = results;
+    }
+
+    Ok(rs_to_res)
+}
+
+fn exec_with_single_plan(
+    runtime: &(impl Router + Vshard),
+    mut exec_plan: ExecutionPlan,
+    buckets: &Buckets,
+    return_format: DispatchReturnFormat,
+) -> Result<Box<dyn Any>, SbroadError> {
+    let metadata = &*runtime.metadata().lock();
+    let query_type = exec_plan.query_type()?;
+    let vtable_max_rows = exec_plan.get_vtable_max_rows();
+    let waiting_timeout = metadata.waiting_timeout();
+    let replicasets = lua_get_replicasets_from_buckets(buckets)?;
     match &query_type {
-        QueryType::DQL => dql_on_all(metadata, required, optional, vtable_max_rows),
-        QueryType::DML => dml_on_all(metadata, required, optional, conn_type.is_readonly()),
+        QueryType::DQL => {
+            let lua = tarantool::lua_state();
+            let rs_to_res = exec_cacheable_dql_with_single_plan(
+                &lua,
+                exec_plan,
+                &replicasets,
+                vtable_max_rows,
+                waiting_timeout,
+            )?;
+            build_final_dql_result(rs_to_res, return_format)
+        }
+        QueryType::DML => {
+            let required_binary = build_required_binary(&mut exec_plan)?;
+            let optional_binary = build_optional_binary(exec_plan)?;
+            let message = FullMessage::new(required_binary, optional_binary);
+            lua_dml_single_plan(metadata, message, &replicasets)
+        }
+    }
+}
+
+fn exec_with_custom_plan(
+    runtime: &(impl Router + Vshard),
+    sub_plan: ExecutionPlan,
+    buckets: &Buckets,
+    return_format: DispatchReturnFormat,
+) -> Result<Box<dyn Any>, SbroadError> {
+    let all_buckets: HashSet<u64, RepeatableState>;
+
+    let buckets_set = match buckets {
+        Buckets::All => {
+            all_buckets = (1..=runtime.bucket_count()).collect();
+            &all_buckets
+        }
+        Buckets::Filtered(buckets) => buckets,
+        Buckets::Any => unreachable!("buckets any case is handled earlier"),
+    };
+
+    // todo(ars): group should be a runtime function not global,
+    // this way we could implement it for mock runtime for better testing
+    // Vec of { replicaset_uuid, corresponding bucket ids }.
+    let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets_set)?.drain().collect();
+    if rs_bucket_vec.is_empty() {
+        return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+            "no replica sets were found for the buckets {buckets:?} to execute the query on"
+        )));
+    }
+
+    let query_type = sub_plan.query_type()?;
+    let vtable_max_rows = sub_plan.get_vtable_max_rows();
+    let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
+    let waiting_timeout = runtime.metadata().lock().waiting_timeout();
+    match &query_type {
+        QueryType::DQL => {
+            let lua = tarantool::lua_state();
+            let rs_to_res = exec_cacheable_dql_with_custom_plans(
+                &lua,
+                rs_ir,
+                vtable_max_rows,
+                waiting_timeout,
+            )?;
+            build_final_dql_result(rs_to_res, return_format)
+        }
+        QueryType::DML => {
+            let mut rs_message = HashMap::with_capacity(rs_ir.len());
+            for (rs, mut ir) in rs_ir {
+                let required_binary = build_required_binary(&mut ir)?;
+                let optional_binary = build_optional_binary(ir)?;
+                rs_message.insert(rs, FullMessage::new(required_binary, optional_binary));
+            }
+            lua_dispatch_dml(&*runtime.metadata().lock(), rs_message)
+        }
     }
 }
 
 /// Generic function over `dql_on_some` and `dml_on_some` functions.
 /// Used to execute IR on some replicasets (that are discovered from given `buckets`).
 #[otm_child_span("query.dispatch.cartridge.some")]
-pub fn exec_ir_on_some_buckets(
+pub fn impl_exec_ir_on_buckets(
     runtime: &(impl Router + Vshard),
     sub_plan: ExecutionPlan,
     buckets: &Buckets,
+    return_format: DispatchReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
-    let query_type = sub_plan.query_type()?;
-    let conn_type = sub_plan.connection_type()?;
-    let vtable_max_rows = sub_plan.get_vtable_max_rows();
-    let Buckets::Filtered(bucket_set) = buckets else {
-        return Err(SbroadError::Invalid(
-            Entity::Buckets,
-            Some(format_smolstr!(
-                "Expected Buckets::Filtered, got {buckets:?}"
-            )),
-        ));
-    };
     let mut buckets = buckets;
     let random_bucket = runtime.get_random_bucket();
-    if bucket_set.is_empty() {
-        match empty_query_result(&sub_plan)? {
-            Some(res) => return Ok(res),
-            None => {
-                buckets = &random_bucket;
+    if let Buckets::Filtered(buckets_set) = buckets {
+        if buckets_set.is_empty() {
+            match empty_query_result(&sub_plan, return_format.clone())? {
+                Some(res) => return Ok(res),
+                None => {
+                    buckets = &random_bucket;
+                }
             }
         }
     }
 
-    // todo(ars): group should be a runtime function not global,
-    // this way we could implement it for mock runtime for better testing
-    // Vec of { replicaset_uuid, corresponding bucket ids }.
-    let rs_bucket_vec: Vec<(String, Vec<u64>)> = group(buckets)?.drain().collect();
-    if rs_bucket_vec.is_empty() {
-        return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
-            "no replica sets were found for the buckets {buckets:?} to execute the query on"
-        )));
-    }
-    let rs_ir = prepare_rs_to_ir_map(&rs_bucket_vec, sub_plan)?;
-    let mut rs_message = HashMap::with_capacity(rs_ir.len());
-    for (rs, ir) in rs_ir {
-        rs_message.insert(rs, Message::from(encode_plan(ir)?));
-    }
-    match &query_type {
-        QueryType::DQL => dql_on_some(
-            &*runtime.metadata().lock(),
-            rs_message,
-            conn_type.is_readonly(),
-            vtable_max_rows,
-        ),
-        QueryType::DML => dml_on_some(
-            &*runtime.metadata().lock(),
-            rs_message,
-            conn_type.is_readonly(),
-        ),
+    if !sub_plan.has_segmented_tables() && !sub_plan.has_customization_opcodes() {
+        exec_with_single_plan(runtime, sub_plan, buckets, return_format)
+    } else {
+        exec_with_custom_plan(runtime, sub_plan, buckets, return_format)
     }
 }
 
@@ -370,8 +823,8 @@ impl Plan {
 pub fn prepare_rs_to_ir_map(
     rs_bucket_vec: &[(String, Vec<u64>)],
     mut sub_plan: ExecutionPlan,
-) -> Result<HashMap<String, ExecutionPlan>, SbroadError> {
-    let mut rs_ir: HashMap<String, ExecutionPlan> = HashMap::new();
+) -> Result<RSMap, SbroadError> {
+    let mut rs_ir: RSMap = HashMap::new();
     rs_ir.reserve(rs_bucket_vec.len());
     if let Some((last, other)) = rs_bucket_vec.split_last() {
         let mut sae_info = sub_plan.get_ir_plan().serialize_as_empty_info()?;
@@ -465,20 +918,55 @@ fn disable_serialize_as_empty_opcode(
 pub(crate) type GroupedBuckets = HashMap<String, Vec<u64>>;
 
 /// Function that transforms `Buckets` (set of bucket_ids)
+/// into vector of replicasets where those buckets reside
+/// according to router cache.
+///
+/// Rust binding to Lua `get_replicasets_from_buckets` function.
+#[otm_child_span("buckets.group")]
+fn lua_get_replicasets_from_buckets(buckets: &Buckets) -> Result<Vec<RSName>, SbroadError> {
+    if let Buckets::All = buckets {
+        return Ok(Vec::new());
+    }
+    let lua_buckets: Vec<u64> = match buckets {
+        Buckets::Any => {
+            return Err(SbroadError::Unsupported(
+                Entity::Buckets,
+                Some("grouping buckets is not supported for Buckets::Any".into()),
+            ))
+        }
+        Buckets::All => return Ok(Vec::new()),
+        Buckets::Filtered(list) => list.iter().copied().collect(),
+    };
+
+    let lua = tarantool::lua_state();
+
+    let Some(func): Option<LuaFunction<_>> = lua.get("get_replicasets_from_buckets") else {
+        return Err(SbroadError::Other(
+            "no function 'get_replicasets_from_buckets'".into(),
+        ));
+    };
+
+    let res: Vec<RSName> = match func.call_with_args(lua_buckets) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                Option::from("get buckets from replicasets"),
+                &format!("{e:?}")
+            );
+            return Err(SbroadError::LuaError(format_smolstr!("{e:?}")));
+        }
+    };
+
+    Ok(res)
+}
+
+/// Function that transforms `Buckets` (set of bucket_ids)
 /// into `GroupedBuckets` (map from replicaset uuid to set of bucket_ids).
 ///
 /// Rust binding to Lua `group_buckets_by_replicasets` function.
 #[otm_child_span("buckets.group")]
-fn group(buckets: &Buckets) -> Result<GroupedBuckets, SbroadError> {
-    let lua_buckets: Vec<u64> = match buckets {
-        Buckets::All | Buckets::Any => {
-            return Err(SbroadError::Unsupported(
-                Entity::Buckets,
-                Some("grouping buckets is not supported for Buckets::All or Buckets::Any".into()),
-            ))
-        }
-        Buckets::Filtered(list) => list.iter().copied().collect(),
-    };
+fn group(buckets: &HashSet<u64, RepeatableState>) -> Result<GroupedBuckets, SbroadError> {
+    let lua_buckets: Vec<u64> = buckets.iter().copied().collect();
 
     let lua = tarantool::lua_state();
 

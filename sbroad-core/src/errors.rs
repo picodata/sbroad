@@ -345,6 +345,8 @@ pub enum SbroadError {
     OutdatedStorageSchema,
     UseOfBothParamsStyles,
     GlobalDml(SmolStr),
+    DispatchError(SmolStr),
+    Other(SmolStr),
 }
 
 impl fmt::Display for SbroadError {
@@ -381,6 +383,7 @@ impl fmt::Display for SbroadError {
             SbroadError::TypeError(err) => {
                 format_smolstr!("{err}")
             }
+            SbroadError::DispatchError(s) | SbroadError::Other(s) => s.clone(),
         };
 
         write!(f, "{p}")

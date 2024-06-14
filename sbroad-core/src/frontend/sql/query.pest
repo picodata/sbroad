@@ -294,6 +294,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
                 Integer = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
                 Unsigned = @{ ASCII_DIGIT+ }
                 SingleQuotedString = @{ "'" ~ ((!("'") ~ ANY) | "''")* ~ "'" }
+                UnquotedString = @{ ((!("'") ~ ANY) | "''")* }
             Parameter = { PgParameter | TntParameter }
                 TntParameter = @{ "?" }
                 PgParameter = { "$" ~ Unsigned }

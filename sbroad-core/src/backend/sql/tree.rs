@@ -1067,19 +1067,22 @@ impl<'p> SyntaxPlan<'p> {
         for child_id in &mut sn_children {
             *child_id = self.pop_from_stack(*child_id);
         }
-        let mut nodes = Vec::with_capacity(sn_children.len() * 2 - 1);
-        // Reverse the order of the children back.
-        let first = sn_children.pop().expect("at least one child in VALUES");
 
         // Consume the output from the stack.
         let _ = self.pop_from_stack(output_plan_id);
 
+        let mut nodes = Vec::with_capacity(sn_children.len() * 2 - 1);
+        // Reverse the order of the children back.
         let arena = &mut self.nodes;
-        while let Some(child_id) = sn_children.pop() {
-            nodes.push(child_id);
+        for child_id in sn_children.iter().skip(1).rev() {
+            nodes.push(*child_id);
             nodes.push(arena.push_sn_non_plan(SyntaxNode::new_comma()));
         }
-        nodes.push(first);
+        nodes.push(
+            *sn_children
+                .first()
+                .expect("values must have at least one child"),
+        );
         let sn = SyntaxNode::new_pointer(id, None, nodes);
         arena.push_sn_plan(sn);
     }

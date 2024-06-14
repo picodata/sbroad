@@ -2,7 +2,8 @@
 //!
 //! Traits that define an execution engine interface.
 
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
+use tarantool::tuple::Tuple;
 
 use crate::cbo::histogram::Scalar;
 use crate::cbo::{ColumnStats, TableColumnPair, TableStats};
@@ -13,7 +14,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use crate::errors::SbroadError;
+use crate::errors::{Action, Entity, SbroadError};
 use crate::executor::bucket::Buckets;
 use crate::executor::ir::ExecutionPlan;
 use crate::executor::protocol::SchemaInfo;
@@ -24,8 +25,7 @@ use crate::ir::relation::Type;
 use crate::ir::value::Value;
 use crate::ir::NodeId;
 
-use super::ir::{ConnectionType, QueryType};
-use super::protocol::Binary;
+use super::result::ProducerResult;
 
 use tarantool::sql::Statement;
 
@@ -155,6 +155,85 @@ pub trait QueryCache {
     fn get_table_version(&self, _: &str) -> Result<u64, SbroadError>;
 }
 
+/// Helper struct specifying in which format
+/// DQL subtree dispatch should return data.
+#[derive(Clone, PartialEq, Eq)]
+pub enum DispatchReturnFormat {
+    /// When we executed the last subtree,
+    /// we must return result to user in form
+    /// of a tuple. This allows to do some optimisations
+    /// see `build_final_dql_result`.
+    ///
+    /// HACK: This is also critical for reading from
+    /// system tables. Currently we don't support
+    /// arrays or maps in tables, but we still can
+    /// allow users to read those values from tables.
+    /// This is because read from a system table is
+    /// executed on a single node and we don't decode
+    /// returned tuple, instead we return it as is.
+    Tuple,
+    /// Return value as `ProducerResult`. This is used
+    /// for non-final subtrees, when we need to create
+    /// a virtual table from the result.
+    Inner,
+}
+
+pub trait ConvertToDispatchResult {
+    /// Convert self to specified format
+    ///
+    /// # Errors
+    /// - Implementation errors
+    fn convert(self, format: DispatchReturnFormat) -> Result<Box<dyn Any>, SbroadError>;
+}
+
+impl ConvertToDispatchResult for ProducerResult {
+    fn convert(self, format: DispatchReturnFormat) -> Result<Box<dyn Any>, SbroadError> {
+        let res: Box<dyn Any> = match format {
+            DispatchReturnFormat::Tuple => {
+                let wrapped = vec![self];
+                #[cfg(feature = "mock")]
+                {
+                    Box::new(wrapped)
+                }
+                #[cfg(not(feature = "mock"))]
+                {
+                    Box::new(Tuple::new(&wrapped).map_err(|e| {
+                        SbroadError::Other(format_smolstr!(
+                            "create tuple from producer result: {e}"
+                        ))
+                    })?)
+                }
+            }
+            DispatchReturnFormat::Inner => Box::new(self),
+        };
+        Ok(res)
+    }
+}
+
+impl ConvertToDispatchResult for Tuple {
+    fn convert(self, format: DispatchReturnFormat) -> Result<Box<dyn Any>, SbroadError> {
+        let res: Box<dyn Any> = match format {
+            DispatchReturnFormat::Tuple => Box::new(self),
+            DispatchReturnFormat::Inner => {
+                let wrapped = self.decode::<Vec<ProducerResult>>().map_err(|e| {
+                    SbroadError::FailedTo(
+                        Action::Decode,
+                        Some(Entity::Tuple),
+                        format_smolstr!("into producer result: {e:?}"),
+                    )
+                })?;
+                let res = wrapped.into_iter().next().ok_or_else(|| {
+                    SbroadError::Other(
+                        "failed to convert tuple into ProducerResult: tuple is empty".into(),
+                    )
+                })?;
+                Box::new(res)
+            }
+        };
+        Ok(res)
+    }
+}
+
 /// A router trait.
 pub trait Router: QueryCache {
     type ParseTree;
@@ -199,6 +278,7 @@ pub trait Router: QueryCache {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
+        return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Materialize result motion node to virtual table
@@ -273,34 +353,28 @@ pub trait Statistics {
 }
 
 pub trait Vshard {
-    /// Execute a query on all the shards in the cluster.
+    /// Execute a query on a given buckets.
     ///
     /// # Errors
     /// - Execution errors
-    fn exec_ir_on_all(
-        &self,
-        required: Binary,
-        optional: Binary,
-        query_type: QueryType,
-        conn_type: ConnectionType,
-        vtable_max_rows: u64,
-    ) -> Result<Box<dyn Any>, SbroadError>;
-
-    /// Execute a query on a some of the shards in the cluster.
-    ///
-    /// # Errors
-    /// - Execution errors
-    fn exec_ir_on_some(
+    fn exec_ir_on_buckets(
         &self,
         sub_plan: ExecutionPlan,
         buckets: &Buckets,
+        return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError>;
 
-    /// Execute query locally on the current node.
+    /// Execute query on any node.
+    /// All the data needed to execute query
+    /// is already in the plan.
     ///
     /// # Errors
     /// - Execution errors
-    fn exec_ir_on_any_node(&self, sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError>;
+    fn exec_ir_on_any_node(
+        &self,
+        sub_plan: ExecutionPlan,
+        return_format: DispatchReturnFormat,
+    ) -> Result<Box<dyn Any>, SbroadError>;
 
     /// Get the amount of buckets in the cluster.
     fn bucket_count(&self) -> u64;

@@ -1,6 +1,6 @@
-use crate::errors::SbroadError;
 use crate::executor::ir::ExecutionPlan;
 use crate::ir::relation::SpaceEngine;
+use crate::{errors::SbroadError, executor::protocol::VTablesMeta};
 
 #[cfg(not(feature = "mock"))]
 mod prod_imports {
@@ -9,6 +9,7 @@ mod prod_imports {
     pub use crate::errors::{Action, Entity, SbroadError};
     pub use crate::executor::engine::helpers::{pk_name, table_name};
     pub use crate::executor::ir::ExecutionPlan;
+    use crate::executor::protocol::VTablesMeta;
     pub use crate::ir::relation::SpaceEngine;
     pub use smol_str::{format_smolstr, SmolStr};
     pub use tarantool::index::{FieldType, IndexOptions, IndexType, Part};
@@ -20,6 +21,7 @@ mod prod_imports {
         plan_id: &str,
         motion_id: usize,
         engine: &SpaceEngine,
+        vtables_meta: Option<&VTablesMeta>,
     ) -> Result<SmolStr, SbroadError> {
         let cleanup = |space: Space, name: &str| match with_su(ADMIN_ID, || space.drop()) {
             Ok(_) => {}
@@ -35,16 +37,26 @@ mod prod_imports {
 
         // If the space already exists, it is possible that admin has
         // populated it with data (by mistake?). Clean the space up.
-        if let Some(space) = Space::find(&table_name) {
-            cleanup(space, &table_name);
+        if let Some(space) = Space::find(table_name.as_str()) {
+            cleanup(space, table_name.as_str());
         }
 
-        let vtable = exec_plan.get_motion_vtable(motion_id)?;
-        let mut fields: Vec<Field> = vtable
-            .get_columns()
-            .iter()
-            .map(|c| Field::from(c.clone()))
-            .collect();
+        let mut fields: Vec<Field> = if let Some(vtables_meta) = vtables_meta {
+            let meta = vtables_meta
+                .get(&motion_id)
+                .expect("invalid execution plan");
+            meta.columns
+                .iter()
+                .map(|c| Field::from(c.clone()))
+                .collect()
+        } else {
+            let vtable = exec_plan.get_motion_vtable(motion_id)?;
+            vtable
+                .get_columns()
+                .iter()
+                .map(|c| Field::from(c.clone()))
+                .collect()
+        };
 
         let pk_name = pk_name(plan_id, motion_id);
         fields.push(Field::unsigned(pk_name.clone()));
@@ -83,7 +95,7 @@ mod prod_imports {
         match create_index_res {
             Ok(Ok(_)) => {}
             Err(e) | Ok(Err(e)) => {
-                cleanup(space, &table_name);
+                cleanup(space, table_name.as_str());
                 return Err(SbroadError::FailedTo(
                     Action::Create,
                     Some(Entity::Index),
@@ -123,10 +135,11 @@ pub fn create_table(
     plan_id: &str,
     motion_id: usize,
     engine: &SpaceEngine,
+    #[allow(unused_variables)] vtables_meta: Option<&VTablesMeta>,
 ) -> Result<TableGuard, SbroadError> {
     #[cfg(not(feature = "mock"))]
     {
-        let name = create_tmp_space_impl(exec_plan, plan_id, motion_id, engine)?;
+        let name = create_tmp_space_impl(exec_plan, plan_id, motion_id, engine, vtables_meta)?;
         Ok(TableGuard {
             name,
             do_truncate: true,

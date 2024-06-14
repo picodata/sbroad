@@ -223,7 +223,7 @@ where
                     let res = evict(key, &mut lru_node.value);
                     if res.is_err() {
                         if first_error.is_ok() {
-                            first_error = res.clone();
+                            first_error.clone_from(&res);
                         }
                         error!(Option::from("clear LRU cache"), &format!("{res:?}"));
                     }

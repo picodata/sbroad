@@ -1676,7 +1676,6 @@ fn front_sql_group_concat_aggregate2() {
 
     let plan = sql_to_optimized_ir(input, vec![]);
 
-    println!("{}", plan.as_explain().unwrap());
     let expected_explain = String::from(
         r#"projection (group_concat(("group_concat_14"::string, ' '::string))::string -> "col_1", group_concat(distinct ("column_16"::string))::string -> "col_2")
     motion [policy: full]

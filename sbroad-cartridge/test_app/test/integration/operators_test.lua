@@ -124,13 +124,13 @@ g.test_not_eq = function()
         }
     )
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "product_units", type = "integer"},
-        },
-        rows = {{2, "123", 2}, {3, "123", 3}},
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "product_units", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, {
+        {2, "123", 2}, {3, "123", 3}
     })
 
 
@@ -193,17 +193,15 @@ g.test_not_eq2 = function()
             }
     )
     t.assert_equals(err, nil)
-    t.assert_items_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "u", type = "integer"}
-        },
-        rows = {
-            {1, 2}, {1, 3}, {1, 4},
-            {2, 1}, {2, 3}, {2, 4},
-            {3, 1}, {3, 2}, {3, 4},
-            {4, 1}, {4, 2}, {4, 3},
-        },
+    t.assert_items_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "u", type = "integer"}
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 2}, {1, 3}, {1, 4},
+        {2, 1}, {2, 3}, {2, 4},
+        {3, 1}, {3, 2}, {3, 4},
+        {4, 1}, {4, 2}, {4, 3},
     })
 end
 
@@ -290,14 +288,12 @@ g.test_except = function()
     ]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "a", type = "number"},
-        },
-        rows = {
-            {4.2},
-            {777}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "a", type = "number"},
+    })
+    t.assert_items_equals(r.rows, {
+        {4.2},
+        {777}
     })
 end
 
@@ -419,13 +415,11 @@ g.test_exists_subquery_select_from_values = function ()
     ]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-        },
-        rows = {
-            {1}, {2}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1}, {2}
     })
 end
 
@@ -533,14 +527,12 @@ g.test_exists_partitioned_in_selection_condition = function()
     ]], {} })
 
     t.assert_equals(err_all, nil)
-    t.assert_equals(r_all, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "a", type = "number"},
-        },
-        rows = {
-            {1, 4.2}, {2, 6.66}
-        },
+    t.assert_equals(r_all.metadata, {
+        {name = "id", type = "integer"},
+        {name = "a", type = "number"},
+    })
+    t.assert_items_equals(r_all.rows, {
+        {1, 4.2}, {2, 6.66}
     })
 
     local r, err = api:call("sbroad.execute", { [[
@@ -581,14 +573,12 @@ g.test_exists_partitioned_in_join_filter = function()
     ]], {} })
 
     t.assert_equals(err_all, nil)
-    t.assert_equals(r_all, {
-        metadata = {
-            {name = "tid", type = "integer"},
-            {name = "sid", type = "integer"},
-        },
-        rows = {
-            {1, 1}, {1, 10}, {2, 1}, {2, 10}
-        },
+    t.assert_equals(r_all.metadata, {
+        {name = "tid", type = "integer"},
+        {name = "sid", type = "integer"},
+    })
+    t.assert_items_equals(r_all.rows, {
+        {1, 1}, {1, 10}, {2, 1}, {2, 10}
     })
 
     local r, err = api:call("sbroad.execute", { [[

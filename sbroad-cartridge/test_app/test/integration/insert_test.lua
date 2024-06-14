@@ -63,12 +63,14 @@ g.after_each(
         storage1:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage1:call("box.execute", { [[truncate table "t"]] })
         storage1:call("box.execute", { [[truncate table "unique_secondary_index"]] })
+        storage1:call("box.execute", { [[truncate table "arithmetic_space"]] })
 
         local storage2 = cluster:server("storage-2-1").net_box
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key"]] })
         storage2:call("box.execute", { [[truncate table "space_simple_shard_key_hist"]] })
         storage2:call("box.execute", { [[truncate table "t"]] })
         storage2:call("box.execute", { [[truncate table "unique_secondary_index"]] })
+        storage2:call("box.execute", { [[truncate table "arithmetic_space"]] })
     end
 )
 
@@ -88,18 +90,16 @@ g.test_insert_1 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {10, box.NULL, 0, 11520},
-            {2, "ok_hist_2", 1, 22072}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {10, box.NULL, 0, 11520},
+        {2, "ok_hist_2", 1, 22072}
     })
 end
 
@@ -118,18 +118,16 @@ g.test_insert_2 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {10, box.NULL, 0, 11520},
-            {3, "four", 5, 21301}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {10, box.NULL, 0, 11520},
+        {3, "four", 5, 21301}
     })
 end
 
@@ -145,19 +143,17 @@ g.test_insert_3 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {5, box.NULL, 6, 6661},
-            {10, box.NULL, 0, 11520},
-            {4, box.NULL, 5, 27225},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {5, box.NULL, 6, 6661},
+        {10, box.NULL, 0, 11520},
+        {4, box.NULL, 5, 27225},
     })
 end
 
@@ -174,19 +170,17 @@ g.test_insert_4 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {5, "КИРИЛЛИЦА", 6, 6661},
-            {10, box.NULL, 0, 11520},
-            {4, "кириллица", 5, 27225},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {5, "КИРИЛЛИЦА", 6, 6661},
+        {10, box.NULL, 0, 11520},
+        {4, "кириллица", 5, 27225},
     })
 end
 
@@ -203,19 +197,17 @@ g.test_insert_5 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {5, "КИРИЛЛИЦА", 6, 6661},
-            {10, box.NULL, 0, 11520},
-            {4, "кириллица", 5, 27225},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {5, "КИРИЛЛИЦА", 6, 6661},
+        {10, box.NULL, 0, 11520},
+        {4, "кириллица", 5, 27225},
     })
 end
 
@@ -232,18 +224,16 @@ g.test_insert_6 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            { -9223372036854775808LL, "bigint", 7, 2274 },
-            {1, "ok", 1, 3940},
-            {10, box.NULL, 0, 11520}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        { -9223372036854775808LL, "bigint", 7, 2274 },
+        {1, "ok", 1, 3940},
+        {10, box.NULL, 0, 11520}
     })
 end
 
@@ -260,21 +250,20 @@ g.test_insert_7 = function()
     r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "space_simple_shard_key"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, "ok", 1, 3940},
-            {8, "", 8, 12104},
-            {10, box.NULL, 0, 11520}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok", 1, 3940},
+        {8, "", 8, 12104},
+        {10, box.NULL, 0, 11520}
     })
 end
 
+-- TODO(ars): this test fails. What also fails is a simple query like: values (1, 'hello')...
 -- check type derivation for null column in the first row of the VALUES operator
 g.test_insert_8 = function()
     local api = cluster:server("api-1").net_box
@@ -431,16 +420,14 @@ g.test_insert_on_conflict_do_replace = function()
     r, err = api:call("sbroad.execute", { [[
     select * from "space_simple_shard_key" ]] })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-        },
-        rows = {
-            {1, "1", 1},
-            {10, nil, 0},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "1", 1},
+        {10, nil, 0},
     })
 end
 
@@ -460,16 +447,14 @@ g.test_insert_select_on_conflict_do_replace = function()
     r, err = api:call("sbroad.execute", { [[
     select * from "space_simple_shard_key" ]] })
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "name", type = "string"},
-            {name = "sysOp", type = "integer"},
-        },
-        rows = {
-            {1, "ok1", 5},
-            {10, nil, 4},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "name", type = "string"},
+        {name = "sysOp", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, "ok1", 5},
+        {10, nil, 4},
     })
 end
 

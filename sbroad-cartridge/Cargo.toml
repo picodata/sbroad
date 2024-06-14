@@ -32,6 +32,7 @@ git = "https://git.picodata.io/picodata/picodata/tarantool-module.git"
 version = ">=4.0"
 features = ["picodata"]
 
+
 [dev-dependencies]
 pretty_assertions = "1.3"
 

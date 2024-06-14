@@ -39,7 +39,7 @@ fn get_sql_from_execution_plan(
     let sp = SyntaxPlan::new(&subplan, subplan_top_id, snapshot).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan.to_sql(&nodes, name_base).unwrap();
+    let (sql, _) = subplan.to_sql(&nodes, name_base, None).unwrap();
     sql
 }
 
@@ -621,7 +621,7 @@ fn exec_plan_subtree_having() {
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE).unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE, None).unwrap();
     if let MotionPolicy::Segment(_) = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Segment for local aggregation stage");
@@ -645,7 +645,7 @@ fn exec_plan_subtree_having() {
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE).unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE, None).unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -703,7 +703,7 @@ fn exec_plan_subtree_having_without_groupby() {
     let sp = SyntaxPlan::new(&subplan1, subplan1_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE).unwrap();
+    let (sql, _) = subplan1.to_sql(&nodes, TEMPLATE, None).unwrap();
     if let MotionPolicy::Full = exec_plan.get_motion_policy(motion_id).unwrap() {
     } else {
         panic!("Expected MotionPolicy::Full after local stage");
@@ -728,7 +728,7 @@ fn exec_plan_subtree_having_without_groupby() {
     let sp = SyntaxPlan::new(&subplan2, subplan2_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE).unwrap();
+    let (sql, _) = subplan2.to_sql(&nodes, TEMPLATE, None).unwrap();
     assert_eq!(
         sql,
         PatternWithParams::new(
@@ -761,7 +761,7 @@ fn global_table_scan() {
     let sp = SyntaxPlan::new(&subplan, subplan_top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    let (sql, _) = subplan.to_sql(&nodes, TEMPLATE).unwrap();
+    let (sql, _) = subplan.to_sql(&nodes, TEMPLATE, None).unwrap();
 
     assert_eq!(
         sql,

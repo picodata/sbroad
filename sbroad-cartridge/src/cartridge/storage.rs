@@ -3,14 +3,18 @@ use crate::cartridge::config::StorageConfiguration;
 use sbroad::errors::{Entity, SbroadError};
 use sbroad::executor::bucket::Buckets;
 use sbroad::executor::engine::helpers::storage::unprepare;
-use sbroad::executor::engine::helpers::vshard::get_random_bucket;
-use sbroad::executor::engine::helpers::{read_or_prepare, EncodedQueryInfo};
+use sbroad::executor::engine::helpers::vshard::{get_random_bucket, CacheInfo};
+use sbroad::executor::engine::helpers::EncodedQueryInfo;
+use sbroad::executor::engine::helpers::{
+    execute_first_cacheable_request, execute_second_cacheable_request, OptionalBytes,
+};
+use sbroad::executor::engine::DispatchReturnFormat;
 use sbroad::executor::engine::{helpers, StorageCache};
 use sbroad::executor::engine::{QueryCache, Vshard};
 use sbroad::executor::hash::bucket_id_by_tuple;
-use sbroad::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
+use sbroad::executor::ir::{ExecutionPlan, QueryType};
 use sbroad::executor::lru::{Cache, LRUCache, DEFAULT_CAPACITY};
-use sbroad::executor::protocol::{Binary, RequiredData, SchemaInfo};
+use sbroad::executor::protocol::{RequiredData, SchemaInfo};
 use sbroad::ir::value::Value;
 use sbroad::ir::NodeId;
 use sbroad::utils::MutexLike;
@@ -153,21 +157,11 @@ impl ConfigurationProvider for StorageRuntime {
 }
 
 impl Vshard for StorageRuntime {
-    fn exec_ir_on_all(
+    fn exec_ir_on_any_node(
         &self,
-        _required: Binary,
-        _optional: Binary,
-        _query_type: QueryType,
-        _conn_type: ConnectionType,
-        _vtable_max_rows: u64,
+        _sub_plan: ExecutionPlan,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        Err(SbroadError::Unsupported(
-            Entity::Runtime,
-            Some("exec_ir_on_all is not supported on the storage".to_smolstr()),
-        ))
-    }
-
-    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the cartridge runtime".to_smolstr()),
@@ -186,10 +180,11 @@ impl Vshard for StorageRuntime {
         Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
-    fn exec_ir_on_some(
+    fn exec_ir_on_buckets(
         &self,
         _sub_plan: ExecutionPlan,
         _buckets: &Buckets,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
@@ -223,15 +218,24 @@ impl StorageRuntime {
     pub fn execute_plan(
         &self,
         required: &mut RequiredData,
-        raw_optional: &mut Vec<u8>,
+        mut raw_optional: OptionalBytes,
+        cache_info: CacheInfo,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        match required.query_type {
-            QueryType::DML => helpers::execute_dml(self, required, raw_optional),
+        let res = match required.query_type {
+            QueryType::DML => helpers::execute_dml(self, required, raw_optional.get_mut()?),
             QueryType::DQL => {
-                let mut info = EncodedQueryInfo::new(std::mem::take(raw_optional), required);
-                read_or_prepare(self, &mut info)
+                let mut info = EncodedQueryInfo::new(raw_optional, required);
+                match cache_info {
+                    CacheInfo::CacheableFirstRequest => {
+                        execute_first_cacheable_request(self, &mut info)
+                    }
+                    CacheInfo::CacheableSecondRequest => {
+                        execute_second_cacheable_request(self, &mut info)
+                    }
+                }
             }
-        }
+        };
+        res
     }
 }
 

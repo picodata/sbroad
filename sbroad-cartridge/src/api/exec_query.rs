@@ -70,8 +70,7 @@ fn proc_sql_execute(args: &RawBytes) -> RetResult<RawProcResult, String> {
 }
 
 fn execute_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
-    let (raw_required, mut raw_optional) =
-        decode_msgpack(args).context("decode dispatched data")?;
+    let (raw_required, optional_bytes, cache_info) = decode_msgpack(&args.0)?;
 
     load_config(&SEGMENT_ENGINE)?;
 
@@ -81,7 +80,7 @@ fn execute_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
     SEGMENT_ENGINE.with(|engine| {
         let runtime = engine.lock();
         let result = runtime
-            .execute_plan(&mut required, &mut raw_optional)
+            .execute_plan(&mut required, optional_bytes, cache_info)
             .context("execute plan")?;
         result
             .downcast::<Tuple>()

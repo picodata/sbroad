@@ -389,13 +389,13 @@ fn bench_serde_clone(c: &mut Criterion) {
 }
 
 fn build_ir(pattern: &str, params: Vec<Value>, engine: &mut RouterRuntimeMock) {
-    let mut query = Query::new(engine, pattern, params).unwrap();
+    let query = Query::new(engine, pattern, params).unwrap();
     let top_id = query.get_exec_plan().get_ir_plan().get_top().unwrap();
     let plan = query.get_exec_plan();
     let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest).unwrap();
     let ordered = OrderedSyntaxNodes::try_from(sp).unwrap();
     let nodes = ordered.to_syntax_data().unwrap();
-    plan.to_sql(&nodes, "").unwrap();
+    plan.to_sql(&nodes, "", None).unwrap();
 }
 
 /// Note: it's disabled, because currently one of target queries fails on execution.

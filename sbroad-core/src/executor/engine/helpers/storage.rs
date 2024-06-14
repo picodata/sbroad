@@ -3,7 +3,8 @@ use sbroad_proc::otm_child_span;
 use smol_str::{format_smolstr, SmolStr};
 use std::any::Any;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::sync::OnceLock;
 use tarantool::session::with_su;
 use tarantool::space::Space;
 use tarantool::sql::{prepare_and_execute_raw, Statement};
@@ -22,6 +23,20 @@ use crate::utils::ByteCounter;
 
 const IPROTO_DATA: u8 = 0x30;
 const IPROTO_META: u8 = 0x32;
+
+pub enum DQLStorageReturnFormat {
+    // Return result as a vector of bytes, no need
+    // to allocate Tuple. Used for global tables
+    // reads (exec_ir_on_any) or DML queries, that
+    // materialize reading subtree locally.
+    Raw,
+    // Return result as a Tuple of three elements:
+    // [rows count, cache miss flag, producer result]
+    // Used by all dql queries who go through vshard
+    // (and so iproto), where we always must return
+    // Tuple
+    Vshard,
+}
 
 /// Storage runtime configuration.
 #[allow(clippy::module_name_repetitions)]
@@ -123,8 +138,11 @@ fn repack_meta(meta: EncodedMetadata) -> (rmpv::Value, rmpv::Value) {
     for mut map in maps.drain(..) {
         let col_name = map.remove(&0).expect("missing name in DQL metadata");
         let col_type = map.remove(&1).expect("missing type in DQL metadata");
-        let inner = vec![("name".into(), col_name), ("type".into(), col_type)];
-        repacked.push(rmpv::Value::Map(inner));
+        // repacked.push(rmpv::Value::Map(vec![(col_name, col_type)]));
+        repacked.push(rmpv::Value::Map(vec![
+            (rmpv::Value::String("name".into()), col_name),
+            (rmpv::Value::String("type".into()), col_type),
+        ]));
     }
     ("metadata".into(), rmpv::Value::Array(repacked))
 }
@@ -144,11 +162,59 @@ fn repack_data(
     Ok(("rows".into(), rmpv::Value::Array(rows)))
 }
 
+pub(crate) fn dql_cache_miss_result() -> Tuple {
+    const RESULT_SIZE: usize = 20;
+
+    fn create_result<W>(buf_ref: &mut W)
+    where
+        W: Write,
+    {
+        let empty_result = {
+            let new_meta: (rmpv::Value, rmpv::Value) =
+                ("metadata".into(), rmpv::Value::Array(vec![]));
+            let new_data: (rmpv::Value, rmpv::Value) = ("rows".into(), rmpv::Value::Array(vec![]));
+            rmpv::Value::Map(vec![new_meta, new_data])
+        };
+
+        write_array_len(buf_ref, 3).expect("failed to write array length");
+        // write number of rows in result
+        rmpv::encode::write_value(buf_ref, &rmpv::Value::from(0))
+            .expect("failed to write rows count");
+        // write cache miss flag
+        rmpv::encode::write_value(buf_ref, &rmpv::Value::from(true))
+            .expect("failed to write cache miss flag");
+        rmpv::encode::write_value(buf_ref, &empty_result).expect("failed to write result");
+    }
+
+    fn check_result_size() -> bool {
+        let mut buf = Vec::with_capacity(100);
+        create_result(&mut buf);
+        buf.len() == RESULT_SIZE
+    }
+
+    debug_assert!(check_result_size());
+
+    static RESULT_BYTES: OnceLock<[u8; RESULT_SIZE]> = OnceLock::new();
+    let bytes = RESULT_BYTES.get_or_init(|| {
+        let mut res = [0; RESULT_SIZE];
+        create_result(&mut res.as_mut_slice());
+        res
+    });
+
+    Tuple::try_from_slice(bytes.as_slice()).expect("failed to create cache miss tuple")
+}
+
 fn dql_result_to_tuple(
     stream: &mut (impl Read + Sized),
     max_rows: u64,
-) -> Result<Tuple, SbroadError> {
+    format: &DQLStorageReturnFormat,
+) -> Result<Box<dyn Any>, SbroadError> {
     let (meta, data) = parse_dql(stream);
+    let rows_len: u64 = if let rmpv::Value::Array(rows) = &data {
+        rows.len() as u64
+    } else {
+        panic!("Unexpected rows format!");
+    };
     let new_meta = repack_meta(meta);
     let new_data = repack_data(data, max_rows)?;
     let repacked = rmpv::Value::Map(vec![new_meta, new_data]);
@@ -156,10 +222,27 @@ fn dql_result_to_tuple(
     let mut byte_counter = ByteCounter::default();
     rmpv::encode::write_value(&mut byte_counter, &repacked).expect("failed to write result");
     let mut buf = Vec::with_capacity(byte_counter.bytes());
-    write_array_len(&mut buf, 1).expect("failed to write array length");
-    rmpv::encode::write_value(&mut buf, &repacked).expect("failed to write result");
-    let tup_buf = TupleBuffer::try_from_vec(buf).expect("failed to convert to tuple buffer");
-    Ok(Tuple::from(&tup_buf))
+
+    let res: Box<dyn Any> = match format {
+        DQLStorageReturnFormat::Raw => {
+            write_array_len(&mut buf, 1).expect("failed to write array length");
+            rmpv::encode::write_value(&mut buf, &repacked).expect("failed to write result");
+            Box::new(buf)
+        }
+        DQLStorageReturnFormat::Vshard => {
+            write_array_len(&mut buf, 3).expect("failed to write array length");
+            rmpv::encode::write_value(&mut buf, &rmpv::Value::from(rows_len))
+                .expect("failed to write rows count");
+            rmpv::encode::write_value(&mut buf, &rmpv::Value::from(false))
+                .expect("failed to write cache miss flag");
+            let inner = rmpv::Value::Array(vec![repacked]);
+            rmpv::encode::write_value(&mut buf, &inner).expect("failed to write result");
+            let tup_buf =
+                TupleBuffer::try_from_vec(buf).expect("failed to convert to tuple buffer");
+            Box::new(Tuple::from(&tup_buf))
+        }
+    };
+    Ok(res)
 }
 
 fn encoded_params(params: &[Value]) -> Vec<EncodedValue> {
@@ -172,13 +255,13 @@ pub fn execute_prepared(
     params: &[Value],
     vdbe_max_steps: u64,
     max_rows: u64,
+    format: &DQLStorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let encoded_params = encoded_params(params);
     let mut stream = with_su(ADMIN_ID, || {
         stmt.execute_raw(&encoded_params, vdbe_max_steps)
     })??;
-    let tuple = dql_result_to_tuple(&mut stream, max_rows)?;
-    Ok(Box::new(tuple) as Box<dyn Any>)
+    dql_result_to_tuple(&mut stream, max_rows, format)
 }
 
 #[otm_child_span("tarantool.statement.unprepared.execute")]
@@ -187,11 +270,11 @@ pub fn execute_unprepared(
     params: &[Value],
     vdbe_max_steps: u64,
     max_rows: u64,
+    format: &DQLStorageReturnFormat,
 ) -> Result<Box<dyn Any>, SbroadError> {
     let encoded_params = encoded_params(params);
     let mut stream = with_su(ADMIN_ID, || {
         prepare_and_execute_raw(query, &encoded_params, vdbe_max_steps)
     })??;
-    let tuple = dql_result_to_tuple(&mut stream, max_rows)?;
-    Ok(Box::new(tuple) as Box<dyn Any>)
+    dql_result_to_tuple(&mut stream, max_rows, format)
 }

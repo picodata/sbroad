@@ -64,6 +64,16 @@ impl From<HashMap<u64, Vec<usize>, RepeatableState>> for VTableIndex {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 struct ShardingRecord(ShardingKey, usize);
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct VirtualTableMeta {
+    /// List of the columns.
+    pub columns: Vec<Column>,
+    /// Unique table name (we need to generate it ourselves).
+    pub name: Option<SmolStr>,
+    /// Column positions that form a primary key.
+    pub primary_key: Option<Vec<ColumnPosition>>,
+}
+
 /// Result tuple storage, created by the executor. All tuples
 /// have a distribution key.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -110,6 +120,15 @@ impl VirtualTable {
             name: None,
             primary_key: None,
             bucket_index: VTableIndex::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn metadata(&self) -> VirtualTableMeta {
+        VirtualTableMeta {
+            columns: self.columns.clone(),
+            name: self.name.clone(),
+            primary_key: self.primary_key.clone(),
         }
     }
 
@@ -559,7 +578,11 @@ impl VirtualTable {
             rows.push(row);
         }
 
-        let res = [ProducerResult { metadata, rows }];
+        let res = vec![ProducerResult {
+            metadata,
+            rows,
+            // cache_miss: None,
+        }];
         #[cfg(feature = "mock")]
         {
             Ok(Box::new(res))

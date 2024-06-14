@@ -10,7 +10,6 @@
 //! * `row_count` (u64): the number of tuples inserted (that may be equal to 0)
 
 use core::fmt::Debug;
-use serde::de::Error as DeError;
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde::{Deserialize, Deserializer};
 use smol_str::{SmolStr, ToSmolStr};
@@ -59,17 +58,13 @@ impl<'de> Deserialize<'de> for MetadataColumn {
     where
         D: Deserializer<'de>,
     {
-        let map = HashMap::<String, String>::deserialize(deserializer)?;
-        let col_name = map
-            .get("name")
-            .ok_or_else(|| DeError::custom("missing name in DQL metadata"))?;
-        let col_type = map
-            .get("type")
-            .ok_or_else(|| DeError::custom("missing type in DQL metadata"))?;
-        Ok(MetadataColumn::new(
-            col_name.to_string(),
-            col_type.to_string(),
-        ))
+        let mut map = HashMap::<String, String>::deserialize(deserializer)?;
+        let err = |missing_key: &str| -> D::Error {
+            serde::de::Error::custom(format!("expected metadata to have key: {missing_key}"))
+        };
+        let name = map.remove("name").ok_or_else(|| err("name"))?;
+        let r#type = map.remove("type").ok_or_else(|| err("type"))?;
+        Ok(MetadataColumn::new(name, r#type))
     }
 }
 
@@ -90,6 +85,37 @@ pub struct ProducerResult {
     pub rows: Vec<ExecutorTuple>,
 }
 
+#[allow(clippy::module_name_repetitions)]
+#[derive(LuaRead, Debug, Deserialize, PartialEq, Clone)]
+pub struct DQLQueryResult {
+    pub metadata: Vec<MetadataColumn>,
+    pub rows: Vec<ExecutorTuple>,
+}
+
+impl From<ProducerResult> for DQLQueryResult {
+    fn from(value: ProducerResult) -> Self {
+        Self {
+            metadata: value.metadata,
+            rows: value.rows,
+        }
+    }
+}
+
+impl Serialize for DQLQueryResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("metadata", &self.metadata)?;
+        map.serialize_entry("rows", &self.rows)?;
+        map.end()
+    }
+}
+
+/// This impl allows to convert `DQLQueryResult` into `Tuple`, using `Tuple::new` method.
+impl Encode for DQLQueryResult {}
+
 impl Default for ProducerResult {
     fn default() -> Self {
         Self::new()
@@ -104,6 +130,7 @@ impl ProducerResult {
         ProducerResult {
             metadata: Vec::new(),
             rows: Vec::new(),
+            // cache_miss: None,
         }
     }
 
@@ -181,6 +208,7 @@ impl Serialize for ProducerResult {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("metadata", &self.metadata)?;
         map.serialize_entry("rows", &self.rows)?;
+        // map.serialize_entry("cache_miss", &self.cache_miss)?;
         map.end()
     }
 }

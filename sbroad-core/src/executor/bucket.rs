@@ -303,7 +303,7 @@ where
         );
 
         for (_, node_id) in tree.iter(top_id) {
-            if self.bucket_map.get(&node_id).is_some() {
+            if self.bucket_map.contains_key(&node_id) {
                 continue;
             }
 

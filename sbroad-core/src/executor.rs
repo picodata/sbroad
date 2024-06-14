@@ -279,8 +279,12 @@ where
             return v.to_output();
         }
         let buckets = self.bucket_discovery(top_id)?;
-        self.coordinator
-            .dispatch(&mut self.exec_plan, top_id, &buckets)
+        self.coordinator.dispatch(
+            &mut self.exec_plan,
+            top_id,
+            &buckets,
+            engine::DispatchReturnFormat::Tuple,
+        )
     }
 
     /// Query explain

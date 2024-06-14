@@ -24,9 +24,8 @@ use crate::executor::engine::{
     Router, Statistics, Vshard,
 };
 use crate::executor::hash::bucket_id_by_tuple;
-use crate::executor::ir::{ConnectionType, ExecutionPlan, QueryType};
+use crate::executor::ir::ExecutionPlan;
 use crate::executor::lru::{LRUCache, DEFAULT_CAPACITY};
-use crate::executor::protocol::Binary;
 use crate::executor::result::ProducerResult;
 use crate::executor::vtable::VirtualTable;
 use crate::executor::Cache;
@@ -40,7 +39,7 @@ use crate::utils::MutexLike;
 
 use super::helpers::vshard::{prepare_rs_to_ir_map, GroupedBuckets};
 use super::helpers::{dispatch_by_buckets, normalize_name_from_sql};
-use super::{get_builtin_functions, Metadata, QueryCache};
+use super::{get_builtin_functions, DispatchReturnFormat, Metadata, QueryCache};
 
 pub const TEMPLATE: &str = "test";
 
@@ -893,21 +892,11 @@ impl QueryCache for RouterRuntimeMock {
 }
 
 impl Vshard for RouterRuntimeMock {
-    fn exec_ir_on_all(
+    fn exec_ir_on_any_node(
         &self,
-        _required: Binary,
-        _optional: Binary,
-        _query_type: QueryType,
-        _conn_type: ConnectionType,
-        _vtable_max_rows: u64,
+        _sub_plan: ExecutionPlan,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        Err(SbroadError::Unsupported(
-            Entity::Runtime,
-            Some("exec_ir_on_all is not supported for the mock runtime".to_smolstr()),
-        ))
-    }
-
-    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the mock runtime".to_smolstr()),
@@ -926,30 +915,17 @@ impl Vshard for RouterRuntimeMock {
         Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
-    fn exec_ir_on_some(
+    fn exec_ir_on_buckets(
         &self,
         sub_plan: ExecutionPlan,
         buckets: &Buckets,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        mock_exec_ir_on_some(&self.vshard_mock, buckets, sub_plan)
+        mock_exec_ir_on_buckets(&self.vshard_mock, buckets, sub_plan)
     }
 }
 
 impl Vshard for &RouterRuntimeMock {
-    fn exec_ir_on_all(
-        &self,
-        _required: Binary,
-        _optional: Binary,
-        _query_type: QueryType,
-        _conn_type: ConnectionType,
-        _vtable_max_rows: u64,
-    ) -> Result<Box<dyn Any>, SbroadError> {
-        Err(SbroadError::Unsupported(
-            Entity::Runtime,
-            Some("exec_ir_on_all is not supported for the mock runtime".to_smolstr()),
-        ))
-    }
-
     fn bucket_count(&self) -> u64 {
         self.metadata().lock().bucket_count
     }
@@ -962,23 +938,28 @@ impl Vshard for &RouterRuntimeMock {
         Ok(bucket_id_by_tuple(s, self.bucket_count()))
     }
 
-    fn exec_ir_on_any_node(&self, _sub_plan: ExecutionPlan) -> Result<Box<dyn Any>, SbroadError> {
+    fn exec_ir_on_any_node(
+        &self,
+        _sub_plan: ExecutionPlan,
+        _return_format: DispatchReturnFormat,
+    ) -> Result<Box<dyn Any>, SbroadError> {
         Err(SbroadError::Unsupported(
             Entity::Runtime,
             Some("exec_ir_locally is not supported for the mock runtime".to_smolstr()),
         ))
     }
 
-    fn exec_ir_on_some(
+    fn exec_ir_on_buckets(
         &self,
         sub_plan: ExecutionPlan,
         buckets: &Buckets,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
-        mock_exec_ir_on_some(&self.vshard_mock, buckets, sub_plan)
+        mock_exec_ir_on_buckets(&self.vshard_mock, buckets, sub_plan)
     }
 }
 
-fn mock_exec_ir_on_some(
+fn mock_exec_ir_on_buckets(
     vshard_mock: &VshardMock,
     buckets: &Buckets,
     sub_plan: ExecutionPlan,
@@ -1350,6 +1331,7 @@ impl Router for RouterRuntimeMock {
         plan: &mut ExecutionPlan,
         top_id: usize,
         buckets: &Buckets,
+        _return_format: DispatchReturnFormat,
     ) -> Result<Box<dyn Any>, SbroadError> {
         let mut result = ProducerResult::new();
         let sp = SyntaxPlan::new(plan, top_id, Snapshot::Oldest)?;
@@ -1358,16 +1340,16 @@ impl Router for RouterRuntimeMock {
 
         match buckets {
             Buckets::All => {
-                let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
+                let (sql, _) = plan.to_sql(&nodes, TEMPLATE, None)?;
                 result.extend(exec_on_all(String::from(sql).as_str()))?;
             }
             Buckets::Any => {
-                let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
+                let (sql, _) = plan.to_sql(&nodes, TEMPLATE, None)?;
                 result.extend(exec_locally(String::from(sql).as_str()))?;
             }
             Buckets::Filtered(list) => {
                 for bucket in list {
-                    let (sql, _) = plan.to_sql(&nodes, TEMPLATE)?;
+                    let (sql, _) = plan.to_sql(&nodes, TEMPLATE, None)?;
                     let temp_result = exec_on_some(*bucket, String::from(sql).as_str());
                     result.extend(temp_result)?;
                 }
@@ -1503,10 +1485,12 @@ impl ReplicasetDispatchInfo {
         let sp = SyntaxPlan::new(exec_plan, top, Snapshot::Oldest).unwrap();
         let ordered_sn = OrderedSyntaxNodes::try_from(sp).unwrap();
         let syntax_data_nodes = ordered_sn.to_syntax_data().unwrap();
-        let (pattern_with_params, _) = exec_plan.to_sql(&syntax_data_nodes, TEMPLATE).unwrap();
+        let (pattern_with_params, _) = exec_plan
+            .to_sql(&syntax_data_nodes, TEMPLATE, None)
+            .unwrap();
         let mut vtables: HashMap<usize, Rc<VirtualTable>> = HashMap::new();
         if let Some(vtables_map) = exec_plan.get_vtables() {
-            vtables = vtables_map.clone();
+            vtables.clone_from(vtables_map);
         }
         Self {
             rs_id,
@@ -1533,7 +1517,7 @@ impl RouterRuntimeMock {
         plan: ExecutionPlan,
         buckets: &Buckets,
     ) -> Vec<ReplicasetDispatchInfo> {
-        *dispatch_by_buckets(plan, buckets, self)
+        *dispatch_by_buckets(plan, buckets, self, DispatchReturnFormat::Tuple)
             .unwrap()
             .downcast::<Vec<ReplicasetDispatchInfo>>()
             .unwrap()

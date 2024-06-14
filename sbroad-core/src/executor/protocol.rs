@@ -3,7 +3,7 @@ use rmp::decode::{read_array_len, Bytes, RmpRead};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
-use tarantool::tlua::{self, AsLua, PushGuard, PushInto, PushOneInto, Void};
+use tarantool::tlua::{self, AsLua, Push, PushGuard, PushInto, PushOne, PushOneInto, Void};
 use tarantool::tuple::{Tuple, TupleBuffer};
 
 use crate::backend::sql::tree::OrderedSyntaxNodes;
@@ -17,6 +17,11 @@ use crate::executor::engine::TableVersionMap;
 use crate::ir::{NodeId, Options};
 #[cfg(not(feature = "mock"))]
 use opentelemetry::trace::TraceContextExt;
+
+use super::engine::helpers::vshard::CacheInfo;
+use super::vtable::VirtualTableMeta;
+
+pub type VTablesMeta = HashMap<usize, VirtualTableMeta>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct Binary(Vec<u8>);
@@ -39,22 +44,50 @@ where
     }
 }
 
-impl<L> PushOneInto<L> for Binary where L: AsLua {}
+impl<L> Push<L> for Binary
+where
+    L: AsLua,
+{
+    type Err = Void;
 
-/// Set of fields needed for query execution.
-/// See `RequiredData` and `OptionalData` for more info (they are transformed from `Binary`
-/// and backwards).
-#[derive(PushInto, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Message {
-    required: Binary,
-    optional: Binary,
+    fn push_to_lua(&self, lua: L) -> Result<PushGuard<L>, (Self::Err, L)> {
+        let encoded = unsafe { std::str::from_utf8_unchecked(&self.0) };
+        encoded.push_to_lua(lua)
+    }
 }
 
-impl From<(Binary, Binary)> for Message {
-    fn from(value: (Binary, Binary)) -> Self {
-        Message {
-            required: value.0,
-            optional: value.1,
+impl<L> PushOne<L> for Binary where L: AsLua {}
+impl<L> PushOneInto<L> for Binary where L: AsLua {}
+
+#[derive(PushInto, Push, Debug, Deserialize, Serialize, PartialEq)]
+pub struct RequiredMessage {
+    pub required: Binary,
+    pub cache_hint: CacheInfo,
+}
+
+impl From<Binary> for RequiredMessage {
+    fn from(value: Binary) -> Self {
+        RequiredMessage {
+            required: value,
+            cache_hint: CacheInfo::CacheableFirstRequest,
+        }
+    }
+}
+
+#[derive(PushInto, Push, Debug, Deserialize, Serialize, PartialEq)]
+pub struct FullMessage {
+    pub required: Binary,
+    pub optional: Binary,
+    pub cache_hint: CacheInfo,
+}
+
+impl FullMessage {
+    #[must_use]
+    pub fn new(required: Binary, optional: Binary) -> Self {
+        FullMessage {
+            required,
+            optional,
+            cache_hint: CacheInfo::CacheableSecondRequest,
         }
     }
 }
@@ -300,6 +333,7 @@ impl TryFrom<EncodedRequiredData> for RequiredData {
 pub struct OptionalData {
     pub exec_plan: ExecutionPlan,
     pub ordered: OrderedSyntaxNodes,
+    pub vtables_meta: VTablesMeta,
 }
 
 impl TryFrom<OptionalData> for Vec<u8> {
@@ -332,8 +366,16 @@ impl TryFrom<&[u8]> for OptionalData {
 
 impl OptionalData {
     #[must_use]
-    pub fn new(exec_plan: ExecutionPlan, ordered: OrderedSyntaxNodes) -> Self {
-        OptionalData { exec_plan, ordered }
+    pub fn new(
+        exec_plan: ExecutionPlan,
+        ordered: OrderedSyntaxNodes,
+        vtables_meta: VTablesMeta,
+    ) -> Self {
+        OptionalData {
+            exec_plan,
+            ordered,
+            vtables_meta,
+        }
     }
 
     /// Serialize to bytes

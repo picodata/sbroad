@@ -75,6 +75,9 @@ g.after_all(function()
   helper.stop_test_cluster()
 end)
 
+-- TODO: https://git.picodata.io/picodata/picodata/sbroad/-/issues/260
+-- This test check that we can read from system tables in picodata,
+-- but still we don't support arrays in our IR completely.
 g.test_array_read = function ()
   local api = helper.cluster:server("api-1").net_box
 

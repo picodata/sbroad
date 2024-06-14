@@ -1,4 +1,8 @@
 use crate::debug;
+use crate::executor::protocol::VTablesMeta;
+use crate::ir::relation::Column;
+use crate::ir::transformation::redistribution::MotionPolicy;
+use crate::ir::tree::traversal::PostOrderWithFilter;
 use opentelemetry::Context;
 use serde::{Deserialize, Serialize};
 use smol_str::format_smolstr;
@@ -155,25 +159,86 @@ impl From<PatternWithParams> for String {
 impl ExecutionPlan {
     /// # Errors
     /// - IR plan is invalid
-    pub fn to_params(&self, nodes: &[&SyntaxData]) -> Result<Vec<Value>, SbroadError> {
-        let ir_plan = self.get_ir_plan();
-        let mut params: Vec<Value> = Vec::new();
-
-        for data in nodes {
-            let SyntaxData::Parameter(id) = data else {
-                continue;
-            };
-            let value = ir_plan.get_expression_node(*id)?;
-            if let Expression::Constant { value, .. } = value {
-                params.push(value.clone());
-            } else {
+    pub fn to_params(&self) -> Result<Vec<Value>, SbroadError> {
+        let plan = self.get_ir_plan();
+        let capacity = plan.next_id();
+        let filter = |id: usize| -> bool { matches!(plan.get_node(id), Ok(Node::Parameter(_))) };
+        let mut tree = PostOrderWithFilter::with_capacity(
+            |node| plan.flashback_subtree_iter(node),
+            capacity,
+            Box::new(filter),
+        );
+        let top_id = plan.get_top()?;
+        tree.populate_nodes(top_id);
+        let nodes = tree.take_nodes();
+        let mut params: Vec<Value> = Vec::with_capacity(nodes.len());
+        for (_, param_id) in nodes {
+            let Expression::Constant { value } = plan.get_expression_node(param_id)? else {
                 return Err(SbroadError::Invalid(
-                    Entity::Expression,
-                    Some(format_smolstr!("parameter {value:?} is not a constant")),
+                    Entity::Plan,
+                    Some(format_smolstr!(
+                        "expected parameter constant on id={param_id}"
+                    )),
                 ));
-            }
+            };
+            params.push(value.clone());
         }
         Ok(params)
+    }
+
+    /// Remove vtables from execution plan.
+    ///
+    /// Because vtables are transfered in required data,
+    /// no need to store them in optional data (where
+    /// execution plan is stored).
+    /// One exception currently is vtable under DML
+    /// node, such query is not cacheable (because
+    /// we execute dml using tarantool api) and this
+    /// vtable is not removed from plan.
+    ///
+    /// # Errors
+    /// - Invalid plan
+    pub fn remove_vtables(&mut self) -> Result<VTablesMeta, SbroadError> {
+        let mut reserved_motion_id = None;
+        {
+            let ir = self.get_ir_plan();
+            let top_id = ir.get_top()?;
+            let top = ir.get_relation_node(top_id)?;
+            if top.is_dml() {
+                let motion_id = ir.dml_child_id(top_id)?;
+                let motion = ir.get_relation_node(motion_id)?;
+                if !matches!(
+                    motion,
+                    Relational::Motion {
+                        policy: MotionPolicy::LocalSegment { .. } | MotionPolicy::Local,
+                        ..
+                    }
+                ) {
+                    reserved_motion_id = Some(motion_id);
+                }
+            }
+        }
+
+        let Some(vtables) = self.get_mut_vtables() else {
+            return Ok(VTablesMeta::default());
+        };
+        let mut vtables_meta = VTablesMeta::with_capacity(vtables.len());
+
+        for (id, vtable) in vtables.iter() {
+            vtables_meta.insert(*id, vtable.metadata());
+        }
+
+        let reserved_entry = if let Some(id) = reserved_motion_id {
+            vtables.remove_entry(&id)
+        } else {
+            None
+        };
+        vtables.clear();
+        if let Some((key, value)) = reserved_entry {
+            vtables.insert(key, value);
+        }
+
+        Ok(vtables_meta)
     }
 
     /// Transform plan sub-tree (pointed by top) to sql string pattern with parameters.
@@ -186,6 +251,7 @@ impl ExecutionPlan {
         &self,
         nodes: &[&SyntaxData],
         plan_id: &str,
+        vtables_meta: Option<&VTablesMeta>,
     ) -> Result<(PatternWithParams, Vec<TableGuard>), SbroadError> {
         let vtable_engine = self.vtable_engine()?;
         let capacity = self.get_vtables().map_or(1, HashMap::len);
@@ -437,19 +503,32 @@ impl ExecutionPlan {
                     }
                     SyntaxData::VTable(motion_id) => {
                         let name = table_name(plan_id, *motion_id);
-                        let vtable = self.get_motion_vtable(*motion_id)?;
-
-                        // for each name we wrap it in quotes and add a comma (except last name): 2 + 1
-                        let cp: usize = vtable.get_columns().iter().map(|c| c.name.len() + 3).sum();
-                        let mut col_names = String::with_capacity(cp.saturating_sub(1));
-                        if let Some((last, other)) = vtable.get_columns().split_last() {
-                            for col in other {
-                                push_identifier(&mut col_names, &col.name);
-                                col_names.push(',');
+                        let build_names = |columns: &[Column]| -> String {
+                            let cp: usize = columns.iter().map(|c| c.name.len() + 3).sum();
+                            let mut col_names = String::with_capacity(cp.saturating_sub(1));
+                            if let Some((last, other)) = columns.split_last() {
+                                for col in other {
+                                    push_identifier(&mut col_names, &col.name);
+                                    col_names.push(',');
+                                }
+                                push_identifier(&mut col_names, &last.name);
                             }
-                            push_identifier(&mut col_names, &last.name);
-                        }
-
+                            col_names
+                        };
+                        let col_names = if let Some(meta) = vtables_meta {
+                            let meta = meta.get(motion_id).ok_or_else(|| {
+                                SbroadError::Invalid(
+                                    Entity::RequiredData,
+                                    Some(format_smolstr!(
+                                        "no vtable meta for motion with id={motion_id}"
+                                    )),
+                                )
+                            })?;
+                            build_names(&meta.columns)
+                        } else {
+                            let vtable = self.get_motion_vtable(*motion_id)?;
+                            build_names(vtable.get_columns())
+                        };
                         write!(sql, "SELECT {col_names} FROM \"{name}\"").map_err(|e| {
                             SbroadError::FailedTo(
                                 Action::Serialize,
@@ -458,7 +537,8 @@ impl ExecutionPlan {
                             )
                         })?;
                         // BETWEEN can refer to the same virtual table multiple times.
-                        let table_guard = create_table(self, plan_id, *motion_id, &vtable_engine)?;
+                        let table_guard =
+                            create_table(self, plan_id, *motion_id, &vtable_engine, vtables_meta)?;
                         guard.push(table_guard);
                     }
                 }

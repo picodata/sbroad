@@ -506,20 +506,20 @@ g.test_associativity = function()
         select "id" from "arithmetic_space" where "a" + ("b" + "c") = ("a" + "b") + "c"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where "a" * ("b" * "c") = ("a" * "b") * "c"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     -- subtraction is left-associative
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where ("a" - "b") - "c" = "a" - "b" - "c"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where "a" - ("b" - "c" ) = "a" - "b" - "c"
@@ -534,7 +534,7 @@ g.test_associativity = function()
             cast("a" as decimal) / cast("b" as decimal) / cast("c" as decimal)
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where
@@ -557,13 +557,13 @@ g.test_commutativity = function()
         select "id" from "arithmetic_space" where "a" + "b" = "b" + "a"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where "a" * "b" = "b" * "a"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     -- subtraction and division are not commutative
     -- and x [-|/] y = y [-|/] x is true only when
@@ -574,7 +574,7 @@ g.test_commutativity = function()
         select "id" from "arithmetic_space" where "a" = "b"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, {})
+    t.assert_items_equals(res.rows, {})
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space"
@@ -584,7 +584,7 @@ g.test_commutativity = function()
             where "a" = "b" or "a" = -1 * "b"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, {})
+    t.assert_items_equals(res.rows, {})
 end
 
 g.test_distributivity = function()
@@ -600,14 +600,14 @@ g.test_distributivity = function()
             "a"  * ("b" + "c") = "a" * "b" + "a" * "c"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where
             ("a" + "b") * "c" = "a" * "c" + "b" * "c"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     -- division is right-distributive over addition|subtraction
     local res, err = api:call("sbroad.execute", { [[
@@ -616,7 +616,7 @@ g.test_distributivity = function()
             cast("a" as decimal) / cast("c" as decimal) + cast("b" as decimal) / cast("c" as decimal)
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res.rows, res_all.rows)
+    t.assert_items_equals(res.rows, res_all.rows)
 
     local res, err = api:call("sbroad.execute", { [[
         select "id" from "arithmetic_space" where
@@ -664,7 +664,8 @@ g.test_arithmetic_in_subquery = function()
         where exists (select (1 + 2) * 3 / 4 from "arithmetic_space" where (1 * 2) / (8 / 4) = "id")
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_all, r)
+    t.assert_equals(res_all.metadata, r.metadata)
+    t.assert_items_equals(res_all.rows, r.rows)
 
     -- test subquery with asterisk and multiplication
     r, err = api:call("sbroad.execute", { [[
@@ -949,7 +950,7 @@ g2.test_associativity = function()
         select "id", ("a" + "b") + "c" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_add2.rows, res_add1.rows)
+    t.assert_items_equals(res_add2.rows, res_add1.rows)
 
     -- multiplication is associative
     local res_mul1, err = api:call("sbroad.execute", { [[
@@ -962,7 +963,7 @@ g2.test_associativity = function()
         select "id", ("a" * "b") * "c" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_mul2.rows, res_mul1.rows)
+    t.assert_items_equals(res_mul2.rows, res_mul1.rows)
 
     -- subtraction is left-associative
     local res_sub, err = api:call("sbroad.execute", { [[
@@ -975,7 +976,7 @@ g2.test_associativity = function()
         select "id", ("a" - "b") - "c" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_sub1.rows, res_sub.rows)
+    t.assert_items_equals(res_sub1.rows, res_sub.rows)
 
     local res_sub2, err = api:call("sbroad.execute", { [[
         select "id", "a" - ("b" - "c" ) from "arithmetic_space"
@@ -995,7 +996,7 @@ g2.test_associativity = function()
         select "id", (cast("a" as decimal) / cast("b" as decimal)) / cast("c" as decimal) from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_div1.rows, res_div.rows)
+    t.assert_items_equals(res_div1.rows, res_div.rows)
 
     local res_div2, err = api:call("sbroad.execute", { [[
         select "id", cast("a" as decimal) / (cast("b" as decimal) / cast("c" as decimal)) from "arithmetic_space"
@@ -1018,7 +1019,7 @@ g2.test_commutativity = function()
         select "id", "b" + "a" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_add2.rows, res_add1.rows)
+    t.assert_items_equals(res_add2.rows, res_add1.rows)
 
     -- multiplication is commutative
     local res_mul1, err = api:call("sbroad.execute", { [[
@@ -1031,7 +1032,7 @@ g2.test_commutativity = function()
         select "id", "b" * "a" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
-    t.assert_equals(res_mul2.rows, res_mul1.rows)
+    t.assert_items_equals(res_mul2.rows, res_mul1.rows)
 
     -- subtraction is not commutative
     -- and x [-|/] y = y [-|/] x is true only when
@@ -1083,14 +1084,14 @@ g2.test_distributivity = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_not_equals(res_mul.rows, {})
-    t.assert_equals(res_mul.rows, res_mul1.rows)
+    t.assert_items_equals(res_mul.rows, res_mul1.rows)
 
     local res_mul2, err = api:call("sbroad.execute", { [[
         select "id", ("b" + "c") * "a" from "arithmetic_space"
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_not_equals(res_mul2.rows, {})
-    t.assert_equals(res_mul.rows, res_mul2.rows)
+    t.assert_items_equals(res_mul.rows, res_mul2.rows)
 
     -- division is right-distributive over addition|subtraction
     local res_div, err = api:call("sbroad.execute", { [[
@@ -1110,7 +1111,7 @@ g2.test_distributivity = function()
     ]], {} })
     t.assert_equals(err, nil)
     t.assert_not_equals(res_div1.rows, {})
-    t.assert_equals(res_div.rows, res_div1.rows)
+    t.assert_items_equals(res_div.rows, res_div1.rows)
 
     local res_div, err = api:call("sbroad.execute", { [[
         select

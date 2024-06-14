@@ -1,6 +1,7 @@
 local t = require('luatest')
 local g = t.group('integration_api')
 local datetime = require('datetime')
+local os = require('os')
 
 local helper = require('test.helper.cluster_no_replication')
 local cluster = nil
@@ -355,16 +356,14 @@ g.test_decimal_double = function()
     local r, err = api:call("sbroad.execute", { [[SELECT *, "bucket_id" FROM "t"]], {} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-            {name = "a", type = "number"},
-            {name = "bucket_id", type = "unsigned"},
-        },
-        rows = {
-            {1, 4.2, 3940},
-            {2, 6.66, 22072},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+        {name = "a", type = "number"},
+        {name = "bucket_id", type = "unsigned"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1, 4.2, 3940},
+        {2, 6.66, 22072},
     })
 end
 
@@ -446,14 +445,12 @@ g.test_pg_style_params1 = function()
     ]], {1} })
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "id", type = "integer"},
-        },
-        rows = {
-            {1},
-            {2}
-        },
+    t.assert_equals(r.metadata, {
+        {name = "id", type = "integer"},
+    })
+    t.assert_items_equals(r.rows, {
+        {1},
+        {2}
     })
 end
 
@@ -564,14 +561,12 @@ g.test_to_char = function ()
     ]]})
 
     t.assert_equals(err, nil)
-    t.assert_equals(r, {
-        metadata = {
-            {name = "col_1", type = "string"},
-        },
-        rows = {
-            {"to_char: 2021-08-21-00-00-00-+0300"},
-            {"to_char: 2021-08-20-00-00-00-+0300"},
-        },
+    t.assert_equals(r.metadata, {
+        {name = "col_1", type = "string"},
+    })
+    t.assert_items_equals(r.rows, {
+        {"to_char: 2021-08-20-00-00-00-+0300"},
+        {"to_char: 2021-08-21-00-00-00-+0300"},
     })
 
     -- second argument is optional
@@ -641,7 +636,14 @@ g.test_current_date = function ()
         select currEnt_dAte from "datetime_t"
     ]]})
 
-    local current_date = datetime.now()
+    -- datetime.new() returns local time,
+    -- we need utc time
+    local os_date = os.date("!*t")
+    local current_date = datetime.new{
+        day = os_date.day,
+        month = os_date.month,
+        year = os_date.year
+    }
     current_date:set({hour=0, min=0, sec=0, nsec=0, tzoffset=0})
     t.assert_equals(err, nil)
     t.assert_equals(r, {

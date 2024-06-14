@@ -320,7 +320,11 @@ impl Plan {
                     }
                 }
                 Relational::Values { .. } => writeln!(buf, "Values")?,
-                Relational::ValuesRow { .. } => writeln!(buf, "ValuesRow")?,
+                Relational::ValuesRow { data, .. } => {
+                    writeln!(buf, "ValuesRow")?;
+                    writeln_with_tabulation(buf, tabulation_number + 1, "Data")?;
+                    self.formatted_arena_node(buf, tabulation_number + 1, *data)?;
+                }
                 Relational::Motion { policy, .. } => {
                     writeln!(buf, "Motion [policy = {policy:?}]")?;
                 }

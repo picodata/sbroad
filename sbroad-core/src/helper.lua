@@ -110,6 +110,12 @@ local function unwrap_execute_result(result)
     end
 end
 
+local function table_size(t)
+  local count = 0
+  for _, _ in pairs(t) do count = count + 1 end
+  return count
+end
+
 return {
     is_iproto_multireturn_supported = is_iproto_multireturn_supported,
     pico_compat = pico_compat,
@@ -119,5 +125,6 @@ return {
     dql_error = dql_error,
     format_result = format_result,
     unwrap_execute_result = unwrap_execute_result,
-    constants = constants
+    constants = constants,
+    table_size = table_size
 }
