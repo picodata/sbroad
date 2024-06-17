@@ -8,7 +8,7 @@ local rust_funcs = {
 	"invalidate_segment_cache",
 	"invalidate_coordinator_cache",
 	"dispatch_query",
-  "execute"
+  "proc_sql_execute",
 }
 
 --- Generates convenient wrappers over `box.lib`

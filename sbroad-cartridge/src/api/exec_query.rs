@@ -57,7 +57,7 @@ fn dispatch_query_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
 }
 
 #[tarantool::proc(packed_args)]
-fn execute(args: &RawBytes) -> RetResult<RawProcResult, String> {
+fn proc_sql_execute(args: &RawBytes) -> RetResult<RawProcResult, String> {
     RetResult(wrap_proc_result(Some("execute_query"), execute_inner(args)))
 }
 

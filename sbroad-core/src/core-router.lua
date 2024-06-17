@@ -218,7 +218,7 @@ _G.dql_on_some = function(uuid_to_args, is_readonly, waiting_timeout, vtable_max
     local result
     local call_opts = { is_async = true }
 
-    local exec_fn = helper.proc_fn_name("execute")
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
     if #uuid_to_args == 1 then
         -- When read request is executed only on one
         -- storage, we don't care about bucket rebalancing.
@@ -268,7 +268,7 @@ end
 
 _G.dql_on_all = function(required, optional, waiting_timeout, vtable_max_rows)
     local replicasets = vshard.router.routeall()
-    local exec_fn = helper.proc_fn_name("execute")
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
     local uuid_to_args = {}
     for uuid, _ in pairs(replicasets) do
         uuid_to_args[uuid] = { required = required, optional = optional }
@@ -290,7 +290,7 @@ end
 
 _G.dml_on_some = function(tbl_rs_ir, is_readonly, waiting_timeout)
     local result = nil
-    local exec_fn = helper.proc_fn_name("execute")
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
     local futures = {}
 
     for rs_uuid, map in pairs(tbl_rs_ir) do
@@ -345,7 +345,7 @@ _G.dml_on_all = function(required, optional, is_readonly, waiting_timeout)
     local replicas = vshard.router.routeall()
     local result = nil
     local futures = {}
-    local exec_fn = helper.proc_fn_name("execute")
+    local exec_fn = helper.proc_fn_name("proc_sql_execute")
 
     for _, replica in pairs(replicas) do
         if is_readonly then
