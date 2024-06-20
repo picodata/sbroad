@@ -127,7 +127,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
             ScopeSession  = { ^"session" }
             ScopeLocal    = { ^"local" }
         ConfParam = { NamedParam | TimeZoneParam }
-            NamedParam    = { Identifier ~ (^"to" | "=") ~ NamedParamValue }
+            NamedParam    = { Identifier ~ (^"to" | "=") ~ (NamedParamValue ~ ("," ~ NamedParamValue)*) }
                 NamedParamValue = { ParamValueDefault | SingleQuotedString | Identifier | Double | Decimal | Integer }
             TimeZoneParam = { ^"time" ~ ^"zone" ~ TimeZoneParamValue }
                 TimeZoneParamValue = { NamedParamValue | ParamValueLocal }
