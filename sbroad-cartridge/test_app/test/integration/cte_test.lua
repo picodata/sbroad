@@ -31,7 +31,7 @@ g.test_cte = function ()
         SELECT b FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
     t.assert_items_equals(r["rows"], { {4}, {5} })
 
     -- nested cte
@@ -41,7 +41,7 @@ g.test_cte = function ()
         SELECT * FROM cte2
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE2.B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
     t.assert_items_equals(r["rows"], { {4}, {5} })
 
     -- reuse cte
@@ -52,7 +52,7 @@ g.test_cte = function ()
         SELECT b FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
     t.assert_items_equals(r["rows"], { {4}, {5}, {4}, {5} })
 
     -- inner join table with cte
@@ -63,7 +63,7 @@ g.test_cte = function ()
     t.assert_equals(err, nil)
     t.assert_items_equals(
         r["metadata"],
-        { {name = "CTE.B", type = "number"}, {name = "t.a", type = "number"} }
+        { {name = "B", type = "number"}, {name = "a", type = "number"} }
     )
     t.assert_items_equals(r["rows"], { {1, 1}, {2, 2} })
 
@@ -90,7 +90,7 @@ g.test_cte = function ()
     t.assert_items_equals(
         r["metadata"],
         -- TODO: this should be simply B?
-        { {name = "CTE.B", type = "number"} }
+        { {name = "B", type = "number"} }
     )
     t.assert_items_equals( r["rows"], { {1}, {2} })
 
@@ -122,7 +122,7 @@ g.test_cte = function ()
     ]], })
     t.assert_equals(err, nil)
     -- FIXME: metadata type from tarantool is not correct
-    t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "any"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1}, {2}, {3} })
 
     -- union in cte
@@ -132,7 +132,7 @@ g.test_cte = function ()
         SELECT a FROM c2
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "C2.A", type = "any"} })
+    t.assert_items_equals(r["metadata"], { {name = "A", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1}, {2} })
 
     -- union all in cte
@@ -142,7 +142,7 @@ g.test_cte = function ()
         SELECT b FROM cte2
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE2.B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
     t.assert_items_equals(r["rows"], { {1}, {2} })
 
     -- join in cte
@@ -155,7 +155,7 @@ g.test_cte = function ()
         SELECT c FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE.C", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "C", type = "number"} })
     t.assert_items_equals(r["rows"], { {1} })
 
     -- order by in cte
@@ -164,7 +164,7 @@ g.test_cte = function ()
         SELECT b FROM cte
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE.B", type = "number"} })
+    t.assert_items_equals(r["metadata"], { {name = "B", type = "number"} })
     t.assert_items_equals(r["rows"], { {5}, {4} })
 
     -- randomly distributed cte, used multiple times
@@ -174,7 +174,7 @@ g.test_cte = function ()
         JOIN cte ON true
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["metadata"], { {name = "C", type = "integer"} })
     t.assert_items_equals(r["rows"], { {4}, {4} })
 
     -- cte with segment distributed, used multiple times
@@ -184,7 +184,7 @@ g.test_cte = function ()
         JOIN cte ON true
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["metadata"], { {name = "C", type = "integer"} })
     t.assert_items_equals(r["rows"], { {1} })
 
     -- globally distributed cte, used multiple times
@@ -194,7 +194,7 @@ g.test_cte = function ()
         JOIN cte ON true
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "T.C", type = "integer"} })
+    t.assert_items_equals(r["metadata"], { {name = "C", type = "integer"} })
     t.assert_items_equals(r["rows"], { {1} })
 
     -- cte with "serialize as empty table" opcode in motion
@@ -204,7 +204,7 @@ g.test_cte = function ()
         SELECT * FROM cte2
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE2.A", type = "any"} })
+    t.assert_items_equals(r["metadata"], { {name = "A", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1} })
 
     r, err = api:call("sbroad.execute", { [[
@@ -219,7 +219,7 @@ g.test_cte = function ()
         SELECT * FROM cte2
     ]], })
     t.assert_equals(err, nil)
-    t.assert_items_equals(r["metadata"], { {name = "CTE2.A", type = "any"} })
+    t.assert_items_equals(r["metadata"], { {name = "A", type = "unsigned"} })
     t.assert_items_equals(r["rows"], { {1}, {1}, {1} })
 end
 

@@ -161,8 +161,8 @@ left_join.test_left_join_false_condition = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "decimal" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         { 1, nil },
@@ -184,8 +184,8 @@ left_join.test_left_join_local_execution = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1 },
@@ -229,8 +229,8 @@ left_join.test_inner_segment_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1 },
@@ -271,8 +271,8 @@ left_join.test_inner_full_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 2 },
@@ -317,8 +317,8 @@ left_join.test_outer_segment_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "decimal" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 2, 2 },
@@ -338,8 +338,8 @@ left_join.test_single_dist_outer = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "decimal" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 2, 3 },
@@ -358,8 +358,8 @@ left_join.test_single_dist_both = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 4 },
@@ -385,8 +385,8 @@ left_join.test_sq_with_full_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, nil },
@@ -436,8 +436,8 @@ left_join.test_sq_with_segment_motion = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1 },
@@ -526,8 +526,8 @@ left_join.test_table_with_nulls1 = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { nil, nil },
@@ -550,8 +550,8 @@ left_join.test_table_with_nulls2 = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { nil, nil },
@@ -577,8 +577,8 @@ left_join.test_empty_left_table = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {})
 end
@@ -594,8 +594,8 @@ left_join.test_empty_right_table = function()
     local r, err = api:call("sbroad.execute", { query_str, {} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.A", type = "integer" },
-        { name = "T2.B", type = "integer" },
+        { name = "A", type = "integer" },
+        { name = "B", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {nil, nil},
@@ -692,12 +692,12 @@ FROM
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        {name = "SP1.yearquarter", type = "integer"},
+        {name = "yearquarter", type = "integer"},
         {name = "a", type = "string"},
         {name = "b", type = "string"},
-        {name = "SP2.total", type = "integer"},
-        {name = "SP2.sp2_id", type = "integer"},
-        {name = "SP2.name", type = "string"},
+        {name = "total", type = "unsigned"},
+        {name = "sp2_id", type = "integer"},
+        {name = "name", type = "string"},
     })
     t.assert_items_equals(r.rows, {
         {1, "a", "a", nil, nil, nil},
@@ -724,8 +724,8 @@ left_join.test_left_multi_join= function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        {name = "SPACE1.yearquarter", type = "integer"},
-        {name = "SPACE2.name", type = "string"},
+        {name = "yearquarter", type = "integer"},
+        {name = "name", type = "string"},
     })
     t.assert_items_equals(r.rows, {
         {4, "a"},

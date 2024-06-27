@@ -155,7 +155,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "COLUMN_1", type = "any"},
+            {name = "COLUMN_1", type = "unsigned"},
         },
         rows = {
             {1}
@@ -184,7 +184,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "колонка", type = "any"},
+            {name = "колонка", type = "unsigned"},
         },
         rows = {
             {1}
@@ -203,7 +203,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "case_result", type = "any"},
+            {name = "case_result", type = "scalar"},
         },
         rows = {
             {'first'}, {42}, {42}, {42}, {42}, {'second'}, {42}, {42}, {42}, {42}
@@ -226,9 +226,9 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            { name = "arithmetic_space.id", type = "integer"},
-            { name = "values.val", type = "any"},
-            { name = "case_result", type = "any"},
+            { name = "id", type = "integer"},
+            { name = "val", type = "unsigned"},
+            { name = "case_result", type = "string"},
         },
         rows = {
             {1, 1, 'equal'},
@@ -267,7 +267,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(r, {
         metadata = {
             {name = "id", type = "integer"},
-            {name = "case_result", type = "any"},
+            {name = "case_result", type = "string"},
         },
         rows = {
             {1, 'second'},
@@ -303,7 +303,7 @@ arbitrary_projection.test_arbitrary_valid = function()
     t.assert_equals(r, {
         metadata = {
             {name = "id", type = "integer"},
-            {name = "COL_1", type = "any"},
+            {name = "COL_1", type = "scalar"},
         },
         rows = {
             {1, 1},

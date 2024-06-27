@@ -258,7 +258,7 @@ g2.test_arithmetic_invalid = function()
     )
     t.assert_str_contains(
         tostring(err),
-        "Type mismatch: can not convert boolean(TRUE) to integer, decimal, double, datetime or interval"
+        "invalid expression: types boolean and boolean are not supported for arithmetic expression"
     )
 
     -- arithemic operation on string col
@@ -267,7 +267,7 @@ g2.test_arithmetic_invalid = function()
     )
     t.assert_str_contains(
         tostring(err),
-        "Type mismatch: can not convert string('123') to integer, decimal, double, datetime or interval"
+        "invalid expression: types string and string are not supported for arithmetic expression"
     )
 
     -- arithemic operation on number col
@@ -276,7 +276,7 @@ g2.test_arithmetic_invalid = function()
     )
     t.assert_str_contains(
         tostring(err),
-        "Type mismatch: can not convert number(4.6) to integer, decimal, double, datetime or interval"
+        "invalid expression: types number and number are not supported for arithmetic expression"
     )
 end
 
@@ -743,9 +743,9 @@ g1.test_join_simple_arithmetic = function()
     t.assert_equals(
         r.metadata,
         {
-            {name = "t3.id", type = "integer"},
-            {name = "t3.a", type = "integer"},
-            {name = "t8.b", type = "integer"},
+            {name = "id", type = "integer"},
+            {name = "a", type = "integer"},
+            {name = "b", type = "integer"},
         }
     )
     t.assert_equals(
@@ -780,9 +780,9 @@ g1.test_join_simple_arithmetic = function()
     t.assert_equals(
         r.metadata,
         {
-            {name = "t3.id", type = "integer"},
-            {name = "t3.a", type = "integer"},
-            {name = "t8.b", type = "integer"},
+            {name = "id", type = "integer"},
+            {name = "a", type = "integer"},
+            {name = "b", type = "integer"},
         }
     )
     t.assert_equals(
@@ -820,9 +820,9 @@ g1.test_projection_selection_join = function()
     t.assert_equals(
         r.metadata,
         {
-            {name = "t3.id", type = "integer"},
-            {name = "t3.a", type = "integer"},
-            {name = "t8.b", type = "integer"},
+            {name = "id", type = "integer"},
+            {name = "a", type = "integer"},
+            {name = "b", type = "integer"},
             {name = "sum", type = "integer"},
 
         }
@@ -860,9 +860,9 @@ g1.test_projection_selection_join = function()
     t.assert_equals(
         r.metadata,
         {
-            {name = "t3.id", type = "integer"},
-            {name = "t3.a", type = "integer"},
-            {name = "t8.b", type = "integer"},
+            {name = "id", type = "integer"},
+            {name = "a", type = "integer"},
+            {name = "b", type = "integer"},
             {name = "mul", type = "integer"},
 
         }
@@ -887,8 +887,8 @@ g1.test_arithmetic_in_parens = function()
     t.assert_items_equals(
             without_parens.metadata,
             {
-                {name = "T1.A1", type = "integer"},
-                {name = "T2.A2", type = "integer"},
+                {name = "A1", type = "integer"},
+                {name = "A2", type = "integer"},
             }
     )
 
@@ -901,8 +901,8 @@ g1.test_arithmetic_in_parens = function()
     t.assert_items_equals(
             with_parens.metadata,
             {
-                {name = "T1.A1", type = "integer"},
-                {name = "T2.A2", type = "integer"},
+                {name = "A1", type = "integer"},
+                {name = "A2", type = "integer"},
             }
     )
 

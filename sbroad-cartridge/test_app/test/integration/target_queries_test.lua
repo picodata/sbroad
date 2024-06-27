@@ -161,9 +161,9 @@ FROM
 WHERE "col1" = ?]], { 0, 0, 1} })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 2 },
@@ -190,10 +190,10 @@ WHERE "col1" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 2, 1, 2 },
@@ -222,10 +222,10 @@ WHERE "col1" = ?
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            { name = "t3.col1", type = "integer" },
-            { name = "t3.col2", type = "integer" },
-            { name = "t3.account_id", type = "integer" },
-            { name = "t3.amount", type = "integer" },
+            { name = "col1", type = "integer" },
+            { name = "col2", type = "integer" },
+            { name = "account_id", type = "integer" },
+            { name = "amount", type = "integer" },
         },
         rows = {
             { 1, 2, 1, 3 }
@@ -250,9 +250,9 @@ WHERE "col1" = ? OR "col1" = ?]], { 0, 0, 0, 1, 3} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 3, 1, 3 },
@@ -282,10 +282,10 @@ WHERE "col1" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 2, 1, 2 },
@@ -314,9 +314,9 @@ WHERE "col1" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 3, 1, 3 },
@@ -347,10 +347,10 @@ WHERE ("col1" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 1, 3 },
@@ -382,10 +382,10 @@ WHERE ("col1" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 1, 3 },
@@ -420,9 +420,9 @@ WHERE "col1" IN
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 2 },
@@ -458,9 +458,9 @@ WHERE "col1" IN
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 2 },
@@ -496,10 +496,10 @@ WHERE ("col1", "col2") IN
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 1, 1, 1, 3 }
@@ -532,12 +532,12 @@ WHERE "t3"."col1" = 1 AND "t8"."cola" = 1]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -577,12 +577,12 @@ WHERE "t3"."col1" = ? AND ("t8"."cola" = ?
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -617,13 +617,13 @@ AND ("t8"."cola" = ? AND "t8"."colb" = ?)]], { 0, 0, 0, 0, 0, 0, 1, 2, 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -659,13 +659,13 @@ AND ("t8"."cola" = 1 AND ("t8"."colb" = 2 AND "t3"."amount" > 0))]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -700,12 +700,12 @@ WHERE "t3"."col1" = ? AND "t8"."cola" = ?]], { 1, 2 } })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -740,13 +740,13 @@ WHERE "t3"."col1" = ? AND "t3"."col2" = 2 AND ("t8"."cola" = 1 AND "t8"."colb" =
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "number" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "number" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -780,13 +780,13 @@ WHERE "t3"."col1" = 1 AND ("t3"."col2" = 1 AND "t8"."colb" = 2)]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -819,13 +819,13 @@ WHERE "t3"."col1" = 1 AND "t3"."col2" = 1]], {} })
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
-        { name = "t8.id", type = "integer" },
-        { name = "t8.cola", type = "integer" },
-        { name = "t8.colb", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
+        { name = "id", type = "integer" },
+        { name = "cola", type = "integer" },
+        { name = "colb", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -904,10 +904,10 @@ WHERE "account_id" IN
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -944,10 +944,10 @@ WHERE "account_id" IN
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "t3.col1", type = "integer" },
-        { name = "t3.col2", type = "integer" },
-        { name = "t3.account_id", type = "integer" },
-        { name = "t3.amount", type = "integer" },
+        { name = "col1", type = "integer" },
+        { name = "col2", type = "integer" },
+        { name = "account_id", type = "integer" },
+        { name = "amount", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {

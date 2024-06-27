@@ -282,9 +282,9 @@ g.test_insert_8 = function()
     local r, err = api:call("sbroad.execute", { [[VALUES (?, ?, ?), (?, ?, ?)]], { 8, 8, box.NULL, 9, 9, 'hello' } })
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], {
-        {name = "COLUMN_4", type = "integer"},
-        {name = "COLUMN_5", type = "integer"},
-        {name = "COLUMN_6", type = "text"},
+        {name = "COLUMN_4", type = "scalar"},
+        {name = "COLUMN_5", type = "scalar"},
+        {name = "COLUMN_6", type = "scalar"},
     })
     t.assert_items_equals(r["rows"], { { 8, 8, box.NULL }, { 9, 9, 'hello' } })
 
@@ -294,27 +294,27 @@ g.test_insert_8 = function()
     )
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], {
-        {name = "COLUMN_4", type = "integer"},
-        {name = "COLUMN_5", type = "integer"},
-        {name = "COLUMN_6", type = "boolean"},
+        {name = "COLUMN_4", type = "scalar"},
+        {name = "COLUMN_5", type = "scalar"},
+        {name = "COLUMN_6", type = "scalar"},
     })
     t.assert_items_equals(r["rows"], { { 9, 9, 'hello' }, { 8, 8, box.NULL } })
 
     r, err = api:call("sbroad.execute", { [[VALUES (8, 8, null), (9, 9, 'hello')]], {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], {
-        {name = "COLUMN_4", type = "integer"},
-        {name = "COLUMN_5", type = "integer"},
-        {name = "COLUMN_6", type = "text"},
+        {name = "COLUMN_4", type = "unsigned"},
+        {name = "COLUMN_5", type = "unsigned"},
+        {name = "COLUMN_6", type = "string"},
     })
     t.assert_items_equals(r["rows"], { { 8, 8, box.NULL }, { 9, 9, 'hello' } })
 
     r, err = api:call("sbroad.execute", { [[VALUES (9, 9, 'hello'), (8, 8, null)]], {} })
     t.assert_equals(err, nil)
     t.assert_items_equals(r["metadata"], {
-        {name = "COLUMN_4", type = "integer"},
-        {name = "COLUMN_5", type = "integer"},
-        {name = "COLUMN_6", type = "boolean"},
+        {name = "COLUMN_4", type = "unsigned"},
+        {name = "COLUMN_5", type = "unsigned"},
+        {name = "COLUMN_6", type = "scalar"},
     })
     t.assert_items_equals(r["rows"], { { 9, 9, 'hello' }, { 8, 8, box.NULL } })
 

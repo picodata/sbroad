@@ -10,9 +10,12 @@ use std::{
     rc::Rc,
     sync::OnceLock,
 };
-use tarantool::error::{Error, TarantoolErrorCode};
-use tarantool::space::Space;
 use tarantool::transaction::transaction;
+use tarantool::{
+    error::{Error, TarantoolErrorCode},
+    tuple::RawBytes,
+};
+use tarantool::{space::Space, tuple::TupleBuffer};
 
 use crate::executor::engine::helpers::storage::runtime::{prepare, read_prepared, read_unprepared};
 use crate::executor::engine::{QueryCache, StorageCache};
@@ -48,6 +51,7 @@ use crate::{
     },
 };
 use sbroad_proc::otm_child_span;
+use serde::Serialize;
 use tarantool::msgpack::rmp::{self, decode::RmpRead};
 use tarantool::tuple::Tuple;
 
@@ -1894,4 +1898,209 @@ pub fn sharding_key_from_map<'rec, S: ::std::hash::BuildHasher>(
         }
     }
     Ok(tuple)
+}
+
+/// Try to get metadata from the plan. If the plan is not dql, `None` is returned.
+///
+/// # Errors
+/// - Invalid execution plan.
+pub fn try_get_metadata_from_plan(
+    plan: &ExecutionPlan,
+) -> Result<Option<Vec<MetadataColumn>>, SbroadError> {
+    fn is_dql_exec_plan(plan: &ExecutionPlan) -> Result<bool, SbroadError> {
+        let ir = plan.get_ir_plan();
+        Ok(matches!(plan.query_type()?, QueryType::DQL) && !ir.is_explain())
+    }
+
+    if !is_dql_exec_plan(plan)? {
+        return Ok(None);
+    }
+
+    // Get metadata (column types) from the top node's output tuple.
+    let ir = plan.get_ir_plan();
+    let top_id = ir.get_top()?;
+    let top_output_id = ir.get_relation_node(top_id)?.output();
+    let columns = ir.get_row_list(top_output_id)?;
+    let mut metadata = Vec::with_capacity(columns.len());
+    for col_id in columns {
+        let column = ir.get_expression_node(*col_id)?;
+        let column_type = column.calculate_type(ir)?.to_string();
+        let column_name = if let Expression::Alias { name, .. } = column {
+            let mut chars = name.chars();
+            // remove quotes from the name
+            chars.next();
+            chars.next_back();
+            chars.as_str().to_owned()
+        } else {
+            return Err(SbroadError::Invalid(
+                Entity::Expression,
+                Some(smol_str::format_smolstr!("expected alias, got {column:?}")),
+            ));
+        };
+        metadata.push(MetadataColumn::new(column_name, column_type));
+    }
+    Ok(Some(metadata))
+}
+
+fn parse_rows(tuple: &Tuple) -> Result<&[u8], SbroadError> {
+    fn skip_string(stream: &mut impl RmpRead) -> Result<(), SbroadError> {
+        let colname_len = rmp::decode::read_str_len(stream).map_err(|e| {
+            SbroadError::FailedTo(
+                Action::Decode,
+                Some(Entity::MsgPack),
+                format_smolstr!("read str len: {e:?}"),
+            )
+        })?;
+        for _ in 0..colname_len {
+            stream.read_u8().map_err(|e| {
+                SbroadError::FailedTo(
+                    Action::Decode,
+                    Some(Entity::MsgPack),
+                    format_smolstr!("read u8: {e:?}"),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    fn expect_map_len(stream: &mut impl RmpRead, expected_len: u32) -> Result<(), SbroadError> {
+        let actual_len = rmp::decode::read_map_len(stream).map_err(|e| {
+            SbroadError::FailedTo(
+                Action::Decode,
+                Some(Entity::MsgPack),
+                format_smolstr!("read map len: {e:?}"),
+            )
+        })?;
+        if actual_len != expected_len {
+            return Err(SbroadError::UnexpectedNumberOfValues(format_smolstr!(
+                "expected map len {expected_len} doesn't match the actual len {actual_len}"
+            )));
+        }
+        Ok(())
+    }
+
+    let bytes: &RawBytes = tuple.get(0).ok_or(SbroadError::FailedTo(
+        Action::Get,
+        Some(Entity::Bytes),
+        format_smolstr!("raw bytes from tuple"),
+    ))?;
+    let mut stream = rmp::decode::Bytes::from(bytes.as_ref());
+
+    // parse { 'metadata': ..., 'rows': ... }
+    expect_map_len(&mut stream, 2)?;
+
+    // skip 'metadata'
+    skip_string(&mut stream)?;
+
+    // skip metadata (column names and types)
+    let metadata_len = rmp::decode::read_array_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format_smolstr!("read array len: {e:?}"),
+        )
+    })?;
+    for _ in 0..metadata_len {
+        expect_map_len(&mut stream, 2)?;
+
+        // skip 'name'
+        skip_string(&mut stream)?;
+
+        // skip column name
+        skip_string(&mut stream)?;
+
+        // skip 'type'
+        skip_string(&mut stream)?;
+
+        // skip column type
+        skip_string(&mut stream)?;
+    }
+
+    // { 'rows': ... }
+    Ok(stream.remaining_slice())
+}
+
+fn encode_result_tuple(metadata: &[MetadataColumn], rows: &[u8]) -> Result<Tuple, SbroadError> {
+    #[derive(Debug, Default)]
+    struct MpByteCounter(usize);
+
+    impl MpByteCounter {
+        #[must_use]
+        pub fn bytes(&self) -> usize {
+            self.0
+        }
+    }
+
+    impl std::io::Write for MpByteCounter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn count_mp_bytes(v: impl Serialize) -> usize {
+        let mut byte_counter: MpByteCounter = MpByteCounter::default();
+        let mut ser = rmp_serde::Serializer::new(&mut byte_counter);
+        v.serialize(&mut ser).expect("counting failed");
+        byte_counter.bytes()
+    }
+
+    fn calculate_result_tuple_size(metadata: &[MetadataColumn], rows: &[u8]) -> usize {
+        let array_header_size = 1 + 4; // array marker + array len
+        let map_header_size = 1 + 4; // map marker + map len
+        let metadata_str_size = 1 + 4 + 8; // str marker + str len + 'metadata'
+        let metadata_size = count_mp_bytes(metadata);
+        array_header_size + map_header_size + metadata_str_size + metadata_size + rows.len()
+    }
+
+    let res_size = calculate_result_tuple_size(metadata, rows);
+    let mut stream = rmp::encode::ByteBuf::with_capacity(res_size);
+
+    // result is an array
+    rmp::encode::write_array_len(&mut stream, 1).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Encode,
+            Some(Entity::MsgPack),
+            format_smolstr!("array len: {e:?}"),
+        )
+    })?;
+
+    // encode map with metadata and rows
+    rmp::encode::write_map_len(&mut stream, 2).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Encode,
+            Some(Entity::MsgPack),
+            format_smolstr!("map len: {e:?}"),
+        )
+    })?;
+    rmp::encode::write_str(&mut stream, "metadata").map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Encode,
+            Some(Entity::MsgPack),
+            format_smolstr!("string 'metadata': {e:?}"),
+        )
+    })?;
+    rmp_serde::encode::write_named(stream.as_mut_vec(), metadata)
+        .map_err(|_| SbroadError::FailedTo(Action::Serialize, Some(Entity::Metadata), "".into()))?;
+    stream.as_mut_vec().extend_from_slice(rows);
+
+    let tuple_buf = TupleBuffer::try_from_vec(stream.into_vec())?;
+    Ok(Tuple::new(&tuple_buf)?)
+}
+
+/// Replace metadata in a tuple representing dql result ({rows: ..., metadata: ...}).
+///
+/// # Errors
+/// - Msgpack parsing erros.
+/// - Violated format of dql result.
+pub fn replace_metadata_in_dql_result(
+    tuple: &Tuple,
+    metadata: &[MetadataColumn],
+) -> Result<Tuple, SbroadError> {
+    let rows = parse_rows(tuple)?;
+    encode_result_tuple(metadata, rows)
 }

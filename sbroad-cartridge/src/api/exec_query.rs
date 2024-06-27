@@ -1,5 +1,7 @@
 use anyhow::{anyhow, bail, Context};
-use sbroad::executor::engine::helpers::decode_msgpack;
+use sbroad::executor::engine::helpers::{
+    decode_msgpack, replace_metadata_in_dql_result, try_get_metadata_from_plan,
+};
 
 use tarantool::tuple::{RawBytes, Tuple};
 
@@ -43,12 +45,18 @@ fn dispatch_query_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
             bail!("blocks of commands are not supported");
         }
 
+        let metadata = try_get_metadata_from_plan(query.get_exec_plan())?;
         let dispatch_result = query.dispatch()?;
-        if let Ok(tuple) = dispatch_result.downcast::<Tuple>() {
+        if let Ok(mut tuple) = dispatch_result.downcast::<Tuple>() {
             debug!(
                 Option::from("query dispatch"),
                 &format!("Returning tuple: {tuple:?}")
             );
+
+            // replace tarantool's metadata with the metadata from the plan
+            if let Some(metadata) = metadata {
+                tuple = Box::new(replace_metadata_in_dql_result(&tuple, &metadata)?);
+            }
             Ok(RawProcResult::Tuple(*tuple))
         } else {
             bail!("unsupported result type")

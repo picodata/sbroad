@@ -108,8 +108,8 @@ g.test_motion_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t1.id", type = "integer"},
-            {name = "t1.name", type = "string"},
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
         },
         rows = {
             { 1, "ok" },
@@ -145,9 +145,9 @@ g.test_join_motion_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t3.id", type = "integer"},
-            {name = "t3.name", type = "string"},
-            {name = "t8.product_units", type = "integer"},
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"},
         },
         rows = {
             { 1, "ok", 5 },
@@ -215,8 +215,8 @@ g.test_motion_dotted_name = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "Q.sysOp", type = "integer"},
-            {name = "testing_space.product_units", type = "integer"},
+            {name = "sysOp", type = "integer"},
+            {name = "product_units", type = "integer"},
         },
         rows = {},
     })
@@ -247,7 +247,7 @@ g.test_join_segment_motion = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-            {name = "t1.id", type = "integer"},
+            {name = "id", type = "integer"},
         })
     t.assert_items_equals(r.rows,
         {
@@ -296,7 +296,7 @@ g.test_subquery_under_motion_with_alias = function()
     t.assert_equals(r, {
         metadata = {
             {name = "tid", type = "integer"},
-            {name = "smth.sid", type = "integer"},
+            {name = "sid", type = "integer"},
         },
         rows = {
             {1, 1}, {1, 10}
@@ -319,7 +319,7 @@ g.test_nested_joins_with_motions = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "T1.id", type = "integer"},
+            {name = "id", type = "integer"},
         },
         rows = {
             {1}

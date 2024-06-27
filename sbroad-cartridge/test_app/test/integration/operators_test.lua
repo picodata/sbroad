@@ -195,8 +195,8 @@ g.test_not_eq2 = function()
     t.assert_equals(err, nil)
     t.assert_items_equals(r, {
         metadata = {
-            {name = "t.id", type = "integer"},
-            {name = "Q.U", type = "integer"}
+            {name = "id", type = "integer"},
+            {name = "U", type = "integer"}
         },
         rows = {
             {1, 2}, {1, 3}, {1, 4},
@@ -219,8 +219,8 @@ g.test_simple_shard_key_union_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t1.id", type = "integer"},
-            {name = "t1.name", type = "string"},
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
         },
         rows = {
             { 1, "ok_hist" },
@@ -240,9 +240,9 @@ g.test_complex_shard_key_union_query = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t1.id", type = "integer"},
-            {name = "t1.name", type = "string"},
-            {name = "t1.product_units", type = "integer"}
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "product_units", type = "integer"}
         },
         rows = {
             { 1, "123", 1 },
@@ -583,8 +583,8 @@ g.test_exists_partitioned_in_join_filter = function()
     t.assert_equals(err_all, nil)
     t.assert_equals(r_all, {
         metadata = {
-            {name = "t.tid", type = "integer"},
-            {name = "s.sid", type = "integer"},
+            {name = "tid", type = "integer"},
+            {name = "sid", type = "integer"},
         },
         rows = {
             {1, 1}, {1, 10}, {2, 1}, {2, 10}
@@ -704,7 +704,7 @@ g.test_not_with_in = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
-        metadata = {{name = "COLUMN_1", type = "any"}},
+        metadata = {{name = "COLUMN_1", type = "unsigned"}},
         rows = {},
     })
 end
@@ -718,7 +718,7 @@ g.test_not_with_exists = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r, {
-        metadata = {{name = "COLUMN_1", type = "any"}},
+        metadata = {{name = "COLUMN_1", type = "unsigned"}},
         rows = {},
     })
 end
@@ -754,8 +754,8 @@ g.test_not_in_condition = function()
     t.assert_equals(r, {
         metadata = {
             {name = "tid", type = "integer"},
-            {name = "t.id", type = "integer"},
-            {name = "t.a", type = "number"},
+            {name = "id", type = "integer"},
+            {name = "a", type = "number"},
         },
         rows = {{1, 1, 4.2}},
     })

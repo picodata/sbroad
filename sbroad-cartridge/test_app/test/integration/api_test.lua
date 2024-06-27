@@ -380,10 +380,10 @@ g.test_bucket_id_in_join = function()
     t.assert_equals(err, nil)
     t.assert_equals(r, {
         metadata = {
-            {name = "t1.id", type = "integer"},
-            {name = "t1.name", type = "string"},
-            {name = "t1.sysOp", type = "integer"},
-            {name = "t2.a", type = "number"},
+            {name = "id", type = "integer"},
+            {name = "name", type = "string"},
+            {name = "sysOp", type = "integer"},
+            {name = "a", type = "number"},
         },
         rows = {},
     })

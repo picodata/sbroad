@@ -419,8 +419,8 @@ groupby_queries.test_with_join2 = function ()
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "arithmetic_space.c", type = "integer" },
-        { name = "Q.A1", type = "integer" },
+        { name = "c", type = "integer" },
+        { name = "A1", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -462,8 +462,8 @@ groupby_queries.test_with_join3 = function ()
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "R.i", type = "integer" },
-        { name = "Q.b", type = "integer" },
+        { name = "i", type = "integer" },
+        { name = "b", type = "integer" },
     })
 
     t.assert_items_equals(r.rows, {
@@ -865,7 +865,7 @@ groupby_queries.test_count = function()
 
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "CS", type = "decimal" },
+        { name = "CS", type = "integer" },
         { name = "COL_1" , type = "decimal" }
     })
 
@@ -1274,10 +1274,10 @@ groupby_queries.test_join_single6 = function()
     local api = cluster:server("api-1").net_box
 
     local expected_metadata = {
-        { name = "O.A", type = "decimal" },
-        { name = "O.B", type = "decimal" },
-        { name = "I.C", type = "integer" },
-        { name = "I.D", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "B", type = "integer" },
+        { name = "C", type = "integer" },
+        { name = "D", type = "integer" },
     }
     local expected_rows = {
         { 6, 4, 4, 6 },
@@ -1317,8 +1317,8 @@ groupby_queries.test_join_single7 = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "I.A", type = "decimal" },
-        { name = "O.D", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "D", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 6, 6 },
@@ -1337,8 +1337,8 @@ groupby_queries.test_join_single8 = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "I.A", type = "decimal" },
-        { name = "O.D", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "D", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 6, 6 },
@@ -1358,8 +1358,8 @@ groupby_queries.test_join_single9 = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "I.A", type = "decimal" },
-        { name = "O.D", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "D", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 6, 2 },
@@ -1376,8 +1376,8 @@ groupby_queries.test_join_single10 = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "I.A", type = "decimal" },
-        { name = "O.D", type = "integer" },
+        { name = "A", type = "decimal" },
+        { name = "D", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         { 6, 2 },
@@ -1574,10 +1574,10 @@ groupby_queries.test_avg = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "double" },
-        { name = "COL_2", type = "double" },
-        { name = "COL_3", type = "double" },
-        { name = "COL_4", type = "double" },
+        { name = "COL_1", type = "decimal" },
+        { name = "COL_2", type = "decimal" },
+        { name = "COL_3", type = "decimal" },
+        { name = "COL_4", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         {1, 1, 2.25, 2}
@@ -1596,8 +1596,8 @@ groupby_queries.test_avg_with_groupby = function()
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
         { name = "a", type = "integer" },
-        { name = "COL_1", type = "double" },
-        { name = "COL_2", type = "double" },
+        { name = "COL_1", type = "decimal" },
+        { name = "COL_2", type = "decimal" },
     })
     t.assert_items_equals(r.rows, {
         {1, 1.5, 1.5},
@@ -1656,8 +1656,8 @@ groupby_queries.test_min = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "scalar" },
-        { name = "COL_2", type = "scalar" },
+        { name = "COL_1", type = "integer" },
+        { name = "COL_2", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {1, 0}
@@ -1676,8 +1676,8 @@ groupby_queries.test_min_with_groupby = function()
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
         { name = "a", type = "integer" },
-        { name = "COL_1", type = "scalar" },
-        { name = "COL_2", type = "scalar" },
+        { name = "COL_1", type = "integer" },
+        { name = "COL_2", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {1, 1, 1},
@@ -1695,8 +1695,8 @@ groupby_queries.test_max = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "scalar" },
-        { name = "COL_2", type = "scalar" },
+        { name = "COL_1", type = "integer" },
+        { name = "COL_2", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {4, 1}
@@ -1715,8 +1715,8 @@ groupby_queries.test_max_with_groupby = function()
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
         { name = "a", type = "integer" },
-        { name = "COL_1", type = "scalar" },
-        { name = "COL_2", type = "scalar" },
+        { name = "COL_1", type = "integer" },
+        { name = "COL_2", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {1, 2, 2},
@@ -2404,10 +2404,10 @@ groupby_queries.test_having_full_query = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "T1.a", type = "integer" },
-        { name = "T2.B", type = "integer" },
-        { name = "T2.S", type = "string" },
-        { name = "T1.d", type = "integer" },
+        { name = "a", type = "integer" },
+        { name = "B", type = "integer" },
+        { name = "S", type = "string" },
+        { name = "d", type = "integer" },
     })
     t.assert_items_equals(r.rows, {
         {1, 1, "a", 2},
@@ -2500,7 +2500,7 @@ groupby_queries.test_having_inside_except = function()
     })
     t.assert_equals(err, nil)
     t.assert_equals(r.metadata, {
-        { name = "COL_1", type = "decimal" },
+        { name = "COL_1", type = "integer" },
     })
     t.assert_items_equals(r.rows, {})
 end
