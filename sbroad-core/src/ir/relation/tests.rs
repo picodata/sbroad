@@ -1,4 +1,5 @@
 use pretty_assertions::{assert_eq, assert_ne};
+use std::collections::HashSet;
 
 use super::*;
 use crate::ir::tests::column_user_non_null;
@@ -246,5 +247,48 @@ fn table_converting() {
     .unwrap();
 
     let s = serde_yaml::to_string(&t).unwrap();
-    assert_eq!(t, Table::seg_from_yaml(&s).unwrap());
+    assert_eq!(t, seg_from_yaml(&s).unwrap());
+}
+
+fn seg_from_yaml(s: &str) -> Result<Table, SbroadError> {
+    let table: Table = match serde_yaml::from_str(s) {
+        Ok(t) => t,
+        Err(e) => {
+            return Err(SbroadError::FailedTo(
+                Action::Serialize,
+                Some(Entity::Table),
+                format_smolstr!("{e:?}"),
+            ))
+        }
+    };
+    let mut uniq_cols: HashSet<&str> = HashSet::new();
+    let cols = table.columns.clone();
+
+    let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
+
+    if !no_duplicates {
+        return Err(SbroadError::DuplicatedValue(
+            "Table contains duplicate columns. Unable to convert to YAML.".into(),
+        ));
+    }
+
+    if let TableKind::ShardedSpace {
+        sharding_key: shard_key,
+        ..
+    } = &table.kind
+    {
+        let in_range = shard_key.positions.iter().all(|pos| *pos < cols.len());
+
+        if !in_range {
+            return Err(SbroadError::Invalid(
+                Entity::Value,
+                Some(format_smolstr!(
+                    "key positions must be less than {}",
+                    cols.len()
+                )),
+            ));
+        }
+    }
+
+    Ok(table)
 }

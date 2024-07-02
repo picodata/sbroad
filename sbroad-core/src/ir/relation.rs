@@ -9,7 +9,7 @@
 
 use ahash::AHashMap;
 use smol_str::{format_smolstr, SmolStr, ToSmolStr};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{self, Formatter};
 use tarantool::index::Metadata as IndexMetadata;
 use tarantool::space::{Field, FieldType as SpaceFieldType, Space, SpaceEngineType, SystemSpace};
@@ -640,53 +640,6 @@ impl Table {
             kind,
             tier: None,
         })
-    }
-
-    /// Table segment from YAML.
-    ///
-    /// # Errors
-    /// Returns `SbroadError` when the YAML-serialized table is invalid.
-    pub fn seg_from_yaml(s: &str) -> Result<Self, SbroadError> {
-        let table: Table = match serde_yaml::from_str(s) {
-            Ok(t) => t,
-            Err(e) => {
-                return Err(SbroadError::FailedTo(
-                    Action::Serialize,
-                    Some(Entity::Table),
-                    format_smolstr!("{e:?}"),
-                ))
-            }
-        };
-        let mut uniq_cols: HashSet<&str> = HashSet::new();
-        let cols = table.columns.clone();
-
-        let no_duplicates = cols.iter().all(|col| uniq_cols.insert(&col.name));
-
-        if !no_duplicates {
-            return Err(SbroadError::DuplicatedValue(
-                "Table contains duplicate columns. Unable to convert to YAML.".into(),
-            ));
-        }
-
-        if let TableKind::ShardedSpace {
-            sharding_key: shard_key,
-            ..
-        } = &table.kind
-        {
-            let in_range = shard_key.positions.iter().all(|pos| *pos < cols.len());
-
-            if !in_range {
-                return Err(SbroadError::Invalid(
-                    Entity::Value,
-                    Some(format_smolstr!(
-                        "key positions must be less than {}",
-                        cols.len()
-                    )),
-                ));
-            }
-        }
-
-        Ok(table)
     }
 
     /// Get position of the `bucket_id` system column in the table.
