@@ -45,7 +45,7 @@ workflow:
   - &cache-libso
     key: ${CI_COMMIT_REF_SLUG}-libso
     paths:
-      - target
+      - target/release/libsbroad_cartridge.so
 
 default:
   tags:
@@ -64,7 +64,7 @@ build-lib:
 
 .kaniko_image: &kaniko_image
   image:
-    name: docker-public.binary.picodata.io/kaniko-project/executor:v1.14.0-debug
+    name: docker-public.binary.picodata.io/kaniko-project/executor:v1.23.1-debug
     entrypoint: ['']
     pull_policy: [if-not-present]
 
