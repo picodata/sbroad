@@ -7,6 +7,9 @@ variables:
   DOCKER_AUTH_CONFIG: $DOCKER_AUTH_RW
   FF_NETWORK_PER_BUILD: 1
   RAW_REGISTRY: $RAW_PRIVATE_REGISTRY
+  FF_USE_FASTZIP: "true"
+  CACHE_COMPRESSION_LEVEL: "fastest"
+
 
   CI_DEBUG_SERVICES: "true"
 
@@ -28,9 +31,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "web"
 
 .cache-rocks: &cache-rocks
-  key:
-    files:
-      - sbroad-cartridge/sbroad-scm-1.rockspec
+  key: ${CI_COMMIT_REF_SLUG}
   paths:
     - target
 
@@ -40,12 +41,6 @@ workflow:
       - sbroad-cartridge/test_app/test_app-scm-1.rockspec
   paths:
     - sbroad-cartridge/test_app/.rocks
-
-.cache-libso:
-  - &cache-libso
-    key: ${CI_COMMIT_REF_SLUG}-libso
-    paths:
-      - target/release/libsbroad_cartridge.so
 
 default:
   tags:
@@ -59,7 +54,9 @@ build-lib:
   script:
     - make
   cache:
-    - <<: *cache-libso
+    - <<: *cache-rocks
+      policy: push
+    - <<: *cache-rocks-app
       policy: push
 
 .kaniko_image: &kaniko_image
@@ -95,7 +92,7 @@ build-stress-image:
   stage: build
   <<: *kaniko_image
   cache:
-    - <<: *cache-libso
+    - <<: *cache-rocks
       policy: pull
   variables:
     GIT_USERNAME: $CI_REGISTRY_USER
@@ -114,10 +111,10 @@ build-stress-image:
 .test:
   stage: test
   cache:
-    - <<: *cache-libso
-      policy: pull
     - <<: *cache-rocks
+      policy: pull    
     - <<: *cache-rocks-app
+      policy: pull
 
 lint:
   extends: [.test]
@@ -173,8 +170,6 @@ stress_tests:
       paths:
         - sbroad-cartridge/stress-test/$CI_COMMIT_BRANCH/${STRESS_TEST}/k6_summary.json
       policy: push
-    - <<: *cache-libso
-      policy: pull
     - <<: *cache-rocks
       policy: pull
     - <<: *cache-rocks-app
@@ -256,5 +251,5 @@ deploy-luarocks:
     - scp -o stricthostkeychecking=no sbroad*rock luarocks@94.26.239.246:/data/nginx/www/packrepo/luarocks
     - ssh -o stricthostkeychecking=no luarocks@94.26.239.246 "luarocks-admin make_manifest /data/nginx/www/packrepo/luarocks"
   cache:
-    - <<: *cache-libso
+    - <<: *cache-rocks
       policy: pull
