@@ -27,6 +27,7 @@ expression  ::= ('NOT'* (
                     | to_char
                     | to_date
                     | trim
+                    | substr
                     | '(' expression ')'
                     | 'NOT'? 'EXISTS' '(' (query | values) ')'
                     | '(' (query | values) ')'
@@ -53,6 +54,7 @@ to_date     ::= 'TO_DATE' '(' expression ',' format ')'
 trim        ::= 'TRIM' '('
                 ((('LEADING' | 'TRAILING' | 'BOTH')? removal_chars
                 | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM')? string ')'
+substr      ::= 'SUBSTR' '(' string ',' from (',' count)? ')'
 values      ::= 'VALUES'
                 ('(' (expression(',' expression)*) ')')
                 (',' ('(' (expression(',' expression)*) ')'))*
