@@ -1145,6 +1145,7 @@ dependencies = [
  "rmpv",
  "sbroad-proc",
  "serde",
+ "serde_bytes",
  "serde_yaml",
  "smol_str",
  "tarantool",

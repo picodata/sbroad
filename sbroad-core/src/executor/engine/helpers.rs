@@ -45,7 +45,7 @@ use crate::{
     executor::{
         bucket::Buckets,
         ir::{ExecutionPlan, QueryType},
-        protocol::{Binary, EncodedOptionalData, EncodedRequiredData, OptionalData, RequiredData},
+        protocol::{Binary, EncodedOptionalData, OptionalData, RequiredData},
         result::{ConsumerResult, MetadataColumn, ProducerResult},
         vtable::{VTableTuple, VirtualTable},
     },
@@ -172,9 +172,8 @@ pub fn build_required_binary(exec_plan: &mut ExecutionPlan) -> Result<Binary, Sb
         schema_info,
         tables,
     );
-    let encoded_required_data = EncodedRequiredData::try_from(required)?;
-    let raw_required_data: Vec<u8> = encoded_required_data.into();
-    Ok(raw_required_data.into())
+    let required_as_tuple = required.to_tuple()?;
+    Ok(required_as_tuple.into())
 }
 
 /// # Errors
@@ -248,10 +247,8 @@ pub fn build_optional_binary(mut exec_plan: ExecutionPlan) -> Result<Binary, Sbr
     };
     let vtables_meta = exec_plan.remove_vtables()?;
     let optional_data = OptionalData::new(exec_plan, ordered, vtables_meta);
-
-    let encoded_optional_data = EncodedOptionalData::try_from(optional_data)?;
-    let raw_optional_data: Vec<u8> = encoded_optional_data.into();
-    Ok(raw_optional_data.into())
+    let optional_as_tuple = optional_data.to_tuple()?;
+    Ok(optional_as_tuple.into())
 }
 
 /// Helper struct for storing optional data extracted
@@ -306,14 +303,31 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<DecodeOutput, SbroadError> {
             )),
         ));
     }
-    let data_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
+
+    // Decode required data.
+    let req_array_len = rmp::decode::read_array_len(&mut stream).map_err(|e| {
+        SbroadError::FailedTo(
+            Action::Decode,
+            Some(Entity::MsgPack),
+            format_smolstr!("required array length: {e:?}"),
+        )
+    })? as usize;
+    if req_array_len != 1 {
+        return Err(SbroadError::Invalid(
+            Entity::Tuple,
+            Some(format_smolstr!(
+                "expected array of 1 element in required, got {req_array_len}"
+            )),
+        ));
+    }
+    let req_data_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
         SbroadError::FailedTo(
             Action::Decode,
             Some(Entity::MsgPack),
             format_smolstr!("read required data length: {e:?}"),
         )
     })? as usize;
-    let mut data: Vec<u8> = vec![0_u8; data_len];
+    let mut data: Vec<u8> = vec![0_u8; req_data_len];
     stream.read_exact_buf(&mut data).map_err(|e| {
         SbroadError::FailedTo(
             Action::Decode,
@@ -324,6 +338,21 @@ pub fn decode_msgpack(tuple_buf: &[u8]) -> Result<DecodeOutput, SbroadError> {
 
     let mut optional_data = None;
     if array_len == 3 {
+        let opt_array_len = rmp::decode::read_array_len(&mut stream).map_err(|e| {
+            SbroadError::FailedTo(
+                Action::Decode,
+                Some(Entity::MsgPack),
+                format_smolstr!("optional array length: {e:?}"),
+            )
+        })? as usize;
+        if opt_array_len != 1 {
+            return Err(SbroadError::Invalid(
+                Entity::Tuple,
+                Some(format_smolstr!(
+                    "expected array of 1 element in optional, got {opt_array_len}"
+                )),
+            ));
+        }
         let opt_len = rmp::decode::read_str_len(&mut stream).map_err(|e| {
             SbroadError::FailedTo(
                 Action::Decode,

@@ -1,5 +1,5 @@
 use opentelemetry::Context;
-use rmp::decode::{read_array_len, Bytes, RmpRead};
+use rmp::decode::{read_array_len, read_str_len, Bytes, RmpRead};
 use serde::{Deserialize, Serialize};
 use smol_str::{format_smolstr, SmolStr};
 use std::collections::HashMap;
@@ -24,12 +24,108 @@ use super::vtable::VirtualTableMeta;
 
 pub type VTablesMeta = HashMap<NodeId, VirtualTableMeta>;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
-pub struct Binary(Vec<u8>);
+pub fn rust_allocated_tuple_from_bincode<T>(value: &T) -> Result<Tuple, SmolStr>
+where
+    T: ?Sized + serde::Serialize,
+{
+    let type_name = std::any::type_name::<T>();
+
+    let res = bincode::serialized_size(value);
+    let bincode_size = match res {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = format_smolstr!("failed getting serialized size for {type_name}: {e}");
+            tarantool::say_warn!("{msg}");
+            return Err(msg);
+        }
+    };
+    if bincode_size > u32::MAX as u64 {
+        let msg = format_smolstr!(
+            "serialized value of {type_name} is too big: {bincode_size} > {}",
+            u32::MAX
+        );
+        tarantool::say_warn!("{msg}");
+        return Err(msg);
+    }
+
+    let mut msgpack_header = [0_u8; 6];
+    // array of len 1
+    msgpack_header[0] = b'\x91';
+    // string with 32bit length
+    msgpack_header[1] = b'\xdb';
+    // 32bit length of string
+    msgpack_header[2..].copy_from_slice(&(bincode_size as u32).to_be_bytes());
+
+    let capacity = msgpack_header.len() + bincode_size as usize;
+    let mut builder = tarantool::tuple::TupleBuilder::rust_allocated();
+    builder.reserve(capacity);
+    builder.append(&msgpack_header);
+
+    let res = bincode::serialize_into(&mut builder, value);
+    match res {
+        Ok(()) => {}
+        Err(e) => {
+            let msg = format_smolstr!("failed serializing value of {type_name}: {e}");
+            tarantool::say_warn!("{msg}");
+            return Err(msg);
+        }
+    }
+
+    let tuple = builder.into_tuple();
+    let tuple = match tuple {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = format_smolstr!(
+                "failed creating a tuple from serialized data for {type_name}: {e}"
+            );
+            tarantool::say_warn!("{msg}");
+            return Err(msg);
+        }
+    };
+
+    Ok(tuple)
+}
+
+pub fn rust_allocated_tuple_from_bytes(data: &[u8]) -> Tuple {
+    let mut msgpack_header = [0_u8; 6];
+    // array of len 1
+    msgpack_header[0] = b'\x91';
+    // string with 32bit length
+    msgpack_header[1] = b'\xdb';
+    // 32bit length of string
+    msgpack_header[2..].copy_from_slice(&(data.len() as u32).to_be_bytes());
+
+    let capacity = msgpack_header.len() + data.len();
+    let mut builder = tarantool::tuple::TupleBuilder::rust_allocated();
+    builder.reserve(capacity);
+    builder.append(&msgpack_header);
+
+    builder.append(data);
+
+    let tuple = builder.into_tuple();
+    match tuple {
+        Ok(v) => v,
+        Err(e) => {
+            unreachable!("can't fail msgpack validation, msgpack header is valid: {e}");
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct Binary(#[serde(with = "serde_bytes")] Tuple);
 
 impl From<Vec<u8>> for Binary {
+    #[inline(always)]
     fn from(value: Vec<u8>) -> Self {
-        Binary(value)
+        let tuple = rust_allocated_tuple_from_bytes(&value);
+        Binary(tuple)
+    }
+}
+
+impl From<Tuple> for Binary {
+    #[inline(always)]
+    fn from(tuple: tarantool::tuple::Tuple) -> Self {
+        Binary(tuple)
     }
 }
 
@@ -40,8 +136,7 @@ where
     type Err = Void;
 
     fn push_into_lua(self, lua: L) -> Result<PushGuard<L>, (Void, L)> {
-        let encoded = unsafe { String::from_utf8_unchecked(self.0) };
-        encoded.push_into_lua(lua)
+        self.0.push_into_lua(lua)
     }
 }
 
@@ -52,8 +147,7 @@ where
     type Err = Void;
 
     fn push_to_lua(&self, lua: L) -> Result<PushGuard<L>, (Self::Err, L)> {
-        let encoded = unsafe { std::str::from_utf8_unchecked(&self.0) };
-        encoded.push_to_lua(lua)
+        self.0.push_to_lua(lua)
     }
 }
 
@@ -148,7 +242,7 @@ impl<'e> IntoIterator for &'e EncodedRows {
     fn into_iter(self) -> Self::IntoIter {
         let capacity = *self.marking.iter().max().unwrap_or(&0);
         EncodedRowsIter {
-            stream: Bytes::from(self.encoded.0.as_slice()),
+            stream: Bytes::from(self.encoded.0.data()),
             marking: &self.marking,
             position: 0,
             // Allocate buffer for encoded row.
@@ -175,6 +269,11 @@ impl<'e> Iterator for EncodedRowsIter<'e> {
         let cur_pos = self.position;
         self.position += 1;
         if cur_pos == 0 {
+            // Array of one element wrapping a string (binary) with an array of encoded tuples.
+            let wrapper_array_len = read_array_len(&mut self.stream).expect("wrapping array");
+            assert_eq!(wrapper_array_len, 1);
+            let str_len = read_str_len(&mut self.stream).expect("string length");
+            assert_eq!(str_len as usize, self.stream.remaining_slice().len());
             let array_len = read_array_len(&mut self.stream).expect("encoded rows length");
             assert_eq!(array_len as usize, self.marking.len());
         }
@@ -263,6 +362,16 @@ impl TryFrom<&[u8]> for RequiredData {
 }
 
 impl RequiredData {
+    const ENTITY: Entity = Entity::RequiredData;
+
+    /// Construct a tuple, i.e. msgpack array of one binary string
+    /// containing the bincode encoding of `self`.
+    #[inline(always)]
+    pub fn to_tuple(&self) -> Result<tarantool::tuple::Tuple, SbroadError> {
+        rust_allocated_tuple_from_bincode(self)
+            .map_err(|msg| SbroadError::FailedTo(Action::Serialize, Some(Self::ENTITY), msg))
+    }
+
     #[must_use]
     pub fn new(
         plan_id: SmolStr,
@@ -366,6 +475,16 @@ impl TryFrom<&[u8]> for OptionalData {
 }
 
 impl OptionalData {
+    const ENTITY: Entity = Entity::OptionalData;
+
+    /// Construct a tuple, i.e. msgpack array of one binary string
+    /// containing the bincode encoding of `self`.
+    #[inline(always)]
+    pub fn to_tuple(&self) -> Result<tarantool::tuple::Tuple, SbroadError> {
+        rust_allocated_tuple_from_bincode(self)
+            .map_err(|msg| SbroadError::FailedTo(Action::Serialize, Some(Self::ENTITY), msg))
+    }
+
     #[must_use]
     pub fn new(
         exec_plan: ExecutionPlan,
