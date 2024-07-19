@@ -354,7 +354,11 @@ impl<'binder> ParamsBinder<'binder> {
                         }
                     }
                 },
-                Node::Invalid(..) | Node::Parameter(..) | Node::Ddl(..) | Node::Acl(..) => {}
+                Node::Invalid(..)
+                | Node::Parameter(..)
+                | Node::Ddl(..)
+                | Node::Acl(..)
+                | Node::Plugin(_) => {}
             }
         }
 
@@ -529,6 +533,7 @@ impl<'binder> ParamsBinder<'binder> {
                 MutNode::Invalid(..)
                 | MutNode::Parameter(..)
                 | MutNode::Ddl(..)
+                | MutNode::Plugin(_)
                 | MutNode::Acl(..) => {}
             }
         }

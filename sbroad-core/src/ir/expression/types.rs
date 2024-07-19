@@ -39,6 +39,10 @@ impl Plan {
                 Entity::Node,
                 Some("code block node has no type".to_smolstr()),
             )),
+            Node::Plugin(_) => Err(SbroadError::Invalid(
+                Entity::Node,
+                Some("Plugin node has no type".to_smolstr()),
+            )),
         }
     }
 }

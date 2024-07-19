@@ -44,6 +44,9 @@ fn dispatch_query_inner(args: &RawBytes) -> anyhow::Result<RawProcResult> {
         if let Ok(true) = query.is_block() {
             bail!("blocks of commands are not supported");
         }
+        if let Ok(true) = query.is_plugin() {
+            bail!("plugin of commands are not supported");
+        }
 
         let metadata = try_get_metadata_from_plan(query.get_exec_plan())?;
         let dispatch_result = query.dispatch()?;

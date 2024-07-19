@@ -22,11 +22,15 @@ use tarantool::tlua;
 use operator::Arithmetic;
 use relation::{Table, Type};
 
+use self::parameters::Parameters;
+use self::relation::Relations;
+use self::transformation::redistribution::MotionPolicy;
 use crate::errors::Entity::Query;
 use crate::errors::{Action, Entity, SbroadError, TypeError};
 use crate::executor::engine::helpers::to_user;
 use crate::executor::engine::TableVersionMap;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::plugin::{MutPlugin, Plugin};
 use crate::ir::node::{
     Alias, ArenaType, ArithmeticExpr, BoolExpr, Case, Cast, Concat, Constant, ExprInParentheses,
     GroupBy, Having, Insert, Limit, Motion, MutNode, Node, Node136, Node224, Node32, Node64,
@@ -41,10 +45,6 @@ use crate::ir::tree::traversal::{
 use crate::ir::undo::TransformationLog;
 use crate::ir::value::Value;
 use crate::{collection, error, warn};
-
-use self::parameters::Parameters;
-use self::relation::Relations;
-use self::transformation::redistribution::MotionPolicy;
 
 // TODO: remove when rust version in bumped in module
 #[allow(elided_lifetimes_in_associated_constant)]
@@ -142,6 +142,10 @@ impl Nodes {
                 Node96::StableFunction(stable_func) => {
                     Node::Expression(Expression::StableFunction(stable_func))
                 }
+                Node96::CreatePlugin(create) => Node::Plugin(Plugin::Create(create)),
+                Node96::EnablePlugin(enable) => Node::Plugin(Plugin::Enable(enable)),
+                Node96::DisablePlugin(disable) => Node::Plugin(Plugin::Disable(disable)),
+                Node96::DropPlugin(drop) => Node::Plugin(Plugin::Drop(drop)),
             }),
             ArenaType::Arena136 => self
                 .arena136
@@ -163,6 +167,10 @@ impl Nodes {
                     Node136::RenameRoutine(rename_routine) => {
                         Node::Ddl(Ddl::RenameRoutine(rename_routine))
                     }
+                    Node136::MigrateTo(migrate) => Node::Plugin(Plugin::MigrateTo(migrate)),
+                    Node136::ChangeConfig(change_config) => {
+                        Node::Plugin(Plugin::ChangeConfig(change_config))
+                    }
                 }),
             ArenaType::Arena224 => self
                 .arena224
@@ -171,6 +179,12 @@ impl Nodes {
                     Node224::CreateIndex(create_index) => Node::Ddl(Ddl::CreateIndex(create_index)),
                     Node224::CreateTable(create_table) => Node::Ddl(Ddl::CreateTable(create_table)),
                     Node224::Invalid(inv) => Node::Invalid(inv),
+                    Node224::AppendServiceToTier(append) => {
+                        Node::Plugin(Plugin::AppendServiceToTier(append))
+                    }
+                    Node224::RemoveServiceFromTier(remove) => {
+                        Node::Plugin(Plugin::RemoveServiceFromTier(remove))
+                    }
                 }),
         }
     }
@@ -270,6 +284,10 @@ impl Nodes {
                     Node96::StableFunction(stable_func) => {
                         MutNode::Expression(MutExpression::StableFunction(stable_func))
                     }
+                    Node96::CreatePlugin(create) => MutNode::Plugin(MutPlugin::Create(create)),
+                    Node96::EnablePlugin(enable) => MutNode::Plugin(MutPlugin::Enable(enable)),
+                    Node96::DisablePlugin(disable) => MutNode::Plugin(MutPlugin::Disable(disable)),
+                    Node96::DropPlugin(drop) => MutNode::Plugin(MutPlugin::Drop(drop)),
                 }),
             ArenaType::Arena136 => {
                 self.arena136
@@ -303,6 +321,12 @@ impl Nodes {
                         Node136::RenameRoutine(rename_routine) => {
                             MutNode::Ddl(MutDdl::RenameRoutine(rename_routine))
                         }
+                        Node136::MigrateTo(migrate) => {
+                            MutNode::Plugin(MutPlugin::MigrateTo(migrate))
+                        }
+                        Node136::ChangeConfig(change_config) => {
+                            MutNode::Plugin(MutPlugin::ChangeConfig(change_config))
+                        }
                     })
             }
             ArenaType::Arena224 => {
@@ -315,6 +339,12 @@ impl Nodes {
                         Node224::Invalid(inv) => MutNode::Invalid(inv),
                         Node224::CreateTable(create_table) => {
                             MutNode::Ddl(MutDdl::CreateTable(create_table))
+                        }
+                        Node224::AppendServiceToTier(append) => {
+                            MutNode::Plugin(MutPlugin::AppendServiceToTier(append))
+                        }
+                        Node224::RemoveServiceFromTier(remove) => {
+                            MutNode::Plugin(MutPlugin::RemoveServiceFromTier(remove))
                         }
                     })
             }
@@ -1337,6 +1367,15 @@ impl Plan {
         Ok(matches!(top, Node::Acl(_)))
     }
 
+    /// Checks that plan is a plugin query.
+    ///
+    /// # Errors
+    /// - top node doesn't exist in the plan or is invalid.
+    pub fn is_plugin(&self) -> Result<bool, SbroadError> {
+        let top_id = self.get_top()?;
+        Ok(matches!(self.get_node(top_id)?, Node::Plugin(_)))
+    }
+
     /// Set top node of plan
     /// # Errors
     /// - top node doesn't exist in the plan.
@@ -1360,7 +1399,8 @@ impl Plan {
             | Node::Ddl(..)
             | Node::Invalid(..)
             | Node::Acl(..)
-            | Node::Block(..) => Err(SbroadError::Invalid(
+            | Node::Block(..)
+            | Node::Plugin(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!("node is not Relational type: {node:?}")),
             )),
@@ -1380,6 +1420,7 @@ impl Plan {
             | MutNode::Ddl(..)
             | MutNode::Invalid(..)
             | MutNode::Acl(..)
+            | MutNode::Plugin(..)
             | MutNode::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some("Node is not relational".into()),
@@ -1429,6 +1470,7 @@ impl Plan {
             | MutNode::Ddl(..)
             | MutNode::Invalid(..)
             | MutNode::Acl(..)
+            | MutNode::Plugin(..)
             | MutNode::Block(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(

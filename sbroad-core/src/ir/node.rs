@@ -13,6 +13,11 @@ use tarantool::{
     space::SpaceEngineType,
 };
 
+use super::{
+    ddl::AlterSystemType,
+    expression::{cast, FunctionFeature, TrimKind},
+    operator::{self, ConflictStrategy, JoinKind, OrderByElement, UpdateStrategy},
+};
 use crate::ir::{
     acl::{AlterOption, GrantRevokeType},
     ddl::{ColumnDef, Language, ParamDef, SetParamScopeType, SetParamValue},
@@ -22,17 +27,16 @@ use crate::ir::{
     transformation::redistribution::{ColumnPosition, MotionPolicy, Program},
     value::Value,
 };
-
-use super::{
-    ddl::AlterSystemType,
-    expression::{cast, FunctionFeature, TrimKind},
-    operator::{self, ConflictStrategy, JoinKind, OrderByElement, UpdateStrategy},
+use plugin::{
+    AppendServiceToTier, ChangeConfig, CreatePlugin, DisablePlugin, DropPlugin, EnablePlugin,
+    MigrateTo, MutPlugin, Plugin, PluginOwned, RemoveServiceFromTier,
 };
 
 pub mod acl;
 pub mod block;
 pub mod ddl;
 pub mod expression;
+pub mod plugin;
 pub mod relational;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, Hash, Copy)]
@@ -1106,6 +1110,10 @@ pub enum Node96 {
     StableFunction(StableFunction),
     DropProc(DropProc),
     Insert(Insert),
+    CreatePlugin(CreatePlugin),
+    EnablePlugin(EnablePlugin),
+    DisablePlugin(DisablePlugin),
+    DropPlugin(DropPlugin),
 }
 
 impl Node96 {
@@ -1119,6 +1127,10 @@ impl Node96 {
             Node96::StableFunction(stable_func) => {
                 NodeOwned::Expression(ExprOwned::StableFunction(stable_func))
             }
+            Node96::DropPlugin(drop_plugin) => NodeOwned::Plugin(PluginOwned::Drop(drop_plugin)),
+            Node96::CreatePlugin(create) => NodeOwned::Plugin(PluginOwned::Create(create)),
+            Node96::EnablePlugin(enable) => NodeOwned::Plugin(PluginOwned::Enable(enable)),
+            Node96::DisablePlugin(disable) => NodeOwned::Plugin(PluginOwned::Disable(disable)),
         }
     }
 }
@@ -1136,6 +1148,8 @@ pub enum Node136 {
     GrantPrivilege(GrantPrivilege),
     RevokePrivilege(RevokePrivilege),
     Update(Update),
+    MigrateTo(MigrateTo),
+    ChangeConfig(ChangeConfig),
 }
 
 impl Node136 {
@@ -1160,6 +1174,10 @@ impl Node136 {
             Node136::RenameRoutine(rename_routine) => {
                 NodeOwned::Ddl(DdlOwned::RenameRoutine(rename_routine))
             }
+            Node136::MigrateTo(migrate) => NodeOwned::Plugin(PluginOwned::MigrateTo(migrate)),
+            Node136::ChangeConfig(change_config) => {
+                NodeOwned::Plugin(PluginOwned::ChangeConfig(change_config))
+            }
         }
     }
 }
@@ -1170,6 +1188,8 @@ pub enum Node224 {
     Invalid(Invalid),
     CreateTable(CreateTable),
     CreateIndex(CreateIndex),
+    AppendServiceToTier(AppendServiceToTier),
+    RemoveServiceFromTier(RemoveServiceFromTier),
 }
 
 impl Node224 {
@@ -1183,6 +1203,12 @@ impl Node224 {
                 NodeOwned::Ddl(DdlOwned::CreateIndex(create_index))
             }
             Node224::Invalid(inv) => NodeOwned::Invalid(inv),
+            Node224::AppendServiceToTier(append) => {
+                NodeOwned::Plugin(PluginOwned::AppendServiceToTier(append))
+            }
+            Node224::RemoveServiceFromTier(remove) => {
+                NodeOwned::Plugin(PluginOwned::RemoveServiceFromTier(remove))
+            }
         }
     }
 }
@@ -1235,6 +1261,7 @@ pub enum Node<'nodes> {
     Block(Block<'nodes>),
     Parameter(&'nodes Parameter),
     Invalid(&'nodes Invalid),
+    Plugin(Plugin<'nodes>),
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -1247,6 +1274,7 @@ pub enum MutNode<'nodes> {
     Block(MutBlock<'nodes>),
     Parameter(&'nodes mut Parameter),
     Invalid(&'nodes mut Invalid),
+    Plugin(MutPlugin<'nodes>),
 }
 
 impl Node<'_> {
@@ -1260,6 +1288,7 @@ impl Node<'_> {
             Node::Block(block) => NodeOwned::Block(block.get_block_owned()),
             Node::Parameter(param) => NodeOwned::Parameter((*param).clone()),
             Node::Invalid(inv) => NodeOwned::Invalid((*inv).clone()),
+            Node::Plugin(plugin) => NodeOwned::Plugin(plugin.get_plugin_owned()),
         }
     }
 }
@@ -1275,6 +1304,7 @@ pub enum NodeOwned {
     Block(BlockOwned),
     Parameter(Parameter),
     Invalid(Invalid),
+    Plugin(PluginOwned),
 }
 
 impl From<NodeOwned> for NodeAligned {
@@ -1287,6 +1317,7 @@ impl From<NodeOwned> for NodeAligned {
             NodeOwned::Invalid(inv) => inv.into(),
             NodeOwned::Parameter(param) => param.into(),
             NodeOwned::Relational(rel) => rel.into(),
+            NodeOwned::Plugin(p) => p.into(),
         }
     }
 }

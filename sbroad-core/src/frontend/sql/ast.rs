@@ -35,6 +35,30 @@ impl ParseNode {
             value,
         }
     }
+
+    /// Return first child from node children.
+    ///
+    /// # Panics
+    ///
+    /// Panics a children array is empty.
+    pub(super) fn first_child(&self) -> usize {
+        *self
+            .children
+            .first()
+            .expect("could not find first child in node")
+    }
+
+    /// Return a nth child from node children.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no n-child in a children array.
+    pub(super) fn child_n(&self, n: usize) -> usize {
+        *self
+            .children
+            .get(n)
+            .unwrap_or_else(|| panic!("could find {n} child in node"))
+    }
 }
 
 /// A storage arena of the parse nodes

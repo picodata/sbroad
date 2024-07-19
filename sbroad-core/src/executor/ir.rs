@@ -805,6 +805,7 @@ impl ExecutionPlan {
                 NodeOwned::Invalid { .. }
                 | NodeOwned::Ddl { .. }
                 | NodeOwned::Acl { .. }
+                | NodeOwned::Plugin { .. }
                 | NodeOwned::Block { .. } => {
                     panic!("Unexpected node in `take_subtree`: {node:?}")
                 }

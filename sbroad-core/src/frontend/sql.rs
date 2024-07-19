@@ -48,7 +48,7 @@ use crate::ir::operator::{
 use crate::ir::relation::{Column, ColumnRole, TableKind, Type as RelationType};
 use crate::ir::tree::traversal::{LevelNode, PostOrder, EXPR_CAPACITY};
 use crate::ir::value::Value;
-use crate::ir::{OptionKind, OptionParamValue, OptionSpec, Plan};
+use crate::ir::{node::plugin, OptionKind, OptionParamValue, OptionSpec, Plan};
 use crate::otm::child_span;
 
 use crate::errors::Entity::AST;
@@ -58,6 +58,10 @@ use crate::ir::acl::{GrantRevokeType, Privilege};
 use crate::ir::aggregates::AggregateKind;
 use crate::ir::expression::NewColumnsSource;
 use crate::ir::helpers::RepeatableState;
+use crate::ir::node::plugin::{
+    AppendServiceToTier, ChangeConfig, CreatePlugin, DisablePlugin, DropPlugin, EnablePlugin,
+    MigrateTo, MigrateToOpts, RemoveServiceFromTier, ServiceSettings, SettingsPair,
+};
 use crate::ir::transformation::redistribution::ColumnPosition;
 use crate::warn;
 use sbroad_proc::otm_child_span;
@@ -2596,6 +2600,257 @@ fn parse_select(
     select_expr.populate_plan(plan)
 }
 
+fn parse_create_plugin(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<CreatePlugin, SbroadError> {
+    let mut if_not_exists = false;
+    let first_node_idx = node.first_child();
+    let plugin_name_child_idx = if let Rule::IfNotExists = ast.nodes.get_node(first_node_idx)?.rule
+    {
+        if_not_exists = true;
+        1
+    } else {
+        0
+    };
+
+    let plugin_name_idx = node.child_n(plugin_name_child_idx);
+    let name = parse_identifier(ast, plugin_name_idx)?;
+
+    let version_idx = node.child_n(plugin_name_child_idx + 1);
+    let version = parse_identifier(ast, version_idx)?;
+
+    let mut timeout = plugin::get_default_timeout();
+    if let Some(timeout_child_id) = node.children.get(plugin_name_child_idx + 2) {
+        timeout = get_timeout(ast, *timeout_child_id)?;
+    }
+
+    Ok(CreatePlugin {
+        name,
+        version,
+        if_not_exists,
+        timeout,
+    })
+}
+
+fn parse_drop_plugin(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+) -> Result<DropPlugin, SbroadError> {
+    let mut if_exists = false;
+    let first_node_idx = node.first_child();
+    let plugin_name_child_idx = if let Rule::IfExists = ast.nodes.get_node(first_node_idx)?.rule {
+        if_exists = true;
+        1
+    } else {
+        0
+    };
+
+    let plugin_name_idx = node.child_n(plugin_name_child_idx);
+    let name = parse_identifier(ast, plugin_name_idx)?;
+    let version_idx = node.child_n(plugin_name_child_idx + 1);
+    let version = parse_identifier(ast, version_idx)?;
+
+    let mut with_data = false;
+    let timeout_idx = if let Rule::WithData = ast.nodes.get_node(plugin_name_child_idx + 2)?.rule {
+        with_data = true;
+        plugin_name_child_idx + 3
+    } else {
+        plugin_name_child_idx + 2
+    };
+
+    let mut timeout = plugin::get_default_timeout();
+    if let Some(timeout_child_id) = node.children.get(timeout_idx) {
+        timeout = get_timeout(ast, *timeout_child_id)?;
+    }
+
+    Ok(DropPlugin {
+        name,
+        version,
+        if_exists,
+        with_data,
+        timeout,
+    })
+}
+
+fn parse_alter_plugin(
+    ast: &AbstractSyntaxTree,
+    plan: &mut Plan,
+    node: &ParseNode,
+) -> Result<Option<NodeId>, SbroadError> {
+    let plugin_name_idx = node.first_child();
+    let plugin_name = parse_identifier(ast, plugin_name_idx)?;
+
+    let idx = node.child_n(1);
+    let node = ast.nodes.get_node(idx)?;
+    let plugin_expr = match node.rule {
+        Rule::EnablePlugin => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+
+            let mut timeout = plugin::get_default_timeout();
+            if let Some(timeout_child_id) = node.children.get(1) {
+                timeout = get_timeout(ast, *timeout_child_id)?;
+            }
+
+            Some(
+                plan.nodes.push(
+                    EnablePlugin {
+                        name: plugin_name,
+                        version,
+                        timeout,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        Rule::DisablePlugin => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+
+            let mut timeout = plugin::get_default_timeout();
+            if let Some(timeout_child_id) = node.children.get(1) {
+                timeout = get_timeout(ast, *timeout_child_id)?;
+            }
+
+            Some(
+                plan.nodes.push(
+                    DisablePlugin {
+                        name: plugin_name,
+                        version,
+                        timeout,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        Rule::MigrateTo => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+            let opts = parse_plugin_opts::<MigrateToOpts>(ast, node, 1, |opts, node, idx| {
+                match node.rule {
+                    Rule::Timeout => {
+                        opts.timeout = get_timeout(ast, idx)?;
+                    }
+                    Rule::RollbackTimeout => {
+                        opts.rollback_timeout = get_timeout(ast, idx)?;
+                    }
+                    _ => {}
+                };
+                Ok(())
+            })?;
+
+            Some(
+                plan.nodes.push(
+                    MigrateTo {
+                        name: plugin_name,
+                        version,
+                        opts,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        Rule::AddServiceToTier => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+            let service_idx = node.child_n(1);
+            let service_name = parse_identifier(ast, service_idx)?;
+            let tier_idx = node.child_n(2);
+            let tier = parse_identifier(ast, tier_idx)?;
+
+            let mut timeout = plugin::get_default_timeout();
+            if let Some(timeout_child_id) = node.children.get(3) {
+                timeout = get_timeout(ast, *timeout_child_id)?;
+            }
+
+            Some(
+                plan.nodes.push(
+                    AppendServiceToTier {
+                        plugin_name,
+                        version,
+                        service_name,
+                        tier,
+                        timeout,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        Rule::RemoveServiceFromTier => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+            let service_idx = node.child_n(1);
+            let service_name = parse_identifier(ast, service_idx)?;
+            let tier_idx = node.child_n(2);
+            let tier = parse_identifier(ast, tier_idx)?;
+
+            let mut timeout = plugin::get_default_timeout();
+            if let Some(timeout_child_id) = node.children.get(3) {
+                timeout = get_timeout(ast, *timeout_child_id)?;
+            }
+
+            Some(
+                plan.nodes.push(
+                    RemoveServiceFromTier {
+                        plugin_name,
+                        version,
+                        service_name,
+                        tier,
+                        timeout,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        Rule::ChangeConfig => {
+            let version_idx = node.first_child();
+            let version = parse_identifier(ast, version_idx)?;
+
+            let mut key_value_grouped: HashMap<SmolStr, Vec<SettingsPair>> = HashMap::new();
+            let mut timeout = plugin::get_default_timeout();
+
+            for &i in &node.children[1..] {
+                let next_node = ast.nodes.get_node(i)?;
+                if next_node.rule == Rule::ConfigKV {
+                    let svc_idx = next_node.child_n(0);
+                    let svc = parse_identifier(ast, svc_idx)?;
+                    let key_idx = next_node.child_n(1);
+                    let key = parse_identifier(ast, key_idx)?;
+                    let value_idx = next_node.child_n(2);
+                    let value = parse_string_literal(ast, value_idx)?;
+                    let entry = key_value_grouped.entry(svc).or_default();
+                    entry.push(SettingsPair { key, value });
+                } else {
+                    timeout = get_timeout(ast, i)?;
+                    break;
+                }
+            }
+
+            Some(
+                plan.nodes.push(
+                    ChangeConfig {
+                        plugin_name,
+                        version,
+                        key_value_grouped: key_value_grouped
+                            .into_iter()
+                            .map(|(service, settings)| ServiceSettings {
+                                name: service,
+                                pairs: settings,
+                            })
+                            .collect::<Vec<_>>(),
+                        timeout,
+                    }
+                    .into(),
+                ),
+            )
+        }
+        _ => None,
+    };
+
+    Ok(plugin_expr)
+}
+
 /// Generate an alias for the unnamed projection expressions.
 #[must_use]
 pub fn get_unnamed_column_alias(pos: usize) -> SmolStr {
@@ -3811,6 +4066,21 @@ impl AbstractSyntaxTree {
                     let plan_id = plan.nodes.push(create_role.into());
                     map.add(id, plan_id);
                 }
+                Rule::CreatePlugin => {
+                    let create_plugin = parse_create_plugin(self, node)?;
+                    let plan_id = plan.nodes.push(create_plugin.into());
+                    map.add(id, plan_id);
+                }
+                Rule::DropPlugin => {
+                    let drop_plugin = parse_drop_plugin(self, node)?;
+                    let plan_id = plan.nodes.push(drop_plugin.into());
+                    map.add(id, plan_id);
+                }
+                Rule::AlterPlugin => {
+                    if let Some(node_id) = parse_alter_plugin(self, &mut plan, node)? {
+                        map.add(id, node_id);
+                    }
+                }
                 Rule::SetParam => {
                     let set_param_node = parse_set_param(self, node)?;
                     let plan_id = plan.nodes.push(set_param_node.into());
@@ -3907,3 +4177,19 @@ impl Plan {
 pub mod ast;
 pub mod ir;
 pub mod tree;
+
+fn parse_plugin_opts<T: Default>(
+    ast: &AbstractSyntaxTree,
+    node: &ParseNode,
+    start_from: usize,
+    mut with_opt_node: impl FnMut(&mut T, &ParseNode, usize) -> Result<(), SbroadError>,
+) -> Result<T, SbroadError> {
+    let mut opts = T::default();
+
+    for &param_idx in &node.children[start_from..] {
+        let param_node = ast.nodes.get_node(param_idx)?;
+        with_opt_node(&mut opts, param_node, param_idx)?;
+    }
+
+    Ok(opts)
+}

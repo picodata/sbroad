@@ -833,6 +833,10 @@ impl Plan {
                 Entity::Distribution,
                 Some("Failed to get distribution for an invalid node.".to_smolstr()),
             )),
+            Node::Plugin(_) => Err(SbroadError::Invalid(
+                Entity::Distribution,
+                Some("Failed to get distribution for a PLUGIN block node.".to_smolstr()),
+            )),
         }
     }
 

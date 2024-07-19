@@ -21,6 +21,7 @@ impl Plan {
             | Node::Ddl(..)
             | Node::Acl(..)
             | Node::Invalid(..)
+            | Node::Plugin(_)
             | Node::Parameter(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(
@@ -43,6 +44,7 @@ impl Plan {
             | MutNode::Ddl(..)
             | MutNode::Acl(..)
             | MutNode::Invalid(..)
+            | MutNode::Plugin(_)
             | MutNode::Parameter(..) => Err(SbroadError::Invalid(
                 Entity::Node,
                 Some(format_smolstr!(

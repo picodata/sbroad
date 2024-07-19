@@ -144,13 +144,13 @@ where
                 }
                 plan.version_map = table_version_map;
             }
-            if !plan.is_ddl()? && !plan.is_acl()? {
+            if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_plugin()? {
                 cache.put(key, plan.clone())?;
             }
         }
         if plan.is_block()? {
             plan.bind_params(params)?;
-        } else if !plan.is_ddl()? && !plan.is_acl()? {
+        } else if !plan.is_ddl()? && !plan.is_acl()? && !plan.is_plugin()? {
             plan.bind_params(params)?;
             plan.apply_options()?;
             plan.optimize()?;
@@ -340,6 +340,14 @@ where
     /// - Plan is invalid
     pub fn is_acl(&self) -> Result<bool, SbroadError> {
         self.exec_plan.get_ir_plan().is_acl()
+    }
+
+    /// Checks that query is for plugin.
+    ///
+    /// # Errors
+    /// - Plan is invalid
+    pub fn is_plugin(&self) -> Result<bool, SbroadError> {
+        self.exec_plan.get_ir_plan().is_plugin()
     }
 
     /// Checks that query is an empty query.

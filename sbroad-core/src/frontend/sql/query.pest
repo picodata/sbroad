@@ -1,4 +1,4 @@
-Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL | EmptyQuery) ~ EOF }
+Command = _{ SOI ~ (Query | ExplainQuery | Block | DDL | ACL | Plugin | EmptyQuery) ~ EOF }
 
 // Helper rule to denote we have to update plan relations from metadata
 // (with Table which name corresponds to current node).
@@ -7,6 +7,26 @@ Table     = @{ Identifier }
 // Helper rule to denote we have to create relational scan node.
 ScanTable = { Table }
 ScanCteOrTable = @{ Table }
+
+Plugin = _{ CreatePlugin | DropPlugin | AlterPlugin }
+    CreatePlugin = { ^"create" ~ ^"plugin" ~ IfNotExists? ~ Identifier ~ PluginVersion ~ TimeoutOption? }
+        PluginVersion = @{ Unsigned ~ "." ~ Unsigned ~ "." ~ Unsigned }
+        IfNotExists = { ^"if" ~ ^"not" ~ ^"exists" }
+    DropPlugin = { ^"drop" ~ ^"plugin" ~ IfExists? ~ Identifier ~ PluginVersion ~ WithData? ~ TimeoutOption? }
+        IfExists = { ^"if" ~ ^"exists" }
+        WithData = { ^"with" ~ ^"data" }
+    AlterPlugin = { ^"alter" ~ ^"plugin" ~ Identifier ~ AlterVariant }
+        AlterVariant = _{ EnablePlugin | DisablePlugin | MigrateTo | AddServiceToTier | RemoveServiceFromTier | ChangeConfig }
+        EnablePlugin = { PluginVersion ~  ^"enable" ~ TimeoutOption? }
+        DisablePlugin = { PluginVersion ~ ^"disable" ~ TimeoutOption? }
+        MigrateTo = { ^"migrate" ~ ^"to" ~ PluginVersion ~ MigrateUpOption? }
+            RollbackTimeout = { ^"rollback_timeout" ~ "=" ~ Duration }
+            MigrateUpOptionParam = _{ Timeout | RollbackTimeout }
+            MigrateUpOption = _{ ^"option" ~ "(" ~ MigrateUpOptionParam ~ ("," ~ MigrateUpOptionParam)* ~ ")" }
+        AddServiceToTier = { PluginVersion ~ ^"add" ~ ^"service" ~ Identifier ~ ^"to" ~ ^"tier" ~ Identifier ~ TimeoutOption? }
+        RemoveServiceFromTier = { PluginVersion ~ ^"remove" ~ ^"service" ~ Identifier ~ ^"from" ~ ^"tier" ~ Identifier ~ TimeoutOption? }
+        ChangeConfig = { PluginVersion ~ ^"set" ~ ConfigKV ~ ("," ~ ConfigKV)* ~ TimeoutOption? }
+            ConfigKV = { Identifier ~ ^"." ~ Identifier ~ "=" ~ SingleQuotedString }
 
 ACL = _{ DropRole | DropUser | CreateRole | CreateUser | AlterUser | GrantPrivilege | RevokePrivilege }
     CreateUser = {
