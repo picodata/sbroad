@@ -361,7 +361,18 @@ mod test {
                 }),
             },
             TestCase {
-                sql: r#"DROP PLUGIN IF EXISTS "abcde" 1.1.1 WITH DATA option(timeout=10)"#,
+                sql: r#"DROP PLUGIN IF EXISTS "abcde" 1.1.1 WITH DATA option(timeout=11)"#,
+                arena_type: ArenaType::Arena96,
+                expected: PluginOwned::Drop(DropPlugin {
+                    name: SmolStr::from("abcde"),
+                    version: SmolStr::from("1.1.1"),
+                    if_exists: true,
+                    with_data: true,
+                    timeout: Decimal::from(11),
+                }),
+            },
+            TestCase {
+                sql: r#"DROP PLUGIN IF EXISTS "abcde" 1.1.1 WITH DATA"#,
                 arena_type: ArenaType::Arena96,
                 expected: PluginOwned::Drop(DropPlugin {
                     name: SmolStr::from("abcde"),

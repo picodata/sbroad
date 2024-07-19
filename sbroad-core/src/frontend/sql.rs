@@ -2879,12 +2879,14 @@ fn parse_drop_plugin(
     };
 
     let plugin_name_idx = node.child_n(plugin_name_child_idx);
+
     let name = parse_identifier(ast, plugin_name_idx)?;
     let version_idx = node.child_n(plugin_name_child_idx + 1);
     let version = parse_identifier(ast, version_idx)?;
 
     let mut with_data = false;
-    let timeout_idx = if let Rule::WithData = ast.nodes.get_node(plugin_name_child_idx + 2)?.rule {
+    let next_node_idx = node.child_n(plugin_name_child_idx + 2);
+    let next_child_n = if let Rule::WithData = ast.nodes.get_node(next_node_idx)?.rule {
         with_data = true;
         plugin_name_child_idx + 3
     } else {
@@ -2892,7 +2894,7 @@ fn parse_drop_plugin(
     };
 
     let mut timeout = plugin::get_default_timeout();
-    if let Some(timeout_child_id) = node.children.get(timeout_idx) {
+    if let Some(timeout_child_id) = node.children.get(next_child_n) {
         timeout = get_timeout(ast, *timeout_child_id)?;
     }
 
