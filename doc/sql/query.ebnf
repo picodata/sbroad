@@ -19,47 +19,61 @@ select      ::= 'SELECT' 'DISTINCT'? projection (',' projection)* 'FROM' scan
                 (('UNION' 'ALL'? | 'EXCEPT' 'DISTINCT'?) select)?
 projection  ::= (table '.')? '*' | expression (('AS')? name)? | aggregate
 scan        ::= (table | '(' (query | values) ')') ('AS'? name)?
-expression  ::= (table '.')? column
-               | expression ('IS' ('NOT')? 'NULL')
-               | expression ('OR' | 'AND' | '*' | '/' | '+' | '-' | '=' | '>' | '<' | '>=' | '<=' | ('<>' | '!=')) expression
-               | expression ('NOT')? 'BETWEEN' expression 'AND' expression
-               | ('NOT')? 'EXISTS' '(' (query | values) ')'
-               | expression ('NOT')? 'IN' '(' (query | values) ')'
-               | (table '.')? column
-               | '(' (query | values) ')'
-               | literal
-               | cast
-               | ('(' (expression(',' expression)*) ')')
-               | 'NOT' expression
-               | '(' expression ')'
-               | 'CURRENT_DATE'
-               | 'TO_DATE' '(' expression',' format ')'
-               | 'TO_CHAR' '(' expression',' format ')'
-               | 'TRIM' '(' ((('LEADING' | 'TRAILING' | 'BOTH')? expression) | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM' expression ')'
-               | 'CASE' expression? ('WHEN' expression 'THEN' expression)+ ('ELSE' expression)? 'END'
+expression  ::= ('NOT'* (
+                    (table '.')? column
+                    | literal
+                    | case
+                    | cast
+                    | current_date
+                    | to_char
+                    | to_date
+                    | trim
+                    | '(' expression ')'
+                    | 'NOT'? 'EXISTS' '(' (query | values) ')'
+                    | '(' (query | values) ')'
+                    | '(' expression (',' expression)* ')'
+                ) ('IS' 'NOT'? 'NULL')?)
+                | expression
+                (
+                    'NOT'? 'BETWEEN' expression 'AND'
+                    | ('+' | '-' | '*' | '/')
+                    | ('<>' | '!=' | '>=' | '>' | '<=' | '<' | '=' | 'NOT'? 'IN')
+                    | '||'
+                    | 'AND'
+                    | 'OR'
+                )
+                expression
 aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ( 'DISTINCT'?  expression ) ')'
                | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
+case        ::= 'CASE' expression?
+                ('WHEN' expression 'THEN' expression)+
+                ('ELSE' expression)? 'END'
 cast        ::= 'CAST' '(' expression 'AS' type ')'
+to_char     ::= 'TO_CHAR' '(' expression ',' format ')'
+to_date     ::= 'TO_DATE' '(' expression ',' format ')'
+trim        ::= 'TRIM' '('
+                ((('LEADING' | 'TRAILING' | 'BOTH')? removal_chars
+                | ('LEADING' | 'TRAILING' | 'BOTH')) 'FROM')? string ')'
 values      ::= 'VALUES'
                 ('(' (expression(',' expression)*) ')')
                 (',' ('(' (expression(',' expression)*) ')'))*
 literal     ::= 'TRUE'
                 | 'FALSE'
                 | 'NULL'
-                | '?'
-                | ('$' unsigned)
-                | integer
-                | unsigned
-                | double
                 | decimal
+                | double
+                | integer
                 | string
+                | unsigned
+                | ('$' unsigned)
+                | '?'
 
 dml         ::= (call | delete | insert | update)
                 ( 'OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
                 ')')?
-call        ::= 'CALL' procedure '(' literal? (',' literal)* ')'
+call        ::= 'CALL' procedure '(' (literal (',' literal)*)? ')'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? (query | values)
                 ('ON' 'CONFLICT' 'DO'  ('NOTHING' | 'REPLACE' | 'FAIL'))?
@@ -154,14 +168,17 @@ drop_procedure ::= 'DROP' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
 drop_table     ::= 'DROP' 'TABLE' table
 drop_role      ::= 'DROP' 'ROLE' role
 drop_user      ::= 'DROP' 'USER' user
-type        ::= ('BOOL' | 'BOOLEAN')
+type        ::= 'BOOL'
+                | 'BOOLEAN'
                 | 'DATETIME'
                 | 'DECIMAL'
                 | 'DOUBLE'
-                | ('INT' | 'INTEGER')
+                | 'INT'
+                | 'INTEGER'
                 | 'NUMBER'
                 | 'SCALAR'
-                | ('STRING' | 'TEXT')
+                | 'STRING'
+                | 'TEXT'
                 | 'UNSIGNED'
                 | 'UUID'
-                | 'VARCHAR' ('(' length ')')?
+                | 'VARCHAR' '(' length ')'
