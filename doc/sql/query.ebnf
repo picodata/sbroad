@@ -1,8 +1,7 @@
 statement   ::= explain | ddl | dml | dql | acl | call
-explain     ::= 'EXPLAIN' ( dml | dql )
-
+explain     ::= 'EXPLAIN' (dml | dql)
 dql         ::= (query | values)
-                ( 'OPTION' '('
+                ('OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
                 ')')?
@@ -43,7 +42,7 @@ expression  ::= ('NOT'* (
                     | 'OR'
                 )
                 expression
-aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ( 'DISTINCT'?  expression ) ')'
+aggregate   ::= ('AVG' | 'COUNT' | 'MAX' | 'MIN' | 'SUM' | 'TOTAL') '(' ('DISTINCT'?  expression) ')'
                | 'GROUP_CONCAT' '(' expression ','  "'" string "'" ')'
 case        ::= 'CASE' expression?
                 ('WHEN' expression 'THEN' expression)+
@@ -67,9 +66,8 @@ literal     ::= 'TRUE'
                 | unsigned
                 | ('$' unsigned)
                 | '?'
-
 dml         ::= (call | delete | insert | update)
-                ( 'OPTION' '('
+                ('OPTION' '('
                     (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned)
                     (',' (('VTABLE_MAX_ROWS' | 'SQL_VDBE_MAX_STEPS') '=' unsigned))*
                 ')')?
@@ -80,7 +78,6 @@ insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? (query | v
 update      ::= 'UPDATE' table 'SET'
                 column '=' expression (',' column '=' expression)*
                 ('FROM' scan)? ('WHERE' expression)?
-
 acl         ::= (alter_user | create_role | create_user | drop_role | drop_user | grant | revoke)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
 revoke      ::= 'REVOKE' (
@@ -107,11 +104,9 @@ grant       ::= 'GRANT' (
                     | role
                 )
                 'TO' (role | user)
-
 ddl         ::= (alter_procedure | create_index | create_procedure | create_table
                 | drop_index | drop_procedure | drop_table)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
-
 alter_procedure ::= 'ALTER' 'PROCEDURE' procedure ('(' type (',' type)* ')')?
                      'RENAME' 'TO' procedure
 create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
@@ -125,7 +120,7 @@ create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
                          | ('RUN_SIZE_RATIO' '=' decimal)
                          | ('DIMENSION' '=' unsigned)
                          | ('DISTANCE' '=' ('EUCLID' | 'MANHATTAN'))
-                         | ('HINT' '=' (TRUE | FALSE))
+                         | ('HINT' '=' ('TRUE' | 'FALSE'))
                      )
                      (
                         ','
@@ -137,14 +132,14 @@ create_index ::= 'CREATE' 'UNIQUE'? 'INDEX' index 'ON' table
                              | ('RUN_SIZE_RATIO' '=' decimal)
                              | ('DIMENSION' '=' unsigned)
                              | ('DISTANCE' '=' ('EUCLID' | 'MANHATTAN'))
-                             | ('HINT' '=' (TRUE | FALSE))
+                             | ('HINT' '=' ('TRUE' | 'FALSE'))
                          )
                      )*
                  ')')?
 create_procedure ::= 'CREATE' 'PROCEDURE' procedure '(' type (',' type)* ')'
-                     ('language' 'SQL')? (
-                         ('as' '$$' (insert | update | delete) '$$')
-                         | ('begin' 'atomic' (insert | update | delete) 'end')
+                     ('LANGUAGE' 'SQL')? (
+                         ('AS' '$$' (insert | update | delete) '$$')
+                         | ('BEGIN' 'ATOMIC' (insert | update | delete) 'END')
                      )
 create_role    ::= 'CREATE' 'ROLE' role
 create_table   ::= 'CREATE' 'TABLE' table
