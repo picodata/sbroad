@@ -319,7 +319,8 @@ fn subtree_next<'plan>(
                     }
                     None
                 }
-                Relational::ScanCte { child, output, .. } => {
+                Relational::ScanCte { child, output, .. }
+                | Relational::Limit { child, output, .. } => {
                     let step = *iter.get_child().borrow();
                     if step == 0 {
                         *iter.get_child().borrow_mut() += 1;

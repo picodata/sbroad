@@ -121,12 +121,14 @@ fn reuse_union_in_cte() {
         projection ("CTE"."A"::string -> "A")
             scan cte "CTE"($0)
 subquery $0:
-motion [policy: full]
-                    union
-                        projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
-                            scan "test_space"
-                        projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
-                            scan "test_space"
+projection ("CTE"."FIRST_NAME"::string -> "A")
+                    scan "CTE"
+                        motion [policy: full]
+                            union
+                                projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                                    scan "test_space"
+                                projection ("test_space"."FIRST_NAME"::string -> "FIRST_NAME")
+                                    scan "test_space"
 execution options:
 sql_vdbe_max_steps = 45000
 vtable_max_rows = 5000

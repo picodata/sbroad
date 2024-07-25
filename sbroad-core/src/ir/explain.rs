@@ -897,6 +897,7 @@ enum ExplainNode {
     SubQuery(SubQuery),
     Motion(Motion),
     Cte(SmolStr, Ref),
+    Limit(u64),
 }
 
 impl Display for ExplainNode {
@@ -923,6 +924,7 @@ impl Display for ExplainNode {
             ExplainNode::Update(u) => u.to_smolstr(),
             ExplainNode::SubQuery(s) => s.to_smolstr(),
             ExplainNode::Motion(m) => m.to_smolstr(),
+            ExplainNode::Limit(l) => format_smolstr!("limit {l}"),
         };
 
         write!(f, "{s}")
@@ -1343,6 +1345,17 @@ impl FullExplain {
                     current_node.children.push(values);
 
                     Some(ExplainNode::Delete(relation.to_smolstr()))
+                }
+                Relational::Limit { limit, .. } => {
+                    let child = stack.pop().ok_or_else(|| {
+                        SbroadError::UnexpectedNumberOfValues(
+                            "Limit node must have exactly one child".into(),
+                        )
+                    })?;
+
+                    current_node.children.push(child);
+
+                    Some(ExplainNode::Limit(*limit))
                 }
             };
             stack.push(current_node);

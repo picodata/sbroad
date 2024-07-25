@@ -848,6 +848,7 @@ fn parse_select_full(
     ast: &AbstractSyntaxTree,
     node_id: usize,
     map: &mut Translation,
+    plan: &mut Plan,
 ) -> Result<(), SbroadError> {
     let node = ast.nodes.get_node(node_id)?;
     assert_eq!(node.rule, Rule::SelectFull);
@@ -856,16 +857,50 @@ fn parse_select_full(
         let child_node = ast.nodes.get_node(*child_id)?;
         match child_node.rule {
             Rule::Cte => continue,
-            Rule::SelectWithOptionalContinuation => {
-                let select_id = map.get(*child_id)?;
-                top_id = Some(select_id);
+            Rule::SelectStatement => {
+                top_id = Some(parse_select_statement(ast, *child_id, map, plan)?);
             }
             _ => unreachable!("Unexpected node: {child_node:?}"),
         }
     }
-    let top_id = top_id.expect("Select must contain at least one child");
+    let top_id = top_id.expect("SelectFull must have at least one child");
     map.add(node_id, top_id);
     Ok(())
+}
+
+fn parse_select_statement(
+    ast: &AbstractSyntaxTree,
+    node_id: usize,
+    map: &mut Translation,
+    plan: &mut Plan,
+) -> Result<usize, SbroadError> {
+    let node = ast.nodes.get_node(node_id)?;
+    assert_eq!(node.rule, Rule::SelectStatement);
+    let mut top_id = None;
+    let mut limit = None;
+    for child_id in &node.children {
+        let child_node = ast.nodes.get_node(*child_id)?;
+        match child_node.rule {
+            Rule::SelectWithOptionalContinuation => {
+                let select_id = map.get(*child_id)?;
+                top_id = Some(select_id);
+            }
+            Rule::Limit => {
+                let child_node = ast.nodes.get_node(child_node.children[0])?;
+                match child_node.rule {
+                    Rule::Unsigned => limit = Some(parse_unsigned(child_node)?),
+                    Rule::LimitAll => (), // LIMIT ALL is the same as omitting the LIMIT clause
+                    _ => unreachable!("Unexpected limit child: {child_node:?}"),
+                }
+            }
+            _ => unreachable!("Unexpected node: {child_node:?}"),
+        }
+    }
+    let top_id = top_id.expect("SelectStatement must have at least one child");
+    if let Some(limit) = limit {
+        return plan.add_limit(top_id, limit);
+    }
+    Ok(top_id)
 }
 
 fn parse_scan_cte_or_table<M>(
@@ -933,8 +968,12 @@ fn parse_cte(
                 let column_name = parse_normalized_identifier(ast, *child_id)?;
                 columns.push(column_name);
             }
-            Rule::SelectWithOptionalContinuation | Rule::Values => {
+            Rule::Values => {
                 let select_id = map.get(*child_id)?;
+                top_id = Some(select_id);
+            }
+            Rule::SelectStatement => {
+                let select_id = parse_select_statement(ast, *child_id, map, plan)?;
                 top_id = Some(select_id);
             }
             _ => unreachable!("Unexpected node: {child_node:?}"),
@@ -1147,6 +1186,25 @@ fn parse_trim<M: Metadata>(
     Ok(trim)
 }
 
+fn parse_unsigned(ast_node: &ParseNode) -> Result<u64, SbroadError> {
+    assert!(matches!(ast_node.rule, Rule::Unsigned));
+    if let Some(str_value) = ast_node.value.as_ref() {
+        str_value.parse::<u64>().map_err(|_| {
+            SbroadError::Invalid(
+                Entity::Query,
+                Some(format_smolstr!(
+                    "option value is not unsigned integer: {str_value}"
+                )),
+            )
+        })
+    } else {
+        Err(SbroadError::Invalid(
+            AST,
+            Some("Unsigned node has value".into()),
+        ))
+    }
+}
+
 /// Common logic for `SqlVdbeMaxSteps` and `VTableMaxRows` parsing.
 fn parse_option<M: Metadata>(
     ast: &AbstractSyntaxTree,
@@ -1168,23 +1226,7 @@ fn parse_option<M: Metadata>(
             OptionParamValue::Parameter { plan_id }
         }
         Rule::Unsigned => {
-            let v = {
-                if let Some(str_value) = ast_node.value.as_ref() {
-                    str_value.parse::<u64>().map_err(|_| {
-                        SbroadError::Invalid(
-                            Entity::Query,
-                            Some(format_smolstr!(
-                                "option value is not unsigned integer: {str_value}"
-                            )),
-                        )
-                    })?
-                } else {
-                    return Err(SbroadError::Invalid(
-                        AST,
-                        Some("Unsigned node has value".into()),
-                    ));
-                }
-            };
+            let v = parse_unsigned(ast_node)?;
             OptionParamValue::Value {
                 val: Value::Unsigned(v),
             }
@@ -2908,7 +2950,7 @@ impl AbstractSyntaxTree {
                     map.add(id, select_plan_node_id);
                 }
                 Rule::SelectFull => {
-                    parse_select_full(self, id, &mut map)?;
+                    parse_select_full(self, id, &mut map, &mut plan)?;
                 }
                 Rule::Projection => {
                     let (rel_child_id, other_children) = node

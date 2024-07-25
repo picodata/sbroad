@@ -3744,6 +3744,8 @@ mod insert;
 #[cfg(test)]
 mod join;
 #[cfg(test)]
+mod limit;
+#[cfg(test)]
 mod params;
 #[cfg(test)]
 mod single;

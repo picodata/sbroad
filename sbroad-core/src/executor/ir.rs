@@ -321,7 +321,8 @@ impl ExecutionPlan {
             | Relational::Update { .. }
             | Relational::Values { .. }
             | Relational::Having { .. }
-            | Relational::ValuesRow { .. } => Ok(*top_id),
+            | Relational::ValuesRow { .. }
+            | Relational::Limit { .. } => Ok(*top_id),
             Relational::Motion { .. } | Relational::Insert { .. } | Relational::Delete { .. } => {
                 Err(SbroadError::Invalid(
                     Entity::Relational,
@@ -584,7 +585,8 @@ impl ExecutionPlan {
                         | Relational::ScanCte { .. }
                         | Relational::Union { .. }
                         | Relational::UnionAll { .. }
-                        | Relational::Values { .. } => {}
+                        | Relational::Values { .. }
+                        | Relational::Limit { .. } => {}
                     }
 
                     for child_id in rel.mut_children() {

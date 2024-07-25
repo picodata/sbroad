@@ -420,7 +420,8 @@ where
                 | Relational::Having { output, .. }
                 | Relational::OrderBy { output, .. }
                 | Relational::ScanCte { output, .. }
-                | Relational::ScanSubQuery { output, .. } => {
+                | Relational::ScanSubQuery { output, .. }
+                | Relational::Limit { output, .. } => {
                     let child_id = ir_plan.get_relational_child(node_id, 0)?;
                     let child_rel = ir_plan.get_relation_node(child_id)?;
                     let child_buckets = self

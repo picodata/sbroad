@@ -2169,6 +2169,35 @@ impl Plan {
                 | Relational::ValuesRow { output, .. } => {
                     self.set_distribution(output)?;
                 }
+                Relational::Limit { output, limit, .. } => {
+                    let rel_child_id = self.get_relational_child(id, 0)?;
+                    let child_dist =
+                        self.get_distribution(self.get_relational_output(rel_child_id)?)?;
+
+                    match child_dist {
+                        Distribution::Single | Distribution::Global => {
+                            // All rows on a single node, no motion needed.
+                            self.set_dist(output, child_dist.clone())?;
+                        }
+                        Distribution::Any | Distribution::Segment { .. } => {
+                            // Rows are distributed, so motion needed with full policy to
+                            // bring them on a single node.
+                            let child_dist = child_dist.clone();
+                            // We don't need more than limit rows, so we can add a limit for the
+                            // queries sent during the map stage.
+                            let limit_id = self.add_limit(id, limit)?;
+                            self.set_dist(
+                                self.get_relational_output(limit_id)?,
+                                Distribution::Single,
+                            )?;
+                            old_new.insert(id, limit_id);
+                            let mut strategy = Strategy::new(limit_id);
+                            strategy.add_child(id, MotionPolicy::Full, Program::default());
+                            self.create_motion_nodes(strategy)?;
+                            self.set_dist(output, child_dist)?;
+                        }
+                    }
+                }
                 Relational::OrderBy { output, .. } => {
                     let rel_child_id = self.get_relational_child(id, 0)?;
 

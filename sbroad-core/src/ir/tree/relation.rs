@@ -98,7 +98,9 @@ fn relational_next<'nodes>(
             None
         }
         Some(Node::Relational(
-            Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. },
+            Relational::OrderBy { child, .. }
+            | Relational::ScanCte { child, .. }
+            | Relational::Limit { child, .. },
         )) => {
             let step = *iter.get_child().borrow();
             if step == 0 {

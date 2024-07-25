@@ -160,15 +160,20 @@ ExplainQuery = _{ Explain }
 Query = { (SelectFull | Values | Insert | Update | Delete) ~ DqlOption? }
     SelectFull = {
         (^"with" ~ Cte ~ ("," ~ Cte)*)?
-        ~ SelectWithOptionalContinuation
+        ~ SelectStatement
     }
+    SelectStatement = {
+      SelectWithOptionalContinuation ~ Limit?
+    }
+    Limit = { ^"limit" ~ (Unsigned | LimitAll) }
+      LimitAll = { ^"all" | Null }
     SelectOp = _{ UnionAllOp | ExceptOp | UnionOp }
         UnionOp = { ^"union" }
         ExceptOp = { (^"except" ~ ^"distinct") | ^"except" }
         UnionAllOp = { ^"union" ~ ^"all" }
     SelectWithOptionalContinuation = { Select ~ (SelectOp ~ Select)* }
     Cte = { Identifier ~ ("(" ~ CteColumn ~ ("," ~ CteColumn)* ~ ")")? ~ ^"as"
-            ~ "(" ~ (SelectWithOptionalContinuation | Values) ~ ")" }
+            ~ "(" ~ (SelectStatement | Values) ~ ")" }
     CteColumn = @{ Identifier }
     Select = {
         ^"select" ~ Projection ~ ^"from" ~ Scan ~
@@ -246,6 +251,7 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
                         | ^"table" | ^"text" | ^"then" | ^"to" | ^"true"
                         | ^"union" | ^"unsigned" | ^"using" | ^"uuid"
                         | ^"values" | ^"varchar" | ^"when" | ^"where" | ^"with"
+                        | ^"limit"
                         }
 
 Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }

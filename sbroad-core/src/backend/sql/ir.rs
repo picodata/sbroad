@@ -300,6 +300,7 @@ impl ExecutionPlan {
                     SyntaxData::Inline(content) => sql.push_str(content),
                     SyntaxData::From => sql.push_str("FROM"),
                     SyntaxData::Leading => sql.push_str("LEADING"),
+                    SyntaxData::Limit(limit) => sql.push_str(&format_smolstr!("LIMIT {limit}")),
                     SyntaxData::Both => sql.push_str("BOTH"),
                     SyntaxData::Trailing => sql.push_str("TRAILING"),
                     SyntaxData::Operator(s) => sql.push_str(s.as_str()),
@@ -366,7 +367,8 @@ impl ExecutionPlan {
                                 Relational::ScanSubQuery { .. }
                                 | Relational::ScanCte { .. }
                                 | Relational::Motion { .. }
-                                | Relational::ValuesRow { .. } => {}
+                                | Relational::ValuesRow { .. }
+                                | Relational::Limit { .. } => {}
                                 Relational::Selection { .. } => sql.push_str("WHERE"),
                                 Relational::Union { .. } => sql.push_str("UNION"),
                                 Relational::UnionAll { .. } => sql.push_str("UNION ALL"),

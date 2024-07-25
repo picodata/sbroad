@@ -606,6 +606,11 @@ impl SubtreeCloner {
                 left: _,
                 right: _,
                 output: _,
+            }
+            | Relational::Limit {
+                limit: _,
+                child: _,
+                output: _,
             } => {}
             Relational::Having {
                 children: _,

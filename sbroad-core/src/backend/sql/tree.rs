@@ -57,6 +57,8 @@ pub enum SyntaxData {
     From,
     /// "leading"
     Leading,
+    /// "limit"
+    Limit(u64),
     /// "both"
     Both,
     /// "trailing"
@@ -235,6 +237,14 @@ impl SyntaxNode {
     fn new_leading() -> Self {
         SyntaxNode {
             data: SyntaxData::Leading,
+            left: None,
+            right: Vec::new(),
+        }
+    }
+
+    fn new_limit(limit: u64) -> Self {
+        SyntaxNode {
+            data: SyntaxData::Limit(limit),
             left: None,
             right: Vec::new(),
         }
@@ -623,6 +633,7 @@ impl<'p> SyntaxPlan<'p> {
                 Relational::Motion { .. } => self.add_motion(id),
                 Relational::ValuesRow { .. } => self.add_values_row(id),
                 Relational::Values { .. } => self.add_values(id),
+                Relational::Limit { .. } => self.add_limit(id),
             },
             Node::Expression(expr) => match expr {
                 Expression::ExprInParentheses { .. } => self.add_expr_in_parentheses(id),
@@ -1060,6 +1071,22 @@ impl<'p> SyntaxPlan<'p> {
         }
         nodes.push(first);
         let sn = SyntaxNode::new_pointer(id, None, nodes);
+        arena.push_sn_plan(sn);
+    }
+
+    fn add_limit(&mut self, id: usize) {
+        let (_, limit) = self.prologue_rel(id);
+        let Relational::Limit { limit, child, .. } = limit else {
+            panic!("expected LIMIT node");
+        };
+        let (limit, child) = (*limit, *child);
+        let child_sn_id = self.pop_from_stack(child);
+        let arena = &mut self.nodes;
+        let children: Vec<usize> = vec![
+            child_sn_id,
+            arena.push_sn_non_plan(SyntaxNode::new_limit(limit)),
+        ];
+        let sn = SyntaxNode::new_pointer(id, None, children);
         arena.push_sn_plan(sn);
     }
 

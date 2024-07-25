@@ -501,6 +501,16 @@ pub enum Relational {
         /// should be empty.
         children: Vec<usize>,
     },
+    Limit {
+        /// Output tuple.
+        output: usize,
+        // The limit value constant that comes after LIMIT keyword.
+        limit: u64,
+        /// Select statement that is being limited.
+        /// Note that it can be a complex statement, like SELECT .. UNION ALL SELECT .. LIMIT 100,
+        /// in that case limit is applied to the result of union.
+        child: usize,
+    },
 }
 
 #[allow(dead_code)]
@@ -527,7 +537,8 @@ impl Relational {
             | Relational::Union { output, .. }
             | Relational::UnionAll { output, .. }
             | Relational::Values { output, .. }
-            | Relational::ValuesRow { output, .. } => *output,
+            | Relational::ValuesRow { output, .. }
+            | Relational::Limit { output, .. } => *output,
         }
     }
 
@@ -553,7 +564,8 @@ impl Relational {
             | Relational::Union { output, .. }
             | Relational::UnionAll { output, .. }
             | Relational::Values { output, .. }
-            | Relational::ValuesRow { output, .. } => output,
+            | Relational::ValuesRow { output, .. }
+            | Relational::Limit { output, .. } => output,
         }
     }
 
@@ -561,9 +573,9 @@ impl Relational {
     #[must_use]
     pub fn children(&self) -> Children<'_> {
         match self {
-            Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
-                Children::Single(child)
-            }
+            Relational::OrderBy { child, .. }
+            | Relational::ScanCte { child, .. }
+            | Relational::Limit { child, .. } => Children::Single(child),
             Relational::Except { left, right, .. }
             | Relational::Intersect { left, right, .. }
             | Relational::UnionAll { left, right, .. }
@@ -589,9 +601,9 @@ impl Relational {
     pub fn mut_children(&mut self) -> MutChildren<'_> {
         // return MutChildren { node: self };
         match self {
-            Relational::OrderBy { child, .. } | Relational::ScanCte { child, .. } => {
-                MutChildren::Single(child)
-            }
+            Relational::OrderBy { child, .. }
+            | Relational::ScanCte { child, .. }
+            | Relational::Limit { child, .. } => MutChildren::Single(child),
             Relational::Except { left, right, .. }
             | Relational::Intersect { left, right, .. }
             | Relational::UnionAll { left, right, .. }
@@ -751,6 +763,13 @@ impl Relational {
                 // It is safe to unwrap here, because the length is already checked above.
                 *child = children[0];
             }
+            Relational::Limit { ref mut child, .. } => {
+                if children.len() != 1 {
+                    unreachable!("LIMIT may have only a single relational child");
+                }
+                // It is safe to unwrap here, because the length is already checked above.
+                *child = children[0];
+            }
             Relational::ScanRelation { .. } => {
                 assert!(children.is_empty(), "scan must have no children!");
             }
@@ -826,7 +845,8 @@ impl Relational {
             | Relational::Union { .. }
             | Relational::UnionAll { .. }
             | Relational::Values { .. }
-            | Relational::ValuesRow { .. } => Ok(None),
+            | Relational::ValuesRow { .. }
+            | Relational::Limit { .. } => Ok(None),
         }
     }
 
@@ -852,6 +872,7 @@ impl Relational {
             Relational::UnionAll { .. } => "UnionAll",
             Relational::Values { .. } => "Values",
             Relational::ValuesRow { .. } => "ValuesRow",
+            Relational::Limit { .. } => "Limit",
         }
     }
 
@@ -1734,15 +1755,16 @@ impl Plan {
 
         if !columns.is_empty() {
             let mut child_output_id = child_node.output();
-            // If the child node is VALUES, we need to wrap it with a subquery
-            // to change names in projection.
-            if matches!(child_node, Relational::Values { .. }) {
+            // Child must be a projection, but sometimes we need to get our hand dirty to maintain
+            // this invariant. For instance, child can be VALUES, LIMIT or UNION. In such cases
+            // we wrap the child with a subquery and change names in the subquery's projection.
+            if !matches!(child_node, Relational::Projection { .. }) {
                 let sq_id = self
                     .add_sub_query(child_id, Some(&alias))
-                    .expect("add subquery for values");
+                    .expect("add subquery in cte");
                 child_id = self
                     .add_proj(sq_id, &[], false, false)
-                    .expect("add projection for values");
+                    .expect("add projection in cte");
                 child_output_id = self
                     .get_relational_output(child_id)
                     .expect("projection has an output tuple");
@@ -1830,6 +1852,23 @@ impl Plan {
         let union_id = self.add_relational(union_all)?;
         self.replace_parent_in_subtree(output, None, Some(union_id))?;
         Ok(union_id)
+    }
+
+    /// Adds a limit node to the top of select node.
+    ///
+    /// # Errors
+    /// - Row node is not of a row type
+    pub fn add_limit(&mut self, select: usize, limit: u64) -> Result<usize, SbroadError> {
+        let output = self.add_row_for_output(select, &[], true)?;
+        let limit = Relational::Limit {
+            output,
+            limit,
+            child: select,
+        };
+
+        let limit_id = self.add_relational(limit)?;
+        self.replace_parent_in_subtree(output, None, Some(limit_id))?;
+        Ok(limit_id)
     }
 
     /// Adds a values row node.

@@ -341,6 +341,7 @@ impl Plan {
                 Relational::Insert { .. } => writeln!(buf, "Insert")?,
                 Relational::Intersect { .. } => writeln!(buf, "Intersect")?,
                 Relational::Except { .. } => writeln!(buf, "Except")?,
+                Relational::Limit { limit, .. } => writeln!(buf, "Limit {limit}")?,
             }
             // Print children.
             match relation {
@@ -359,7 +360,8 @@ impl Plan {
                 | Relational::Update { .. }
                 | Relational::Having { .. }
                 | Relational::GroupBy { .. }
-                | Relational::ValuesRow { .. }) => {
+                | Relational::ValuesRow { .. }
+                | Relational::Limit { .. }) => {
                     writeln_with_tabulation(buf, tabulation_number + 1, "Children:")?;
                     for child in &node.children() {
                         writeln_with_tabulation(
@@ -401,7 +403,8 @@ impl Plan {
                 | Relational::Union { output, .. }
                 | Relational::UnionAll { output, .. }
                 | Relational::Update { output, .. }
-                | Relational::ValuesRow { output, .. } => {
+                | Relational::ValuesRow { output, .. }
+                | Relational::Limit { output, .. } => {
                     writeln_with_tabulation(
                         buf,
                         tabulation_number + 1,
