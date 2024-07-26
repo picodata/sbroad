@@ -11,10 +11,10 @@ cte         ::= ('WITH'
                 (',' cte ('(' column (',' column)* ')')? 'AS' '(' (select | values) ')')*
                 )? select
 select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
-                'FROM' (table | ('(' (select | values) ')')) (('AS')? name)?
+                'FROM' scan
                 (
                     ('INNER' | ('LEFT' ('OUTER')?))? 'JOIN' (
-                        ((table | ('(' (select | values) ')')) (('AS')? name)?)
+                        (scan)
                     )
                     'ON' expression
                 )*
@@ -24,6 +24,7 @@ select      ::= 'SELECT' 'DISTINCT'?  ((projection (',' projection)*))
                 ('ORDER' 'BY' (expression ('ASC' | 'DESC')?) (',' expression ('ASC' | 'DESC')?)*)?
                 ((('UNION' 'ALL'?) | ('EXCEPT' 'DISTINCT'?)) select)*
 projection  ::= (table '.')? '*' | expression (('AS')? name)? | aggregate
+scan        ::= (table | '(' (select | values) ')') ('AS'? name)?
 expression  ::= (table '.')? column
                | expression ('IS' ('NOT')? 'NULL')
                | expression ('OR' | 'AND' | '*' | '/' | '+' | '-' | '=' | '>' | '<' | '>=' | '<=' | ('<>' | '!=')) expression
@@ -73,7 +74,7 @@ update      ::= 'UPDATE' table
                     column '=' expression
                     (',' column '=' expression)*
                 )
-                ('FROM' '(' (select | values) ')' (('AS')? name)?)? ('WHERE' expression)?
+                ('FROM' scan)? ('WHERE' expression)?
 
 acl         ::= (alter_user | create_role | create_user | drop_role | drop_user | grant | revoke)
                 ('OPTION' '(' ('TIMEOUT' '=' double)')')?
