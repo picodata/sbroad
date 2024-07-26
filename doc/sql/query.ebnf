@@ -63,11 +63,8 @@ call        ::= 'CALL' procedure '(' literal? (',' literal)* ')'
 delete      ::= 'DELETE' 'FROM' table ('WHERE' expression)?
 insert      ::= 'INSERT' 'INTO' table ('(' column (',' column)* ')')? (values | select)
                 ('ON' 'CONFLICT' 'DO'  ('NOTHING' | 'REPLACE' | 'FAIL'))?
-update      ::= 'UPDATE' table
-                'SET' (
-                    column '=' expression
-                    (',' column '=' expression)*
-                )
+update      ::= 'UPDATE' table 'SET'
+                column '=' expression (',' column '=' expression)*
                 ('FROM' scan)? ('WHERE' expression)?
 
 acl         ::= (alter_user | create_role | create_user | drop_role | drop_user | grant | revoke)
