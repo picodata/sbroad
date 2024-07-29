@@ -151,7 +151,7 @@ DDL = _{ CreateTable | DropTable | CreateIndex | DropIndex
 
 Block = { CallProc ~ DqlOption? }
     CallProc = { ^"call" ~ Identifier ~ "(" ~ ProcValues ~ ")" }
-        ProcValues = { ProcValue? ~ ("," ~ ProcValue)* }
+        ProcValues = { (ProcValue ~ ("," ~ ProcValue)*)? }
             ProcValue = _{ Literal | Parameter }
 
 ExplainQuery = _{ Explain }
@@ -228,7 +228,7 @@ Identifier = @{ DelimitedIdentifier | RegularIdentifier  }
         RegularIdentifierApplicableSymbol = { !IdentifierInapplicableSymbol ~ ANY }
         IdentifierInapplicableSymbol = { WHITESPACE | "." | "," | "(" | EOF | ")" | "\""
                                        | "'" | ArithInfixOp | ConcatInfixOp | NotEq | GtEq
-                                       | Gt | LtEq | Lt | Eq | Lt }
+                                       | Gt | LtEq | Lt | Eq }
         KeywordCoverage = { Keyword ~ IdentifierInapplicableSymbol }
             // Note: In case two keywords with the same prefix are met, shorter ones must go after longest.
             //       E.g. ^"in" must go after ^"insert" because keywords traversal stops on the first match.
@@ -259,7 +259,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             Subtract = { "-" }
             Multiply = { "*" }
             Divide   = { "/" }
-        CmpInfixOp    = _{ NotEq | GtEq | Gt | LtEq | Lt | Eq | Lt | In }
+        CmpInfixOp    = _{ NotEq | GtEq | Gt | LtEq | Lt | Eq | In }
             Eq    = { "=" }
             Gt    = { ">" }
             GtEq  = { ">=" }
@@ -304,7 +304,7 @@ Expr = { ExprAtomValue ~ (ExprInfixOp ~ ExprAtomValue)* }
             Case = {
                 ^"case" ~
                 Expr? ~
-                CaseWhenBlock* ~
+                CaseWhenBlock+ ~
                 CaseElseBlock? ~
                 ^"end"
             }
